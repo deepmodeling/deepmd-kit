@@ -74,8 +74,8 @@ class DOSFitting(Fitting):
             Number of frame parameter
     numb_aparam
             Number of atomic parameter
-    numb_caseid
-            Number of case specific identification.
+    dim_case_embd
+            Dimension of case specific embedding.
     ! numb_dos (added)
             Number of gridpoints on which the DOS is evaluated (NEDOS in VASP)
     rcond
@@ -113,7 +113,7 @@ class DOSFitting(Fitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        numb_caseid: int = 0,
+        dim_case_embd: int = 0,
         numb_dos: int = 300,
         rcond: Optional[float] = None,
         trainable: Optional[list[bool]] = None,
@@ -135,9 +135,9 @@ class DOSFitting(Fitting):
 
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
-        self.numb_caseid = numb_caseid
-        if numb_caseid > 0:
-            raise ValueError("numb_caseid is not supported in TensorFlow.")
+        self.dim_case_embd = dim_case_embd
+        if dim_case_embd > 0:
+            raise ValueError("dim_case_embd is not supported in TensorFlow.")
 
         self.numb_dos = numb_dos
 
@@ -715,7 +715,7 @@ class DOSFitting(Fitting):
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
-            "numb_caseid": self.numb_caseid,
+            "dim_case_embd": self.dim_case_embd,
             "rcond": self.rcond,
             "trainable": self.trainable,
             "activation_function": self.activation_function,
@@ -738,7 +738,7 @@ class DOSFitting(Fitting):
                 "fparam_inv_std": self.fparam_inv_std,
                 "aparam_avg": self.aparam_avg,
                 "aparam_inv_std": self.aparam_inv_std,
-                "caseid": None,
+                "case_embd": None,
             },
             "type_map": self.type_map,
         }

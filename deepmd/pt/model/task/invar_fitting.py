@@ -56,8 +56,8 @@ class InvarFitting(GeneralFitting):
         Number of frame parameters.
     numb_aparam : int
         Number of atomic parameters.
-    numb_caseid : int
-        Number of case specific identification.
+    dim_case_embd : int
+        Dimension of case specific embedding.
     activation_function : str
         Activation function.
     precision : str
@@ -93,7 +93,7 @@ class InvarFitting(GeneralFitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        numb_caseid: int = 0,
+        dim_case_embd: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
@@ -116,7 +116,7 @@ class InvarFitting(GeneralFitting):
             resnet_dt=resnet_dt,
             numb_fparam=numb_fparam,
             numb_aparam=numb_aparam,
-            numb_caseid=numb_caseid,
+            dim_case_embd=dim_case_embd,
             activation_function=activation_function,
             precision=precision,
             mixed_types=mixed_types,

@@ -26,7 +26,7 @@
         "_comment": " that's all"
       },
       "my_fitting": {
-        "numb_caseid": 2,
+        "dim_case_embd": 2,
         "neuron": [
           240,
           240,

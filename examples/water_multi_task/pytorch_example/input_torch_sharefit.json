@@ -64,7 +64,7 @@
         ],
         "resnet_dt": true,
         "seed": 1,
-        "numb_caseid": 2,
+        "dim_case_embd": 2,
         "_comment": " that's all"
       },
       "_comment": "that's all"

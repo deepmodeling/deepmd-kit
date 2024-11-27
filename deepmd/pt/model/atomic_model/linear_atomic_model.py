@@ -158,13 +158,13 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     def get_sel(self) -> list[int]:
         return [max([model.get_nsel() for model in self.models])]
 
-    def set_caseid(self, case_idx: int):
+    def set_case_embd(self, case_idx: int):
         """
-        Set the case identification of this atomic model by the given case_idx,
+        Set the case embedding of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
         """
         for model in self.models:
-            model.set_caseid(case_idx)
+            model.set_case_embd(case_idx)
 
     def get_model_nsels(self) -> list[int]:
         """Get the processed sels for each individual models. Not distinguishing types."""
@@ -569,13 +569,13 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         )
         return dd
 
-    def set_caseid(self, case_idx: int):
+    def set_case_embd(self, case_idx: int):
         """
-        Set the case identification of this atomic model by the given case_idx,
+        Set the case embedding of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
         """
         # only set case_idx for dpmodel
-        self.models[0].set_caseid(case_idx)
+        self.models[0].set_case_embd(case_idx)
 
     @classmethod
     def deserialize(cls, data) -> "DPZBLLinearEnergyAtomicModel":

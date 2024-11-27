@@ -1275,37 +1275,39 @@ def get_model_for_wrapper(_model_params, resuming=False):
     else:
         _model = {}
         model_keys = list(_model_params["model_dict"])
-        do_caseid, caseid_index = get_caseid_config(_model_params)
+        do_case_embd, case_embd_index = get_case_embd_config(_model_params)
         for _model_key in model_keys:
             _model[_model_key] = get_single_model(
                 _model_params["model_dict"][_model_key],
             )
-            if do_caseid and not resuming:
-                # only set caseid when from scratch multitask training
-                _model[_model_key].set_caseid(caseid_index[_model_key])
+            if do_case_embd and not resuming:
+                # only set case_embd when from scratch multitask training
+                _model[_model_key].set_case_embd(case_embd_index[_model_key])
     return _model
 
 
-def get_caseid_config(_model_params):
+def get_case_embd_config(_model_params):
     assert (
         "model_dict" in _model_params
     ), "Only support setting data config for multi-task model!"
     model_keys = list(_model_params["model_dict"])
     sorted_model_keys = sorted(model_keys)
-    numb_caseid_list = [
+    numb_case_embd_list = [
         _model_params["model_dict"][model_key]
         .get("fitting_net", {})
-        .get("numb_caseid", 0)
+        .get("dim_case_embd", 0)
         for model_key in sorted_model_keys
     ]
-    if not all(item == numb_caseid_list[0] for item in numb_caseid_list):
+    if not all(item == numb_case_embd_list[0] for item in numb_case_embd_list):
         raise ValueError(
-            f"All models must have the same dimension of data identification, while the settings are: {numb_caseid_list}"
+            f"All models must have the same dimension of data identification, while the settings are: {numb_case_embd_list}"
         )
-    if numb_caseid_list[0] == 0:
+    if numb_case_embd_list[0] == 0:
         return False, {}
-    caseid_index = {model_key: idx for idx, model_key in enumerate(sorted_model_keys)}
-    return True, caseid_index
+    case_embd_index = {
+        model_key: idx for idx, model_key in enumerate(sorted_model_keys)
+    }
+    return True, case_embd_index
 
 
 def model_change_out_bias(

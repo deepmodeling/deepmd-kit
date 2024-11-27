@@ -60,12 +60,12 @@ Specifically, there are several parts that need to be modified:
       - Level 0: Shares all parameters (default)
       - Level 1: Shares type embedding only
     - Not all descriptors support all levels (e.g., se_a only supports level 0)
-- - For fitting nets, we only support the default `shared_level`=0, where all parameters will be shared except for `bias_atom_e` and `caseid`.
+- - For fitting nets, we only support the default `shared_level`=0, where all parameters will be shared except for `bias_atom_e` and `case_embd`.
 - - To conduct multitask training, there are two typical approaches:
     1. **Descriptor sharing only**: Share the descriptor with `shared_level`=0. See [here](../../examples/water_multi_task/pytorch_example/input_torch.json) for an example.
     2. **Descriptor and fitting network sharing with data identification**:
        - Share the descriptor and the fitting network with `shared_level`=0.
-       - {ref}`numb_caseid <model[standard]/fitting_net[ener]/numb_caseid>` must be set to the number of model branches, which will distinguish different data tasks using a one-hot embedding.
+       - {ref}`dim_case_embd <model[standard]/fitting_net[ener]/dim_case_embd>` must be set to the number of model branches, which will distinguish different data tasks using a one-hot embedding.
        - See [here](../../examples/water_multi_task/pytorch_example/input_torch_sharefit.json) for an example.
 - - The parts that are exclusive to each model can be written following the previous definition.
 

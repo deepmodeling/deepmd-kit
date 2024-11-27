@@ -58,8 +58,8 @@ class DipoleFittingSeA(Fitting):
             Number of frame parameters
     numb_aparam
             Number of atomic parameters
-    numb_caseid
-            Number of case specific identification.
+    dim_case_embd
+            Dimension of case specific embedding.
     sel_type : list[int]
             The atom types selected to have an atomic dipole prediction. If is None, all atoms are selected.
     seed : int
@@ -86,7 +86,7 @@ class DipoleFittingSeA(Fitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        numb_caseid: int = 0,
+        dim_case_embd: int = 0,
         sel_type: Optional[list[int]] = None,
         seed: Optional[int] = None,
         activation_function: str = "tanh",
@@ -122,13 +122,13 @@ class DipoleFittingSeA(Fitting):
         self.type_map = type_map
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
-        self.numb_caseid = numb_caseid
+        self.dim_case_embd = dim_case_embd
         if numb_fparam > 0:
             raise ValueError("numb_fparam is not supported in the dipole fitting")
         if numb_aparam > 0:
             raise ValueError("numb_aparam is not supported in the dipole fitting")
-        if numb_caseid > 0:
-            raise ValueError("numb_caseid is not supported in TensorFlow.")
+        if dim_case_embd > 0:
+            raise ValueError("dim_case_embd is not supported in TensorFlow.")
         self.fparam_avg = None
         self.fparam_std = None
         self.fparam_inv_std = None
@@ -401,7 +401,7 @@ class DipoleFittingSeA(Fitting):
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
-            "numb_caseid": self.numb_caseid,
+            "dim_case_embd": self.dim_case_embd,
             "activation_function": self.activation_function_name,
             "precision": self.fitting_precision.name,
             "exclude_types": [],

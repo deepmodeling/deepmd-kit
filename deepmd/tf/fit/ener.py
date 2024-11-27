@@ -117,8 +117,8 @@ class EnerFitting(Fitting):
             Number of frame parameter
     numb_aparam
             Number of atomic parameter
-    numb_caseid
-        Number of case specific identification.
+    dim_case_embd
+        Dimension of case specific embedding.
     rcond
             The condition number for the regression of atomic energy.
     tot_ener_zero
@@ -158,7 +158,7 @@ class EnerFitting(Fitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        numb_caseid: int = 0,
+        dim_case_embd: int = 0,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[list[bool]] = None,
@@ -193,9 +193,9 @@ class EnerFitting(Fitting):
         #        .add("trainable",        [list, bool], default = True)
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
-        self.numb_caseid = numb_caseid
-        if numb_caseid > 0:
-            raise ValueError("numb_caseid is not supported in TensorFlow.")
+        self.dim_case_embd = dim_case_embd
+        if dim_case_embd > 0:
+            raise ValueError("dim_case_embd is not supported in TensorFlow.")
         self.n_neuron = neuron
         self.resnet_dt = resnet_dt
         self.rcond = rcond
@@ -920,7 +920,7 @@ class EnerFitting(Fitting):
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
-            "numb_caseid": self.numb_caseid,
+            "dim_case_embd": self.dim_case_embd,
             "rcond": self.rcond,
             "tot_ener_zero": self.tot_ener_zero,
             "trainable": self.trainable,
@@ -952,7 +952,7 @@ class EnerFitting(Fitting):
                 "fparam_inv_std": self.fparam_inv_std,
                 "aparam_avg": self.aparam_avg,
                 "aparam_inv_std": self.aparam_inv_std,
-                "caseid": None,
+                "case_embd": None,
             },
             "type_map": self.type_map,
         }

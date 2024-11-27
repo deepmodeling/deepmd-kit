@@ -74,7 +74,7 @@ class MultiTaskTrainTest:
                 self.share_fitting
                 and "model_1.atomic_model.fitting_net" in state_key
                 and "fitting_net.bias_atom_e" not in state_key
-                and "fitting_net.caseid" not in state_key
+                and "fitting_net.case_embd" not in state_key
             ):
                 torch.testing.assert_close(
                     multi_state_dict[state_key],
