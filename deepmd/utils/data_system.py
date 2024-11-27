@@ -755,7 +755,7 @@ def process_systems(systems: Union[str, list[str]]) -> list[str]:
     help_msg = "Please check your setting for data systems"
     # check length of systems
     if len(systems) == 0:
-        msg = "Can not find any valid data systems"
+        msg = "Cannot find any valid data systems"
         log.fatal(msg)
         raise OSError(msg, help_msg)
     return systems
