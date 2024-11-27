@@ -28,9 +28,6 @@ from deepmd.utils.data import (
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 
 log = logging.getLogger(__name__)
 
