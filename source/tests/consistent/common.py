@@ -42,10 +42,11 @@ from ..utils import (
 INSTALLED_TF = Backend.get_backend("tensorflow")().is_available()
 INSTALLED_PT = Backend.get_backend("pytorch")().is_available()
 INSTALLED_JAX = Backend.get_backend("jax")().is_available()
+INSTALLED_PD = Backend.get_backend("paddle")().is_available()
 INSTALLED_ARRAY_API_STRICT = find_spec("array_api_strict") is not None
 
-if os.environ.get("CI") and not (INSTALLED_TF and INSTALLED_PT):
-    raise ImportError("TensorFlow or PyTorch should be tested in the CI")
+if os.environ.get("CI") and not (INSTALLED_TF and INSTALLED_PT and INSTALLED_PD):
+    raise ImportError("TensorFlow, PyTorch or Paddle should be tested in the CI")
 
 
 if INSTALLED_TF:
@@ -62,10 +63,12 @@ if INSTALLED_TF:
 
 
 __all__ = [
-    "INSTALLED_ARRAY_API_STRICT",
-    "INSTALLED_JAX",
-    "INSTALLED_PT",
+    "CommonTest",
     "INSTALLED_TF",
+    "INSTALLED_PT",
+    "INSTALLED_JAX",
+    "INSTALLED_PD",
+    "INSTALLED_ARRAY_API_STRICT",
     "CommonTest",
 ]
 
@@ -85,6 +88,8 @@ class CommonTest(ABC):
     """PyTorch model class."""
     jax_class: ClassVar[Optional[type]]
     """JAX model class."""
+    pd_class: ClassVar[Optional[type]]
+    """Paddle model class."""
     array_api_strict_class: ClassVar[Optional[type]]
     args: ClassVar[Optional[Union[Argument, list[Argument]]]]
     """Arguments that maps to the `data`."""
@@ -97,6 +102,8 @@ class CommonTest(ABC):
     # we may usually skip jax before jax is fully supported
     skip_jax: ClassVar[bool] = True
     """Whether to skip the JAX model."""
+    skip_pd: ClassVar[bool] = not INSTALLED_PD
+    """Whether to skip the Paddle model."""
     skip_array_api_strict: ClassVar[bool] = True
     """Whether to skip the array_api_strict model."""
     rtol = 1e-10
@@ -179,6 +186,16 @@ class CommonTest(ABC):
         """
         raise NotImplementedError("Not implemented")
 
+    @abstractmethod
+    def eval_pd(self, pd_obj: Any) -> Any:
+        """Evaluate the return value of PD.
+
+        Parameters
+        ----------
+        pd_obj : Any
+            The object of PD
+        """
+
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
         """Evaluate the return value of array_api_strict.
 
@@ -195,6 +212,7 @@ class CommonTest(ABC):
         TF = 1
         DP = 2
         PT = 3
+        PD = 4
         JAX = 5
         ARRAY_API_STRICT = 6
 
@@ -262,6 +280,11 @@ class CommonTest(ABC):
         data = obj.serialize()
         return ret, data
 
+    def get_pd_ret_serialization_from_cls(self, obj):
+        ret = self.eval_pd(obj)
+        data = obj.serialize()
+        return ret, data
+
     def get_array_api_strict_ret_serialization_from_cls(self, obj):
         ret = self.eval_array_api_strict(obj)
         data = obj.serialize()
@@ -280,6 +303,8 @@ class CommonTest(ABC):
             return self.RefBackend.PT
         if not self.skip_jax:
             return self.RefBackend.JAX
+        if not self.skip_pd:
+            return self.RefBackend.PD
         if not self.skip_array_api_strict:
             return self.RefBackend.ARRAY_API_STRICT
         raise ValueError("No available reference")
@@ -298,6 +323,9 @@ class CommonTest(ABC):
         if ref == self.RefBackend.JAX:
             obj = self.init_backend_cls(self.jax_class)
             return self.get_jax_ret_serialization_from_cls(obj)
+        if ref == self.RefBackend.PD:
+            obj = self.init_backend_cls(self.pd_class)
+            return self.get_pd_ret_serialization_from_cls(obj)
         if ref == self.RefBackend.ARRAY_API_STRICT:
             obj = self.init_backend_cls(self.array_api_strict_class)
             return self.get_array_api_strict_ret_serialization_from_cls(obj)
@@ -451,6 +479,45 @@ class CommonTest(ABC):
         ret1, data1 = self.get_jax_ret_serialization_from_cls(obj1)
         obj1 = self.jax_class.deserialize(data1)
         ret2, data2 = self.get_jax_ret_serialization_from_cls(obj1)
+        np.testing.assert_equal(data1, data2)
+        for rr1, rr2 in zip(ret1, ret2):
+            if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
+                np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+                assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+            else:
+                self.assertEqual(rr1, rr2)
+
+    def test_pd_consistent_with_ref(self):
+        """Test whether PD and reference are consistent."""
+        if self.skip_pd:
+            self.skipTest("Unsupported backend")
+        ref_backend = self.get_reference_backend()
+        if ref_backend == self.RefBackend.PD:
+            self.skipTest("Reference is self")
+        ret1, data1 = self.get_reference_ret_serialization(ref_backend)
+        ret1 = self.extract_ret(ret1, ref_backend)
+        obj = self.pd_class.deserialize(data1)
+        ret2 = self.eval_pd(obj)
+        ret2 = self.extract_ret(ret2, self.RefBackend.PD)
+        data2 = obj.serialize()
+        if obj.__class__.__name__.startswith(("Polar", "Dipole", "DOS")):
+            # tf, pd serialization mismatch
+            common_keys = set(data1.keys()) & set(data2.keys())
+            data1 = {k: data1[k] for k in common_keys}
+            data2 = {k: data2[k] for k in common_keys}
+        np.testing.assert_equal(data1, data2)
+        for rr1, rr2 in zip(ret1, ret2):
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+
+    def test_pd_self_consistent(self):
+        """Test whether PD is self consistent."""
+        if self.skip_pd:
+            self.skipTest("Unsupported backend")
+        obj1 = self.init_backend_cls(self.pd_class)
+        ret1, data1 = self.get_pd_ret_serialization_from_cls(obj1)
+        obj2 = self.pd_class.deserialize(data1)
+        ret2, data2 = self.get_pd_ret_serialization_from_cls(obj2)
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):

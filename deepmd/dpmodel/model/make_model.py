@@ -457,7 +457,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
             Returns
             -------
-            formated_nlist
+            formatted_nlist
                 the formatted nlist.
 
             """
