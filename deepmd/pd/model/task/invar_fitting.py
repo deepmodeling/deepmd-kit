@@ -57,6 +57,9 @@ class InvarFitting(GeneralFitting):
         Number of frame parameters.
     numb_aparam : int
         Number of atomic parameters.
+    dim_case_embd : int
+        (Not supported yet)
+        Dimension of case specific embedding.
     activation_function : str
         Activation function.
     precision : str
@@ -92,6 +95,7 @@ class InvarFitting(GeneralFitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        dim_case_embd: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
@@ -114,6 +118,7 @@ class InvarFitting(GeneralFitting):
             resnet_dt=resnet_dt,
             numb_fparam=numb_fparam,
             numb_aparam=numb_aparam,
+            dim_case_embd=dim_case_embd,
             activation_function=activation_function,
             precision=precision,
             mixed_types=mixed_types,
@@ -142,7 +147,7 @@ class InvarFitting(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         return super().deserialize(data)
 
     def output_def(self) -> FittingOutputDef:

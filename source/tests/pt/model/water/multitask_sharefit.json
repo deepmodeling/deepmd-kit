@@ -25,37 +25,30 @@
         "seed": 1,
         "_comment": " that's all"
       },
+      "my_fitting": {
+        "dim_case_embd": 2,
+        "neuron": [
+          240,
+          240,
+          240
+        ],
+        "resnet_dt": true,
+        "seed": 1,
+        "_comment": " that's all"
+      },
       "_comment": "that's all"
     },
     "model_dict": {
       "model_1": {
         "type_map": "my_type_map",
         "descriptor": "my_descriptor",
-        "fitting_net": {
-          "neuron": [
-            240,
-            240,
-            240
-          ],
-          "resnet_dt": true,
-          "seed": 1,
-          "_comment": " that's all"
-        },
+        "fitting_net": "my_fitting",
         "data_stat_nbatch": 1
       },
       "model_2": {
         "type_map": "my_type_map",
         "descriptor": "my_descriptor",
-        "fitting_net": {
-          "neuron": [
-            240,
-            240,
-            240
-          ],
-          "resnet_dt": true,
-          "seed": 1,
-          "_comment": " that's all"
-        },
+        "fitting_net": "my_fitting",
         "data_stat_nbatch": 1
       }
     }
