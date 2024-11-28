@@ -40,6 +40,7 @@ def setUpModule():
         multitask_template = json.load(f)
 
 
+@unittest.skip("Skip until solving cuda error 709 in jit.save")
 class MultiTaskTrainTest:
     def test_multitask_train(self):
         # test multitask training
@@ -181,6 +182,7 @@ class MultiTaskTrainTest:
                 shutil.rmtree(f)
 
 
+@unittest.skip("Skip until solving cuda error 709 in jit.save")
 class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
     def setUp(self):
         multitask_se_e2_a = deepcopy(multitask_template)
