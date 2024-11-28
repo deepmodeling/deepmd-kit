@@ -78,6 +78,7 @@ class PropertyFittingNet(InvarFitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        dim_case_embd: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
@@ -99,6 +100,7 @@ class PropertyFittingNet(InvarFitting):
             resnet_dt=resnet_dt,
             numb_fparam=numb_fparam,
             numb_aparam=numb_aparam,
+            dim_case_embd=dim_case_embd,
             rcond=rcond,
             trainable=trainable,
             activation_function=activation_function,
@@ -111,7 +113,7 @@ class PropertyFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "PropertyFittingNet":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        check_version_compatibility(data.pop("@version"), 3, 1)
         data.pop("dim_out")
         data.pop("var_name")
         data.pop("tot_ener_zero")

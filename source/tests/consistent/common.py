@@ -101,7 +101,7 @@ class CommonTest(ABC):
     # we may usually skip jax before jax is fully supported
     skip_jax: ClassVar[bool] = True
     """Whether to skip the JAX model."""
-    skip_pd: ClassVar[bool] = not INSTALLED_PD
+    skip_pd: ClassVar[bool] = True
     """Whether to skip the Paddle model."""
     skip_array_api_strict: ClassVar[bool] = True
     """Whether to skip the array_api_strict model."""
@@ -185,7 +185,6 @@ class CommonTest(ABC):
         """
         raise NotImplementedError("Not implemented")
 
-    @abstractmethod
     def eval_pd(self, pd_obj: Any) -> Any:
         """Evaluate the return value of PD.
 
@@ -194,6 +193,7 @@ class CommonTest(ABC):
         pd_obj : Any
             The object of PD
         """
+        raise NotImplementedError("Not implemented")
 
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
         """Evaluate the return value of array_api_strict.

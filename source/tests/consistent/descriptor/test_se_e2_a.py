@@ -136,7 +136,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             env_protection,
         ) = self.param
-        return CommonTest.skip_pd
+        return not INSTALLED_PD
 
     @property
     def skip_array_api_strict(self) -> bool:
