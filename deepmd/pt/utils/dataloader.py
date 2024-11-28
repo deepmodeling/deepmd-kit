@@ -222,7 +222,7 @@ class BackgroundConsumer(Thread):
             self._queue.put(item)  # Blocking if the queue is full
 
         # Signal the consumer we are done; this should not happen for DataLoader
-        self._queue.put(StopIteration)
+        self._queue.put(StopIteration())
 
 
 QUEUESIZE = 32
@@ -250,7 +250,7 @@ class BufferedIterator:
             wait_time > 1.0
         ):  # Even for Multi-Task training, each step usually takes < 1s
             log.warning(f"Data loading is slow, waited {wait_time:.2f} seconds.")
-        if issubclass(item, Exception):
+        if isinstance(item, Exception):
             raise item
         return item
 
