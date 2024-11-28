@@ -99,9 +99,10 @@ def main_parser() -> argparse.ArgumentParser:
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
         epilog=textwrap.dedent(
             """\
-        Use --tf or --pt to choose the backend:
+        Use --tf, --pt or --pd to choose the backend:
             dp --tf train input.json
             dp --pt train input.json
+            dp --pd train input.json
         """
         ),
     )
