@@ -80,6 +80,18 @@ from typing import (
 )
 
 
+def format_training_message(
+    batch: int,
+    wall_time: float,
+    eta: Optional[int] = None,
+):
+    """Format a training message."""
+    msg = f"batch {batch:7d}: " f"total wall time = {wall_time:.2f} s"
+    if isinstance(eta, int):
+        msg += f", eta = {datetime.timedelta(seconds=int(eta))!s}"
+    return msg
+
+
 class Trainer:
     def __init__(
         self,
@@ -1213,15 +1225,3 @@ def model_change_out_bias(
         f"to {to_numpy_array(new_bias).reshape(-1)!s}."
     )
     return _model
-
-
-def format_training_message(
-    batch: int,
-    wall_time: float,
-    eta: Optional[int] = None,
-):
-    """Format a training message."""
-    msg = f"batch {batch:7d}: " f"total wall time = {wall_time:.2f} s"
-    if isinstance(eta, int):
-        msg += f", eta = {datetime.timedelta(seconds=int(eta))!s}"
-    return msg

@@ -27,7 +27,6 @@ from deepmd.pd.model.network.mlp import (
     NetworkCollection,
 )
 from deepmd.pd.utils import (
-    decomp,
     env,
 )
 from deepmd.pd.utils.env import (
@@ -481,8 +480,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         # nb x (nloc x nnei) x nt
         index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand([-1, -1, nt])
         # nb x (nloc x nnei) x nt
-        # atype_tebd_nlist = paddle.take_along_axis(atype_tebd_ext, axis=1, index=index)
-        atype_tebd_nlist = decomp.take_along_axis(atype_tebd_ext, axis=1, indices=index)
+        atype_tebd_nlist = paddle.take_along_axis(atype_tebd_ext, axis=1, indices=index)
         # nb x nloc x nnei x nt
         atype_tebd_nlist = atype_tebd_nlist.reshape([nb, nloc, nnei, nt])
         # beyond the cutoff sw should be 0.0
@@ -537,7 +535,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     gg_t = gg_t * sw.reshape([-1, self.nnei, 1])
                 # nfnl x nnei x ng
                 gg = gg_s * gg_t + gg_s
-                input_r = decomp.normalize(
+                input_r = paddle_func.normalize(
                     rr.reshape([-1, self.nnei, 4])[:, :, 1:4], axis=-1
                 )
                 gg = self.dpa1_attention(
