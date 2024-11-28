@@ -184,11 +184,12 @@ class ModelTestCase:
 
         for kk in ret[0]:
             # ensure the first frame and the second frame are the same
-            np.testing.assert_allclose(
-                ret[0][kk][0],
-                ret[0][kk][1],
-                err_msg=f"compare {kk} between frame 0 and 1",
-            )
+            if ret[0][kk] is not None:
+                np.testing.assert_allclose(
+                    ret[0][kk][0],
+                    ret[0][kk][1],
+                    err_msg=f"compare {kk} between frame 0 and 1",
+                )
 
             subret = []
             for rr in ret:
