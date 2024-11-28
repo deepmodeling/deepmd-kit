@@ -1058,11 +1058,11 @@ class Trainer:
             if is_train
             else (self.validation_data, self.validation_dataloader)
         )
-        if data is None and not is_train:
-            return {}, {}, {}
         if self.multi_task:
             data = data[task_key]
             dataloader = dataloader[task_key]
+        if data is None and not is_train:
+            return {}, {}, {}
         try:
             batch_data = next(iter(data))
         except StopIteration:
