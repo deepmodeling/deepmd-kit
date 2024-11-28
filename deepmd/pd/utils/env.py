@@ -77,7 +77,7 @@ inter_nthreads, intra_nthreads = get_default_nthreads()
 
 
 def enable_prim(enable: bool = True):
-    # operator in list below will not use composite
+    # NOTE: operator in list below will not use composite
     # operator but kernel instead
     EAGER_COMP_OP_BLACK_LIST = [
         "abs_grad",

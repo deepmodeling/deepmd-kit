@@ -3,9 +3,6 @@ import datetime
 import functools
 import logging
 import time
-from contextlib import (
-    contextmanager,
-)
 from copy import (
     deepcopy,
 )
@@ -14,7 +11,6 @@ from pathlib import (
 )
 from typing import (
     Any,
-    Optional,
 )
 
 import numpy as np
@@ -32,6 +28,9 @@ from paddle.io import (
 
 from deepmd.common import (
     symlink_prefix_files,
+)
+from deepmd.dpmodel.utils.learning_rate import (
+    LearningRateExp,
 )
 from deepmd.loggers.training import (
     format_training_message_per_task,
@@ -60,13 +59,11 @@ from deepmd.pd.utils.env import (
     SAMPLER_RECORD,
     enable_prim,
 )
-from deepmd.pd.utils.learning_rate import (
-    LearningRateExp,
-)
 from deepmd.pd.utils.stat import (
     make_stat_input,
 )
 from deepmd.pd.utils.utils import (
+    nvprof_context,
     to_numpy_array,
 )
 from deepmd.utils.data import (
@@ -77,6 +74,10 @@ from deepmd.utils.path import (
 )
 
 log = logging.getLogger(__name__)
+
+from typing import (
+    Optional,
+)
 
 
 class Trainer:
@@ -706,6 +707,8 @@ class Trainer:
 
                 self.scheduler.step()
 
+                if enable_profiling:
+                    core.nvprof_nvtx_pop()
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
@@ -878,9 +881,6 @@ class Trainer:
                     writer.add_scalar(
                         f"{task_key}/{item}", more_loss[item].item(), _step_id
                     )
-
-            if enable_profiling:
-                core.nvprof_nvtx_pop()
 
         self.t0 = time.time()
         self.total_train_time = 0.0
@@ -1213,19 +1213,6 @@ def model_change_out_bias(
         f"to {to_numpy_array(new_bias).reshape(-1)!s}."
     )
     return _model
-
-
-@contextmanager
-def nvprof_context(enable_profiler: bool, name: str):
-    if enable_profiler:
-        core.nvprof_nvtx_push(name)
-
-    try:
-        yield
-
-    finally:
-        if enable_profiler:
-            core.nvprof_nvtx_pop()
 
 
 def format_training_message(

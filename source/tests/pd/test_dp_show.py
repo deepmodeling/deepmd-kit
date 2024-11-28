@@ -29,6 +29,7 @@ from .model.test_permutation import (
 )
 
 
+@unittest.skip("Skip until solving cuda error 709 in jit.save")
 class TestSingleTaskModel(unittest.TestCase):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
@@ -101,6 +102,7 @@ class TestSingleTaskModel(unittest.TestCase):
                 shutil.rmtree(f)
 
 
+@unittest.skip("Skip until solving cuda error 709 in jit.save")
 class TestMultiTaskModel(unittest.TestCase):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/multitask.json")
