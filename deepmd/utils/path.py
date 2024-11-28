@@ -44,9 +44,6 @@ class DPPath(ABC):
             raise FileNotFoundError(f"{path} not found")
         return super().__new__(cls)
 
-    def __getnewargs__(self):
-        return (self.path, self.mode)
-
     @abstractmethod
     def load_numpy(self) -> np.ndarray:
         """Load NumPy array.
@@ -117,6 +114,10 @@ class DPPath(ABC):
         """Check if self is directory."""
 
     @abstractmethod
+    def __getnewargs__(self):
+        """Return the arguments to be passed to __new__ when unpickling an instance."""
+
+    @abstractmethod
     def __truediv__(self, key: str) -> "DPPath":
         """Used for / operator."""
 
@@ -173,6 +174,9 @@ class DPOSPath(DPPath):
             self.path = path
         else:
             self.path = Path(path)
+
+    def __getnewargs__(self):
+        return (self.path, self.mode)
 
     def load_numpy(self) -> np.ndarray:
         """Load NumPy array.
@@ -306,6 +310,9 @@ class DPH5Path(DPPath):
         self.root = self._load_h5py(s[0], mode)
         # h5 path: default is the root path
         self._name = s[1] if len(s) > 1 else "/"
+
+    def __getnewargs__(self):
+        return (self.root_path, self.mode)
 
     @classmethod
     @lru_cache(None)
