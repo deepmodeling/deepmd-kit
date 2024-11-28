@@ -50,7 +50,7 @@ def setup_seed(seed) -> None:
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
-
+    np.random.seed(seed)
 
 class DpLoaderSet(Dataset):
     """A dataset for storing DataLoaders to multiple Systems.
