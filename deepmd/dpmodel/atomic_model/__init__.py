@@ -44,14 +44,14 @@ from .polar_atomic_model import (
 )
 
 __all__ = [
-    "make_base_atomic_model",
     "BaseAtomicModel",
     "DPAtomicModel",
-    "DPEnergyAtomicModel",
-    "PairTabAtomicModel",
-    "LinearEnergyAtomicModel",
-    "DPZBLLinearEnergyAtomicModel",
     "DPDOSAtomicModel",
-    "DPPolarAtomicModel",
     "DPDipoleAtomicModel",
+    "DPEnergyAtomicModel",
+    "DPPolarAtomicModel",
+    "DPZBLLinearEnergyAtomicModel",
+    "LinearEnergyAtomicModel",
+    "PairTabAtomicModel",
+    "make_base_atomic_model",
 ]

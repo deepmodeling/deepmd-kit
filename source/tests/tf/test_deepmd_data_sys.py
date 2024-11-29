@@ -37,12 +37,12 @@ class TestDataSystem(unittest.TestCase):
         self.sys_name = []
         self.nset = 3
         for ii in range(self.nsys):
-            sys_name = "sys_%d" % ii
+            sys_name = f"sys_{ii}"
             self.sys_name.append(sys_name)
             os.makedirs(sys_name, exist_ok=True)
             np.savetxt(os.path.join(sys_name, "type.raw"), self.atom_type[ii], fmt="%d")
             for jj in range(self.nset):
-                set_name = os.path.join(sys_name, "set.%03d" % jj)
+                set_name = os.path.join(sys_name, f"set.{jj:03d}")
                 os.makedirs(set_name, exist_ok=True)
                 path = os.path.join(set_name, "coord.npy")
                 val = rng.random([self.nframes[ii] + jj, self.natoms[ii] * 3])
@@ -58,7 +58,7 @@ class TestDataSystem(unittest.TestCase):
 
     def tearDown(self) -> None:
         for ii in range(self.nsys):
-            sys_name = "sys_%d" % ii
+            sys_name = f"sys_{ii}"
             shutil.rmtree(sys_name)
 
     def test_ntypes(self) -> None:
@@ -474,7 +474,7 @@ class TestDataSystem(unittest.TestCase):
                     find = True
             all_find.append(find)
         for idx, ii in enumerate(all_find):
-            self.assertTrue(ii, msg="does not find frame %d in array" % idx)
+            self.assertTrue(ii, msg=f"does not find frame {idx} in array")
 
     def test_sys_prob_floating_point_error(self) -> None:
         # test floating point error; See #1917

@@ -13,7 +13,7 @@ class GraphWithoutTensorError(Exception):
 
 
 __all__ = [
-    "OutOfMemoryError",
     "GraphTooLargeError",
     "GraphWithoutTensorError",
+    "OutOfMemoryError",
 ]

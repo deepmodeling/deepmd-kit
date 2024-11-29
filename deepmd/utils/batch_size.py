@@ -68,7 +68,7 @@ class AutoBatchSize(ABC):
                 log.warning(
                     "You can use the environment variable DP_INFER_BATCH_SIZE to"
                     "control the inference batch size (nframes * natoms). "
-                    "The default value is %d." % initial_batch_size
+                    f"The default value is {initial_batch_size}."
                 )
 
         self.factor = factor
@@ -141,8 +141,7 @@ class AutoBatchSize(ABC):
         old_batch_size = self.current_batch_size
         self.current_batch_size = int(self.current_batch_size * factor)
         log.info(
-            "Adjust batch size from %d to %d"
-            % (old_batch_size, self.current_batch_size)
+            f"Adjust batch size from {old_batch_size} to {self.current_batch_size}"
         )
 
     def execute_all(
@@ -176,8 +175,7 @@ class AutoBatchSize(ABC):
                     (
                         vv[start_index:end_index, ...]
                         if (
-                            array_api_compat.is_array_api_obj(vv)
-                            and vv.ndim > 1
+                            (array_api_compat.is_array_api_obj(vv) and vv.ndim > 1)
                             or str(vv.__class__) == "<class 'paddle.Tensor'>"
                         )
                         else vv
@@ -188,8 +186,7 @@ class AutoBatchSize(ABC):
                     kk: (
                         vv[start_index:end_index, ...]
                         if (
-                            array_api_compat.is_array_api_obj(vv)
-                            and vv.ndim > 1
+                            (array_api_compat.is_array_api_obj(vv) and vv.ndim > 1)
                             or str(vv.__class__) == "<class 'paddle.Tensor'>"
                         )
                         else vv
