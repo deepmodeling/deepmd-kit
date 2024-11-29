@@ -106,7 +106,7 @@ class Trainer:
         shared_links=None,
         finetune_links=None,
         init_frz_model=None,
-    ):
+    ) -> None:
         """Construct a DeePMD trainer.
 
         Args:
@@ -707,20 +707,17 @@ class Trainer:
 
                 if self.gradient_max_norm > 0.0:
                     with nvprof_context(enable_profiling, "Gradient clip"):
-                        grad_norm = paddle.nn.utils.clip_grad_norm_(
-                            self.wrapper.parameters(), self.gradient_max_norm
+                        paddle.nn.utils.clip_grad_norm_(
+                            self.wrapper.parameters(),
+                            self.gradient_max_norm,
+                            error_if_nonfinite=True,
                         )
-                    if not paddle.isfinite(grad_norm).all():
-                        # check local gradnorm single GPU case, trigger NanDetector
-                        raise FloatingPointError("gradients are Nan/Inf")
 
                 with nvprof_context(enable_profiling, "Adam update"):
                     self.optimizer.step()
 
                 self.scheduler.step()
 
-                if enable_profiling:
-                    core.nvprof_nvtx_pop()
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
@@ -729,7 +726,7 @@ class Trainer:
             if self.display_in_training and (
                 display_step_id % self.disp_freq == 0 or display_step_id == 1
             ):
-                self.wrapper.eval()
+                self.wrapper.eval()  # Will set to train mode before fininshing validation
 
                 def log_loss_train(_loss, _more_loss, _task_key="Default"):
                     results = {}
@@ -835,6 +832,7 @@ class Trainer:
                                         learning_rate=None,
                                     )
                                 )
+                self.wrapper.train()
 
                 current_time = time.time()
                 train_time = current_time - self.t0
@@ -891,9 +889,13 @@ class Trainer:
                 writer.add_scalar(f"{task_key}/loss", loss, display_step_id)
                 for item in more_loss:
                     writer.add_scalar(
-                        f"{task_key}/{item}", more_loss[item].item(), _step_id
+                        f"{task_key}/{item}", more_loss[item].item(), display_step_id
                     )
 
+            if enable_profiling:
+                core.nvprof_nvtx_pop()
+
+        self.wrapper.train()
         self.t0 = time.time()
         self.total_train_time = 0.0
         for step_id in range(self.num_steps):
@@ -989,7 +991,7 @@ class Trainer:
                 "files, which can be viewd in NVIDIA Nsight Systems software"
             )
 
-    def save_model(self, save_path, lr=0.0, step=0):
+    def save_model(self, save_path, lr=0.0, step=0) -> None:
         module = (
             self.wrapper.module
             if dist.is_available() and dist.is_initialized()
@@ -1085,7 +1087,7 @@ class Trainer:
         log_dict["sid"] = batch_data["sid"]
         return input_dict, label_dict, log_dict
 
-    def print_header(self, fout, train_results, valid_results):
+    def print_header(self, fout, train_results, valid_results) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""
         print_str += "# {:5s}".format("step")
@@ -1116,7 +1118,9 @@ class Trainer:
         fout.write(print_str)
         fout.flush()
 
-    def print_on_training(self, fout, step_id, cur_lr, train_results, valid_results):
+    def print_on_training(
+        self, fout, step_id, cur_lr, train_results, valid_results
+    ) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""
         print_str += f"{step_id:7d}"
