@@ -81,7 +81,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         ln_eps: Optional[float] = 1e-5,
         seed: Optional[Union[int, list[int]]] = None,
         type: Optional[str] = None,
-    ):
+    ) -> None:
         r"""Construct an embedding net of type `se_atten`.
 
         Parameters
@@ -249,12 +249,20 @@ class DescrptBlockSeAtten(DescriptorBlock):
         # add for compression
         self.compress = False
         self.is_sorted = False
-        # self.compress_info = nn.ParameterList(
-        #     [self.create_parameter([0], dtype=self.prec).to("cpu")]
-        # )
-        # self.compress_data = nn.ParameterList(
-        #     [self.create_parameter([0], dtype=self.prec).to(env.DEVICE)]
-        # )
+        self.compress_info = nn.ParameterList(
+            [
+                self.create_parameter(
+                    [], default_initializer=nn.initializer.Constant(0), dtype=self.prec
+                ).to("cpu")
+            ]
+        )
+        self.compress_data = nn.ParameterList(
+            [
+                self.create_parameter(
+                    [], default_initializer=nn.initializer.Constant(0), dtype=self.prec
+                ).to(env.DEVICE)
+            ]
+        )
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -401,9 +409,21 @@ class DescrptBlockSeAtten(DescriptorBlock):
         lower,
         upper,
     ) -> None:
-        raise NotImplementedError(
-            "Compressed descriptor in paddle is not supported yet."
+        net = "filter_net"
+        self.compress_info[0] = paddle.to_tensor(
+            [
+                lower[net],
+                upper[net],
+                upper[net] * table_config[0],
+                table_config[1],
+                table_config[2],
+                table_config[3],
+            ],
+            dtype=self.prec,
+            place="cpu",
         )
+        self.compress_data[0] = table_data[net].to(device=env.DEVICE, dtype=self.prec)
+        self.compress = True
 
     def forward(
         self,

@@ -69,7 +69,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             # underscore to prevent conflict with normal inputs
             atomic_model_: Optional[T_AtomicModel] = None,
             **kwargs,
-        ):
+        ) -> None:
             super().__init__(*args, **kwargs)
             if atomic_model_ is not None:
                 self.atomic_model: T_AtomicModel = atomic_model_
@@ -125,6 +125,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 check_frequency,
             )
 
+        # cannot use the name forward. torch script does not work
         def forward_common(
             self,
             coord,
@@ -173,7 +174,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 atype,
                 self.get_rcut(),
                 self.get_sel(),
-                mixed_types=self.mixed_types(),
+                # types will be distinguished in the lower interface,
+                # so it doesn't need to be distinguished here
+                mixed_types=True,
                 box=bb,
             )
             model_predict_lower = self.forward_common_lower(
@@ -408,7 +411,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
             Returns
             -------
-            formatted_nlist
+            formated_nlist
                 the formatted nlist.
 
             """

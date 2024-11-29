@@ -82,7 +82,7 @@ def enable_prim(enable: bool = True):
     EAGER_COMP_OP_BLACK_LIST = [
         "abs_grad",
         "cast_grad",
-        "concat_grad",
+        # "concat_grad",
         "cos_double_grad",
         "cos_grad",
         "cumprod_grad",
@@ -115,8 +115,7 @@ def enable_prim(enable: bool = True):
         "sin_double_grad",
         "sin_grad",
         "slice_grad",
-        "split_grad",
-        "split_grad",
+        # "split_grad",
         "sqrt_grad",
         "stack_grad",
         "sum_grad",
@@ -137,6 +136,7 @@ def enable_prim(enable: bool = True):
         "subtract_grad",
         "tile_grad",
     ]
+    EAGER_COMP_OP_BLACK_LIST = list(set(EAGER_COMP_OP_BLACK_LIST))
 
     """Enable running program in primitive C++ API in eager/static mode."""
     from paddle.framework import (
