@@ -15,7 +15,7 @@ class AtomExcludeMask(paddle.nn.Layer):
         self,
         ntypes: int,
         exclude_types: list[int] = [],
-    ):
+    ) -> None:
         super().__init__()
         self.reinit(ntypes, exclude_types)
 
@@ -23,7 +23,7 @@ class AtomExcludeMask(paddle.nn.Layer):
         self,
         ntypes: int,
         exclude_types: list[int] = [],
-    ):
+    ) -> None:
         self.ntypes = ntypes
         self.exclude_types = exclude_types
         self.type_mask = np.array(
@@ -68,7 +68,7 @@ class PairExcludeMask(paddle.nn.Layer):
         self,
         ntypes: int,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         super().__init__()
         self.reinit(ntypes, exclude_types)
 
@@ -76,7 +76,7 @@ class PairExcludeMask(paddle.nn.Layer):
         self,
         ntypes: int,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         self.ntypes = ntypes
         self._exclude_types: set[tuple[int, int]] = set()
         for tt in exclude_types:
@@ -134,9 +134,7 @@ class PairExcludeMask(paddle.nn.Layer):
             [
                 atype_ext,
                 self.ntypes
-                * paddle.ones([nf, 1], dtype=atype_ext.dtype).to(
-                    device=atype_ext.place
-                ),
+                * paddle.ones([nf, 1], dtype=atype_ext.dtype).to(atype_ext.place),
             ],
             axis=-1,
         )

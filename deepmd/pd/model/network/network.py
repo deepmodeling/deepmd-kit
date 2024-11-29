@@ -45,7 +45,7 @@ class TypeEmbedNet(nn.Layer):
         use_econf_tebd=False,
         use_tebd_bias: bool = False,
         type_map=None,
-    ):
+    ) -> None:
         """Construct a type embedding net."""
         super().__init__()
         self.type_nums = type_nums
@@ -80,11 +80,28 @@ class TypeEmbedNet(nn.Layer):
         """
         return self.embedding(atype.place)[atype]
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def get_full_embedding(self, device: str | paddle.base.libpaddle.Place):
+        """
+        Get the type embeddings of all types.
+
+        Parameters
+        ----------
+        device : torch.device
+            The device on which to perform the computation.
+
+        Returns
+        -------
+        type_embedding : torch.Tensor
+            The full type embeddings of all types. The last index corresponds to the zero padding.
+            Shape: (ntypes + 1) x tebd_dim
+        """
+        return self.embedding(device)
+
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         assert (
             self.__class__ == base_class.__class__
@@ -148,7 +165,7 @@ class TypeEmbedNetConsistent(nn.Layer):
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
-    ):
+    ) -> None:
         """Construct a type embedding net."""
         super().__init__()
         self.ntypes = ntypes

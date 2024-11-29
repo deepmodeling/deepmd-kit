@@ -22,6 +22,7 @@ from deepmd.pd.utils import (
     env,
 )
 from deepmd.pd.utils.env import (
+    PRECISION_DICT,
     RESERVED_PRECISON_DICT,
 )
 from deepmd.pd.utils.update_sel import (
@@ -245,7 +246,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         # not implemented
         spin=None,
         type: Optional[str] = None,
-    ):
+    ) -> None:
         super().__init__()
         # Ensure compatibility with the deprecated stripped_type_embedding option.
         if stripped_type_embedding is not None:
@@ -305,6 +306,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
             use_tebd_bias=use_tebd_bias,
             type_map=type_map,
         )
+        self.prec = PRECISION_DICT[precision]
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable
@@ -370,7 +372,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         """Returns the protection of building environment matrix."""
         return self.se_atten.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -624,22 +626,35 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
             The smooth switch function. shape: nf x nloc x nnei
 
         """
+        # cast the input to internal precsion
+        extended_coord = extended_coord.to(dtype=self.prec)
         del mapping
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.reshape([nframes, -1]).shape[1] // 3
         g1_ext = self.type_embedding(extended_atype)
         g1_inp = g1_ext[:, :nloc, :]
+        if self.tebd_input_mode in ["strip"]:
+            type_embedding = self.type_embedding.get_full_embedding(g1_ext.place)
+        else:
+            type_embedding = None
         g1, g2, h2, rot_mat, sw = self.se_atten(
             nlist,
             extended_coord,
             extended_atype,
             g1_ext,
             mapping=None,
+            type_embedding=type_embedding,
         )
         if self.concat_output_tebd:
             g1 = paddle.concat([g1, g1_inp], axis=-1)
 
-        return g1, rot_mat, g2, h2, sw
+        return (
+            g1.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            rot_mat.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            g2.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION) if g2 is not None else None,
+            h2.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            sw.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+        )
 
     @classmethod
     def update_sel(
