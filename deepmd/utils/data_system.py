@@ -100,6 +100,7 @@ class DeepmdDataSystem:
         del rcut
         self.system_dirs = systems
         self.nsystems = len(self.system_dirs)
+        assert self.nsystems > 0, "No systems provided"
         self.data_systems = []
         for ii in self.system_dirs:
             self.data_systems.append(
@@ -752,12 +753,7 @@ def process_systems(systems: Union[str, list[str]]) -> list[str]:
         systems = expand_sys_str(systems)
     elif isinstance(systems, list):
         systems = systems.copy()
-    help_msg = "Please check your setting for data systems"
-    # check length of systems
-    if len(systems) == 0:
-        msg = "Cannot find any valid data systems"
-        log.fatal(msg)
-        raise OSError(msg, help_msg)
+    assert systems, "No systems provided"
     return systems
 
 
