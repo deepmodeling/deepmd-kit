@@ -10,7 +10,7 @@ from .fitting import (
 )
 
 __all__ = [
+    "BaseFitting",
     "EnergyFittingNet",
     "Fitting",
-    "BaseFitting",
 ]

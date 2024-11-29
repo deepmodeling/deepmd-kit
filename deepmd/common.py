@@ -35,13 +35,13 @@ from deepmd.utils.path import (
 )
 
 __all__ = [
-    "select_idx_map",
-    "make_default_mesh",
-    "j_loader",
+    "VALID_ACTIVATION",
+    "VALID_PRECISION",
     "expand_sys_str",
     "get_np_precision",
-    "VALID_PRECISION",
-    "VALID_ACTIVATION",
+    "j_loader",
+    "make_default_mesh",
+    "select_idx_map",
 ]
 
 _PRECISION = Literal["default", "float16", "float32", "float64"]
@@ -63,9 +63,9 @@ VALID_ACTIVATION: set[_ACTIVATION] = set(get_args(_ACTIVATION))
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")
     __all__ += [
+        "_ACTIVATION",
         "_DICT_VAL",
         "_PRECISION",
-        "_ACTIVATION",
     ]
 
 

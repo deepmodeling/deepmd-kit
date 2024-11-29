@@ -38,15 +38,15 @@ except ImportError:
 load_entry_point("deepmd")
 
 __all__ = [
-    "__version__",
-    "descriptor",
-    "fit",
-    "loss",
-    "utils",
-    "cluster",
-    "network",
     "DeepEval",
     "DeepPotential",
     "DipoleChargeModifier",
+    "__version__",
+    "cluster",
+    "descriptor",
+    "fit",
+    "loss",
+    "network",
     "nvnmd",
+    "utils",
 ]

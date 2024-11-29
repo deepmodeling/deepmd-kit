@@ -14,10 +14,10 @@ import numpy as np
 import paddle
 
 __all__ = [
-    "scatter_reduce",
-    "sec",
     "masked_add_",
     "numel",
+    "scatter_reduce",
+    "sec",
 ]
 
 
