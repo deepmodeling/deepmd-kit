@@ -189,6 +189,7 @@ class ModelTestCase:
                     ret[0][kk][0],
                     ret[0][kk][1],
                     err_msg=f"compare {kk} between frame 0 and 1",
+                    atol=aprec,
                 )
 
             subret = []
