@@ -80,7 +80,7 @@ class TypeEmbedNet(nn.Layer):
         """
         return self.embedding(atype.place)[atype]
 
-    def get_full_embedding(self, device: str | paddle.base.libpaddle.Place):
+    def get_full_embedding(self, device: str):
         """
         Get the type embeddings of all types.
 
