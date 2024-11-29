@@ -125,7 +125,6 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 check_frequency,
             )
 
-        # cannot use the name forward. torch script does not work
         def forward_common(
             self,
             coord,

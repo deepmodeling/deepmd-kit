@@ -212,7 +212,7 @@ class GeneralFitting(Fitting):
             self.register_buffer(
                 "case_embd",
                 paddle.zeros(self.dim_case_embd, dtype=self.prec, place=device),
-                # torch.eye(self.dim_case_embd, dtype=self.prec, device=device)[0],
+                # paddle.eye(self.dim_case_embd, dtype=self.prec, place=device)[0],
             )
         else:
             self.case_embd = None

@@ -64,16 +64,12 @@ class TestDPA1(unittest.TestCase):
             6.575011420004332585e00,
             6.825240650611076099e00,
         ]
-        self.coord = (
-            paddle.to_tensor(coord, dtype=env.GLOBAL_PD_FLOAT_PRECISION)
-            .reshape([1, -1, 3])
-            .to(device=env.DEVICE)
-        )
-        self.atype = (
-            paddle.to_tensor([0, 0, 0, 1, 1], dtype=paddle.int32)
-            .reshape([1, -1])
-            .to(device=env.DEVICE)
-        )
+        self.coord = paddle.to_tensor(
+            coord, dtype=env.GLOBAL_PD_FLOAT_PRECISION, place=env.DEVICE
+        ).reshape([1, -1, 3])
+        self.atype = paddle.to_tensor(
+            [0, 0, 0, 1, 1], dtype=paddle.int32, place=env.DEVICE
+        ).reshape([1, -1])
         self.ref_d = paddle.to_tensor(
             [
                 8.382518544113587780e-03,
@@ -238,7 +234,8 @@ class TestDPA1(unittest.TestCase):
                 1.518237240362583541e-03,
             ],
             dtype=env.GLOBAL_PD_FLOAT_PRECISION,
-        ).to(device=env.DEVICE)
+            place=env.DEVICE,
+        )
         with open(Path(CUR_DIR) / "models" / "dpa1.json") as fp:
             self.model_json = json.load(fp)
         self.file_model_param = Path(CUR_DIR) / "models" / "dpa1.pd"
@@ -249,7 +246,8 @@ class TestDPA1(unittest.TestCase):
         model_dpa1 = self.model_json
         dparams = model_dpa1["descriptor"]
         ntypes = len(model_dpa1["type_map"])
-        assert "se_atten" == dparams.pop("type")
+        assert "se_atten" == dparams["type"]
+        dparams.pop("type")
         dparams["ntypes"] = ntypes
         des = DescrptBlockSeAtten(
             **dparams,
@@ -305,7 +303,8 @@ class TestDPA1(unittest.TestCase):
         ntypes = len(model_dpa2["type_map"])
         dparams = model_dpa2["descriptor"]
         dparams["ntypes"] = ntypes
-        assert dparams.pop("type") == "se_atten"
+        assert dparams["type"] == "se_atten"
+        dparams.pop("type")
         dparams["concat_output_tebd"] = False
         dparams["use_tebd_bias"] = True
         des = DescrptDPA1(

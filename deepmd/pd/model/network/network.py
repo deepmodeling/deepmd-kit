@@ -86,12 +86,12 @@ class TypeEmbedNet(nn.Layer):
 
         Parameters
         ----------
-        device : torch.device
+        device : str
             The device on which to perform the computation.
 
         Returns
         -------
-        type_embedding : torch.Tensor
+        type_embedding : paddle.Tensor
             The full type embeddings of all types. The last index corresponds to the zero padding.
             Shape: (ntypes + 1) x tebd_dim
         """
