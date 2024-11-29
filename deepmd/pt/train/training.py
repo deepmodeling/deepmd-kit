@@ -1053,23 +1053,47 @@ class Trainer:
             checkpoint_files[0].unlink()
 
     def get_data(self, is_train=True, task_key="Default"):
-        data, dataloader = (
-            (self.training_data, self.training_dataloader)
-            if is_train
-            else (self.validation_data, self.validation_dataloader)
-        )
-        if self.multi_task:
-            data = data[task_key]
-            dataloader = dataloader[task_key]
-        if data is None and not is_train:
-            return {}, {}, {}
-        try:
-            batch_data = next(iter(data))
-        except StopIteration:
-            # Refresh the status of the dataloader to start from a new epoch
-            with torch.device("cpu"):
-                data = BufferedIterator(iter(dataloader))
-            batch_data = next(iter(data))
+        if not self.multi_task:
+            if is_train:
+                try:
+                    batch_data = next(iter(self.training_data))
+                except StopIteration:
+                    # Refresh the status of the dataloader to start from a new epoch
+                    with torch.device("cpu"):
+                        self.training_data = BufferedIterator(
+                            iter(self.training_dataloader)
+                        )
+                    batch_data = next(iter(self.training_data))
+            else:
+                if self.validation_data is None:
+                    return {}, {}, {}
+                try:
+                    batch_data = next(iter(self.validation_data))
+                except StopIteration:
+                    self.validation_data = BufferedIterator(
+                        iter(self.validation_dataloader)
+                    )
+                    batch_data = next(iter(self.validation_data))
+        else:
+            if is_train:
+                try:
+                    batch_data = next(iter(self.training_data[task_key]))
+                except StopIteration:
+                    # Refresh the status of the dataloader to start from a new epoch
+                    self.training_data[task_key] = BufferedIterator(
+                        iter(self.training_dataloader[task_key])
+                    )
+                    batch_data = next(iter(self.training_data[task_key]))
+            else:
+                if self.validation_data[task_key] is None:
+                    return {}, {}, {}
+                try:
+                    batch_data = next(iter(self.validation_data[task_key]))
+                except StopIteration:
+                    self.validation_data[task_key] = BufferedIterator(
+                        iter(self.validation_dataloader[task_key])
+                    )
+                    batch_data = next(iter(self.validation_data[task_key]))
 
         for key in batch_data.keys():
             if key == "sid" or key == "fid" or key == "box" or "find_" in key:
