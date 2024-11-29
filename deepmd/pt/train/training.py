@@ -1067,7 +1067,8 @@ class Trainer:
             batch_data = next(iter(data))
         except StopIteration:
             # Refresh the status of the dataloader to start from a new epoch
-            data = BufferedIterator(iter(dataloader))
+            with torch.device("cpu"):
+                data = BufferedIterator(iter(dataloader))
             batch_data = next(iter(data))
 
         for key in batch_data.keys():
