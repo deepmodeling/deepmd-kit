@@ -739,9 +739,9 @@ def test_dos(
             frame_output = np.hstack((test_out, pred_out))
 
             save_txt_file(
-                detail_path.with_suffix(".dos.out.%.d" % ii),
+                detail_path.with_suffix(f".dos.out.{ii}"),
                 frame_output,
-                header="%s - %.d: data_dos pred_dos" % (system, ii),
+                header=f"{system} - {ii}: data_dos pred_dos",
                 append=append_detail,
             )
 
@@ -753,9 +753,9 @@ def test_dos(
                 frame_output = np.hstack((test_out, pred_out))
 
                 save_txt_file(
-                    detail_path.with_suffix(".ados.out.%.d" % ii),
+                    detail_path.with_suffix(f".ados.out.{ii}"),
                     frame_output,
-                    header="%s - %.d: data_ados pred_ados" % (system, ii),
+                    header=f"{system} - {ii}: data_ados pred_ados",
                     append=append_detail,
                 )
 
@@ -895,9 +895,9 @@ def test_property(
             frame_output = np.hstack((test_out, pred_out))
 
             save_txt_file(
-                detail_path.with_suffix(".property.out.%.d" % ii),
+                detail_path.with_suffix(f".property.out.{ii}"),
                 frame_output,
-                header="%s - %.d: data_property pred_property" % (system, ii),
+                header=f"{system} - {ii}: data_property pred_property",
                 append=append_detail,
             )
 
@@ -909,9 +909,9 @@ def test_property(
                 frame_output = np.hstack((test_out, pred_out))
 
                 save_txt_file(
-                    detail_path.with_suffix(".aproperty.out.%.d" % ii),
+                    detail_path.with_suffix(f".aproperty.out.{ii}"),
                     frame_output,
-                    header="%s - %.d: data_aproperty pred_aproperty" % (system, ii),
+                    header=f"{system} - {ii}: data_aproperty pred_aproperty",
                     append=append_detail,
                 )
 

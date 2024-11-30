@@ -804,10 +804,10 @@ class DataRequirementItem:
             raise KeyError(key)
         return self.dict[key]
 
-    def __eq__(self, __value: object) -> bool:
-        if not isinstance(__value, DataRequirementItem):
+    def __eq__(self, value: object, /) -> bool:
+        if not isinstance(value, DataRequirementItem):
             return False
-        return self.dict == __value.dict
+        return self.dict == value.dict
 
     def __repr__(self) -> str:
         return f"DataRequirementItem({self.dict})"

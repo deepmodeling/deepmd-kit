@@ -508,8 +508,7 @@ class DeepEval(ABC):
                 fparam = np.tile(fparam.reshape([-1]), [nframes, 1])
             else:
                 raise RuntimeError(
-                    "got wrong size of frame param, should be either %d x %d or %d"
-                    % (nframes, fdim, fdim)
+                    f"got wrong size of frame param, should be either {nframes} x {fdim} or {fdim}"
                 )
         if aparam is not None:
             fdim = self.get_dim_aparam()
@@ -521,8 +520,7 @@ class DeepEval(ABC):
                 aparam = np.tile(aparam.reshape([-1]), [nframes, natoms])
             else:
                 raise RuntimeError(
-                    "got wrong size of frame param, should be either %d x %d x %d or %d x %d or %d"
-                    % (nframes, natoms, fdim, natoms, fdim, fdim)
+                    f"got wrong size of frame param, should be either {nframes} x {natoms} x {fdim} or {natoms} x {fdim} or {fdim}"
                 )
         return coords, cells, atom_types, fparam, aparam, nframes, natoms
 

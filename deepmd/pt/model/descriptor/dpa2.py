@@ -403,25 +403,8 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             ]
             self.repformers.share_params(base_class.repformers, 0, resume=resume)
         # shared_level: 1
-        # share all parameters in type_embedding and repinit
-        elif shared_level == 1:
-            self._modules["type_embedding"] = base_class._modules["type_embedding"]
-            self.repinit.share_params(base_class.repinit, 0, resume=resume)
-            if self.use_three_body:
-                self.repinit_three_body.share_params(
-                    base_class.repinit_three_body, 0, resume=resume
-                )
-        # shared_level: 2
-        # share all parameters in type_embedding and repformers
-        elif shared_level == 2:
-            self._modules["type_embedding"] = base_class._modules["type_embedding"]
-            self._modules["g1_shape_tranform"] = base_class._modules[
-                "g1_shape_tranform"
-            ]
-            self.repformers.share_params(base_class.repformers, 0, resume=resume)
-        # shared_level: 3
         # share all parameters in type_embedding
-        elif shared_level == 3:
+        elif shared_level == 1:
             self._modules["type_embedding"] = base_class._modules["type_embedding"]
         # Other shared levels
         else:

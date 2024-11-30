@@ -19,10 +19,10 @@ from .property_model import (
 )
 
 __all__ = [
-    "EnergyModel",
-    "DPZBLLinearEnergyAtomicModel",
     "DOSModel",
+    "DPZBLLinearEnergyAtomicModel",
     "DipoleModel",
+    "EnergyModel",
     "PolarModel",
     "PropertyModel",
 ]

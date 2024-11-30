@@ -11,10 +11,10 @@ from deepmd.utils.argcheck import (
 )
 
 __all__ = [
-    "list_to_doc",
-    "normalize",
+    "gen_args",
     "gen_doc",
     "gen_json",
-    "gen_args",
+    "list_to_doc",
+    "normalize",
     "type_embedding_args",
 ]

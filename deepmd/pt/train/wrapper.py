@@ -112,8 +112,10 @@ class ModelWrapper(torch.nn.Module):
                         f"Shared params of {model_key_base}.{class_type_base} and {model_key_link}.{class_type_link}!"
                     )
             else:
-                if hasattr(self.model[model_key_base], class_type_base):
-                    base_class = self.model[model_key_base].__getattr__(class_type_base)
+                if hasattr(self.model[model_key_base].atomic_model, class_type_base):
+                    base_class = self.model[model_key_base].atomic_model.__getattr__(
+                        class_type_base
+                    )
                     for link_item in shared_links[shared_item]["links"][1:]:
                         class_type_link = link_item["shared_type"]
                         model_key_link = link_item["model_key"]
@@ -124,9 +126,9 @@ class ModelWrapper(torch.nn.Module):
                         assert (
                             class_type_base == class_type_link
                         ), f"Class type mismatched: {class_type_base} vs {class_type_link}!"
-                        link_class = self.model[model_key_link].__getattr__(
-                            class_type_link
-                        )
+                        link_class = self.model[
+                            model_key_link
+                        ].atomic_model.__getattr__(class_type_link)
                         link_class.share_params(
                             base_class, shared_level_link, resume=resume
                         )

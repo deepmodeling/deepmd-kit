@@ -28,6 +28,7 @@ from torch.utils.data.distributed import (
 )
 
 from deepmd.pt.utils import (
+    dp_random,
     env,
 )
 from deepmd.pt.utils.dataset import (
@@ -50,6 +51,7 @@ def setup_seed(seed) -> None:
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
+    dp_random.seed(seed)
 
 
 class DpLoaderSet(Dataset):
@@ -185,19 +187,21 @@ class DpLoaderSet(Dataset):
         name: str,
         prob: list[float],
     ) -> None:
-        print_summary(
-            name,
-            len(self.systems),
-            [ss.system for ss in self.systems],
-            [ss._natoms for ss in self.systems],
-            self.batch_sizes,
-            [
-                ss._data_system.get_sys_numb_batch(self.batch_sizes[ii])
-                for ii, ss in enumerate(self.systems)
-            ],
-            prob,
-            [ss._data_system.pbc for ss in self.systems],
-        )
+        rank = dist.get_rank() if dist.is_initialized() else 0
+        if rank == 0:
+            print_summary(
+                name,
+                len(self.systems),
+                [ss.system for ss in self.systems],
+                [ss._natoms for ss in self.systems],
+                self.batch_sizes,
+                [
+                    ss._data_system.get_sys_numb_batch(self.batch_sizes[ii])
+                    for ii, ss in enumerate(self.systems)
+                ],
+                prob,
+                [ss._data_system.pbc for ss in self.systems],
+            )
 
 
 _sentinel = object()

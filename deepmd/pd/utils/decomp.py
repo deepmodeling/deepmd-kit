@@ -13,12 +13,12 @@ from __future__ import (
 import paddle
 
 __all__ = [
-    "softmax",
+    "masked_add_",
     "norm",
-    "take_along_axis",
     "scatter_reduce",
     "sec",
-    "masked_add_",
+    "softmax",
+    "take_along_axis",
 ]
 
 

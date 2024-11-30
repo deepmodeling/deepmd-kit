@@ -132,7 +132,7 @@ class NvnmdConfig:
         r"""Initialize version-dependent parameters."""
         self.version = version
         self.max_nnei = max_nnei
-        log.debug("#Set nvnmd version as %d " % self.version)
+        log.debug(f"#Set nvnmd version as {self.version} ")
         if self.version == 0:
             if self.max_nnei == 128:
                 self.jdata_deepmd_input = jdata_deepmd_input_v0_ni128.copy()
