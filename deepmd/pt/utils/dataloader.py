@@ -28,6 +28,7 @@ from torch.utils.data.distributed import (
 )
 
 from deepmd.pt.utils import (
+    dp_random,
     env,
 )
 from deepmd.pt.utils.dataset import (
@@ -50,6 +51,7 @@ def setup_seed(seed) -> None:
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
+    dp_random.seed(seed)
 
 
 class DpLoaderSet(Dataset):
