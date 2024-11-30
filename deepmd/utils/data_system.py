@@ -100,7 +100,8 @@ class DeepmdDataSystem:
         del rcut
         self.system_dirs = systems
         self.nsystems = len(self.system_dirs)
-        assert self.nsystems > 0, "No systems provided"
+        if self.nsystems <= 0:
+            raise ValueError("No systems provided")
         self.data_systems = []
         for ii in self.system_dirs:
             self.data_systems.append(
