@@ -753,7 +753,7 @@ def process_systems(systems: Union[str, list[str]]) -> list[str]:
         systems = expand_sys_str(systems)
     elif isinstance(systems, list):
         systems = systems.copy()
-    assert systems, "No systems provided"
+    return systems
     return systems
 
 
