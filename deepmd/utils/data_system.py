@@ -754,7 +754,6 @@ def process_systems(systems: Union[str, list[str]]) -> list[str]:
     elif isinstance(systems, list):
         systems = systems.copy()
     return systems
-    return systems
 
 
 def get_data(
