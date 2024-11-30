@@ -276,7 +276,11 @@ class Trainer:
             }
 
         # Model
-        self.model = get_model_for_wrapper(model_params, resuming=resuming, loss_param_tmp)
+        self.model = get_model_for_wrapper(
+            model_params,
+            resuming=resuming,
+            loss_param_tmp=loss_param_tmp,
+        )
 
         # Loss
         if not self.multi_task:
