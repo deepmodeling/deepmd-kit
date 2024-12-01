@@ -80,20 +80,23 @@ class TypeEmbedNet(nn.Layer):
         """
         return self.embedding(atype.place)[atype]
 
-    def get_full_embedding(self, device: str):
+    def get_full_embedding(self, device: Union[str, paddle.base.libpaddle.Place]):
         """
-        Get the type embeddings of all types.
+        Retrieve the type embeddings for all types.
 
         Parameters
         ----------
-        device : str
+        device : Union[str, paddle.base.libpaddle.Place]
             The device on which to perform the computation.
+            It can be specified as:
+                - str: "cpu", "gpu", "gpu:0", etc., indicating the device type.
+                - paddle.base.libpaddle.Place: an device of paddle Tensor.
 
         Returns
         -------
         type_embedding : paddle.Tensor
-            The full type embeddings of all types. The last index corresponds to the zero padding.
-            Shape: (ntypes + 1) x tebd_dim
+            The complete set of type embeddings, including a zero-padding entry at the last index.
+            Shape: (ntypes + 1, tebd_dim)
         """
         return self.embedding(device)
 

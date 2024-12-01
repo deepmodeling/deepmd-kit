@@ -110,7 +110,7 @@ def _make_nei_g1(
     # index: nb x (nloc x nnei) x ng1
     index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand([-1, -1, ng1])
     # gg1  : nb x (nloc x nnei) x ng1
-    gg1 = decomp.take_along_axis(g1_ext, axis=1, indices=index)
+    gg1 = paddle.take_along_axis(g1_ext, axis=1, indices=index)
     # gg1  : nb x nloc x nnei x ng1
     gg1 = gg1.reshape([nb, nloc, nnei, ng1])
     return gg1

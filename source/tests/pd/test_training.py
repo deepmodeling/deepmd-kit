@@ -24,6 +24,7 @@ from deepmd.pd.utils.finetune import (
 
 from .model.test_permutation import (
     model_dpa1,
+    model_dpa2,
     model_se_e2_a,
 )
 
@@ -149,9 +150,7 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         self.config["model"] = deepcopy(model_se_e2_a)
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
-        # import paddle
         enable_prim(True)
-        # assert paddle.framework.core._is_eager_prim_enabled()
 
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
@@ -188,6 +187,22 @@ class TestEnergyModelDPA1(unittest.TestCase, DPTrainTest):
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_dpa1)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
+
+
+class TestEnergyModelDPA2(unittest.TestCase, DPTrainTest):
+    def setUp(self) -> None:
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_dpa2)
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
 

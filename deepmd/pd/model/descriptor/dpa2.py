@@ -25,8 +25,10 @@ from deepmd.pd.model.network.network import (
     TypeEmbedNetConsistent,
 )
 from deepmd.pd.utils import (
-    decomp,
     env,
+)
+from deepmd.pd.utils.env import (
+    PRECISION_DICT,
 )
 from deepmd.pd.utils.nlist import (
     build_multiple_neighbor_list,
@@ -93,7 +95,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
-    ):
+    ) -> None:
         r"""The DPA-2 descriptor. see https://arxiv.org/abs/2312.15492.
 
         Parameters
@@ -156,6 +158,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
 
         self.repinit_args = init_subclass_params(repinit, RepinitArgs)
         self.repformer_args = init_subclass_params(repformer, RepformerArgs)
+        self.tebd_input_mode = self.repinit_args.tebd_input_mode
 
         self.repinit = DescrptBlockSeAtten(
             self.repinit_args.rcut,
@@ -265,6 +268,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         )
         self.concat_output_tebd = concat_output_tebd
         self.precision = precision
+        self.prec = PRECISION_DICT[self.precision]
         self.smooth = smooth
         self.exclude_types = exclude_types
         self.env_protection = env_protection
@@ -307,6 +311,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         # set trainable
         for param in self.parameters():
             param.stop_gradient = not trainable
+        self.compress = False
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -344,11 +349,11 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         return self.repformers.dim_emb
 
     def mixed_types(self) -> bool:
-        """If true, the discriptor
+        """If true, the descriptor
         1. assumes total number of atoms aligned across frames;
         2. requires a neighbor list that does not distinguish different atomic types.
 
-        If false, the discriptor
+        If false, the descriptor
         1. assumes total number of atoms of each atom type aligned across frames;
         2. requires a neighbor list that distinguishes different atomic types.
 
@@ -370,11 +375,11 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         # the env_protection of repinit is the same as that of the repformer
         return self.repinit.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         assert (
             self.__class__ == base_class.__class__
@@ -387,33 +392,18 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
                 "type_embedding"
             ]
             self.repinit.share_params(base_class.repinit, 0, resume=resume)
+            if self.use_three_body:
+                self.repinit_three_body.share_params(
+                    base_class.repinit_three_body, 0, resume=resume
+                )
             self._sub_layers["g1_shape_tranform"] = base_class._sub_layers[
                 "g1_shape_tranform"
             ]
             self.repformers.share_params(base_class.repformers, 0, resume=resume)
         # shared_level: 1
-        # share all parameters in type_embedding and repinit
-        elif shared_level == 1:
-            self._sub_layers["type_embedding"] = base_class._sub_layers[
-                "type_embedding"
-            ]
-            self.repinit.share_params(base_class.repinit, 0, resume=resume)
-        # shared_level: 2
-        # share all parameters in type_embedding and repformers
-        elif shared_level == 2:
-            self._sub_layers["type_embedding"] = base_class._sub_layers[
-                "type_embedding"
-            ]
-            self._sub_layers["g1_shape_tranform"] = base_class._sub_layers[
-                "g1_shape_tranform"
-            ]
-            self.repformers.share_params(base_class.repformers, 0, resume=resume)
-        # shared_level: 3
         # share all parameters in type_embedding
-        elif shared_level == 3:
-            self._sub_layers["type_embedding"] = base_class._sub_layers[
-                "type_embedding"
-            ]
+        elif shared_level == 1:
+            self._modules["type_embedding"] = base_class._modules["type_embedding"]
         # Other shared levels
         else:
             raise NotImplementedError
@@ -486,7 +476,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -743,12 +733,15 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             The smooth switch function. shape: nf x nloc x nnei
 
         """
+        # cast the input to internal precsion
+        extended_coord = extended_coord.to(dtype=self.prec)
+
         use_three_body = self.use_three_body
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.reshape([nframes, -1]).shape[1] // 3
         # nlists
         nlist_dict = build_multiple_neighbor_list(
-            extended_coord,
+            extended_coord.detach(),
             nlist,
             self.rcut_list,
             self.nsel_list,
@@ -756,6 +749,10 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         # repinit
         g1_ext = self.type_embedding(extended_atype)
         g1_inp = g1_ext[:, :nloc, :]
+        if self.tebd_input_mode in ["strip"]:
+            type_embedding = self.type_embedding.get_full_embedding(g1_ext.place)
+        else:
+            type_embedding = None
         g1, _, _, _, _ = self.repinit(
             nlist_dict[
                 get_multiple_nlist_key(self.repinit.get_rcut(), self.repinit.get_nsel())
@@ -764,6 +761,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             extended_atype,
             g1_ext,
             mapping,
+            type_embedding,
         )
         if use_three_body:
             assert self.repinit_three_body is not None
@@ -778,6 +776,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
                 extended_atype,
                 g1_ext,
                 mapping,
+                type_embedding,
             )
             g1 = paddle.concat([g1, g1_three_body], axis=-1)
         # linear to change shape
@@ -793,7 +792,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
                 .unsqueeze(-1)
                 .expand([-1, -1, g1.shape[-1]])
             )
-            g1_ext = decomp.take_along_axis(g1, mapping_ext, 1)
+            g1_ext = paddle.take_along_axis(g1, mapping_ext, 1)
             g1 = g1_ext
         # repformer
         g1, g2, h2, rot_mat, sw = self.repformers(
@@ -806,11 +805,17 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             extended_atype,
             g1,
             mapping,
-            comm_dict,
+            comm_dict=comm_dict,
         )
         if self.concat_output_tebd:
             g1 = paddle.concat([g1, g1_inp], axis=-1)
-        return g1, rot_mat, g2, h2, sw
+        return (
+            g1.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            rot_mat.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            g2.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            h2.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            sw.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+        )
 
     @classmethod
     def update_sel(
@@ -824,7 +829,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict
@@ -847,6 +852,14 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             True,
         )
         local_jdata_cpy["repinit"]["nsel"] = repinit_sel[0]
+        min_nbor_dist, repinit_three_body_sel = update_sel.update_one_sel(
+            train_data,
+            type_map,
+            local_jdata_cpy["repinit"]["three_body_rcut"],
+            local_jdata_cpy["repinit"]["three_body_sel"],
+            True,
+        )
+        local_jdata_cpy["repinit"]["three_body_sel"] = repinit_three_body_sel[0]
         min_nbor_dist, repformer_sel = update_sel.update_one_sel(
             train_data,
             type_map,
@@ -856,3 +869,29 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         )
         local_jdata_cpy["repformer"]["nsel"] = repformer_sel[0]
         return local_jdata_cpy, min_nbor_dist
+
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        # do some checks before the mocel compression process
+        raise NotImplementedError("enable_compression is not implemented yet")

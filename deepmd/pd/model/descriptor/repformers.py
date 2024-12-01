@@ -20,7 +20,6 @@ from deepmd.pd.model.network.mlp import (
     MLPLayer,
 )
 from deepmd.pd.utils import (
-    decomp,
     env,
 )
 from deepmd.pd.utils.env import (
@@ -31,9 +30,6 @@ from deepmd.pd.utils.env_mat_stat import (
 )
 from deepmd.pd.utils.exclude_mask import (
     PairExcludeMask,
-)
-from deepmd.pd.utils.spin import (
-    concat_switch_virtual,
 )
 from deepmd.pd.utils.utils import (
     ActivationFn,
@@ -419,7 +415,7 @@ class DescrptBlockRepformers(DescriptorBlock):
             g2, h2 = paddle.split(dmatrix, [1, 3], axis=-1)
         else:
             # g2, h2 = paddle.linalg.norm(diff, axis=-1, keepdim=True), diff
-            g2, h2 = decomp.norm(diff, axis=-1, keepdim=True), diff
+            g2, h2 = paddle.linalg.norm(diff, axis=-1, keepdim=True), diff
             g2 = g2 / self.rcut
             h2 = h2 / self.rcut
         # nb x nloc x nnei x ng2
@@ -441,65 +437,65 @@ class DescrptBlockRepformers(DescriptorBlock):
             # g1_ext: nb x nall x ng1
             if comm_dict is None:
                 assert mapping is not None
-                g1_ext = decomp.take_along_axis(g1, axis=1, indices=mapping)
+                g1_ext = paddle.take_along_axis(g1, axis=1, indices=mapping)
             else:
-                raise NotImplementedError("Not impl yet")
-                has_spin = "has_spin" in comm_dict
-                if not has_spin:
-                    n_padding = nall - nloc
-                    g1 = paddle.nn.functional.pad(
-                        g1.squeeze(0), (0, 0, 0, n_padding), value=0.0
-                    )
-                    real_nloc = nloc
-                    real_nall = nall
-                else:
-                    # for spin
-                    real_nloc = nloc // 2
-                    real_nall = nall // 2
-                    real_n_padding = real_nall - real_nloc
-                    g1_real, g1_virtual = paddle.split(
-                        g1, [real_nloc, real_nloc], axis=1
-                    )
-                    # mix_g1: nb x real_nloc x (ng1 * 2)
-                    mix_g1 = paddle.concat([g1_real, g1_virtual], axis=2)
-                    # nb x real_nall x (ng1 * 2)
-                    g1 = paddle.nn.functional.pad(
-                        mix_g1.squeeze(0), (0, 0, 0, real_n_padding), value=0.0
-                    )
+                raise NotImplementedError("Not implemented yet")
+                # has_spin = "has_spin" in comm_dict
+                # if not has_spin:
+                #     n_padding = nall - nloc
+                #     g1 = paddle.nn.functional.pad(
+                #         g1.squeeze(0), (0, 0, 0, n_padding), value=0.0
+                #     )
+                #     real_nloc = nloc
+                #     real_nall = nall
+                # else:
+                #     # for spin
+                #     real_nloc = nloc // 2
+                #     real_nall = nall // 2
+                #     real_n_padding = real_nall - real_nloc
+                #     g1_real, g1_virtual = paddle.split(
+                #         g1, [real_nloc, real_nloc], axis=1
+                #     )
+                #     # mix_g1: nb x real_nloc x (ng1 * 2)
+                #     mix_g1 = paddle.concat([g1_real, g1_virtual], axis=2)
+                #     # nb x real_nall x (ng1 * 2)
+                #     g1 = paddle.nn.functional.pad(
+                #         mix_g1.squeeze(0), (0, 0, 0, real_n_padding), value=0.0
+                #     )
 
-                assert "send_list" in comm_dict
-                assert "send_proc" in comm_dict
-                assert "recv_proc" in comm_dict
-                assert "send_num" in comm_dict
-                assert "recv_num" in comm_dict
-                assert "communicator" in comm_dict
-                ret = paddle.ops.deepmd.border_op(
-                    comm_dict["send_list"],
-                    comm_dict["send_proc"],
-                    comm_dict["recv_proc"],
-                    comm_dict["send_num"],
-                    comm_dict["recv_num"],
-                    g1,
-                    comm_dict["communicator"],
-                    paddle.to_tensor(
-                        real_nloc,
-                        dtype=paddle.int32,
-                        place=env.DEVICE,
-                    ),  # should be int of c++
-                    paddle.to_tensor(
-                        real_nall - real_nloc,
-                        dtype=paddle.int32,
-                        place=env.DEVICE,
-                    ),  # should be int of c++
-                )
-                g1_ext = ret[0].unsqueeze(0)
-                if has_spin:
-                    g1_real_ext, g1_virtual_ext = paddle.split(
-                        g1_ext, [ng1, ng1], axis=2
-                    )
-                    g1_ext = concat_switch_virtual(
-                        g1_real_ext, g1_virtual_ext, real_nloc
-                    )
+                # assert "send_list" in comm_dict
+                # assert "send_proc" in comm_dict
+                # assert "recv_proc" in comm_dict
+                # assert "send_num" in comm_dict
+                # assert "recv_num" in comm_dict
+                # assert "communicator" in comm_dict
+                # ret = paddle.ops.deepmd.border_op(
+                #     comm_dict["send_list"],
+                #     comm_dict["send_proc"],
+                #     comm_dict["recv_proc"],
+                #     comm_dict["send_num"],
+                #     comm_dict["recv_num"],
+                #     g1,
+                #     comm_dict["communicator"],
+                #     paddle.to_tensor(
+                #         real_nloc,
+                #         dtype=paddle.int32,
+                #         place=env.DEVICE,
+                #     ),  # should be int of c++
+                #     paddle.to_tensor(
+                #         real_nall - real_nloc,
+                #         dtype=paddle.int32,
+                #         place=env.DEVICE,
+                #     ),  # should be int of c++
+                # )
+                # g1_ext = ret[0].unsqueeze(0)
+                # if has_spin:
+                #     g1_real_ext, g1_virtual_ext = paddle.split(
+                #         g1_ext, [ng1, ng1], axis=2
+                #     )
+                #     g1_ext = concat_switch_virtual(
+                #         g1_real_ext, g1_virtual_ext, real_nloc
+                #     )
             g1, g2, h2 = ll.forward(
                 g1_ext,
                 g2,

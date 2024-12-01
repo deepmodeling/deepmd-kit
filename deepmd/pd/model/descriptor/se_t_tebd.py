@@ -26,7 +26,6 @@ from deepmd.pd.model.network.network import (
     TypeEmbedNetConsistent,
 )
 from deepmd.pd.utils import (
-    decomp,
     env,
 )
 from deepmd.pd.utils.env import (
@@ -834,7 +833,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand([-1, -1, nt])
             # nb x (nloc x nnei) x nt
             # atype_tebd_nlist = paddle.take_along_axis(atype_tebd_ext, axis=1, index=index)
-            atype_tebd_nlist = decomp.take_along_axis(
+            atype_tebd_nlist = paddle.take_along_axis(
                 atype_tebd_ext, axis=1, indices=index
             )
             # nb x nloc x nnei x nt
@@ -858,7 +857,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             # nf x (nl x nnei)
             nlist_index = nlist.reshape([nb, nloc * nnei])
             # nf x (nl x nnei)
-            nei_type = decomp.take_along_axis(
+            nei_type = paddle.take_along_axis(
                 extended_atype, indices=nlist_index, axis=1
             )
             # nfnl x nnei
@@ -892,7 +891,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             ).reshape(-1, nt * 2)
             tt_full = self.filter_layers_strip.networks[0](two_side_type_embedding)
             # (nfnl x nt_i x nt_j) x ng
-            gg_t = decomp.take_along_axis(tt_full, indices=idx, axis=0)
+            gg_t = paddle.take_along_axis(tt_full, indices=idx, axis=0)
             # (nfnl x nt_i x nt_j) x ng
             gg_t = gg_t.reshape(nfnl, nnei, nnei, ng)
             if self.smooth:
