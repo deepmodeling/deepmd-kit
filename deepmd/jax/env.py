@@ -18,7 +18,7 @@ if os.environ.get("DP_DTYPE_PROMOTION_STRICT") == "1":
 
 __all__ = [
     "jax",
+    "jax_export",
     "jnp",
     "nnx",
-    "jax_export",
 ]

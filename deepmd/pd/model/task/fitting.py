@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 import logging
 from abc import (
     abstractmethod,
@@ -55,7 +54,7 @@ class Fitting(paddle.nn.Layer, BaseFitting):
             return BaseFitting.__new__(BaseFitting, *args, **kwargs)
         return super().__new__(cls)
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -65,14 +64,7 @@ class Fitting(paddle.nn.Layer, BaseFitting):
             self.__class__ == base_class.__class__
         ), "Only fitting nets of the same type can share params!"
         if shared_level == 0:
-            # link buffers
-            if hasattr(self, "bias_atom_e"):
-                self.bias_atom_e = base_class.bias_atom_e
-            # the following will successfully link all the params except buffers, which need manually link.
-            for item in self._sub_layers:
-                self._sub_layers[item] = base_class._sub_layers[item]
-        elif shared_level == 1:
-            # only not share the bias_atom_e
+            # only not share the bias_atom_e and the case_embd
             # the following will successfully link all the params except buffers, which need manually link.
             for item in self._sub_layers:
                 self._sub_layers[item] = base_class._sub_layers[item]
@@ -103,6 +95,8 @@ class GeneralFitting(Fitting):
         Number of frame parameters.
     numb_aparam : int
         Number of atomic parameters.
+    dim_case_embd : int
+        Dimension of case specific embedding.
     activation_function : str
         Activation function.
     precision : str
@@ -140,6 +134,7 @@ class GeneralFitting(Fitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        dim_case_embd: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
@@ -151,7 +146,7 @@ class GeneralFitting(Fitting):
         type_map: Optional[list[str]] = None,
         use_aparam_as_mask: bool = False,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__()
         self.var_name = var_name
         self.ntypes = ntypes
@@ -161,6 +156,7 @@ class GeneralFitting(Fitting):
         self.resnet_dt = resnet_dt
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
+        self.dim_case_embd = dim_case_embd
         self.activation_function = activation_function
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
@@ -181,7 +177,9 @@ class GeneralFitting(Fitting):
         # init constants
         if bias_atom_e is None:
             bias_atom_e = np.zeros([self.ntypes, net_dim_out], dtype=np.float64)
-        bias_atom_e = paddle.to_tensor(bias_atom_e, dtype=self.prec).to(device=device)
+        bias_atom_e = paddle.to_tensor(
+            bias_atom_e, dtype=env.GLOBAL_PD_FLOAT_PRECISION, place=device
+        )
         bias_atom_e = bias_atom_e.reshape([self.ntypes, net_dim_out])
         if not self.mixed_types:
             assert self.ntypes == bias_atom_e.shape[0], "Element count mismatches!"
@@ -210,10 +208,20 @@ class GeneralFitting(Fitting):
         else:
             self.aparam_avg, self.aparam_inv_std = None, None
 
+        if self.dim_case_embd > 0:
+            self.register_buffer(
+                "case_embd",
+                paddle.zeros(self.dim_case_embd, dtype=self.prec, place=device),
+                # paddle.eye(self.dim_case_embd, dtype=self.prec, place=device)[0],
+            )
+        else:
+            self.case_embd = None
+
         in_dim = (
             self.dim_descrpt
             + self.numb_fparam
             + (0 if self.use_aparam_as_mask else self.numb_aparam)
+            + self.dim_case_embd
         )
 
         self.filter_layers = NetworkCollection(
@@ -241,7 +249,7 @@ class GeneralFitting(Fitting):
     def reinit_exclude(
         self,
         exclude_types: list[int] = [],
-    ):
+    ) -> None:
         self.exclude_types = exclude_types
         self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
@@ -274,7 +282,7 @@ class GeneralFitting(Fitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
-            "@version": 2,
+            "@version": 3,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -282,6 +290,7 @@ class GeneralFitting(Fitting):
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
+            "dim_case_embd": self.dim_case_embd,
             "activation_function": self.activation_function,
             "precision": self.precision,
             "mixed_types": self.mixed_types,
@@ -290,6 +299,7 @@ class GeneralFitting(Fitting):
             "exclude_types": self.exclude_types,
             "@variables": {
                 "bias_atom_e": to_numpy_array(self.bias_atom_e),
+                "case_embd": to_numpy_array(self.case_embd),
                 "fparam_avg": to_numpy_array(self.fparam_avg),
                 "fparam_inv_std": to_numpy_array(self.fparam_inv_std),
                 "aparam_avg": to_numpy_array(self.aparam_avg),
@@ -311,7 +321,7 @@ class GeneralFitting(Fitting):
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
-        data = copy.deepcopy(data)
+        data = data.copy()
         variables = data.pop("@variables")
         nets = data.pop("nets")
         obj = cls(**data)
@@ -349,7 +359,16 @@ class GeneralFitting(Fitting):
         """Get the name to each type of atoms."""
         return self.type_map
 
-    def __setitem__(self, key, value):
+    def set_case_embd(self, case_idx: int):
+        """
+        Set the case embedding of this fitting net by the given case_idx,
+        typically concatenated with the output of the descriptor and fed into the fitting net.
+        """
+        self.case_embd = paddle.eye(self.dim_case_embd, dtype=self.prec).to(device)[
+            case_idx
+        ]
+
+    def __setitem__(self, key, value) -> None:
         if key in ["bias_atom_e"]:
             value = value.reshape([self.ntypes, self._net_out_dim()])
             self.bias_atom_e = value
@@ -361,6 +380,8 @@ class GeneralFitting(Fitting):
             self.aparam_avg = value
         elif key in ["aparam_inv_std"]:
             self.aparam_inv_std = value
+        elif key in ["case_embd"]:
+            self.case_embd = value
         elif key in ["scale"]:
             self.scale = value
         else:
@@ -377,6 +398,8 @@ class GeneralFitting(Fitting):
             return self.aparam_avg
         elif key in ["aparam_inv_std"]:
             return self.aparam_inv_std
+        elif key in ["case_embd"]:
+            return self.case_embd
         elif key in ["scale"]:
             return self.scale
         else:
@@ -403,7 +426,11 @@ class GeneralFitting(Fitting):
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
     ):
-        xx = descriptor
+        # cast the input to internal precsion
+        xx = descriptor.to(self.prec)
+        fparam = fparam.to(self.prec) if fparam is not None else None
+        aparam = aparam.to(self.prec) if aparam is not None else None
+
         if self.remove_vaccum_contribution is not None:
             # TODO: compute the input for vaccm when remove_vaccum_contribution is set
             # Ideally, the input for vacuum should be computed;
@@ -471,15 +498,30 @@ class GeneralFitting(Fitting):
                     axis=-1,
                 )
 
+        if self.dim_case_embd > 0:
+            assert self.case_embd is not None
+            case_embd = paddle.tile(self.case_embd.reshape([1, 1, -1]), [nf, nloc, 1])
+            xx = paddle.concat(
+                [xx, case_embd],
+                axis=-1,
+            )
+            if xx_zeros is not None:
+                xx_zeros = paddle.concat(
+                    [xx_zeros, case_embd],
+                    axis=-1,
+                )
+
         outs = paddle.zeros(
             (nf, nloc, net_dim_out),
             dtype=env.GLOBAL_PD_FLOAT_PRECISION,
-        ).to(device=descriptor.place)  # jit assertion
+        ).to(device=descriptor.place)
         if self.mixed_types:
             atom_property = self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
             if xx_zeros is not None:
                 atom_property -= self.filter_layers.networks[0](xx_zeros)
-            outs = outs + atom_property  # Shape is [nframes, natoms[0], net_dim_out]
+            outs = (
+                outs + atom_property + self.bias_atom_e[atype].to(self.prec)
+            )  # Shape is [nframes, natoms[0], net_dim_out]
         else:
             for type_i, ll in enumerate(self.filter_layers.networks):
                 mask = (atype == type_i).unsqueeze(-1)
@@ -495,12 +537,12 @@ class GeneralFitting(Fitting):
                     ):
                         atom_property -= ll(xx_zeros)
                 atom_property = atom_property + self.bias_atom_e[type_i]
-                atom_property = atom_property * mask.astype(atom_property.dtype)
+                atom_property = paddle.where(mask, atom_property, 0.0)
                 outs = (
                     outs + atom_property
                 )  # Shape is [nframes, natoms[0], net_dim_out]
         # nf x nloc
-        mask = self.emask(atype)
+        mask = self.emask(atype).to("bool")
         # nf x nloc x nod
-        outs = outs * mask[:, :, None].astype(outs.dtype)
+        outs = paddle.where(mask[:, :, None], outs, 0.0)
         return {self.var_name: outs.astype(env.GLOBAL_PD_FLOAT_PRECISION)}

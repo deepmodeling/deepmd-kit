@@ -24,9 +24,6 @@ from deepmd.pd.model.model.transform_output import (
     communicate_extended_output,
     fit_output_to_model_output,
 )
-from deepmd.pd.utils import (
-    decomp,
-)
 from deepmd.pd.utils.env import (
     GLOBAL_PD_ENER_FLOAT_PRECISION,
     GLOBAL_PD_FLOAT_PRECISION,
@@ -72,7 +69,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             # underscore to prevent conflict with normal inputs
             atomic_model_: Optional[T_AtomicModel] = None,
             **kwargs,
-        ):
+        ) -> None:
             super().__init__(*args, **kwargs)
             if atomic_model_ is not None:
                 self.atomic_model: T_AtomicModel = atomic_model_
@@ -176,7 +173,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 atype,
                 self.get_rcut(),
                 self.get_sel(),
-                mixed_types=self.mixed_types(),
+                # types will be distinguished in the lower interface,
+                # so it doesn't need to be distinguished here
+                mixed_types=True,
                 box=bb,
             )
             model_predict_lower = self.forward_common_lower(
@@ -411,7 +410,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
             Returns
             -------
-            formatted_nlist
+            formated_nlist
                 the formatted nlist.
 
             """
@@ -459,18 +458,17 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 coord0 = extended_coord[:, :n_nloc, :]
                 # nf x (nloc x nnei) x 3
                 index = nlist.reshape([n_nf, n_nloc * n_nnei, 1]).expand([-1, -1, 3])
-                coord1 = decomp.take_along_axis(extended_coord, axis=1, indices=index)
+                coord1 = paddle.take_along_axis(extended_coord, axis=1, indices=index)
                 # nf x nloc x nnei x 3
                 coord1 = coord1.reshape([n_nf, n_nloc, n_nnei, 3])
                 # nf x nloc x nnei
-                # rr = paddle.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
-                rr = decomp.norm(coord0[:, :, None, :] - coord1, axis=-1)
+                rr = paddle.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
                 rr = paddle.where(m_real_nei, rr, float("inf"))
                 rr, nlist_mapping = (
                     paddle.sort(rr, axis=-1),
                     paddle.argsort(rr, axis=-1),
                 )
-                nlist = decomp.take_along_axis(nlist, axis=2, indices=nlist_mapping)
+                nlist = paddle.take_along_axis(nlist, axis=2, indices=nlist_mapping)
                 nlist = paddle.where(rr > rcut, paddle.full_like(nlist, -1), nlist)
                 nlist = nlist[..., :nnei]
             else:  # not extra_nlist_sort and n_nnei <= nnei:
@@ -515,6 +513,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
         @classmethod
         def deserialize(cls, data) -> "CM":
             return cls(atomic_model_=T_AtomicModel.deserialize(data))
+
+        def set_case_embd(self, case_idx: int):
+            self.atomic_model.set_case_embd(case_idx)
 
         def get_dim_fparam(self) -> int:
             """Get the number (dimension) of frame parameters of this atomic model."""

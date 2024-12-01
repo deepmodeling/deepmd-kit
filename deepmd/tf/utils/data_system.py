@@ -9,6 +9,6 @@ from deepmd.utils.data_system import (
 
 __all__ = [
     "DeepmdDataSystem",
-    "process_sys_probs",
     "prob_sys_size_ext",
+    "process_sys_probs",
 ]

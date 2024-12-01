@@ -265,7 +265,7 @@ class Trainer:
             self.opt_type, self.opt_param = get_opt_param(training_params)
 
         # Model
-        self.model = get_model_for_wrapper(model_params)
+        self.model = get_model_for_wrapper(model_params, resuming=resuming)
 
         # Loss
         if not self.multi_task:
@@ -656,7 +656,6 @@ class Trainer:
             # PyTorch Profiler
             if self.enable_profiler or self.profiling:
                 prof.step()
-            self.wrapper.train()
             if isinstance(self.lr_exp, dict):
                 _lr = self.lr_exp[task_key]
             else:
@@ -682,12 +681,11 @@ class Trainer:
                 )
                 loss.backward()
                 if self.gradient_max_norm > 0.0:
-                    grad_norm = torch.nn.utils.clip_grad_norm_(
-                        self.wrapper.parameters(), self.gradient_max_norm
+                    torch.nn.utils.clip_grad_norm_(
+                        self.wrapper.parameters(),
+                        self.gradient_max_norm,
+                        error_if_nonfinite=True,
                     )
-                    if not torch.isfinite(grad_norm).all():
-                        # check local gradnorm single GPU case, trigger NanDetector
-                        raise FloatingPointError("gradients are Nan/Inf")
                 with torch.device("cpu"):
                     self.optimizer.step()
                 self.scheduler.step()
@@ -766,7 +764,7 @@ class Trainer:
             if self.display_in_training and (
                 display_step_id % self.disp_freq == 0 or display_step_id == 1
             ):
-                self.wrapper.eval()
+                self.wrapper.eval()  # Will set to train mode before fininshing validation
 
                 def log_loss_train(_loss, _more_loss, _task_key="Default"):
                     results = {}
@@ -872,6 +870,7 @@ class Trainer:
                                         learning_rate=None,
                                     )
                                 )
+                self.wrapper.train()
 
                 current_time = time.time()
                 train_time = current_time - self.t0
@@ -927,6 +926,7 @@ class Trainer:
                         f"{task_key}/{item}", more_loss[item], display_step_id
                     )
 
+        self.wrapper.train()
         self.t0 = time.time()
         self.total_train_time = 0.0
         for step_id in range(self.num_steps):
@@ -1132,7 +1132,7 @@ class Trainer:
     def print_header(self, fout, train_results, valid_results) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""
-        print_str += "# %5s" % "step"
+        print_str += "# {:5s}".format("step")
         if not self.multi_task:
             if valid_results:
                 prop_fmt = "   %11s %11s"
@@ -1155,7 +1155,7 @@ class Trainer:
                     prop_fmt = "   %11s"
                     for k in sorted(train_results[model_key].keys()):
                         print_str += prop_fmt % (k + f"_trn_{model_key}")
-        print_str += "   %8s\n" % "lr"
+        print_str += "   {:8s}\n".format("lr")
         print_str += "# If there is no available reference data, rmse_*_{val,trn} will print nan\n"
         fout.write(print_str)
         fout.flush()
@@ -1165,7 +1165,7 @@ class Trainer:
     ) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""
-        print_str += "%7d" % step_id
+        print_str += f"{step_id:7d}"
         if not self.multi_task:
             if valid_results:
                 prop_fmt = "   %11.2e %11.2e"
@@ -1267,7 +1267,7 @@ def get_single_model(
     return model
 
 
-def get_model_for_wrapper(_model_params):
+def get_model_for_wrapper(_model_params, resuming=False):
     if "model_dict" not in _model_params:
         _model = get_single_model(
             _model_params,
@@ -1275,11 +1275,39 @@ def get_model_for_wrapper(_model_params):
     else:
         _model = {}
         model_keys = list(_model_params["model_dict"])
+        do_case_embd, case_embd_index = get_case_embd_config(_model_params)
         for _model_key in model_keys:
             _model[_model_key] = get_single_model(
                 _model_params["model_dict"][_model_key],
             )
+            if do_case_embd and not resuming:
+                # only set case_embd when from scratch multitask training
+                _model[_model_key].set_case_embd(case_embd_index[_model_key])
     return _model
+
+
+def get_case_embd_config(_model_params):
+    assert (
+        "model_dict" in _model_params
+    ), "Only support setting case embedding for multi-task model!"
+    model_keys = list(_model_params["model_dict"])
+    sorted_model_keys = sorted(model_keys)
+    numb_case_embd_list = [
+        _model_params["model_dict"][model_key]
+        .get("fitting_net", {})
+        .get("dim_case_embd", 0)
+        for model_key in sorted_model_keys
+    ]
+    if not all(item == numb_case_embd_list[0] for item in numb_case_embd_list):
+        raise ValueError(
+            f"All models must have the same dimension of case embedding, while the settings are: {numb_case_embd_list}"
+        )
+    if numb_case_embd_list[0] == 0:
+        return False, {}
+    case_embd_index = {
+        model_key: idx for idx, model_key in enumerate(sorted_model_keys)
+    }
+    return True, case_embd_index
 
 
 def model_change_out_bias(

@@ -136,9 +136,9 @@ def get_model(model_params):
 
 __all__ = [
     "BaseModel",
-    "get_model",
     "DPModelCommon",
     "EnergyModel",
     "FrozenModel",
+    "get_model",
     "make_model",
 ]

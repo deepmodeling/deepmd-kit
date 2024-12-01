@@ -26,7 +26,7 @@ class ModelWrapper(paddle.nn.Layer):
         loss: paddle.nn.Layer | dict = None,
         model_params=None,
         shared_links=None,
-    ):
+    ) -> None:
         """Construct a DeePMD model wrapper.
 
         Args:
@@ -64,74 +64,13 @@ class ModelWrapper(paddle.nn.Layer):
                     self.loss[task_key] = loss[task_key]
         self.inference_only = self.loss is None
 
-    def share_params(self, shared_links, resume=False):
+    def share_params(self, shared_links, resume=False) -> None:
         """
         Share the parameters of classes following rules defined in shared_links during multitask training.
         If not start from checkpoint (resume is False),
         some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
-        supported_types = ["descriptor", "fitting_net"]
-        for shared_item in shared_links:
-            class_name = shared_links[shared_item]["type"]
-            shared_base = shared_links[shared_item]["links"][0]
-            class_type_base = shared_base["shared_type"]
-            model_key_base = shared_base["model_key"]
-            shared_level_base = shared_base["shared_level"]
-            if "descriptor" in class_type_base:
-                if class_type_base == "descriptor":
-                    base_class = self.model[model_key_base].get_descriptor()
-                elif "hybrid" in class_type_base:
-                    raise NotImplementedError(
-                        "Hybrid descriptor is not implemented yet"
-                    )
-                else:
-                    raise RuntimeError(f"Unknown class_type {class_type_base}!")
-                for link_item in shared_links[shared_item]["links"][1:]:
-                    class_type_link = link_item["shared_type"]
-                    model_key_link = link_item["model_key"]
-                    shared_level_link = int(link_item["shared_level"])
-                    assert (
-                        shared_level_link >= shared_level_base
-                    ), "The shared_links must be sorted by shared_level!"
-                    assert (
-                        "descriptor" in class_type_link
-                    ), f"Class type mismatched: {class_type_base} vs {class_type_link}!"
-                    if class_type_link == "descriptor":
-                        link_class = self.model[model_key_link].get_descriptor()
-                    elif "hybrid" in class_type_link:
-                        raise NotImplementedError(
-                            "Hybrid descriptor is not implemented yet"
-                        )
-                    else:
-                        raise RuntimeError(f"Unknown class_type {class_type_link}!")
-                    link_class.share_params(
-                        base_class, shared_level_link, resume=resume
-                    )
-                    log.warning(
-                        f"Shared params of {model_key_base}.{class_type_base} and {model_key_link}.{class_type_link}!"
-                    )
-            else:
-                if hasattr(self.model[model_key_base], class_type_base):
-                    base_class = self.model[model_key_base].__getattr__(class_type_base)
-                    for link_item in shared_links[shared_item]["links"][1:]:
-                        class_type_link = link_item["shared_type"]
-                        model_key_link = link_item["model_key"]
-                        shared_level_link = int(link_item["shared_level"])
-                        assert (
-                            shared_level_link >= shared_level_base
-                        ), "The shared_links must be sorted by shared_level!"
-                        assert (
-                            class_type_base == class_type_link
-                        ), f"Class type mismatched: {class_type_base} vs {class_type_link}!"
-                        link_class = self.model[model_key_link].__getattr__(
-                            class_type_link
-                        )
-                        link_class.share_params(
-                            base_class, shared_level_link, resume=resume
-                        )
-                        log.warning(
-                            f"Shared params of {model_key_base}.{class_type_base} and {model_key_link}.{class_type_link}!"
-                        )
+        raise NotImplementedError("share_params is not implemented yet")
 
     def forward(
         self,

@@ -6,6 +6,6 @@ from .exclude_mask import (
 )
 
 __all__ = [
-    "PairExcludeMask",
     "AtomExcludeMask",
+    "PairExcludeMask",
 ]

@@ -96,7 +96,7 @@ class ForwardLowerTest:
             mixed_types=self.model.mixed_types(),
             box=cell.unsqueeze(0),
         )
-        extended_spin = decomp.take_along_axis(
+        extended_spin = paddle.take_along_axis(
             spin.unsqueeze(0), indices=mapping.unsqueeze(-1).tile((1, 1, 3)), axis=1
         )
         input_dict = {
@@ -146,7 +146,6 @@ class TestEnergyModelSeA(unittest.TestCase, ForwardLowerTest):
         self.model = get_model(model_params).to(env.DEVICE)
 
 
-@unittest.skip("Skip for not implemented yet")
 class TestEnergyModelDPA1(unittest.TestCase, ForwardLowerTest):
     def setUp(self):
         self.prec = 1e-10

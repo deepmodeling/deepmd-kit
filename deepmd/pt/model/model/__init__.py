@@ -196,7 +196,7 @@ def get_zbl_model(model_params):
     rmax = model_params["sw_rmax"]
     atom_exclude_types = model_params.get("atom_exclude_types", [])
     pair_exclude_types = model_params.get("pair_exclude_types", [])
-    return DPZBLModel(
+    model = DPZBLModel(
         dp_model,
         pt_model,
         rmin,
@@ -205,6 +205,8 @@ def get_zbl_model(model_params):
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
     )
+    model.model_def_script = json.dumps(model_params)
+    return model
 
 
 def _can_be_converted_to_float(value) -> Optional[bool]:
@@ -295,17 +297,17 @@ def get_model(model_params):
 
 __all__ = [
     "BaseModel",
-    "get_model",
-    "DPModelCommon",
-    "EnergyModel",
-    "DipoleModel",
-    "PolarModel",
     "DOSModel",
-    "FrozenModel",
-    "SpinModel",
-    "SpinEnergyModel",
+    "DPModelCommon",
     "DPZBLModel",
-    "make_model",
-    "make_hessian_model",
+    "DipoleModel",
+    "EnergyModel",
+    "FrozenModel",
     "LinearEnergyModel",
+    "PolarModel",
+    "SpinEnergyModel",
+    "SpinModel",
+    "get_model",
+    "make_hessian_model",
+    "make_model",
 ]

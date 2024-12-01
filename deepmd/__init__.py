@@ -40,6 +40,6 @@ def DeepPotential(*args, **kwargs):
 
 
 __all__ = [
-    "__version__",
     "DeepPotential",
+    "__version__",
 ]

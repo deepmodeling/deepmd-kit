@@ -135,7 +135,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         ) = self.param
         # Paddle do not support "bfloat16" in some kernels,
         # so skip this in CI test
-        return CommonTest.skip_pd or precision == "bfloat16"
+        return not INSTALLED_PD or precision == "bfloat16"
 
     tf_class = EnerFittingTF
     dp_class = EnerFittingDP

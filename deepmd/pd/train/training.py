@@ -3,9 +3,6 @@ import datetime
 import functools
 import logging
 import time
-from contextlib import (
-    contextmanager,
-)
 from copy import (
     deepcopy,
 )
@@ -14,7 +11,6 @@ from pathlib import (
 )
 from typing import (
     Any,
-    Optional,
 )
 
 import numpy as np
@@ -32,6 +28,9 @@ from paddle.io import (
 
 from deepmd.common import (
     symlink_prefix_files,
+)
+from deepmd.dpmodel.utils.learning_rate import (
+    LearningRateExp,
 )
 from deepmd.loggers.training import (
     format_training_message_per_task,
@@ -51,7 +50,7 @@ from deepmd.pd.utils import (
 )
 from deepmd.pd.utils.dataloader import (
     BufferedIterator,
-    get_weighted_sampler,
+    get_sampler_from_params,
 )
 from deepmd.pd.utils.env import (
     DEVICE,
@@ -60,13 +59,11 @@ from deepmd.pd.utils.env import (
     SAMPLER_RECORD,
     enable_prim,
 )
-from deepmd.pd.utils.learning_rate import (
-    LearningRateExp,
-)
 from deepmd.pd.utils.stat import (
     make_stat_input,
 )
 from deepmd.pd.utils.utils import (
+    nvprof_context,
     to_numpy_array,
 )
 from deepmd.utils.data import (
@@ -77,6 +74,22 @@ from deepmd.utils.path import (
 )
 
 log = logging.getLogger(__name__)
+
+from typing import (
+    Optional,
+)
+
+
+def format_training_message(
+    batch: int,
+    wall_time: float,
+    eta: Optional[int] = None,
+):
+    """Format a training message."""
+    msg = f"batch {batch:7d}: " f"total wall time = {wall_time:.2f} s"
+    if isinstance(eta, int):
+        msg += f", eta = {datetime.timedelta(seconds=int(eta))!s}"
+    return msg
 
 
 class Trainer:
@@ -93,7 +106,7 @@ class Trainer:
         shared_links=None,
         finetune_links=None,
         init_frz_model=None,
-    ):
+    ) -> None:
         """Construct a DeePMD trainer.
 
         Args:
@@ -155,19 +168,7 @@ class Trainer:
 
         def get_data_loader(_training_data, _validation_data, _training_params):
             def get_dataloader_and_buffer(_data, _params):
-                if "auto_prob" in _training_params["training_data"]:
-                    _sampler = get_weighted_sampler(
-                        _data, _params["training_data"]["auto_prob"]
-                    )
-                elif "sys_probs" in _training_params["training_data"]:
-                    _sampler = get_weighted_sampler(
-                        _data,
-                        _params["training_data"]["sys_probs"],
-                        sys_prob=True,
-                    )
-                else:
-                    _sampler = get_weighted_sampler(_data, "prob_sys_size")
-
+                _sampler = get_sampler_from_params(_data, _params)
                 if _sampler is None:
                     log.warning(
                         "Sampler not specified!"
@@ -188,14 +189,16 @@ class Trainer:
                 return _dataloader, _data_buffered
 
             training_dataloader, training_data_buffered = get_dataloader_and_buffer(
-                _training_data, _training_params
+                _training_data, _training_params["training_data"]
             )
 
             if _validation_data is not None:
                 (
                     validation_dataloader,
                     validation_data_buffered,
-                ) = get_dataloader_and_buffer(_validation_data, _training_params)
+                ) = get_dataloader_and_buffer(
+                    _validation_data, _training_params["validation_data"]
+                )
                 valid_numb_batch = _training_params["validation_data"].get(
                     "numb_btch", 1
                 )
@@ -270,7 +273,7 @@ class Trainer:
             self.opt_type, self.opt_param = get_opt_param(training_params)
 
         # Model
-        self.model = get_model_for_wrapper(model_params)
+        self.model = get_model_for_wrapper(model_params, resuming=resuming)
 
         # Loss
         if not self.multi_task:
@@ -482,7 +485,7 @@ class Trainer:
                         _new_state_dict,
                         _origin_state_dict,
                         _random_state_dict,
-                    ):
+                    ) -> None:
                         _new_fitting = _finetune_rule_single.get_random_fitting()
                         _model_key_from = _finetune_rule_single.get_model_branch()
                         target_keys = [
@@ -655,7 +658,7 @@ class Trainer:
             core.nvprof_start()
             core.nvprof_enable_record_event()
 
-        def step(_step_id, task_key="Default"):
+        def step(_step_id, task_key="Default") -> None:
             # Paddle Profiler
             if enable_profiling:
                 core.nvprof_nvtx_push(f"Training step {_step_id}")
@@ -694,12 +697,11 @@ class Trainer:
 
                 if self.gradient_max_norm > 0.0:
                     with nvprof_context(enable_profiling, "Gradient clip"):
-                        grad_norm = paddle.nn.utils.clip_grad_norm_(
-                            self.wrapper.parameters(), self.gradient_max_norm
+                        paddle.nn.utils.clip_grad_norm_(
+                            self.wrapper.parameters(),
+                            self.gradient_max_norm,
+                            error_if_nonfinite=True,
                         )
-                    if not paddle.isfinite(grad_norm).all():
-                        # check local gradnorm single GPU case, trigger NanDetector
-                        raise FloatingPointError("gradients are Nan/Inf")
 
                 with nvprof_context(enable_profiling, "Adam update"):
                     self.optimizer.step()
@@ -714,7 +716,7 @@ class Trainer:
             if self.display_in_training and (
                 display_step_id % self.disp_freq == 0 or display_step_id == 1
             ):
-                self.wrapper.eval()
+                self.wrapper.eval()  # Will set to train mode before fininshing validation
 
                 def log_loss_train(_loss, _more_loss, _task_key="Default"):
                     results = {}
@@ -820,6 +822,7 @@ class Trainer:
                                         learning_rate=None,
                                     )
                                 )
+                self.wrapper.train()
 
                 current_time = time.time()
                 train_time = current_time - self.t0
@@ -873,15 +876,16 @@ class Trainer:
                 display_step_id % self.tensorboard_freq == 0 or display_step_id == 1
             ):
                 writer.add_scalar(f"{task_key}/lr", cur_lr, display_step_id)
-                writer.add_scalar(f"{task_key}/loss", loss, display_step_id)
+                writer.add_scalar(f"{task_key}/loss", loss.item(), display_step_id)
                 for item in more_loss:
                     writer.add_scalar(
-                        f"{task_key}/{item}", more_loss[item].item(), _step_id
+                        f"{task_key}/{item}", more_loss[item].item(), display_step_id
                     )
 
             if enable_profiling:
                 core.nvprof_nvtx_pop()
 
+        self.wrapper.train()
         self.t0 = time.time()
         self.total_train_time = 0.0
         for step_id in range(self.num_steps):
@@ -977,7 +981,7 @@ class Trainer:
                 "files, which can be viewd in NVIDIA Nsight Systems software"
             )
 
-    def save_model(self, save_path, lr=0.0, step=0):
+    def save_model(self, save_path, lr=0.0, step=0) -> None:
         module = (
             self.wrapper.module
             if dist.is_available() and dist.is_initialized()
@@ -1073,10 +1077,10 @@ class Trainer:
         log_dict["sid"] = batch_data["sid"]
         return input_dict, label_dict, log_dict
 
-    def print_header(self, fout, train_results, valid_results):
+    def print_header(self, fout, train_results, valid_results) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""
-        print_str += "# %5s" % "step"
+        print_str += "# {:5s}".format("step")
         if not self.multi_task:
             if valid_results:
                 prop_fmt = "   %11s %11s"
@@ -1099,15 +1103,17 @@ class Trainer:
                     prop_fmt = "   %11s"
                     for k in sorted(train_results[model_key].keys()):
                         print_str += prop_fmt % (k + f"_trn_{model_key}")
-        print_str += "   %8s\n" % "lr"
+        print_str += "   {:8s}\n".format("lr")
         print_str += "# If there is no available reference data, rmse_*_{val,trn} will print nan\n"
         fout.write(print_str)
         fout.flush()
 
-    def print_on_training(self, fout, step_id, cur_lr, train_results, valid_results):
+    def print_on_training(
+        self, fout, step_id, cur_lr, train_results, valid_results
+    ) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""
-        print_str += "%7d" % step_id
+        print_str += f"{step_id:7d}"
         if not self.multi_task:
             if valid_results:
                 prop_fmt = "   %11.2e %11.2e"
@@ -1179,7 +1185,7 @@ def get_single_model(
     return model
 
 
-def get_model_for_wrapper(_model_params):
+def get_model_for_wrapper(_model_params, resuming=False):
     if "model_dict" not in _model_params:
         _model = get_single_model(
             _model_params,
@@ -1187,11 +1193,39 @@ def get_model_for_wrapper(_model_params):
     else:
         _model = {}
         model_keys = list(_model_params["model_dict"])
+        do_case_embd, case_embd_index = get_case_embd_config(_model_params)
         for _model_key in model_keys:
             _model[_model_key] = get_single_model(
                 _model_params["model_dict"][_model_key],
             )
+            if do_case_embd and not resuming:
+                # only set case_embd when from scratch multitask training
+                _model[_model_key].set_case_embd(case_embd_index[_model_key])
     return _model
+
+
+def get_case_embd_config(_model_params):
+    assert (
+        "model_dict" in _model_params
+    ), "Only support setting case embedding for multi-task model!"
+    model_keys = list(_model_params["model_dict"])
+    sorted_model_keys = sorted(model_keys)
+    numb_case_embd_list = [
+        _model_params["model_dict"][model_key]
+        .get("fitting_net", {})
+        .get("dim_case_embd", 0)
+        for model_key in sorted_model_keys
+    ]
+    if not all(item == numb_case_embd_list[0] for item in numb_case_embd_list):
+        raise ValueError(
+            f"All models must have the same dimension of case embedding, while the settings are: {numb_case_embd_list}"
+        )
+    if numb_case_embd_list[0] == 0:
+        return False, {}
+    case_embd_index = {
+        model_key: idx for idx, model_key in enumerate(sorted_model_keys)
+    }
+    return True, case_embd_index
 
 
 def model_change_out_bias(
@@ -1213,28 +1247,3 @@ def model_change_out_bias(
         f"to {to_numpy_array(new_bias).reshape(-1)!s}."
     )
     return _model
-
-
-@contextmanager
-def nvprof_context(enable_profiler: bool, name: str):
-    if enable_profiler:
-        core.nvprof_nvtx_push(name)
-
-    try:
-        yield
-
-    finally:
-        if enable_profiler:
-            core.nvprof_nvtx_pop()
-
-
-def format_training_message(
-    batch: int,
-    wall_time: float,
-    eta: Optional[int] = None,
-):
-    """Format a training message."""
-    msg = f"batch {batch:7d}: " f"total wall time = {wall_time:.2f} s"
-    if isinstance(eta, int):
-        msg += f", eta = {datetime.timedelta(seconds=int(eta))!s}"
-    return msg

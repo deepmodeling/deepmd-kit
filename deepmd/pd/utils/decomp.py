@@ -14,62 +14,11 @@ import numpy as np
 import paddle
 
 __all__ = [
-    "norm",
-    "take_along_axis",
-    "scatter_reduce",
-    "sec",
     "masked_add_",
     "numel",
+    "scatter_reduce",
+    "sec",
 ]
-
-
-def norm_decomp(
-    x: paddle.Tensor, p: float = 2, axis: bool = -1, keepdim: bool = False
-) -> paddle.Tensor:
-    """Forward decompsition function of norm.
-
-    Parameters
-    ----------
-    x : paddle.Tensor
-        Input
-    p : float, default: 2
-        Order of norm
-    axis : bool, default: -1
-        Dimensions over which to compute the vector or matrix norm
-    keepdim : bool, default: False
-        If set to True, the reduced dimensions are retained in the result as dimensions
-        with size one
-
-    Returns
-    -------
-    paddle.Tensor
-        A real-valued tensor, even when A is complex.
-    """
-    return paddle.linalg.norm(x, p=p, axis=axis, keepdim=keepdim)
-
-
-def take_along_axis_decomp(
-    x: paddle.Tensor, indices: paddle.Tensor, axis: int, broadcast: bool = True
-) -> paddle.Tensor:
-    """Forward decompsition function of take_along_axis.
-
-    Parameters
-    ----------
-    x : paddle.Tensor
-        The input tensor.
-    indices : paddle.Tensor
-        Indices to take along each 1d slice of array.
-    axis : int
-        The axis to take 1d slices along.
-    broadcast : bool, default: True
-        Whether the indices broadcast.
-
-    Returns
-    -------
-    paddle.Tensor
-        Computed output.
-    """
-    return paddle.take_along_axis(x, indices, axis, broadcast)
 
 
 def scatter_reduce_decomp(
@@ -178,33 +127,6 @@ def masked_add__decomp(
     return x
 
 
-def normalize_decomp(
-    x: paddle.Tensor,
-    p: float = 2,
-    axis: int = 1,
-    epsilon: float = 1e-12,
-) -> paddle.Tensor:
-    """Forward decompsition function of normalize.
-
-    Parameters
-    ----------
-    x : paddle.Tensor
-        Input tensor.
-    p : float, optional
-        Order of the norm, default: 2
-    axis : int, optional
-        Axis on which to perform normalization, default: 1
-    epsilon : float, optional
-        Epislon value, default: 1e-12
-
-    Returns
-    -------
-    paddle.Tensor
-        Computed output.
-    """
-    return paddle.nn.functional.normalize(x, p, axis, epsilon)
-
-
 def numel(x: paddle.Tensor) -> int:
     if paddle.in_dynamic_mode():
         return np.prod(x.shape)
@@ -213,8 +135,5 @@ def numel(x: paddle.Tensor) -> int:
 
 
 # alias for decomposed functions for convinience
-normalize = normalize_decomp
 masked_add_ = masked_add__decomp
 scatter_reduce = scatter_reduce_decomp
-take_along_axis = take_along_axis_decomp
-norm = norm_decomp

@@ -77,12 +77,12 @@ inter_nthreads, intra_nthreads = get_default_nthreads()
 
 
 def enable_prim(enable: bool = True):
-    # operator in list below will not use composite
+    # NOTE: operator in list below will not use composite
     # operator but kernel instead
     EAGER_COMP_OP_BLACK_LIST = [
         "abs_grad",
         "cast_grad",
-        "concat_grad",
+        # "concat_grad",
         "cos_double_grad",
         "cos_grad",
         "cumprod_grad",
@@ -115,8 +115,7 @@ def enable_prim(enable: bool = True):
         "sin_double_grad",
         "sin_grad",
         "slice_grad",
-        "split_grad",
-        "split_grad",
+        # "split_grad",
         "sqrt_grad",
         "stack_grad",
         "sum_grad",
@@ -137,6 +136,7 @@ def enable_prim(enable: bool = True):
         "subtract_grad",
         "tile_grad",
     ]
+    EAGER_COMP_OP_BLACK_LIST = list(set(EAGER_COMP_OP_BLACK_LIST))
 
     """Enable running program in primitive C++ API in eager/static mode."""
     from paddle.framework import (
@@ -151,19 +151,19 @@ def enable_prim(enable: bool = True):
 
 
 __all__ = [
+    "CACHE_PER_SYS",
+    "DEFAULT_PRECISION",
+    "DEVICE",
+    "ENERGY_BIAS_TRAINABLE",
     "GLOBAL_ENER_FLOAT_PRECISION",
     "GLOBAL_NP_FLOAT_PRECISION",
-    "GLOBAL_PD_FLOAT_PRECISION",
     "GLOBAL_PD_ENER_FLOAT_PRECISION",
-    "DEFAULT_PRECISION",
+    "GLOBAL_PD_FLOAT_PRECISION",
+    "JIT",
+    "LOCAL_RANK",
+    "NUM_WORKERS",
     "PRECISION_DICT",
     "RESERVED_PRECISON_DICT",
     "SAMPLER_RECORD",
-    "NUM_WORKERS",
-    "DEVICE",
-    "JIT",
-    "CACHE_PER_SYS",
-    "ENERGY_BIAS_TRAINABLE",
-    "LOCAL_RANK",
     "enable_prim",
 ]

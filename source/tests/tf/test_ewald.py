@@ -143,7 +143,7 @@ class TestEwaldRecp(tf.test.TestCase):
                     c_force,
                     force[:, idx * 3 + dd],
                     places,
-                    err_msg="force component [%d,%d] failed" % (idx, dd),
+                    err_msg=f"force component [{idx},{dd}] failed",
                 )
 
     def test_virial(self) -> None:

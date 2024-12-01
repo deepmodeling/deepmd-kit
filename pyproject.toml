@@ -415,6 +415,7 @@ banned-module-level-imports = [
     "tensorflow",
     "torch",
     "jax",
+    "paddle",
 ]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]

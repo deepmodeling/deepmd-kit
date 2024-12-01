@@ -71,14 +71,14 @@ def torch2tf(torch_name, last_layer_id=None):
             return None
         layer_id = int(fields[4 + offset]) + 1
         weight_type = fields[5 + offset]
-        ret = "filter_type_all/%s_%d_%d:0" % (weight_type, layer_id, element_id)
+        ret = f"filter_type_all/{weight_type}_{layer_id}_{element_id}:0"
     elif fields[1] == "fitting_net":
         layer_id = int(fields[4 + offset])
         weight_type = fields[5 + offset]
         if layer_id != last_layer_id:
-            ret = "layer_%d_type_%d/%s:0" % (layer_id, element_id, weight_type)
+            ret = f"layer_{layer_id}_type_{element_id}/{weight_type}:0"
         else:
-            ret = "final_layer_type_%d/%s:0" % (element_id, weight_type)
+            ret = f"final_layer_type_{element_id}/{weight_type}:0"
     else:
         raise RuntimeError(f"Unexpected parameter name: {torch_name}")
     return ret

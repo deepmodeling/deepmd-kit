@@ -27,7 +27,6 @@ from deepmd.pd.model.network.mlp import (
     NetworkCollection,
 )
 from deepmd.pd.utils import (
-    decomp,
     env,
 )
 from deepmd.pd.utils.env import (
@@ -82,7 +81,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         ln_eps: Optional[float] = 1e-5,
         seed: Optional[Union[int, list[int]]] = None,
         type: Optional[str] = None,
-    ):
+    ) -> None:
         r"""Construct an embedding net of type `se_atten`.
 
         Parameters
@@ -209,12 +208,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
         )
 
         wanted_shape = (self.ntypes, self.nnei, 4)
-        mean = paddle.zeros(wanted_shape, dtype=env.GLOBAL_PD_FLOAT_PRECISION).to(
-            device=env.DEVICE
-        )
-        stddev = paddle.ones(wanted_shape, dtype=env.GLOBAL_PD_FLOAT_PRECISION).to(
-            device=env.DEVICE
-        )
+        mean = paddle.zeros(wanted_shape, dtype=self.prec).to(device=env.DEVICE)
+        stddev = paddle.ones(wanted_shape, dtype=self.prec).to(device=env.DEVICE)
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
         self.tebd_dim_input = self.tebd_dim if self.type_one_side else self.tebd_dim * 2
@@ -254,12 +249,20 @@ class DescrptBlockSeAtten(DescriptorBlock):
         # add for compression
         self.compress = False
         self.is_sorted = False
-        # self.compress_info = nn.ParameterList(
-        #     [self.create_parameter([0], dtype=self.prec).to("cpu")]
-        # )
-        # self.compress_data = nn.ParameterList(
-        #     [self.create_parameter([0], dtype=self.prec).to(env.DEVICE)]
-        # )
+        self.compress_info = nn.ParameterList(
+            [
+                self.create_parameter(
+                    [], default_initializer=nn.initializer.Constant(0), dtype=self.prec
+                ).to("cpu")
+            ]
+        )
+        self.compress_data = nn.ParameterList(
+            [
+                self.create_parameter(
+                    [], default_initializer=nn.initializer.Constant(0), dtype=self.prec
+                ).to(env.DEVICE)
+            ]
+        )
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -297,7 +300,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.filter_neuron[-1]
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -348,7 +351,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -394,7 +397,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         self.exclude_types = exclude_types
         self.is_sorted = len(self.exclude_types) == 0
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -406,9 +409,21 @@ class DescrptBlockSeAtten(DescriptorBlock):
         lower,
         upper,
     ) -> None:
-        raise NotImplementedError(
-            "Compressed descriptor in paddle is not supported yet."
+        net = "filter_net"
+        self.compress_info[0] = paddle.to_tensor(
+            [
+                lower[net],
+                upper[net],
+                upper[net] * table_config[0],
+                table_config[1],
+                table_config[2],
+                table_config[3],
+            ],
+            dtype=self.prec,
+            place="cpu",
         )
+        self.compress_data[0] = table_data[net].to(device=env.DEVICE, dtype=self.prec)
+        self.compress = True
 
     def forward(
         self,
@@ -417,6 +432,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         extended_atype: paddle.Tensor,
         extended_atype_embd: Optional[paddle.Tensor] = None,
         mapping: Optional[paddle.Tensor] = None,
+        type_embedding: Optional[paddle.Tensor] = None,
     ):
         """Compute the descriptor.
 
@@ -432,6 +448,9 @@ class DescrptBlockSeAtten(DescriptorBlock):
             The extended type embedding of atoms. shape: nf x nall
         mapping
             The index mapping, not required by this descriptor.
+        type_embedding
+            Full type embeddings. shape: (ntypes+1) x nt
+            Required for stripped type embeddings.
 
         Returns
         -------
@@ -472,24 +491,12 @@ class DescrptBlockSeAtten(DescriptorBlock):
         nlist_mask = nlist != -1
         nlist = paddle.where(nlist == -1, paddle.zeros_like(nlist), nlist)
         sw = paddle.squeeze(sw, -1)
-        # nf x nloc x nt -> nf x nloc x nnei x nt
-        atype_tebd = extended_atype_embd[:, :nloc, :]
-        atype_tebd_nnei = atype_tebd.unsqueeze(2).expand([-1, -1, self.nnei, -1])
         # nf x nall x nt
         nt = extended_atype_embd.shape[-1]
-        atype_tebd_ext = extended_atype_embd
-        # nb x (nloc x nnei) x nt
-        index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand([-1, -1, nt])
-        # nb x (nloc x nnei) x nt
-        # atype_tebd_nlist = paddle.take_along_axis(atype_tebd_ext, axis=1, index=index)
-        atype_tebd_nlist = decomp.take_along_axis(atype_tebd_ext, axis=1, indices=index)
-        # nb x nloc x nnei x nt
-        atype_tebd_nlist = atype_tebd_nlist.reshape([nb, nloc, nnei, nt])
         # beyond the cutoff sw should be 0.0
         sw = sw.masked_fill(~nlist_mask, 0.0)
         # (nb x nloc) x nnei
         exclude_mask = exclude_mask.reshape([nb * nloc, nnei])
-
         # nfnl x nnei x 4
         dmatrix = dmatrix.reshape([-1, self.nnei, 4])
         nfnl = dmatrix.shape[0]
@@ -497,9 +504,25 @@ class DescrptBlockSeAtten(DescriptorBlock):
         rr = dmatrix
         rr = rr * exclude_mask[:, :, None].astype(rr.dtype)
         ss = rr[:, :, :1]
-        nlist_tebd = atype_tebd_nlist.reshape([nfnl, nnei, self.tebd_dim])
-        atype_tebd = atype_tebd_nnei.reshape([nfnl, nnei, self.tebd_dim])
         if self.tebd_input_mode in ["concat"]:
+            atype_tebd_ext = extended_atype_embd
+            # nb x (nloc x nnei) x nt
+            index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand([-1, -1, nt])
+            # nb x (nloc x nnei) x nt
+            atype_tebd_nlist = paddle.take_along_axis(
+                atype_tebd_ext, axis=1, indices=index
+            )  # j
+            # nb x nloc x nnei x nt
+            atype_tebd_nlist = atype_tebd_nlist.reshape([nb, nloc, nnei, nt])
+
+            # nf x nloc x nt -> nf x nloc x nnei x nt
+            atype_tebd = extended_atype_embd[:, :nloc, :]
+            atype_tebd_nnei = atype_tebd.unsqueeze(2).expand(
+                [-1, -1, self.nnei, -1]
+            )  # i
+
+            nlist_tebd = atype_tebd_nlist.reshape([nfnl, nnei, self.tebd_dim])
+            atype_tebd = atype_tebd_nnei.reshape([nfnl, nnei, self.tebd_dim])
             if not self.type_one_side:
                 # nfnl x nnei x (1 + tebd_dim * 2)
                 ss = paddle.concat([ss, nlist_tebd, atype_tebd], axis=2)
@@ -517,27 +540,58 @@ class DescrptBlockSeAtten(DescriptorBlock):
             # nfnl x 4 x ng
             xyz_scatter = paddle.matmul(rr.transpose([0, 2, 1]), gg)
         elif self.tebd_input_mode in ["strip"]:
+            assert self.filter_layers_strip is not None
+            assert type_embedding is not None
+            ng = self.filter_neuron[-1]
+            ntypes_with_padding = type_embedding.shape[0]
+            # nf x (nl x nnei)
+            nlist_index = nlist.reshape([nb, nloc * nnei])
+            # nf x (nl x nnei)
+            nei_type = paddle.take_along_axis(
+                extended_atype, indices=nlist_index, axis=1
+            )
+            # (nf x nl x nnei) x ng
+            nei_type_index = nei_type.reshape([-1, 1]).expand([-1, ng]).to(paddle.int64)
+            if self.type_one_side:
+                tt_full = self.filter_layers_strip.networks[0](type_embedding)
+                # (nf x nl x nnei) x ng
+                gg_t = paddle.take_along_axis(tt_full, indices=nei_type_index, axis=0)
+            else:
+                idx_i = paddle.tile(
+                    atype.reshape([-1, 1]) * ntypes_with_padding, [1, nnei]
+                ).reshape([-1])
+                idx_j = nei_type.reshape([-1])
+                # (nf x nl x nnei) x ng
+                idx = (idx_i + idx_j).reshape([-1, 1]).expand([-1, ng]).to(paddle.int64)
+                # (ntypes) * ntypes * nt
+                type_embedding_nei = paddle.tile(
+                    type_embedding.reshape([1, ntypes_with_padding, nt]),
+                    [ntypes_with_padding, 1, 1],
+                )
+                # ntypes * (ntypes) * nt
+                type_embedding_center = paddle.tile(
+                    type_embedding.reshape([ntypes_with_padding, 1, nt]),
+                    [1, ntypes_with_padding, 1],
+                )
+                # (ntypes * ntypes) * (nt+nt)
+                two_side_type_embedding = paddle.concat(
+                    [type_embedding_nei, type_embedding_center], -1
+                ).reshape([-1, nt * 2])
+                tt_full = self.filter_layers_strip.networks[0](two_side_type_embedding)
+                # (nf x nl x nnei) x ng
+                gg_t = paddle.take_along_axis(tt_full, axis=0, indices=idx)
+            # (nf x nl) x nnei x ng
+            gg_t = gg_t.reshape([nfnl, nnei, ng])
+            if self.smooth:
+                gg_t = gg_t * sw.reshape([-1, self.nnei, 1])
             if self.compress:
                 raise NotImplementedError("Compression is not implemented yet.")
             else:
                 # nfnl x nnei x ng
                 gg_s = self.filter_layers.networks[0](ss)
-                assert self.filter_layers_strip is not None
-                if not self.type_one_side:
-                    # nfnl x nnei x (tebd_dim * 2)
-                    tt = paddle.concat(
-                        [nlist_tebd, atype_tebd], axis=2
-                    )  # dynamic, index
-                else:
-                    # nfnl x nnei x tebd_dim
-                    tt = nlist_tebd
-                # nfnl x nnei x ng
-                gg_t = self.filter_layers_strip.networks[0](tt)
-                if self.smooth:
-                    gg_t = gg_t * sw.reshape([-1, self.nnei, 1])
                 # nfnl x nnei x ng
                 gg = gg_s * gg_t + gg_s
-                input_r = decomp.normalize(
+                input_r = paddle_func.normalize(
                     rr.reshape([-1, self.nnei, 4])[:, :, 1:4], axis=-1
                 )
                 gg = self.dpa1_attention(
@@ -592,7 +646,7 @@ class NeighborGatedAttention(nn.Layer):
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         """Construct a neighbor-wise attention net."""
         super().__init__()
         self.layer_num = layer_num
@@ -662,7 +716,7 @@ class NeighborGatedAttention(nn.Layer):
         else:
             raise TypeError(key)
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if not isinstance(key, int):
             raise TypeError(key)
         if isinstance(value, self.network_type):
@@ -734,7 +788,7 @@ class NeighborGatedAttentionLayer(nn.Layer):
         ln_eps: float = 1e-5,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         """Construct a neighbor-wise attention layer."""
         super().__init__()
         self.nnei = nnei
@@ -841,7 +895,7 @@ class GatedAttentionLayer(nn.Layer):
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         """Construct a multi-head neighbor-wise attention net."""
         super().__init__()
         assert hidden_dim % num_heads == 0, "hidden_dim must be divisible by num_heads"

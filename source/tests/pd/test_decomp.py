@@ -17,50 +17,6 @@ class TestDecomp(unittest.TestCase):
     def setUp(self):
         paddle.seed(GLOBAL_SEED)
 
-    def test_softmax_decomp(self):
-        raw_api = paddle.nn.functional.softmax
-        decomp_api = decomp.softmax
-
-        raw_input = paddle.randn([100, 100], "float32")
-        raw_output = raw_api(raw_input)
-        decomp_output = decomp_api(raw_input)
-
-        np.testing.assert_allclose(
-            raw_output.numpy(),
-            decomp_output.numpy(),
-            1e-6,
-            1e-8,
-        )
-
-    def test_norm_decomp(self):
-        raw_api = paddle.linalg.norm
-        decomp_api = decomp.norm
-
-        raw_input = paddle.randn([100, 100], "float32")
-        raw_output = raw_api(raw_input, p=2, axis=-1)
-        decomp_output = decomp_api(raw_input, p=2, axis=-1)
-
-        np.testing.assert_allclose(
-            raw_output.numpy(),
-            decomp_output.numpy(),
-            1e-5,
-            1e-8,
-        )
-
-    def test_take_along_axis_decomp(self):
-        raw_api = paddle.take_along_axis
-        decomp_api = decomp.take_along_axis
-
-        raw_input = paddle.randn([100, 100], "float32")
-        raw_indices = paddle.randint(0, 100, [100, 2])
-        raw_output = raw_api(raw_input, raw_indices, axis=-1)
-        decomp_output = decomp_api(raw_input, raw_indices, axis=-1)
-
-        np.testing.assert_equal(
-            raw_output.numpy(),
-            decomp_output.numpy(),
-        )
-
     def test_scatter_reduce_decomp(self):
         raw_api = paddle.put_along_axis
         decomp_api = decomp.scatter_reduce
@@ -111,21 +67,4 @@ class TestDecomp(unittest.TestCase):
         np.testing.assert_equal(
             raw_output.numpy(),
             raw_input.numpy(),  # inplace
-        )
-
-    def test_normalize_decomp(self):
-        raw_api = paddle.nn.functional.normalize
-        decomp_api = decomp.normalize_decomp
-
-        raw_input = paddle.randn([100, 100], "float32")
-        axis = -1
-
-        raw_output = raw_api(raw_input, p=2, axis=axis)
-        decomp_output = decomp_api(raw_input, p=2, axis=axis)
-
-        np.testing.assert_allclose(
-            raw_output.numpy(),
-            decomp_output.numpy(),  # inplace
-            1e-5,
-            1e-8,
         )

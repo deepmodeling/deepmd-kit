@@ -29,14 +29,14 @@ from .type_predict import (
 )
 
 __all__ = [
+    "BaseFitting",
+    "DOSFittingNet",
     "DenoiseNet",
     "DipoleFittingNet",
     "EnergyFittingNet",
     "EnergyFittingNetDirect",
     "Fitting",
-    "BaseFitting",
-    "TypePredictNet",
     "PolarFittingNet",
-    "DOSFittingNet",
     "PropertyFittingNet",
+    "TypePredictNet",
 ]

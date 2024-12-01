@@ -10,7 +10,7 @@ from deepmd.utils.plugin import (
 
 __all__ = [
     "Plugin",
-    "VariantMeta",
-    "VariantABCMeta",
     "PluginVariant",
+    "VariantABCMeta",
+    "VariantMeta",
 ]

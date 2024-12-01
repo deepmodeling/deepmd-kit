@@ -1,6 +1,0 @@
-tensorflow>=2.14.0
-deepmd-kit>=2.2.7
-dpdata
-ase
-coverage
-pytest
