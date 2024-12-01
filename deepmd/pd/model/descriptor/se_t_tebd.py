@@ -888,12 +888,12 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             # (ntypes * ntypes) * (nt+nt)
             two_side_type_embedding = paddle.concat(
                 [type_embedding_i, type_embedding_j], -1
-            ).reshape(-1, nt * 2)
+            ).reshape([-1, nt * 2])
             tt_full = self.filter_layers_strip.networks[0](two_side_type_embedding)
             # (nfnl x nt_i x nt_j) x ng
             gg_t = paddle.take_along_axis(tt_full, indices=idx, axis=0)
             # (nfnl x nt_i x nt_j) x ng
-            gg_t = gg_t.reshape(nfnl, nnei, nnei, ng)
+            gg_t = gg_t.reshape([nfnl, nnei, nnei, ng])
             if self.smooth:
                 gg_t = (
                     gg_t

@@ -969,12 +969,15 @@ class RepformerLayer(paddle.nn.Layer):
         g2 = _apply_nlist_mask(g2, nlist_mask)
         if not smooth:
             # nb x nloc
-            # must use type_as here to convert bool to float, otherwise there will be numerical difference from numpy
+            # must use astype here to convert bool to float, otherwise there will be numerical difference from numpy
             if not use_sqrt_nnei:
-                invnnei = 1.0 / (epsilon + paddle.sum(nlist_mask.type_as(g2), axis=-1))
+                invnnei = 1.0 / (
+                    epsilon + paddle.sum(nlist_mask.astype(g2.dtype), axis=-1)
+                )
             else:
                 invnnei = 1.0 / (
-                    epsilon + paddle.sqrt(paddle.sum(nlist_mask.type_as(g2), axis=-1))
+                    epsilon
+                    + paddle.sqrt(paddle.sum(nlist_mask.astype(g2.dtype), axis=-1))
                 )
             # nb x nloc x 1 x 1
             invnnei = invnnei.unsqueeze(-1).unsqueeze(-1)
