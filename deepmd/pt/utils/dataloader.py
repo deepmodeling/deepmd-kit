@@ -2,10 +2,8 @@
 import logging
 import os
 import time
-from functools import (
-    partial,
-)
-from multiprocessing import (
+
+from multiprocessing.dummy import (
     Pool,
 )
 from queue import (
@@ -57,13 +55,6 @@ def setup_seed(seed) -> None:
     torch.backends.cudnn.deterministic = True
 
 
-def construct_dataset(system, type_map):
-    return DeepmdDataSetForLoader(
-        system=system,
-        type_map=type_map,
-    )
-
-
 class DpLoaderSet(Dataset):
     """A dataset for storing DataLoaders to multiple Systems.
 
@@ -99,7 +90,11 @@ class DpLoaderSet(Dataset):
         if len(systems) >= 100:
             log.info(f"Constructing DataLoaders from {len(systems)} systems")
 
-        construct_dataset_systems = partial(construct_dataset, type_map=type_map)
+        def construct_dataset(system):
+            return DeepmdDataSetForLoader(
+                system=system,
+                type_map=type_map,
+            )
 
         with Pool(
             os.cpu_count()
@@ -109,7 +104,7 @@ class DpLoaderSet(Dataset):
                 else 1
             )
         ) as pool:
-            self.systems = pool.map(construct_dataset_systems, systems)
+            self.systems = pool.map(construct_dataset, systems)
 
         self.sampler_list: list[DistributedSampler] = []
         self.index = []
@@ -235,13 +230,12 @@ class BufferedIterator:
         self._consumer = BackgroundConsumer(self._queue, self._iterable)
         self._consumer.start()
         self.last_warning_time = time.time()
-        self.len = len(iterable)
 
     def __iter__(self):
         return self
 
     def __len__(self) -> int:
-        return self.len
+        return len(self._iterable)
 
     def __next__(self):
         start_wait = time.time()
