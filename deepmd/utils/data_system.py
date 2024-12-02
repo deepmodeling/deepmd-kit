@@ -28,9 +28,6 @@ from deepmd.utils.data import (
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 
 log = logging.getLogger(__name__)
 
@@ -103,6 +100,8 @@ class DeepmdDataSystem:
         del rcut
         self.system_dirs = systems
         self.nsystems = len(self.system_dirs)
+        if self.nsystems <= 0:
+            raise ValueError("No systems provided")
         self.data_systems = []
         for ii in self.system_dirs:
             self.data_systems.append(
@@ -755,23 +754,6 @@ def process_systems(systems: Union[str, list[str]]) -> list[str]:
         systems = expand_sys_str(systems)
     elif isinstance(systems, list):
         systems = systems.copy()
-    help_msg = "Please check your setting for data systems"
-    # check length of systems
-    if len(systems) == 0:
-        msg = "cannot find valid a data system"
-        log.fatal(msg)
-        raise OSError(msg, help_msg)
-    # roughly check all items in systems are valid
-    for ii in systems:
-        ii = DPPath(ii)
-        if not ii.is_dir():
-            msg = f"dir {ii} is not a valid dir"
-            log.fatal(msg)
-            raise OSError(msg, help_msg)
-        if not (ii / "type.raw").is_file():
-            msg = f"dir {ii} is not a valid data system dir"
-            log.fatal(msg)
-            raise OSError(msg, help_msg)
     return systems
 
 
