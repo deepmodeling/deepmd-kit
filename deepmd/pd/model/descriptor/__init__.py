@@ -26,11 +26,11 @@ from .se_a import (
 __all__ = [
     "BaseDescriptor",
     "DescriptorBlock",
+    "DescrptBlockRepformers",
     "DescrptBlockSeA",
     "DescrptBlockSeAtten",
     "DescrptDPA1",
     "DescrptDPA2",
     "DescrptSeA",
     "prod_env_mat",
-    "DescrptBlockRepformers",
 ]
