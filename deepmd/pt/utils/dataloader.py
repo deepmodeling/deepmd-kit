@@ -234,6 +234,7 @@ class BufferedIterator:
         self._iterable = iterable
         self._consumer = BackgroundConsumer(self._queue, self._iterable)
         self._consumer.start()
+        self.last_warning_time = time.time()
         self.len = len(iterable)
 
     def __iter__(self):
@@ -247,9 +248,12 @@ class BufferedIterator:
         item = self._queue.get()
         wait_time = time.time() - start_wait
         if (
-            wait_time > 1.0
+            wait_time > 1.0 and start_wait - self.last_warning_time > 15 * 60
         ):  # Even for Multi-Task training, each step usually takes < 1s
-            log.warning(f"Data loading is slow, waited {wait_time:.2f} seconds.")
+            log.warning(
+                f"Data loading is slow, waited {wait_time:.2f} seconds. Ignoring this warning for 15 minutes."
+            )
+            self.last_warning_time = start_wait
         if isinstance(item, Exception):
             raise item
         return item
