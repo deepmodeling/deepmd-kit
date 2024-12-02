@@ -2,7 +2,6 @@
 import logging
 import os
 import time
-
 from multiprocessing.dummy import (
     Pool,
 )
