@@ -356,6 +356,8 @@ class DescrptSeR(DescrptSe):
             self.filter_neuron,
             graph,
             graph_def,
+            type_one_side=self.type_one_side,
+            exclude_types=self.exclude_types,
             activation_fn=self.filter_activation_fn,
             suffix=suffix,
         )
