@@ -22,6 +22,10 @@ from .se_a import (
     DescrptBlockSeA,
     DescrptSeA,
 )
+from .se_t_tebd import (
+    DescrptBlockSeTTebd,
+    DescrptSeTTebd,
+)
 
 __all__ = [
     "BaseDescriptor",
@@ -29,8 +33,10 @@ __all__ = [
     "DescrptBlockRepformers",
     "DescrptBlockSeA",
     "DescrptBlockSeAtten",
+    "DescrptBlockSeTTebd",
     "DescrptDPA1",
     "DescrptDPA2",
     "DescrptSeA",
+    "DescrptSeTTebd",
     "prod_env_mat",
 ]
