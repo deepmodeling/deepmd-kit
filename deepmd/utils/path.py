@@ -168,8 +168,6 @@ class DPOSPath(DPPath):
         super().__init__()
         self.mode = mode
         self.path = Path(path)
-        if not self.path.exists():
-            raise FileNotFoundError(f"{self.path} not found")
 
     def load_numpy(self) -> np.ndarray:
         """Load NumPy array.
