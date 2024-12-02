@@ -279,7 +279,7 @@ class Trainer:
         self.model = get_model_for_wrapper(
             model_params,
             resuming=resuming,
-            loss_param_tmp=loss_param_tmp,
+            _loss_params=loss_param_tmp,
         )
 
         # Loss
