@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import pathlib
 from typing import (
     Optional,
     Union,
@@ -7,6 +8,7 @@ from typing import (
 import numpy as np
 import paddle
 
+from deepmd.common import j_loader as dp_j_loader
 from deepmd.main import (
     main,
 )
@@ -14,6 +16,12 @@ from deepmd.pd.utils.env import (
     DEVICE,
     GLOBAL_PD_FLOAT_PRECISION,
 )
+
+tests_path = pathlib.Path(__file__).parent.absolute()
+
+
+def j_loader(filename):
+    return dp_j_loader(tests_path / filename)
 
 
 def run_dp(cmd: str) -> int:

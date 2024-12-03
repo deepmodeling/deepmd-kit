@@ -1,0 +1,57 @@
+{
+  "type_map": [
+    "O",
+    "H"
+  ],
+  "descriptor": {
+    "type": "dpa2",
+    "repinit": {
+      "rcut": 6.0,
+      "rcut_smth": 2.0,
+      "nsel": 30,
+      "neuron": [
+        2,
+        4,
+        8
+      ],
+      "axis_neuron": 4,
+      "activation_function": "tanh"
+
+    },
+    "repformer": {
+      "rcut": 4.0,
+      "rcut_smth": 0.5,
+      "nsel": 10,
+      "nlayers": 12,
+      "g1_dim": 8,
+      "g2_dim": 5,
+      "attn2_hidden": 3,
+      "attn2_nhead": 1,
+      "attn1_hidden": 5,
+      "attn1_nhead": 1,
+      "axis_neuron": 4,
+      "update_h2": false,
+      "update_g1_has_conv": true,
+      "update_g1_has_grrg": true,
+      "update_g1_has_drrd": true,
+      "update_g1_has_attn": true,
+      "update_g2_has_g1g1": true,
+      "update_g2_has_attn": true,
+      "attn2_has_gate": true,
+      "use_sqrt_nnei": false,
+      "g1_out_conv": false,
+      "g1_out_mlp": false
+    },
+    "seed": 1,
+    "add_tebd_to_repinit_out": false
+  },
+  "fitting_net": {
+    "neuron": [
+      240,
+      240,
+      240
+    ],
+    "resnet_dt": true,
+    "seed": 1
+  }
+}

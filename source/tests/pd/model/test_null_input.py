@@ -22,6 +22,8 @@ from ..common import (
     eval_model,
 )
 from .test_permutation import (
+    model_dpa1,
+    model_dpa2,
     model_se_e2_a,
 )
 
@@ -31,7 +33,7 @@ dtype = paddle.float64
 class NullTest:
     def test_nloc_1(
         self,
-    ):
+    ) -> None:
         natoms = 1
         generator = paddle.seed(GLOBAL_SEED)
         # paddle.seed(1000)
@@ -59,7 +61,7 @@ class NullTest:
 
     def test_nloc_2_far(
         self,
-    ):
+    ) -> None:
         natoms = 2
         generator = paddle.seed(GLOBAL_SEED)
         cell = paddle.rand([3, 3], dtype=dtype).to(device=env.DEVICE)
@@ -91,4 +93,18 @@ class TestEnergyModelSeA(unittest.TestCase, NullTest):
     def setUp(self):
         model_params = copy.deepcopy(model_se_e2_a)
         self.type_split = False
+        self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestEnergyModelDPA1(unittest.TestCase, NullTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_dpa1)
+        self.type_split = True
+        self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestEnergyModelDPA2(unittest.TestCase, NullTest):
+    def setUp(self) -> None:
+        model_params = copy.deepcopy(model_dpa2)
+        self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
