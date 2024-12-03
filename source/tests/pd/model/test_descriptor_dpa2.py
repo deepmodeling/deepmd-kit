@@ -123,7 +123,8 @@ class TestDPA2(unittest.TestCase):
         ntypes = len(model_dpa2["type_map"])
         dparams = model_dpa2["descriptor"]
         dparams["ntypes"] = ntypes
-        assert dparams.pop("type") == "dpa2"
+        assert dparams["type"] == "dpa2"
+        dparams.pop("type")
         dparams["concat_output_tebd"] = False
         dparams["use_tebd_bias"] = True
         des = DescrptDPA2(
