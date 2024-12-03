@@ -60,6 +60,8 @@ class DeepmdData:
     ) -> None:
         """Constructor."""
         root = DPPath(sys_path)
+        if not root.is_dir():
+            raise FileNotFoundError(f"System {sys_path} is not found!")
         self.dirs = root.glob(set_prefix + ".*")
         if not len(self.dirs):
             raise FileNotFoundError(f"No {set_prefix}.* is found in {sys_path}")
