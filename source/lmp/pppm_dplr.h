@@ -28,6 +28,7 @@ class PPPMDPLR : public PPPM {
   ~PPPMDPLR() override {};
   void init() override;
   const std::vector<double> &get_fele() const { return fele; };
+  std::vector<double> &get_fele() { return fele; }
 
  protected:
   void compute(int, int) override;
