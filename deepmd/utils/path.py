@@ -14,6 +14,7 @@ from pathlib import (
 from typing import (
     ClassVar,
     Optional,
+    Union,
 )
 
 import h5py
@@ -157,19 +158,16 @@ class DPOSPath(DPPath):
 
     Parameters
     ----------
-    path : str
+    path : Union[str, Path]
         path
     mode : str, optional
         mode, by default "r"
     """
 
-    def __init__(self, path: str, mode: str = "r") -> None:
+    def __init__(self, path: Union[str, Path], mode: str = "r") -> None:
         super().__init__()
         self.mode = mode
-        if isinstance(path, Path):
-            self.path = path
-        else:
-            self.path = Path(path)
+        self.path = Path(path)
 
     def load_numpy(self) -> np.ndarray:
         """Load NumPy array.
@@ -300,6 +298,8 @@ class DPH5Path(DPPath):
         # so we do not support file names containing #...
         s = path.split("#")
         self.root_path = s[0]
+        if not os.path.isfile(self.root_path):
+            raise FileNotFoundError(f"{self.root_path} not found")
         self.root = self._load_h5py(s[0], mode)
         # h5 path: default is the root path
         self._name = s[1] if len(s) > 1 else "/"
