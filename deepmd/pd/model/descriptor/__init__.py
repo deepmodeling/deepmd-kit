@@ -5,6 +5,10 @@ from .base_descriptor import (
 from .descriptor import (
     DescriptorBlock,
 )
+from .dpa1 import (
+    DescrptBlockSeAtten,
+    DescrptDPA1,
+)
 from .env_mat import (
     prod_env_mat,
 )
@@ -17,6 +21,8 @@ __all__ = [
     "BaseDescriptor",
     "DescriptorBlock",
     "DescrptBlockSeA",
+    "DescrptBlockSeAtten",
+    "DescrptDPA1",
     "DescrptSeA",
     "prod_env_mat",
 ]

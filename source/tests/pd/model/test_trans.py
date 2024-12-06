@@ -103,7 +103,6 @@ class TestDOSModelSeA(unittest.TestCase, TransTest):
         self.model = get_model(model_params).to(env.DEVICE)
 
 
-@unittest.skip("Skip for not implemented yet")
 class TestEnergyModelDPA1(unittest.TestCase, TransTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
