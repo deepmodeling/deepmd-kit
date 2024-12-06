@@ -48,6 +48,9 @@ from .dp_model import (
 from .dp_zbl_model import (
     DPZBLModel,
 )
+from .ener_hess_model import (
+    EnergyHessianModel,
+)
 from .ener_model import (
     EnergyModel,
 )
@@ -263,6 +266,8 @@ def get_standard_model(model_params):
         modelcls = DOSModel
     elif fitting_net_type in ["ener", "direct_force_ener"]:
         modelcls = EnergyModel
+        if model_params.get("hessian_mode"):
+            modelcls = EnergyHessianModel
     elif fitting_net_type == "property":
         modelcls = PropertyModel
     else:
@@ -301,6 +306,7 @@ __all__ = [
     "DPModelCommon",
     "DPZBLModel",
     "DipoleModel",
+    "EnergyHessianModel",
     "EnergyModel",
     "FrozenModel",
     "LinearEnergyModel",

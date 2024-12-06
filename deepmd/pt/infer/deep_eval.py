@@ -130,7 +130,10 @@ class DeepEval(DeepEvalBackend):
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
             model = get_model(self.input_param).to(DEVICE)
-            model = torch.jit.script(model)
+            try:
+                model = torch.jit.script(model)
+            except RuntimeError:
+                pass
             self.dp = ModelWrapper(model)
             self.dp.load_state_dict(state_dict)
         elif str(self.model_path).endswith(".pth"):
@@ -160,6 +163,7 @@ class DeepEval(DeepEvalBackend):
         self._has_spin = getattr(self.dp.model["Default"], "has_spin", False)
         if callable(self._has_spin):
             self._has_spin = self._has_spin()
+        self._has_hessian = self.model_def_script.get("hessian_mode", False)
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
@@ -233,6 +237,10 @@ class DeepEval(DeepEvalBackend):
     def get_has_spin(self):
         """Check if the model has spin atom types."""
         return self._has_spin
+
+    def get_has_hessian(self):
+        """Check if the model has hessian."""
+        return self._has_hessian
 
     def eval(
         self,
@@ -339,6 +347,7 @@ class DeepEval(DeepEvalBackend):
                     OutputVariableCategory.REDU,
                     OutputVariableCategory.DERV_R,
                     OutputVariableCategory.DERV_C_REDU,
+                    OutputVariableCategory.DERV_R_DERV_R,
                 )
             ]
 
@@ -568,6 +577,9 @@ class DeepEval(DeepEvalBackend):
             # Something wrong here?
             # return [nframes, *shape, natoms, 1]
             return [nframes, natoms, *odef.shape, 1]
+        elif odef.category == OutputVariableCategory.DERV_R_DERV_R:
+            return [nframes, 3 * natoms, 3 * natoms]
+            # return [nframes, *odef.shape, 3 * natoms, 3 * natoms]
         else:
             raise RuntimeError("unknown category")
 
