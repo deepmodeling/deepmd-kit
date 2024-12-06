@@ -115,8 +115,8 @@ def make_hessian_model(T_Model):
 
         def _cal_hessian_all(
             self,
-            coord,
-            atype,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
             box: Optional[torch.Tensor] = None,
             fparam: Optional[torch.Tensor] = None,
             aparam: Optional[torch.Tensor] = None,
@@ -184,7 +184,7 @@ def make_hessian_model(T_Model):
             self,
             obj: CM,
             ci: int,
-            atype,
+            atype: torch.Tensor,
             box: Optional[torch.Tensor],
             fparam: Optional[torch.Tensor],
             aparam: Optional[torch.Tensor],
