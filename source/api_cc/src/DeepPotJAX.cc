@@ -566,7 +566,7 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   input_list[1] = add_input(op, atype, atype_shape, data_tensor[1], status);
   // nlist
   if (ago == 0) {
-    nlist_data.copy_from_nlist(lmp_list);
+    nlist_data.copy_from_nlist(lmp_list, nall - nghost);
     nlist_data.shuffle_exclude_empty(fwd_map);
   }
   size_t max_size = 0;

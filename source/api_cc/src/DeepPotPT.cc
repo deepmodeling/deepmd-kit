@@ -169,7 +169,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   at::Tensor atype_Tensor =
       torch::from_blob(atype_64.data(), {1, nall_real}, int_option).to(device);
   if (ago == 0) {
-    nlist_data.copy_from_nlist(lmp_list);
+    nlist_data.copy_from_nlist(lmp_list, nall - nghost);
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
     if (do_message_passing) {
