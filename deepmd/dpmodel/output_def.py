@@ -197,6 +197,7 @@ class OutputVariableDef:
         r_hessian: bool = False,
         magnetic: bool = False,
         intensive: bool = False,
+        sub_var_name: list = None,
     ) -> None:
         self.name = name
         self.shape = list(shape)
@@ -220,6 +221,7 @@ class OutputVariableDef:
         self.r_hessian = r_hessian
         self.magnetic = magnetic
         self.intensive = intensive
+        self.sub_var_name = sub_var_name
         if self.r_hessian:
             if not self.reducible:
                 raise ValueError("only reducible variable can calculate hessian")

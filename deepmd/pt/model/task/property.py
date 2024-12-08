@@ -82,6 +82,7 @@ class PropertyFittingNet(InvarFitting):
         bias_atom_p: Optional[torch.Tensor] = None,
         intensive: bool = False,
         bias_method: str = "normal",
+        property_name: str|list = "property",
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -95,6 +96,7 @@ class PropertyFittingNet(InvarFitting):
         self.task_dim = task_dim
         self.intensive = intensive
         self.bias_method = bias_method
+        self.property_name = property_name
         super().__init__(
             var_name="property",
             ntypes=ntypes,
@@ -126,6 +128,7 @@ class PropertyFittingNet(InvarFitting):
                     r_differentiable=False,
                     c_differentiable=False,
                     intensive=self.intensive,
+                    sub_var_name=self.property_name,
                 ),
             ]
         )

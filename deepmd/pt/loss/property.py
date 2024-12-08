@@ -24,6 +24,8 @@ class PropertyLoss(TaskLoss):
         loss_func: str = "smooth_mae",
         metric: list = ["mae"],
         beta: float = 1.00,
+        property_name: str|list = "property",
+        property_dim: int|list = 1,
         **kwargs,
     ) -> None:
         r"""Construct a layer to compute loss on property.
@@ -44,6 +46,13 @@ class PropertyLoss(TaskLoss):
         self.loss_func = loss_func
         self.metric = metric
         self.beta = beta
+        if isinstance(property_name, str):
+            property_name = [property_name]
+        if isinstance(property_dim, int):
+            property_dim = [property_dim]
+        self.property_name = property_name
+        assert self.task_dim == sum(property_dim)
+        self.property_name_dim_mapping = dict(zip(property_name, property_dim))
 
     def forward(self, input_dict, model, label, natoms, learning_rate=0.0, mae=False):
         """Return loss on properties .
@@ -69,8 +78,16 @@ class PropertyLoss(TaskLoss):
             Other losses for display.
         """
         model_pred = model(**input_dict)
-        assert label["property"].shape[-1] == self.task_dim
-        assert model_pred["property"].shape[-1] == self.task_dim
+        nbz = model_pred["property"].shape[0]
+        assert model_pred["property"].shape == (nbz, self.task_dim)
+
+        concat_property = []
+        for property_name in self.property_name:
+            assert label[property_name].shape == (nbz, self.property_name_dim_mapping[property_name])
+            concat_property.append(label[property_name])
+        label["property"] = torch.cat([label["dipole_moment"],label["homo"]],dim=1)
+        assert label["property"].shape == (nbz, self.task_dim)
+
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
 
@@ -138,13 +155,14 @@ class PropertyLoss(TaskLoss):
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         label_requirement = []
-        label_requirement.append(
-            DataRequirementItem(
-                "property",
-                ndof=self.task_dim,
-                atomic=False,
-                must=False,
-                high_prec=True,
+        for property_name in self.property_name:
+            label_requirement.append(
+                DataRequirementItem(
+                    property_name,
+                    ndof=self.property_name_dim_mapping[property_name],
+                    atomic=False,
+                    must=True,
+                    high_prec=True,
+                )
             )
-        )
         return label_requirement
