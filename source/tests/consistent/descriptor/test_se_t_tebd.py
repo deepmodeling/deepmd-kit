@@ -17,6 +17,7 @@ from deepmd.env import (
 from ..common import (
     INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
+    INSTALLED_PD,
     INSTALLED_PT,
     CommonTest,
     parameterized,
@@ -34,6 +35,10 @@ if INSTALLED_JAX:
     from deepmd.jax.descriptor.se_t_tebd import DescrptSeTTebd as DescrptSeTTebdJAX
 else:
     DescrptSeTTebdJAX = None
+if INSTALLED_PD:
+    from deepmd.pd.model.descriptor.se_t_tebd import DescrptSeTTebd as DescrptSeTTebdPD
+else:
+    DescrptSeTTebdPD = None
 if INSTALLED_ARRAY_API_STRICT:
     from ...array_api_strict.descriptor.se_t_tebd import (
         DescrptSeTTebd as DescrptSeTTebdStrict,
@@ -146,12 +151,14 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
         ) = self.param
         return True
 
+    skip_pd = not INSTALLED_PD
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
     tf_class = DescrptSeTTebdTF
     dp_class = DescrptSeTTebdDP
     pt_class = DescrptSeTTebdPT
+    pd_class = DescrptSeTTebdPD
     jax_class = DescrptSeTTebdJAX
     array_api_strict_class = DescrptSeTTebdStrict
     args = descrpt_se_e3_tebd_args().append(Argument("ntypes", int, optional=False))
@@ -236,6 +243,16 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_descriptor(
             jax_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def eval_pd(self, pd_obj: Any) -> Any:
+        return self.eval_pd_descriptor(
+            pd_obj,
             self.natoms,
             self.coords,
             self.atype,

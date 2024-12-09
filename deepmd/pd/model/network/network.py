@@ -45,7 +45,7 @@ class TypeEmbedNet(nn.Layer):
         use_econf_tebd=False,
         use_tebd_bias: bool = False,
         type_map=None,
-    ):
+    ) -> None:
         """Construct a type embedding net."""
         super().__init__()
         self.type_nums = type_nums
@@ -80,11 +80,31 @@ class TypeEmbedNet(nn.Layer):
         """
         return self.embedding(atype.place)[atype]
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def get_full_embedding(self, device: Union[str, paddle.base.libpaddle.Place]):
+        """
+        Retrieve the type embeddings for all types.
+
+        Parameters
+        ----------
+        device : Union[str, paddle.base.libpaddle.Place]
+            The device on which to perform the computation.
+            It can be specified as:
+                - str: "cpu", "gpu", "gpu:0", etc., indicating the device type.
+                - paddle.base.libpaddle.Place: an device of paddle Tensor.
+
+        Returns
+        -------
+        type_embedding : paddle.Tensor
+            The complete set of type embeddings, including a zero-padding entry at the last index.
+            Shape: (ntypes + 1, tebd_dim)
+        """
+        return self.embedding(device)
+
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         assert (
             self.__class__ == base_class.__class__
@@ -148,7 +168,7 @@ class TypeEmbedNetConsistent(nn.Layer):
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
-    ):
+    ) -> None:
         """Construct a type embedding net."""
         super().__init__()
         self.ntypes = ntypes

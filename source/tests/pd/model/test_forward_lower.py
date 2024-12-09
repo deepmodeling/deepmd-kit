@@ -96,7 +96,7 @@ class ForwardLowerTest:
             mixed_types=self.model.mixed_types(),
             box=cell.unsqueeze(0),
         )
-        extended_spin = decomp.take_along_axis(
+        extended_spin = paddle.take_along_axis(
             spin.unsqueeze(0), indices=mapping.unsqueeze(-1).tile((1, 1, 3)), axis=1
         )
         input_dict = {
@@ -140,23 +140,21 @@ class ForwardLowerTest:
 
 
 class TestEnergyModelSeA(unittest.TestCase, ForwardLowerTest):
-    def setUp(self):
+    def setUp(self) -> None:
         self.prec = 1e-10
         model_params = copy.deepcopy(model_se_e2_a)
         self.model = get_model(model_params).to(env.DEVICE)
 
 
-@unittest.skip("Skip for not implemented yet")
 class TestEnergyModelDPA1(unittest.TestCase, ForwardLowerTest):
-    def setUp(self):
+    def setUp(self) -> None:
         self.prec = 1e-10
         model_params = copy.deepcopy(model_dpa1)
         self.model = get_model(model_params).to(env.DEVICE)
 
 
-@unittest.skip("Skip for not implemented yet")
 class TestEnergyModelDPA2(unittest.TestCase, ForwardLowerTest):
-    def setUp(self):
+    def setUp(self) -> None:
         self.prec = 1e-10
         model_params = copy.deepcopy(model_dpa2)
         self.model = get_model(model_params).to(env.DEVICE)
@@ -164,7 +162,7 @@ class TestEnergyModelDPA2(unittest.TestCase, ForwardLowerTest):
 
 @unittest.skip("Skip for not implemented yet")
 class TestEnergyModelZBL(unittest.TestCase, ForwardLowerTest):
-    def setUp(self):
+    def setUp(self) -> None:
         self.prec = 1e-10
         model_params = copy.deepcopy(model_zbl)
         self.model = get_model(model_params).to(env.DEVICE)
@@ -172,7 +170,7 @@ class TestEnergyModelZBL(unittest.TestCase, ForwardLowerTest):
 
 @unittest.skip("Skip for not implemented yet")
 class TestEnergyModelSpinSeA(unittest.TestCase, ForwardLowerTest):
-    def setUp(self):
+    def setUp(self) -> None:
         self.prec = 1e-10
         model_params = copy.deepcopy(model_spin)
         self.test_spin = True
@@ -181,7 +179,7 @@ class TestEnergyModelSpinSeA(unittest.TestCase, ForwardLowerTest):
 
 @unittest.skip("Skip for not implemented yet")
 class TestEnergyModelSpinDPA1(unittest.TestCase, ForwardLowerTest):
-    def setUp(self):
+    def setUp(self) -> None:
         self.prec = 1e-10
         model_params = copy.deepcopy(model_spin)
         model_params["descriptor"] = copy.deepcopy(model_dpa1)["descriptor"]
@@ -193,7 +191,7 @@ class TestEnergyModelSpinDPA1(unittest.TestCase, ForwardLowerTest):
 
 @unittest.skip("Skip for not implemented yet")
 class TestEnergyModelSpinDPA2(unittest.TestCase, ForwardLowerTest):
-    def setUp(self):
+    def setUp(self) -> None:
         self.prec = 1e-10
         model_params = copy.deepcopy(model_spin)
         model_params["descriptor"] = copy.deepcopy(model_dpa2)["descriptor"]
