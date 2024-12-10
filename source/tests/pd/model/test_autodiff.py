@@ -190,7 +190,6 @@ class TestEnergyModelSeAVirial(unittest.TestCase, VirialTest):
         self.model = get_model(model_params).to(env.DEVICE)
 
 
-@unittest.skip("Skip for not implemented yet")
 class TestEnergyModelDPA1Force(unittest.TestCase, ForceTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
@@ -198,7 +197,6 @@ class TestEnergyModelDPA1Force(unittest.TestCase, ForceTest):
         self.model = get_model(model_params).to(env.DEVICE)
 
 
-@unittest.skip("Skip for not implemented yet")
 class TestEnergyModelDPA1Virial(unittest.TestCase, VirialTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)

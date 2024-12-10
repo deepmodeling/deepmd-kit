@@ -19,6 +19,7 @@ from ..common import (
     eval_model,
 )
 from .test_permutation import (  # model_dpau,
+    model_dpa1,
     model_se_e2_a,
 )
 
@@ -151,6 +152,41 @@ class TestEnergyModelSeA(unittest.TestCase, SmoothTest):
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
+
+
+class TestEnergyModelDPA1(unittest.TestCase, SmoothTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_dpa1)
+        self.type_split = True
+        self.model = get_model(model_params).to(env.DEVICE)
+        # less degree of smoothness,
+        # error can be systematically removed by reducing epsilon
+        self.epsilon = 1e-5
+        self.aprec = 1e-5
+
+
+class TestEnergyModelDPA1Excl1(unittest.TestCase, SmoothTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_dpa1)
+        model_params["pair_exclude_types"] = [[0, 1]]
+        self.type_split = True
+        self.model = get_model(model_params).to(env.DEVICE)
+        # less degree of smoothness,
+        # error can be systematically removed by reducing epsilon
+        self.epsilon = 1e-5
+        self.aprec = 1e-5
+
+
+class TestEnergyModelDPA1Excl12(unittest.TestCase, SmoothTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_dpa1)
+        model_params["pair_exclude_types"] = [[0, 1], [0, 2]]
+        self.type_split = True
+        self.model = get_model(model_params).to(env.DEVICE)
+        # less degree of smoothness,
+        # error can be systematically removed by reducing epsilon
+        self.epsilon = 1e-5
+        self.aprec = 1e-5
 
 
 # class TestEnergyFoo(unittest.TestCase):

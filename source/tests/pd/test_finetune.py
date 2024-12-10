@@ -341,7 +341,6 @@ class TestEnergyDOSModelSeA(FinetuneTest, unittest.TestCase):
         self.testkey = "dos"
 
 
-@unittest.skip("Skip for not implemented yet")
 class TestEnergyModelDPA1(FinetuneTest, unittest.TestCase):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
