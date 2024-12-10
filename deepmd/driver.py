@@ -67,7 +67,7 @@ class DPDriver(dpdata.driver.Driver):
             cell = data["cells"].reshape((nframes, 9))
         else:
             cell = None
-        e, f, v = self.dp.eval(coord, cell, atype)
+        e, f, v = self.dp.eval(coords=coord, cells=cell, atom_types=atype)[:3]
         data = data.copy()
         data["energies"] = e.reshape((nframes,))
         data["forces"] = f.reshape((nframes, natoms, 3))

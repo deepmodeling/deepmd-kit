@@ -70,7 +70,7 @@ class TestDeepPot(unittest.TestCase):
                 atomic=False,
                 fparam=result.fparam,
                 aparam=result.aparam,
-            )
+            )[:3]
             # check shape of the returns
             nframes = 1
             natoms = len(result.atype)
@@ -108,7 +108,7 @@ class TestDeepPot(unittest.TestCase):
                 atomic=True,
                 fparam=result.fparam,
                 aparam=result.aparam,
-            )
+            )[:5]
             # check shape of the returns
             nframes = 1
             natoms = len(result.atype)
@@ -174,7 +174,7 @@ class TestDeepPot(unittest.TestCase):
                 atomic=True,
                 fparam=result.fparam,
                 aparam=result.aparam,
-            )
+            )[:5]
             # check shape of the returns
             nframes = 2
             natoms = len(result.atype)
@@ -232,7 +232,7 @@ class TestDeepPot(unittest.TestCase):
                 aparam=np.zeros([0, self.case.dim_aparam], dtype=np.float64)
                 if self.case.dim_aparam
                 else None,
-            )
+            )[:3]
             # check shape of the returns
             natoms = 0
             self.assertEqual(ee.shape, (nframes, 1))

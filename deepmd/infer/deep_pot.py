@@ -64,6 +64,7 @@ class DeepPot(DeepEval):
                         r_differentiable=True,
                         c_differentiable=True,
                         atomic=True,
+                        r_hessian=True,
                     ),
                 ]
             )
@@ -99,7 +100,10 @@ class DeepPot(DeepEval):
         aparam: Optional[np.ndarray],
         mixed_type: bool,
         **kwargs: Any,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> Union[
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    ]:
         pass
 
     @overload
@@ -113,7 +117,10 @@ class DeepPot(DeepEval):
         aparam: Optional[np.ndarray],
         mixed_type: bool,
         **kwargs: Any,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> Union[
+        tuple[np.ndarray, np.ndarray, np.ndarray],
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    ]:
         pass
 
     @overload
@@ -179,6 +186,8 @@ class DeepPot(DeepEval):
         atomic_virial
             The atomic virial of the system, in shape (nframes, natoms, 9). Only returned
             when atomic is True.
+        hessian
+            The Hessian matrix of the system, in shape (nframes, 3 * natoms, 3 * natoms). Returned when available.
         """
         # This method has been used by:
         # documentation python.md
@@ -239,6 +248,11 @@ class DeepPot(DeepEval):
             force_mag = results["energy_derv_r_mag"].reshape(nframes, natoms, 3)
             mask_mag = results["mask_mag"].reshape(nframes, natoms, 1)
             result = (*list(result), force_mag, mask_mag)
+        if self.deep_eval.get_has_hessian():
+            hessian = results["energy_derv_r_derv_r"].reshape(
+                nframes, 3 * natoms, 3 * natoms
+            )
+            result = (*list(result), hessian)
         return result
 
 
