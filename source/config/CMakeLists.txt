@@ -14,6 +14,12 @@ else()
   set(ENABLE_PYTORCH 0)
 endif()
 
+if(ENABLE_PADDLE)
+  set(ENABLE_PADDLE 1)
+else()
+  set(ENABLE_PADDLE 0)
+endif()
+
 configure_file("run_config.ini" "${CMAKE_CURRENT_BINARY_DIR}/run_config.ini"
                @ONLY)
 
