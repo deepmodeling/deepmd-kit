@@ -9,7 +9,7 @@ namespace deepmd {
 /**
  * @brief Paddle implementation for Deep Potential.
  **/
-class DeepPotPD : public DeepPotBase {
+class DeepPotPD : public DeepPotBackend {
  public:
   /**
    * @brief DP constructor without initialization.

@@ -1414,7 +1414,7 @@ deepmd::DPBackend deepmd::get_backend(const std::string& model) {
     return deepmd::DPBackend::JAX;
   } else if ((model.length() >= 5 &&
               model.substr(model.length() - 5) == ".json")) {
-    backend = deepmd::DPBackend::Paddle;
+    return deepmd::DPBackend::Paddle;
   }
   throw deepmd::deepmd_exception("Unsupported model file format");
 }
