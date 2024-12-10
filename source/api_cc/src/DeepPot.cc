@@ -15,6 +15,9 @@
 #if defined(BUILD_TENSORFLOW) || defined(BUILD_JAX)
 #include "DeepPotJAX.h"
 #endif
+#ifdef BUILD_PADDLE
+#include "DeepPotPD.h"
+#endif
 #include "device.h"
 
 using namespace deepmd;
@@ -53,7 +56,11 @@ void DeepPot::init(const std::string& model,
     throw deepmd::deepmd_exception("PyTorch backend is not built");
 #endif
   } else if (deepmd::DPBackend::Paddle == backend) {
+#ifdef BUILD_PADDLE
+    dp = std::make_shared<deepmd::DeepPotPD>(model, gpu_rank, file_content);
+#else
     throw deepmd::deepmd_exception("PaddlePaddle backend is not supported yet");
+#endif
   } else if (deepmd::DPBackend::JAX == backend) {
 #if defined(BUILD_TENSORFLOW) || defined(BUILD_JAX)
     dp = std::make_shared<deepmd::DeepPotJAX>(model, gpu_rank, file_content);
