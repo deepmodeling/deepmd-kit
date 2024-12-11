@@ -2347,6 +2347,12 @@ def loss_ener():
     doc_enable_atom_ener_coeff = "If true, the energy will be computed as \\sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
     return [
         Argument(
+            "use_l1_all",
+            bool,
+            optional=True,
+            default=False,
+        ),
+        Argument(
             "start_pref_e",
             [float, int],
             optional=True,
