@@ -27,6 +27,7 @@
     "fitting_net": {
       "type": "property",
       "intensive": true,
+      "property_name": "band_property",
       "task_dim": 3,
       "neuron": [
         100,
@@ -48,6 +49,8 @@
   },
   "loss": {
     "type": "property",
+    "property_name": "band_property",
+    "property_dim": [3],
     "_comment": " that's all"
   },
   "training": {

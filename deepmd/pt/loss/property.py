@@ -56,6 +56,8 @@ class PropertyLoss(TaskLoss):
         self.property_name = property_name
         assert self.task_dim == sum(property_dim)
         self.property_name_dim_mapping = dict(zip(property_name, property_dim))
+        self.out_bias = kwargs.get("out_bias", None)
+        self.out_std = kwargs.get("out_std", None)
 
     def forward(self, input_dict, model, label, natoms, learning_rate=0.0, mae=False):
         """Return loss on properties .
@@ -94,8 +96,8 @@ class PropertyLoss(TaskLoss):
         label["property"] = torch.cat(concat_property, dim=1)
         assert label["property"].shape == (nbz, self.task_dim)
 
-        out_std = model.atomic_model.out_std[0][0]
-        out_bias = model.atomic_model.out_bias[0][0]
+        out_std = model.atomic_model.out_std[0][0] if self.out_std is None else torch.tensor(self.out_std,device=env.DEVICE)
+        out_bias = model.atomic_model.out_bias[0][0] if self.out_bias is None else torch.tensor(self.out_bias,device=env.DEVICE)
         assert len(out_std.shape) == 1
         assert out_std.shape[0] == self.task_dim
 
