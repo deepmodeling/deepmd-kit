@@ -29,6 +29,7 @@ from deepmd.pt.utils.utils import (
 from deepmd.utils.out_stat import (
     compute_stats_from_atomic,
     compute_stats_from_redu,
+    compute_stats_property,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -290,6 +291,11 @@ def compute_output_stats(
         # remove the keys that are not in the sample
         keys = [keys] if isinstance(keys, str) else keys
         assert isinstance(keys, list)
+        sub_keys = []
+        for key in keys:
+            if atomic_output.var_defs[key].sub_var_name is not None:
+                sub_keys.extend(atomic_output.var_defs[key].sub_var_name)
+        keys.extend(sub_keys)
         new_keys = [
             ii
             for ii in keys
@@ -297,8 +303,6 @@ def compute_output_stats(
         ]
         del keys
         keys = new_keys
-        from IPython import embed
-        embed()
         # split system based on label
         atomic_sampled_idx = defaultdict(list)
         global_sampled_idx = defaultdict(list)
@@ -375,6 +379,7 @@ def compute_output_stats(
 
         # merge global/atomic bias
         bias_atom_e, std_atom_e = {}, {}
+        keys = ["property"] if ("property" in atomic_output.var_defs and (ii in keys for ii in atomic_output.var_defs["property"].sub_var_name)) else keys
         for kk in keys:
             # use atomic bias whenever available
             if kk in bias_atom_a:
@@ -478,26 +483,42 @@ def compute_output_stats_global(
     std_atom_e = {}
     for kk in keys:
         if kk in stats_input:
-            if atomic_output is not None and atomic_output.get_data()[kk].intensive:
-                task_dim = stats_input[kk].shape[1]
-                assert merged_natoms[kk].shape == (nf[kk], ntypes)
-                stats_input[kk] = (
-                    merged_natoms[kk].sum(axis=1).reshape(-1, 1) * stats_input[kk]
+            if "property" in atomic_output.var_defs:
+                bias_atom_e[kk], std_atom_e[kk] = compute_stats_property(
+                    stats_input[kk],
+                    merged_natoms[kk],
+                    assigned_bias=assigned_atom_ener[kk]
                 )
-                assert stats_input[kk].shape == (nf[kk], task_dim)
-            bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
-                stats_input[kk],
-                merged_natoms[kk],
-                assigned_bias=assigned_atom_ener[kk],
-                rcond=rcond,
-            )
+            else:
+                bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
+                    stats_input[kk],
+                    merged_natoms[kk],
+                    assigned_bias=assigned_atom_ener[kk],
+                    rcond=rcond,
+                )
         else:
             # this key does not have global labels, skip it.
             continue
+    if "property" in atomic_output.var_defs:
+        concat_bias = []
+        concat_std = []
+        for ii in atomic_output.var_defs["property"].sub_var_name:
+            assert ii in bias_atom_e.keys()
+            assert ii in std_atom_e.keys()
+            concat_bias.append(bias_atom_e[ii])
+            concat_std.append(std_atom_e[ii])
+        del bias_atom_e, std_atom_e
+        bias_atom_e = {}
+        std_atom_e = {}
+        bias_atom_e["property"] = np.concatenate(concat_bias, axis=-1)
+        std_atom_e["property"] = np.concatenate(concat_std, axis=-1)
+        std_atom_e["property"] = np.tile(std_atom_e["property"], (bias_atom_e["property"].shape[0], 1))
+
+        return bias_atom_e, std_atom_e
+
     bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
 
     # unbias_e is only used for print rmse
-
     if model_pred is None:
         unbias_e = {
             kk: merged_natoms[kk] @ bias_atom_e[kk].reshape(ntypes, -1)

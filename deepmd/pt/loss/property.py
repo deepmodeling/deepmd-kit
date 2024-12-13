@@ -85,8 +85,13 @@ class PropertyLoss(TaskLoss):
         for property_name in self.property_name:
             assert label[property_name].shape == (nbz, self.property_name_dim_mapping[property_name])
             concat_property.append(label[property_name])
-        label["property"] = torch.cat([label["dipole_moment"],label["homo"]],dim=1)
+        label["property"] = torch.cat(concat_property,dim=1)
         assert label["property"].shape == (nbz, self.task_dim)
+
+        out_std = model.atomic_model.out_std[0][0]
+        out_bias = model.atomic_model.out_bias[0][0]
+        assert len(out_std.shape) == 1
+        assert out_std.shape[0] == self.task_dim
 
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
@@ -94,26 +99,26 @@ class PropertyLoss(TaskLoss):
         # loss
         if self.loss_func == "smooth_mae":
             loss += F.smooth_l1_loss(
-                label["property"],
-                model_pred["property"],
+                (label["property"]-out_bias)/out_std,
+                (model_pred["property"]-out_bias)/out_std,
                 reduction="sum",
                 beta=self.beta,
             )
         elif self.loss_func == "mae":
             loss += F.l1_loss(
-                label["property"], model_pred["property"], reduction="sum"
+                (label["property"]-out_bias)/out_std, (model_pred["property"]-out_bias)/out_std, reduction="sum"
             )
         elif self.loss_func == "mse":
             loss += F.mse_loss(
-                label["property"],
-                model_pred["property"],
+                (label["property"]-out_bias)/out_std,
+                (model_pred["property"]-out_bias)/out_std,
                 reduction="sum",
             )
         elif self.loss_func == "rmse":
             loss += torch.sqrt(
                 F.mse_loss(
-                    label["property"],
-                    model_pred["property"],
+                    (label["property"]-out_bias)/out_std,
+                    (model_pred["property"]-out_bias)/out_std,
                     reduction="mean",
                 )
             )

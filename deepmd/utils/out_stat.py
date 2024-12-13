@@ -130,3 +130,52 @@ def compute_stats_from_atomic(
             output[mask].std(axis=0) if output[mask].size > 0 else np.nan
         )
     return output_bias, output_std
+
+def compute_stats_property(
+    output_redu: np.ndarray,
+    natoms: np.ndarray,
+    assigned_bias: Optional[np.ndarray] = None
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute the output statistics.
+
+    Given the reduced output value and the number of atoms for each atom,
+    compute the least-squares solution as the atomic output bias and std.
+
+    Parameters
+    ----------
+    output_redu
+        The reduced output value, shape is [nframes, *(odim0, odim1, ...)].
+    natoms
+        The number of atoms for each atom, shape is [nframes, ntypes].
+    assigned_bias
+        The assigned output bias, shape is [ntypes, *(odim0, odim1, ...)].
+        Set to a tensor of shape (odim0, odim1, ...) filled with nan if the bias
+        of the type is not assigned.
+    rcond
+        Cut-off ratio for small singular values of a.
+
+    Returns
+    -------
+    np.ndarray
+        The computed output bias, shape is [ntypes, *(odim0, odim1, ...)].
+    np.ndarray
+        The computed output std, shape is [*(odim0, odim1, ...)].
+    """
+
+    natoms = np.array(natoms) # [nf, ntypes]
+    nf, ntypes = natoms.shape
+    output_redu = np.array(output_redu)
+    var_shape = list(output_redu.shape[1:])
+    output_redu = output_redu.reshape(nf, -1)
+    # check shape
+    assert output_redu.ndim == 2
+    assert natoms.ndim == 2
+    assert output_redu.shape[0] == natoms.shape[0]  # [nf,1]
+
+    computed_output_bias = np.repeat(np.mean(output_redu,axis=0)[np.newaxis, :], ntypes, axis=0)
+    output_std = np.std(output_redu,axis=0)
+
+    computed_output_bias = computed_output_bias.reshape([natoms.shape[1]] + var_shape)  # noqa: RUF005
+    output_std = output_std.reshape(var_shape)
+
+    return computed_output_bias, output_std
