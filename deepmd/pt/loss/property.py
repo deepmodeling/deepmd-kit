@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from typing import (
+    Union,
+)
 
 import torch
 import torch.nn.functional as F
-from typing import Union
 
 from deepmd.pt.loss.loss import (
     TaskLoss,
