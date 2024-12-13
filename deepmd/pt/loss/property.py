@@ -101,12 +101,12 @@ class PropertyLoss(TaskLoss):
         out_std = (
             model.atomic_model.out_std[0][0]
             if self.out_std is None
-            else torch.tensor(self.out_std, device=env.DEVICE)
+            else torch.tensor(self.out_std, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
         )
         out_bias = (
             model.atomic_model.out_bias[0][0]
             if self.out_bias is None
-            else torch.tensor(self.out_bias, device=env.DEVICE)
+            else torch.tensor(self.out_bias, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
         )
         assert len(out_std.shape) == 1
         assert out_std.shape[0] == self.task_dim
