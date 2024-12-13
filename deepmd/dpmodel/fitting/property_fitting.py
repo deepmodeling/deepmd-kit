@@ -75,6 +75,7 @@ class PropertyFittingNet(InvarFitting):
         trainable: Union[bool, list[bool]] = True,
         intensive: bool = False,
         bias_method: str = "normal",
+        property_name: Union[str, list] = "property",
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -90,6 +91,7 @@ class PropertyFittingNet(InvarFitting):
         self.task_dim = task_dim
         self.intensive = intensive
         self.bias_method = bias_method
+        self.property_name = property_name
         super().__init__(
             var_name="property",
             ntypes=ntypes,

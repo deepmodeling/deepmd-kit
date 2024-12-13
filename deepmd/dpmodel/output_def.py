@@ -3,6 +3,7 @@ import functools
 from enum import (
     IntEnum,
 )
+from typing import Union
 
 
 def check_shape(
@@ -197,7 +198,7 @@ class OutputVariableDef:
         r_hessian: bool = False,
         magnetic: bool = False,
         intensive: bool = False,
-        sub_var_name: list[str] = [],
+        sub_var_name: Union[list[str], str, None] = None,
     ) -> None:
         self.name = name
         self.shape = list(shape)
@@ -221,6 +222,8 @@ class OutputVariableDef:
         self.r_hessian = r_hessian
         self.magnetic = magnetic
         self.intensive = intensive
+        if isinstance(sub_var_name, str):
+            sub_var_name = [sub_var_name]
         self.sub_var_name = sub_var_name
         if self.r_hessian:
             if not self.reducible:
