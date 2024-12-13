@@ -73,8 +73,10 @@ class TensorLoss(Loss):
             atomic_weight = global_cvt_2_tf_float(1.0)
 
         if self.local_weight > 0.0:
-            diff = polar - atomic_polar_hat
-            diff = tf.reshape(diff, [-1, self.tensor_size]) * atomic_weight
+            diff = tf.reshape(polar, [-1, self.tensor_size]) - tf.reshape(
+                atomic_polar_hat, [-1, self.tensor_size]
+            )
+            diff = diff * atomic_weight
             local_loss = global_cvt_2_tf_float(find_atomic) * tf.reduce_mean(
                 tf.square(self.scale * diff), name="l2_" + suffix
             )
