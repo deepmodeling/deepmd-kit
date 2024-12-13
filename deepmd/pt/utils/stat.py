@@ -291,11 +291,12 @@ def compute_output_stats(
         # remove the keys that are not in the sample
         keys = [keys] if isinstance(keys, str) else keys
         assert isinstance(keys, list)
-        sub_keys = []
-        for key in keys:
-            if atomic_output.var_defs[key].sub_var_name is not None:
-                sub_keys.extend(atomic_output.var_defs[key].sub_var_name)
-        keys.extend(sub_keys)
+        if "property" in atomic_output.var_defs:
+            sub_keys = []
+            for key in keys:
+                if atomic_output.var_defs[key].sub_var_name is not None:
+                    sub_keys.extend(atomic_output.var_defs[key].sub_var_name)
+            keys.extend(sub_keys)
         new_keys = [
             ii
             for ii in keys
