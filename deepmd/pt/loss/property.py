@@ -3,6 +3,7 @@ import logging
 
 import torch
 import torch.nn.functional as F
+from typing import Union
 
 from deepmd.pt.loss.loss import (
     TaskLoss,
@@ -24,8 +25,8 @@ class PropertyLoss(TaskLoss):
         loss_func: str = "smooth_mae",
         metric: list = ["mae"],
         beta: float = 1.00,
-        property_name: str | list = "property",
-        property_dim: int | list = 1,
+        property_name: Union[str, list] = "property",
+        property_dim: Union[int, list] = 1,
         **kwargs,
     ) -> None:
         r"""Construct a layer to compute loss on property.

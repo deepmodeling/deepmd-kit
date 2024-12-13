@@ -197,7 +197,7 @@ class OutputVariableDef:
         r_hessian: bool = False,
         magnetic: bool = False,
         intensive: bool = False,
-        sub_var_name: list = None,
+        sub_var_name: list[str] = None,
     ) -> None:
         self.name = name
         self.shape = list(shape)
