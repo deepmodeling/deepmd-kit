@@ -50,7 +50,9 @@
   "loss": {
     "type": "property",
     "property_name": "band_property",
-    "property_dim": [3],
+    "property_dim": [
+      3
+    ],
     "_comment": " that's all"
   },
   "training": {
