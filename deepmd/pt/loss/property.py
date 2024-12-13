@@ -29,6 +29,8 @@ class PropertyLoss(TaskLoss):
         beta: float = 1.00,
         property_name: Union[str, list] = "property",
         property_dim: Union[int, list] = 1,
+        out_bias: Union[list, None] = None,
+        out_std: Union[list, None] = None,
         **kwargs,
     ) -> None:
         r"""Construct a layer to compute loss on property.
@@ -56,8 +58,8 @@ class PropertyLoss(TaskLoss):
         self.property_name = property_name
         assert self.task_dim == sum(property_dim)
         self.property_name_dim_mapping = dict(zip(property_name, property_dim))
-        self.out_bias = kwargs.get("out_bias", None)
-        self.out_std = kwargs.get("out_std", None)
+        self.out_bias = out_bias
+        self.out_std = out_std
 
     def forward(self, input_dict, model, label, natoms, learning_rate=0.0, mae=False):
         """Return loss on properties .
