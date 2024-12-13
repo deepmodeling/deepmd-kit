@@ -82,7 +82,7 @@ class PropertyFittingNet(InvarFitting):
         bias_atom_p: Optional[torch.Tensor] = None,
         intensive: bool = False,
         bias_method: str = "normal",
-        property_name: str|list = "property",
+        property_name: str | list = "property",
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,

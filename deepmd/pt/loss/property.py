@@ -24,8 +24,8 @@ class PropertyLoss(TaskLoss):
         loss_func: str = "smooth_mae",
         metric: list = ["mae"],
         beta: float = 1.00,
-        property_name: str|list = "property",
-        property_dim: int|list = 1,
+        property_name: str | list = "property",
+        property_dim: int | list = 1,
         **kwargs,
     ) -> None:
         r"""Construct a layer to compute loss on property.
@@ -83,9 +83,12 @@ class PropertyLoss(TaskLoss):
 
         concat_property = []
         for property_name in self.property_name:
-            assert label[property_name].shape == (nbz, self.property_name_dim_mapping[property_name])
+            assert label[property_name].shape == (
+                nbz,
+                self.property_name_dim_mapping[property_name],
+            )
             concat_property.append(label[property_name])
-        label["property"] = torch.cat(concat_property,dim=1)
+        label["property"] = torch.cat(concat_property, dim=1)
         assert label["property"].shape == (nbz, self.task_dim)
 
         out_std = model.atomic_model.out_std[0][0]
@@ -99,26 +102,28 @@ class PropertyLoss(TaskLoss):
         # loss
         if self.loss_func == "smooth_mae":
             loss += F.smooth_l1_loss(
-                (label["property"]-out_bias)/out_std,
-                (model_pred["property"]-out_bias)/out_std,
+                (label["property"] - out_bias) / out_std,
+                (model_pred["property"] - out_bias) / out_std,
                 reduction="sum",
                 beta=self.beta,
             )
         elif self.loss_func == "mae":
             loss += F.l1_loss(
-                (label["property"]-out_bias)/out_std, (model_pred["property"]-out_bias)/out_std, reduction="sum"
+                (label["property"] - out_bias) / out_std,
+                (model_pred["property"] - out_bias) / out_std,
+                reduction="sum",
             )
         elif self.loss_func == "mse":
             loss += F.mse_loss(
-                (label["property"]-out_bias)/out_std,
-                (model_pred["property"]-out_bias)/out_std,
+                (label["property"] - out_bias) / out_std,
+                (model_pred["property"] - out_bias) / out_std,
                 reduction="sum",
             )
         elif self.loss_func == "rmse":
             loss += torch.sqrt(
                 F.mse_loss(
-                    (label["property"]-out_bias)/out_std,
-                    (model_pred["property"]-out_bias)/out_std,
+                    (label["property"] - out_bias) / out_std,
+                    (model_pred["property"] - out_bias) / out_std,
                     reduction="mean",
                 )
             )

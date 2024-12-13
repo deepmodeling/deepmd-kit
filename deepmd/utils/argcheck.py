@@ -1615,7 +1615,13 @@ def fitting_property():
         Argument(
             "bias_method", str, optional=True, default="normal", doc=doc_bias_method
         ),
-        Argument("property_name", [str, list], optional=True, default="property", doc=doc_property_name),
+        Argument(
+            "property_name",
+            [str, list],
+            optional=True,
+            default="property",
+            doc=doc_property_name,
+        ),
     ]
 
 

@@ -379,7 +379,16 @@ def compute_output_stats(
 
         # merge global/atomic bias
         bias_atom_e, std_atom_e = {}, {}
-        keys = ["property"] if ("property" in atomic_output.var_defs and (ii in keys for ii in atomic_output.var_defs["property"].sub_var_name)) else keys
+        keys = (
+            ["property"]
+            if (
+                "property" in atomic_output.var_defs
+                and (
+                    ii in keys for ii in atomic_output.var_defs["property"].sub_var_name
+                )
+            )
+            else keys
+        )
         for kk in keys:
             # use atomic bias whenever available
             if kk in bias_atom_a:
@@ -487,7 +496,7 @@ def compute_output_stats_global(
                 bias_atom_e[kk], std_atom_e[kk] = compute_stats_property(
                     stats_input[kk],
                     merged_natoms[kk],
-                    assigned_bias=assigned_atom_ener[kk]
+                    assigned_bias=assigned_atom_ener[kk],
                 )
             else:
                 bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
@@ -512,7 +521,9 @@ def compute_output_stats_global(
         std_atom_e = {}
         bias_atom_e["property"] = np.concatenate(concat_bias, axis=-1)
         std_atom_e["property"] = np.concatenate(concat_std, axis=-1)
-        std_atom_e["property"] = np.tile(std_atom_e["property"], (bias_atom_e["property"].shape[0], 1))
+        std_atom_e["property"] = np.tile(
+            std_atom_e["property"], (bias_atom_e["property"].shape[0], 1)
+        )
 
         return bias_atom_e, std_atom_e
 

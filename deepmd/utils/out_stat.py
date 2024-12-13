@@ -33,8 +33,6 @@ def compute_stats_from_redu(
         The assigned output bias, shape is [ntypes, *(odim0, odim1, ...)].
         Set to a tensor of shape (odim0, odim1, ...) filled with nan if the bias
         of the type is not assigned.
-    rcond
-        Cut-off ratio for small singular values of a.
 
     Returns
     -------
@@ -131,10 +129,11 @@ def compute_stats_from_atomic(
         )
     return output_bias, output_std
 
+
 def compute_stats_property(
     output_redu: np.ndarray,
     natoms: np.ndarray,
-    assigned_bias: Optional[np.ndarray] = None
+    assigned_bias: Optional[np.ndarray] = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute the output statistics.
 
@@ -151,8 +150,6 @@ def compute_stats_property(
         The assigned output bias, shape is [ntypes, *(odim0, odim1, ...)].
         Set to a tensor of shape (odim0, odim1, ...) filled with nan if the bias
         of the type is not assigned.
-    rcond
-        Cut-off ratio for small singular values of a.
 
     Returns
     -------
@@ -161,8 +158,7 @@ def compute_stats_property(
     np.ndarray
         The computed output std, shape is [*(odim0, odim1, ...)].
     """
-
-    natoms = np.array(natoms) # [nf, ntypes]
+    natoms = np.array(natoms)  # [nf, ntypes]
     nf, ntypes = natoms.shape
     output_redu = np.array(output_redu)
     var_shape = list(output_redu.shape[1:])
@@ -172,8 +168,10 @@ def compute_stats_property(
     assert natoms.ndim == 2
     assert output_redu.shape[0] == natoms.shape[0]  # [nf,1]
 
-    computed_output_bias = np.repeat(np.mean(output_redu,axis=0)[np.newaxis, :], ntypes, axis=0)
-    output_std = np.std(output_redu,axis=0)
+    computed_output_bias = np.repeat(
+        np.mean(output_redu, axis=0)[np.newaxis, :], ntypes, axis=0
+    )
+    output_std = np.std(output_redu, axis=0)
 
     computed_output_bias = computed_output_bias.reshape([natoms.shape[1]] + var_shape)  # noqa: RUF005
     output_std = output_std.reshape(var_shape)
