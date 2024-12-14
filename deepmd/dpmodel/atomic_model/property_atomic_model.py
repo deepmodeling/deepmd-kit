@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import numpy as np
 from deepmd.dpmodel.fitting.property_fitting import (
     PropertyFittingNet,
 )
@@ -15,3 +16,23 @@ class DPPropertyAtomicModel(DPAtomicModel):
                 "fitting must be an instance of PropertyFittingNet for DPPropertyAtomicModel"
             )
         super().__init__(descriptor, fitting, type_map, **kwargs)
+
+    def apply_out_stat(
+        self,
+        ret: dict[str, np.ndarray],
+        atype: np.ndarray,
+    ):
+        """Apply the stat to each atomic output.
+
+        Parameters
+        ----------
+        ret
+            The returned dict by the forward_atomic method
+        atype
+            The atom types. nf x nloc
+
+        """
+        out_bias, out_std = self._fetch_out_stat(self.bias_keys)
+        for kk in self.bias_keys:
+            ret[kk] = ret[kk] * out_std[kk][0] + out_bias[kk][0]
+        return ret

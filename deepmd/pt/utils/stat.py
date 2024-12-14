@@ -296,7 +296,8 @@ def compute_output_stats(
             for key in keys:
                 if atomic_output.var_defs[key].sub_var_name is not None:
                     sub_keys.extend(atomic_output.var_defs[key].sub_var_name)
-            keys.extend(sub_keys)
+            del keys
+            keys = sub_keys
         new_keys = [
             ii
             for ii in keys

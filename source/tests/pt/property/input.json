@@ -28,6 +28,7 @@
       "type": "property",
       "intensive": true,
       "property_name": "band_property",
+      "property_dim": 3,
       "task_dim": 3,
       "neuron": [
         100,

@@ -779,9 +779,15 @@ def test_property(
     tuple[list[np.ndarray], list[int]]
         arrays with results and their shapes
     """
-    data.add("property", dp.task_dim, atomic=False, must=True, high_prec=True)
-    if has_atom_property:
-        data.add("atom_property", dp.task_dim, atomic=True, must=False, high_prec=True)
+    property_name = dp.get_property_name()
+    property_dim = dp.get_property_dim()
+    assert isinstance(property_name, list)
+    assert isinstance(property_dim, list)
+    assert sum(property_dim) == dp.task_dim
+    for (name, dim) in zip(property_name, property_dim):
+        data.add(name, dim, atomic=False, must=True, high_prec=True)
+        if has_atom_property:
+            data.add(f"atom_{name}", dim, atomic=True, must=False, high_prec=True)
 
     if dp.get_dim_fparam() > 0:
         data.add(
@@ -831,6 +837,18 @@ def test_property(
     if has_atom_property:
         aproperty = ret[1]
         aproperty = aproperty.reshape([numb_test, natoms * dp.task_dim])
+
+    concat_property = []
+    concat_aproperty = []
+    for (name, dim) in zip(property_name, property_dim):
+        test_data[name] = test_data[name].reshape([numb_test, dim])
+        test_data[f"atom_{name}"] = test_data[f"atom_{name}"].reshape(
+            [numb_test, natoms * dim]
+        )
+        concat_property.append(test_data[name])
+        concat_aproperty.append(test_data[f"atom_{name}"])
+    test_data["property"] = np.concatenate(concat_property, axis=1)
+    test_data["atom_property"] = np.concatenate(concat_aproperty, axis=1)
 
     diff_property = property - test_data["property"][:numb_test]
     mae_property = mae(diff_property)

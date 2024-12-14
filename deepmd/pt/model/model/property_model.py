@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Optional,
+    Union
 )
 
 import torch
@@ -77,6 +78,16 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
     def get_intensive(self) -> bool:
         """Get whether the property is intensive."""
         return self.model_output_def()["property"].intensive
+
+    @torch.jit.export
+    def get_property_name(self) -> Union[list[str], str]:
+        """Get the name of the property."""
+        return self.get_fitting_net().property_name
+
+    @torch.jit.export
+    def get_property_dim(self) -> Union[list[int], int]:
+        """Get the dimension of the property."""
+        return self.get_fitting_net().property_dim
 
     @torch.jit.export
     def forward_lower(

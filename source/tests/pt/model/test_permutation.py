@@ -332,6 +332,7 @@ model_property = {
         "type": "property",
         "task_dim": 3,
         "property_name": ["band_property"],
+        "property_dim": 3,
         "neuron": [24, 24, 24],
         "resnet_dt": True,
         "bias_method": "normal",
