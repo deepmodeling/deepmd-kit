@@ -53,9 +53,9 @@ __all__ = [
     "DPDipoleAtomicModel",
     "DPEnergyAtomicModel",
     "DPPolarAtomicModel",
+    "DPPropertyAtomicModel",
     "DPZBLLinearEnergyAtomicModel",
     "LinearEnergyAtomicModel",
     "PairTabAtomicModel",
     "make_base_atomic_model",
-    "DPPropertyAtomicModel",
 ]

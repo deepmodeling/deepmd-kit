@@ -784,7 +784,7 @@ def test_property(
     assert isinstance(property_name, list)
     assert isinstance(property_dim, list)
     assert sum(property_dim) == dp.task_dim
-    for (name, dim) in zip(property_name, property_dim):
+    for name, dim in zip(property_name, property_dim):
         data.add(name, dim, atomic=False, must=True, high_prec=True)
         if has_atom_property:
             data.add(f"atom_{name}", dim, atomic=True, must=False, high_prec=True)
@@ -840,7 +840,7 @@ def test_property(
 
     concat_property = []
     concat_aproperty = []
-    for (name, dim) in zip(property_name, property_dim):
+    for name, dim in zip(property_name, property_dim):
         test_data[name] = test_data[name].reshape([numb_test, dim])
         test_data[f"atom_{name}"] = test_data[f"atom_{name}"].reshape(
             [numb_test, natoms * dim]

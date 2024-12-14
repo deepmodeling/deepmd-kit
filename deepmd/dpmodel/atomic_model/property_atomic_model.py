@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
+
 from deepmd.dpmodel.fitting.property_fitting import (
     PropertyFittingNet,
 )
