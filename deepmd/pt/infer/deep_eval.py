@@ -130,10 +130,8 @@ class DeepEval(DeepEvalBackend):
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
             model = get_model(self.input_param).to(DEVICE)
-            try:
+            if not self.input_param.get("hessian_mode"):
                 model = torch.jit.script(model)
-            except RuntimeError:
-                pass
             self.dp = ModelWrapper(model)
             self.dp.load_state_dict(state_dict)
         elif str(self.model_path).endswith(".pth"):

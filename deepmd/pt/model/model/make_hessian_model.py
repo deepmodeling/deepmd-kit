@@ -175,7 +175,7 @@ def make_hessian_model(T_Model):
             hess = torch.autograd.functional.hessian(
                 wc,
                 coord,
-                create_graph=True,
+                create_graph=self.training,
             )
             return hess
 

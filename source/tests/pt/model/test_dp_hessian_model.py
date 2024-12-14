@@ -7,7 +7,6 @@ from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
 from deepmd.pt.model.model import (
-    EnergyHessianModel,
     EnergyModel,
 )
 from deepmd.pt.model.task.ener import (
@@ -44,8 +43,10 @@ class TestEnergyHessianModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist)
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        md0 = EnergyHessianModel(ds, ft, type_map=type_map).to(env.DEVICE)
-        md1 = EnergyHessianModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md0 = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md0.enable_hessian()
+        md1.enable_hessian()
         args = [to_torch_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
         ret0 = md0.forward(*args)
         ret1 = md1.forward(*args)
@@ -95,7 +96,8 @@ class TestEnergyHessianModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist)
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         md0 = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
-        md1 = EnergyHessianModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md1.enable_hessian()
         args = [to_torch_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
         ret0 = md0.forward(*args)
         ret1 = md1.forward(*args)
@@ -139,8 +141,10 @@ class TestEnergyHessianModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist)
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        md0 = EnergyHessianModel(ds, ft, type_map=type_map).to(env.DEVICE)
-        md1 = EnergyHessianModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md0 = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md0.enable_hessian()
+        md1.enable_hessian()
         md0.requires_hessian("energy")
         args = [to_torch_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
         ret0 = md0.forward_common(*args)
