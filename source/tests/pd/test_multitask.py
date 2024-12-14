@@ -34,22 +34,15 @@ from .model.test_permutation import (
 )
 
 
-def setUpModule():
+def setUpModule() -> None:
     global multitask_template
     multitask_template_json = str(Path(__file__).parent / "water/multitask.json")
     with open(multitask_template_json) as f:
         multitask_template = json.load(f)
 
-    global multitask_sharefit_template
-    multitask_sharefit_template_json = str(
-        Path(__file__).parent / "water/multitask_sharefit.json"
-    )
-    with open(multitask_sharefit_template_json) as f:
-        multitask_sharefit_template = json.load(f)
-
 
 class MultiTaskTrainTest:
-    def test_multitask_train(self):
+    def test_multitask_train(self) -> None:
         # test multitask training
         self.config = update_deepmd_input(self.config, warning=True)
         self.config = normalize(self.config, multi_task=True)
