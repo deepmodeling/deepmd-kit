@@ -91,7 +91,13 @@ class TestOutStat(unittest.TestCase):
         )
 
     def test_compute_stats_property(self) -> None:
+        """Test compute_stats_property function with various scenarios."""
         bias, std = compute_stats_property(self.output_redu, self.natoms)
+        # Test shapes
+        assert bias.shape == (len(self.mean), self.output_redu.shape[1])
+        assert std.shape == (self.output_redu.shape[1],)
+
+        # Test values
         for fake_atom_bias in bias:
             np.testing.assert_allclose(
                 fake_atom_bias, np.mean(self.output_redu, axis=0), rtol=1e-7
