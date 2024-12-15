@@ -23,7 +23,6 @@ from .make_model import (
 )
 
 DPEnergyModel_ = make_model(DPEnergyAtomicModel)
-DPEnergyModel_ = make_hessian_model(DPEnergyModel_)
 
 
 @BaseModel.register("ener")
@@ -40,6 +39,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         self._hessian_enabled = False
 
     def enable_hessian(self):
+        self.__class__ = make_hessian_model(type(self))
+        self.hess_fitting_def = super(type(self), self).atomic_output_def()
         self.requires_hessian("energy")
         self._hessian_enabled = True
 
