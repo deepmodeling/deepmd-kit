@@ -33,6 +33,8 @@ def compute_stats_from_redu(
         The assigned output bias, shape is [ntypes, *(odim0, odim1, ...)].
         Set to a tensor of shape (odim0, odim1, ...) filled with nan if the bias
         of the type is not assigned.
+    rcond
+        Cut-off ratio for small singular values of a.
 
     Returns
     -------
