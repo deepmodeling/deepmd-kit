@@ -331,8 +331,8 @@ model_property = {
     "fitting_net": {
         "type": "property",
         "task_dim": 3,
-        "property_name": ["foo", "bar"],
-        "property_dim": [1, 2],
+        "property_name": "band_property",
+        "property_dim": 3,
         "neuron": [24, 24, 24],
         "resnet_dt": True,
         "intensive": True,

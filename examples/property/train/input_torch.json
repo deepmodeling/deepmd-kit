@@ -32,7 +32,8 @@
     "fitting_net": {
       "type": "property",
       "intensive": true,
-      "task_dim": 3,
+      "property_name": "band_prop",
+      "property_dim": 3,
       "neuron": [
         240,
         240,

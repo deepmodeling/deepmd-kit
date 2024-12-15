@@ -44,7 +44,15 @@ class PropertyFittingNet(InvarFitting):
     dim_descrpt : int
         Embedding width per atom.
     task_dim : int
-            The dimension of outputs of fitting net.
+        The dimension of outputs of fitting net.
+    property_name:
+        The names of fitting properties, which should be consistent with the property names in the dataset.
+        If the data file is named `humo.npy`, this parameter should be "humo" or ["humo"].
+        If you want to fit two properties at the same time, supposing that the data files are named `humo.npy` and `lumo.npy`,
+        this parameter should be `["humo", "lumo"]`.
+    property_dim:
+        The dimensions of fitting properties, which should be consistent with the property dimensions in the dataset.
+        Note that the order here must be the same as the order of `property_name`.
     neuron : list[int]
         Number of neurons in each hidden layers of the fitting net.
     bias_atom_p : torch.Tensor, optional
@@ -94,9 +102,13 @@ class PropertyFittingNet(InvarFitting):
         self.intensive = intensive
         if isinstance(property_name, str):
             property_name = [property_name]
-        self.property_name = property_name
         if isinstance(property_dim, int):
             property_dim = [property_dim]
+        assert len(property_name) == len(property_dim), (
+            f"The number of property names ({len(property_name)}) must match "
+            f"the number of property dimensions ({len(property_dim)})."
+        )
+        self.property_name = property_name
         self.property_dim = property_dim
         super().__init__(
             var_name="property",

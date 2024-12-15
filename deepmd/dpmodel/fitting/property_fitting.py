@@ -44,7 +44,8 @@ class PropertyFittingNet(InvarFitting):
     property_name:
             The names of fitting properties, which should be consistent with the property names in the dataset.
             If the data file is named `humo.npy`, this parameter should be "humo" or ["humo"].
-            If you want to fit two properties at the same time, supposing that the data files are named `humo.npy` and `lumo.npy`, this parameter should be `["humo", "lumo"]`.
+            If you want to fit two properties at the same time, supposing that the data files are named `humo.npy` and `lumo.npy`,
+            this parameter should be `["humo", "lumo"]`.
     property_dim:
             The dimensions of fitting properties, which should be consistent with the property dimensions in the dataset.
             Note that the order here must be the same as the order of `property_name`.

@@ -129,16 +129,14 @@ def compute_stats_from_atomic(
         )
     return output_bias, output_std
 
-
 def compute_stats_property(
     output_redu: np.ndarray,
     natoms: np.ndarray,
     assigned_bias: Optional[np.ndarray] = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Compute the output statistics.
+    """Compute the mean value and standard deviation of reduced output.
 
-    Given the reduced output value and the number of atoms for each atom,
-    compute the least-squares solution as the atomic output bias and std.
+    Given the reduced output value, compute the mean value and standard deviation of output.
 
     Parameters
     ----------
@@ -146,6 +144,7 @@ def compute_stats_property(
         The reduced output value, shape is [nframes, *(odim0, odim1, ...)].
     natoms
         The number of atoms for each atom, shape is [nframes, ntypes].
+        It is used to generate a fake bias in property fitting.
     assigned_bias
         The assigned output bias, shape is [ntypes, *(odim0, odim1, ...)].
         Set to a tensor of shape (odim0, odim1, ...) filled with nan if the bias
@@ -154,9 +153,11 @@ def compute_stats_property(
     Returns
     -------
     np.ndarray
-        The computed output bias, shape is [ntypes, *(odim0, odim1, ...)].
+        The computed output mean(fake bias), shape is [ntypes, *(odim0, odim1, ...)].
+        In property fitting, we assume that the atom output is not element-dependent,
+        i.e., the `bias` is the same for each atom (they are all mean value of reduced output).
     np.ndarray
-        The computed output std, shape is [*(odim0, odim1, ...)].
+        The computed output standard deviation, shape is [*(odim0, odim1, ...)].
     """
     natoms = np.array(natoms)  # [nf, ntypes]
     nf, ntypes = natoms.shape
@@ -173,7 +174,7 @@ def compute_stats_property(
     )
     output_std = np.std(output_redu, axis=0)
 
-    computed_output_bias = computed_output_bias.reshape([natoms.shape[1]] + var_shape)  # noqa: RUF005
+    computed_output_bias = computed_output_bias.reshape([natoms.shape[1]] + var_shape)
     output_std = output_std.reshape(var_shape)
 
     return computed_output_bias, output_std

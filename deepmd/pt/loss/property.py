@@ -101,22 +101,27 @@ class PropertyLoss(TaskLoss):
         label["property"] = torch.cat(concat_property, dim=1)
         assert label["property"].shape == (nbz, self.task_dim)
 
-        out_std = (
-            model.atomic_model.out_std[0][0]
-            if self.out_std is None
-            else torch.tensor(
+        if self.out_std is None:
+            out_std = model.atomic_model.out_std[0][0]
+        else:
+            out_std = torch.tensor(
                 self.out_std, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
             )
-        )
-        out_bias = (
-            model.atomic_model.out_bias[0][0]
-            if self.out_bias is None
-            else torch.tensor(
+        if out_std.shape != (self.task_dim,):
+            raise ValueError(
+                f"Expected out_std to have shape ({self.task_dim},), but got {out_std.shape}"
+            )
+
+        if self.out_bias is None:
+            out_bias = model.atomic_model.out_bias[0][0]
+        else:
+            out_bias = torch.tensor(
                 self.out_bias, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
             )
-        )
-        assert len(out_std.shape) == 1
-        assert out_std.shape[0] == self.task_dim
+        if out_bias.shape != (self.task_dim,):
+            raise ValueError(
+                f"Expected out_bias to have shape ({self.task_dim},), but got {out_bias.shape}"
+            )
 
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}

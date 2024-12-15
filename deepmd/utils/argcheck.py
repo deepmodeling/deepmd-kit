@@ -1613,8 +1613,7 @@ def fitting_property():
         Argument(
             "property_name",
             [str, list],
-            optional=True,
-            default="property",
+            optional=False,
             doc=doc_property_name,
         ),
         Argument(
