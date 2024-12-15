@@ -62,8 +62,9 @@ PropertyFittingTF = object
     (True, False),  # mixed_types
     (0, 1),  # numb_fparam
     (0, 1),  # numb_aparam
-    (1, 3),  # task_dim
     (True, False),  # intensive
+    ("foo", ["foo"]), # property_name
+    (3, [4], [5,6]), # property_dim
 )
 class TestProperty(CommonTest, FittingTest, unittest.TestCase):
     @property
@@ -74,8 +75,9 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
             numb_aparam,
-            task_dim,
             intensive,
+            property_name,
+            property_dim,
         ) = self.param
         return {
             "neuron": [5, 5, 5],
@@ -84,8 +86,9 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             "numb_fparam": numb_fparam,
             "numb_aparam": numb_aparam,
             "seed": 20240217,
-            "task_dim": task_dim,
             "intensive": intensive,
+            "property_name": property_name,
+            "property_dim": property_dim,
         }
 
     @property
@@ -96,8 +99,9 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
             numb_aparam,
-            task_dim,
             intensive,
+            property_name,
+            property_dim,
         ) = self.param
         return CommonTest.skip_pt
 
@@ -128,6 +132,10 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
         self.aparam = np.zeros_like(
             self.atype, dtype=GLOBAL_NP_FLOAT_PRECISION
         ).reshape(-1, 1)
+        if isinstance(self.data["property_dim"], list):
+            self.task_dim = sum(self.data["property_dim"])
+        else:
+            self.task_dim = self.data["property_dim"]
 
     @property
     def additional_data(self) -> dict:
@@ -137,13 +145,15 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
             numb_aparam,
-            task_dim,
             intensive,
+            property_name,
+            property_dim,
         ) = self.param
         return {
             "ntypes": self.ntypes,
             "dim_descrpt": self.inputs.shape[-1],
             "mixed_types": mixed_types,
+            "task_dim": self.task_dim
         }
 
     def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
@@ -153,8 +163,9 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
             numb_aparam,
-            task_dim,
             intensive,
+            property_name,
+            property_dim,
         ) = self.param
         return self.build_tf_fitting(
             obj,
@@ -173,8 +184,9 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
             numb_aparam,
-            task_dim,
             intensive,
+            property_name,
+            property_dim,
         ) = self.param
         return (
             pt_obj(
@@ -199,8 +211,9 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
             numb_aparam,
-            task_dim,
             intensive,
+            property_name,
+            property_dim,
         ) = self.param
         return dp_obj(
             self.inputs,
@@ -216,8 +229,9 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
             numb_aparam,
-            task_dim,
             intensive,
+            property_name,
+            property_dim,
         ) = self.param
         return np.asarray(
             jax_obj(
@@ -235,8 +249,9 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
             numb_aparam,
-            task_dim,
             intensive,
+            property_name,
+            property_dim,
         ) = self.param
         return to_numpy_array(
             array_api_strict_obj(
@@ -262,8 +277,9 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
             numb_aparam,
-            task_dim,
             intensive,
+            property_name,
+            property_dim,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -281,8 +297,9 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
             numb_aparam,
-            task_dim,
             intensive,
+            property_name,
+            property_dim,
         ) = self.param
         if precision == "float64":
             return 1e-10

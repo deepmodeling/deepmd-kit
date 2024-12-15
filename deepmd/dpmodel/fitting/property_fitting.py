@@ -93,7 +93,11 @@ class PropertyFittingNet(InvarFitting):
     ) -> None:
         self.task_dim = task_dim
         self.intensive = intensive
+        if isinstance(property_name, str):
+            property_name = [property_name]
         self.property_name = property_name
+        if isinstance(property_dim, int):
+            property_dim = [property_dim]
         self.property_dim = property_dim
         super().__init__(
             var_name="property",
