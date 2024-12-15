@@ -61,7 +61,7 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.atype_ext[:, : self.nloc], dtype=int, device=env.DEVICE
         )
 
-        for nfp, nap, bias_atom_p, intensive, bias_method in itertools.product(
+        for nfp, nap, bias_atom_p, intensive in itertools.product(
             [0, 3],
             [0, 4],
             [
@@ -69,18 +69,18 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 np.array([[11, 12, 13, 4, 15], [16, 17, 18, 9, 20]]),
             ],
             [True, False],
-            ["normal", "no_bias"],
         ):
             ft0 = PropertyFittingNet(
                 self.nt,
                 self.dd0.dim_out,
                 task_dim=5,
+                property_name=["foo","bar"],
+                property_dim=[2,3],
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 mixed_types=self.dd0.mixed_types(),
                 bias_atom_p=bias_atom_p,
                 intensive=intensive,
-                bias_method=bias_method,
                 seed=GLOBAL_SEED,
             ).to(env.DEVICE)
 
@@ -135,21 +135,21 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_jit(
         self,
     ) -> None:
-        for nfp, nap, intensive, bias_method in itertools.product(
+        for nfp, nap, intensive in itertools.product(
             [0, 3],
             [0, 4],
             [True, False],
-            ["normal", "no_bias"],
         ):
             ft0 = PropertyFittingNet(
                 self.nt,
                 self.dd0.dim_out,
                 task_dim=5,
+                property_name=["foo","bar"],
+                property_dim=[2,3],
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 mixed_types=self.dd0.mixed_types(),
                 intensive=intensive,
-                bias_method=bias_method,
                 seed=GLOBAL_SEED,
             ).to(env.DEVICE)
             torch.jit.script(ft0)
@@ -201,6 +201,8 @@ class TestInvarianceOutCell(unittest.TestCase):
             self.nt,
             self.dd0.dim_out,
             task_dim=11,
+            property_name=["foo","bar"],
+            property_dim=[3,8],
             numb_fparam=0,
             numb_aparam=0,
             mixed_types=self.dd0.mixed_types(),
@@ -257,21 +259,21 @@ class TestInvarianceRandomShift(unittest.TestCase):
         # use larger cell to rotate only coord and shift to the center of cell
         cell_rot = 10.0 * torch.eye(3, dtype=dtype, device=env.DEVICE)
 
-        for nfp, nap, intensive, bias_method in itertools.product(
+        for nfp, nap, intensive in itertools.product(
             [0, 3],
             [0, 4],
             [True, False],
-            ["normal", "no_bias"],
         ):
             ft0 = PropertyFittingNet(
                 self.nt,
                 self.dd0.dim_out,  # dim_descrpt
-                task_dim=9,
+                task_dim=5,
+                property_name=["foo","bar"],
+                property_dim=[2,3],
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 mixed_types=self.dd0.mixed_types(),
                 intensive=intensive,
-                bias_method=bias_method,
                 seed=GLOBAL_SEED,
             ).to(env.DEVICE)
             if nfp > 0:
@@ -324,6 +326,8 @@ class TestInvarianceRandomShift(unittest.TestCase):
             self.nt,
             self.dd0.dim_out,
             task_dim=8,
+            property_name="abc",
+            property_dim=8,
             numb_fparam=0,
             numb_aparam=0,
             mixed_types=self.dd0.mixed_types(),
@@ -372,6 +376,8 @@ class TestInvarianceRandomShift(unittest.TestCase):
             self.nt,
             self.dd0.dim_out,
             task_dim=11,
+            property_name=["foo"],
+            property_dim=[11],
             numb_fparam=0,
             numb_aparam=0,
             mixed_types=self.dd0.mixed_types(),
@@ -422,6 +428,8 @@ class TestPropertyModel(unittest.TestCase):
             self.nt,
             self.dd0.dim_out,
             task_dim=3,
+            property_name=["foo","bar"],
+            property_dim=[2,1],
             numb_fparam=0,
             numb_aparam=0,
             mixed_types=self.dd0.mixed_types(),
