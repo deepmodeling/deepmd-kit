@@ -129,6 +129,7 @@ def compute_stats_from_atomic(
         )
     return output_bias, output_std
 
+
 def compute_stats_property(
     output_redu: np.ndarray,
     natoms: np.ndarray,

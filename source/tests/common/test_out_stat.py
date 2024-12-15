@@ -93,8 +93,10 @@ class TestOutStat(unittest.TestCase):
     def test_compute_stats_property(self) -> None:
         bias, std = compute_stats_property(self.output_redu, self.natoms)
         for fake_atom_bias in bias:
-            np.testing.assert_allclose(fake_atom_bias, np.mean(self.output_redu,axis=0), rtol=1e-7)
-        np.testing.assert_allclose(std, np.std(self.output_redu,axis=0), rtol=1e-7)
+            np.testing.assert_allclose(
+                fake_atom_bias, np.mean(self.output_redu, axis=0), rtol=1e-7
+            )
+        np.testing.assert_allclose(std, np.std(self.output_redu, axis=0), rtol=1e-7)
 
     def test_compute_stats_from_atomic(self) -> None:
         bias, std = compute_stats_from_atomic(self.output, self.atype)

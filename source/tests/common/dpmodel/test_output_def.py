@@ -94,12 +94,20 @@ class TestDef(unittest.TestCase):
                 c_differentiable=False,
                 atomic=True,
                 intensive=True,
-                sub_var_name=["foo","bar"],
+                sub_var_name=["foo", "bar"],
             ),
         ]
         # fitting definition
         fd = FittingOutputDef(defs)
-        expected_keys = ["energy", "energy2", "energy3", "dos", "foo", "gap", "property"]
+        expected_keys = [
+            "energy",
+            "energy2",
+            "energy3",
+            "dos",
+            "foo",
+            "gap",
+            "property",
+        ]
         self.assertEqual(
             set(expected_keys),
             set(fd.keys()),
