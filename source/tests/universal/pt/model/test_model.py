@@ -783,7 +783,6 @@ class TestPropertyModelPT(unittest.TestCase, PropertyModelTest, PTTestCase):
             type_map=cls.expected_type_map,
             embedding_width=ds.get_dim_emb(),
         )
-
         ft = Fitting(
             **cls.input_dict_ft,
         )
