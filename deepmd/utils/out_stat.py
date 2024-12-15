@@ -177,7 +177,7 @@ def compute_stats_property(
     )
     output_std = np.std(output_redu, axis=0)
 
-    computed_output_bias = computed_output_bias.reshape([natoms.shape[1]] + var_shape)
+    computed_output_bias = computed_output_bias.reshape([natoms.shape[1]] + var_shape)  # noqa: RUF005
     output_std = output_std.reshape(var_shape)
 
     return computed_output_bias, output_std
