@@ -44,7 +44,9 @@ class LossTestCase:
             if "property_name" in self.input_dict.keys():
                 rng = np.random.default_rng(seed=GLOBAL_SEED)
                 model_predict = {
-                    "property": rng.random([nframes, self.input_dict["task_dim"]], dtype=np.float64)
+                    "property": rng.random(
+                        [nframes, self.input_dict["task_dim"]], dtype=np.float64
+                    )
                 }
             else:
                 model_predict = {

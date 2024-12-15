@@ -63,8 +63,8 @@ PropertyFittingTF = object
     (0, 1),  # numb_fparam
     (0, 1),  # numb_aparam
     (True, False),  # intensive
-    ("foo", ["foo"]), # property_name
-    (3, [4], [5,6]), # property_dim
+    ("foo", ["foo"]),  # property_name
+    (3, [4], [5, 6]),  # property_dim
 )
 class TestProperty(CommonTest, FittingTest, unittest.TestCase):
     @property
@@ -153,7 +153,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             "ntypes": self.ntypes,
             "dim_descrpt": self.inputs.shape[-1],
             "mixed_types": mixed_types,
-            "task_dim": self.task_dim
+            "task_dim": self.task_dim,
         }
 
     def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
