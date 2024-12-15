@@ -23,14 +23,14 @@ class DPPropertyAtomicModel(DPAtomicModel):
         ret: dict[str, np.ndarray],
         atype: np.ndarray,
     ):
-        """Apply the stat to each atomic output.
+        """Apply the stat to each atomic output. In property fitting, each output will be multiplied by label std and then plus the label average value.
 
         Parameters
         ----------
         ret
             The returned dict by the forward_atomic method
         atype
-            The atom types. nf x nloc
+            The atom types. nf x nloc. It is useless in property fitting.
 
         """
         out_bias, out_std = self._fetch_out_stat(self.bias_keys)

@@ -127,3 +127,5 @@ class PropertyAtomicModelTest(AtomicModelTestCase):
         cls.aprec_dict = {}
         cls.rprec_dict = {}
         cls.epsilon_dict = {}
+        cls.property_name = ["band_prop"]
+        cls.task_dim = 3

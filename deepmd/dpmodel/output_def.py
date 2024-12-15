@@ -187,6 +187,11 @@ class OutputVariableDef:
           If the derivatives of variable have magnetic parts.
     intensive : bool
           It indicates whether the fitting property is intensive or extensive.
+    sub_var_name: Optional[Union[list[str], str]]
+          It is only useful in the property fitting. When one wants to fit multiple properties,
+          I need a uniform key "property" to manage these multiple properties, which can be seen as sub-names of "property".
+          For example, when one wants to fit "humo" and "lumo" which store in "humo.npy" and "lumo.npy",
+          the `sub_var_name` of "property" is ["humo", "lumo"].
     """
 
     def __init__(

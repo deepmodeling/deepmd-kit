@@ -147,6 +147,9 @@ class PropertyFittingNet(InvarFitting):
             **InvarFitting.serialize(self),
             "type": "property",
             "task_dim": self.task_dim,
+            "intensive": self.intensive,
+            "property_name": self.property_name,
+            "property_dim": self.property_dim,
         }
 
         return dd

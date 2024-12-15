@@ -455,6 +455,8 @@ class TestPropertyAtomicModelDP(unittest.TestCase, PropertyAtomicModelTest, DPTe
             mixed_types=ds.mixed_types(),
             type_map=cls.expected_type_map,
             embedding_width=ds.get_dim_emb(),
+            task_dim=cls.task_dim,
+            property_name=cls.property_name,
         )
         ft = Fitting(
             **cls.input_dict_ft,
