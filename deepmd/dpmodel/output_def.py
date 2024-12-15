@@ -4,8 +4,8 @@ from enum import (
     IntEnum,
 )
 from typing import (
-    Union,
     Optional,
+    Union,
 )
 
 

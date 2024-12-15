@@ -519,10 +519,12 @@ def compute_output_stats_global(
             concat_bias.append(bias_atom_e[ii])
             concat_std.append(std_atom_e[ii])
         bias_atom_e = {"property": np.concatenate(concat_bias, axis=-1)}
-        std_atom_e = {"property": np.tile(
-             np.concatenate(concat_std, axis=-1),
-             (bias_atom_e["property"].shape[0], 1)
-        )}
+        std_atom_e = {
+            "property": np.tile(
+                np.concatenate(concat_std, axis=-1),
+                (bias_atom_e["property"].shape[0], 1),
+            )
+        }
 
         return bias_atom_e, std_atom_e
 

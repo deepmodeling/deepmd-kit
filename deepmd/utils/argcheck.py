@@ -2512,7 +2512,7 @@ def loss_property():
             optional=True,
             default=1.00,
             doc=doc_beta,
-        )
+        ),
     ]
 
 

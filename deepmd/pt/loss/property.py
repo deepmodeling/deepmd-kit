@@ -57,7 +57,9 @@ class PropertyLoss(TaskLoss):
             property_dim = [property_dim]
         self.property_name = property_name
         assert self.task_dim == sum(property_dim)
-        assert len(property_name) == len(property_dim), f"The shape of the `property_name` you provide must be consistent with the `property_dim`, but your `property_name` is {property_name} and your `property_dim` is {property_dim}!"
+        assert (
+            len(property_name) == len(property_dim)
+        ), f"The shape of the `property_name` you provide must be consistent with the `property_dim`, but your `property_name` is {property_name} and your `property_dim` is {property_dim}!"
         self.property_name_dim_mapping = dict(zip(property_name, property_dim))
         self.out_bias = out_bias
         self.out_std = out_std
