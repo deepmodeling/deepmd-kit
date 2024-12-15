@@ -64,7 +64,7 @@ PropertyFittingTF = object
     (0, 1),  # numb_aparam
     (True, False),  # intensive
     ("foo", ["foo"]),  # property_name
-    (3, [4], [5, 6]),  # property_dim
+    (3, [4]),  # property_dim
 )
 class TestProperty(CommonTest, FittingTest, unittest.TestCase):
     @property
