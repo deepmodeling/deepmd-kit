@@ -142,11 +142,11 @@ class DeepProperty(DeepEval):
         return self.deep_eval.get_intensive()
 
     def get_property_name(self) -> Union[list[str], str]:
-        """Get the name of the property."""
+        """Get the names of the properties."""
         return self.deep_eval.get_property_name()
 
     def get_property_dim(self) -> Union[list[int], int]:
-        """Get the dimension of the property."""
+        """Get the dimensions of the properties."""
         return self.deep_eval.get_property_dim()
 
 

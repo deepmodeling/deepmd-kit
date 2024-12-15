@@ -98,6 +98,11 @@ def _get_standard_model_components(model_params, ntypes):
         fitting_net["out_dim"] = descriptor.get_dim_emb()
         if "ener" in fitting_net["type"]:
             fitting_net["return_energy"] = True
+    if "property" in fitting_net["type"]:
+        if isinstance(fitting_net["property_dim"], list):
+            fitting_net["task_dim"]  = sum(fitting_net["property_dim"])
+        else:
+            fitting_net["task_dim"] = fitting_net["property_dim"]
     fitting = BaseFitting(**fitting_net)
     return descriptor, fitting, fitting_net["type"]
 

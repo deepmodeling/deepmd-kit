@@ -518,20 +518,18 @@ def compute_output_stats_global(
             assert ii in std_atom_e.keys()
             concat_bias.append(bias_atom_e[ii])
             concat_std.append(std_atom_e[ii])
-        del bias_atom_e, std_atom_e
-        bias_atom_e = {}
-        std_atom_e = {}
-        bias_atom_e["property"] = np.concatenate(concat_bias, axis=-1)
-        std_atom_e["property"] = np.concatenate(concat_std, axis=-1)
-        std_atom_e["property"] = np.tile(
-            std_atom_e["property"], (bias_atom_e["property"].shape[0], 1)
-        )
+        bias_atom_e = {"property": np.concatenate(concat_bias, axis=-1)}
+        std_atom_e = {"property": np.tile(
+             np.concatenate(concat_std, axis=-1),
+             (bias_atom_e["property"].shape[0], 1)
+        )}
 
         return bias_atom_e, std_atom_e
 
     bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
 
     # unbias_e is only used for print rmse
+
     if model_pred is None:
         unbias_e = {
             kk: merged_natoms[kk] @ bias_atom_e[kk].reshape(ntypes, -1)

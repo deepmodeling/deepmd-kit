@@ -842,13 +842,15 @@ def test_property(
     concat_aproperty = []
     for name, dim in zip(property_name, property_dim):
         test_data[name] = test_data[name].reshape([numb_test, dim])
-        test_data[f"atom_{name}"] = test_data[f"atom_{name}"].reshape(
-            [numb_test, natoms * dim]
-        )
         concat_property.append(test_data[name])
-        concat_aproperty.append(test_data[f"atom_{name}"])
+        if has_atom_property:
+            test_data[f"atom_{name}"] = test_data[f"atom_{name}"].reshape(
+                [numb_test, natoms * dim]
+            )
+            concat_aproperty.append(test_data[f"atom_{name}"])
     test_data["property"] = np.concatenate(concat_property, axis=1)
-    test_data["atom_property"] = np.concatenate(concat_aproperty, axis=1)
+    if has_atom_property:
+        test_data["atom_property"] = np.concatenate(concat_aproperty, axis=1)
 
     diff_property = property - test_data["property"][:numb_test]
     mae_property = mae(diff_property)

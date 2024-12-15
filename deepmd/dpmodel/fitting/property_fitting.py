@@ -41,10 +41,6 @@ class PropertyFittingNet(InvarFitting):
             this list is of length :math:`N_l + 1`, specifying if the hidden layers and the output layer are trainable.
     intensive
             Whether the fitting property is intensive.
-    bias_method
-            The method of applying the bias to each atomic output, user can select 'normal' or 'no_bias'.
-            If 'normal' is used, the computed bias will be added to the atomic output.
-            If 'no_bias' is used, no bias will be added to the atomic output.
     resnet_dt
             Time-step `dt` in the resnet construction:
             :math:`y = x + dt * \phi (Wx + b)`
@@ -74,7 +70,6 @@ class PropertyFittingNet(InvarFitting):
         rcond: Optional[float] = None,
         trainable: Union[bool, list[bool]] = True,
         intensive: bool = False,
-        bias_method: str = "normal",
         property_name: Union[str, list] = "property",
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -90,7 +85,6 @@ class PropertyFittingNet(InvarFitting):
     ) -> None:
         self.task_dim = task_dim
         self.intensive = intensive
-        self.bias_method = bias_method
         self.property_name = property_name
         super().__init__(
             var_name="property",

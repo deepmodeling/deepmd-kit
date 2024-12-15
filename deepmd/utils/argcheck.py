@@ -1578,10 +1578,9 @@ def fitting_property():
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_seed = "Random seed for parameter initialization of the fitting net"
-    doc_task_dim = "The dimension of outputs of fitting net"
     doc_intensive = "Whether the fitting property is intensive"
-    doc_bias_method = "The method of applying the bias to each atomic output, user can select 'normal' or 'no_bias'. If 'no_bias' is used, no bias will be added to the atomic output."
-    doc_property_name = "TODO"
+    doc_property_name = "The names of fitting properties, which should be consistent with the property names in the dataset."
+    doc_property_dim = "The dimensions of fitting properties, which should be consistent with the property dimensions in the dataset."
     return [
         Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
         Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
@@ -1610,17 +1609,20 @@ def fitting_property():
         Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
         Argument("precision", str, optional=True, default="default", doc=doc_precision),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
-        Argument("task_dim", int, optional=True, default=1, doc=doc_task_dim),
         Argument("intensive", bool, optional=True, default=False, doc=doc_intensive),
-        Argument(
-            "bias_method", str, optional=True, default="normal", doc=doc_bias_method
-        ),
         Argument(
             "property_name",
             [str, list],
             optional=True,
             default="property",
             doc=doc_property_name,
+        ),
+        Argument(
+            "property_dim",
+            [int, list],
+            optional=True,
+            default=1,
+            doc=doc_property_dim,
         ),
     ]
 
@@ -2489,8 +2491,6 @@ def loss_property():
     doc_loss_func = "The loss function to minimize, such as 'mae','smooth_mae'."
     doc_metric = "The metric for display. This list can include 'smooth_mae', 'mae', 'mse' and 'rmse'."
     doc_beta = "The 'beta' parameter in 'smooth_mae' loss."
-    doc_property_name = "The names of fitting properties, which should be consistent with the property names in the dataset."
-    doc_property_dim = "The dimensions of fitting properties, which should be consistent with the property dimensions in the dataset."
     return [
         Argument(
             "loss_func",
@@ -2512,21 +2512,7 @@ def loss_property():
             optional=True,
             default=1.00,
             doc=doc_beta,
-        ),
-        Argument(
-            "property_name",
-            [str, list],
-            optional=True,
-            default="property",
-            doc=doc_property_name,
-        ),
-        Argument(
-            "property_dim",
-            [int, list],
-            optional=True,
-            default=1,
-            doc=doc_property_dim,
-        ),
+        )
     ]
 
 

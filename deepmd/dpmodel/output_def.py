@@ -5,6 +5,7 @@ from enum import (
 )
 from typing import (
     Union,
+    Optional,
 )
 
 
@@ -200,7 +201,7 @@ class OutputVariableDef:
         r_hessian: bool = False,
         magnetic: bool = False,
         intensive: bool = False,
-        sub_var_name: Union[list[str], str, None] = None,
+        sub_var_name: Optional[Union[list[str], str]] = None,
     ) -> None:
         self.name = name
         self.shape = list(shape)

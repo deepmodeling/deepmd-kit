@@ -51,10 +51,6 @@ class PropertyFittingNet(InvarFitting):
         Average property per atom for each element.
     intensive : bool, optional
         Whether the fitting property is intensive.
-    bias_method : str, optional
-        The method of applying the bias to each atomic output, user can select 'normal' or 'no_bias'.
-        If 'normal' is used, the computed bias will be added to the atomic output.
-        If 'no_bias' is used, no bias will be added to the atomic output.
     resnet_dt : bool
         Using time-step in the ResNet construction.
     numb_fparam : int
@@ -78,13 +74,12 @@ class PropertyFittingNet(InvarFitting):
         self,
         ntypes: int,
         dim_descrpt: int,
-        task_dim: int = 1,
+        task_dim: int,
+        property_name: Union[str, list],
+        property_dim: Union[int, list] = 1,
         neuron: list[int] = [128, 128, 128],
         bias_atom_p: Optional[torch.Tensor] = None,
         intensive: bool = False,
-        bias_method: str = "normal",
-        property_name: Union[str, list] = "property",
-        property_dim: Union[int, list] = 1,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -97,7 +92,6 @@ class PropertyFittingNet(InvarFitting):
     ) -> None:
         self.task_dim = task_dim
         self.intensive = intensive
-        self.bias_method = bias_method
         if isinstance(property_name, str):
             property_name = [property_name]
         self.property_name = property_name
@@ -121,9 +115,6 @@ class PropertyFittingNet(InvarFitting):
             seed=seed,
             **kwargs,
         )
-
-    def get_bias_method(self) -> str:
-        return self.bias_method
 
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
