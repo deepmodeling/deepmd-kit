@@ -174,5 +174,3 @@ class PropertyModelTest(ModelTestCase):
         cls.rprec_dict = {}
         cls.epsilon_dict = {}
         cls.skip_test_autodiff = True
-        cls.property_name = ["band_prop"]
-        cls.task_dim = 3
