@@ -332,7 +332,7 @@ model_property = {
     "fitting_net": {
         "type": "property",
         "property_name": ["foo", "bar"],
-        "property_dim": [1, 2]
+        "property_dim": [1, 2],
         "task_dim": 3,
         "neuron": [24, 24, 24],
         "resnet_dt": True,
