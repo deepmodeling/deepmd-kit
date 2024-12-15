@@ -57,7 +57,7 @@ class TestProperty(CommonTest, ModelTest, unittest.TestCase):
                 "type": "property",
                 "neuron": [4, 4, 4],
                 "property_name": ["foo", "bar"],
-                "property_dim": [2,3],
+                "property_dim": [2, 3],
                 "resnet_dt": True,
                 "numb_fparam": 0,
                 "precision": "float64",
