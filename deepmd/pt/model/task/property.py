@@ -146,7 +146,7 @@ class PropertyFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "PropertyFittingNet":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         data.pop("dim_out")
         data.pop("var_name")
         obj = super().deserialize(data)
@@ -163,6 +163,7 @@ class PropertyFittingNet(InvarFitting):
             "property_name": self.property_name,
             "property_dim": self.property_dim,
         }
+        dd["@version"] = 4
 
         return dd
 
