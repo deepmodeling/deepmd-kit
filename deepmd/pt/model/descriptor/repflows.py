@@ -1,0 +1,570 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Callable,
+    Optional,
+    Union,
+)
+
+import torch
+
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
+)
+from deepmd.pt.model.descriptor.descriptor import (
+    DescriptorBlock,
+)
+from deepmd.pt.model.descriptor.env_mat import (
+    prod_env_mat,
+)
+from deepmd.pt.model.network.mlp import (
+    MLPLayer,
+)
+from deepmd.pt.utils import (
+    env,
+)
+from deepmd.pt.utils.env import (
+    PRECISION_DICT,
+)
+from deepmd.pt.utils.env_mat_stat import (
+    EnvMatStatSe,
+)
+from deepmd.pt.utils.exclude_mask import (
+    PairExcludeMask,
+)
+from deepmd.pt.utils.spin import (
+    concat_switch_virtual,
+)
+from deepmd.pt.utils.utils import (
+    ActivationFn,
+)
+from deepmd.utils.env_mat_stat import (
+    StatItem,
+)
+from deepmd.utils.path import (
+    DPPath,
+)
+
+from .repflow_layer import (
+    RepFlowLayer,
+)
+
+if not hasattr(torch.ops.deepmd, "border_op"):
+
+    def border_op(
+        argument0,
+        argument1,
+        argument2,
+        argument3,
+        argument4,
+        argument5,
+        argument6,
+        argument7,
+        argument8,
+    ) -> torch.Tensor:
+        raise NotImplementedError(
+            "border_op is not available since customized PyTorch OP library is not built when freezing the model. "
+            "See documentation for DPA-3 for details."
+        )
+
+    # Note: this hack cannot actually save a model that can be run using LAMMPS.
+    torch.ops.deepmd.border_op = border_op
+
+
+@DescriptorBlock.register("se_repflow")
+class DescrptBlockRepflows(DescriptorBlock):
+    def __init__(
+        self,
+        e_rcut,
+        e_rcut_smth,
+        e_sel: int,
+        a_rcut,
+        a_rcut_smth,
+        a_sel: int,
+        ntypes: int,
+        nlayers: int = 6,
+        n_dim: int = 128,
+        e_dim: int = 64,
+        a_dim: int = 64,
+        axis_neuron: int = 4,
+        node_has_conv: bool = False,
+        update_angle: bool = True,
+        activation_function: str = "silu",
+        update_style: str = "res_residual",
+        update_residual: float = 0.1,
+        update_residual_init: str = "const",
+        set_davg_zero: bool = True,
+        exclude_types: list[tuple[int, int]] = [],
+        env_protection: float = 0.0,
+        precision: str = "float64",
+        seed: Optional[Union[int, list[int]]] = None,
+    ) -> None:
+        r"""
+        The repflow descriptor block.
+
+        Parameters
+        ----------
+        n_dim : int, optional
+            The dimension of node representation.
+        e_dim : int, optional
+            The dimension of edge representation.
+        a_dim : int, optional
+            The dimension of angle representation.
+        nlayers : int, optional
+            Number of repflow layers.
+        e_rcut : float, optional
+            The edge cut-off radius.
+        e_rcut_smth : float, optional
+            Where to start smoothing for edge. For example the 1/r term is smoothed from rcut to rcut_smth.
+        e_sel : int, optional
+            Maximally possible number of selected edge neighbors.
+        a_rcut : float, optional
+            The angle cut-off radius.
+        a_rcut_smth : float, optional
+            Where to start smoothing for angle. For example the 1/r term is smoothed from rcut to rcut_smth.
+        a_sel : int, optional
+            Maximally possible number of selected angle neighbors.
+        axis_neuron : int, optional
+            The number of dimension of submatrix in the symmetrization ops.
+        update_angle : bool, optional
+            Where to update the angle rep. If not, only node and edge rep will be used.
+        update_style : str, optional
+            Style to update a representation.
+            Supported options are:
+            -'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n)
+            -'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)
+            -'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n)
+            where `r1`, `r2` ... `r3` are residual weights defined by `update_residual`
+            and `update_residual_init`.
+        update_residual : float, optional
+            When update using residual mode, the initial std of residual vector weights.
+        update_residual_init : str, optional
+            When update using residual mode, the initialization mode of residual vector weights.
+        ntypes : int
+            Number of element types
+        activation_function : str, optional
+            The activation function in the embedding net.
+        set_davg_zero : bool, optional
+            Set the normalization average to zero.
+        precision : str, optional
+            The precision of the embedding net parameters.
+        exclude_types : list[list[int]], optional
+            The excluded pairs of types which have no interaction with each other.
+            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+        env_protection : float, optional
+            Protection parameter to prevent division by zero errors during environment matrix calculations.
+            For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
+        seed : int, optional
+            Random seed for parameter initialization.
+        """
+        super().__init__()
+        self.e_rcut = float(e_rcut)
+        self.e_rcut_smth = float(e_rcut_smth)
+        self.e_sel = e_sel
+        self.a_rcut = float(a_rcut)
+        self.a_rcut_smth = float(a_rcut_smth)
+        self.a_sel = a_sel
+        self.ntypes = ntypes
+        self.nlayers = nlayers
+        # for other common desciptor method
+        sel = [e_sel] if isinstance(e_sel, int) else e_sel
+        self.nnei = sum(sel)
+        self.ndescrpt = self.nnei * 4  # use full descriptor.
+        assert len(sel) == 1
+        self.sel = sel
+        self.rcut = e_rcut
+        self.rcut_smth = e_rcut_smth
+        self.sec = self.sel
+        self.split_sel = self.sel
+        self.axis_neuron = axis_neuron
+        self.set_davg_zero = set_davg_zero
+
+        self.n_dim = n_dim
+        self.e_dim = e_dim
+        self.a_dim = a_dim
+        self.update_angle = update_angle
+        self.node_has_conv = node_has_conv
+
+        self.activation_function = activation_function
+        self.update_style = update_style
+        self.update_residual = update_residual
+        self.update_residual_init = update_residual_init
+        self.act = ActivationFn(activation_function)
+        self.prec = PRECISION_DICT[precision]
+        self.angle_embedding = torch.nn.Linear(
+            in_features=1,
+            out_features=self.a_dim,
+            bias=False,
+            dtype=self.prec,
+        )
+
+        # order matters, placed after the assignment of self.ntypes
+        self.reinit_exclude(exclude_types)
+        self.env_protection = env_protection
+        self.precision = precision
+        self.epsilon = 1e-4
+        self.seed = seed
+
+        self.edge_embd = MLPLayer(
+            1, self.e_dim, precision=precision, seed=child_seed(seed, 0)
+        )
+        layers = []
+        for ii in range(nlayers):
+            layers.append(
+                RepFlowLayer(
+                    e_rcut=self.e_rcut,
+                    e_rcut_smth=self.e_rcut_smth,
+                    e_sel=self.sel,
+                    a_rcut=self.a_rcut,
+                    a_rcut_smth=self.a_rcut_smth,
+                    a_sel=self.a_sel,
+                    ntypes=self.ntypes,
+                    n_dim=self.n_dim,
+                    e_dim=self.e_dim,
+                    a_dim=self.a_dim,
+                    axis_neuron=self.axis_neuron,
+                    update_g1_has_conv=self.node_has_conv,  # tmp
+                    update_angle=self.update_angle,
+                    activation_function=self.activation_function,
+                    update_style=self.update_style,
+                    update_residual=self.update_residual,
+                    update_residual_init=self.update_residual_init,
+                    precision=precision,
+                    seed=child_seed(child_seed(seed, 1), ii),
+                )
+            )
+        self.layers = torch.nn.ModuleList(layers)
+
+        wanted_shape = (self.ntypes, self.nnei, 4)
+        mean = torch.zeros(wanted_shape, dtype=self.prec, device=env.DEVICE)
+        stddev = torch.ones(wanted_shape, dtype=self.prec, device=env.DEVICE)
+        self.register_buffer("mean", mean)
+        self.register_buffer("stddev", stddev)
+        self.stats = None
+
+    def get_rcut(self) -> float:
+        """Returns the cut-off radius."""
+        return self.e_rcut
+
+    def get_rcut_smth(self) -> float:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        return self.e_rcut_smth
+
+    def get_nsel(self) -> int:
+        """Returns the number of selected atoms in the cut-off radius."""
+        return sum(self.sel)
+
+    def get_sel(self) -> list[int]:
+        """Returns the number of selected atoms for each type."""
+        return self.sel
+
+    def get_ntypes(self) -> int:
+        """Returns the number of element types."""
+        return self.ntypes
+
+    def get_dim_out(self) -> int:
+        """Returns the output dimension."""
+        return self.dim_out
+
+    def get_dim_in(self) -> int:
+        """Returns the input dimension."""
+        return self.dim_in
+
+    def get_dim_emb(self) -> int:
+        """Returns the embedding dimension g2."""
+        return self.e_dim
+
+    def __setitem__(self, key, value) -> None:
+        if key in ("avg", "data_avg", "davg"):
+            self.mean = value
+        elif key in ("std", "data_std", "dstd"):
+            self.stddev = value
+        else:
+            raise KeyError(key)
+
+    def __getitem__(self, key):
+        if key in ("avg", "data_avg", "davg"):
+            return self.mean
+        elif key in ("std", "data_std", "dstd"):
+            return self.stddev
+        else:
+            raise KeyError(key)
+
+    def mixed_types(self) -> bool:
+        """If true, the descriptor
+        1. assumes total number of atoms aligned across frames;
+        2. requires a neighbor list that does not distinguish different atomic types.
+
+        If false, the descriptor
+        1. assumes total number of atoms of each atom type aligned across frames;
+        2. requires a neighbor list that distinguishes different atomic types.
+
+        """
+        return True
+
+    def get_env_protection(self) -> float:
+        """Returns the protection of building environment matrix."""
+        return self.env_protection
+
+    @property
+    def dim_out(self):
+        """Returns the output dimension of this descriptor."""
+        return self.n_dim
+
+    @property
+    def dim_in(self):
+        """Returns the atomic input dimension of this descriptor."""
+        return self.n_dim
+
+    @property
+    def dim_emb(self):
+        """Returns the embedding dimension g2."""
+        return self.get_dim_emb()
+
+    def reinit_exclude(
+        self,
+        exclude_types: list[tuple[int, int]] = [],
+    ) -> None:
+        self.exclude_types = exclude_types
+        self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
+
+    def forward(
+        self,
+        nlist: torch.Tensor,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        extended_atype_embd: Optional[torch.Tensor] = None,
+        mapping: Optional[torch.Tensor] = None,
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+    ):
+        if comm_dict is None:
+            assert mapping is not None
+            assert extended_atype_embd is not None
+        nframes, nloc, nnei = nlist.shape
+        nall = extended_coord.view(nframes, -1).shape[1] // 3
+        atype = extended_atype[:, :nloc]
+        # nb x nloc x nnei
+        exclude_mask = self.emask(nlist, extended_atype)
+        nlist = torch.where(exclude_mask != 0, nlist, -1)
+        # nb x nloc x nnei x 4, nb x nloc x nnei x 3, nb x nloc x nnei x 1
+        dmatrix, diff, sw = prod_env_mat(
+            extended_coord,
+            nlist,
+            atype,
+            self.mean,
+            self.stddev,
+            self.e_rcut,
+            self.e_rcut_smth,
+            protection=self.env_protection,
+        )
+        nlist_mask = nlist != -1
+        sw = torch.squeeze(sw, -1)
+        # beyond the cutoff sw should be 0.0
+        sw = sw.masked_fill(~nlist_mask, 0.0)
+
+        # [nframes, nloc, tebd_dim]
+        if comm_dict is None:
+            assert isinstance(extended_atype_embd, torch.Tensor)  # for jit
+            atype_embd = extended_atype_embd[:, :nloc, :]
+            assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
+        else:
+            atype_embd = extended_atype_embd
+        assert isinstance(atype_embd, torch.Tensor)  # for jit
+        g1 = self.act(atype_embd)
+        ng1 = g1.shape[-1]
+        # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
+        g2, h2 = torch.split(dmatrix, [1, 3], dim=-1)
+        # nb x nloc x nnei x ng2
+        g2 = self.act(self.edge_embd(g2))
+
+        # get angle nlist (maybe smaller)
+        a_dist_mask = (torch.linalg.norm(diff, dim=-1) < self.a_rcut)[
+            :, :, : self.a_sel
+        ]
+        angle_nlist = nlist[:, :, : self.a_sel]
+        angle_nlist = torch.where(a_dist_mask, angle_nlist, -1)
+        _, angle_diff, angle_sw = prod_env_mat(
+            extended_coord,
+            angle_nlist,
+            atype,
+            self.mean[:, : self.a_sel],
+            self.stddev[:, : self.a_sel],
+            self.a_rcut,
+            self.a_rcut_smth,
+            protection=self.env_protection,
+        )
+        angle_nlist_mask = angle_nlist != -1
+        angle_sw = torch.squeeze(angle_sw, -1)
+        # beyond the cutoff sw should be 0.0
+        angle_sw = angle_sw.masked_fill(~angle_nlist_mask, 0.0)
+        angle_nlist[angle_nlist == -1] = 0
+
+        # nf x nloc x a_nnei x 3
+        normalized_diff_i = angle_diff / (
+            torch.linalg.norm(angle_diff, dim=-1, keepdim=True) + 1e-6
+        )
+        # nf x nloc x 3 x a_nnei
+        normalized_diff_j = torch.transpose(normalized_diff_i, 2, 3)
+        # nf x nloc x a_nnei x a_nnei
+        # 1 - 1e-6 for torch.acos stability
+        cosine_ij = torch.matmul(normalized_diff_i, normalized_diff_j) * (1 - 1e-6)
+        # nf x nloc x a_nnei x a_nnei x 1
+        cosine_ij = cosine_ij.unsqueeze(-1) / (torch.pi**0.5)
+        # nf x nloc x a_nnei x a_nnei x a_dim
+        angle_embed = self.angle_embedding(cosine_ij).reshape(
+            nframes, nloc, self.a_sel, self.a_sel, self.a_dim
+        )
+
+        # set all padding positions to index of 0
+        # if the a neighbor is real or not is indicated by nlist_mask
+        nlist[nlist == -1] = 0
+        # nb x nall x ng1
+        if comm_dict is None:
+            assert mapping is not None
+            mapping = (
+                mapping.view(nframes, nall).unsqueeze(-1).expand(-1, -1, self.n_dim)
+            )
+        for idx, ll in enumerate(self.layers):
+            # g1:     nb x nloc x ng1
+            # g1_ext: nb x nall x ng1
+            if comm_dict is None:
+                assert mapping is not None
+                g1_ext = torch.gather(g1, 1, mapping)
+            else:
+                has_spin = "has_spin" in comm_dict
+                if not has_spin:
+                    n_padding = nall - nloc
+                    g1 = torch.nn.functional.pad(
+                        g1.squeeze(0), (0, 0, 0, n_padding), value=0.0
+                    )
+                    real_nloc = nloc
+                    real_nall = nall
+                else:
+                    # for spin
+                    real_nloc = nloc // 2
+                    real_nall = nall // 2
+                    real_n_padding = real_nall - real_nloc
+                    g1_real, g1_virtual = torch.split(g1, [real_nloc, real_nloc], dim=1)
+                    # mix_g1: nb x real_nloc x (ng1 * 2)
+                    mix_g1 = torch.cat([g1_real, g1_virtual], dim=2)
+                    # nb x real_nall x (ng1 * 2)
+                    g1 = torch.nn.functional.pad(
+                        mix_g1.squeeze(0), (0, 0, 0, real_n_padding), value=0.0
+                    )
+
+                assert "send_list" in comm_dict
+                assert "send_proc" in comm_dict
+                assert "recv_proc" in comm_dict
+                assert "send_num" in comm_dict
+                assert "recv_num" in comm_dict
+                assert "communicator" in comm_dict
+                ret = torch.ops.deepmd.border_op(
+                    comm_dict["send_list"],
+                    comm_dict["send_proc"],
+                    comm_dict["recv_proc"],
+                    comm_dict["send_num"],
+                    comm_dict["recv_num"],
+                    g1,
+                    comm_dict["communicator"],
+                    torch.tensor(
+                        real_nloc,
+                        dtype=torch.int32,
+                        device=env.DEVICE,
+                    ),  # should be int of c++
+                    torch.tensor(
+                        real_nall - real_nloc,
+                        dtype=torch.int32,
+                        device=env.DEVICE,
+                    ),  # should be int of c++
+                )
+                g1_ext = ret[0].unsqueeze(0)
+                if has_spin:
+                    g1_real_ext, g1_virtual_ext = torch.split(g1_ext, [ng1, ng1], dim=2)
+                    g1_ext = concat_switch_virtual(
+                        g1_real_ext, g1_virtual_ext, real_nloc
+                    )
+            g1, g2, h2, angle_embed = ll.forward(
+                g1_ext,
+                g2,
+                h2,
+                angle_embed,
+                nlist,
+                nlist_mask,
+                sw,
+                angle_nlist,
+                angle_nlist_mask,
+                angle_sw,
+            )
+
+        # nb x nloc x 3 x ng2
+        h2g2 = RepFlowLayer._cal_hg(
+            g2,
+            h2,
+            nlist_mask,
+            sw,
+            smooth=True,
+            epsilon=self.epsilon,
+            use_sqrt_nnei=True,
+        )
+        # (nb x nloc) x ng2 x 3
+        rot_mat = torch.permute(h2g2, (0, 1, 3, 2))
+
+        return g1, g2, h2, rot_mat.view(nframes, nloc, self.dim_emb, 3), sw
+
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], list[dict]], list[dict]],
+        path: Optional[DPPath] = None,
+    ) -> None:
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
+        env_mat_stat = EnvMatStatSe(self)
+        if path is not None:
+            path = path / env_mat_stat.get_hash()
+        if path is None or not path.is_dir():
+            if callable(merged):
+                # only get data for once
+                sampled = merged()
+            else:
+                sampled = merged
+        else:
+            sampled = []
+        env_mat_stat.load_or_compute_stats(sampled, path)
+        self.stats = env_mat_stat.stats
+        mean, stddev = env_mat_stat()
+        if not self.set_davg_zero:
+            self.mean.copy_(
+                torch.tensor(mean, device=env.DEVICE, dtype=self.mean.dtype)
+            )
+        self.stddev.copy_(
+            torch.tensor(stddev, device=env.DEVICE, dtype=self.stddev.dtype)
+        )
+
+    def get_stats(self) -> dict[str, StatItem]:
+        """Get the statistics of the descriptor."""
+        if self.stats is None:
+            raise RuntimeError(
+                "The statistics of the descriptor has not been computed."
+            )
+        return self.stats
+
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor block has message passing."""
+        return True
+
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
+        return True
