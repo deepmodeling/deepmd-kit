@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import paddle
 
-from deepmd.pd.utils import (
-    decomp,
-)
-
 
 def phys2inter(
     coord: paddle.Tensor,
@@ -82,14 +78,11 @@ def to_face_distance(
 def b_to_face_distance(cell):
     volume = paddle.linalg.det(cell)
     c_yz = paddle.cross(cell[:, 1], cell[:, 2], axis=-1)
-    # _h2yz = volume / paddle.linalg.norm(c_yz, axis=-1)
-    _h2yz = volume / decomp.norm(c_yz, axis=-1)
+    _h2yz = volume / paddle.linalg.norm(c_yz, axis=-1)
     c_zx = paddle.cross(cell[:, 2], cell[:, 0], axis=-1)
-    # _h2zx = volume / paddle.linalg.norm(c_zx, axis=-1)
-    _h2zx = volume / decomp.norm(c_zx, axis=-1)
+    _h2zx = volume / paddle.linalg.norm(c_zx, axis=-1)
     c_xy = paddle.cross(cell[:, 0], cell[:, 1], axis=-1)
-    # _h2xy = volume / paddle.linalg.norm(c_xy, axis=-1)
-    _h2xy = volume / decomp.norm(c_xy, axis=-1)
+    _h2xy = volume / paddle.linalg.norm(c_xy, axis=-1)
     return paddle.stack([_h2yz, _h2zx, _h2xy], axis=1)
 
 
