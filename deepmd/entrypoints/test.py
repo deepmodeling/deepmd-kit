@@ -780,17 +780,10 @@ def test_property(
         arrays with results and their shapes
     """
     property_name = dp.get_property_name()
-    property_dim = dp.get_property_dim()
-    assert isinstance(property_name, list)
-    assert isinstance(property_dim, list)
-    assert sum(property_dim) == dp.task_dim
-    assert (
-        len(property_name) == len(property_dim)
-    ), f"The shape of the `property_name` you provide must be consistent with the `property_dim`, but your `property_name` is {property_name} and your `property_dim` is {property_dim}!"
-    for name, dim in zip(property_name, property_dim):
-        data.add(name, dim, atomic=False, must=True, high_prec=True)
-        if has_atom_property:
-            data.add(f"atom_{name}", dim, atomic=True, must=False, high_prec=True)
+    assert isinstance(property_name, str)
+    data.add(property_name, dp.task_dim, atomic=False, must=True, high_prec=True)
+    if has_atom_property:
+        data.add(f"atom_{property_name}", dp.task_dim, atomic=True, must=False, high_prec=True)
 
     if dp.get_dim_fparam() > 0:
         data.add(
@@ -841,26 +834,12 @@ def test_property(
         aproperty = ret[1]
         aproperty = aproperty.reshape([numb_test, natoms * dp.task_dim])
 
-    concat_property = []
-    concat_aproperty = []
-    for name, dim in zip(property_name, property_dim):
-        test_data[name] = test_data[name].reshape([numb_test, dim])
-        concat_property.append(test_data[name])
-        if has_atom_property:
-            test_data[f"atom_{name}"] = test_data[f"atom_{name}"].reshape(
-                [numb_test, natoms * dim]
-            )
-            concat_aproperty.append(test_data[f"atom_{name}"])
-    test_data["property"] = np.concatenate(concat_property, axis=1)
-    if has_atom_property:
-        test_data["atom_property"] = np.concatenate(concat_aproperty, axis=1)
-
-    diff_property = property - test_data["property"][:numb_test]
+    diff_property = property - test_data[property_name][:numb_test]
     mae_property = mae(diff_property)
     rmse_property = rmse(diff_property)
 
     if has_atom_property:
-        diff_aproperty = aproperty - test_data["atom_property"][:numb_test]
+        diff_aproperty = aproperty - test_data[f"atom_{property_name}"][:numb_test]
         mae_aproperty = mae(diff_aproperty)
         rmse_aproperty = rmse(diff_aproperty)
 
@@ -877,13 +856,13 @@ def test_property(
         detail_path = Path(detail_file)
 
         for ii in range(numb_test):
-            test_out = test_data["property"][ii].reshape(-1, 1)
+            test_out = test_data[property_name][ii].reshape(-1, 1)
             pred_out = property[ii].reshape(-1, 1)
 
             frame_output = np.hstack((test_out, pred_out))
 
             save_txt_file(
-                detail_path.with_suffix(f".property.out.{ii}"),
+                detail_path.with_suffix(f".{property_name}.out.{ii}"),
                 frame_output,
                 header=f"{system} - {ii}: data_property pred_property",
                 append=append_detail,
@@ -891,13 +870,13 @@ def test_property(
 
         if has_atom_property:
             for ii in range(numb_test):
-                test_out = test_data["atom_property"][ii].reshape(-1, 1)
+                test_out = test_data[f"atom_{property_name}"][ii].reshape(-1, 1)
                 pred_out = aproperty[ii].reshape(-1, 1)
 
                 frame_output = np.hstack((test_out, pred_out))
 
                 save_txt_file(
-                    detail_path.with_suffix(f".aproperty.out.{ii}"),
+                    detail_path.with_suffix(f".a{property_name}.out.{ii}"),
                     frame_output,
                     header=f"{system} - {ii}: data_aproperty pred_aproperty",
                     append=append_detail,

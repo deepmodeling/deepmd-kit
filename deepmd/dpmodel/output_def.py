@@ -187,11 +187,6 @@ class OutputVariableDef:
           If the derivatives of variable have magnetic parts.
     intensive : bool
           It indicates whether the fitting property is intensive or extensive.
-    sub_var_name: Optional[Union[list[str], str]]
-          It is only useful in the property fitting. When one wants to fit multiple properties,
-          I need a uniform key "property" to manage these multiple properties, which can be seen as sub-names of "property".
-          For example, when one wants to fit "humo" and "lumo" which store in "humo.npy" and "lumo.npy",
-          the `sub_var_name` of "property" is ["humo", "lumo"].
     """
 
     def __init__(
@@ -206,7 +201,6 @@ class OutputVariableDef:
         r_hessian: bool = False,
         magnetic: bool = False,
         intensive: bool = False,
-        sub_var_name: Optional[Union[list[str], str]] = None,
     ) -> None:
         self.name = name
         self.shape = list(shape)
@@ -230,9 +224,6 @@ class OutputVariableDef:
         self.r_hessian = r_hessian
         self.magnetic = magnetic
         self.intensive = intensive
-        if isinstance(sub_var_name, str):
-            sub_var_name = [sub_var_name]
-        self.sub_var_name = sub_var_name
         if self.r_hessian:
             if not self.reducible:
                 raise ValueError("only reducible variable can calculate hessian")

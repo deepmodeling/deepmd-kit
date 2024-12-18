@@ -102,6 +102,7 @@ class DeepProperty(DeepEval):
             The properties of the system, in shape (nframes, num_tasks).
         """
         self.change_output_def()
+
         (
             coords,
             cells,
@@ -141,13 +142,9 @@ class DeepProperty(DeepEval):
         """Get whether the property is intensive."""
         return self.deep_eval.get_intensive()
 
-    def get_property_name(self) -> Union[list[str], str]:
-        """Get the names of the properties."""
+    def get_property_name(self) -> str:
+        """Get the name of the fitting property."""
         return self.deep_eval.get_property_name()
-
-    def get_property_dim(self) -> Union[list[int], int]:
-        """Get the dimensions of the properties."""
-        return self.deep_eval.get_property_dim()
 
 
 __all__ = ["DeepProperty"]

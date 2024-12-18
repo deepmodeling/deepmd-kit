@@ -24,8 +24,7 @@ class PropertyLoss(TaskLoss):
     def __init__(
         self,
         task_dim,
-        property_name: Union[str, list],
-        property_dim: Union[int, list],
+        property_name: str,
         loss_func: str = "smooth_mae",
         metric: list = ["mae"],
         beta: float = 1.00,
@@ -51,16 +50,7 @@ class PropertyLoss(TaskLoss):
         self.loss_func = loss_func
         self.metric = metric
         self.beta = beta
-        if isinstance(property_name, str):
-            property_name = [property_name]
-        if isinstance(property_dim, int):
-            property_dim = [property_dim]
         self.property_name = property_name
-        assert self.task_dim == sum(property_dim)
-        assert (
-            len(property_name) == len(property_dim)
-        ), f"The shape of the `property_name` you provide must be consistent with the `property_dim`, but your `property_name` is {property_name} and your `property_dim` is {property_dim}!"
-        self.property_name_dim_mapping = dict(zip(property_name, property_dim))
         self.out_bias = out_bias
         self.out_std = out_std
 
@@ -88,18 +78,9 @@ class PropertyLoss(TaskLoss):
             Other losses for display.
         """
         model_pred = model(**input_dict)
-        nbz = model_pred["property"].shape[0]
-        assert model_pred["property"].shape == (nbz, self.task_dim)
-
-        concat_property = []
-        for property_name in self.property_name:
-            assert label[property_name].shape == (
-                nbz,
-                self.property_name_dim_mapping[property_name],
-            )
-            concat_property.append(label[property_name])
-        label["property"] = torch.cat(concat_property, dim=1)
-        assert label["property"].shape == (nbz, self.task_dim)
+        nbz = model_pred[self.property_name].shape[0]
+        assert model_pred[self.property_name].shape == (nbz, self.task_dim)
+        assert label[self.property_name].shape == (nbz, self.task_dim)
 
         if self.out_std is None:
             out_std = model.atomic_model.out_std[0][0]
@@ -129,28 +110,28 @@ class PropertyLoss(TaskLoss):
         # loss
         if self.loss_func == "smooth_mae":
             loss += F.smooth_l1_loss(
-                (label["property"] - out_bias) / out_std,
-                (model_pred["property"] - out_bias) / out_std,
+                (label[self.property_name] - out_bias) / out_std,
+                (model_pred[self.property_name] - out_bias) / out_std,
                 reduction="sum",
                 beta=self.beta,
             )
         elif self.loss_func == "mae":
             loss += F.l1_loss(
-                (label["property"] - out_bias) / out_std,
-                (model_pred["property"] - out_bias) / out_std,
+                (label[self.property_name] - out_bias) / out_std,
+                (model_pred[self.property_name] - out_bias) / out_std,
                 reduction="sum",
             )
         elif self.loss_func == "mse":
             loss += F.mse_loss(
-                (label["property"] - out_bias) / out_std,
-                (model_pred["property"] - out_bias) / out_std,
+                (label[self.property_name] - out_bias) / out_std,
+                (model_pred[self.property_name] - out_bias) / out_std,
                 reduction="sum",
             )
         elif self.loss_func == "rmse":
             loss += torch.sqrt(
                 F.mse_loss(
-                    (label["property"] - out_bias) / out_std,
-                    (model_pred["property"] - out_bias) / out_std,
+                    (label[self.property_name] - out_bias) / out_std,
+                    (model_pred[self.property_name] - out_bias) / out_std,
                     reduction="mean",
                 )
             )
@@ -160,28 +141,28 @@ class PropertyLoss(TaskLoss):
         # more loss
         if "smooth_mae" in self.metric:
             more_loss["smooth_mae"] = F.smooth_l1_loss(
-                label["property"],
-                model_pred["property"],
+                label[self.property_name],
+                model_pred[self.property_name],
                 reduction="mean",
                 beta=self.beta,
             ).detach()
         if "mae" in self.metric:
             more_loss["mae"] = F.l1_loss(
-                label["property"],
-                model_pred["property"],
+                label[self.property_name],
+                model_pred[self.property_name],
                 reduction="mean",
             ).detach()
         if "mse" in self.metric:
             more_loss["mse"] = F.mse_loss(
-                label["property"],
-                model_pred["property"],
+                label[self.property_name],
+                model_pred[self.property_name],
                 reduction="mean",
             ).detach()
         if "rmse" in self.metric:
             more_loss["rmse"] = torch.sqrt(
                 F.mse_loss(
-                    label["property"],
-                    model_pred["property"],
+                    label[self.property_name],
+                    model_pred[self.property_name],
                     reduction="mean",
                 )
             ).detach()
@@ -192,14 +173,13 @@ class PropertyLoss(TaskLoss):
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         label_requirement = []
-        for property_name in self.property_name:
-            label_requirement.append(
-                DataRequirementItem(
-                    property_name,
-                    ndof=self.property_name_dim_mapping[property_name],
-                    atomic=False,
-                    must=True,
-                    high_prec=True,
-                )
+        label_requirement.append(
+            DataRequirementItem(
+                self.property_name,
+                ndof=self.task_dim,
+                atomic=False,
+                must=True,
+                high_prec=True,
             )
+        )
         return label_requirement

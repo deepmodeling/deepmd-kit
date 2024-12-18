@@ -42,13 +42,8 @@ class PropertyFittingNet(InvarFitting):
     intensive
             Whether the fitting property is intensive.
     property_name:
-            The names of fitting properties, which should be consistent with the property names in the dataset.
-            If the data file is named `humo.npy`, this parameter should be "humo" or ["humo"].
-            If you want to fit two properties at the same time, supposing that the data files are named `humo.npy` and `lumo.npy`,
-            this parameter should be `["humo", "lumo"]`.
-    property_dim:
-            The dimensions of fitting properties, which should be consistent with the property dimensions in the dataset.
-            Note that the order here must be the same as the order of `property_name`.
+            The name of fitting property, which should be consistent with the property name in the dataset.
+            If the data file is named `humo.npy`, this parameter should be "humo".
     resnet_dt
             Time-step `dt` in the resnet construction:
             :math:`y = x + dt * \phi (Wx + b)`
@@ -78,8 +73,7 @@ class PropertyFittingNet(InvarFitting):
         rcond: Optional[float] = None,
         trainable: Union[bool, list[bool]] = True,
         intensive: bool = False,
-        property_name: Union[str, list] = "property",
-        property_dim: Union[int, list] = 1,
+        property_name: str = "property",
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -94,14 +88,9 @@ class PropertyFittingNet(InvarFitting):
     ) -> None:
         self.task_dim = task_dim
         self.intensive = intensive
-        if isinstance(property_name, str):
-            property_name = [property_name]
         self.property_name = property_name
-        if isinstance(property_dim, int):
-            property_dim = [property_dim]
-        self.property_dim = property_dim
         super().__init__(
-            var_name="property",
+            var_name=property_name,
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             dim_out=task_dim,
@@ -143,7 +132,6 @@ class PropertyFittingNet(InvarFitting):
             "task_dim": self.task_dim,
             "intensive": self.intensive,
             "property_name": self.property_name,
-            "property_dim": self.property_dim,
         }
         dd["@version"] = 4
 

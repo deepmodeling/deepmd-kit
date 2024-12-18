@@ -1578,9 +1578,9 @@ def fitting_property():
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_seed = "Random seed for parameter initialization of the fitting net"
+    doc_task_dim = "The dimension of outputs of fitting net"
     doc_intensive = "Whether the fitting property is intensive"
-    doc_property_name = "The names of fitting properties, which should be consistent with the property names in the dataset."
-    doc_property_dim = "The dimensions of fitting properties, which should be consistent with the property dimensions in the dataset."
+    doc_property_name = "The names of fitting property, which should be consistent with the property name in the dataset."
     return [
         Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
         Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
@@ -1609,19 +1609,13 @@ def fitting_property():
         Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
         Argument("precision", str, optional=True, default="default", doc=doc_precision),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
+        Argument("task_dim", int, optional=True, default=1, doc=doc_task_dim),
         Argument("intensive", bool, optional=True, default=False, doc=doc_intensive),
         Argument(
             "property_name",
             [str, list],
             optional=False,
             doc=doc_property_name,
-        ),
-        Argument(
-            "property_dim",
-            [int, list],
-            optional=True,
-            default=1,
-            doc=doc_property_dim,
         ),
     ]
 

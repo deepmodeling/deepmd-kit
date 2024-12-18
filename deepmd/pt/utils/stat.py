@@ -243,7 +243,7 @@ def compute_output_stats(
     rcond: Optional[float] = None,
     preset_bias: Optional[dict[str, list[Optional[np.ndarray]]]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
-    atomic_output: Optional[FittingOutputDef] = None,
+    property_fitting: bool = False,
 ):
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -273,8 +273,8 @@ def compute_output_stats(
         If not None, the model will be utilized to generate the original energy prediction,
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
-    atomic_output : FittingOutputDef, optional
-        The output of atomic model.
+    property_fitting : bool, optional
+        If the type of fitting net is property.
     """
     # try to restore the bias from stat file
     bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
@@ -291,13 +291,6 @@ def compute_output_stats(
         # remove the keys that are not in the sample
         keys = [keys] if isinstance(keys, str) else keys
         assert isinstance(keys, list)
-        if "property" in atomic_output.var_defs:
-            sub_keys = []
-            for key in keys:
-                if atomic_output.var_defs[key].sub_var_name is not None:
-                    sub_keys.extend(atomic_output.var_defs[key].sub_var_name)
-            del keys
-            keys = sub_keys
         new_keys = [
             ii
             for ii in keys
@@ -370,7 +363,7 @@ def compute_output_stats(
             rcond,
             preset_bias,
             model_pred_g,
-            atomic_output,
+            property_fitting,
         )
         bias_atom_a, std_atom_a = compute_output_stats_atomic(
             sampled,
@@ -381,16 +374,6 @@ def compute_output_stats(
 
         # merge global/atomic bias
         bias_atom_e, std_atom_e = {}, {}
-        keys = (
-            ["property"]
-            if (
-                "property" in atomic_output.var_defs
-                and (
-                    ii in keys for ii in atomic_output.var_defs["property"].sub_var_name
-                )
-            )
-            else keys
-        )
         for kk in keys:
             # use atomic bias whenever available
             if kk in bias_atom_a:
@@ -423,7 +406,7 @@ def compute_output_stats_global(
     rcond: Optional[float] = None,
     preset_bias: Optional[dict[str, list[Optional[np.ndarray]]]] = None,
     model_pred: Optional[dict[str, np.ndarray]] = None,
-    atomic_output: Optional[FittingOutputDef] = None,
+    property_fitting: bool = False,
 ):
     """This function only handle stat computation from reduced global labels."""
     # return directly if model predict is empty for global
@@ -494,7 +477,7 @@ def compute_output_stats_global(
     std_atom_e = {}
     for kk in keys:
         if kk in stats_input:
-            if "property" in atomic_output.var_defs:
+            if property_fitting:
                 bias_atom_e[kk], std_atom_e[kk] = compute_stats_property(
                     stats_input[kk],
                     merged_natoms[kk],
@@ -510,24 +493,9 @@ def compute_output_stats_global(
         else:
             # this key does not have global labels, skip it.
             continue
-    if "property" in atomic_output.var_defs:
-        concat_bias = []
-        concat_std = []
-        for ii in atomic_output.var_defs["property"].sub_var_name:
-            assert ii in bias_atom_e.keys()
-            assert ii in std_atom_e.keys()
-            concat_bias.append(bias_atom_e[ii])
-            concat_std.append(std_atom_e[ii])
-        bias_atom_e = {"property": np.concatenate(concat_bias, axis=-1)}
-        std_atom_e = {
-            "property": np.tile(
-                np.concatenate(concat_std, axis=-1),
-                (bias_atom_e["property"].shape[0], 1),
-            )
-        }
 
+    if property_fitting:
         return bias_atom_e, std_atom_e
-
     bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
 
     # unbias_e is only used for print rmse

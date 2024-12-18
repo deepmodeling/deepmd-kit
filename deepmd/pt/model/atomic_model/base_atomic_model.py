@@ -456,7 +456,6 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 model_forward=self._get_forward_wrapper_func(),
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,
-                atomic_output=self.atomic_output_def(),
             )
             self._store_out_stat(delta_bias, out_std, add=True)
         elif bias_adjust_mode == "set-by-statistic":
@@ -467,7 +466,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 stat_file_path=stat_file_path,
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,
-                atomic_output=self.atomic_output_def(),
+                property_fitting=("property_name" in vars(self.fitting_net)),
             )
             self._store_out_stat(bias_out, std_out)
         else:
