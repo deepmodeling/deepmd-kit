@@ -62,17 +62,9 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
             do_atomic_virial=do_atomic_virial,
         )
         model_predict = {}
-<<<<<<< HEAD
         model_predict["atom_property"] = model_ret["property"]
         model_predict["property"] = model_ret["property_redu"]
-=======
-        model_predict[f"atom_{self.get_property_name()}"] = model_ret[
-            self.get_property_name()
-        ]
-        model_predict[self.get_property_name()] = model_ret[
-            f"{self.get_property_name()}_redu"
-        ]
->>>>>>> dbf394c21ebeec756fa086c3facbcc16fb7ac516
+
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
         return model_predict
@@ -116,17 +108,9 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
             extra_nlist_sort=self.need_sorted_nlist_for_lower(),
         )
         model_predict = {}
-<<<<<<< HEAD
         model_predict["atom_property"] = model_ret["property"]
         model_predict["property"] = model_ret["property_redu"]
-=======
-        model_predict[f"atom_{self.get_property_name()}"] = model_ret[
-            self.get_property_name()
-        ]
-        model_predict[self.get_property_name()] = model_ret[
-            f"{self.get_property_name()}_redu"
-        ]
->>>>>>> dbf394c21ebeec756fa086c3facbcc16fb7ac516
+
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
         return model_predict
