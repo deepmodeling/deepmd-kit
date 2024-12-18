@@ -141,5 +141,9 @@ class DeepProperty(DeepEval):
         """Get whether the property is intensive."""
         return self.deep_eval.get_intensive()
 
+    def get_property_name(self) -> str:
+        """Get the name of the fitting property."""
+        return self.deep_eval.get_property_name()
+
 
 __all__ = ["DeepProperty"]

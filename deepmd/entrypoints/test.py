@@ -779,9 +779,17 @@ def test_property(
     tuple[list[np.ndarray], list[int]]
         arrays with results and their shapes
     """
-    data.add("property", dp.task_dim, atomic=False, must=True, high_prec=True)
+    property_name = dp.get_property_name()
+    assert isinstance(property_name, str)
+    data.add(property_name, dp.task_dim, atomic=False, must=True, high_prec=True)
     if has_atom_property:
-        data.add("atom_property", dp.task_dim, atomic=True, must=False, high_prec=True)
+        data.add(
+            f"atom_{property_name}",
+            dp.task_dim,
+            atomic=True,
+            must=False,
+            high_prec=True,
+        )
 
     if dp.get_dim_fparam() > 0:
         data.add(
@@ -832,12 +840,12 @@ def test_property(
         aproperty = ret[1]
         aproperty = aproperty.reshape([numb_test, natoms * dp.task_dim])
 
-    diff_property = property - test_data["property"][:numb_test]
+    diff_property = property - test_data[property_name][:numb_test]
     mae_property = mae(diff_property)
     rmse_property = rmse(diff_property)
 
     if has_atom_property:
-        diff_aproperty = aproperty - test_data["atom_property"][:numb_test]
+        diff_aproperty = aproperty - test_data[f"atom_{property_name}"][:numb_test]
         mae_aproperty = mae(diff_aproperty)
         rmse_aproperty = rmse(diff_aproperty)
 

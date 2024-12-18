@@ -64,6 +64,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         model_predict = {}
         model_predict["atom_property"] = model_ret["property"]
         model_predict["property"] = model_ret["property_redu"]
+
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
         return model_predict
@@ -77,6 +78,11 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
     def get_intensive(self) -> bool:
         """Get whether the property is intensive."""
         return self.model_output_def()["property"].intensive
+
+    @torch.jit.export
+    def get_property_name(self) -> str:
+        """Get the name of the property."""
+        return self.get_fitting_net().property_name
 
     @torch.jit.export
     def forward_lower(
@@ -104,6 +110,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         model_predict = {}
         model_predict["atom_property"] = model_ret["property"]
         model_predict["property"] = model_ret["property_redu"]
+
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
         return model_predict

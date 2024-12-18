@@ -184,6 +184,10 @@ class DeepEval(DeepEvalBackend):
     def get_intensive(self) -> bool:
         return self.dp.model["Default"].get_intensive()
 
+    def get_property_name(self) -> str:
+        """Get the name of the property."""
+        return self.dp.model["Default"].get_property_name()
+
     @property
     def model_type(self) -> type["DeepEvalWrapper"]:
         """The the evaluator of the model type."""
