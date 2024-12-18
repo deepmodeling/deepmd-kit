@@ -86,7 +86,6 @@ class DescrptBlockRepflows(DescriptorBlock):
         e_dim: int = 64,
         a_dim: int = 64,
         axis_neuron: int = 4,
-        node_has_conv: bool = False,
         update_angle: bool = True,
         activation_function: str = "silu",
         update_style: str = "res_residual",
@@ -182,7 +181,6 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.e_dim = e_dim
         self.a_dim = a_dim
         self.update_angle = update_angle
-        self.node_has_conv = node_has_conv
 
         self.activation_function = activation_function
         self.update_style = update_style
@@ -190,12 +188,6 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.update_residual_init = update_residual_init
         self.act = ActivationFn(activation_function)
         self.prec = PRECISION_DICT[precision]
-        self.angle_embedding = torch.nn.Linear(
-            in_features=1,
-            out_features=self.a_dim,
-            bias=False,
-            dtype=self.prec,
-        )
 
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
@@ -206,6 +198,9 @@ class DescrptBlockRepflows(DescriptorBlock):
 
         self.edge_embd = MLPLayer(
             1, self.e_dim, precision=precision, seed=child_seed(seed, 0)
+        )
+        self.angle_embd = MLPLayer(
+            1, self.a_dim, precision=precision, bias=False, seed=child_seed(seed, 1)
         )
         layers = []
         for ii in range(nlayers):
@@ -222,7 +217,6 @@ class DescrptBlockRepflows(DescriptorBlock):
                     e_dim=self.e_dim,
                     a_dim=self.a_dim,
                     axis_neuron=self.axis_neuron,
-                    update_g1_has_conv=self.node_has_conv,  # tmp
                     update_angle=self.update_angle,
                     activation_function=self.activation_function,
                     update_style=self.update_style,
@@ -270,7 +264,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         return self.dim_in
 
     def get_dim_emb(self) -> int:
-        """Returns the embedding dimension g2."""
+        """Returns the embedding dimension e_dim."""
         return self.e_dim
 
     def __setitem__(self, key, value) -> None:
@@ -317,7 +311,7 @@ class DescrptBlockRepflows(DescriptorBlock):
 
     @property
     def dim_emb(self):
-        """Returns the embedding dimension g2."""
+        """Returns the embedding dimension e_dim."""
         return self.get_dim_emb()
 
     def reinit_exclude(
@@ -369,22 +363,22 @@ class DescrptBlockRepflows(DescriptorBlock):
         else:
             atype_embd = extended_atype_embd
         assert isinstance(atype_embd, torch.Tensor)  # for jit
-        g1 = self.act(atype_embd)
-        ng1 = g1.shape[-1]
+        node_ebd = self.act(atype_embd)
+        n_dim = node_ebd.shape[-1]
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
-        g2, h2 = torch.split(dmatrix, [1, 3], dim=-1)
-        # nb x nloc x nnei x ng2
-        g2 = self.act(self.edge_embd(g2))
+        edge_input, h2 = torch.split(dmatrix, [1, 3], dim=-1)
+        # nb x nloc x nnei x e_dim
+        edge_ebd = self.act(self.edge_embd(edge_input))
 
         # get angle nlist (maybe smaller)
         a_dist_mask = (torch.linalg.norm(diff, dim=-1) < self.a_rcut)[
             :, :, : self.a_sel
         ]
-        angle_nlist = nlist[:, :, : self.a_sel]
-        angle_nlist = torch.where(a_dist_mask, angle_nlist, -1)
-        _, angle_diff, angle_sw = prod_env_mat(
+        a_nlist = nlist[:, :, : self.a_sel]
+        a_nlist = torch.where(a_dist_mask, a_nlist, -1)
+        _, a_diff, a_sw = prod_env_mat(
             extended_coord,
-            angle_nlist,
+            a_nlist,
             atype,
             self.mean[:, : self.a_sel],
             self.stddev[:, : self.a_sel],
@@ -392,15 +386,15 @@ class DescrptBlockRepflows(DescriptorBlock):
             self.a_rcut_smth,
             protection=self.env_protection,
         )
-        angle_nlist_mask = angle_nlist != -1
-        angle_sw = torch.squeeze(angle_sw, -1)
+        a_nlist_mask = a_nlist != -1
+        a_sw = torch.squeeze(a_sw, -1)
         # beyond the cutoff sw should be 0.0
-        angle_sw = angle_sw.masked_fill(~angle_nlist_mask, 0.0)
-        angle_nlist[angle_nlist == -1] = 0
+        a_sw = a_sw.masked_fill(~a_nlist_mask, 0.0)
+        a_nlist[a_nlist == -1] = 0
 
         # nf x nloc x a_nnei x 3
-        normalized_diff_i = angle_diff / (
-            torch.linalg.norm(angle_diff, dim=-1, keepdim=True) + 1e-6
+        normalized_diff_i = a_diff / (
+            torch.linalg.norm(a_diff, dim=-1, keepdim=True) + 1e-6
         )
         # nf x nloc x 3 x a_nnei
         normalized_diff_j = torch.transpose(normalized_diff_i, 2, 3)
@@ -410,31 +404,31 @@ class DescrptBlockRepflows(DescriptorBlock):
         # nf x nloc x a_nnei x a_nnei x 1
         cosine_ij = cosine_ij.unsqueeze(-1) / (torch.pi**0.5)
         # nf x nloc x a_nnei x a_nnei x a_dim
-        angle_embed = self.angle_embedding(cosine_ij).reshape(
+        angle_ebd = self.angle_embd(cosine_ij).reshape(
             nframes, nloc, self.a_sel, self.a_sel, self.a_dim
         )
 
         # set all padding positions to index of 0
         # if the a neighbor is real or not is indicated by nlist_mask
         nlist[nlist == -1] = 0
-        # nb x nall x ng1
+        # nb x nall x n_dim
         if comm_dict is None:
             assert mapping is not None
             mapping = (
                 mapping.view(nframes, nall).unsqueeze(-1).expand(-1, -1, self.n_dim)
             )
         for idx, ll in enumerate(self.layers):
-            # g1:     nb x nloc x ng1
-            # g1_ext: nb x nall x ng1
+            # node_ebd:     nb x nloc x n_dim
+            # node_ebd_ext: nb x nall x n_dim
             if comm_dict is None:
                 assert mapping is not None
-                g1_ext = torch.gather(g1, 1, mapping)
+                node_ebd_ext = torch.gather(node_ebd, 1, mapping)
             else:
                 has_spin = "has_spin" in comm_dict
                 if not has_spin:
                     n_padding = nall - nloc
-                    g1 = torch.nn.functional.pad(
-                        g1.squeeze(0), (0, 0, 0, n_padding), value=0.0
+                    node_ebd = torch.nn.functional.pad(
+                        node_ebd.squeeze(0), (0, 0, 0, n_padding), value=0.0
                     )
                     real_nloc = nloc
                     real_nall = nall
@@ -443,12 +437,14 @@ class DescrptBlockRepflows(DescriptorBlock):
                     real_nloc = nloc // 2
                     real_nall = nall // 2
                     real_n_padding = real_nall - real_nloc
-                    g1_real, g1_virtual = torch.split(g1, [real_nloc, real_nloc], dim=1)
-                    # mix_g1: nb x real_nloc x (ng1 * 2)
-                    mix_g1 = torch.cat([g1_real, g1_virtual], dim=2)
-                    # nb x real_nall x (ng1 * 2)
-                    g1 = torch.nn.functional.pad(
-                        mix_g1.squeeze(0), (0, 0, 0, real_n_padding), value=0.0
+                    node_ebd_real, node_ebd_virtual = torch.split(
+                        node_ebd, [real_nloc, real_nloc], dim=1
+                    )
+                    # mix_node_ebd: nb x real_nloc x (n_dim * 2)
+                    mix_node_ebd = torch.cat([node_ebd_real, node_ebd_virtual], dim=2)
+                    # nb x real_nall x (n_dim * 2)
+                    node_ebd = torch.nn.functional.pad(
+                        mix_node_ebd.squeeze(0), (0, 0, 0, real_n_padding), value=0.0
                     )
 
                 assert "send_list" in comm_dict
@@ -463,7 +459,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                     comm_dict["recv_proc"],
                     comm_dict["send_num"],
                     comm_dict["recv_num"],
-                    g1,
+                    node_ebd,
                     comm_dict["communicator"],
                     torch.tensor(
                         real_nloc,
@@ -476,39 +472,33 @@ class DescrptBlockRepflows(DescriptorBlock):
                         device=env.DEVICE,
                     ),  # should be int of c++
                 )
-                g1_ext = ret[0].unsqueeze(0)
+                node_ebd_ext = ret[0].unsqueeze(0)
                 if has_spin:
-                    g1_real_ext, g1_virtual_ext = torch.split(g1_ext, [ng1, ng1], dim=2)
-                    g1_ext = concat_switch_virtual(
-                        g1_real_ext, g1_virtual_ext, real_nloc
+                    node_ebd_real_ext, node_ebd_virtual_ext = torch.split(
+                        node_ebd_ext, [n_dim, n_dim], dim=2
                     )
-            g1, g2, h2, angle_embed = ll.forward(
-                g1_ext,
-                g2,
+                    node_ebd_ext = concat_switch_virtual(
+                        node_ebd_real_ext, node_ebd_virtual_ext, real_nloc
+                    )
+            node_ebd, edge_ebd, angle_ebd = ll.forward(
+                node_ebd_ext,
+                edge_ebd,
                 h2,
-                angle_embed,
+                angle_ebd,
                 nlist,
                 nlist_mask,
                 sw,
-                angle_nlist,
-                angle_nlist_mask,
-                angle_sw,
+                a_nlist,
+                a_nlist_mask,
+                a_sw,
             )
 
-        # nb x nloc x 3 x ng2
-        h2g2 = RepFlowLayer._cal_hg(
-            g2,
-            h2,
-            nlist_mask,
-            sw,
-            smooth=True,
-            epsilon=self.epsilon,
-            use_sqrt_nnei=True,
-        )
-        # (nb x nloc) x ng2 x 3
+        # nb x nloc x 3 x e_dim
+        h2g2 = RepFlowLayer._cal_hg(edge_ebd, h2, nlist_mask, sw)
+        # (nb x nloc) x e_dim x 3
         rot_mat = torch.permute(h2g2, (0, 1, 3, 2))
 
-        return g1, g2, h2, rot_mat.view(nframes, nloc, self.dim_emb, 3), sw
+        return node_ebd, edge_ebd, h2, rot_mat.view(nframes, nloc, self.dim_emb, 3), sw
 
     def compute_input_stats(
         self,

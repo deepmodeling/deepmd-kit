@@ -1482,7 +1482,6 @@ def dpa3_repflow_args():
             default=4,
             doc=doc_axis_neuron,
         ),
-        Argument("node_has_conv", bool, optional=True, default=False, doc="TMP"),
         Argument(
             "update_angle",
             bool,

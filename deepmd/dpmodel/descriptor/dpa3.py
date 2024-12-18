@@ -15,7 +15,6 @@ class RepFlowArgs:
         a_rcut_smth: float = 3.5,
         a_sel: int = 20,
         axis_neuron: int = 4,
-        node_has_conv: bool = False,
         update_angle: bool = True,
         update_style: str = "res_residual",
         update_residual: float = 0.1,
@@ -73,7 +72,6 @@ class RepFlowArgs:
         self.a_rcut_smth = a_rcut_smth
         self.a_sel = a_sel
         self.axis_neuron = axis_neuron
-        self.node_has_conv = node_has_conv  # tmp
         self.update_angle = update_angle
         self.update_style = update_style
         self.update_residual = update_residual
@@ -98,7 +96,6 @@ class RepFlowArgs:
             "a_rcut_smth": self.a_rcut_smth,
             "a_sel": self.a_sel,
             "axis_neuron": self.axis_neuron,
-            "node_has_conv": self.node_has_conv,  # tmp
             "update_angle": self.update_angle,
             "update_style": self.update_style,
             "update_residual": self.update_residual,
