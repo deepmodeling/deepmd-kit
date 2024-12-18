@@ -243,7 +243,7 @@ def compute_output_stats(
     rcond: Optional[float] = None,
     preset_bias: Optional[dict[str, list[Optional[np.ndarray]]]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
-    property_fitting: bool = False,
+    property_name: Optional[str] = None,
 ):
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -273,8 +273,10 @@ def compute_output_stats(
         If not None, the model will be utilized to generate the original energy prediction,
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
-    property_fitting : bool, optional
-        If the type of fitting net is property.
+    property_name : str, optional
+        It is only useful in property fitting.
+        This parameter is not none indicating using property fitting.
+        Then we calculate the mean and std of label instead of bias.
     """
     # try to restore the bias from stat file
     bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
@@ -290,6 +292,8 @@ def compute_output_stats(
 
         # remove the keys that are not in the sample
         keys = [keys] if isinstance(keys, str) else keys
+        if property_name is not None:
+            keys += [property_name]
         assert isinstance(keys, list)
         new_keys = [
             ii
@@ -363,7 +367,7 @@ def compute_output_stats(
             rcond,
             preset_bias,
             model_pred_g,
-            property_fitting,
+            property_name,
         )
         bias_atom_a, std_atom_a = compute_output_stats_atomic(
             sampled,
@@ -374,6 +378,7 @@ def compute_output_stats(
 
         # merge global/atomic bias
         bias_atom_e, std_atom_e = {}, {}
+        keys = ["property"] if (property_name is not None) else keys
         for kk in keys:
             # use atomic bias whenever available
             if kk in bias_atom_a:
@@ -406,7 +411,7 @@ def compute_output_stats_global(
     rcond: Optional[float] = None,
     preset_bias: Optional[dict[str, list[Optional[np.ndarray]]]] = None,
     model_pred: Optional[dict[str, np.ndarray]] = None,
-    property_fitting: bool = False,
+    property_name: Optional[str] = None,
 ):
     """This function only handle stat computation from reduced global labels."""
     # return directly if model predict is empty for global
@@ -475,14 +480,17 @@ def compute_output_stats_global(
 
     bias_atom_e = {}
     std_atom_e = {}
+
     for kk in keys:
         if kk in stats_input:
-            if property_fitting:
-                bias_atom_e[kk], std_atom_e[kk] = compute_stats_property(
+            if property_name is not None:
+                assert len(keys) == 1
+                bias_atom_e["property"], std_atom_e["property"] = compute_stats_property(
                     stats_input[kk],
                     merged_natoms[kk],
                     assigned_bias=assigned_atom_ener[kk],
                 )
+                return bias_atom_e, std_atom_e
             else:
                 bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
                     stats_input[kk],
@@ -493,9 +501,7 @@ def compute_output_stats_global(
         else:
             # this key does not have global labels, skip it.
             continue
-
-    if property_fitting:
-        return bias_atom_e, std_atom_e
+        
     bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
 
     # unbias_e is only used for print rmse

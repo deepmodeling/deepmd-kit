@@ -102,7 +102,6 @@ class DeepProperty(DeepEval):
             The properties of the system, in shape (nframes, num_tasks).
         """
         self.change_output_def()
-
         (
             coords,
             cells,

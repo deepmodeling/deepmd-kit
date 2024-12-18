@@ -1613,7 +1613,7 @@ def fitting_property():
         Argument("intensive", bool, optional=True, default=False, doc=doc_intensive),
         Argument(
             "property_name",
-            [str, list],
+            str,
             optional=False,
             doc=doc_property_name,
         ),

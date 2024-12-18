@@ -24,6 +24,7 @@ class DPPropertyAtomicModel(DPAtomicModel):
         atype: np.ndarray,
     ):
         """Apply the stat to each atomic output.
+
         In property fitting, each output will be multiplied by label std and then plus the label average value.
 
         Parameters

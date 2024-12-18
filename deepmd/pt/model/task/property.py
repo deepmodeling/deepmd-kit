@@ -95,7 +95,7 @@ class PropertyFittingNet(InvarFitting):
         self.intensive = intensive
         self.property_name = property_name
         super().__init__(
-            var_name=property_name,
+            var_name="property",
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             dim_out=task_dim,

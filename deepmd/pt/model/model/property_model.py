@@ -38,8 +38,8 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
     def translated_output_def(self):
         out_def_data = self.model_output_def().get_data()
         output_def = {
-            f"atom_{self.get_property_name()}": out_def_data[self.get_property_name()],
-            self.get_property_name(): out_def_data[f"{self.get_property_name()}_redu"],
+            "atom_property": out_def_data["property"],
+            "property": out_def_data["property_redu"],
         }
         if "mask" in out_def_data:
             output_def["mask"] = out_def_data["mask"]
@@ -63,8 +63,8 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
             do_atomic_virial=do_atomic_virial,
         )
         model_predict = {}
-        model_predict[f"atom_{self.get_property_name()}"] = model_ret[self.get_property_name()]
-        model_predict[self.get_property_name()] = model_ret[f"{self.get_property_name()}_redu"]
+        model_predict["atom_property"] = model_ret["property"]
+        model_predict["property"] = model_ret["property_redu"]
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
         return model_predict
@@ -77,7 +77,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
     @torch.jit.export
     def get_intensive(self) -> bool:
         """Get whether the property is intensive."""
-        return self.model_output_def()[self.get_property_name()].intensive
+        return self.model_output_def()["property"].intensive
 
     @torch.jit.export
     def get_property_name(self) -> str:
@@ -108,8 +108,8 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
             extra_nlist_sort=self.need_sorted_nlist_for_lower(),
         )
         model_predict = {}
-        model_predict[f"atom_{self.get_property_name()}"] = model_ret[self.get_property_name()]
-        model_predict[self.get_property_name()] = model_ret[f"{self.get_property_name()}_redu"]
+        model_predict["atom_property"] = model_ret["property"]
+        model_predict["property"] = model_ret["property_redu"]
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
         return model_predict

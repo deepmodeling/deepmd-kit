@@ -78,9 +78,10 @@ class PropertyLoss(TaskLoss):
             Other losses for display.
         """
         model_pred = model(**input_dict)
-        nbz = model_pred[self.property_name].shape[0]
-        assert model_pred[self.property_name].shape == (nbz, self.task_dim)
-        assert label[self.property_name].shape == (nbz, self.task_dim)
+        nbz = model_pred["property"].shape[0]
+        assert model_pred["property"].shape == (nbz, self.task_dim)
+        label["property"] = label[self.property_name]
+        assert label["property"].shape == (nbz, self.task_dim)
 
         if self.out_std is None:
             out_std = model.atomic_model.out_std[0][0]
@@ -110,28 +111,28 @@ class PropertyLoss(TaskLoss):
         # loss
         if self.loss_func == "smooth_mae":
             loss += F.smooth_l1_loss(
-                (label[self.property_name] - out_bias) / out_std,
-                (model_pred[self.property_name] - out_bias) / out_std,
+                (label["property"] - out_bias) / out_std,
+                (model_pred["property"] - out_bias) / out_std,
                 reduction="sum",
                 beta=self.beta,
             )
         elif self.loss_func == "mae":
             loss += F.l1_loss(
-                (label[self.property_name] - out_bias) / out_std,
-                (model_pred[self.property_name] - out_bias) / out_std,
+                (label["property"] - out_bias) / out_std,
+                (model_pred["property"] - out_bias) / out_std,
                 reduction="sum",
             )
         elif self.loss_func == "mse":
             loss += F.mse_loss(
-                (label[self.property_name] - out_bias) / out_std,
-                (model_pred[self.property_name] - out_bias) / out_std,
+                (label["property"] - out_bias) / out_std,
+                (model_pred["property"] - out_bias) / out_std,
                 reduction="sum",
             )
         elif self.loss_func == "rmse":
             loss += torch.sqrt(
                 F.mse_loss(
-                    (label[self.property_name] - out_bias) / out_std,
-                    (model_pred[self.property_name] - out_bias) / out_std,
+                    (label["property"] - out_bias) / out_std,
+                    (model_pred["property"] - out_bias) / out_std,
                     reduction="mean",
                 )
             )
@@ -141,28 +142,28 @@ class PropertyLoss(TaskLoss):
         # more loss
         if "smooth_mae" in self.metric:
             more_loss["smooth_mae"] = F.smooth_l1_loss(
-                label[self.property_name],
-                model_pred[self.property_name],
+                label["property"],
+                model_pred["property"],
                 reduction="mean",
                 beta=self.beta,
             ).detach()
         if "mae" in self.metric:
             more_loss["mae"] = F.l1_loss(
-                label[self.property_name],
-                model_pred[self.property_name],
+                label["property"],
+                model_pred["property"],
                 reduction="mean",
             ).detach()
         if "mse" in self.metric:
             more_loss["mse"] = F.mse_loss(
-                label[self.property_name],
-                model_pred[self.property_name],
+                label["property"],
+                model_pred["property"],
                 reduction="mean",
             ).detach()
         if "rmse" in self.metric:
             more_loss["rmse"] = torch.sqrt(
                 F.mse_loss(
-                    label[self.property_name],
-                    model_pred[self.property_name],
+                    label["property"],
+                    model_pred["property"],
                     reduction="mean",
                 )
             ).detach()
