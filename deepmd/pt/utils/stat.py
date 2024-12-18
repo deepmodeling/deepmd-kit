@@ -12,9 +12,6 @@ from typing import (
 import numpy as np
 import torch
 
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-)
 from deepmd.pt.utils import (
     AtomExcludeMask,
 )

@@ -783,7 +783,13 @@ def test_property(
     assert isinstance(property_name, str)
     data.add(property_name, dp.task_dim, atomic=False, must=True, high_prec=True)
     if has_atom_property:
-        data.add(f"atom_{property_name}", dp.task_dim, atomic=True, must=False, high_prec=True)
+        data.add(
+            f"atom_{property_name}",
+            dp.task_dim,
+            atomic=True,
+            must=False,
+            high_prec=True,
+        )
 
     if dp.get_dim_fparam() > 0:
         data.add(

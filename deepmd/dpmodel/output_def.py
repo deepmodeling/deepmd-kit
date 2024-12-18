@@ -3,10 +3,6 @@ import functools
 from enum import (
     IntEnum,
 )
-from typing import (
-    Optional,
-    Union,
-)
 
 
 def check_shape(
