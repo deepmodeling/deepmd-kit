@@ -39,6 +39,8 @@ class ActivationFn(torch.nn.Module):
             return F.softplus(x)
         elif self.activation.lower() == "sigmoid":
             return torch.sigmoid(x)
+        elif self.activation.lower() == "silu":
+            return F.silu(x)
         elif self.activation.lower() == "linear" or self.activation.lower() == "none":
             return x
         else:
