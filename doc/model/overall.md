@@ -57,6 +57,11 @@ DeePMD-kit implements the following descriptors:
 
 The fitting of the following physical properties is supported
 
-1. [`ener`](train-energy.md): Fit the energy of the system. The force (derivative with atom positions) and the virial (derivative with the box tensor) can also be trained.
+1. [`ener`](train-energy.md): Fit the energy of the system. The force (derivative with atom positions), the virial (derivative with the box tensor) and the hessian (second-order derivative with atom positions) can also be trained.
+
+:::{warning}
+Due to the restrictions of torch jit script, the models trained with hessian are not jitable so that the frozen models cannot output hessians.
+:::
+
 2. [`dipole`](train-fitting-tensor.md): The dipole moment.
 3. [`polar`](train-fitting-tensor.md): The polarizability.

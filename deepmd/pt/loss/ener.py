@@ -411,3 +411,75 @@ class EnergyStdLoss(TaskLoss):
                 )
             )
         return label_requirement
+
+
+class EnergyHessianStdLoss(EnergyStdLoss):
+    def __init__(
+        self,
+        start_pref_h=0.0,
+        limit_pref_h=0.0,
+        **kwargs,
+    ):
+        r"""Enable the layer to compute loss on hessian.
+
+        Parameters
+        ----------
+        start_pref_h : float
+            The prefactor of hessian loss at the start of the training.
+        limit_pref_h : float
+            The prefactor of hessian loss at the end of the training.
+        **kwargs
+            Other keyword arguments.
+        """
+        super().__init__(**kwargs)
+        self.has_h = (start_pref_h != 0.0 and limit_pref_h != 0.0) or self.inference
+
+        self.start_pref_h = start_pref_h
+        self.limit_pref_h = limit_pref_h
+
+    def forward(self, input_dict, model, label, natoms, learning_rate, mae=False):
+        model_pred, loss, more_loss = super().forward(
+            input_dict, model, label, natoms, learning_rate, mae=mae
+        )
+        coef = learning_rate / self.starter_learning_rate
+        pref_h = self.limit_pref_h + (self.start_pref_h - self.limit_pref_h) * coef
+
+        if self.has_h and "hessian" in model_pred and "hessian" in label:
+            find_hessian = label.get("find_hessian", 0.0)
+            pref_h = pref_h * find_hessian
+            diff_h = label["hessian"].reshape(
+                -1,
+            ) - model_pred["hessian"].reshape(
+                -1,
+            )
+            l2_hessian_loss = torch.mean(torch.square(diff_h))
+            if not self.inference:
+                more_loss["l2_hessian_loss"] = self.display_if_exist(
+                    l2_hessian_loss.detach(), find_hessian
+                )
+            loss += pref_h * l2_hessian_loss
+            rmse_h = l2_hessian_loss.sqrt()
+            more_loss["rmse_h"] = self.display_if_exist(rmse_h.detach(), find_hessian)
+            if mae:
+                mae_h = torch.mean(torch.abs(diff_h))
+                more_loss["mae_h"] = self.display_if_exist(mae_h.detach(), find_hessian)
+
+        if not self.inference:
+            more_loss["rmse"] = torch.sqrt(loss.detach())
+        return model_pred, loss, more_loss
+
+    @property
+    def label_requirement(self) -> list[DataRequirementItem]:
+        """Add hessian label requirement needed for this loss calculation."""
+        label_requirement = super().label_requirement
+        if self.has_h:
+            label_requirement.append(
+                DataRequirementItem(
+                    "hessian",
+                    ndof=1,  # 9=3*3 --> 3N*3N=ndof*natoms*natoms
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                )
+            )
+        return label_requirement
