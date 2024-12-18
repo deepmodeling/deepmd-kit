@@ -95,6 +95,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         precision: str = "float64",
+        skip_static: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
         r"""
@@ -176,6 +177,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.split_sel = self.sel
         self.axis_neuron = axis_neuron
         self.set_davg_zero = set_davg_zero
+        self.skip_static = skip_static
 
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -231,6 +233,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         wanted_shape = (self.ntypes, self.nnei, 4)
         mean = torch.zeros(wanted_shape, dtype=self.prec, device=env.DEVICE)
         stddev = torch.ones(wanted_shape, dtype=self.prec, device=env.DEVICE)
+        if self.skip_static:
+            stddev = stddev * 0.3
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
         self.stats = None
@@ -521,6 +525,8 @@ class DescrptBlockRepflows(DescriptorBlock):
             The path to the stat file.
 
         """
+        if self.skip_static and self.set_davg_zero:
+            return
         env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()

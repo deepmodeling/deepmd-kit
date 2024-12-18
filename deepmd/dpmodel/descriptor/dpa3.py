@@ -19,6 +19,7 @@ class RepFlowArgs:
         update_style: str = "res_residual",
         update_residual: float = 0.1,
         update_residual_init: str = "const",
+        skip_static: bool = False,
     ) -> None:
         r"""The constructor for the RepFlowArgs class which defines the parameters of the repflow block in DPA3 descriptor.
 
@@ -76,6 +77,7 @@ class RepFlowArgs:
         self.update_style = update_style
         self.update_residual = update_residual
         self.update_residual_init = update_residual_init
+        self.skip_static = skip_static
 
     def __getitem__(self, key):
         if hasattr(self, key):
