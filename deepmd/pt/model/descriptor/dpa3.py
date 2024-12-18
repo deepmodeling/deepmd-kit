@@ -270,7 +270,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         # share all parameters in type_embedding, repflow
         if shared_level == 0:
             self._modules["type_embedding"] = base_class._modules["type_embedding"]
-            self.repflows.share_params(base_class.repflow, 0, resume=resume)
+            self.repflows.share_params(base_class.repflows, 0, resume=resume)
         # shared_level: 1
         # share all parameters in type_embedding
         elif shared_level == 1:
