@@ -230,7 +230,7 @@ def train(
     use_pretrain_script: bool = False,
     force_load: bool = False,
     output: str = "out.json",
-):
+) -> None:
     log.info("Configuration path: %s", input_file)
     SummaryPrinter()()
     with open(input_file) as fin:
@@ -321,10 +321,18 @@ def train(
     # save min_nbor_dist
     if min_nbor_dist is not None:
         if not multi_task:
-            trainer.model.min_nbor_dist = min_nbor_dist
+            trainer.model.min_nbor_dist = paddle.to_tensor(
+                min_nbor_dist,
+                dtype=paddle.float64,
+                place=DEVICE,
+            )
         else:
             for model_item in min_nbor_dist:
-                trainer.model[model_item].min_nbor_dist = min_nbor_dist[model_item]
+                trainer.model[model_item].min_nbor_dist = paddle.to_tensor(
+                    min_nbor_dist[model_item],
+                    dtype=paddle.float64,
+                    place=DEVICE,
+                )
     trainer.run()
 
 
@@ -332,7 +340,7 @@ def freeze(
     model: str,
     output: str = "frozen_model.json",
     head: Optional[str] = None,
-):
+) -> None:
     paddle.set_flags(
         {
             "FLAGS_save_cf_stack_op": 1,
@@ -383,7 +391,7 @@ def change_bias(
     numb_batch: int = 0,
     model_branch: Optional[str] = None,
     output: Optional[str] = None,
-):
+) -> None:
     if input_file.endswith(".pd"):
         old_state_dict = paddle.load(input_file)
         model_state_dict = copy.deepcopy(old_state_dict.get("model", old_state_dict))
