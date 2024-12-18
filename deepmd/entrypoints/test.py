@@ -876,7 +876,7 @@ def test_property(
 
         if has_atom_property:
             for ii in range(numb_test):
-                test_out = test_data[f"atom_property"][ii].reshape(-1, 1)
+                test_out = test_data["atom_property"][ii].reshape(-1, 1)
                 pred_out = aproperty[ii].reshape(-1, 1)
 
                 frame_output = np.hstack((test_out, pred_out))

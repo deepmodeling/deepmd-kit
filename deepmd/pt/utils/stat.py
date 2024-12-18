@@ -482,10 +482,12 @@ def compute_output_stats_global(
         if kk in stats_input:
             if property_name is not None:
                 assert len(keys) == 1
-                bias_atom_e["property"], std_atom_e["property"] = compute_stats_property(
-                    stats_input[kk],
-                    merged_natoms[kk],
-                    assigned_bias=assigned_atom_ener[kk],
+                bias_atom_e["property"], std_atom_e["property"] = (
+                    compute_stats_property(
+                        stats_input[kk],
+                        merged_natoms[kk],
+                        assigned_bias=assigned_atom_ener[kk],
+                    )
                 )
                 return bias_atom_e, std_atom_e
             else:
@@ -498,7 +500,7 @@ def compute_output_stats_global(
         else:
             # this key does not have global labels, skip it.
             continue
-        
+
     bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
 
     # unbias_e is only used for print rmse
