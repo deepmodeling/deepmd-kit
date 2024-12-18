@@ -150,7 +150,9 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         self.config["model"] = deepcopy(model_se_e2_a)
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
+        # import paddle
         enable_prim(True)
+        # assert paddle.framework.core._is_eager_prim_enabled()
 
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
