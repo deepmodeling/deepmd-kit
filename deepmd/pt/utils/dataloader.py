@@ -96,8 +96,7 @@ class DpLoaderSet(Dataset):
         self.systems: list[DeepmdDataSetForLoader] = []
         global_rank = dist.get_rank() if dist.is_initialized() else 0
         if global_rank == 0:
-            if len(systems) >= 100:
-                log.info(f"Constructing DataLoaders from {len(systems)} systems")
+            log.info(f"Constructing DataLoaders from {len(systems)} systems")
             with Pool(os.cpu_count()) as pool:
                 self.systems = pool.map(construct_dataset, systems)
         else:
