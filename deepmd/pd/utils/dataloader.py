@@ -30,7 +30,6 @@ from paddle.io.dataloader.collate import (
     default_collate_fn,
 )
 
-from deepmd.utils import dp_random
 from deepmd.pd.utils import (
     env,
 )
@@ -39,6 +38,9 @@ from deepmd.pd.utils.dataset import (
 )
 from deepmd.pt.utils.utils import (
     mix_entropy,
+)
+from deepmd.utils import (
+    dp_random,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
