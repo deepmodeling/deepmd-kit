@@ -87,18 +87,16 @@ class DpLoaderSet(Dataset):
             with h5py.File(systems) as file:
                 systems = [os.path.join(systems, item) for item in file.keys()]
 
-        self.systems: list[DeepmdDataSetForLoader] = []
-
         def construct_dataset(system):
-            if len(systems) >= 100:
-                log.info(f"Constructing DataLoaders from {len(systems)} systems")
             return DeepmdDataSetForLoader(
                 system=system,
                 type_map=type_map,
             )
-
+        self.systems: list[DeepmdDataSetForLoader] = []
         global_rank = dist.get_rank() if dist.is_initialized() else 0
         if global_rank == 0:
+            if len(systems) >= 100:
+                log.info(f"Constructing DataLoaders from {len(systems)} systems")
             with Pool(os.cpu_count()) as pool:
                 self.systems = pool.map(construct_dataset, systems)
         else:
