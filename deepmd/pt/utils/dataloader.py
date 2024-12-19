@@ -92,6 +92,7 @@ class DpLoaderSet(Dataset):
                 system=system,
                 type_map=type_map,
             )
+
         self.systems: list[DeepmdDataSetForLoader] = []
         global_rank = dist.get_rank() if dist.is_initialized() else 0
         if global_rank == 0:
