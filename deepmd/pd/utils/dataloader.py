@@ -40,7 +40,7 @@ from deepmd.pt.utils.utils import (
     mix_entropy,
 )
 from deepmd.utils import (
-    dp_random,
+    random as dp_random,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
