@@ -36,6 +36,7 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.dataset import (
     DeepmdDataSetForLoader,
 )
+from deepmd.pt.utils.utils import mix_entropy
 from deepmd.utils.data import (
     DataRequirementItem,
 )
