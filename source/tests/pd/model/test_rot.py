@@ -176,7 +176,6 @@ class TestEnergyModelDPA1(unittest.TestCase, RotTest):
         self.model = get_model(model_params).to(env.DEVICE)
 
 
-@unittest.skip("Skip for not implemented yet")
 class TestEnergyModelDPA2(unittest.TestCase, RotTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa2)
