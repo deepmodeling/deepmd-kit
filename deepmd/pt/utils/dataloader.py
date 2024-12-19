@@ -100,7 +100,7 @@ class DpLoaderSet(Dataset):
             with Pool(os.cpu_count()) as pool:
                 self.systems = pool.map(construct_dataset, systems)
         else:
-            self.systems = [None] * len(systems) # type: ignore
+            self.systems = [None] * len(systems)  # type: ignore
         if dist.is_initialized():
             dist.broadcast_object_list(self.systems)
             assert self.systems[-1] is not None
