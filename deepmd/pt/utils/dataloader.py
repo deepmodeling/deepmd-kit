@@ -50,8 +50,10 @@ torch.multiprocessing.set_sharing_strategy("file_system")
 
 
 def setup_seed(seed) -> None:
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    if isinstance(seed, (list, tuple)):
+        mixed_seed = mix_entropy(seed)
+    torch.manual_seed(mixed_seed)
+    torch.cuda.manual_seed_all(mixed_seed)
     torch.backends.cudnn.deterministic = True
     dp_random.seed(seed)
 
