@@ -588,15 +588,14 @@ class Trainer:
         if self.opt_type == "Adam":
             self.scheduler = paddle.optimizer.lr.LambdaDecay(
                 learning_rate=self.lr_exp.start_lr,
-                lr_lambda=lambda step: warm_up_linear(
-                    step + self.start_step, self.warmup_steps
-                ),
+                lr_lambda=lambda step: warm_up_linear(step, self.warmup_steps),
             )
             self.optimizer = paddle.optimizer.Adam(
                 learning_rate=self.scheduler, parameters=self.wrapper.parameters()
             )
             if optimizer_state_dict is not None and self.restart_training:
                 self.optimizer.set_state_dict(optimizer_state_dict)
+                self.scheduler.last_epoch -= 1  # need to minus 1 to accurate
         else:
             raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
