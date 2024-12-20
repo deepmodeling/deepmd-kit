@@ -138,7 +138,7 @@ def get_trainer(
 
         # validation and training data
         # avoid the same batch sequence among devices
-        rank_seed = (seed + rank) % (2**32) if seed is not None else None
+        rank_seed = [rank, seed % (2**32)] if seed is not None else None
         validation_data_single = (
             DpLoaderSet(
                 validation_systems,
