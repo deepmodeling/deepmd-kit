@@ -478,7 +478,6 @@ def compute_output_stats_global(
 
     bias_atom_e = {}
     std_atom_e = {}
-
     for kk in keys:
         if kk in stats_input:
             if property_name is not None:
@@ -501,7 +500,6 @@ def compute_output_stats_global(
         else:
             # this key does not have global labels, skip it.
             continue
-
     bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
 
     # unbias_e is only used for print rmse

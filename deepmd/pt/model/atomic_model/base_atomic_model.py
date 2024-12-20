@@ -461,7 +461,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         elif bias_adjust_mode == "set-by-statistic":
             property_name = (
                 self.fitting_net.property_name
-                if "property_name" in vars(self.fitting_net)
+                if "property" in self.bias_keys
                 else None
             )
             bias_out, std_out = compute_output_stats(
