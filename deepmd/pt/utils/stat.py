@@ -290,7 +290,8 @@ def compute_output_stats(
         # remove the keys that are not in the sample
         keys = [keys] if isinstance(keys, str) else keys
         if property_name is not None:
-            keys += [property_name]
+            del keys
+            keys = [property_name]
         assert isinstance(keys, list)
         new_keys = [
             ii

@@ -95,14 +95,17 @@ class TestOutStat(unittest.TestCase):
         bias, std = compute_stats_property(self.output_redu, self.natoms)
         # Test shapes
         assert bias.shape == (len(self.mean), self.output_redu.shape[1])
-        assert std.shape == (self.output_redu.shape[1],)
+        assert std.shape == (len(self.mean), self.output_redu.shape[1])
 
         # Test values
         for fake_atom_bias in bias:
             np.testing.assert_allclose(
                 fake_atom_bias, np.mean(self.output_redu, axis=0), rtol=1e-7
             )
-        np.testing.assert_allclose(std, np.std(self.output_redu, axis=0), rtol=1e-7)
+        for fake_atom_std in std:
+            np.testing.assert_allclose(
+                fake_atom_std, np.std(self.output_redu, axis=0), rtol=1e-7
+            )
 
     def test_compute_stats_from_atomic(self) -> None:
         bias, std = compute_stats_from_atomic(self.output, self.atype)

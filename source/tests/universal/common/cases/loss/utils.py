@@ -26,9 +26,7 @@ class LossTestCase:
             [key for key in self.key_to_pref_map if self.key_to_pref_map[key] > 0]
         )
         if "property" in label_keys_expected:
-            for key in self.input_dict["property_name"]:
-                assert key in label_keys
-            assert len(self.input_dict["property_name"]) == len(label_keys)
+            assert [self.input_dict["property_name"]] == label_keys
         else:
             np.testing.assert_equal(label_keys_expected, label_keys)
 
