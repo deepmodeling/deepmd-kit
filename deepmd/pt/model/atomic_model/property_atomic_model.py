@@ -25,25 +25,17 @@ class DPPropertyAtomicModel(DPAtomicModel):
         atype: torch.Tensor,
     ):
         """Apply the stat to each atomic output.
-        This function defines how the bias is applied to the atomic output of the model.
+        In property fitting, each output will be multiplied by label std and then plus the label average value.
 
         Parameters
         ----------
         ret
             The returned dict by the forward_atomic method
         atype
-            The atom types. nf x nloc
+            The atom types. nf x nloc. It is useless in property fitting.
 
         """
-        if self.fitting_net.get_bias_method() == "normal":
-            out_bias, out_std = self._fetch_out_stat(self.bias_keys)
-            for kk in self.bias_keys:
-                # nf x nloc x odims, out_bias: ntypes x odims
-                ret[kk] = ret[kk] + out_bias[kk][atype]
-            return ret
-        elif self.fitting_net.get_bias_method() == "no_bias":
-            return ret
-        else:
-            raise NotImplementedError(
-                "Only 'normal' and 'no_bias' is supported for parameter 'bias_method'."
-            )
+        out_bias, out_std = self._fetch_out_stat(self.bias_keys)
+        for kk in self.bias_keys:
+            ret[kk] = ret[kk] * out_std[kk][0] + out_bias[kk][0]
+        return ret

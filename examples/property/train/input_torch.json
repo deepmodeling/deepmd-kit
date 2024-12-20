@@ -33,6 +33,7 @@
       "type": "property",
       "intensive": true,
       "task_dim": 3,
+      "property_name": "band_prop",
       "neuron": [
         240,
         240,
@@ -53,6 +54,11 @@
   },
   "loss": {
     "type": "property",
+    "metric": [
+      "mae"
+    ],
+    "loss_func": "smooth_mae",
+    "beta": 1.0,
     "_comment": " that's all"
   },
   "training": {

@@ -79,6 +79,11 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         return self.model_output_def()["property"].intensive
 
     @torch.jit.export
+    def get_property_name(self) -> str:
+        """Get the name of the property."""
+        return self.get_fitting_net().property_name
+
+    @torch.jit.export
     def forward_lower(
         self,
         extended_coord,

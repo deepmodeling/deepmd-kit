@@ -208,6 +208,8 @@ def FittingParamProperty(
         "dim_descrpt": dim_descrpt,
         "mixed_types": mixed_types,
         "type_map": type_map,
+        "task_dim": 3,
+        "property_name": "band_prop",
         "exclude_types": exclude_types,
         "seed": GLOBAL_SEED,
         "precision": precision,

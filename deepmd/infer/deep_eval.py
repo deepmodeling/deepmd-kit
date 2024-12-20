@@ -276,6 +276,10 @@ class DeepEvalBackend(ABC):
         """Check if the model has spin atom types."""
         return False
 
+    def get_property_name(self) -> str:
+        """Get the name of the fitting property."""
+        return NotImplementedError
+
     @abstractmethod
     def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model. Only used in old implement."""

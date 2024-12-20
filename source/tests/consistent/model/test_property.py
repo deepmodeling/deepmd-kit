@@ -56,6 +56,7 @@ class TestProperty(CommonTest, ModelTest, unittest.TestCase):
             "fitting_net": {
                 "type": "property",
                 "neuron": [4, 4, 4],
+                "property_name": "foo",
                 "resnet_dt": True,
                 "numb_fparam": 0,
                 "precision": "float64",

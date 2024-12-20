@@ -86,6 +86,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             "seed": 20240217,
             "task_dim": task_dim,
             "intensive": intensive,
+            "property_name": "foo",
         }
 
     @property

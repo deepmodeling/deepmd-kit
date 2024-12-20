@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from deepmd.dpmodel.atomic_model.dp_atomic_model import (
-    DPAtomicModel,
+from deepmd.dpmodel.atomic_model import (
+    DPPropertyAtomicModel,
 )
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
@@ -13,7 +13,7 @@ from .make_model import (
     make_model,
 )
 
-DPPropertyModel_ = make_model(DPAtomicModel)
+DPPropertyModel_ = make_model(DPPropertyAtomicModel)
 
 
 @BaseModel.register("property")

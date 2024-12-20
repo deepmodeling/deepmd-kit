@@ -6,6 +6,7 @@ import numpy as np
 from deepmd.utils.out_stat import (
     compute_stats_from_atomic,
     compute_stats_from_redu,
+    compute_stats_property,
 )
 
 
@@ -88,6 +89,23 @@ class TestOutStat(unittest.TestCase):
             self.natoms @ bias,
             rtol=1e-7,
         )
+
+    def test_compute_stats_property(self) -> None:
+        """Test compute_stats_property function with various scenarios."""
+        bias, std = compute_stats_property(self.output_redu, self.natoms)
+        # Test shapes
+        assert bias.shape == (len(self.mean), self.output_redu.shape[1])
+        assert std.shape == (len(self.mean), self.output_redu.shape[1])
+
+        # Test values
+        for fake_atom_bias in bias:
+            np.testing.assert_allclose(
+                fake_atom_bias, np.mean(self.output_redu, axis=0), rtol=1e-7
+            )
+        for fake_atom_std in std:
+            np.testing.assert_allclose(
+                fake_atom_std, np.std(self.output_redu, axis=0), rtol=1e-7
+            )
 
     def test_compute_stats_from_atomic(self) -> None:
         bias, std = compute_stats_from_atomic(self.output, self.atype)

@@ -12,9 +12,6 @@ from typing import (
 import numpy as np
 import torch
 
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-)
 from deepmd.pt.utils import (
     AtomExcludeMask,
 )
@@ -29,6 +26,7 @@ from deepmd.pt.utils.utils import (
 from deepmd.utils.out_stat import (
     compute_stats_from_atomic,
     compute_stats_from_redu,
+    compute_stats_property,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -242,7 +240,7 @@ def compute_output_stats(
     rcond: Optional[float] = None,
     preset_bias: Optional[dict[str, list[Optional[np.ndarray]]]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
-    atomic_output: Optional[FittingOutputDef] = None,
+    property_name: Optional[str] = None,
 ):
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -272,8 +270,10 @@ def compute_output_stats(
         If not None, the model will be utilized to generate the original energy prediction,
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
-    atomic_output : FittingOutputDef, optional
-        The output of atomic model.
+    property_name : str, optional
+        It is only useful in property fitting.
+        This parameter is not none indicating using property fitting.
+        Then we calculate the mean and std of label instead of bias.
     """
     # try to restore the bias from stat file
     bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
@@ -289,6 +289,9 @@ def compute_output_stats(
 
         # remove the keys that are not in the sample
         keys = [keys] if isinstance(keys, str) else keys
+        if property_name is not None:
+            del keys
+            keys = [property_name]
         assert isinstance(keys, list)
         new_keys = [
             ii
@@ -362,7 +365,7 @@ def compute_output_stats(
             rcond,
             preset_bias,
             model_pred_g,
-            atomic_output,
+            property_name,
         )
         bias_atom_a, std_atom_a = compute_output_stats_atomic(
             sampled,
@@ -373,6 +376,7 @@ def compute_output_stats(
 
         # merge global/atomic bias
         bias_atom_e, std_atom_e = {}, {}
+        keys = ["property"] if (property_name is not None) else keys
         for kk in keys:
             # use atomic bias whenever available
             if kk in bias_atom_a:
@@ -405,7 +409,7 @@ def compute_output_stats_global(
     rcond: Optional[float] = None,
     preset_bias: Optional[dict[str, list[Optional[np.ndarray]]]] = None,
     model_pred: Optional[dict[str, np.ndarray]] = None,
-    atomic_output: Optional[FittingOutputDef] = None,
+    property_name: Optional[str] = None,
 ):
     """This function only handle stat computation from reduced global labels."""
     # return directly if model predict is empty for global
@@ -476,19 +480,23 @@ def compute_output_stats_global(
     std_atom_e = {}
     for kk in keys:
         if kk in stats_input:
-            if atomic_output is not None and atomic_output.get_data()[kk].intensive:
-                task_dim = stats_input[kk].shape[1]
-                assert merged_natoms[kk].shape == (nf[kk], ntypes)
-                stats_input[kk] = (
-                    merged_natoms[kk].sum(axis=1).reshape(-1, 1) * stats_input[kk]
+            if property_name is not None:
+                assert len(keys) == 1
+                bias_atom_e["property"], std_atom_e["property"] = (
+                    compute_stats_property(
+                        stats_input[kk],
+                        merged_natoms[kk],
+                        assigned_bias=assigned_atom_ener[kk],
+                    )
                 )
-                assert stats_input[kk].shape == (nf[kk], task_dim)
-            bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
-                stats_input[kk],
-                merged_natoms[kk],
-                assigned_bias=assigned_atom_ener[kk],
-                rcond=rcond,
-            )
+                return bias_atom_e, std_atom_e
+            else:
+                bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
+                    stats_input[kk],
+                    merged_natoms[kk],
+                    assigned_bias=assigned_atom_ener[kk],
+                    rcond=rcond,
+                )
         else:
             # this key does not have global labels, skip it.
             continue
