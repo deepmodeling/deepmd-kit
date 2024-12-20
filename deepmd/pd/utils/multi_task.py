@@ -96,7 +96,9 @@ def preprocess_shared_params(model_config):
     shared_links = {}
     type_map_keys = []
 
-    def replace_one_item(params_dict, key_type, key_in_dict, suffix="", index=None):
+    def replace_one_item(
+        params_dict, key_type, key_in_dict, suffix="", index=None
+    ) -> None:
         shared_type = key_type
         shared_key = key_in_dict
         shared_level = 0

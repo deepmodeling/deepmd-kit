@@ -416,7 +416,6 @@ class TestEnergyModelDPA1(unittest.TestCase, PermutationTest):
         self.model = get_model(model_params).to(env.DEVICE)
 
 
-@unittest.skip("Skip for not implemented yet")
 class TestEnergyModelDPA2(unittest.TestCase, PermutationTest):
     def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa2)

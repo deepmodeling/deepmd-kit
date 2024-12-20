@@ -20,6 +20,7 @@ from ..common import (
 )
 from .test_permutation import (  # model_dpau,
     model_dpa1,
+    model_dpa2,
     model_se_e2_a,
 )
 
@@ -187,6 +188,36 @@ class TestEnergyModelDPA1Excl12(unittest.TestCase, SmoothTest):
         # error can be systematically removed by reducing epsilon
         self.epsilon = 1e-5
         self.aprec = 1e-5
+
+
+class TestEnergyModelDPA2(unittest.TestCase, SmoothTest):
+    def setUp(self) -> None:
+        model_params = copy.deepcopy(model_dpa2)
+        model_params["descriptor"]["repinit"]["rcut"] = 8
+        model_params["descriptor"]["repinit"]["rcut_smth"] = 3.5
+        self.type_split = True
+        self.model = get_model(model_params).to(env.DEVICE)
+        self.epsilon, self.aprec = 1e-5, 1e-4
+
+
+class TestEnergyModelDPA2_1(unittest.TestCase, SmoothTest):
+    def setUp(self) -> None:
+        model_params = copy.deepcopy(model_dpa2)
+        model_params["fitting_net"]["type"] = "ener"
+        self.type_split = True
+        self.test_virial = False
+        self.model = get_model(model_params).to(env.DEVICE)
+        self.epsilon, self.aprec = None, None
+
+
+class TestEnergyModelDPA2_2(unittest.TestCase, SmoothTest):
+    def setUp(self) -> None:
+        model_params = copy.deepcopy(model_dpa2)
+        model_params["fitting_net"]["type"] = "ener"
+        self.type_split = True
+        self.test_virial = False
+        self.model = get_model(model_params).to(env.DEVICE)
+        self.epsilon, self.aprec = None, None
 
 
 # class TestEnergyFoo(unittest.TestCase):

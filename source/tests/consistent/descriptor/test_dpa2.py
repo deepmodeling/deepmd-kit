@@ -17,6 +17,7 @@ from deepmd.env import (
 from ..common import (
     INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
+    INSTALLED_PD,
     INSTALLED_PT,
     CommonTest,
     parameterized,
@@ -34,6 +35,12 @@ if INSTALLED_JAX:
     from deepmd.jax.descriptor.dpa2 import DescrptDPA2 as DescrptDPA2JAX
 else:
     DescrptDPA2JAX = None
+
+if INSTALLED_PD:
+    from deepmd.pd.model.descriptor.dpa2 import DescrptDPA2 as DescrptDPA2PD
+else:
+    DescrptDPA2PD = None
+
 if INSTALLED_ARRAY_API_STRICT:
     from ...array_api_strict.descriptor.dpa2 import DescrptDPA2 as DescrptDPA2Strict
 else:
@@ -215,6 +222,39 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
         return CommonTest.skip_pt
 
     @property
+    def skip_pd(self) -> bool:
+        (
+            repinit_tebd_input_mode,
+            repinit_set_davg_zero,
+            repinit_type_one_side,
+            repinit_use_three_body,
+            repformer_update_g1_has_conv,
+            repformer_direct_dist,
+            repformer_update_g1_has_drrd,
+            repformer_update_g1_has_grrg,
+            repformer_update_g1_has_attn,
+            repformer_update_g2_has_g1g1,
+            repformer_update_g2_has_attn,
+            repformer_update_h2,
+            repformer_attn2_has_gate,
+            repformer_update_style,
+            repformer_update_residual_init,
+            repformer_set_davg_zero,
+            repformer_trainable_ln,
+            repformer_ln_eps,
+            repformer_use_sqrt_nnei,
+            repformer_g1_out_conv,
+            repformer_g1_out_mlp,
+            smooth,
+            exclude_types,
+            precision,
+            add_tebd_to_repinit_out,
+            use_econf_tebd,
+            use_tebd_bias,
+        ) = self.param
+        return not INSTALLED_PD or precision == "bfloat16"
+
+    @property
     def skip_dp(self) -> bool:
         (
             repinit_tebd_input_mode,
@@ -286,6 +326,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
     tf_class = DescrptDPA2TF
     dp_class = DescrptDPA2DP
     pt_class = DescrptDPA2PT
+    pd_class = DescrptDPA2PD
     jax_class = DescrptDPA2JAX
     array_api_strict_class = DescrptDPA2Strict
     args = descrpt_dpa2_args().append(Argument("ntypes", int, optional=False))
@@ -376,6 +417,16 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt(self, pt_obj: Any) -> Any:
         return self.eval_pt_descriptor(
             pt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def eval_pd(self, pd_obj: Any) -> Any:
+        return self.eval_pd_descriptor(
+            pd_obj,
             self.natoms,
             self.coords,
             self.atype,
