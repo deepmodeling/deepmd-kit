@@ -595,7 +595,7 @@ class Trainer:
             )
             if optimizer_state_dict is not None and self.restart_training:
                 self.optimizer.set_state_dict(optimizer_state_dict)
-                self.scheduler.last_epoch -= 1  # need to minus 1 to accurate
+                self.scheduler.last_epoch -= 1
         else:
             raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
