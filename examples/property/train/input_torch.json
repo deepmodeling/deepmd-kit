@@ -54,7 +54,9 @@
   },
   "loss": {
     "type": "property",
-    "metric": ["mae"],
+    "metric": [
+      "mae"
+    ],
     "loss_func": "smooth_mae",
     "beta": 1.0,
     "_comment": " that's all"

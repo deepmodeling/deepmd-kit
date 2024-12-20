@@ -43,7 +43,7 @@ The JSON of `property` type should be provided like
 
 ## Loss
 
-DeepProperty supports trainings of the global system (one or more global labels are provided in a frame). For example, when fitting `property`, each frame will provide a `1 x task_dim` vector which gives the fitting properties. 
+DeepProperty supports trainings of the global system (one or more global labels are provided in a frame). For example, when fitting `property`, each frame will provide a `1 x task_dim` vector which gives the fitting properties.
 
 The loss section should be provided like
 
@@ -64,6 +64,7 @@ The loss section should be provided like
 The label should be named `{property_name}.npy/raw`, `property_name` is defined by `fitting_net/property_name` in `input.json`.
 
 To prepare the data, you can use `dpdata` tools, for example:
+
 ```
 import dpdata
 import numpy as np
@@ -133,7 +134,7 @@ dp --pt train input.json
 The detailed loss can be found in `lcurve.out`:
 
 ```
-# step        mae_val     mae_trn   lr      
+# step        mae_val     mae_trn   lr
 # If there is no available reference data, rmse_*_{val,trn} will print nan
       1      2.72e-02    2.40e-02    2.0e-04
     100      1.79e-02    1.34e-02    2.0e-04
@@ -183,10 +184,12 @@ for `*.property.out.*`, it contains matrix with shape of `(2, task_dim)`,
 ```
 
 ## Data Normalization
-When `fitting_net/type` is `ener`, the energy bias layer “$e_{bias}$” adds a constant bias to the atomic energy contribution according to the atomic number.i.e., 
+
+When `fitting_net/type` is `ener`, the energy bias layer “$e_{bias}$” adds a constant bias to the atomic energy contribution according to the atomic number.i.e.,
 $$e_{bias} (Z_i) (MLP(D_i))= MLP(D_i) + e_{bias} (Z_i)$$
 
 But when `fitting_net/type` is `property`. The property bias layer is used to normalize the property output of the model.i.e.,
 $$p_{bias} (MLP(D_i))= MLP(D_i) * std+ mean$$
+
 1. `std`: The standard deviation of the property label
 2. `mean`: The average value of the property label
