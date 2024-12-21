@@ -186,6 +186,40 @@ Switch to the TensorFlow {{ tensorflow_icon }} tab for more information.
 
 ::::::
 
+::::::{tab-item} Paddle {{ paddle_icon }}
+
+:::::{tab-set}
+
+::::{tab-item} CUDA 12.3
+
+```bash
+pip install deepmd-kit[paddle]
+```
+
+::::
+
+::::{tab-item} CUDA 11.8
+
+```bash
+pip install paddlepaddle-gpu==3.0.0b2 -i https://www.paddlepaddle.org.cn/packages/stable/cu123/
+pip install deepmd-kit-cu11
+```
+
+::::
+
+::::{tab-item} CPU
+
+```bash
+pip install paddlepaddle-gpu==3.0.0b2 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/
+pip install deepmd-kit
+```
+
+::::
+
+:::::
+
+::::::
+
 :::::::
 
 The supported platform includes Linux x86-64 and aarch64 with GNU C Library 2.28 or above, macOS x86-64 and arm64, and Windows x86-64.

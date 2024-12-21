@@ -93,6 +93,21 @@ One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to instal
 
 :::
 
+:::{tab-item} Paddle {{ paddle_icon }}
+
+To install Paddle, run
+
+```sh
+# cu123
+pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/cu123/
+# cu118
+pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/cu118/
+# cpu
+pip install --pre paddlepaddle -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/
+```
+
+:::
+
 ::::
 
 It is important that every time a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by
@@ -119,7 +134,7 @@ One should remember to activate the virtual environment every time he/she uses D
 
 Check the compiler version on your machine
 
-```
+```bash
 gcc --version
 ```
 
@@ -138,6 +153,12 @@ Note that TensorFlow may have specific requirements for the compiler version to 
 
 You can set the environment variable `export DP_ENABLE_PYTORCH=1` to enable customized C++ OPs in the PyTorch backend.
 Note that PyTorch may have specific requirements for the compiler version to support the C++ standard version and [`_GLIBCXX_USE_CXX11_ABI`](https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html) used by PyTorch.
+
+:::
+
+:::{tab-item} Paddle {{ paddle_icon }}
+
+You can set the environment variable `export DP_ENABLE_PADDLE=1` to enable customized C++ OPs in the Paddle backend.
 
 :::
 
@@ -188,6 +209,13 @@ The path to the ROCM toolkit directory. If `ROCM_ROOT` is not set, it will look 
 {{ pytorch_icon }} Enable customized C++ OPs for the PyTorch backend. PyTorch can still run without customized C++ OPs, but features will be limited.
 :::
 
+:::{envvar} DP_ENABLE_PADDLE
+
+**Choices**: `0`, `1`; **Default**: `0`
+
+{{ paddle_icon }} Enable customized C++ OPs for the Paddle backend. Paddle can still run without customized C++ OPs, but features will be limited.
+:::
+
 :::{envvar} TENSORFLOW_ROOT
 
 **Type**: Path; **Default**: Detected automatically
@@ -200,6 +228,13 @@ The path to the ROCM toolkit directory. If `ROCM_ROOT` is not set, it will look 
 **Type**: Path; **Default**: Detected automatically
 
 {{ pytorch_icon }} The path to PyTorch Python library. If not given, by default, the installer only finds PyTorch under the user site-package directory (`site.getusersitepackages()`) or the system site-package directory (`sysconfig.get_path("purelib")`) due to the limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest PyTorch (or the environment variable `PYTORCH_VERSION` if given) from PyPI will be built against.
+:::
+
+:::{envvar} PADDLE_INFERENCE_DIR
+
+**Type**: Path; **Default**: None
+
+{{ paddle_icon }} The path to Paddle inference library, e.g. `/path/to/paddle_inference_install_dir`. If `DP_ENABLE_PADDLE` is enabled, it needs to be specified manually; otherwise, installation will fail.
 :::
 
 :::{envvar} DP_ENABLE_NATIVE_OPTIMIZATION
@@ -229,7 +264,7 @@ Other [CMake environment variables](https://cmake.org/cmake/help/latest/manual/c
 
 To test the installation, one should first jump out of the source directory
 
-```
+```bash
 cd /some/other/workspace
 ```
 
@@ -325,6 +360,18 @@ download the TensorFlow C library from [this page](https://www.tensorflow.org/in
 
 :::
 
+:::{tab-item} Paddle {{ paddle_icon }}
+
+If you want to use C++ interface of Paddle, you need to compile the Paddle inference library(C++ interface) manually from the [linux-compile-by-make](https://www.paddlepaddle.org.cn/documentation/docs/zh/develop/install/compile/linux-compile-by-make.html), then use the `.so` and `.a` files in `Paddle/build/paddle_inference_install_dir/`.
+
+We also provide a nightly pre-compiled Paddle C++ library for Linux x86_64 with CUDA 11.8/12.3 below:
+
+[Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz](https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz)
+
+[Cuda123_cudnn900_Trt8616_D1/latest/paddle_inference.tgz](https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda123_cudnn900_Trt8616_D1/latest/paddle_inference.tgz)
+
+:::
+
 ::::
 
 ### Install DeePMD-kit's C++ interface
@@ -389,6 +436,16 @@ cmake -DENABLE_JAX=ON -D CMAKE_PREFIX_PATH=${tensorflow_c_root} ..
 
 :::
 
+:::{tab-item} Paddle {{ paddle_icon }}
+
+I assume you have get the Paddle inference library(C++ interface) to `$PADDLE_INFERENCE_DIR`, then execute CMake
+
+```bash
+cmake -DENABLE_PADDLE=ON -DPADDLE_INFERENCE_DIR=$PADDLE_INFERENCE_DIR -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
+```
+
+:::
+
 ::::
 
 One may add the following CMake variables to `cmake` using the [`-D <var>=<value>` option](https://cmake.org/cmake/help/latest/manual/cmake.1.html#cmdoption-cmake-D):
@@ -420,11 +477,27 @@ If {cmake:variable}`ENABLE_TENSORFLOW` is `OFF`, the TensorFlow C library is use
 
 :::
 
+:::{cmake:variable} ENABLE_PADDLE
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+{{ paddle_icon }} Whether building the Paddle backend.
+
+:::
+
 :::{cmake:variable} TENSORFLOW_ROOT
 
 **Type**: `PATH`
 
 {{ tensorflow_icon }} {{ jax_icon }} The Path to TensorFlow's C++ interface.
+
+:::
+
+:::{cmake:variable} PADDLE_INFERENCE_DIR
+
+**Type**: `PATH`
+
+{{ paddle_icon }} The Path to Paddle's C++ inference directory, such as `/path/to/paddle_inference_install_dir` or `/path/to/paddle_inference`.
 
 :::
 
