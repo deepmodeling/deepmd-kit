@@ -180,7 +180,7 @@ The arguments here should be consistent with the class arguments of your new com
 ## Package new codes
 
 You may package new codes into a new Python package if you don't want to contribute it to the main DeePMD-kit repository.
-A good example is [DeePMD-GNN](https://github.com/njzjz/deepmd-gnn).
+A good example is [DeePMD-GNN](https://gitlab.com/RutgersLBSR/deepmd-gnn).
 It's crucial to add your new component to `project.entry-points."deepmd.pt"` in `pyproject.toml`:
 
 ```toml
