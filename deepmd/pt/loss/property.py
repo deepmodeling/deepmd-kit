@@ -42,8 +42,14 @@ class PropertyLoss(TaskLoss):
             The loss function, such as "smooth_mae", "mae", "rmse".
         metric : list
             The metric such as mae, rmse which will be printed.
-        beta:
+        beta : float
             The 'beta' parameter in 'smooth_mae' loss.
+        out_bias : Union[list, None]
+            It is the average value of the label. The shape is nkeys * ntypes * task_dim.
+            In property fitting, nkeys = 1, so the shape is 1 * ntypes * task_dim.
+        out_std : Union[list, None]
+            It is the standard deviation of the label. The shape is nkeys * ntypes * task_dim.
+            In property fitting, nkeys = 1, so the shape is 1 * ntypes * task_dim.
         """
         super().__init__()
         self.task_dim = task_dim
