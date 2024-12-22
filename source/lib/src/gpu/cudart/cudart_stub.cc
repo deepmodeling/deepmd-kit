@@ -26,7 +26,8 @@ void *DP_cudart_dlopen(char *libname) {
     if (!dso_handle) {
       std::cerr << "DeePMD-kit: Cannot find " << libname << std::endl;
 #ifndef _WIN32
-      std::cerr << "DeePMD-kit: Error message: " << std::string(dlerror()) << std::endl;
+      std::cerr << "DeePMD-kit: Error message: " << std::string(dlerror())
+                << std::endl;
 #endif
       return nullptr;
     }

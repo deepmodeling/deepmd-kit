@@ -390,9 +390,11 @@ static inline void _load_library_path(std::string dso_path) {
   if (!dso_handle) {
     throw deepmd::deepmd_exception(
         dso_path +
-        " is not found or fails to load! You can add the library directory to LD_LIBRARY_PATH."
+        " is not found or fails to load! You can add the library directory to "
+        "LD_LIBRARY_PATH."
 #ifndef _WIN32
-        " Error message: " + std::string(dlerror())
+        " Error message: " +
+        std::string(dlerror())
 #endif
     );
   }
