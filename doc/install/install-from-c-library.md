@@ -1,4 +1,4 @@
-# Install from pre-compiled C library {{ tensorflow_icon }}, JAX {{ jax_icon }}
+# Install from pre-compiled C library {{ tensorflow_icon }} {{ jax_icon }}
 
 :::{note}
 **Supported backends**: TensorFlow {{ tensorflow_icon }}, JAX {{ jax_icon }}
