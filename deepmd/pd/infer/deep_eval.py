@@ -354,6 +354,12 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
     ):
         model = self.dp.to(DEVICE)
+
+        # switch to eval mode
+        is_training = model.training
+        if is_training:
+            model.eval()
+
         prec = NP_PRECISION_DICT[RESERVED_PRECISON_DICT[GLOBAL_PD_FLOAT_PRECISION]]
 
         nframes = coords.shape[0]
@@ -419,6 +425,11 @@ class DeepEval(DeepEvalBackend):
                 results.append(
                     np.full(np.abs(shape), np.nan, dtype=prec)
                 )  # this is kinda hacky
+
+        # switch back to training mode if previously enabled
+        if is_training:
+            model.train()
+
         return tuple(results)
 
     def _eval_model_spin(
