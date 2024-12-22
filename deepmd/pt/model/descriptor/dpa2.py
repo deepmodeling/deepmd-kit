@@ -100,7 +100,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
     ) -> None:
-        r"""The DPA-2 descriptor. see https://arxiv.org/abs/2312.15492.
+        r"""The DPA-2 descriptor[1]_.
 
         Parameters
         ----------
@@ -147,6 +147,11 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         sw:                 torch.Tensor
             The switch function for decaying inverse distance.
 
+        References
+        ----------
+        .. [1] Zhang, D., Liu, X., Zhang, X. et al. DPA-2: a
+           large atomic model as a multi-task learner. npj
+           Comput Mater 10, 293 (2024). https://doi.org/10.1038/s41524-024-01493-2
         """
         super().__init__()
 
