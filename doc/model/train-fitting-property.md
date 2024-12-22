@@ -65,7 +65,7 @@ The label should be named `{property_name}.npy/raw`, `property_name` is defined 
 
 To prepare the data, you can use `dpdata` tools, for example:
 
-```
+```py
 import dpdata
 import numpy as np
 from dpdata.data_type import (
