@@ -93,8 +93,8 @@ class PropertyLoss(TaskLoss):
         label["property"] = label[self.property_name]
         assert label["property"].shape == (nbz, self.task_dim)
         if not self.intensive:
-            model_pred["property"] = model_pred["property"]/natoms
-            label["property"] = label["property"]/natoms
+            model_pred["property"] = model_pred["property"] / natoms
+            label["property"] = label["property"] / natoms
 
         if self.out_std is None:
             out_std = model.atomic_model.out_std[0][0]

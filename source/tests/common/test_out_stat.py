@@ -4,9 +4,9 @@ import unittest
 import numpy as np
 
 from deepmd.utils.out_stat import (
+    compute_stats_do_not_distinguish_types,
     compute_stats_from_atomic,
     compute_stats_from_redu,
-    compute_stats_do_not_distinguish_types,
 )
 
 
@@ -92,7 +92,9 @@ class TestOutStat(unittest.TestCase):
 
     def test_compute_stats_do_not_distinguish_types_intensive(self) -> None:
         """Test compute_stats_property function with intensive scenario."""
-        bias, std = compute_stats_do_not_distinguish_types(self.output_redu, self.natoms, intensive=True)
+        bias, std = compute_stats_do_not_distinguish_types(
+            self.output_redu, self.natoms, intensive=True
+        )
         # Test shapes
         assert bias.shape == (len(self.mean), self.output_redu.shape[1])
         assert std.shape == (len(self.mean), self.output_redu.shape[1])
@@ -109,7 +111,9 @@ class TestOutStat(unittest.TestCase):
 
     def test_compute_stats_do_not_distinguish_types_extensive(self) -> None:
         """Test compute_stats_property function with extensive scenario."""
-        bias, std = compute_stats_do_not_distinguish_types(self.output_redu, self.natoms)
+        bias, std = compute_stats_do_not_distinguish_types(
+            self.output_redu, self.natoms
+        )
         # Test shapes
         assert bias.shape == (len(self.mean), self.output_redu.shape[1])
         assert std.shape == (len(self.mean), self.output_redu.shape[1])
@@ -117,11 +121,25 @@ class TestOutStat(unittest.TestCase):
         # Test values
         for fake_atom_bias in bias:
             np.testing.assert_allclose(
-                fake_atom_bias, np.array([6218.91610282,7183.82275736,4445.23155934,5748.23644722,5362.8519454]), rtol=1e-7
+                fake_atom_bias,
+                np.array(
+                    [
+                        6218.91610282,
+                        7183.82275736,
+                        4445.23155934,
+                        5748.23644722,
+                        5362.8519454,
+                    ]
+                ),
+                rtol=1e-7,
             )
         for fake_atom_std in std:
             np.testing.assert_allclose(
-                fake_atom_std, np.array([128.78691576,36.53743668,105.82372405,96.43642486,33.68885327]), rtol=1e-7
+                fake_atom_std,
+                np.array(
+                    [128.78691576, 36.53743668, 105.82372405, 96.43642486, 33.68885327]
+                ),
+                rtol=1e-7,
             )
 
     def test_compute_stats_from_atomic(self) -> None:

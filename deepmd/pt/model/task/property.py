@@ -125,6 +125,7 @@ class PropertyFittingNet(InvarFitting):
                 ),
             ]
         )
+
     def get_intensive(self) -> bool:
         """Whether the fitting property is intensive."""
         return self.intensive
