@@ -39,16 +39,16 @@ class DeepmdDataSetForLoader(Dataset):
         b_data = self._data_system.get_item_torch(index)
         b_data["natoms"] = self._natoms_vec
         return b_data
-    
+
     def _build_element_to_frames(self):
         """Mapping element types to frame indexes"""
-        element_to_frames = {element: [] for element in range(self._ntypes)} 
+        element_to_frames = {element: [] for element in range(self._ntypes)}
         for frame_idx in range(len(self)):
             frame_data = self._data_system.get_item_torch(frame_idx)
 
-            elements = frame_data["atype"]  
+            elements = frame_data["atype"]
             for element in set(elements):
-                if len(element_to_frames[element]) < 10:  
+                if len(element_to_frames[element]) < 10:
                     element_to_frames[element].append(frame_idx)
         return element_to_frames
 
