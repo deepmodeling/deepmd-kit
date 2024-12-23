@@ -19,6 +19,14 @@ class DPPropertyAtomicModel(DPAtomicModel):
             )
         super().__init__(descriptor, fitting, type_map, **kwargs)
 
+    def get_compute_stats_distinguish_types(self) -> bool:
+        """Get whether the fitting net computes stats which are not distinguished between different types of atoms."""
+        return False
+
+    def get_intensive(self) -> bool:
+        """Whether the fitting property is intensive."""
+        return self.fitting_net.get_intensive()
+
     def apply_out_stat(
         self,
         ret: dict[str, torch.Tensor],

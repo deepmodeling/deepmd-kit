@@ -187,7 +187,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
                 aparam=torch.from_numpy(self.aparam).to(device=PT_DEVICE)
                 if numb_aparam
                 else None,
-            )["property"]
+            )[pt_obj.property_name]
             .detach()
             .cpu()
             .numpy()
@@ -208,7 +208,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             self.atype.reshape(1, -1),
             fparam=self.fparam if numb_fparam else None,
             aparam=self.aparam if numb_aparam else None,
-        )["property"]
+        )[dp_obj.property_name]
 
     def eval_jax(self, jax_obj: Any) -> Any:
         (

@@ -134,11 +134,16 @@ def _post_process_stat(
 
     For global statistics, we do not have the std for each type of atoms,
     thus fake the output std by ones for all the types.
+    If the shape of out_std is already the same as out_bias,
+    we do not need to do anything.
 
     """
     new_std = {}
     for kk, vv in out_bias.items():
-        new_std[kk] = np.ones_like(vv)
+        if vv.shape == out_std[kk].shape:
+            new_std[kk] = out_std[kk]
+        else:
+            new_std[kk] = np.ones_like(vv)
     return out_bias, new_std
 
 
@@ -240,7 +245,7 @@ def compute_output_stats(
     rcond: Optional[float] = None,
     preset_bias: Optional[dict[str, list[Optional[np.ndarray]]]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
-    stats_do_not_distinguish_types: bool = False,
+    stats_distinguish_types: bool = True,
     intensive: bool = False,
 ):
     """
@@ -363,7 +368,7 @@ def compute_output_stats(
             rcond,
             preset_bias,
             model_pred_g,
-            stats_do_not_distinguish_types,
+            stats_distinguish_types,
             intensive,
         )
         bias_atom_a, std_atom_a = compute_output_stats_atomic(
@@ -407,7 +412,7 @@ def compute_output_stats_global(
     rcond: Optional[float] = None,
     preset_bias: Optional[dict[str, list[Optional[np.ndarray]]]] = None,
     model_pred: Optional[dict[str, np.ndarray]] = None,
-    stats_do_not_distinguish_types: bool = False,
+    stats_distinguish_types: bool = True,
     intensive: bool = False,
 ):
     """This function only handle stat computation from reduced global labels."""
@@ -477,9 +482,9 @@ def compute_output_stats_global(
 
     bias_atom_e = {}
     std_atom_e = {}
-    if stats_do_not_distinguish_types:
-        for kk in keys:
-            if kk in stats_input:
+    for kk in keys:
+        if kk in stats_input:
+            if not stats_distinguish_types:
                 bias_atom_e[kk], std_atom_e[kk] = (
                     compute_stats_do_not_distinguish_types(
                         stats_input[kk],
@@ -489,18 +494,12 @@ def compute_output_stats_global(
                     )
                 )
             else:
-                # this key does not have global labels, skip it.
-                continue
-        return bias_atom_e, std_atom_e
-
-    for kk in keys:
-        if kk in stats_input:
-            bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
-                stats_input[kk],
-                merged_natoms[kk],
-                assigned_bias=assigned_atom_ener[kk],
-                rcond=rcond,
-            )
+                bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
+                    stats_input[kk],
+                    merged_natoms[kk],
+                    assigned_bias=assigned_atom_ener[kk],
+                    rcond=rcond,
+                )
         else:
             # this key does not have global labels, skip it.
             continue

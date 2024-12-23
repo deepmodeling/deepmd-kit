@@ -125,6 +125,14 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         """Get the type map."""
         return self.type_map
 
+    def get_compute_stats_distinguish_types(self) -> bool:
+        """Get whether the fitting net computes stats which are not distinguished between different types of atoms."""
+        return True
+
+    def get_intensive(self) -> bool:
+        """Whether the fitting property is intensive."""
+        return False
+
     def reinit_atom_exclude(
         self,
         exclude_types: list[int] = [],
@@ -466,8 +474,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 stat_file_path=stat_file_path,
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,
-                stats_do_not_distinguish_types=self.fitting_net.get_compute_stats_do_not_distinguish_types(),
-                intensive=self.fitting_net.intensive,
+                stats_distinguish_types=self.get_compute_stats_distinguish_types(),
+                intensive=self.get_intensive(),
             )
             self._store_out_stat(bias_out, std_out)
         else:

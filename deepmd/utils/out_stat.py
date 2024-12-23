@@ -170,24 +170,20 @@ def compute_stats_do_not_distinguish_types(
     output_redu = np.array(output_redu)
     var_shape = list(output_redu.shape[1:])
     output_redu = output_redu.reshape(nf, -1)
+    if not intensive:
+        output_redu = output_redu / natoms.sum(axis=1)[:, np.newaxis]
     # check shape
     assert output_redu.ndim == 2
     assert natoms.ndim == 2
     assert output_redu.shape[0] == natoms.shape[0]  # [nf,1]
 
-    if intensive:
-        computed_output_bias = np.repeat(
-            np.mean(output_redu, axis=0)[np.newaxis, :], ntypes, axis=0
-        )
-        output_std = np.std(output_redu, axis=0)
+    computed_output_bias = np.repeat(
+        np.mean(output_redu, axis=0)[np.newaxis, :], ntypes, axis=0
+    )
+    output_std = np.std(output_redu, axis=0)
 
-        computed_output_bias = computed_output_bias.reshape(
-            [natoms.shape[1]] + var_shape
-        )  # noqa: RUF005
-        output_std = output_std.reshape(var_shape)
-        output_std = np.tile(output_std, (computed_output_bias.shape[0], 1))
-    else:
-        # TODO: implement extensive
-        pass
+    computed_output_bias = computed_output_bias.reshape([natoms.shape[1]] + var_shape)  # noqa: RUF005
+    output_std = output_std.reshape(var_shape)
+    output_std = np.tile(output_std, (computed_output_bias.shape[0], 1))
 
     return computed_output_bias, output_std

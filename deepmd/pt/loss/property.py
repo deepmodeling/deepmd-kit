@@ -30,6 +30,7 @@ class PropertyLoss(TaskLoss):
         beta: float = 1.00,
         out_bias: Union[list, None] = None,
         out_std: Union[list, None] = None,
+        intensive: bool = False,
         **kwargs,
     ) -> None:
         r"""Construct a layer to compute loss on property.
@@ -59,6 +60,7 @@ class PropertyLoss(TaskLoss):
         self.property_name = property_name
         self.out_bias = out_bias
         self.out_std = out_std
+        self.intensive = intensive
 
     def forward(self, input_dict, model, label, natoms, learning_rate=0.0, mae=False):
         """Return loss on properties .
@@ -88,6 +90,9 @@ class PropertyLoss(TaskLoss):
         assert model_pred["property"].shape == (nbz, self.task_dim)
         label["property"] = label[self.property_name]
         assert label["property"].shape == (nbz, self.task_dim)
+        if not self.intensive:
+            model_pred["property"] = model_pred["property"]/natoms
+            label["property"] = label["property"]/natoms
 
         if self.out_std is None:
             out_std = model.atomic_model.out_std[0][0]

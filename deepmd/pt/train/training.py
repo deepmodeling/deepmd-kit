@@ -1241,8 +1241,10 @@ def get_loss(loss_params, start_lr, _ntypes, _model):
     elif loss_type == "property":
         task_dim = _model.get_task_dim()
         property_name = _model.get_property_name()
+        intensive = _model.get_intensive()
         loss_params["task_dim"] = task_dim
         loss_params["property_name"] = property_name
+        loss_params["intensive"] = intensive
         return PropertyLoss(**loss_params)
     else:
         loss_params["starter_learning_rate"] = start_lr
