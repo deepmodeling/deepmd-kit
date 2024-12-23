@@ -54,7 +54,7 @@ Cite DeePMD-kit and methods
 .. bibliography::
    :filter: False
 
-   Zhang_2023_DPA2
+   Zhang_npjComputMater_2024_v10_p293
 
 - If frame-specific parameters (`fparam`, e.g. electronic temperature) is used,
 

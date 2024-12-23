@@ -94,7 +94,7 @@ The model section will be overwritten (except the `type_map` subsection) by that
 
 #### Fine-tuning from a multi-task pre-trained model
 
-Additionally, within the PyTorch implementation and leveraging the flexibility offered by the framework and the multi-task training process proposed in DPA2 [paper](https://arxiv.org/abs/2312.15492),
+Additionally, within the PyTorch implementation and leveraging the flexibility offered by the framework and the multi-task training process proposed in DPA2 [paper](https://doi.org/10.1038/s41524-024-01493-2),
 we also support more general multitask pre-trained models, which includes multiple datasets for pre-training. These pre-training datasets share a common descriptor while maintaining their individual fitting nets,
 as detailed in the paper above.
 
