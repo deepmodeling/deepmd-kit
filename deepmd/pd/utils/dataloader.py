@@ -183,6 +183,7 @@ class DpLoaderSet(Dataset):
                 return next(self.item)
 
         self.iters = []
+
         for item in self.dataloaders:
             self.iters.append(LazyIter(item))
 
@@ -196,7 +197,7 @@ class DpLoaderSet(Dataset):
         for system in self.systems:
             system.set_noise(noise_settings)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.dataloaders)
 
     def __getitem__(self, idx):
@@ -219,19 +220,21 @@ class DpLoaderSet(Dataset):
         name: str,
         prob: list[float],
     ):
-        print_summary(
-            name,
-            len(self.systems),
-            [ss.system for ss in self.systems],
-            [ss._natoms for ss in self.systems],
-            self.batch_sizes,
-            [
-                ss._data_system.get_sys_numb_batch(self.batch_sizes[ii])
-                for ii, ss in enumerate(self.systems)
-            ],
-            prob,
-            [ss._data_system.pbc for ss in self.systems],
-        )
+        rank = dist.get_rank() if dist.is_initialized() else 0
+        if rank == 0:
+            print_summary(
+                name,
+                len(self.systems),
+                [ss.system for ss in self.systems],
+                [ss._natoms for ss in self.systems],
+                self.batch_sizes,
+                [
+                    ss._data_system.get_sys_numb_batch(self.batch_sizes[ii])
+                    for ii, ss in enumerate(self.systems)
+                ],
+                prob,
+                [ss._data_system.pbc for ss in self.systems],
+            )
 
 
 _sentinel = object()
@@ -239,13 +242,13 @@ QUEUESIZE = 32
 
 
 class BackgroundConsumer(Thread):
-    def __init__(self, queue, source, max_len):
+    def __init__(self, queue, source, max_len) -> None:
         Thread.__init__(self)
         self._queue = queue
         self._source = source  # Main DL iterator
         self._max_len = max_len  #
 
-    def run(self):
+    def run(self) -> None:
         for item in self._source:
             self._queue.put(item)  # Blocking if the queue is full
 
@@ -254,7 +257,7 @@ class BackgroundConsumer(Thread):
 
 
 class BufferedIterator:
-    def __init__(self, iterable):
+    def __init__(self, iterable) -> None:
         self._queue = queue.Queue(QUEUESIZE)
         self._iterable = iterable
         self._consumer = None
@@ -263,7 +266,7 @@ class BufferedIterator:
         self.warning_time = None
         self.total = len(iterable)
 
-    def _create_consumer(self):
+    def _create_consumer(self) -> None:
         self._consumer = BackgroundConsumer(self._queue, self._iterable, self.total)
         self._consumer.daemon = True
         self._consumer.start()
@@ -271,7 +274,7 @@ class BufferedIterator:
     def __iter__(self):
         return self
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.total
 
     def __next__(self):
@@ -337,3 +340,19 @@ def get_weighted_sampler(training_data, prob_style, sys_prob=False):
     len_sampler = training_data.total_batch * max(env.NUM_WORKERS, 1)
     sampler = WeightedRandomSampler(probs, len_sampler, replacement=True)
     return sampler
+
+
+def get_sampler_from_params(_data, _params):
+    if (
+        "sys_probs" in _params and _params["sys_probs"] is not None
+    ):  # use sys_probs first
+        _sampler = get_weighted_sampler(
+            _data,
+            _params["sys_probs"],
+            sys_prob=True,
+        )
+    elif "auto_prob" in _params:
+        _sampler = get_weighted_sampler(_data, _params["auto_prob"])
+    else:
+        _sampler = get_weighted_sampler(_data, "prob_sys_size")
+    return _sampler
