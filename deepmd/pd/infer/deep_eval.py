@@ -237,6 +237,11 @@ class DeepEval(DeepEvalBackend):
             The output of the evaluation. The keys are the names of the output
             variables, and the values are the corresponding output arrays.
         """
+        # switch to eval mode
+        is_training = self.dp.training
+        if is_training:
+            self.dp.eval()
+
         # convert all of the input to numpy array
         atom_types = np.array(atom_types, dtype=np.int32)
         coords = np.array(coords)
@@ -260,6 +265,11 @@ class DeepEval(DeepEvalBackend):
                 aparam,
                 request_defs,
             )
+
+        # switch back to training mode if previously enabled
+        if is_training:
+            self.dp.train()
+
         return dict(
             zip(
                 [x.name for x in request_defs],
@@ -354,12 +364,6 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
     ):
         model = self.dp.to(DEVICE)
-
-        # switch to eval mode
-        is_training = model.training
-        if is_training:
-            model.eval()
-
         prec = NP_PRECISION_DICT[RESERVED_PRECISON_DICT[GLOBAL_PD_FLOAT_PRECISION]]
 
         nframes = coords.shape[0]
@@ -425,11 +429,6 @@ class DeepEval(DeepEvalBackend):
                 results.append(
                     np.full(np.abs(shape), np.nan, dtype=prec)
                 )  # this is kinda hacky
-
-        # switch back to training mode if previously enabled
-        if is_training:
-            model.train()
-
         return tuple(results)
 
     def _eval_model_spin(
