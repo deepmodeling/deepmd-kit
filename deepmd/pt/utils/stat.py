@@ -85,24 +85,28 @@ def make_stat_input(datasets, dataloaders, nbatches):
 
     # Check elements in the collected data
     all_elements = set()
-    if datasets and hasattr(datasets[0], 'element_to_frames'):
+    if datasets and hasattr(datasets[0], "element_to_frames"):
         all_elements.update(datasets[0].element_to_frames.keys())
-        print('we want', all_elements)
+        print("we want", all_elements)
 
     collected_elements = set()
     for sys_stat in lst:
-        if 'atype' in sys_stat:
-            collected_elements.update(np.unique(sys_stat['atype'].cpu().numpy()))
-            #print('we have', collected_elements)
+        if "atype" in sys_stat:
+            collected_elements.update(np.unique(sys_stat["atype"].cpu().numpy()))
+            # print('we have', collected_elements)
             missing_elements = all_elements - collected_elements
-            #print('we miss', missing_elements)
+            # print('we miss', missing_elements)
 
             for missing_element in missing_elements:
                 for i, dataset in enumerate(datasets):
-                    if hasattr(dataset, 'element_to_frames'):
-                        frame_indices = dataset.element_to_frames.get(missing_element, [])
+                    if hasattr(dataset, "element_to_frames"):
+                        frame_indices = dataset.element_to_frames.get(
+                            missing_element, []
+                        )
                         for frame_idx in frame_indices:
-                            if len(lst[i]['atype']) >= nbatches:  # Ensure batch size limit
+                            if (
+                                len(lst[i]["atype"]) >= nbatches
+                            ):  # Ensure batch size limit
                                 break
                             frame_data = dataset[frame_idx]
                             for key in frame_data:
@@ -112,14 +116,18 @@ def make_stat_input(datasets, dataloaders, nbatches):
 
             collected_elements = set()
             for sys_stat in lst:
-                if 'atype' in sys_stat:
-                    collected_elements.update(np.unique(sys_stat['atype'].cpu().numpy()))
-            #print(f'after adding all missing elements, we have', collected_elements)
+                if "atype" in sys_stat:
+                    collected_elements.update(
+                        np.unique(sys_stat["atype"].cpu().numpy())
+                    )
+            # print(f'after adding all missing elements, we have', collected_elements)
 
     # Convert lists to tensors
     for sys_stat in lst:
         for key in sys_stat:
-            if isinstance(sys_stat[key], list) and isinstance(sys_stat[key][0], torch.Tensor):
+            if isinstance(sys_stat[key], list) and isinstance(
+                sys_stat[key][0], torch.Tensor
+            ):
                 sys_stat[key] = torch.cat(sys_stat[key], dim=0)
 
     return lst
