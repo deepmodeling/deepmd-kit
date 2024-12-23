@@ -226,7 +226,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
                 jnp.asarray(self.atype.reshape(1, -1)),
                 fparam=jnp.asarray(self.fparam) if numb_fparam else None,
                 aparam=jnp.asarray(self.aparam) if numb_aparam else None,
-            )["property"]
+            )[jax_obj.property_name]
         )
 
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
@@ -245,7 +245,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
                 array_api_strict.asarray(self.atype.reshape(1, -1)),
                 fparam=array_api_strict.asarray(self.fparam) if numb_fparam else None,
                 aparam=array_api_strict.asarray(self.aparam) if numb_aparam else None,
-            )["property"]
+            )[array_api_strict_obj.property_name]
         )
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
