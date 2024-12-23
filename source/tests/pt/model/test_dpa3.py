@@ -48,12 +48,14 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ua,
             rus,
             ruri,
+            acr,
             prec,
             ect,
         ) in itertools.product(
             [True, False],  # update_angle
             ["res_residual"],  # update_style
             ["norm", "const"],  # update_residual_init
+            [0, 1],  # a_compress_rate
             ["float64"],  # precision
             [False],  # use_econf_tebd
         ):
@@ -73,6 +75,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 a_rcut=self.rcut - 0.1,
                 a_rcut_smth=self.rcut_smth,
                 a_sel=nnei - 1,
+                a_compress_rate=acr,
                 axis_neuron=4,
                 update_angle=ua,
                 update_style=rus,
@@ -127,12 +130,14 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ua,
             rus,
             ruri,
+            acr,
             prec,
             ect,
         ) in itertools.product(
             [True, False],  # update_angle
             ["res_residual"],  # update_style
             ["norm", "const"],  # update_residual_init
+            [0, 1],  # a_compress_rate
             ["float64"],  # precision
             [False],  # use_econf_tebd
         ):
@@ -150,6 +155,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 a_rcut=self.rcut - 0.1,
                 a_rcut_smth=self.rcut_smth,
                 a_sel=nnei - 1,
+                a_compress_rate=acr,
                 axis_neuron=4,
                 update_angle=ua,
                 update_style=rus,

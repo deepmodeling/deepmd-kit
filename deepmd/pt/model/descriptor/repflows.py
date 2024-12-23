@@ -85,6 +85,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         n_dim: int = 128,
         e_dim: int = 64,
         a_dim: int = 64,
+        a_compress_rate: int = 0,
         axis_neuron: int = 4,
         update_angle: bool = True,
         activation_function: str = "silu",
@@ -123,6 +124,10 @@ class DescrptBlockRepflows(DescriptorBlock):
             Where to start smoothing for angle. For example the 1/r term is smoothed from rcut to rcut_smth.
         a_sel : int, optional
             Maximally possible number of selected angle neighbors.
+        a_compress_rate : int, optional
+            The compression rate for angular messages. The default value is 0, indicating no compression.
+            If a non-zero integer c is provided, the node and edge dimensions will be compressed
+            to n_dim/c and e_dim/2c, respectively, within the angular message.
         axis_neuron : int, optional
             The number of dimension of submatrix in the symmetrization ops.
         update_angle : bool, optional
@@ -175,6 +180,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.rcut_smth = e_rcut_smth
         self.sec = self.sel
         self.split_sel = self.sel
+        self.a_compress_rate = a_compress_rate
         self.axis_neuron = axis_neuron
         self.set_davg_zero = set_davg_zero
         self.skip_stat = skip_stat
@@ -218,6 +224,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                     n_dim=self.n_dim,
                     e_dim=self.e_dim,
                     a_dim=self.a_dim,
+                    a_compress_rate=self.a_compress_rate,
                     axis_neuron=self.axis_neuron,
                     update_angle=self.update_angle,
                     activation_function=self.activation_function,

@@ -1440,6 +1440,11 @@ def dpa3_repflow_args():
     doc_a_sel = 'Maximally possible number of selected angle neighbors. It can be:\n\n\
     - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
     - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    doc_a_compress_rate = (
+        "The compression rate for angular messages. The default value is 0, indicating no compression. "
+        " If a non-zero integer c is provided, the node and edge dimensions will be compressed "
+        "to n_dim/c and e_dim/2c, respectively, within the angular message."
+    )
     doc_axis_neuron = "The number of dimension of submatrix in the symmetrization ops."
     doc_update_angle = (
         "Where to update the angle rep. If not, only node and edge rep will be used."
@@ -1475,6 +1480,9 @@ def dpa3_repflow_args():
         Argument("a_rcut", float, doc=doc_a_rcut),
         Argument("a_rcut_smth", float, doc=doc_a_rcut_smth),
         Argument("a_sel", [int, str], doc=doc_a_sel),
+        Argument(
+            "a_compress_rate", int, optional=True, default=0, doc=doc_a_compress_rate
+        ),
         Argument(
             "axis_neuron",
             int,
