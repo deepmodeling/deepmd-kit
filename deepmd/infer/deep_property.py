@@ -38,10 +38,20 @@ class DeepProperty(DeepEval):
     """
 
     def output_def(self) -> ModelOutputDef:
-        """Get the output definition of this model."""
+        """
+        Get the output definition of this model.
+        But in property_fitting, the output definition is not known until the model is loaded.
+        So we need to rewrite the output definition after the model is loaded.
+        See detail in change_output_def.
+        """
         pass
 
     def change_output_def(self) -> None:
+        """
+        Change the output definition of this model.
+        In property_fitting, the output definition is known after the model is loaded.
+        We need to rewrite the output definition and related information.
+        """
         self.output_def = ModelOutputDef(
             FittingOutputDef(
                 [
