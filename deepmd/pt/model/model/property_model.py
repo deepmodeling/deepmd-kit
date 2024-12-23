@@ -37,8 +37,8 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
     def translated_output_def(self):
         out_def_data = self.model_output_def().get_data()
         output_def = {
-            "atom_property": out_def_data["property"],
-            "property": out_def_data["property_redu"],
+            f"atom_{self.get_property_name()}": out_def_data[self.get_property_name()],
+            self.get_property_name(): out_def_data[f"{self.get_property_name()}_redu"],
         }
         if "mask" in out_def_data:
             output_def["mask"] = out_def_data["mask"]
@@ -107,8 +107,8 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
             extra_nlist_sort=self.need_sorted_nlist_for_lower(),
         )
         model_predict = {}
-        model_predict["atom_property"] = model_ret[self.get_property_name()]
-        model_predict["property"] = model_ret[f"{self.get_property_name()}_redu"]
+        model_predict[f"atom_{self.get_property_name()}"] = model_ret[self.get_property_name()]
+        model_predict[self.get_property_name()] = model_ret[f"{self.get_property_name()}_redu"]
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
         return model_predict

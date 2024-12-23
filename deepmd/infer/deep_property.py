@@ -37,35 +37,27 @@ class DeepProperty(DeepEval):
         Keyword arguments.
     """
 
-    @property
     def output_def(self) -> ModelOutputDef:
         """Get the output definition of this model."""
-        from IPython import embed
-        embed()
-        return ModelOutputDef(
+        pass
+
+    def change_output_def(self) -> None:
+        self.output_def = ModelOutputDef(
             FittingOutputDef(
                 [
                     OutputVariableDef(
-                        "property",
-                        shape=[-1],
+                        self.get_property_name(),
+                        shape=[self.get_task_dim()],
                         reducible=True,
                         atomic=True,
+                        intensive=self.get_intensive(),
                     ),
                 ]
             )
         )
-
-    @output_def.setter
-    def output_def(self, property_def) -> ModelOutputDef:
-        """Get the output definition of this model."""
-        return ModelOutputDef(
-            FittingOutputDef(
-                [property_def]
-            )
-        )
-
-    def change_output_def(self) -> None:
-        self.output_def = OutputVariableDef(self.get_property_name(), shape=[self.get_task_dim()],reducible=True,atomic=True,)
+        self.deep_eval.output_def = self.output_def
+        self.deep_eval._OUTDEF_DP2BACKEND[self.get_property_name()] = f"atom_{self.get_property_name()}"
+        self.deep_eval._OUTDEF_DP2BACKEND[f"{self.get_property_name()}_redu"] = self.get_property_name()
 
     @property
     def task_dim(self) -> int:
@@ -130,10 +122,10 @@ class DeepProperty(DeepEval):
             aparam=aparam,
             **kwargs,
         )
-        atomic_property = results["property"].reshape(
+        atomic_property = results[self.get_property_name()].reshape(
             nframes, natoms, self.get_task_dim()
         )
-        property = results["property_redu"].reshape(nframes, self.get_task_dim())
+        property = results[f"{self.get_property_name()}_redu"].reshape(nframes, self.get_task_dim())
 
         if atomic:
             return (
