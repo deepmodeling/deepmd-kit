@@ -14,6 +14,7 @@ class RepFlowArgs:
         a_rcut: float = 4.0,
         a_rcut_smth: float = 3.5,
         a_sel: int = 20,
+        a_compress_rate: int = 0,
         axis_neuron: int = 4,
         update_angle: bool = True,
         update_style: str = "res_residual",
@@ -44,6 +45,10 @@ class RepFlowArgs:
             Where to start smoothing for angle. For example the 1/r term is smoothed from rcut to rcut_smth.
         a_sel : int, optional
             Maximally possible number of selected angle neighbors.
+        a_compress_rate : int, optional
+            The compression rate for angular messages. The default value is 0, indicating no compression.
+            If a non-zero integer c is provided, the node and edge dimensions will be compressed
+            to n_dim/c and e_dim/2c, respectively, within the angular message.
         axis_neuron : int, optional
             The number of dimension of submatrix in the symmetrization ops.
         update_angle : bool, optional
@@ -71,6 +76,7 @@ class RepFlowArgs:
         self.a_rcut = a_rcut
         self.a_rcut_smth = a_rcut_smth
         self.a_sel = a_sel
+        self.a_compress_rate = a_compress_rate
         self.axis_neuron = axis_neuron
         self.update_angle = update_angle
         self.update_style = update_style
@@ -95,6 +101,7 @@ class RepFlowArgs:
             "a_rcut": self.a_rcut,
             "a_rcut_smth": self.a_rcut_smth,
             "a_sel": self.a_sel,
+            "a_compress_rate": self.a_compress_rate,
             "axis_neuron": self.axis_neuron,
             "update_angle": self.update_angle,
             "update_style": self.update_style,
