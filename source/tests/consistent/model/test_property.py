@@ -191,7 +191,7 @@ class TestProperty(CommonTest, ModelTest, unittest.TestCase):
             )
         elif backend is self.RefBackend.PT:
             return (
-                ret["property"].ravel(),
-                ret["atom_property"].ravel(),
+                ret[property_name].ravel(),
+                ret[f"atom_{property_name}"].ravel(),
             )
         raise ValueError(f"Unknown backend: {backend}")

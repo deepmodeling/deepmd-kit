@@ -25,10 +25,7 @@ class LossTestCase:
         label_keys_expected = sorted(
             [key for key in self.key_to_pref_map if self.key_to_pref_map[key] > 0]
         )
-        if "property" in label_keys_expected:
-            assert [self.input_dict["property_name"]] == label_keys
-        else:
-            np.testing.assert_equal(label_keys_expected, label_keys)
+        np.testing.assert_equal(label_keys_expected, label_keys)
 
     def test_forward(self):
         module = self.forward_wrapper(self.module)
@@ -39,22 +36,14 @@ class LossTestCase:
         nframes = 2
 
         def fake_model():
-            if "property_name" in self.input_dict.keys():
-                rng = np.random.default_rng(seed=GLOBAL_SEED)
-                model_predict = {
-                    "property": rng.random(
-                        [nframes, self.input_dict["task_dim"]], dtype=np.float64
-                    )
-                }
-            else:
-                model_predict = {
-                    data_key: fake_input(
-                        label_dict[data_key], natoms=natoms, nframes=nframes
-                    )
-                    for data_key in label_keys
-                }
-                if "atom_ener" in model_predict:
-                    model_predict["atom_energy"] = model_predict.pop("atom_ener")
+            model_predict = {
+                data_key: fake_input(
+                    label_dict[data_key], natoms=natoms, nframes=nframes
+                )
+                for data_key in label_keys
+            }
+            if "atom_ener" in model_predict:
+                model_predict["atom_energy"] = model_predict.pop("atom_ener")
             model_predict.update(
                 {"mask_mag": np.ones([nframes, natoms, 1], dtype=np.bool_)}
             )

@@ -189,7 +189,7 @@ LossParamTensor = LossParamTensorList[0]
 
 def LossParamProperty():
     key_to_pref_map = {
-        "property": 1.0,
+        "foo": 1.0,
     }
     input_dict = {
         "key_to_pref_map": key_to_pref_map,

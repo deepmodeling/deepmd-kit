@@ -185,8 +185,6 @@ def compute_stats_do_not_distinguish_types(
         np.mean(output_redu, axis=0)[np.newaxis, :], ntypes, axis=0
     )
     output_std = np.std(output_redu, axis=0)
-    if output_std is None:
-        raise ValueError("Failed to compute output standard deviation")
 
     computed_output_bias = computed_output_bias.reshape([natoms.shape[1]] + var_shape)  # noqa: RUF005
     output_std = output_std.reshape(var_shape)
