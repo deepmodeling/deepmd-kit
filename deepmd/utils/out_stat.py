@@ -132,10 +132,11 @@ def compute_stats_from_atomic(
     return output_bias, output_std
 
 
-def compute_stats_property(
+def compute_stats_do_not_distinguish_types(
     output_redu: np.ndarray,
     natoms: np.ndarray,
     assigned_bias: Optional[np.ndarray] = None,
+    intensive: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute the mean value and standard deviation of reduced output.
 
@@ -152,6 +153,8 @@ def compute_stats_property(
         The assigned output bias, shape is [ntypes, *(odim0, odim1, ...)].
         Set to a tensor of shape (odim0, odim1, ...) filled with nan if the bias
         of the type is not assigned.
+    intensive
+        Whether the output is intensive or extensive.
 
     Returns
     -------

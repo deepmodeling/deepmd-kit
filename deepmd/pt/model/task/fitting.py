@@ -367,6 +367,12 @@ class GeneralFitting(Fitting):
             case_idx
         ]
 
+    def get_compute_stats_do_not_distinguish_types(self) -> bool:
+        """
+        Get whether the fitting net computes stats which are not distinguished between different types of atoms.
+        """
+        return False
+
     def __setitem__(self, key, value) -> None:
         if key in ["bias_atom_e"]:
             value = value.view([self.ntypes, self._net_out_dim()])

@@ -95,7 +95,7 @@ class PropertyFittingNet(InvarFitting):
         self.intensive = intensive
         self.property_name = property_name
         super().__init__(
-            var_name="property",
+            var_name=self.property_name,
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             dim_out=task_dim,
@@ -125,6 +125,12 @@ class PropertyFittingNet(InvarFitting):
                 ),
             ]
         )
+
+    def get_compute_stats_do_not_distinguish_types(self) -> bool:
+        """
+        Get whether the fitting net computes stats which are not distinguished between different types of atoms.
+        """
+        return True
 
     @classmethod
     def deserialize(cls, data: dict) -> "PropertyFittingNet":
