@@ -175,22 +175,22 @@ def j_loader(filename: Union[str, Path]) -> dict[str, Any]:
         if file is not json or yaml/yml
     """
     filepath = Path(filename)
-    
+
     try:
         with filepath.open() as fp:
             return json.load(fp)
-    except json.JSONDecodeError: # if not json
-        pass # will try the next option
-    
+    except json.JSONDecodeError:  # if not json
+        pass  # will try the next option
+
     # FileNotFoundError will not be caught here,
     # so it will be raised if file does not exist
-    
+
     try:
         with filepath.open() as fp:
             return yaml.safe_load(fp)
-    except yaml.YAMLError: # if not yaml
-        pass # no more options, raise TypeError
-    
+    except yaml.YAMLError:  # if not yaml
+        pass  # no more options, raise TypeError
+
     raise TypeError("config file must be json, or yaml/yml")
 
 
