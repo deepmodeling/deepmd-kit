@@ -204,7 +204,7 @@ class DeepEval(DeepEvalBackend):
             return DeepGlobalPolar
         elif "wfc" in model_output_type:
             return DeepWFC
-        elif "property" in model_output_type:
+        elif self.dp.model["Default"].get_property_name() in model_output_type:
             return DeepProperty
         else:
             raise RuntimeError("Unknown model type")

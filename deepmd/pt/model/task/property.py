@@ -127,9 +127,7 @@ class PropertyFittingNet(InvarFitting):
         )
 
     def get_compute_stats_do_not_distinguish_types(self) -> bool:
-        """
-        Get whether the fitting net computes stats which are not distinguished between different types of atoms.
-        """
+        """Get whether the fitting net computes stats which are not distinguished between different types of atoms."""
         return True
 
     @classmethod
