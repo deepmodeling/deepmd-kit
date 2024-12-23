@@ -51,6 +51,8 @@ class PropertyLoss(TaskLoss):
         out_std : Union[list, None]
             It is the standard deviation of the label. The shape is nkeys * ntypes * task_dim.
             In property fitting, nkeys = 1, so the shape is 1 * ntypes * task_dim.
+        intensive : bool
+            Whether the property is intensive.
         """
         super().__init__()
         self.task_dim = task_dim

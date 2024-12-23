@@ -163,7 +163,9 @@ def compute_stats_do_not_distinguish_types(
         In property fitting, we assume that the atom output is not element-dependent,
         i.e., the `bias` is the same for each atom (they are all mean value of reduced output).
     np.ndarray
-        The computed output standard deviation, shape is [*(odim0, odim1, ...)].
+        The computed output standard deviation, shape is [ntypes, *(odim0, odim1, ...)].
+        In property fitting, we assume that the atom standard deviation is not element-dependent,
+        i.e., the `std` is the same for each atom (they are all standard deviation of reduced output).
     """
     natoms = np.array(natoms)  # [nf, ntypes]
     nf, ntypes = natoms.shape
@@ -171,7 +173,8 @@ def compute_stats_do_not_distinguish_types(
     var_shape = list(output_redu.shape[1:])
     output_redu = output_redu.reshape(nf, -1)
     if not intensive:
-        output_redu = output_redu / natoms.sum(axis=1)[:, np.newaxis]
+        total_atoms = natoms.sum(axis=1)
+        output_redu = output_redu / total_atoms[:, np.newaxis]
     # check shape
     assert output_redu.ndim == 2
     assert natoms.ndim == 2
@@ -181,6 +184,8 @@ def compute_stats_do_not_distinguish_types(
         np.mean(output_redu, axis=0)[np.newaxis, :], ntypes, axis=0
     )
     output_std = np.std(output_redu, axis=0)
+    if output_std is None:
+        raise ValueError("Failed to compute output standard deviation")
 
     computed_output_bias = computed_output_bias.reshape([natoms.shape[1]] + var_shape)  # noqa: RUF005
     output_std = output_std.reshape(var_shape)

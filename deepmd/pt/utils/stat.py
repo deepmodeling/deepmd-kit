@@ -276,10 +276,10 @@ def compute_output_stats(
         If not None, the model will be utilized to generate the original energy prediction,
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
-    property_name : str, optional
-        It is only useful in property fitting.
-        This parameter is not none indicating using property fitting.
-        Then we calculate the mean and std of label instead of bias.
+    stats_distinguish_types : bool, optional
+        Whether to distinguish different element types in the statistics.
+    intensive : bool, optional
+        Whether the fitting target is intensive.
     """
     # try to restore the bias from stat file
     bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
