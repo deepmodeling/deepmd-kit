@@ -138,9 +138,11 @@ def compute_stats_do_not_distinguish_types(
     assigned_bias: Optional[np.ndarray] = None,
     intensive: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Compute the mean value and standard deviation of reduced output.
+    """Compute element-independent statistics for property fitting.
 
-    Given the reduced output value, compute the mean value and standard deviation of output.
+    Computes mean and standard deviation of the output, treating all elements equally.
+    For extensive properties, the output is normalized by the total number of atoms
+    before computing statistics.
 
     Parameters
     ----------
@@ -148,24 +150,23 @@ def compute_stats_do_not_distinguish_types(
         The reduced output value, shape is [nframes, *(odim0, odim1, ...)].
     natoms
         The number of atoms for each atom, shape is [nframes, ntypes].
-        It is used to generate a fake bias in property fitting.
+        Used for normalization of extensive properties and generating uniform bias.
     assigned_bias
         The assigned output bias, shape is [ntypes, *(odim0, odim1, ...)].
         Set to a tensor of shape (odim0, odim1, ...) filled with nan if the bias
         of the type is not assigned.
     intensive
         Whether the output is intensive or extensive.
+        If False, the output will be normalized by the total number of atoms before computing statistics.
 
     Returns
     -------
     np.ndarray
         The computed output mean(fake bias), shape is [ntypes, *(odim0, odim1, ...)].
-        In property fitting, we assume that the atom output is not element-dependent,
-        i.e., the `bias` is the same for each atom (they are all mean value of reduced output).
+        The same bias is used for all atom types.
     np.ndarray
         The computed output standard deviation, shape is [ntypes, *(odim0, odim1, ...)].
-        In property fitting, we assume that the atom standard deviation is not element-dependent,
-        i.e., the `std` is the same for each atom (they are all standard deviation of reduced output).
+        The same standard deviation is used for all atom types.
     """
     natoms = np.array(natoms)  # [nf, ntypes]
     nf, ntypes = natoms.shape
