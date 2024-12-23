@@ -17,6 +17,7 @@ from ..seed import (
 )
 from .common import (
     INSTALLED_JAX,
+    INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
     parameterized,
@@ -36,6 +37,12 @@ if INSTALLED_TF:
 if INSTALLED_JAX:
     from deepmd.jax.env import (
         jnp,
+    )
+if INSTALLED_PD:
+    from deepmd.pd.utils.utils import ActivationFn as ActivationFn_pd
+    from deepmd.pd.utils.utils import to_numpy_array as paddle_to_numpy
+    from deepmd.pd.utils.utils import (
+        to_paddle_tensor,
     )
 
 
@@ -83,3 +90,11 @@ class TestActivationFunctionConsistent(unittest.TestCase):
         test = get_activation_fn_dp(self.activation)(input)
         self.assertTrue(isinstance(test, jnp.ndarray))
         np.testing.assert_allclose(self.ref, np.from_dlpack(test), atol=1e-10)
+
+    @unittest.skipUnless(INSTALLED_PD, "Paddle is not installed")
+    def test_pd_consistent_with_ref(self):
+        if INSTALLED_PD:
+            test = paddle_to_numpy(
+                ActivationFn_pd(self.activation)(to_paddle_tensor(self.random_input))
+            )
+            np.testing.assert_allclose(self.ref, test, atol=1e-10)

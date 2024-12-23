@@ -5,6 +5,6 @@ from deepmd.infer.deep_polar import (
 )
 
 __all__ = [
-    "DeepPolar",
     "DeepGlobalPolar",
+    "DeepPolar",
 ]

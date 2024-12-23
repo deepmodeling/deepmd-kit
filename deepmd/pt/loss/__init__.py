@@ -22,11 +22,11 @@ from .tensor import (
 )
 
 __all__ = [
-    "DenoiseLoss",
-    "EnergyStdLoss",
-    "EnergySpinLoss",
-    "TensorLoss",
-    "TaskLoss",
     "DOSLoss",
+    "DenoiseLoss",
+    "EnergySpinLoss",
+    "EnergyStdLoss",
     "PropertyLoss",
+    "TaskLoss",
+    "TensorLoss",
 ]

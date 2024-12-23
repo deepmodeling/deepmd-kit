@@ -14,6 +14,7 @@ from ..seed import (
 )
 from .common import (
     INSTALLED_JAX,
+    INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
 )
@@ -87,3 +88,7 @@ class TestNeighborStat(unittest.TestCase):
     @unittest.skipUnless(INSTALLED_JAX, "jax is not installed")
     def test_neighbor_stat_jax(self) -> None:
         self.run_neighbor_stat("jax")
+
+    @unittest.skipUnless(INSTALLED_PD, "paddle is not installed")
+    def test_neighbor_stat_pd(self):
+        self.run_neighbor_stat("paddle")

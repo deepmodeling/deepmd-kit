@@ -60,6 +60,8 @@ class DeepmdData:
     ) -> None:
         """Constructor."""
         root = DPPath(sys_path)
+        if not root.is_dir():
+            raise FileNotFoundError(f"System {sys_path} is not found!")
         self.dirs = root.glob(set_prefix + ".*")
         if not len(self.dirs):
             raise FileNotFoundError(f"No {set_prefix}.* is found in {sys_path}")
@@ -233,6 +235,21 @@ class DeepmdData:
         return self.check_batch_size(test_size)
 
     def get_item_torch(self, index: int) -> dict:
+        """Get a single frame data . The frame is picked from the data system by index. The index is coded across all the sets.
+
+        Parameters
+        ----------
+        index
+            index of the frame
+        """
+        i = bisect.bisect_right(self.prefix_sum, index)
+        frames = self._load_set(self.dirs[i])
+        frame = self._get_subdata(frames, index - self.prefix_sum[i])
+        frame = self.reformat_data_torch(frame)
+        frame["fid"] = index
+        return frame
+
+    def get_item_paddle(self, index: int) -> dict:
         """Get a single frame data . The frame is picked from the data system by index. The index is coded across all the sets.
 
         Parameters
@@ -774,10 +791,10 @@ class DataRequirementItem:
             raise KeyError(key)
         return self.dict[key]
 
-    def __eq__(self, __value: object) -> bool:
-        if not isinstance(__value, DataRequirementItem):
+    def __eq__(self, value: object, /) -> bool:
+        if not isinstance(value, DataRequirementItem):
             return False
-        return self.dict == __value.dict
+        return self.dict == value.dict
 
     def __repr__(self) -> str:
         return f"DataRequirementItem({self.dict})"

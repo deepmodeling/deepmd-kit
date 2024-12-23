@@ -128,7 +128,7 @@ class TestDataModifier(tf.test.TestCase):
                 vf[:, ii].ravel(),
                 num_f.ravel(),
                 places,
-                err_msg="dof %d does not match" % (ii),
+                err_msg=f"dof {ii} does not match",
             )
 
         box3 = np.reshape(box, [nframes, 3, 3])

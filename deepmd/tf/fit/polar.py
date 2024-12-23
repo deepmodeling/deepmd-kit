@@ -63,6 +63,8 @@ class PolarFittingSeA(Fitting):
             Number of frame parameters
     numb_aparam
             Number of atomic parameters
+    dim_case_embd
+            Dimension of case specific embedding.
     sel_type : list[int]
             The atom types selected to have an atomic polarizability prediction. If is None, all atoms are selected.
     fit_diag : bool
@@ -95,6 +97,7 @@ class PolarFittingSeA(Fitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        dim_case_embd: int = 0,
         sel_type: Optional[list[int]] = None,
         fit_diag: bool = True,
         scale: Optional[list[float]] = None,
@@ -162,10 +165,13 @@ class PolarFittingSeA(Fitting):
         self.type_map = type_map
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
+        self.dim_case_embd = dim_case_embd
         if numb_fparam > 0:
             raise ValueError("numb_fparam is not supported in the dipole fitting")
         if numb_aparam > 0:
             raise ValueError("numb_aparam is not supported in the dipole fitting")
+        if dim_case_embd > 0:
+            raise ValueError("dim_case_embd is not supported in TensorFlow.")
         self.fparam_avg = None
         self.fparam_std = None
         self.fparam_inv_std = None
@@ -578,7 +584,7 @@ class PolarFittingSeA(Fitting):
         data = {
             "@class": "Fitting",
             "type": "polar",
-            "@version": 3,
+            "@version": 4,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
             "embedding_width": self.dim_rot_mat_1,
@@ -588,6 +594,7 @@ class PolarFittingSeA(Fitting):
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
+            "dim_case_embd": self.dim_case_embd,
             "activation_function": self.activation_function_name,
             "precision": self.fitting_precision.name,
             "exclude_types": [],
@@ -625,7 +632,7 @@ class PolarFittingSeA(Fitting):
         """
         data = data.copy()
         check_version_compatibility(
-            data.pop("@version", 1), 3, 1
+            data.pop("@version", 1), 4, 1
         )  # to allow PT version.
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(

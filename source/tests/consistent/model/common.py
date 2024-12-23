@@ -12,6 +12,7 @@ from deepmd.dpmodel.common import (
 
 from ..common import (
     INSTALLED_JAX,
+    INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
 )
@@ -29,6 +30,9 @@ if INSTALLED_JAX:
     from deepmd.jax.env import (
         jnp,
     )
+if INSTALLED_PD:
+    from deepmd.pd.utils.utils import to_numpy_array as paddle_to_numpy
+    from deepmd.pd.utils.utils import to_paddle_tensor as numpy_to_paddle
 
 
 class ModelTest:
@@ -111,6 +115,17 @@ class ModelTest:
                 numpy_to_jax(coords),
                 numpy_to_jax(atype),
                 box=numpy_to_jax(box),
+                do_atomic_virial=True,
+            ).items()
+        }
+
+    def eval_pd_model(self, pd_obj: Any, natoms, coords, atype, box) -> Any:
+        return {
+            kk: paddle_to_numpy(vv)
+            for kk, vv in pd_obj(
+                numpy_to_paddle(coords),
+                numpy_to_paddle(atype),
+                box=numpy_to_paddle(box),
                 do_atomic_virial=True,
             ).items()
         }

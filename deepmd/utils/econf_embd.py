@@ -7,8 +7,8 @@ from mendeleev import (
 
 __all__ = [
     "electronic_configuration_embedding",
-    "normalized_electronic_configuration_embedding",
     "make_econf_embedding",
+    "normalized_electronic_configuration_embedding",
     "transform_to_spin_rep",
 ]
 

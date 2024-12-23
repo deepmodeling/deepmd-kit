@@ -8,7 +8,7 @@ from deepmd.utils.model_stat import (
 )
 
 __all__ = [
+    "_make_all_stat_ref",  # used by tests
     "make_stat_input",
     "merge_sys_stat",
-    "_make_all_stat_ref",  # used by tests
 ]
