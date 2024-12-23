@@ -73,15 +73,15 @@ from dpdata.data_type import (
     DataType,
 )
 
-property_name = "band_prop"  #fittng_net/property_name
-task_dim = 3 #fitting_net/task_dim
+property_name = "band_prop"  # fittng_net/property_name
+task_dim = 3  # fitting_net/task_dim
 
 # register datatype
 datatypes = [
     DataType(
         property_name,
         np.ndarray,
-        shape=(Axis.NFRAMES,task_dim),
+        shape=(Axis.NFRAMES, task_dim),
         required=False,
     ),
 ]
@@ -90,7 +90,7 @@ datatypes.extend(
         DataType(
             "energies",
             np.ndarray,
-            shape=(Axis.NFRAMES,1),
+            shape=(Axis.NFRAMES, 1),
             required=False,
         ),
         DataType(
@@ -98,7 +98,7 @@ datatypes.extend(
             np.ndarray,
             shape=(Axis.NFRAMES, Axis.NATOMS, 1),
             required=False,
-        )
+        ),
     ]
 )
 
@@ -107,10 +107,10 @@ for datatype in datatypes:
     dpdata.LabeledSystem.register_data_type(datatype)
 
 ls = dpdata.MultiSystems()
-frame = dpdata.System("POSCAR",fmt="vasp/poscar")
+frame = dpdata.System("POSCAR", fmt="vasp/poscar")
 labelframe = dpdata.LabeledSystem()
 labelframe.append(frame)
-labelframe.data[property_name] = np.array([[-0.236,0.056,0.292]],dtype=np.float32)
+labelframe.data[property_name] = np.array([[-0.236, 0.056, 0.292]], dtype=np.float32)
 ls.append(labelframe)
 ls.to_deepmd_npy_mixed("deepmd")
 ```

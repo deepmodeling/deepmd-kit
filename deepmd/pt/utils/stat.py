@@ -24,9 +24,9 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 from deepmd.utils.out_stat import (
+    compute_stats_do_not_distinguish_types,
     compute_stats_from_atomic,
     compute_stats_from_redu,
-    compute_stats_do_not_distinguish_types,
 )
 from deepmd.utils.path import (
     DPPath,
