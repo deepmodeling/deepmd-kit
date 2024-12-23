@@ -56,8 +56,12 @@ class DeepProperty(DeepEval):
             )
         )
         self.deep_eval.output_def = self.output_def
-        self.deep_eval._OUTDEF_DP2BACKEND[self.get_property_name()] = f"atom_{self.get_property_name()}"
-        self.deep_eval._OUTDEF_DP2BACKEND[f"{self.get_property_name()}_redu"] = self.get_property_name()
+        self.deep_eval._OUTDEF_DP2BACKEND[self.get_property_name()] = (
+            f"atom_{self.get_property_name()}"
+        )
+        self.deep_eval._OUTDEF_DP2BACKEND[f"{self.get_property_name()}_redu"] = (
+            self.get_property_name()
+        )
 
     @property
     def task_dim(self) -> int:
@@ -125,7 +129,9 @@ class DeepProperty(DeepEval):
         atomic_property = results[self.get_property_name()].reshape(
             nframes, natoms, self.get_task_dim()
         )
-        property = results[f"{self.get_property_name()}_redu"].reshape(nframes, self.get_task_dim())
+        property = results[f"{self.get_property_name()}_redu"].reshape(
+            nframes, self.get_task_dim()
+        )
 
         if atomic:
             return (
