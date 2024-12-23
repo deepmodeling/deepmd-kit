@@ -113,6 +113,7 @@ class DeepEval(DeepEvalBackend):
         else:
             # self.dp = paddle.jit.load(self.model_path.split(".json")[0])
             raise ValueError(f"Unknown model file format: {self.model_path}!")
+        self.dp.eval()
         self.rcut = self.dp.model["Default"].get_rcut()
         self.type_map = self.dp.model["Default"].get_type_map()
         if isinstance(auto_batch_size, bool):
@@ -237,11 +238,6 @@ class DeepEval(DeepEvalBackend):
             The output of the evaluation. The keys are the names of the output
             variables, and the values are the corresponding output arrays.
         """
-        # switch to eval mode
-        is_training = self.dp.training
-        if is_training:
-            self.dp.eval()
-
         # convert all of the input to numpy array
         atom_types = np.array(atom_types, dtype=np.int32)
         coords = np.array(coords)
@@ -265,11 +261,6 @@ class DeepEval(DeepEvalBackend):
                 aparam,
                 request_defs,
             )
-
-        # switch back to training mode if previously enabled
-        if is_training:
-            self.dp.train()
-
         return dict(
             zip(
                 [x.name for x in request_defs],
