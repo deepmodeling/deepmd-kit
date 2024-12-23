@@ -172,17 +172,26 @@ def j_loader(filename: Union[str, Path]) -> dict[str, Any]:
     Raises
     ------
     TypeError
-        if the supplied file is of unsupported type
+        if file is not json or yaml/yml
     """
     filepath = Path(filename)
-    if filepath.suffix.endswith("json"):
+    
+    try:
         with filepath.open() as fp:
             return json.load(fp)
-    elif filepath.suffix.endswith(("yml", "yaml")):
+    except json.JSONDecodeError: # if not json
+        pass # will try the next option
+    
+    # FileNotFoundError will not be caught here,
+    # so it will be raised if file does not exist
+    
+    try:
         with filepath.open() as fp:
             return yaml.safe_load(fp)
-    else:
-        raise TypeError("config file must be json, or yaml/yml")
+    except yaml.YAMLError: # if not yaml
+        pass # no more options, raise TypeError
+    
+    raise TypeError("config file must be json, or yaml/yml")
 
 
 def expand_sys_str(root_dir: Union[str, Path]) -> list[str]:
