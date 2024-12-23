@@ -62,8 +62,8 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
             do_atomic_virial=do_atomic_virial,
         )
         model_predict = {}
-        model_predict["atom_property"] = model_ret[self.get_property_name()]
-        model_predict["property"] = model_ret[f"{self.get_property_name()}_redu"]
+        model_predict[f"atom_{self.get_property_name()}"] = model_ret[self.get_property_name()]
+        model_predict[self.get_property_name()] = model_ret[f"{self.get_property_name()}_redu"]
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
         return model_predict

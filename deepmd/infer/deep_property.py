@@ -40,6 +40,8 @@ class DeepProperty(DeepEval):
     @property
     def output_def(self) -> ModelOutputDef:
         """Get the output definition of this model."""
+        from IPython import embed
+        embed()
         return ModelOutputDef(
             FittingOutputDef(
                 [
@@ -53,9 +55,17 @@ class DeepProperty(DeepEval):
             )
         )
 
+    @output_def.setter
+    def output_def(self, property_def) -> ModelOutputDef:
+        """Get the output definition of this model."""
+        return ModelOutputDef(
+            FittingOutputDef(
+                [property_def]
+            )
+        )
+
     def change_output_def(self) -> None:
-        self.output_def["property"].shape = self.task_dim
-        self.output_def["property"].intensive = self.get_intensive()
+        self.output_def = OutputVariableDef(self.get_property_name(), shape=[self.get_task_dim()],reducible=True,atomic=True,)
 
     @property
     def task_dim(self) -> int:

@@ -88,6 +88,7 @@ class PropertyLoss(TaskLoss):
             Other losses for display.
         """
         model_pred = model(**input_dict)
+        model_pred["property"] = model_pred[self.property_name]
         nbz = model_pred["property"].shape[0]
         assert model_pred["property"].shape == (nbz, self.task_dim)
         label["property"] = label[self.property_name]
