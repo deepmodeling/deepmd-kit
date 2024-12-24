@@ -85,7 +85,10 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
     @torch.jit.export
     def get_var_name(self) -> str:
         """Get the name of the property."""
-        return self.get_fitting_net().var_name
+        if hasattr(obj, 'get_var_name') and callable(getattr(obj, 'get_var_name')):
+            return self.get_fitting_net().var_name
+        else:
+            raise NotImplementedError
 
     @torch.jit.export
     def forward_lower(

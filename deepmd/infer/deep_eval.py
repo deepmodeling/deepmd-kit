@@ -276,7 +276,7 @@ class DeepEvalBackend(ABC):
 
     def get_var_name(self) -> str:
         """Get the name of the fitting property."""
-        return NotImplementedError
+        raise NotImplementedError
 
     @abstractmethod
     def get_ntypes_spin(self) -> int:
