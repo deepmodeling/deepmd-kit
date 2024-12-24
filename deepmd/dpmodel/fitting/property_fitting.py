@@ -113,7 +113,7 @@ class PropertyFittingNet(InvarFitting):
         data = data.copy()
         check_version_compatibility(data.pop("@version"), 4, 1)
         data.pop("dim_out")
-        data.pop("var_name")
+        data["property_name"] = data.pop("var_name")
         data.pop("tot_ener_zero")
         data.pop("layer_name")
         data.pop("use_aparam_as_mask", None)
@@ -130,7 +130,6 @@ class PropertyFittingNet(InvarFitting):
             "type": "property",
             "task_dim": self.task_dim,
             "intensive": self.intensive,
-            "property_name": self.var_name,
         }
         dd["@version"] = 4
 

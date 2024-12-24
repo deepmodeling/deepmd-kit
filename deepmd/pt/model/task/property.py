@@ -134,7 +134,7 @@ class PropertyFittingNet(InvarFitting):
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 4, 1)
         data.pop("dim_out")
-        data.pop("var_name")
+        data["property_name"] = data.pop("var_name")
         obj = super().deserialize(data)
 
         return obj
@@ -146,7 +146,6 @@ class PropertyFittingNet(InvarFitting):
             "type": "property",
             "task_dim": self.task_dim,
             "intensive": self.intensive,
-            "property_name": self.var_name,
         }
         dd["@version"] = 4
 
