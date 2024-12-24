@@ -464,7 +464,7 @@ class TestPropFintuFromEnerModel(unittest.TestCase):
         property_input = str(Path(__file__).parent / "property/input.json")
         with open(property_input) as f:
             self.config_property = json.load(f)
-        prop_data_file = [str(Path(__file__).parent / "property/single")]
+        prop_data_file = [str(Path(__file__).parent / "property/double")]
         self.config_property["training"]["training_data"]["systems"] = prop_data_file
         self.config_property["training"]["validation_data"]["systems"] = prop_data_file
         self.config_property["model"]["descriptor"] = deepcopy(model_dpa1["descriptor"])
