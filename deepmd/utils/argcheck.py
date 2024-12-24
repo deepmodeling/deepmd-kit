@@ -1491,6 +1491,12 @@ def dpa3_repflow_args():
             doc=doc_axis_neuron,
         ),
         Argument(
+            "skip_stat",
+            bool,
+            optional=True,
+            default=False,
+        ),
+        Argument(
             "update_angle",
             bool,
             optional=True,
