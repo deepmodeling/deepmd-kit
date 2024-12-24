@@ -17,6 +17,9 @@ from deepmd.dpmodel.descriptor.dpa2 import (
     RepformerArgs,
     RepinitArgs,
 )
+from deepmd.dpmodel.descriptor.dpa3 import (
+    RepFlowArgs,
+)
 
 from ....consistent.common import (
     parameterize_func,
@@ -458,6 +461,75 @@ DescriptorParamDPA2List = parameterize_func(
 )
 # to get name for the default function
 DescriptorParamDPA2 = DescriptorParamDPA2List[0]
+
+
+def DescriptorParamDPA3(
+    ntypes,
+    rcut,
+    rcut_smth,
+    sel,
+    type_map,
+    env_protection=0.0,
+    exclude_types=[],
+    update_style="res_residual",
+    update_residual=0.1,
+    update_residual_init="const",
+    update_angle=True,
+    a_compress_rate=0,
+    precision="float64",
+):
+    input_dict = {
+        # kwargs for repformer
+        "repflow": RepFlowArgs(
+            **{
+                "n_dim": 20,
+                "e_dim": 10,
+                "a_dim": 10,
+                "nlayers": 3,
+                "e_rcut": rcut,
+                "e_rcut_smth": rcut_smth,
+                "e_sel": sum(sel),
+                "a_rcut": rcut / 2,
+                "a_rcut_smth": rcut_smth / 2,
+                "a_sel": sum(sel) // 4,
+                "a_compress_rate": a_compress_rate,
+                "axis_neuron": 4,
+                "update_angle": update_angle,
+                "update_style": update_style,
+                "update_residual": update_residual,
+                "update_residual_init": update_residual_init,
+            }
+        ),
+        "ntypes": ntypes,
+        "concat_output_tebd": False,
+        "precision": precision,
+        "activation_function": "silu",
+        "exclude_types": exclude_types,
+        "env_protection": env_protection,
+        "trainable": True,
+        "use_econf_tebd": False,
+        "use_tebd_bias": False,
+        "type_map": type_map,
+        "seed": GLOBAL_SEED,
+    }
+    return input_dict
+
+
+DescriptorParamDPA3List = parameterize_func(
+    DescriptorParamDPA3,
+    OrderedDict(
+        {
+            "update_residual_init": ("const",),
+            "exclude_types": ([], [[0, 1]]),
+            "update_angle": (True, False),
+            "a_compress_rate": (0, 1),
+            "env_protection": (0.0, 1e-8),
+            "precision": ("float64",),
+        }
+    ),
+)
+# to get name for the default function
+DescriptorParamDPA3 = DescriptorParamDPA3List[0]
 
 
 def DescriptorParamHybrid(ntypes, rcut, rcut_smth, sel, type_map, **kwargs):

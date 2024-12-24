@@ -1355,6 +1355,172 @@ def dpa2_repformer_args():
     ]
 
 
+@descrpt_args_plugin.register("dpa3", doc=doc_only_pt_supported)
+def descrpt_dpa3_args():
+    # repflow args
+    doc_repflow = "The arguments used to initialize the repflow block."
+    # descriptor args
+    doc_concat_output_tebd = (
+        "Whether to concat type embedding at the output of the descriptor."
+    )
+    doc_activation_function = f"The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
+    doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
+    doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
+    doc_trainable = "If the parameters in the embedding net is trainable."
+    doc_seed = "Random seed for parameter initialization."
+    doc_use_econf_tebd = "Whether to use electronic configuration type embedding."
+    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
+    return [
+        # doc_repflow args
+        Argument("repflow", dict, dpa3_repflow_args(), doc=doc_repflow),
+        # descriptor args
+        Argument(
+            "concat_output_tebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_concat_output_tebd,
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="silu",
+            doc=doc_activation_function,
+        ),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument(
+            "exclude_types",
+            list[list[int]],
+            optional=True,
+            default=[],
+            doc=doc_exclude_types,
+        ),
+        Argument(
+            "env_protection",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_only_pt_supported + doc_env_protection,
+        ),
+        Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+        Argument(
+            "use_econf_tebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_use_econf_tebd,
+        ),
+        Argument(
+            "use_tebd_bias",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_tebd_bias,
+        ),
+    ]
+
+
+# repflow for dpa3
+def dpa3_repflow_args():
+    # repflow args
+    doc_n_dim = "The dimension of node representation."
+    doc_e_dim = "The dimension of edge representation."
+    doc_a_dim = "The dimension of angle representation."
+    doc_nlayers = "The number of repflow layers."
+    doc_e_rcut = "The edge cut-off radius."
+    doc_e_rcut_smth = "Where to start smoothing for edge. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
+    doc_e_sel = 'Maximally possible number of selected edge neighbors. It can be:\n\n\
+    - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    doc_a_rcut = "The angle cut-off radius."
+    doc_a_rcut_smth = "Where to start smoothing for angle. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
+    doc_a_sel = 'Maximally possible number of selected angle neighbors. It can be:\n\n\
+    - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    doc_a_compress_rate = (
+        "The compression rate for angular messages. The default value is 0, indicating no compression. "
+        " If a non-zero integer c is provided, the node and edge dimensions will be compressed "
+        "to n_dim/c and e_dim/2c, respectively, within the angular message."
+    )
+    doc_axis_neuron = "The number of dimension of submatrix in the symmetrization ops."
+    doc_update_angle = (
+        "Where to update the angle rep. If not, only node and edge rep will be used."
+    )
+    doc_update_style = (
+        "Style to update a representation. "
+        "Supported options are: "
+        "-'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n) "
+        "-'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)"
+        "-'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n) "
+        "where `r1`, `r2` ... `r3` are residual weights defined by `update_residual` "
+        "and `update_residual_init`."
+    )
+    doc_update_residual = (
+        "When update using residual mode, "
+        "the initial std of residual vector weights."
+    )
+    doc_update_residual_init = (
+        "When update using residual mode, "
+        "the initialization mode of residual vector weights."
+        "Supported modes are: ['norm', 'const']."
+    )
+
+    return [
+        # repflow args
+        Argument("n_dim", int, optional=True, default=128, doc=doc_n_dim),
+        Argument("e_dim", int, optional=True, default=64, doc=doc_e_dim),
+        Argument("a_dim", int, optional=True, default=64, doc=doc_a_dim),
+        Argument("nlayers", int, optional=True, default=6, doc=doc_nlayers),
+        Argument("e_rcut", float, doc=doc_e_rcut),
+        Argument("e_rcut_smth", float, doc=doc_e_rcut_smth),
+        Argument("e_sel", [int, str], doc=doc_e_sel),
+        Argument("a_rcut", float, doc=doc_a_rcut),
+        Argument("a_rcut_smth", float, doc=doc_a_rcut_smth),
+        Argument("a_sel", [int, str], doc=doc_a_sel),
+        Argument(
+            "a_compress_rate", int, optional=True, default=0, doc=doc_a_compress_rate
+        ),
+        Argument(
+            "axis_neuron",
+            int,
+            optional=True,
+            default=4,
+            doc=doc_axis_neuron,
+        ),
+        Argument(
+            "update_angle",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_update_angle,
+        ),
+        Argument(
+            "update_style",
+            str,
+            optional=True,
+            default="res_residual",
+            doc=doc_update_style,
+        ),
+        Argument(
+            "update_residual",
+            float,
+            optional=True,
+            default=0.1,
+            doc=doc_update_residual,
+        ),
+        Argument(
+            "update_residual_init",
+            str,
+            optional=True,
+            default="const",
+            doc=doc_update_residual_init,
+        ),
+    ]
+
+
 @descrpt_args_plugin.register(
     "se_a_ebd_v2", alias=["se_a_tpe_v2"], doc=doc_only_tf_supported
 )
@@ -2188,6 +2354,12 @@ def loss_ener():
     doc_relative_f = "If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label."
     doc_enable_atom_ener_coeff = "If true, the energy will be computed as \\sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
     return [
+        Argument(
+            "use_l1_all",
+            bool,
+            optional=True,
+            default=False,
+        ),
         Argument(
             "start_pref_e",
             [float, int],
