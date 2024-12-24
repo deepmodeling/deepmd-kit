@@ -475,6 +475,7 @@ def DescriptorParamDPA3(
     update_residual=0.1,
     update_residual_init="const",
     update_angle=True,
+    n_multi_edge_message=1,
     a_compress_rate=0,
     precision="float64",
 ):
@@ -493,6 +494,7 @@ def DescriptorParamDPA3(
                 "a_rcut_smth": rcut_smth / 2,
                 "a_sel": sum(sel) // 4,
                 "a_compress_rate": a_compress_rate,
+                "n_multi_edge_message": n_multi_edge_message,
                 "axis_neuron": 4,
                 "update_angle": update_angle,
                 "update_style": update_style,
@@ -523,6 +525,7 @@ DescriptorParamDPA3List = parameterize_func(
             "exclude_types": ([], [[0, 1]]),
             "update_angle": (True, False),
             "a_compress_rate": (0, 1),
+            "n_multi_edge_message": (1, 2),
             "env_protection": (0.0, 1e-8),
             "precision": ("float64",),
         }

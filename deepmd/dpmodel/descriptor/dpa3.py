@@ -17,6 +17,7 @@ class RepFlowArgs:
         a_compress_rate: int = 0,
         a_compress_e_rate: int = 1,
         a_compress_use_split: bool = False,
+        n_multi_edge_message: int = 1,
         axis_neuron: int = 4,
         update_angle: bool = True,
         update_style: str = "res_residual",
@@ -59,6 +60,9 @@ class RepFlowArgs:
         a_compress_use_split : bool, optional
             Whether to split first sub-vectors instead of linear mapping during angular message compression.
             The default value is False.
+        n_multi_edge_message : int, optional
+            The head number of multiple edge messages to update node feature.
+            Default is 1, indicating one head edge message.
         axis_neuron : int, optional
             The number of dimension of submatrix in the symmetrization ops.
         update_angle : bool, optional
@@ -87,6 +91,7 @@ class RepFlowArgs:
         self.a_rcut_smth = a_rcut_smth
         self.a_sel = a_sel
         self.a_compress_rate = a_compress_rate
+        self.n_multi_edge_message = n_multi_edge_message
         self.axis_neuron = axis_neuron
         self.update_angle = update_angle
         self.update_style = update_style
@@ -117,6 +122,7 @@ class RepFlowArgs:
             "a_compress_rate": self.a_compress_rate,
             "a_compress_e_rate": self.a_compress_e_rate,
             "a_compress_use_split": self.a_compress_use_split,
+            "n_multi_edge_message": self.n_multi_edge_message,
             "axis_neuron": self.axis_neuron,
             "update_angle": self.update_angle,
             "update_style": self.update_style,
