@@ -46,6 +46,7 @@ class RepFlowLayer(torch.nn.Module):
         e_dim: int = 16,
         a_dim: int = 64,
         a_compress_rate: int = 0,
+        n_multi_edge_message: int = 1,
         axis_neuron: int = 4,
         update_angle: bool = True,  # angle
         activation_function: str = "silu",
@@ -77,6 +78,8 @@ class RepFlowLayer(torch.nn.Module):
                 f"For a_compress_rate of {a_compress_rate}, a_dim must be divisible by {2 * a_compress_rate}. "
                 f"Currently, a_dim={a_dim} is not valid."
             )
+        self.n_multi_edge_message = n_multi_edge_message
+        assert self.n_multi_edge_message >= 1, "n_multi_edge_message must >= 1!"
         self.axis_neuron = axis_neuron
         self.update_angle = update_angle
         self.activation_function = activation_function
@@ -140,20 +143,21 @@ class RepFlowLayer(torch.nn.Module):
         # node edge message
         self.node_edge_linear = MLPLayer(
             self.edge_info_dim,
-            n_dim,
+            self.n_multi_edge_message * n_dim,
             precision=precision,
             seed=child_seed(seed, 4),
         )
         if self.update_style == "res_residual":
-            self.n_residual.append(
-                get_residual(
-                    n_dim,
-                    self.update_residual,
-                    self.update_residual_init,
-                    precision=precision,
-                    seed=child_seed(seed, 5),
+            for head_index in range(self.n_multi_edge_message):
+                self.n_residual.append(
+                    get_residual(
+                        n_dim,
+                        self.update_residual,
+                        self.update_residual_init,
+                        precision=precision,
+                        seed=child_seed(child_seed(seed, 5), head_index),
+                    )
                 )
-            )
 
         # edge self message
         self.edge_self_linear = MLPLayer(
@@ -463,10 +467,18 @@ class RepFlowLayer(torch.nn.Module):
         )
 
         # node edge message
-        # nb x nloc x nnei x n_dim
+        # nb x nloc x nnei x (h * n_dim)
         node_edge_update = self.act(self.node_edge_linear(edge_info)) * sw.unsqueeze(-1)
         node_edge_update = torch.sum(node_edge_update, dim=-2) / self.nnei
-        n_update_list.append(node_edge_update)
+        if self.n_multi_edge_message > 1:
+            # nb x nloc x nnei x h x n_dim
+            node_edge_update_mul_head = node_edge_update.view(
+                nb, nloc, self.n_multi_edge_message, self.n_dim
+            )
+            for head_index in range(self.n_multi_edge_message):
+                n_update_list.append(node_edge_update_mul_head[:, :, head_index, :])
+        else:
+            n_update_list.append(node_edge_update)
         # update node_ebd
         n_updated = self.list_update(n_update_list, "node")
 
@@ -647,6 +659,7 @@ class RepFlowLayer(torch.nn.Module):
             "e_dim": self.e_dim,
             "a_dim": self.a_dim,
             "a_compress_rate": self.a_compress_rate,
+            "n_multi_edge_message": self.n_multi_edge_message,
             "axis_neuron": self.axis_neuron,
             "activation_function": self.activation_function,
             "update_angle": self.update_angle,

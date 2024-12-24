@@ -1445,6 +1445,10 @@ def dpa3_repflow_args():
         " If a non-zero integer c is provided, the node and edge dimensions will be compressed "
         "to n_dim/c and e_dim/2c, respectively, within the angular message."
     )
+    doc_n_multi_edge_message = (
+        "The head number of multiple edge messages to update node feature. "
+        "Default is 1, indicating one head edge message."
+    )
     doc_axis_neuron = "The number of dimension of submatrix in the symmetrization ops."
     doc_update_angle = (
         "Where to update the angle rep. If not, only node and edge rep will be used."
@@ -1482,6 +1486,13 @@ def dpa3_repflow_args():
         Argument("a_sel", [int, str], doc=doc_a_sel),
         Argument(
             "a_compress_rate", int, optional=True, default=0, doc=doc_a_compress_rate
+        ),
+        Argument(
+            "n_multi_edge_message",
+            int,
+            optional=True,
+            default=1,
+            doc=doc_n_multi_edge_message,
         ),
         Argument(
             "axis_neuron",
