@@ -88,9 +88,8 @@ class PropertyFittingNet(InvarFitting):
     ) -> None:
         self.task_dim = task_dim
         self.intensive = intensive
-        self.property_name = property_name
         super().__init__(
-            var_name=self.property_name,
+            var_name=property_name,
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             dim_out=task_dim,
@@ -131,7 +130,7 @@ class PropertyFittingNet(InvarFitting):
             "type": "property",
             "task_dim": self.task_dim,
             "intensive": self.intensive,
-            "property_name": self.property_name,
+            "property_name": self.var_name,
         }
         dd["@version"] = 4
 

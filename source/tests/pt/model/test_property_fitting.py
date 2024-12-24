@@ -119,16 +119,16 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 aparam=to_numpy_array(iap),
             )
             np.testing.assert_allclose(
-                to_numpy_array(ret0[ft0.property_name]),
-                ret1[ft1.property_name],
+                to_numpy_array(ret0[ft0.var_name]),
+                ret1[ft1.var_name],
             )
             np.testing.assert_allclose(
-                to_numpy_array(ret0[ft0.property_name]),
-                to_numpy_array(ret2[ft2.property_name]),
+                to_numpy_array(ret0[ft0.var_name]),
+                to_numpy_array(ret2[ft2.var_name]),
             )
             np.testing.assert_allclose(
-                to_numpy_array(ret0[ft0.property_name]),
-                ret3[ft3.property_name],
+                to_numpy_array(ret0[ft0.var_name]),
+                ret3[ft3.var_name],
             )
 
     def test_jit(
@@ -228,7 +228,7 @@ class TestInvarianceOutCell(unittest.TestCase):
             )
 
             ret0 = ft0(rd0, atype, gr0, fparam=None, aparam=None)
-            res.append(ret0[ft0.property_name])
+            res.append(ret0[ft0.var_name])
 
         np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
 
@@ -310,7 +310,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
                 )
 
                 ret0 = ft0(rd0, atype, gr0, fparam=ifp, aparam=iap)
-                res.append(ret0[ft0.property_name])
+                res.append(ret0[ft0.var_name])
             np.testing.assert_allclose(
                 to_numpy_array(res[1]),
                 to_numpy_array(res[0]),
@@ -352,7 +352,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
             )
 
             ret0 = ft0(rd0, atype, gr0, fparam=None, aparam=None)
-            res.append(ret0[ft0.property_name])
+            res.append(ret0[ft0.var_name])
 
         np.testing.assert_allclose(
             to_numpy_array(res[0][:, idx_perm]),
@@ -400,7 +400,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
             )
 
             ret0 = ft0(rd0, atype, gr0, fparam=None, aparam=None)
-            res.append(ret0[ft0.property_name])
+            res.append(ret0[ft0.var_name])
 
         np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
 

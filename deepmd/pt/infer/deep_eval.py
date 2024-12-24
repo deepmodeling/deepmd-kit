@@ -184,9 +184,9 @@ class DeepEval(DeepEvalBackend):
     def get_intensive(self) -> bool:
         return self.dp.model["Default"].get_intensive()
 
-    def get_property_name(self) -> str:
+    def get_var_name(self) -> str:
         """Get the name of the property."""
-        return self.dp.model["Default"].get_property_name()
+        return self.dp.model["Default"].get_var_name()
 
     @property
     def model_type(self) -> type["DeepEvalWrapper"]:
@@ -204,7 +204,7 @@ class DeepEval(DeepEvalBackend):
             return DeepGlobalPolar
         elif "wfc" in model_output_type:
             return DeepWFC
-        elif self.dp.model["Default"].get_property_name() in model_output_type:
+        elif self.get_var_name() in model_output_type:
             return DeepProperty
         else:
             raise RuntimeError("Unknown model type")

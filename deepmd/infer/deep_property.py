@@ -56,7 +56,7 @@ class DeepProperty(DeepEval):
             FittingOutputDef(
                 [
                     OutputVariableDef(
-                        self.get_property_name(),
+                        self.get_var_name(),
                         shape=[self.get_task_dim()],
                         reducible=True,
                         atomic=True,
@@ -66,11 +66,11 @@ class DeepProperty(DeepEval):
             )
         )
         self.deep_eval.output_def = self.output_def
-        self.deep_eval._OUTDEF_DP2BACKEND[self.get_property_name()] = (
-            f"atom_{self.get_property_name()}"
+        self.deep_eval._OUTDEF_DP2BACKEND[self.get_var_name()] = (
+            f"atom_{self.get_var_name()}"
         )
-        self.deep_eval._OUTDEF_DP2BACKEND[f"{self.get_property_name()}_redu"] = (
-            self.get_property_name()
+        self.deep_eval._OUTDEF_DP2BACKEND[f"{self.get_var_name()}_redu"] = (
+            self.get_var_name()
         )
 
     @property
@@ -136,10 +136,10 @@ class DeepProperty(DeepEval):
             aparam=aparam,
             **kwargs,
         )
-        atomic_property = results[self.get_property_name()].reshape(
+        atomic_property = results[self.get_var_name()].reshape(
             nframes, natoms, self.get_task_dim()
         )
-        property = results[f"{self.get_property_name()}_redu"].reshape(
+        property = results[f"{self.get_var_name()}_redu"].reshape(
             nframes, self.get_task_dim()
         )
 
@@ -159,9 +159,9 @@ class DeepProperty(DeepEval):
         """Get whether the property is intensive."""
         return self.deep_eval.get_intensive()
 
-    def get_property_name(self) -> str:
+    def get_var_name(self) -> str:
         """Get the name of the fitting property."""
-        return self.deep_eval.get_property_name()
+        return self.deep_eval.get_var_name()
 
 
 __all__ = ["DeepProperty"]

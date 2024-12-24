@@ -274,7 +274,7 @@ class DeepEvalBackend(ABC):
         """Check if the model has spin atom types."""
         return False
 
-    def get_property_name(self) -> str:
+    def get_var_name(self) -> str:
         """Get the name of the fitting property."""
         return NotImplementedError
 

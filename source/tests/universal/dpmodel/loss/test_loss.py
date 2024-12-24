@@ -193,7 +193,7 @@ def LossParamProperty():
     }
     input_dict = {
         "key_to_pref_map": key_to_pref_map,
-        "property_name": "foo",
+        "var_name": "foo",
         "out_bias": [0.1, 0.5, 1.2, -0.1, -10],
         "out_std": [8, 10, 0.001, -0.2, -10],
         "task_dim": 5,
