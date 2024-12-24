@@ -186,7 +186,10 @@ class DeepEval(DeepEvalBackend):
 
     def get_var_name(self) -> str:
         """Get the name of the property."""
-        return self.dp.model["Default"].get_var_name()
+        if hasattr(self.dp.model["Default"], "get_var_name") and callable(getattr(self.dp.model["Default"], "get_var_name")):
+            return self.dp.model["Default"].get_var_name()
+        else:
+            raise NotImplementedError
 
     @property
     def model_type(self) -> type["DeepEvalWrapper"]:
