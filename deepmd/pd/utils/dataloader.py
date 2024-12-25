@@ -36,7 +36,7 @@ from deepmd.pd.utils import (
 from deepmd.pd.utils.dataset import (
     DeepmdDataSetForLoader,
 )
-from deepmd.pt.utils.utils import (
+from deepmd.pd.utils.utils import (
     mix_entropy,
 )
 from deepmd.utils import random as dp_random
