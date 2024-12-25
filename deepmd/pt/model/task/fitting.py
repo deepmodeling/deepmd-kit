@@ -4,9 +4,9 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Callable,
     Optional,
     Union,
-    Callable,
 )
 
 import numpy as np
@@ -440,7 +440,7 @@ class GeneralFitting(Fitting):
             sampled = merged
         # stat fparam
         if self.numb_fparam > 0:
-            cat_data = torch.cat([frame["fparam"] for frame in sampled],dim=0)
+            cat_data = torch.cat([frame["fparam"] for frame in sampled], dim=0)
             cat_data = torch.reshape(cat_data, [-1, self.numb_fparam])
             fparam_avg = torch.mean(cat_data, axis=0)
             fparam_std = torch.std(cat_data, axis=0)
@@ -449,7 +449,9 @@ class GeneralFitting(Fitting):
                 torch.tensor(fparam_avg, device=env.DEVICE, dtype=self.fparam_avg.dtype)
             )
             self.fparam_inv_std.copy_(
-                torch.tensor(fparam_inv_std, device=env.DEVICE, dtype=self.fparam_inv_std.dtype)
+                torch.tensor(
+                    fparam_inv_std, device=env.DEVICE, dtype=self.fparam_inv_std.dtype
+                )
             )
         # TODO: stat aparam
 
