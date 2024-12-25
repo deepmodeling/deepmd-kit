@@ -114,7 +114,7 @@ dp --pt test -m frozen_model.pth -s test_system -d ${output_prefix} -a -n 1
 
 ::::
 
-If `dp test -d ${output_prefix} -a` is specified, the output files will be the same as those in the `ener` mode, i.e.,
+If `dp --pt test -d ${output_prefix} -a` is specified, the output files will be the same as those in the `ener` mode, i.e.,
 
 ```
 ${output_prefix}.e.out   ${output_prefix}.e_peratom.out  ${output_prefix}.f.out
@@ -136,7 +136,7 @@ dp --pt test -m model.pt -s test_system -d ${output_prefix} -a -n 1
 
 ::::
 
-If `dp test -d ${output_prefix} -a` is specified, the predicted Hessian for each frame are output in an additional file in the working directory:
+If `dp --pt test -d ${output_prefix} -a` is specified, the predicted Hessian for each frame are output in an additional file in the working directory:
 
 ```
 ${output_prefix}.h.out
