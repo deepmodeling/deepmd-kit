@@ -1580,7 +1580,7 @@ def fitting_property():
     doc_seed = "Random seed for parameter initialization of the fitting net"
     doc_task_dim = "The dimension of outputs of fitting net"
     doc_intensive = "Whether the fitting property is intensive"
-    doc_bias_method = "The method of applying the bias to each atomic output, user can select 'normal' or 'no_bias'. If 'no_bias' is used, no bias will be added to the atomic output."
+    doc_property_name = "The names of fitting property, which should be consistent with the property name in the dataset."
     return [
         Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
         Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
@@ -1612,7 +1612,10 @@ def fitting_property():
         Argument("task_dim", int, optional=True, default=1, doc=doc_task_dim),
         Argument("intensive", bool, optional=True, default=False, doc=doc_intensive),
         Argument(
-            "bias_method", str, optional=True, default="normal", doc=doc_bias_method
+            "property_name",
+            str,
+            optional=False,
+            doc=doc_property_name,
         ),
     ]
 

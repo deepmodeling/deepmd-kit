@@ -37,25 +37,41 @@ class DeepProperty(DeepEval):
         Keyword arguments.
     """
 
-    @property
     def output_def(self) -> ModelOutputDef:
-        """Get the output definition of this model."""
-        return ModelOutputDef(
+        """
+        Get the output definition of this model.
+        But in property_fitting, the output definition is not known until the model is loaded.
+        So we need to rewrite the output definition after the model is loaded.
+        See detail in change_output_def.
+        """
+        pass
+
+    def change_output_def(self) -> None:
+        """
+        Change the output definition of this model.
+        In property_fitting, the output definition is known after the model is loaded.
+        We need to rewrite the output definition and related information.
+        """
+        self.output_def = ModelOutputDef(
             FittingOutputDef(
                 [
                     OutputVariableDef(
-                        "property",
-                        shape=[-1],
+                        self.get_var_name(),
+                        shape=[self.get_task_dim()],
                         reducible=True,
                         atomic=True,
+                        intensive=self.get_intensive(),
                     ),
                 ]
             )
         )
-
-    def change_output_def(self) -> None:
-        self.output_def["property"].shape = self.task_dim
-        self.output_def["property"].intensive = self.get_intensive()
+        self.deep_eval.output_def = self.output_def
+        self.deep_eval._OUTDEF_DP2BACKEND[self.get_var_name()] = (
+            f"atom_{self.get_var_name()}"
+        )
+        self.deep_eval._OUTDEF_DP2BACKEND[f"{self.get_var_name()}_redu"] = (
+            self.get_var_name()
+        )
 
     @property
     def task_dim(self) -> int:
@@ -120,10 +136,12 @@ class DeepProperty(DeepEval):
             aparam=aparam,
             **kwargs,
         )
-        atomic_property = results["property"].reshape(
+        atomic_property = results[self.get_var_name()].reshape(
             nframes, natoms, self.get_task_dim()
         )
-        property = results["property_redu"].reshape(nframes, self.get_task_dim())
+        property = results[f"{self.get_var_name()}_redu"].reshape(
+            nframes, self.get_task_dim()
+        )
 
         if atomic:
             return (
@@ -140,6 +158,10 @@ class DeepProperty(DeepEval):
     def get_intensive(self) -> bool:
         """Get whether the property is intensive."""
         return self.deep_eval.get_intensive()
+
+    def get_var_name(self) -> str:
+        """Get the name of the fitting property."""
+        return self.deep_eval.get_var_name()
 
 
 __all__ = ["DeepProperty"]
