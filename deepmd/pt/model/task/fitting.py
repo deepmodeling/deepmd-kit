@@ -6,6 +6,7 @@ from abc import (
 from typing import (
     Optional,
     Union,
+    Callable,
 )
 
 import numpy as np
@@ -38,6 +39,9 @@ from deepmd.pt.utils.utils import (
 from deepmd.utils.finetune import (
     get_index_between_two_maps,
     map_atom_exclude_types,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
@@ -408,6 +412,46 @@ class GeneralFitting(Fitting):
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
         pass
+
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], list[dict]], list[dict]],
+        path: Optional[DPPath] = None,
+    ) -> None:
+        """
+        Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
+        if callable(merged):
+            sampled = merged()
+        else:
+            sampled = merged
+        # stat fparam
+        if self.numb_fparam > 0:
+            cat_data = torch.cat([frame["fparam"] for frame in sampled],dim=0)
+            cat_data = torch.reshape(cat_data, [-1, self.numb_fparam])
+            fparam_avg = torch.mean(cat_data, axis=0)
+            fparam_std = torch.std(cat_data, axis=0)
+            fparam_inv_std = 1.0 / fparam_std
+            self.fparam_avg.copy_(
+                torch.tensor(fparam_avg, device=env.DEVICE, dtype=self.fparam_avg.dtype)
+            )
+            self.fparam_inv_std.copy_(
+                torch.tensor(fparam_inv_std, device=env.DEVICE, dtype=self.fparam_inv_std.dtype)
+            )
+        # TODO: stat aparam
 
     def _extend_f_avg_std(self, xx: torch.Tensor, nb: int) -> torch.Tensor:
         return torch.tile(xx.view([1, self.numb_fparam]), [nb, 1])

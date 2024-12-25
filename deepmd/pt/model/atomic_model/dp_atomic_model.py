@@ -298,6 +298,7 @@ class DPAtomicModel(BaseAtomicModel):
             return sampled
 
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
+        self.fitting_net.compute_input_stats(wrapped_sampler, stat_file_path)
         self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
     def get_dim_fparam(self) -> int:
