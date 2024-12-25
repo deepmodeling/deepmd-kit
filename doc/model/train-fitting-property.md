@@ -25,12 +25,11 @@ The JSON of `property` type should be provided like
 ```json
 	"fitting_net" : {
 		"type": "property",
-        "intensive": true,
-        "property_name": "band_prop",
-        "task_dim": 3,
+	        "intensive": true,
+	        "property_name": "band_prop",
+	        "task_dim": 3,
 		"neuron": [240,240,240],
 		"resnet_dt": true,
-		"fparam": 0,
 		"seed": 1,
 	},
 ```
