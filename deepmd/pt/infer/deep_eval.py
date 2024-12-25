@@ -186,6 +186,15 @@ class DeepEval(DeepEvalBackend):
     def get_intensive(self) -> bool:
         return self.dp.model["Default"].get_intensive()
 
+    def get_var_name(self) -> str:
+        """Get the name of the property."""
+        if hasattr(self.dp.model["Default"], "get_var_name") and callable(
+            getattr(self.dp.model["Default"], "get_var_name")
+        ):
+            return self.dp.model["Default"].get_var_name()
+        else:
+            raise NotImplementedError
+
     @property
     def model_type(self) -> type["DeepEvalWrapper"]:
         """The the evaluator of the model type."""
@@ -202,7 +211,7 @@ class DeepEval(DeepEvalBackend):
             return DeepGlobalPolar
         elif "wfc" in model_output_type:
             return DeepWFC
-        elif "property" in model_output_type:
+        elif self.get_var_name() in model_output_type:
             return DeepProperty
         else:
             raise RuntimeError("Unknown model type")

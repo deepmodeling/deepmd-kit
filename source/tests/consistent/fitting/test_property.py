@@ -86,6 +86,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             "seed": 20240217,
             "task_dim": task_dim,
             "intensive": intensive,
+            "property_name": "foo",
         }
 
     @property
@@ -186,7 +187,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
                 aparam=torch.from_numpy(self.aparam).to(device=PT_DEVICE)
                 if numb_aparam
                 else None,
-            )["property"]
+            )[pt_obj.var_name]
             .detach()
             .cpu()
             .numpy()
@@ -207,7 +208,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             self.atype.reshape(1, -1),
             fparam=self.fparam if numb_fparam else None,
             aparam=self.aparam if numb_aparam else None,
-        )["property"]
+        )[dp_obj.var_name]
 
     def eval_jax(self, jax_obj: Any) -> Any:
         (
@@ -225,7 +226,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
                 jnp.asarray(self.atype.reshape(1, -1)),
                 fparam=jnp.asarray(self.fparam) if numb_fparam else None,
                 aparam=jnp.asarray(self.aparam) if numb_aparam else None,
-            )["property"]
+            )[jax_obj.var_name]
         )
 
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
@@ -244,7 +245,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
                 array_api_strict.asarray(self.atype.reshape(1, -1)),
                 fparam=array_api_strict.asarray(self.fparam) if numb_fparam else None,
                 aparam=array_api_strict.asarray(self.aparam) if numb_aparam else None,
-            )["property"]
+            )[array_api_strict_obj.var_name]
         )
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:

@@ -36,6 +36,10 @@ from deepmd.pd.utils import (
 from deepmd.pd.utils.dataset import (
     DeepmdDataSetForLoader,
 )
+from deepmd.pt.utils.utils import (
+    mix_entropy,
+)
+from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -50,8 +54,13 @@ log = logging.getLogger(__name__)
 
 
 def setup_seed(seed):
-    paddle.seed(seed)
+    if isinstance(seed, (list, tuple)):
+        mixed_seed = mix_entropy(seed)
+    else:
+        mixed_seed = seed
+    paddle.seed(mixed_seed)
     os.environ["FLAGS_cudnn_deterministic"] = "True"
+    dp_random.seed(seed)
 
 
 class DpLoaderSet(Dataset):

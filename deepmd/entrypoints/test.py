@@ -814,9 +814,17 @@ def test_property(
     tuple[list[np.ndarray], list[int]]
         arrays with results and their shapes
     """
-    data.add("property", dp.task_dim, atomic=False, must=True, high_prec=True)
+    var_name = dp.get_var_name()
+    assert isinstance(var_name, str)
+    data.add(var_name, dp.task_dim, atomic=False, must=True, high_prec=True)
     if has_atom_property:
-        data.add("atom_property", dp.task_dim, atomic=True, must=False, high_prec=True)
+        data.add(
+            f"atom_{var_name}",
+            dp.task_dim,
+            atomic=True,
+            must=False,
+            high_prec=True,
+        )
 
     if dp.get_dim_fparam() > 0:
         data.add(
@@ -867,12 +875,12 @@ def test_property(
         aproperty = ret[1]
         aproperty = aproperty.reshape([numb_test, natoms * dp.task_dim])
 
-    diff_property = property - test_data["property"][:numb_test]
+    diff_property = property - test_data[var_name][:numb_test]
     mae_property = mae(diff_property)
     rmse_property = rmse(diff_property)
 
     if has_atom_property:
-        diff_aproperty = aproperty - test_data["atom_property"][:numb_test]
+        diff_aproperty = aproperty - test_data[f"atom_{var_name}"][:numb_test]
         mae_aproperty = mae(diff_aproperty)
         rmse_aproperty = rmse(diff_aproperty)
 
@@ -889,7 +897,7 @@ def test_property(
         detail_path = Path(detail_file)
 
         for ii in range(numb_test):
-            test_out = test_data["property"][ii].reshape(-1, 1)
+            test_out = test_data[var_name][ii].reshape(-1, 1)
             pred_out = property[ii].reshape(-1, 1)
 
             frame_output = np.hstack((test_out, pred_out))
@@ -903,7 +911,7 @@ def test_property(
 
         if has_atom_property:
             for ii in range(numb_test):
-                test_out = test_data["atom_property"][ii].reshape(-1, 1)
+                test_out = test_data[f"atom_{var_name}"][ii].reshape(-1, 1)
                 pred_out = aproperty[ii].reshape(-1, 1)
 
                 frame_output = np.hstack((test_out, pred_out))
