@@ -36,9 +36,8 @@ from deepmd.utils.path import (
 
 log = logging.getLogger(__name__)
 
-
 def make_stat_input(datasets, dataloaders, nbatches):
-    """Pack data for statistics.
+    """Pack data for statistics with all elements.
 
     Args:
     - dataset: A list of dataset to analyze.
@@ -82,43 +81,51 @@ def make_stat_input(datasets, dataloaders, nbatches):
                 sys_stat[key] = torch.cat(sys_stat[key], dim=0)
         dict_to_device(sys_stat)
         lst.append(sys_stat)
+    unique_elements = set()
+    all_element = set()
 
-    all_elements = set()
-    if datasets and hasattr(datasets[0], 'element_to_frames'):
-        all_elements.update(datasets[0].element_to_frames.keys())
-        print('we want', all_elements)
-
-    collected_elements = set()
-    for sys_stat in lst:
-        if 'atype' in sys_stat:
-            collected_elements.update(np.unique(sys_stat['atype'].cpu().numpy()))
-            missing_elements = all_elements - collected_elements
-
-            for missing_element in missing_elements:
-                for i, dataset in enumerate(datasets):
-                    if hasattr(dataset, 'element_to_frames'):
-                        frame_indices = dataset.element_to_frames.get(missing_element, [])
-                        for frame_idx in frame_indices:
-                            if len(lst[i]['atype']) >= nbatches: 
-                                break
-                            frame_data = dataset[frame_idx]
-                            for key in frame_data:
-                                if key not in lst[i]:
-                                    lst[i][key] = []
-                                lst[i][key].append(frame_data[key])
-
-            collected_elements = set()
-            for sys_stat in lst:
-                if 'atype' in sys_stat:
-                    collected_elements.update(np.unique(sys_stat['atype'].cpu().numpy()))
-
-    for sys_stat in lst:
-        for key in sys_stat:
-            if isinstance(sys_stat[key], list) and isinstance(sys_stat[key][0], torch.Tensor):
-                sys_stat[key] = torch.cat(sys_stat[key], dim=0)
+    for i in lst:
+        unique_values = np.unique(i['atype'].cpu().numpy())
+        unique_elements.update(unique_values)
+    for i in datasets:
+        all_elements_in_dataset = i.get_all_atype
+        all_element.update(all_elements_in_dataset)
+    missing_element = all_element - unique_elements
+    for miss in missing_element:
+        for i in datasets:
+            if i.element_to_frames.get(miss, []) is not None:
+                frame_indices = i.element_to_frames.get(miss, [])
+                frame_data = i.__getitem__(frame_indices[0])
+                break
+            else:
+                pass
+        sys_stat_new = {}
+        for dd in frame_data:
+            if dd == "type": 
+                continue
+            if frame_data[dd] is None:
+                sys_stat_new[dd] = None
+            elif isinstance(frame_data[dd], np.ndarray):
+                if dd not in sys_stat_new:
+                    sys_stat_new[dd] = []
+                frame_data[dd] = torch.from_numpy(frame_data[dd])
+                frame_data[dd] = frame_data[dd].unsqueeze(0)
+                sys_stat_new[dd].append(frame_data[dd])
+            elif isinstance(stat_data[dd], np.float32):
+                sys_stat_new[dd] = frame_data[dd]
+            else:
+                pass
+        for key in sys_stat_new:
+            if isinstance(sys_stat_new[key], np.float32):
+                pass
+            elif sys_stat_new[key] is None or sys_stat_new[key][0] is None:
+                sys_stat_new[key] = None
+            elif isinstance(stat_data[dd], torch.Tensor):
+                sys_stat_new[key] = torch.cat(sys_stat_new[key], dim=0)
+        dict_to_device(sys_stat_new)                                                        
+        lst.append(sys_stat_new)
 
     return lst
-
 
 def _restore_from_file(
     stat_file_path: DPPath,
