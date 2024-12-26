@@ -5,6 +5,7 @@ from typing import (
     Optional,
 )
 
+import numpy as np
 from torch.utils.data import (
     Dataset,
 )
@@ -13,7 +14,7 @@ from deepmd.utils.data import (
     DataRequirementItem,
     DeepmdData,
 )
-import numpy as np
+
 
 class DeepmdDataSetForLoader(Dataset):
     def __init__(self, system: str, type_map: Optional[list[str]] = None) -> None:
@@ -40,21 +41,21 @@ class DeepmdDataSetForLoader(Dataset):
         b_data = self._data_system.get_item_torch(index)
         b_data["natoms"] = self._natoms_vec
         return b_data
-    
+
     def _build_element_to_frames(self):
         """Build mapping from element types to frame indexes and return all unique element types."""
-        element_to_frames = {element: [] for element in range(self._ntypes)}  
-        all_elements = set()  
+        element_to_frames = {element: [] for element in range(self._ntypes)}
+        all_elements = set()
         all_frame_data = self._data_system.get_batch(self._data_system.nframes)
         all_elements = np.unique(all_frame_data["type"])
-        for i in range(len(self)):  
+        for i in range(len(self)):
             for element in all_elements:
                 element_to_frames[element].append(i)
         return element_to_frames, all_elements
-    
+
     def get_frames_for_element(self, missing_element_name):
         """Get the frames that contain the specified element type."""
-        element_index = self._type_map.index(missing_element_name) 
+        element_index = self._type_map.index(missing_element_name)
         return self.element_to_frames.get(element_index, [])
 
     def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
