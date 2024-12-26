@@ -81,17 +81,16 @@ def make_stat_input(datasets, dataloaders, nbatches):
                 sys_stat[key] = torch.cat(sys_stat[key], dim=0)
         dict_to_device(sys_stat)
         lst.append(sys_stat)
-    unique_elements = set()
-    all_element = set()
 
+    collect_elements = set()
+    all_element = set()
     for i in lst:
-        unique_values = np.unique(i['atype'].cpu().numpy())
-        unique_elements.update(unique_values)
+        collect_values = np.unique(i['atype'].cpu().numpy())
+        collect_elements.update(collect_values)
     for i in datasets:
         all_elements_in_dataset = i.get_all_atype
         all_element.update(all_elements_in_dataset)
-    print(all_element)
-    missing_element = all_element - unique_elements
+    missing_element = all_element - collect_elements
     for miss in missing_element:
         for i in datasets:
             if i.element_to_frames.get(miss, []) is not None:
