@@ -86,7 +86,7 @@ def make_stat_input(datasets, dataloaders, nbatches):
     collect_elements = set()
     all_element = set()
     for i in lst:
-        collect_values = np.unique(i['atype'].cpu().numpy())
+        collect_values = np.unique(i["atype"].cpu().numpy())
         collect_elements.update(collect_values)
     for i in datasets:
         all_elements_in_dataset = i.get_all_atype
