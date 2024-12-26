@@ -43,7 +43,7 @@ PRECISION_DICT = {
 }
 assert VALID_PRECISION.issubset(PRECISION_DICT.keys())
 
-RESERVED_PRECISON_DICT = {
+RESERVED_PRECISION_DICT = {
     np.float16: "float16",
     np.float32: "float32",
     np.float64: "float64",
@@ -52,7 +52,7 @@ RESERVED_PRECISON_DICT = {
     ml_dtypes.bfloat16: "bfloat16",
     np.bool_: "bool",
 }
-assert set(RESERVED_PRECISON_DICT.keys()) == set(PRECISION_DICT.values())
+assert set(RESERVED_PRECISION_DICT.keys()) == set(PRECISION_DICT.values())
 DEFAULT_PRECISION = "float64"
 
 
@@ -74,9 +74,9 @@ def get_xp_precision(
     elif precision == "bool":
         return bool
     elif precision == "default":
-        return get_xp_precision(xp, RESERVED_PRECISON_DICT[PRECISION_DICT[precision]])
+        return get_xp_precision(xp, RESERVED_PRECISION_DICT[PRECISION_DICT[precision]])
     elif precision == "global":
-        return get_xp_precision(xp, RESERVED_PRECISON_DICT[GLOBAL_NP_FLOAT_PRECISION])
+        return get_xp_precision(xp, RESERVED_PRECISION_DICT[GLOBAL_NP_FLOAT_PRECISION])
     elif precision == "bfloat16":
         return ml_dtypes.bfloat16
     else:
@@ -225,6 +225,6 @@ __all__ = [
     "GLOBAL_ENER_FLOAT_PRECISION",
     "GLOBAL_NP_FLOAT_PRECISION",
     "PRECISION_DICT",
-    "RESERVED_PRECISON_DICT",
+    "RESERVED_PRECISION_DICT",
     "NativeOP",
 ]

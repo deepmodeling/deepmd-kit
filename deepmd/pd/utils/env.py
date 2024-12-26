@@ -55,7 +55,7 @@ GLOBAL_PD_ENER_FLOAT_PRECISION = PRECISION_DICT[
 PRECISION_DICT["default"] = GLOBAL_PD_FLOAT_PRECISION
 assert VALID_PRECISION.issubset(PRECISION_DICT.keys())
 # cannot automatically generated
-RESERVED_PRECISON_DICT = {
+RESERVED_PRECISION_DICT = {
     paddle.float16: "float16",
     paddle.float32: "float32",
     paddle.float64: "float64",
@@ -64,7 +64,7 @@ RESERVED_PRECISON_DICT = {
     paddle.bfloat16: "bfloat16",
     paddle.bool: "bool",
 }
-assert set(PRECISION_DICT.values()) == set(RESERVED_PRECISON_DICT.keys())
+assert set(PRECISION_DICT.values()) == set(RESERVED_PRECISION_DICT.keys())
 DEFAULT_PRECISION = "float64"
 
 # throw warnings if threads not set
@@ -163,7 +163,7 @@ __all__ = [
     "LOCAL_RANK",
     "NUM_WORKERS",
     "PRECISION_DICT",
-    "RESERVED_PRECISON_DICT",
+    "RESERVED_PRECISION_DICT",
     "SAMPLER_RECORD",
     "enable_prim",
 ]

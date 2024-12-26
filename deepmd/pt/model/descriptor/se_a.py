@@ -23,7 +23,7 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.env import (
     PRECISION_DICT,
-    RESERVED_PRECISON_DICT,
+    RESERVED_PRECISION_DICT,
 )
 from deepmd.pt.utils.env_mat_stat import (
     EnvMatStatSe,
@@ -379,7 +379,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             "set_davg_zero": obj.set_davg_zero,
             "activation_function": obj.activation_function,
             # make deterministic
-            "precision": RESERVED_PRECISON_DICT[obj.prec],
+            "precision": RESERVED_PRECISION_DICT[obj.prec],
             "embeddings": obj.filter_layers.serialize(),
             "env_mat": DPEnvMat(obj.rcut, obj.rcut_smth).serialize(),
             "exclude_types": obj.exclude_types,
