@@ -8,7 +8,7 @@
 
 Here we propose DPA-1, a Deep Potential model with a novel attention mechanism, which is highly effective for representing the conformation and chemical spaces of atomic systems and learning the PES.
 
-See [this paper](https://arxiv.org/abs/2208.08236) for more information. DPA-1 is implemented as a new descriptor `"se_atten"` for model training, which can be used after simply editing the input.json.
+See [this paper](https://www.nature.com/articles/s41524-024-01278-7) for more information. DPA-1 is implemented as a new descriptor `"se_atten"` for model training, which can be used after simply editing the input.json.
 
 ## Theory
 
