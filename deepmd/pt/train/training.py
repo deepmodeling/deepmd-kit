@@ -145,7 +145,7 @@ class Trainer:
         self.change_bias_after_training = training_params.get(
             "change_bias_after_training", False
         )
-        self.lcurve_should_print_header = True
+        self.lcurve_should_print_header = not self.restart_training # prevent from printing header when resuming
 
         def get_opt_param(params):
             opt_type = params.get("opt_type", "Adam")
