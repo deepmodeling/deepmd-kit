@@ -183,7 +183,7 @@ class TestDPTestPropertySeA(unittest.TestCase):
         pred_property = np.loadtxt(self.detail_file + ".property.out.0")[:, 1]
         np.testing.assert_almost_equal(
             pred_property,
-            to_numpy_array(result["property"])[0],
+            to_numpy_array(result[model.get_var_name()])[0],
         )
 
     def tearDown(self) -> None:
