@@ -36,6 +36,7 @@ from deepmd.utils.path import (
 
 log = logging.getLogger(__name__)
 
+
 def make_stat_input(datasets, dataloaders, nbatches):
     """Pack data for statistics.
 
@@ -101,7 +102,7 @@ def make_stat_input(datasets, dataloaders, nbatches):
                 pass
         sys_stat_new = {}
         for dd in frame_data:
-            if dd == "type": 
+            if dd == "type":
                 continue
             if frame_data[dd] is None:
                 sys_stat_new[dd] = None
@@ -122,10 +123,11 @@ def make_stat_input(datasets, dataloaders, nbatches):
                 sys_stat_new[key] = None
             elif isinstance(stat_data[dd], torch.Tensor):
                 sys_stat_new[key] = torch.cat(sys_stat_new[key], dim=0)
-        dict_to_device(sys_stat_new)                                                        
+        dict_to_device(sys_stat_new)
         lst.append(sys_stat_new)
 
     return lst
+
 
 def _restore_from_file(
     stat_file_path: DPPath,
