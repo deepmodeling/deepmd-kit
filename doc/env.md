@@ -67,7 +67,7 @@ Control high (double) or low (float) precision of training.
 
 **Choices**: `0`, `1`; **Default**: `0`
 
-{{ paddle_icon }} Enable Paddle CINN Compiler when `PD_JIT` is enabled. Note that this option may either improve or decrease the performance. Requires Paddle to support CINN()(`paddle.device.is_compiled_with_cinn()` is `True`).
+{{ paddle_icon }} Enable Paddle CINN Compiler when `PD_JIT` is enabled. Note that this option may either improve or decrease the performance. Requires Paddle to support CINN(`paddle.device.is_compiled_with_cinn()` is `True`).
 
 :::
 
