@@ -239,7 +239,8 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   select_map<VALUETYPE>(force, dforce, bkw_map, 3, nframes, fwd_map.size(),
                         nall_real);
   if (atomic) {
-    throw "atomic virial is not supported as output yet.";
+    throw deepmd::deepmd_exception(
+        "Atomic virial is not supported as output yet.");
     // auto atom_virial_ = predictor->GetOutputHandle("extended_virial");
     // auto atom_energy_ = predictor->GetOutputHandle("atom_energy");
     // datom_energy.resize(nall_real,

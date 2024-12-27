@@ -24,7 +24,7 @@ class DeepPotPD : public DeepPotBackend {
    *DP will read from the string instead of the file.
    **/
   DeepPotPD(const std::string& model,
-            const int& gpu_rank = 0,
+            int gpu_rank = 0,
             const std::string& file_content = "");
   /**
    * @brief Initialize the DP.
@@ -34,7 +34,7 @@ class DeepPotPD : public DeepPotBackend {
    *DP will read from the string instead of the file.
    **/
   void init(const std::string& model,
-            const int& gpu_rank = 0,
+            int gpu_rank = 0,
             const std::string& file_content = "");
 
  private:
