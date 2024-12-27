@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import json
 
 import paddle
 
@@ -38,7 +37,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         raise ValueError("Paddle backend only supports converting .json file")
     model = BaseModel.deserialize(data["model"])
     # JIT will happy in this way...
-    model.model_def_script = json.dumps(data["model_def_script"])
+    # model.model_def_script = json.dumps(data["model_def_script"])
     if "min_nbor_dist" in data.get("@variables", {}):
         model.min_nbor_dist = float(data["@variables"]["min_nbor_dist"])
     # model = paddle.jit.to_static(model)
@@ -49,7 +48,20 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             "FLAGS_enable_pir_api": 1,
         }
     )
+    from paddle.static import (
+        InputSpec,
+    )
+
+    jit_model = paddle.jit.to_static(
+        model.forward_lower,
+        full_graph=True,
+        input_spec=[
+            InputSpec([-1, -1, 3], dtype="float64", name="coord"),
+            InputSpec([-1, -1], dtype="int32", name="atype"),
+            InputSpec([-1, -1, -1], dtype="int32", name="nlist"),
+        ],
+    )
     paddle.jit.save(
-        model,
+        jit_model,
         model_file.split(".json")[0],
     )
