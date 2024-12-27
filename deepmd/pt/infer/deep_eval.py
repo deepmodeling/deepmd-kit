@@ -58,7 +58,7 @@ from deepmd.pt.utils.auto_batch_size import (
 from deepmd.pt.utils.env import (
     DEVICE,
     GLOBAL_PT_FLOAT_PRECISION,
-    RESERVED_PRECISON_DICT,
+    RESERVED_PRECISION_DICT,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
@@ -413,7 +413,7 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
     ):
         model = self.dp.to(DEVICE)
-        prec = NP_PRECISION_DICT[RESERVED_PRECISON_DICT[GLOBAL_PT_FLOAT_PRECISION]]
+        prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
 
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
@@ -428,7 +428,7 @@ class DeepEval(DeepEvalBackend):
             device=DEVICE,
         )
         type_input = torch.tensor(
-            atom_types.astype(NP_PRECISION_DICT[RESERVED_PRECISON_DICT[torch.long]]),
+            atom_types.astype(NP_PRECISION_DICT[RESERVED_PRECISION_DICT[torch.long]]),
             dtype=torch.long,
             device=DEVICE,
         )
@@ -560,7 +560,7 @@ class DeepEval(DeepEvalBackend):
                         np.abs(shape),
                         np.nan,
                         dtype=NP_PRECISION_DICT[
-                            RESERVED_PRECISON_DICT[GLOBAL_PT_FLOAT_PRECISION]
+                            RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]
                         ],
                     )
                 )  # this is kinda hacky

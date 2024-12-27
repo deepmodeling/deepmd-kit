@@ -23,7 +23,7 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.env import (
     PRECISION_DICT,
-    RESERVED_PRECISON_DICT,
+    RESERVED_PRECISION_DICT,
 )
 from deepmd.pt.utils.tabulate import (
     DPTabulate,
@@ -505,7 +505,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             "use_tebd_bias": self.use_tebd_bias,
             "type_map": self.type_map,
             # make deterministic
-            "precision": RESERVED_PRECISON_DICT[obj.prec],
+            "precision": RESERVED_PRECISION_DICT[obj.prec],
             "embeddings": obj.filter_layers.serialize(),
             "attention_layers": obj.dpa1_attention.serialize(),
             "env_mat": DPEnvMat(obj.rcut, obj.rcut_smth).serialize(),

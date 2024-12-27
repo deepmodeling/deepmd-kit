@@ -30,7 +30,7 @@ from deepmd.pd.utils import (
 )
 from deepmd.pd.utils.env import (
     PRECISION_DICT,
-    RESERVED_PRECISON_DICT,
+    RESERVED_PRECISION_DICT,
 )
 from deepmd.pd.utils.env_mat_stat import (
     EnvMatStatSe,
@@ -358,7 +358,7 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
             "use_econf_tebd": self.use_econf_tebd,
             "type_map": self.type_map,
             # make deterministic
-            "precision": RESERVED_PRECISON_DICT[obj.prec],
+            "precision": RESERVED_PRECISION_DICT[obj.prec],
             "embeddings": obj.filter_layers.serialize(),
             "env_mat": DPEnvMat(obj.rcut, obj.rcut_smth).serialize(),
             "type_embedding": self.type_embedding.embedding.serialize(),
