@@ -399,11 +399,11 @@ class Trainer:
             self.lr_exp = get_lr(config["learning_rate"])
 
         # JIT
-        # if JIT:
-        #     raise NotImplementedError(
-        #         "JIT is not supported yet when training with Paddle"
-        #     )
-        #     self.model = paddle.jit.to_static(self.model)
+        if JIT:
+            raise NotImplementedError(
+                "JIT is not supported yet when training with Paddle"
+            )
+            self.model = paddle.jit.to_static(self.model)
 
         # Model Wrapper
         self.wrapper = ModelWrapper(self.model, self.loss, model_params=model_params)
@@ -633,7 +633,7 @@ class Trainer:
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
 
     def run(self):
-        if JIT:
+        if CINN:
             from paddle import (
                 jit,
                 static,
@@ -644,7 +644,10 @@ class Trainer:
             self.wrapper.forward = jit.to_static(
                 full_graph=True, build_strategy=build_strategy
             )(self.wrapper.forward)
-            log.info(f"{'*' * 20} Using Jit {'*' * 20}")
+            log.info(
+                "Enable CINN during training, there may be some additional "
+                "compilation time in the first traning step."
+            )
 
         fout = (
             open(
@@ -922,8 +925,8 @@ class Trainer:
             else:
                 model_key = "Default"
             step(step_id, model_key)
-            # if JIT:
-            #     break
+            if JIT:
+                break
 
         if self.change_bias_after_training and (self.rank == 0 or dist.get_rank() == 0):
             if not self.multi_task:
@@ -978,6 +981,10 @@ class Trainer:
                         / (elapsed_batch // self.disp_freq * self.disp_freq),
                     )
 
+            if JIT:
+                raise NotImplementedError(
+                    "Paddle JIT saving during training is not supported yet."
+                )
             log.info(f"Trained model has been saved to: {self.save_ckpt}")
 
         if fout:

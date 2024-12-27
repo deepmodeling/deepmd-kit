@@ -59,6 +59,13 @@ def to_bool(flag: int | bool | str) -> bool:
 
 JIT = to_bool(os.environ.get("JIT", False))
 CINN = to_bool(os.environ.get("CINN", False))
+if CINN:
+    assert paddle.device.is_compiled_with_cinn(), (
+        "CINN is set to True, but PaddlePaddle is not compiled with CINN support. "
+        "Ensure that your PaddlePaddle installation supports CINN by checking your "
+        "installation or recompiling with CINN enabled."
+    )
+
 CACHE_PER_SYS = 5  # keep at most so many sets per sys in memory
 ENERGY_BIAS_TRAINABLE = True
 
@@ -165,7 +172,7 @@ def enable_prim(enable: bool = True):
     EAGER_COMP_OP_BLACK_LIST = list(set(EAGER_COMP_OP_BLACK_LIST))
 
     """Enable running program with primitive operators in eager/static mode."""
-    if JIT:
+    if JIT or CINN:
         # jit mode
         paddle.framework.core._set_prim_all_enabled(enable)
         if enable:
