@@ -46,6 +46,7 @@ class RepFlowLayer(torch.nn.Module):
         e_dim: int = 16,
         a_dim: int = 64,
         a_compress_rate: int = 0,
+        a_compress_e_rate: int = 1,
         axis_neuron: int = 4,
         update_angle: bool = True,  # angle
         activation_function: str = "silu",
@@ -84,6 +85,7 @@ class RepFlowLayer(torch.nn.Module):
         self.update_style = update_style
         self.update_residual = update_residual
         self.update_residual_init = update_residual_init
+        self.a_compress_e_rate = a_compress_e_rate
         self.precision = precision
         self.seed = seed
         self.prec = PRECISION_DICT[precision]
@@ -181,8 +183,10 @@ class RepFlowLayer(torch.nn.Module):
                 self.a_compress_n_linear = None
                 self.a_compress_e_linear = None
             else:
-                # angle + node/c + edge/2c * 2
-                self.angle_dim += 2 * (self.a_dim // self.a_compress_rate)
+                # angle + a_dim/c + a_dim/2c * 2 * e_rate
+                self.angle_dim += (1 + self.a_compress_e_rate) * (
+                    self.a_dim // self.a_compress_rate
+                )
                 self.a_compress_n_linear = MLPLayer(
                     self.n_dim,
                     self.a_dim // self.a_compress_rate,
@@ -192,7 +196,7 @@ class RepFlowLayer(torch.nn.Module):
                 )
                 self.a_compress_e_linear = MLPLayer(
                     self.e_dim,
-                    self.a_dim // (2 * self.a_compress_rate),
+                    self.a_dim // (2 * self.a_compress_rate) * self.a_compress_e_rate,
                     precision=precision,
                     bias=False,
                     seed=child_seed(seed, 9),
@@ -647,6 +651,7 @@ class RepFlowLayer(torch.nn.Module):
             "e_dim": self.e_dim,
             "a_dim": self.a_dim,
             "a_compress_rate": self.a_compress_rate,
+            "a_compress_e_rate": self.a_compress_e_rate,
             "axis_neuron": self.axis_neuron,
             "activation_function": self.activation_function,
             "update_angle": self.update_angle,
