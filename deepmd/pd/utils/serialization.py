@@ -35,12 +35,15 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     """
     if not model_file.endswith(".json"):
         raise ValueError("Paddle backend only supports converting .json file")
-    model = BaseModel.deserialize(data["model"])
+    model: paddle.nn.Layer = BaseModel.deserialize(data["model"])
     # JIT will happy in this way...
-    # model.model_def_script = json.dumps(data["model_def_script"])
     if "min_nbor_dist" in data.get("@variables", {}):
-        model.min_nbor_dist = float(data["@variables"]["min_nbor_dist"])
-    # model = paddle.jit.to_static(model)
+        model.register_buffer(
+            "buffer_min_nbor_dist",
+            paddle.to_tensor(
+                float(data["@variables"]["min_nbor_dist"]),
+            ),
+        )
     paddle.set_flags(
         {
             "FLAGS_save_cf_stack_op": 1,
