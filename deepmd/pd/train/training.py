@@ -53,6 +53,8 @@ from deepmd.pd.utils.dataloader import (
     get_sampler_from_params,
 )
 from deepmd.pd.utils.env import (
+    CINN,
+    DEFAULT_PRECISION,
     DEVICE,
     JIT,
     NUM_WORKERS,
@@ -397,11 +399,11 @@ class Trainer:
             self.lr_exp = get_lr(config["learning_rate"])
 
         # JIT
-        if JIT:
-            raise NotImplementedError(
-                "JIT is not supported yet when training with Paddle"
-            )
-            self.model = paddle.jit.to_static(self.model)
+        # if JIT:
+        #     raise NotImplementedError(
+        #         "JIT is not supported yet when training with Paddle"
+        #     )
+        #     self.model = paddle.jit.to_static(self.model)
 
         # Model Wrapper
         self.wrapper = ModelWrapper(self.model, self.loss, model_params=model_params)
@@ -631,6 +633,19 @@ class Trainer:
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
 
     def run(self):
+        if JIT:
+            from paddle import (
+                jit,
+                static,
+            )
+
+            build_strategy = static.BuildStrategy()
+            build_strategy.build_cinn_pass: bool = CINN
+            self.wrapper.forward = jit.to_static(
+                full_graph=True, build_strategy=build_strategy
+            )(self.wrapper.forward)
+            log.info(f"{'*' * 20} Using Jit {'*' * 20}")
+
         fout = (
             open(
                 self.disp_file,
@@ -670,9 +685,11 @@ class Trainer:
             cur_lr = _lr.value(_step_id)
             pref_lr = cur_lr
             self.optimizer.clear_grad(set_to_zero=False)
-            input_dict, label_dict, log_dict = self.get_data(
-                is_train=True, task_key=task_key
-            )
+
+            with nvprof_context(enable_profiling, "Fetching data"):
+                input_dict, label_dict, log_dict = self.get_data(
+                    is_train=True, task_key=task_key
+                )
             if SAMPLER_RECORD:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
@@ -686,7 +703,7 @@ class Trainer:
                 with nvprof_context(enable_profiling, "Forward pass"):
                     model_pred, loss, more_loss = self.wrapper(
                         **input_dict,
-                        cur_lr=pref_lr,
+                        cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
                         label=label_dict,
                         task_key=task_key,
                     )
@@ -745,7 +762,7 @@ class Trainer:
                             return {}
                         _, loss, more_loss = self.wrapper(
                             **input_dict,
-                            cur_lr=pref_lr,
+                            cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
                             label=label_dict,
                             task_key=_task_key,
                         )
@@ -795,7 +812,7 @@ class Trainer:
                             )
                             _, loss, more_loss = self.wrapper(
                                 **input_dict,
-                                cur_lr=pref_lr,
+                                cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
                                 label=label_dict,
                                 task_key=_key,
                             )
@@ -905,8 +922,8 @@ class Trainer:
             else:
                 model_key = "Default"
             step(step_id, model_key)
-            if JIT:
-                break
+            # if JIT:
+            #     break
 
         if self.change_bias_after_training and (self.rank == 0 or dist.get_rank() == 0):
             if not self.multi_task:
@@ -961,10 +978,6 @@ class Trainer:
                         / (elapsed_batch // self.disp_freq * self.disp_freq),
                     )
 
-            if JIT:
-                raise NotImplementedError(
-                    "Paddle JIT saving during training is not supported yet."
-                )
             log.info(f"Trained model has been saved to: {self.save_ckpt}")
 
         if fout:
