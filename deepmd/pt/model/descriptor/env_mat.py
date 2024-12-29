@@ -21,10 +21,11 @@ def _make_env_mat(
     nall = coord.shape[1]
     mask = nlist >= 0
     # nlist = nlist * mask  ## this impl will contribute nans in Hessian calculation.
-    nlist = torch.where(mask, nlist, nall - 1)
+    nlist = torch.where(mask, nlist, nall)
     coord_l = coord[:, :natoms].view(bsz, -1, 1, 3)
     index = nlist.view(bsz, -1).unsqueeze(-1).expand(-1, -1, 3)
-    coord_r = torch.gather(coord, 1, index)
+    coord_pad = torch.concat([coord, coord[:, -1:, :] + rcut], dim=1)
+    coord_r = torch.gather(coord_pad, 1, index)
     coord_r = coord_r.view(bsz, natoms, nnei, 3)
     diff = coord_r - coord_l
     length = torch.linalg.norm(diff, dim=-1, keepdim=True)
