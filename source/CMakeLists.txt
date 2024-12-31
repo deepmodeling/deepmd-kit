@@ -33,7 +33,7 @@ if(ENABLE_PADDLE)
     # ENABLE_PADDLE=ON")
     message(STATUS "PADDLE_INFERENCE_DIR is not defined. Downloading...")
     set(DOWNLOAD_URL
-        "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn860_Trt8531_D1/ce51e82e84fc97e0a55a162037f1554746159cad/paddle_inference.tgz"
+        "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz"
     )
     set(TGZ_FILE "${CMAKE_BINARY_DIR}/paddle_inference.tgz")
     set(EXTRACTED_DIR "${CMAKE_BINARY_DIR}/paddle_inference_install_dir")
@@ -51,6 +51,10 @@ if(ENABLE_PADDLE)
       STATUS "PADDLE_INFERENCE_DIR is already defined: ${PADDLE_INFERENCE_DIR}")
   endif()
 
+  link_directories(
+    ${PADDLE_INFERENCE_DIR}/paddle/lib
+    ${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib
+    ${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib)
   message(STATUS "Final PADDLE_INFERENCE_DIR is set to ${PADDLE_INFERENCE_DIR}")
 
   set(PADDLE_INFERENCE_DIR

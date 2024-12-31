@@ -82,7 +82,7 @@ void DeepPotPD::init(const std::string& model,
     config->DisableGpu();
     std::cout << "load model from: " << model << " to cpu " << std::endl;
   } else {
-    std::cout << "load model from: " << model << " to gpu " << gpu_id
+    std::cout << "load model from: " << model << " to gpu:" << gpu_id
               << std::endl;
   }
 
