@@ -29,14 +29,21 @@ endif()
 
 if(ENABLE_PADDLE)
   if(NOT DEFINED PADDLE_INFERENCE_DIR)
-    # message( FATAL_ERROR "Make sure PADDLE_INFERENCE_DIR is set when
+    # message(FATAL_ERROR "Make sure PADDLE_INFERENCE_DIR is set when
     # ENABLE_PADDLE=ON")
-    message(STATUS "PADDLE_INFERENCE_DIR is not defined. Downloading...")
     if(USE_CUDA_TOOLKIT)
+      message(
+        STATUS
+          "PADDLE_INFERENCE_DIR is not defined, downloading GPU infernece lib..."
+      )
       set(DOWNLOAD_URL
           "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz"
       )
     else()
+      message(
+        STATUS
+          "PADDLE_INFERENCE_DIR is not defined, downloading CPU infernece lib..."
+      )
       set(DOWNLOAD_URL
           "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cpu_Mkl_Avx_D1/latest/paddle_inference.tgz"
       )

@@ -77,9 +77,9 @@ void DeepPotPD::init(const std::string& model,
                                    " do not exist, please check it.");
   }
   config->SetModel(pdmodel_path, pdiparams_path);
-  config->EnableUseGpu(
-      4096, 0);  // annotate it if use cpu, default use gpu with 4G mem
-  gpu_enabled = config->use_gpu();
+  // config->EnableUseGpu(
+  //     4096, 0);  // annotate it if use cpu, default use gpu with 4G mem
+  // gpu_enabled = config->use_gpu();
   gpu_enabled = false;
   if (!gpu_enabled) {
     config->DisableGpu();
@@ -349,15 +349,23 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   }
 
   auto output_names = predictor->GetOutputNames();
-  for (int i = 0; i < output_names.size(); ++i) {
-    printf("output_names[%d] = %s\n", i, output_names[i].c_str());
-  }
   auto energy_ = predictor->GetOutputHandle(output_names[1]);
   auto force_ = predictor->GetOutputHandle(output_names[2]);
-  auto virial_ = predictor->GetOutputHandle(output_names[3]);
+  auto virial_ = predictor->GetOutputHandle(output_names[4]);
 
+  int enery_numel = numel(*energy_);
+  assert(enery_numel > 0);
+  ener.resize(enery_numel);
   energy_->CopyToCpu(ener.data());
+
+  int forcey_numel = numel(*force_);
+  assert(forcey_numel > 0);
+  force.resize(forcey_numel);
   force_->CopyToCpu(force.data());
+
+  int virial_numel = numel(*virial_);
+  assert(virial_numel > 0);
+  virial.resize(virial_numel);
   virial_->CopyToCpu(virial.data());
 
   if (atomic) {

@@ -261,6 +261,36 @@ class DeepPotPD : public DeepPotBackend {
     return aparam_nall;
   };
 
+  /**
+   * @brief Print the shape of given tensor.
+   * @param[in] x Tensor x.
+   **/
+  void print_shape(const paddle_infer::Tensor& x) const {
+    std::vector<int> x_shape = x.shape();
+    std::string shape_str = "[";
+    for (int i = 0, n = x_shape.size(); i < n; ++i) {
+      if (i > 0) {
+        shape_str += ", ";
+      }
+      shape_str += std::to_string(x_shape[i]);
+    }
+    std::cout << shape_str;
+  };
+
+  /**
+   * @brief Compute the number of elements in a tensor.
+   * @param[in] x Tensor x.
+   **/
+  int numel(const paddle_infer::Tensor& x) const {
+    // TODO: There might be a overflow problem here for multiply int numbers.
+    int ret = 1;
+    std::vector<int> x_shape = x.shape();
+    for (std::size_t i = 0, n = x_shape.size(); i < n; ++i) {
+      ret *= x_shape[i];
+    }
+    return ret;
+  };
+
   // forward to template class
   void computew(std::vector<double>& ener,
                 std::vector<double>& force,
