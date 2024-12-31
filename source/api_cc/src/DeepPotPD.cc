@@ -11,7 +11,8 @@
 
 using namespace deepmd;
 
-std::vector<int> createNlistTensor(const std::vector<std::vector<int>>& data) {
+std::vector<int> createNlistTensorPD(
+    const std::vector<std::vector<int>>& data) {
   std::vector<int> ret;
   for (const auto& row : data) {
     ret.insert(ret.end(), row.begin(), row.end());
@@ -56,6 +57,7 @@ void DeepPotPD::init(const std::string& model,
   config->DisableGlogInfo();
   config->EnableNewExecutor(true);
   config->EnableNewIR(true);
+  config->EnableCustomPasses({}, true);
 
   // loading inference model
   std::string pdmodel_path;
@@ -78,6 +80,7 @@ void DeepPotPD::init(const std::string& model,
   config->EnableUseGpu(
       4096, 0);  // annotate it if use cpu, default use gpu with 4G mem
   gpu_enabled = config->use_gpu();
+  gpu_enabled = false;
   if (!gpu_enabled) {
     config->DisableGpu();
     std::cout << "load model from: " << model << " to cpu " << std::endl;
@@ -100,12 +103,18 @@ void DeepPotPD::init(const std::string& model,
 
   // initialize hyper params from model buffers
   ntypes_spin = 0;
-  DeepPotPD::get_buffer<int>("buffer_has_message_passing", do_message_passing);
-  DeepPotPD::get_buffer<double>("buffer_rcut", rcut);
-  DeepPotPD::get_buffer<int>("buffer_ntypes", ntypes);
-  DeepPotPD::get_buffer<int>("buffer_dfparam", dfparam);
-  DeepPotPD::get_buffer<int>("buffer_daparam", daparam);
-  DeepPotPD::get_buffer<int>("buffer_aparam_nall", aparam_nall);
+  // DeepPotPD::get_buffer<int>("buffer_has_message_passing",
+  // do_message_passing); DeepPotPD::get_buffer<double>("buffer_rcut", rcut);
+  // DeepPotPD::get_buffer<int>("buffer_ntypes", ntypes);
+  // DeepPotPD::get_buffer<int>("buffer_dfparam", dfparam);
+  // DeepPotPD::get_buffer<int>("buffer_daparam", daparam);
+  // DeepPotPD::get_buffer<int>("buffer_aparam_nall", aparam_nall);
+  do_message_passing = 0;
+  rcut = 6.0;
+  ntypes = 2;
+  dfparam = 0;
+  daparam = 0;
+  aparam_nall = 0;
   inited = true;
 }
 DeepPotPD::~DeepPotPD() {}
@@ -181,7 +190,7 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
           "(do_message_passing == 1 && nghost == 0) is not supported yet.");
     }
   }
-  std::vector<int> firstneigh = createNlistTensor(nlist_data.jlist);
+  std::vector<int> firstneigh = createNlistTensorPD(nlist_data.jlist);
   firstneigh_tensor = predictor->GetInputHandle("nlist");
   firstneigh_tensor->Reshape({1, nloc, (int)firstneigh.size() / (int)nloc});
   firstneigh_tensor->CopyFromCpu(firstneigh.data());
@@ -340,6 +349,9 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   }
 
   auto output_names = predictor->GetOutputNames();
+  for (int i = 0; i < output_names.size(); ++i) {
+    printf("output_names[%d] = %s\n", i, output_names[i].c_str());
+  }
   auto energy_ = predictor->GetOutputHandle(output_names[1]);
   auto force_ = predictor->GetOutputHandle(output_names[2]);
   auto virial_ = predictor->GetOutputHandle(output_names[3]);
