@@ -153,6 +153,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             a_dim=self.repflow_args.a_dim,
             a_compress_rate=self.repflow_args.a_compress_rate,
             a_compress_e_rate=self.repflow_args.a_compress_e_rate,
+            a_compress_use_split=self.repflow_args.a_compress_use_split,
             axis_neuron=self.repflow_args.axis_neuron,
             update_angle=self.repflow_args.update_angle,
             activation_function=self.activation_function,
