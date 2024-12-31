@@ -32,9 +32,15 @@ if(ENABLE_PADDLE)
     # message( FATAL_ERROR "Make sure PADDLE_INFERENCE_DIR is set when
     # ENABLE_PADDLE=ON")
     message(STATUS "PADDLE_INFERENCE_DIR is not defined. Downloading...")
-    set(DOWNLOAD_URL
-        "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz"
-    )
+    if(USE_CUDA_TOOLKIT)
+      set(DOWNLOAD_URL
+          "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz"
+      )
+    else()
+      set(DOWNLOAD_URL
+          "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cpu_Mkl_Avx_D1/latest/paddle_inference.tgz"
+      )
+    endif()
     set(TGZ_FILE "${CMAKE_BINARY_DIR}/paddle_inference.tgz")
     set(EXTRACTED_DIR "${CMAKE_BINARY_DIR}/paddle_inference_install_dir")
     file(DOWNLOAD ${DOWNLOAD_URL} ${TGZ_FILE})
