@@ -2826,6 +2826,12 @@ def training_args(
             optional=True,
             doc=doc_only_pt_supported + doc_gradient_max_norm,
         ),
+        Argument(
+            "min_frames_per_element_forstat",
+            int,
+            optional=True,
+            doc="The minimum number of frames per element used for statistics.",
+        ),
     ]
     variants = [
         Variant(

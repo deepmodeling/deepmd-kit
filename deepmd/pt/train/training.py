@@ -142,6 +142,7 @@ class Trainer:
         self.max_ckpt_keep = training_params.get("max_ckpt_keep", 5)
         self.display_in_training = training_params.get("disp_training", True)
         self.timing_in_training = training_params.get("time_training", True)
+        self.min_frames_per_element_forstat = training_params.get("min_frames_per_element_forstat", 10)
         self.change_bias_after_training = training_params.get(
             "change_bias_after_training", False
         )
@@ -226,6 +227,7 @@ class Trainer:
                     _training_data.systems,
                     _training_data.dataloaders,
                     _data_stat_nbatch,
+                    self.min_frames_per_element_forstat,
                 )
                 return sampled
 

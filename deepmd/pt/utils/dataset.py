@@ -6,6 +6,9 @@ from typing import (
 )
 
 import numpy as np
+import glob
+import os
+from collections import defaultdict
 from torch.utils.data import (
     Dataset,
 )
@@ -13,6 +16,10 @@ from torch.utils.data import (
 from deepmd.utils.data import (
     DataRequirementItem,
     DeepmdData,
+)
+
+from deepmd.utils.path import (
+    DPPath,
 )
 
 
@@ -31,7 +38,6 @@ class DeepmdDataSetForLoader(Dataset):
         self._ntypes = self._data_system.get_ntypes()
         self._natoms = self._data_system.get_natoms()
         self._natoms_vec = self._data_system.get_natoms_vec(self._ntypes)
-        self.element_to_frames, self.get_all_atype = self._build_element_to_frames()
 
     def __len__(self) -> int:
         return self._data_system.nframes
@@ -42,21 +48,23 @@ class DeepmdDataSetForLoader(Dataset):
         b_data["natoms"] = self._natoms_vec
         return b_data
 
-    def _build_element_to_frames(self):
-        """Build mapping from element types to frame indexes and return all unique element types."""
-        element_to_frames = {element: [] for element in range(self._ntypes)}
-        all_elements = set()
-        all_frame_data = self._data_system.get_batch(self._data_system.nframes)
-        all_elements = np.unique(all_frame_data["type"])
-        for i in range(len(self)):
-            for element in all_elements:
-                element_to_frames[element].append(i)
-        return element_to_frames, all_elements
-
-    def get_frames_for_element(self, missing_element_name):
-        """Get the frames that contain the specified element type."""
-        element_index = self._type_map.index(missing_element_name)
-        return self.element_to_frames.get(element_index, [])
+    def true_types(self):
+        """Identify and count unique element types present in the dataset,
+        and count the number of frames each element appears in."""
+        element_counts = defaultdict(lambda: {"count": 0, "frames": 0})
+        set_pattern = os.path.join(self.system, "set.*")
+        set_files = sorted(glob.glob(set_pattern))
+        for set_file in set_files:
+            element_data = self._data_system._load_type_mix(DPPath(set_file))
+            unique_elements, counts = np.unique(element_data, return_counts=True)
+            for elem, cnt in zip(unique_elements, counts):
+                element_counts[elem]["count"] += cnt
+            for elem in unique_elements:
+                frames_with_elem = np.any(element_data == elem, axis=1)
+                row_count = np.sum(frames_with_elem)
+                element_counts[elem]["frames"] += row_count
+        element_counts = dict(element_counts)
+        return element_counts
 
     def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
         """Add data requirement for this data system."""
