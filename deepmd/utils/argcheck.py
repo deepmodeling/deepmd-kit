@@ -2832,6 +2832,13 @@ def training_args(
             optional=True,
             doc="The minimum number of frames per element used for statistics.",
         ),
+        Argument(
+            "enable_element_completion",
+            bool,
+            optional=False,
+            default=True,
+            doc='Whether to check elements when using the mixed type',
+        ),
     ]
     variants = [
         Variant(

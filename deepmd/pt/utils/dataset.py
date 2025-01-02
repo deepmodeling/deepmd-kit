@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-
-import glob
-import os
 from collections import (
     defaultdict,
 )
@@ -18,9 +15,6 @@ from torch.utils.data import (
 from deepmd.utils.data import (
     DataRequirementItem,
     DeepmdData,
-)
-from deepmd.utils.path import (
-    DPPath,
 )
 
 
@@ -49,22 +43,32 @@ class DeepmdDataSetForLoader(Dataset):
         b_data["natoms"] = self._natoms_vec
         return b_data
 
-    def true_types(self):
-        """Identify and count unique element types present in the dataset,
-        and count the number of frames each element appears in.
+    def get_frame_index(self):
         """
-        element_counts = defaultdict(lambda: {"count": 0, "frames": 0})
-        set_pattern = os.path.join(self.system, "set.*")
-        set_files = sorted(glob.glob(set_pattern))
+        Get the frame index and the number of frames with all the elements in the system. 
+        This function is only used in the mixed type.
+
+        Returns
+        -------
+        element_counts : dict
+            A dictionary where:
+            - The key is the element type.
+            - The value is another dictionary with the following keys:
+                - "frames": int
+                    The total number of frames in which the element appears.
+                - "indices": list of int
+                    A list of row indices where the element is found in the dataset.
+        """
+        element_counts = defaultdict(lambda: {"frames": 0, "indices": []})  
+        set_files = self._data_system.dirs 
         for set_file in set_files:
-            element_data = self._data_system._load_type_mix(DPPath(set_file))
-            unique_elements, counts = np.unique(element_data, return_counts=True)
-            for elem, cnt in zip(unique_elements, counts):
-                element_counts[elem]["count"] += cnt
+            element_data = self._data_system._load_type_mix(set_file)
+            unique_elements = np.unique(element_data)
             for elem in unique_elements:
                 frames_with_elem = np.any(element_data == elem, axis=1)
-                row_count = np.sum(frames_with_elem)
-                element_counts[elem]["frames"] += row_count
+                row_indices = np.where(frames_with_elem)[0]
+                element_counts[elem]["frames"] += len(row_indices)
+                element_counts[elem]["indices"].extend(row_indices.tolist())
         element_counts = dict(element_counts)
         return element_counts
 
