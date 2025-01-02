@@ -1,25 +1,21 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
-
 import torch
-from torch.utils.data import (
-    DataLoader,
-)
-
-from deepmd.pt.utils.stat import (
-    make_stat_input,
-)
-
+from torch.utils.data import DataLoader
+from deepmd.pt.utils.stat import make_stat_input
+import numpy as np
+import os
+import glob
+from collections import defaultdict
 
 class TestDataset:
     def __init__(self, samples):
         self.samples = samples
-        self.element_to_frames = {}
+        self.element_to_frames = defaultdict(list)
+        self.mixed_type = True
         for idx, sample in enumerate(samples):
             atypes = sample["atype"]
             for atype in atypes:
-                if atype not in self.element_to_frames:
-                    self.element_to_frames[atype] = []
                 self.element_to_frames[atype].append(idx)
 
     @property
@@ -35,6 +31,17 @@ class TestDataset:
             "atype": torch.tensor(sample["atype"], dtype=torch.long),
             "energy": torch.tensor(sample["energy"], dtype=torch.float32),
         }
+
+    def true_types(self):
+        element_counts = defaultdict(lambda: {"count": 0, "frames": 0})
+        for idx, sample in enumerate(self.samples):
+            atypes = sample["atype"]
+            unique_atypes = set(atypes)
+            for atype in atypes:
+                element_counts[atype]["count"] += 1 
+            for atype in unique_atypes:
+                element_counts[atype]["frames"] += 1 
+        return dict(element_counts)
 
 
 class TestMakeStatInput(unittest.TestCase):
@@ -52,10 +59,24 @@ class TestMakeStatInput(unittest.TestCase):
 
     def test_make_stat_input(self):
         nbatches = 1
-        lst = make_stat_input(self.datasets, self.dataloaders, nbatches=nbatches)
+        lst = make_stat_input(
+            self.datasets,
+            self.dataloaders,
+            nbatches=nbatches,
+            min_frames_per_element_forstat=1,
+        )
         all_elements = self.system.get_all_atype
         unique_elements = {1, 2}
         self.assertEqual(unique_elements, all_elements, "make_stat_input miss elements")
+
+        expected_true_types = {
+            1: {"count": 1, "frames": 1},  
+            2: {"count": 1, "frames": 1},  
+        }
+        actual_true_types = self.system.true_types()
+        self.assertEqual(
+            expected_true_types, actual_true_types, "true_types is wrong"
+        )
 
 
 if __name__ == "__main__":
