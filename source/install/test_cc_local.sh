@@ -1,4 +1,4 @@
-set -e
+set -ex
 
 if [ "$DP_VARIANT" = "cuda" ]; then
 	CUDA_ARGS="-DUSE_CUDA_TOOLKIT=TRUE"

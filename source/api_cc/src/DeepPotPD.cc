@@ -57,7 +57,8 @@ void DeepPotPD::init(const std::string& model,
   config->DisableGlogInfo();
   config->EnableNewExecutor(true);
   config->EnableNewIR(true);
-  config->EnableCustomPasses({}, true);
+  config->EnableCustomPasses({"add_shadow_output_after_dead_parameter_pass"},
+                             true);
 
   // loading inference model
   std::string pdmodel_path;
@@ -76,15 +77,15 @@ void DeepPotPD::init(const std::string& model,
     throw deepmd::deepmd_exception("Given inference model: " + model +
                                    " do not exist, please check it.");
   }
+  const char* use_cuda_toolkit = std::getenv("USE_CUDA_TOOLKIT");
+  gpu_enabled = (use_cuda_toolkit && (std::string(use_cuda_toolkit) == "1"));
   config->SetModel(pdmodel_path, pdiparams_path);
-  // config->EnableUseGpu(
-  //     4096, 0);  // annotate it if use cpu, default use gpu with 4G mem
-  // gpu_enabled = config->use_gpu();
-  gpu_enabled = false;
   if (!gpu_enabled) {
     config->DisableGpu();
     std::cout << "load model from: " << model << " to cpu " << std::endl;
   } else {
+    config->EnableUseGpu(
+        4096, 0);  // annotate it if use cpu, default use gpu with 4G mem
     std::cout << "load model from: " << model << " to gpu:" << gpu_id
               << std::endl;
   }
@@ -103,18 +104,12 @@ void DeepPotPD::init(const std::string& model,
 
   // initialize hyper params from model buffers
   ntypes_spin = 0;
-  // DeepPotPD::get_buffer<int>("buffer_has_message_passing",
-  // do_message_passing); DeepPotPD::get_buffer<double>("buffer_rcut", rcut);
-  // DeepPotPD::get_buffer<int>("buffer_ntypes", ntypes);
-  // DeepPotPD::get_buffer<int>("buffer_dfparam", dfparam);
-  // DeepPotPD::get_buffer<int>("buffer_daparam", daparam);
-  // DeepPotPD::get_buffer<int>("buffer_aparam_nall", aparam_nall);
-  do_message_passing = 0;
-  rcut = 6.0;
-  ntypes = 2;
-  dfparam = 0;
-  daparam = 0;
-  aparam_nall = 0;
+  DeepPotPD::get_buffer<int>("buffer_has_message_passing", do_message_passing);
+  DeepPotPD::get_buffer<double>("buffer_rcut", rcut);
+  DeepPotPD::get_buffer<int>("buffer_ntypes", ntypes);
+  DeepPotPD::get_buffer<int>("buffer_dfparam", dfparam);
+  DeepPotPD::get_buffer<int>("buffer_daparam", daparam);
+  DeepPotPD::get_buffer<int>("buffer_aparam_nall", aparam_nall);
   inited = true;
 }
 DeepPotPD::~DeepPotPD() {}
@@ -358,9 +353,9 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   ener.resize(enery_numel);
   energy_->CopyToCpu(ener.data());
 
-  int forcey_numel = numel(*force_);
-  assert(forcey_numel > 0);
-  force.resize(forcey_numel);
+  int force_numel = numel(*force_);
+  assert(force_numel > 0);
+  force.resize(force_numel);
   force_->CopyToCpu(force.data());
 
   int virial_numel = numel(*virial_);
@@ -371,8 +366,14 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   if (atomic) {
     throw deepmd::deepmd_exception(
         "atomic virial is not supported as output yet.");
-    // auto atom_energy_ = predictor->GetOutputHandle(output_names[4]);
+    // auto atom_energy_ = predictor->GetOutputHandle(output_names[0]);
     // auto atom_virial_ = predictor->GetOutputHandle(output_names[5]);
+    // int atom_energy_numel = numel(*atom_energy_);
+    // int atom_virial_numel = numel(*atom_virial_);
+    // assert(atom_energy_numel > 0);
+    // assert(atom_virial_numel > 0);
+    // atom_energy.resize(atom_energy_numel);
+    // atom_virial.resize(atom_virial_numel);
     // atom_energy_->CopyToCpu(atom_energy.data());
     // atom_virial_->CopyToCpu(atom_virial.data());
   }

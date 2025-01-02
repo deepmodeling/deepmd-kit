@@ -36,6 +36,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     if not model_file.endswith(".json"):
         raise ValueError("Paddle backend only supports converting .json file")
     model: paddle.nn.Layer = BaseModel.deserialize(data["model"])
+    model.eval()
     # JIT will happy in this way...
     if "min_nbor_dist" in data.get("@variables", {}):
         model.register_buffer(

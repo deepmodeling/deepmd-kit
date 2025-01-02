@@ -274,6 +274,7 @@ class DeepPotPD : public DeepPotBackend {
       }
       shape_str += std::to_string(x_shape[i]);
     }
+    shape_str += "]";
     std::cout << shape_str;
   };
 
