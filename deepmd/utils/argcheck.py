@@ -2837,7 +2837,7 @@ def training_args(
             bool,
             optional=False,
             default=True,
-            doc='Whether to check elements when using the mixed type',
+            doc="Whether to check elements when using the mixed type",
         ),
     ]
     variants = [

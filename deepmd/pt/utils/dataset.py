@@ -45,7 +45,7 @@ class DeepmdDataSetForLoader(Dataset):
 
     def get_frame_index(self):
         """
-        Get the frame index and the number of frames with all the elements in the system. 
+        Get the frame index and the number of frames with all the elements in the system.
         This function is only used in the mixed type.
 
         Returns
@@ -59,8 +59,8 @@ class DeepmdDataSetForLoader(Dataset):
                 - "indices": list of int
                     A list of row indices where the element is found in the dataset.
         """
-        element_counts = defaultdict(lambda: {"frames": 0, "indices": []})  
-        set_files = self._data_system.dirs 
+        element_counts = defaultdict(lambda: {"frames": 0, "indices": []})
+        set_files = self._data_system.dirs
         for set_file in set_files:
             element_data = self._data_system._load_type_mix(set_file)
             unique_elements = np.unique(element_data)
