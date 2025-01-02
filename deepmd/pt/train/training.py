@@ -145,7 +145,9 @@ class Trainer:
         self.min_frames_per_element_forstat = training_params.get(
             "min_frames_per_element_forstat", 10
         )
-        self.enable_element_completion = training_params.get("enable_element_completion", True)
+        self.enable_element_completion = training_params.get(
+            "enable_element_completion", True
+        )
         self.change_bias_after_training = training_params.get(
             "change_bias_after_training", False
         )

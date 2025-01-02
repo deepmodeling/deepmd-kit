@@ -37,7 +37,13 @@ from deepmd.utils.path import (
 log = logging.getLogger(__name__)
 
 
-def make_stat_input(datasets, dataloaders, nbatches, min_frames_per_element_forstat, enable_element_completion=True):
+def make_stat_input(
+    datasets,
+    dataloaders,
+    nbatches,
+    min_frames_per_element_forstat,
+    enable_element_completion=True,
+):
     """Pack data for statistics.
 
     Args:
@@ -59,11 +65,13 @@ def make_stat_input(datasets, dataloaders, nbatches, min_frames_per_element_fors
     if datasets[0].mixed_type:
         if enable_element_completion:
             log.info(
-                f'Element check enabled. '
-                f'Verifying if frames with elements meet the set of {min_frames_per_element_forstat}.'
+                f"Element check enabled. "
+                f"Verifying if frames with elements meet the set of {min_frames_per_element_forstat}."
             )
         else:
-            log.info("Element completion is disabled. Skipping missing element handling.")
+            log.info(
+                "Element completion is disabled. Skipping missing element handling."
+            )
 
     def process_batches(dataloader, sys_stat):
         """Process batches from a dataloader to collect statistics."""
@@ -92,7 +100,10 @@ def make_stat_input(datasets, dataloaders, nbatches, min_frames_per_element_fors
         for key in sys_stat:
             if isinstance(sys_stat[key], np.float32):
                 pass
-            elif sys_stat[key] is None or (isinstance(sys_stat[key], list) and (len(sys_stat[key]) == 0 or sys_stat[key][0] is None)):
+            elif sys_stat[key] is None or (
+                isinstance(sys_stat[key], list)
+                and (len(sys_stat[key]) == 0 or sys_stat[key][0] is None)
+            ):
                 sys_stat[key] = None
             elif isinstance(sys_stat[key][0], torch.Tensor):
                 sys_stat[key] = torch.cat(sys_stat[key], dim=0)
@@ -103,9 +114,11 @@ def make_stat_input(datasets, dataloaders, nbatches, min_frames_per_element_fors
         with torch.device("cpu"):
             process_batches(dataloader, sys_stat)
         if datasets[0].mixed_type:
-            if 'atype' in sys_stat and isinstance(sys_stat['atype'], list):
-                collect_values = torch.unique(torch.cat(sys_stat['atype']).flatten(), sorted=True)
-                collect_elements.update(collect_values.tolist())  
+            if "atype" in sys_stat and isinstance(sys_stat["atype"], list):
+                collect_values = torch.unique(
+                    torch.cat(sys_stat["atype"]).flatten(), sorted=True
+                )
+                collect_elements.update(collect_values.tolist())
 
         finalize_stats(sys_stat)
         lst.append(sys_stat)
@@ -116,24 +129,32 @@ def make_stat_input(datasets, dataloaders, nbatches, min_frames_per_element_fors
                 indices = data["indices"]
                 total_element_types.add(elem)
                 if elem not in total_element_counts:
-                    total_element_counts[elem] = {"count": 0, "frames": 0, "indices": []}
+                    total_element_counts[elem] = {
+                        "count": 0,
+                        "frames": 0,
+                        "indices": [],
+                    }
                 total_element_counts[elem]["count"] += count
-                if len(total_element_counts[elem]["indices"]) < min_frames_per_element_forstat:
-                    total_element_counts[elem]["indices"].append({
-                        "sys_index": sys_index,
-                        "frames": frames
-                    })      
+                if (
+                    len(total_element_counts[elem]["indices"])
+                    < min_frames_per_element_forstat
+                ):
+                    total_element_counts[elem]["indices"].append(
+                        {"sys_index": sys_index, "frames": frames}
+                    )
         for elem, data in total_element_counts.items():
             count = data["count"]
             indices_count = len(data["indices"])
             if indices_count < min_frames_per_element_forstat:
-                log.warning(f'The number of frame with element {elem} is {indices_count}, which is less than the expected maximum value {min_frames_per_element_forstat}')
+                log.warning(
+                    f"The number of frame with element {elem} is {indices_count}, which is less than the expected maximum value {min_frames_per_element_forstat}"
+                )
         missing_elements = total_element_types - collect_elements
         for miss in missing_elements:
-            sys_indices = total_element_counts[miss].get('indices', [])
+            sys_indices = total_element_counts[miss].get("indices", [])
             for sys_info in sys_indices:
-                sys_index = sys_info['sys_index']  
-                frames = sys_info['frames']  
+                sys_index = sys_info["sys_index"]
+                frames = sys_info["frames"]
                 sys = datasets[sys_index]
                 frame_data = sys.__getitem__(frames)
                 sys_stat_new = {}
@@ -192,7 +213,7 @@ def make_stat_input(datasets, dataloaders, nbatches, min_frames_per_element_fors
                 elif isinstance(stat_data[dd], torch.Tensor):
                     sys_stat[key] = torch.cat(sys_stat[key], dim=0)
             dict_to_device(sys_stat)
-            lst.append(sys_stat)      
+            lst.append(sys_stat)
     return lst
 
 
