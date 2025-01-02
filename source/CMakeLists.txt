@@ -68,6 +68,32 @@ if(ENABLE_PADDLE)
     ${PADDLE_INFERENCE_DIR}/paddle/lib
     ${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib
     ${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib)
+
+  # Check and append to existing CMAKE_BUILD_RPATH
+  if(DEFINED CMAKE_BUILD_RPATH)
+    list(APPEND CMAKE_BUILD_RPATH "${PADDLE_INFERENCE_DIR}/paddle/lib"
+         "${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib"
+         "${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib")
+  else()
+    set(CMAKE_BUILD_RPATH
+        "${PADDLE_INFERENCE_DIR}/paddle/lib"
+        "${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib"
+        "${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib")
+  endif()
+
+  # Check and append to existing CMAKE_INSTALL_RPATH
+  if(DEFINED CMAKE_INSTALL_RPATH)
+    list(APPEND CMAKE_INSTALL_RPATH "${PADDLE_INFERENCE_DIR}/paddle/lib"
+         "${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib"
+         "${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib")
+  else()
+    set(CMAKE_INSTALL_RPATH
+        "${PADDLE_INFERENCE_DIR}/paddle/lib"
+        "${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib"
+        "${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib")
+  endif()
+
+  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
   message(STATUS "Final PADDLE_INFERENCE_DIR is set to ${PADDLE_INFERENCE_DIR}")
 
   set(PADDLE_INFERENCE_DIR
