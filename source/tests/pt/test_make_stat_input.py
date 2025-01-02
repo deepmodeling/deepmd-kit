@@ -1,12 +1,18 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from collections import (
+    defaultdict,
+)
+
 import torch
-from torch.utils.data import DataLoader
-from deepmd.pt.utils.stat import make_stat_input
-import numpy as np
-import os
-import glob
-from collections import defaultdict
+from torch.utils.data import (
+    DataLoader,
+)
+
+from deepmd.pt.utils.stat import (
+    make_stat_input,
+)
+
 
 class TestDataset:
     def __init__(self, samples):
@@ -38,9 +44,9 @@ class TestDataset:
             atypes = sample["atype"]
             unique_atypes = set(atypes)
             for atype in atypes:
-                element_counts[atype]["count"] += 1 
+                element_counts[atype]["count"] += 1
             for atype in unique_atypes:
-                element_counts[atype]["frames"] += 1 
+                element_counts[atype]["frames"] += 1
         return dict(element_counts)
 
 
@@ -70,13 +76,11 @@ class TestMakeStatInput(unittest.TestCase):
         self.assertEqual(unique_elements, all_elements, "make_stat_input miss elements")
 
         expected_true_types = {
-            1: {"count": 1, "frames": 1},  
-            2: {"count": 1, "frames": 1},  
+            1: {"count": 1, "frames": 1},
+            2: {"count": 1, "frames": 1},
         }
         actual_true_types = self.system.true_types()
-        self.assertEqual(
-            expected_true_types, actual_true_types, "true_types is wrong"
-        )
+        self.assertEqual(expected_true_types, actual_true_types, "true_types is wrong")
 
 
 if __name__ == "__main__":
