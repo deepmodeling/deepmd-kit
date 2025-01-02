@@ -314,7 +314,7 @@ class RepFlowLayer(torch.nn.Module):
         # nb x nloc x 3 x e_dim
         nb, nloc, _, e_dim = h2g2.shape
         # nb x nloc x 3 x axis
-        h2g2m = torch.split(h2g2, axis_neuron, dim=-1)[0]
+        h2g2m = h2g2[..., :axis_neuron]
         # nb x nloc x axis x e_dim
         g1_13 = torch.matmul(torch.transpose(h2g2m, -1, -2), h2g2) / (3.0**1)
         # nb x nloc x (axisxng2)
