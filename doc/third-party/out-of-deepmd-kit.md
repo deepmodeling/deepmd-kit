@@ -6,7 +6,7 @@ The codes of the following interfaces are not a part of the DeePMD-kit package a
 
 ### External GNN models (MACE/NequIP)
 
-[DeePMD-GNN](https://github.com/njzjz/deepmd-gnn) is DeePMD-kit plugin for various graph neural network (GNN) models.
+[DeePMD-GNN](https://gitlab.com/RutgersLBSR/deepmd-gnn) is DeePMD-kit plugin for various graph neural network (GNN) models.
 It has interfaced with [MACE](https://github.com/ACEsuit/mace) (PyTorch version) and [NequIP](https://github.com/mir-group/nequip) (PyTorch version).
 It is also the first example to the DeePMD-kit [plugin mechanism](../development/create-a-model-pt.md#package-new-codes).
 

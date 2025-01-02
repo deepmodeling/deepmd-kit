@@ -35,7 +35,7 @@ from deepmd.pd.utils.auto_batch_size import (
 from deepmd.pd.utils.env import (
     DEVICE,
     GLOBAL_PD_FLOAT_PRECISION,
-    RESERVED_PRECISON_DICT,
+    RESERVED_PRECISION_DICT,
     enable_prim,
 )
 from deepmd.pd.utils.utils import (
@@ -113,6 +113,7 @@ class DeepEval(DeepEvalBackend):
         else:
             # self.dp = paddle.jit.load(self.model_path.split(".json")[0])
             raise ValueError(f"Unknown model file format: {self.model_path}!")
+        self.dp.eval()
         self.rcut = self.dp.model["Default"].get_rcut()
         self.type_map = self.dp.model["Default"].get_type_map()
         if isinstance(auto_batch_size, bool):
@@ -354,7 +355,7 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
     ):
         model = self.dp.to(DEVICE)
-        prec = NP_PRECISION_DICT[RESERVED_PRECISON_DICT[GLOBAL_PD_FLOAT_PRECISION]]
+        prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PD_FLOAT_PRECISION]]
 
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
@@ -369,7 +370,7 @@ class DeepEval(DeepEvalBackend):
             place=DEVICE,
         )
         type_input = paddle.to_tensor(
-            atom_types.astype(NP_PRECISION_DICT[RESERVED_PRECISON_DICT[paddle.int64]]),
+            atom_types.astype(NP_PRECISION_DICT[RESERVED_PRECISION_DICT[paddle.int64]]),
             dtype=paddle.int64,
             place=DEVICE,
         )

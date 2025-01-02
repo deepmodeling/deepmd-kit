@@ -303,6 +303,8 @@ def test_ener(
     if dp.has_spin:
         data.add("spin", 3, atomic=True, must=True, high_prec=False)
         data.add("force_mag", 3, atomic=True, must=False, high_prec=False)
+    if dp.has_hessian:
+        data.add("hessian", 1, atomic=True, must=True, high_prec=False)
 
     test_data = data.get_test()
     mixed_type = data.mixed_type
@@ -352,6 +354,9 @@ def test_ener(
     energy = energy.reshape([numb_test, 1])
     force = force.reshape([numb_test, -1])
     virial = virial.reshape([numb_test, 9])
+    if dp.has_hessian:
+        hessian = ret[3]
+        hessian = hessian.reshape([numb_test, -1])
     if has_atom_ener:
         ae = ret[3]
         av = ret[4]
@@ -415,6 +420,10 @@ def test_ener(
     rmse_ea = rmse_e / natoms
     mae_va = mae_v / natoms
     rmse_va = rmse_v / natoms
+    if dp.has_hessian:
+        diff_h = hessian - test_data["hessian"][:numb_test]
+        mae_h = mae(diff_h)
+        rmse_h = rmse(diff_h)
     if has_atom_ener:
         diff_ae = test_data["atom_ener"][:numb_test].reshape([-1]) - ae.reshape([-1])
         mae_ae = mae(diff_ae)
@@ -447,6 +456,9 @@ def test_ener(
     if has_atom_ener:
         log.info(f"Atomic ener MAE    : {mae_ae:e} eV")
         log.info(f"Atomic ener RMSE   : {rmse_ae:e} eV")
+    if dp.has_hessian:
+        log.info(f"Hessian MAE        : {mae_h:e} eV/A^2")
+        log.info(f"Hessian RMSE       : {rmse_h:e} eV/A^2")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -530,8 +542,24 @@ def test_ener(
             "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
             append=append_detail,
         )
+        if dp.has_hessian:
+            data_h = test_data["hessian"][:numb_test].reshape(-1, 1)
+            pred_h = hessian.reshape(-1, 1)
+            h = np.concatenate(
+                (
+                    data_h,
+                    pred_h,
+                ),
+                axis=1,
+            )
+            save_txt_file(
+                detail_path.with_suffix(".h.out"),
+                h,
+                header=f"{system}: data_h pred_h (3Na*3Na matrix in row-major order)",
+                append=append_detail,
+            )
     if not out_put_spin:
-        return {
+        dict_to_return = {
             "mae_e": (mae_e, energy.size),
             "mae_ea": (mae_ea, energy.size),
             "mae_f": (mae_f, force.size),
@@ -544,7 +572,7 @@ def test_ener(
             "rmse_va": (rmse_va, virial.size),
         }
     else:
-        return {
+        dict_to_return = {
             "mae_e": (mae_e, energy.size),
             "mae_ea": (mae_ea, energy.size),
             "mae_fr": (mae_fr, force_r.size),
@@ -558,6 +586,10 @@ def test_ener(
             "rmse_v": (rmse_v, virial.size),
             "rmse_va": (rmse_va, virial.size),
         }
+    if dp.has_hessian:
+        dict_to_return["mae_h"] = (mae_h, hessian.size)
+        dict_to_return["rmse_h"] = (rmse_h, hessian.size)
+    return dict_to_return
 
 
 def print_ener_sys_avg(avg: dict[str, float]) -> None:
@@ -584,6 +616,9 @@ def print_ener_sys_avg(avg: dict[str, float]) -> None:
     log.info(f"Virial RMSE        : {avg['rmse_v']:e} eV")
     log.info(f"Virial MAE/Natoms  : {avg['mae_va']:e} eV")
     log.info(f"Virial RMSE/Natoms : {avg['rmse_va']:e} eV")
+    if "rmse_h" in avg.keys():
+        log.info(f"Hessian MAE         : {avg['mae_h']:e} eV/A^2")
+        log.info(f"Hessian RMSE        : {avg['rmse_h']:e} eV/A^2")
 
 
 def test_dos(
@@ -779,9 +814,17 @@ def test_property(
     tuple[list[np.ndarray], list[int]]
         arrays with results and their shapes
     """
-    data.add("property", dp.task_dim, atomic=False, must=True, high_prec=True)
+    var_name = dp.get_var_name()
+    assert isinstance(var_name, str)
+    data.add(var_name, dp.task_dim, atomic=False, must=True, high_prec=True)
     if has_atom_property:
-        data.add("atom_property", dp.task_dim, atomic=True, must=False, high_prec=True)
+        data.add(
+            f"atom_{var_name}",
+            dp.task_dim,
+            atomic=True,
+            must=False,
+            high_prec=True,
+        )
 
     if dp.get_dim_fparam() > 0:
         data.add(
@@ -832,12 +875,12 @@ def test_property(
         aproperty = ret[1]
         aproperty = aproperty.reshape([numb_test, natoms * dp.task_dim])
 
-    diff_property = property - test_data["property"][:numb_test]
+    diff_property = property - test_data[var_name][:numb_test]
     mae_property = mae(diff_property)
     rmse_property = rmse(diff_property)
 
     if has_atom_property:
-        diff_aproperty = aproperty - test_data["atom_property"][:numb_test]
+        diff_aproperty = aproperty - test_data[f"atom_{var_name}"][:numb_test]
         mae_aproperty = mae(diff_aproperty)
         rmse_aproperty = rmse(diff_aproperty)
 
@@ -854,7 +897,7 @@ def test_property(
         detail_path = Path(detail_file)
 
         for ii in range(numb_test):
-            test_out = test_data["property"][ii].reshape(-1, 1)
+            test_out = test_data[var_name][ii].reshape(-1, 1)
             pred_out = property[ii].reshape(-1, 1)
 
             frame_output = np.hstack((test_out, pred_out))
@@ -868,7 +911,7 @@ def test_property(
 
         if has_atom_property:
             for ii in range(numb_test):
-                test_out = test_data["atom_property"][ii].reshape(-1, 1)
+                test_out = test_data[f"atom_{var_name}"][ii].reshape(-1, 1)
                 pred_out = aproperty[ii].reshape(-1, 1)
 
                 frame_output = np.hstack((test_out, pred_out))

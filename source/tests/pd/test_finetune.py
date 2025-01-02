@@ -197,7 +197,7 @@ class FinetuneTest:
 
         self.tearDown()
 
-    def test_finetune_change_type(self):
+    def test_finetune_change_type(self) -> None:
         if not self.mixed_types:
             # skip when not mixed_types
             return
@@ -284,7 +284,7 @@ class FinetuneTest:
 
             self.tearDown()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         for f in os.listdir("."):
             if f.startswith("model") and f.endswith(".pd"):
                 os.remove(f)
@@ -295,7 +295,7 @@ class FinetuneTest:
 
 
 class TestEnergyModelSeA(FinetuneTest, unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -311,7 +311,7 @@ class TestEnergyModelSeA(FinetuneTest, unittest.TestCase):
 
 @unittest.skip("Skip for not implemented yet")
 class TestEnergyZBLModelSeA(FinetuneTest, unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -327,7 +327,7 @@ class TestEnergyZBLModelSeA(FinetuneTest, unittest.TestCase):
 
 @unittest.skip("Skip for not implemented yet")
 class TestEnergyDOSModelSeA(FinetuneTest, unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "dos/input.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -341,9 +341,8 @@ class TestEnergyDOSModelSeA(FinetuneTest, unittest.TestCase):
         self.testkey = "dos"
 
 
-@unittest.skip("Skip for not implemented yet")
 class TestEnergyModelDPA1(FinetuneTest, unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -357,9 +356,8 @@ class TestEnergyModelDPA1(FinetuneTest, unittest.TestCase):
         self.testkey = None
 
 
-@unittest.skip("Skip for not implemented yet")
 class TestEnergyModelDPA2(FinetuneTest, unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)

@@ -9,6 +9,7 @@ from typing import (
 
 import numpy as np
 import paddle
+import paddle.nn as nn
 
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -22,7 +23,7 @@ from deepmd.pd.utils import (
 )
 from deepmd.pd.utils.env import (
     PRECISION_DICT,
-    RESERVED_PRECISON_DICT,
+    RESERVED_PRECISION_DICT,
 )
 from deepmd.pd.utils.env_mat_stat import (
     EnvMatStatSe,
@@ -87,13 +88,14 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         type_map: Optional[list[str]] = None,
         # not implemented
         spin=None,
-    ):
+    ) -> None:
         del ntypes
         if spin is not None:
             raise NotImplementedError("old implementation of spin is not supported.")
         super().__init__()
         self.type_map = type_map
         self.compress = False
+        self.prec = PRECISION_DICT[precision]
         self.sea = DescrptBlockSeA(
             rcut,
             rcut_smth,
@@ -161,7 +163,7 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         """Returns the protection of building environment matrix."""
         return self.sea.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -222,9 +224,34 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         """Update the type exclusions."""
         self.sea.reinit_exclude(exclude_types)
+
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        raise ValueError("Enable compression is not supported.")
 
     def forward(
         self,
@@ -266,7 +293,18 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
             The smooth switch function.
 
         """
-        return self.sea.forward(nlist, coord_ext, atype_ext, None, mapping)
+        # cast the input to internal precsion
+        coord_ext = coord_ext.to(dtype=self.prec)
+        g1, rot_mat, g2, h2, sw = self.sea.forward(
+            nlist, coord_ext, atype_ext, None, mapping
+        )
+        return (
+            g1.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            rot_mat.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            None,
+            None,
+            sw.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+        )
 
     def set_stat_mean_and_stddev(
         self,
@@ -296,7 +334,7 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
             "set_davg_zero": obj.set_davg_zero,
             "activation_function": obj.activation_function,
             # make deterministic
-            "precision": RESERVED_PRECISON_DICT[obj.prec],
+            "precision": RESERVED_PRECISION_DICT[obj.prec],
             "embeddings": obj.filter_layers.serialize(),
             "env_mat": DPEnvMat(obj.rcut, obj.rcut_smth).serialize(),
             "exclude_types": obj.exclude_types,
@@ -367,10 +405,6 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
 class DescrptBlockSeA(DescriptorBlock):
     ndescrpt: Final[int]
     __constants__: ClassVar[list] = ["ndescrpt"]
-    lower: dict[str, int]
-    upper: dict[str, int]
-    table_data: dict[str, paddle.Tensor]
-    table_config: list[Union[int, float]]
 
     def __init__(
         self,
@@ -389,7 +423,7 @@ class DescrptBlockSeA(DescriptorBlock):
         trainable: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
         **kwargs,
-    ):
+    ) -> None:
         """Construct an embedding net of type `se_a`.
 
         Args:
@@ -430,13 +464,6 @@ class DescrptBlockSeA(DescriptorBlock):
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
 
-        # add for compression
-        self.compress = False
-        self.lower = {}
-        self.upper = {}
-        self.table_data = {}
-        self.table_config = []
-
         ndim = 1 if self.type_one_side else 2
         filter_layers = NetworkCollection(
             ndim=ndim, ntypes=len(sel), network_type="embedding_network"
@@ -458,6 +485,21 @@ class DescrptBlockSeA(DescriptorBlock):
         self.trainable = trainable
         for param in self.parameters():
             param.stop_gradient = not trainable
+
+        # add for compression
+        self.compress = False
+        self.compress_info = nn.ParameterList(
+            [
+                self.create_parameter([], dtype=self.prec).to(device="cpu")
+                for _ in range(len(self.filter_layers.networks))
+            ]
+        )
+        self.compress_data = nn.ParameterList(
+            [
+                self.create_parameter([], dtype=self.prec).to(device=env.DEVICE)
+                for _ in range(len(self.filter_layers.networks))
+            ]
+        )
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -517,11 +559,11 @@ class DescrptBlockSeA(DescriptorBlock):
         return self.filter_neuron[-1] * self.axis_neuron
 
     @property
-    def dim_in(self):
+    def dim_in(self) -> int:
         """Returns the atomic input dimension of this descriptor."""
         return 0
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -541,7 +583,7 @@ class DescrptBlockSeA(DescriptorBlock):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -587,22 +629,45 @@ class DescrptBlockSeA(DescriptorBlock):
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
     def enable_compression(
         self,
-        table_data,
-        table_config,
-        lower,
-        upper,
+        table_data: dict[str, paddle.Tensor],
+        table_config: list[Union[int, float]],
+        lower: dict[str, int],
+        upper: dict[str, int],
     ) -> None:
+        for embedding_idx, ll in enumerate(self.filter_layers.networks):
+            if self.type_one_side:
+                ii = embedding_idx
+                ti = -1
+            else:
+                # ti: center atom type, ii: neighbor type...
+                ii = embedding_idx // self.ntypes
+                ti = embedding_idx % self.ntypes
+            if self.type_one_side:
+                net = "filter_-1_net_" + str(ii)
+            else:
+                net = "filter_" + str(ti) + "_net_" + str(ii)
+            info_ii = paddle.to_tensor(
+                [
+                    lower[net],
+                    upper[net],
+                    upper[net] * table_config[0],
+                    table_config[1],
+                    table_config[2],
+                    table_config[3],
+                ],
+                dtype=self.prec,
+                place="cpu",
+            )
+            tensor_data_ii = table_data[net].to(device=env.DEVICE, dtype=self.prec)
+            self.compress_data[embedding_idx] = tensor_data_ii
+            self.compress_info[embedding_idx] = info_ii
         self.compress = True
-        self.table_data = table_data
-        self.table_config = table_config
-        self.lower = lower
-        self.upper = upper
 
     def forward(
         self,
@@ -611,6 +676,7 @@ class DescrptBlockSeA(DescriptorBlock):
         extended_atype: paddle.Tensor,
         extended_atype_embd: Optional[paddle.Tensor] = None,
         mapping: Optional[paddle.Tensor] = None,
+        type_embedding: Optional[paddle.Tensor] = None,
     ):
         """Calculate decoded embedding for each atom.
 
@@ -627,7 +693,7 @@ class DescrptBlockSeA(DescriptorBlock):
         del extended_atype_embd, mapping
         nf = nlist.shape[0]
         nloc = nlist.shape[1]
-        atype: paddle.Tensor = extended_atype[:, :nloc]
+        atype = extended_atype[:, :nloc]
         dmatrix, diff, sw = prod_env_mat(
             extended_coord,
             nlist,
@@ -640,7 +706,6 @@ class DescrptBlockSeA(DescriptorBlock):
         )
 
         dmatrix = dmatrix.reshape([-1, self.nnei, 4])
-        dmatrix = dmatrix.astype(self.prec)
         nfnl = dmatrix.shape[0]
         # pre-allocate a shape to pass jit
         xyz_scatter = paddle.zeros(
@@ -649,7 +714,9 @@ class DescrptBlockSeA(DescriptorBlock):
         ).to(extended_coord.place)
         # nfnl x nnei
         exclude_mask = self.emask(nlist, extended_atype).reshape([nfnl, self.nnei])
-        for embedding_idx, ll in enumerate(self.filter_layers.networks):
+        for embedding_idx, (ll, compress_data_ii, compress_info_ii) in enumerate(
+            zip(self.filter_layers.networks, self.compress_data, self.compress_info)
+        ):
             if self.type_one_side:
                 ii = embedding_idx
                 ti = -1
@@ -680,10 +747,16 @@ class DescrptBlockSeA(DescriptorBlock):
                 if rr.numel() > 0:
                     rr = rr * mm.unsqueeze(2).astype(rr.dtype)
                     ss = rr[:, :, :1]
-                    # nfnl x nt x ng
-                    gg = ll.forward(ss)
-                    # nfnl x 4 x ng
-                    gr = paddle.matmul(rr.transpose([0, 2, 1]), gg)
+                    if self.compress:
+                        raise NotImplementedError(
+                            "Compressed environment is not implemented yet."
+                        )
+                    else:
+                        # nfnl x nt x ng
+                        gg = ll.forward(ss)
+                        # nfnl x 4 x ng
+                        gr = paddle.matmul(rr.transpose([0, 2, 1]), gg)
+
                     if ti_mask is not None:
                         xyz_scatter[ti_mask] += gr
                     else:
@@ -699,8 +772,8 @@ class DescrptBlockSeA(DescriptorBlock):
         result = result.reshape([nf, nloc, self.filter_neuron[-1] * self.axis_neuron])
         rot_mat = rot_mat.reshape([nf, nloc] + list(rot_mat.shape[1:]))  # noqa:RUF005
         return (
-            result.astype(env.GLOBAL_PD_FLOAT_PRECISION),
-            rot_mat.astype(env.GLOBAL_PD_FLOAT_PRECISION),
+            result,
+            rot_mat,
             None,
             None,
             sw,

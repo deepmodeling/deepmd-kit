@@ -165,7 +165,7 @@ class PropertyModelTest(ModelTestCase):
         cls.expected_dim_aparam = 0
         cls.expected_sel_type = [0, 1]
         cls.expected_aparam_nall = False
-        cls.expected_model_output_type = ["property", "mask"]
+        cls.expected_model_output_type = ["band_prop", "mask"]
         cls.model_output_equivariant = []
         cls.expected_sel = [46, 92]
         cls.expected_sel_mix = sum(cls.expected_sel)
