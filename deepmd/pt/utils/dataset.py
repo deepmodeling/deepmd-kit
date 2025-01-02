@@ -1,14 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 
+import glob
+import os
+from collections import (
+    defaultdict,
+)
 from typing import (
     Optional,
 )
 
 import numpy as np
-import glob
-import os
-from collections import defaultdict
 from torch.utils.data import (
     Dataset,
 )
@@ -17,7 +19,6 @@ from deepmd.utils.data import (
     DataRequirementItem,
     DeepmdData,
 )
-
 from deepmd.utils.path import (
     DPPath,
 )
@@ -50,7 +51,8 @@ class DeepmdDataSetForLoader(Dataset):
 
     def true_types(self):
         """Identify and count unique element types present in the dataset,
-        and count the number of frames each element appears in."""
+        and count the number of frames each element appears in.
+        """
         element_counts = defaultdict(lambda: {"count": 0, "frames": 0})
         set_pattern = os.path.join(self.system, "set.*")
         set_files = sorted(glob.glob(set_pattern))

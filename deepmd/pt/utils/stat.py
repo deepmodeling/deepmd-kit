@@ -101,7 +101,7 @@ def make_stat_input(datasets, dataloaders, nbatches, min_frames_per_element_fors
                     total_element_counts[elem]["indices"].append({
                         "sys_index": sys_index,
                         "frames": frames
-                    })      
+                    })
         for elem, data in total_element_counts.items():
             count = data["count"]
             indices_count = len(data["indices"])
@@ -111,8 +111,8 @@ def make_stat_input(datasets, dataloaders, nbatches, min_frames_per_element_fors
         for miss in missing_elements:
             sys_indices = total_element_counts[miss].get('indices', [])
             for sys_info in sys_indices:
-                sys_index = sys_info['sys_index']  
-                frames = sys_info['frames']  
+                sys_index = sys_info['sys_index']
+                frames = sys_info['frames']
                 sys = datasets[sys_index]
                 frame_data = sys.__getitem__(frames)
                 sys_stat_new = {}
@@ -172,7 +172,7 @@ def make_stat_input(datasets, dataloaders, nbatches, min_frames_per_element_fors
                 elif isinstance(stat_data[dd], torch.Tensor):
                     sys_stat[key] = torch.cat(sys_stat[key], dim=0)
             dict_to_device(sys_stat)
-            lst.append(sys_stat)      
+            lst.append(sys_stat)
 =======
 
         for key in sys_stat:
