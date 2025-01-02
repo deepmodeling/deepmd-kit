@@ -131,25 +131,27 @@ def make_stat_input(
                 if elem not in global_element_counts:
                     global_element_counts[elem] = {"frames": [], "indices": []}
                 global_element_counts[elem]["frames"].extend(indices)
-                if len(global_element_counts[elem]["indices"]) < min_frames_per_element_forstat:
-                    global_element_counts[elem]["indices"].append({
-                        "sys_index": sys_index,
-                        "frames": indices
-                    })
+                if (
+                    len(global_element_counts[elem]["indices"])
+                    < min_frames_per_element_forstat
+                ):
+                    global_element_counts[elem]["indices"].append(
+                        {"sys_index": sys_index, "frames": indices}
+                    )
     if datasets[0].mixed_type and enable_element_completion:
         for elem, data in global_element_counts.items():
             indices_count = len(data["indices"])
             if indices_count < min_frames_per_element_forstat:
                 log.warning(
-                    f'The number of frames with element {elem} is {indices_count}, '
-                    f'which is less than the required {min_frames_per_element_forstat}'
+                    f"The number of frames with element {elem} is {indices_count}, "
+                    f"which is less than the required {min_frames_per_element_forstat}"
                 )
         missing_elements = total_element_types - collect_elements
         for miss in missing_elements:
-            sys_indices = global_element_counts[miss].get('indices', [])
+            sys_indices = global_element_counts[miss].get("indices", [])
             for sys_info in sys_indices:
-                sys_index = sys_info['sys_index']
-                frames = sys_info['frames']
+                sys_index = sys_info["sys_index"]
+                frames = sys_info["frames"]
                 sys = datasets[sys_index]
                 for frame in frames:
                     frame_data = sys.__getitem__(frame)
