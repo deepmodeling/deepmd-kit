@@ -1,17 +1,29 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
-from deepmd.pt.utils.stat import make_stat_input,compute_output_stats
-from deepmd.pt.utils.dataset import DeepmdDataSetForLoader
-from deepmd.utils.data import DataRequirementItem
+from torch.utils.data import (
+    DataLoader,
+)
+
+from deepmd.pt.utils.dataset import (
+    DeepmdDataSetForLoader,
+)
+from deepmd.pt.utils.stat import (
+    compute_output_stats,
+    make_stat_input,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
+
 
 def collate_fn(batch):
     if isinstance(batch, dict):
         batch = [batch]
     collated_batch = {}
-    for key in batch[0].keys():     
+    for key in batch[0].keys():
         data_list = [d[key] for d in batch]
         if isinstance(data_list[0], np.ndarray):
             data_np = np.stack(data_list)
@@ -20,6 +32,7 @@ def collate_fn(batch):
             collated_batch[key] = torch.tensor(data_list)
     return collated_batch
 
+
 class TestMakeStatInput(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -27,22 +40,23 @@ class TestMakeStatInput(unittest.TestCase):
         cls.datasets = DeepmdDataSetForLoader(system=system_path)
         data_requirements = [
             DataRequirementItem(
-                    "energy",
-                    ndof=1,
-                    atomic=False,
-                ),
-
+                "energy",
+                ndof=1,
+                atomic=False,
+            ),
         ]
         cls.datasets.add_data_requirement(data_requirements)
-        cls.datasets=[cls.datasets]
-        weights = torch.tensor([0.1] * len(cls.datasets)) 
-        sampler = torch.utils.data.WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
+        cls.datasets = [cls.datasets]
+        weights = torch.tensor([0.1] * len(cls.datasets))
+        sampler = torch.utils.data.WeightedRandomSampler(
+            weights, num_samples=len(weights), replacement=True
+        )
         cls.dataloaders = []
         for dataset in cls.datasets:
             dataloader = DataLoader(
                 dataset,
                 sampler=sampler,
-                batch_size=1,        
+                batch_size=1,
                 num_workers=0,
                 drop_last=False,
                 collate_fn=collate_fn,
@@ -52,25 +66,26 @@ class TestMakeStatInput(unittest.TestCase):
 
     def test_make_stat_input(self):
         lst = make_stat_input(
-            datasets=self.datasets,          
-            dataloaders=self.dataloaders,        
+            datasets=self.datasets,
+            dataloaders=self.dataloaders,
             nbatches=1,
             min_frames_per_element_forstat=1,
             enable_element_completion=True,
         )
-        bias,_=compute_output_stats(lst,ntypes=57)
+        bias, _ = compute_output_stats(lst, ntypes=57)
         print(bias)
 
     def test_make_stat_input_nocomplete(self):
         lst = make_stat_input(
-            datasets=self.datasets,          
-            dataloaders=self.dataloaders,        
+            datasets=self.datasets,
+            dataloaders=self.dataloaders,
             nbatches=1,
             min_frames_per_element_forstat=1,
             enable_element_completion=False,
         )
-        bias,_=compute_output_stats(lst,ntypes=57)
+        bias, _ = compute_output_stats(lst, ntypes=57)
         print(bias)
+
 
 if __name__ == "__main__":
     unittest.main()
