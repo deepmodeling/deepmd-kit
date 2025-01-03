@@ -1443,7 +1443,16 @@ def dpa3_repflow_args():
     doc_a_compress_rate = (
         "The compression rate for angular messages. The default value is 0, indicating no compression. "
         " If a non-zero integer c is provided, the node and edge dimensions will be compressed "
-        "to n_dim/c and e_dim/2c, respectively, within the angular message."
+        "to a_dim/c and a_dim/2c, respectively, within the angular message."
+    )
+    doc_a_compress_e_rate = (
+        "The extra compression rate for edge in angular message compression. The default value is 1."
+        "When using angular message compression with a_compress_rate c and a_compress_e_rate c_e, "
+        "the edge dimension will be compressed to (c_e * a_dim / 2c) within the angular message. "
+    )
+    doc_a_compress_use_split = (
+        "Whether to split first sub-vectors instead of linear mapping during angular message compression. "
+        "The default value is False."
     )
     doc_axis_neuron = "The number of dimension of submatrix in the symmetrization ops."
     doc_update_angle = (
@@ -1482,6 +1491,20 @@ def dpa3_repflow_args():
         Argument("a_sel", [int, str], doc=doc_a_sel),
         Argument(
             "a_compress_rate", int, optional=True, default=0, doc=doc_a_compress_rate
+        ),
+        Argument(
+            "a_compress_e_rate",
+            int,
+            optional=True,
+            default=1,
+            doc=doc_a_compress_e_rate,
+        ),
+        Argument(
+            "a_compress_use_split",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_a_compress_use_split,
         ),
         Argument(
             "axis_neuron",

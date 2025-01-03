@@ -15,6 +15,8 @@ class RepFlowArgs:
         a_rcut_smth: float = 3.5,
         a_sel: int = 20,
         a_compress_rate: int = 0,
+        a_compress_e_rate: int = 1,
+        a_compress_use_split: bool = False,
         axis_neuron: int = 4,
         update_angle: bool = True,
         update_style: str = "res_residual",
@@ -49,7 +51,14 @@ class RepFlowArgs:
         a_compress_rate : int, optional
             The compression rate for angular messages. The default value is 0, indicating no compression.
             If a non-zero integer c is provided, the node and edge dimensions will be compressed
-            to n_dim/c and e_dim/2c, respectively, within the angular message.
+            to a_dim/c and a_dim/2c, respectively, within the angular message.
+        a_compress_e_rate : int, optional
+            The extra compression rate for edge in angular message compression. The default value is 1.
+            When using angular message compression with a_compress_rate c and a_compress_e_rate c_e,
+            the edge dimension will be compressed to (c_e * a_dim / 2c) within the angular message.
+        a_compress_use_split : bool, optional
+            Whether to split first sub-vectors instead of linear mapping during angular message compression.
+            The default value is False.
         axis_neuron : int, optional
             The number of dimension of submatrix in the symmetrization ops.
         update_angle : bool, optional
@@ -84,6 +93,8 @@ class RepFlowArgs:
         self.update_residual = update_residual
         self.update_residual_init = update_residual_init
         self.skip_stat = skip_stat
+        self.a_compress_e_rate = a_compress_e_rate
+        self.a_compress_use_split = a_compress_use_split
 
     def __getitem__(self, key):
         if hasattr(self, key):
@@ -104,6 +115,8 @@ class RepFlowArgs:
             "a_rcut_smth": self.a_rcut_smth,
             "a_sel": self.a_sel,
             "a_compress_rate": self.a_compress_rate,
+            "a_compress_e_rate": self.a_compress_e_rate,
+            "a_compress_use_split": self.a_compress_use_split,
             "axis_neuron": self.axis_neuron,
             "update_angle": self.update_angle,
             "update_style": self.update_style,

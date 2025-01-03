@@ -46,6 +46,8 @@ class RepFlowLayer(torch.nn.Module):
         e_dim: int = 16,
         a_dim: int = 64,
         a_compress_rate: int = 0,
+        a_compress_use_split: bool = False,
+        a_compress_e_rate: int = 1,
         axis_neuron: int = 4,
         update_angle: bool = True,  # angle
         activation_function: str = "silu",
@@ -84,6 +86,8 @@ class RepFlowLayer(torch.nn.Module):
         self.update_style = update_style
         self.update_residual = update_residual
         self.update_residual_init = update_residual_init
+        self.a_compress_e_rate = a_compress_e_rate
+        self.a_compress_use_split = a_compress_use_split
         self.precision = precision
         self.seed = seed
         self.prec = PRECISION_DICT[precision]
@@ -180,23 +184,35 @@ class RepFlowLayer(torch.nn.Module):
                 self.angle_dim += self.n_dim + 2 * self.e_dim
                 self.a_compress_n_linear = None
                 self.a_compress_e_linear = None
+                self.e_a_compress_dim = e_dim
+                self.n_a_compress_dim = n_dim
             else:
-                # angle + node/c + edge/2c * 2
-                self.angle_dim += 2 * (self.a_dim // self.a_compress_rate)
-                self.a_compress_n_linear = MLPLayer(
-                    self.n_dim,
-                    self.a_dim // self.a_compress_rate,
-                    precision=precision,
-                    bias=False,
-                    seed=child_seed(seed, 8),
+                # angle + a_dim/c + a_dim/2c * 2 * e_rate
+                self.angle_dim += (1 + self.a_compress_e_rate) * (
+                    self.a_dim // self.a_compress_rate
                 )
-                self.a_compress_e_linear = MLPLayer(
-                    self.e_dim,
-                    self.a_dim // (2 * self.a_compress_rate),
-                    precision=precision,
-                    bias=False,
-                    seed=child_seed(seed, 9),
+                self.e_a_compress_dim = (
+                    self.a_dim // (2 * self.a_compress_rate) * self.a_compress_e_rate
                 )
+                self.n_a_compress_dim = self.a_dim // self.a_compress_rate
+                if not self.a_compress_use_split:
+                    self.a_compress_n_linear = MLPLayer(
+                        self.n_dim,
+                        self.n_a_compress_dim,
+                        precision=precision,
+                        bias=False,
+                        seed=child_seed(seed, 8),
+                    )
+                    self.a_compress_e_linear = MLPLayer(
+                        self.e_dim,
+                        self.e_a_compress_dim,
+                        precision=precision,
+                        bias=False,
+                        seed=child_seed(seed, 9),
+                    )
+                else:
+                    self.a_compress_n_linear = None
+                    self.a_compress_e_linear = None
 
             # edge angle message
             self.edge_angle_linear1 = MLPLayer(
@@ -480,10 +496,15 @@ class RepFlowLayer(torch.nn.Module):
             assert self.edge_angle_linear2 is not None
             # get angle info
             if self.a_compress_rate != 0:
-                assert self.a_compress_n_linear is not None
-                assert self.a_compress_e_linear is not None
-                node_ebd_for_angle = self.a_compress_n_linear(node_ebd)
-                edge_ebd_for_angle = self.a_compress_e_linear(edge_ebd)
+                if not self.a_compress_use_split:
+                    assert self.a_compress_n_linear is not None
+                    assert self.a_compress_e_linear is not None
+                    node_ebd_for_angle = self.a_compress_n_linear(node_ebd)
+                    edge_ebd_for_angle = self.a_compress_e_linear(edge_ebd)
+                else:
+                    # use the first a_compress_dim dim for node and edge
+                    node_ebd_for_angle = node_ebd[:, :, : self.n_a_compress_dim]
+                    edge_ebd_for_angle = edge_ebd[:, :, :, : self.e_a_compress_dim]
             else:
                 node_ebd_for_angle = node_ebd
                 edge_ebd_for_angle = edge_ebd
@@ -647,6 +668,8 @@ class RepFlowLayer(torch.nn.Module):
             "e_dim": self.e_dim,
             "a_dim": self.a_dim,
             "a_compress_rate": self.a_compress_rate,
+            "a_compress_e_rate": self.a_compress_e_rate,
+            "a_compress_use_split": self.a_compress_use_split,
             "axis_neuron": self.axis_neuron,
             "activation_function": self.activation_function,
             "update_angle": self.update_angle,
@@ -667,7 +690,7 @@ class RepFlowLayer(torch.nn.Module):
                     "angle_self_linear": self.angle_self_linear.serialize(),
                 }
             )
-            if self.a_compress_rate != 0:
+            if self.a_compress_rate != 0 and not self.a_compress_use_split:
                 data.update(
                     {
                         "a_compress_n_linear": self.a_compress_n_linear.serialize(),
@@ -700,6 +723,7 @@ class RepFlowLayer(torch.nn.Module):
         data.pop("@class")
         update_angle = data["update_angle"]
         a_compress_rate = data["a_compress_rate"]
+        a_compress_use_split = data["a_compress_use_split"]
         node_self_mlp = data.pop("node_self_mlp")
         node_sym_linear = data.pop("node_sym_linear")
         node_edge_linear = data.pop("node_edge_linear")
@@ -728,7 +752,7 @@ class RepFlowLayer(torch.nn.Module):
             obj.edge_angle_linear1 = MLPLayer.deserialize(edge_angle_linear1)
             obj.edge_angle_linear2 = MLPLayer.deserialize(edge_angle_linear2)
             obj.angle_self_linear = MLPLayer.deserialize(angle_self_linear)
-            if a_compress_rate != 0:
+            if a_compress_rate != 0 and not a_compress_use_split:
                 assert isinstance(a_compress_n_linear, dict)
                 assert isinstance(a_compress_e_linear, dict)
                 obj.a_compress_n_linear = MLPLayer.deserialize(a_compress_n_linear)
