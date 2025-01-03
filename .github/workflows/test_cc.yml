@@ -59,7 +59,7 @@ jobs:
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
         LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
-        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib:${{ github.workspace }}/libtorch/lib:${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/paddle/lib
+        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib:${{ github.workspace }}/libtorch/lib:${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/paddle/lib:${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/third_party/install/onednn/lib:${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/third_party/install/mklml/lib
       if: ${{ !matrix.check_memleak }}
     # test ipi
     - run: pytest --cov=deepmd source/ipi/tests
@@ -68,7 +68,7 @@ jobs:
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
         PATH: ${{ github.workspace }}/dp_test/bin:$PATH
-        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib:${{ github.workspace }}/libtorch/lib:${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/paddle/lib
+        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib:${{ github.workspace }}/libtorch/lib:${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/paddle/lib:${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/third_party/install/onednn/lib:${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/third_party/install/mklml/lib
       if: ${{ !matrix.check_memleak }}
     - uses: codecov/codecov-action@v5
       env:
