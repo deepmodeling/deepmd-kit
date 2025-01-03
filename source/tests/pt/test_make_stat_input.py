@@ -32,7 +32,6 @@ def collate_fn(batch):
             collated_batch[key] = torch.tensor(data_list)
     return collated_batch
 
-
 class TestMakeStatInput(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -63,6 +62,9 @@ class TestMakeStatInput(unittest.TestCase):
                 pin_memory=True,
             )
             cls.dataloaders.append(dataloader)
+    
+    def count_non_zero_elements(self, tensor, threshold=1e-8):
+        return torch.sum(torch.abs(tensor) > threshold).item()
 
     def test_make_stat_input(self):
         lst = make_stat_input(
@@ -73,8 +75,14 @@ class TestMakeStatInput(unittest.TestCase):
             enable_element_completion=True,
         )
         bias, _ = compute_output_stats(lst, ntypes=57)
-        print(bias)
-
+        energy = bias.get('energy')
+        self.assertIsNotNone(energy, "'energy' key not found in bias dictionary.")
+        non_zero_count = self.count_non_zero_elements(energy)
+        self.assertEqual(
+            non_zero_count, 
+            6, 
+            f"Expected exactly 7 non-zero elements, but got {non_zero_count}."
+        )
     def test_make_stat_input_nocomplete(self):
         lst = make_stat_input(
             datasets=self.datasets,
@@ -84,8 +92,14 @@ class TestMakeStatInput(unittest.TestCase):
             enable_element_completion=False,
         )
         bias, _ = compute_output_stats(lst, ntypes=57)
-        print(bias)
-
+        energy = bias.get('energy')
+        self.assertIsNotNone(energy, "'energy' key not found in bias dictionary.")
+        non_zero_count = self.count_non_zero_elements(energy)
+        self.assertLess(
+            non_zero_count, 
+            6, 
+            f"Expected fewer than 7 non-zero elements, but got {non_zero_count}."
+        )
 
 if __name__ == "__main__":
     unittest.main()
