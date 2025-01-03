@@ -123,6 +123,7 @@ def make_stat_input(
         finalize_stats(sys_stat)
         lst.append(sys_stat)
 
+        #get frame index
         if datasets[0].mixed_type:
             element_counts = dataset.get_frame_index()
             for elem, data in element_counts.items():
@@ -138,6 +139,7 @@ def make_stat_input(
                     global_element_counts[elem]["indices"].append(
                         {"sys_index": sys_index, "frames": indices}
                     )
+    #Check whether the element used for statistics is complete in mixed_type
     if datasets[0].mixed_type and enable_element_completion:
         for elem, data in global_element_counts.items():
             indices_count = len(data["indices"])
