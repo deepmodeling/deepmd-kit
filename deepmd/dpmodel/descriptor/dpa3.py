@@ -50,7 +50,7 @@ class RepFlowArgs:
         a_compress_rate : int, optional
             The compression rate for angular messages. The default value is 0, indicating no compression.
             If a non-zero integer c is provided, the node and edge dimensions will be compressed
-            to n_dim/c and e_dim/2c, respectively, within the angular message.
+            to a_dim/c and a_dim/2c, respectively, within the angular message.
         a_compress_e_rate : int, optional
             The extra compression rate for edge in angular message compression. The default value is 1.
             When using angular message compression with a_compress_rate c and a_compress_e_rate c_e,

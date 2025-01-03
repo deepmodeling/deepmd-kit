@@ -1443,12 +1443,12 @@ def dpa3_repflow_args():
     doc_a_compress_rate = (
         "The compression rate for angular messages. The default value is 0, indicating no compression. "
         " If a non-zero integer c is provided, the node and edge dimensions will be compressed "
-        "to n_dim/c and e_dim/2c, respectively, within the angular message."
+        "to a_dim/c and a_dim/2c, respectively, within the angular message."
     )
     doc_a_compress_e_rate = (
         "The extra compression rate for edge in angular message compression. The default value is 1."
         "When using angular message compression with a_compress_rate c and a_compress_e_rate c_e, "
-        "the edge dimension will be compressed to (c_e * e_dim / 2c) within the angular message. "
+        "the edge dimension will be compressed to (c_e * a_dim / 2c) within the angular message. "
     )
     doc_axis_neuron = "The number of dimension of submatrix in the symmetrization ops."
     doc_update_angle = (
