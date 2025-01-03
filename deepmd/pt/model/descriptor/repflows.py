@@ -133,7 +133,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         a_compress_e_rate : int, optional
             The extra compression rate for edge in angular message compression. The default value is 1.
             When using angular message compression with a_compress_rate c and a_compress_e_rate c_e,
-            the edge dimension will be compressed to (c_e * e_dim / 2c) within the angular message.
+            the edge dimension will be compressed to (c_e * a_dim / 2c) within the angular message.
         a_compress_use_split : bool, optional
             Whether to split first sub-vectors instead of linear mapping during angular message compression.
             The default value is False.
