@@ -17,7 +17,6 @@ echo "try to find tensorflow in the Python environment"
 INSTALL_PREFIX=${SCRIPT_PATH}/../../dp_test
 BUILD_TMP_DIR=${SCRIPT_PATH}/../build_tests
 PADDLE_INFERENCE_DIR=${BUILD_TMP_DIR}/paddle_inference_install_dir
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${PADDLE_INFERENCE_DIR}/paddle/lib:${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib:${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib
 mkdir -p ${BUILD_TMP_DIR}
 cd ${BUILD_TMP_DIR}
 cmake \
@@ -32,4 +31,6 @@ cmake \
 	${CUDA_ARGS} ..
 cmake --build . -j${NPROC}
 cmake --install .
+PADDLE_INFERENCE_DIR=${BUILD_TMP_DIR}/paddle_inference_install_dir
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib:${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib
 ctest --output-on-failure

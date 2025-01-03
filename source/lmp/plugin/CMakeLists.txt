@@ -1,7 +1,9 @@
 if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
   message(STATUS "enable LAMMPS plugin mode")
   add_library(lammps_interface INTERFACE)
-  if(DEFINED LAMMPS_VERSION)
+  if(EXISTS "${LAMMPS_SOURCE_ROOT}")
+    message(STATUS "LAMMPS_SOURCE_ROOT directory exists. Skipping download.")
+  elseif(DEFINED LAMMPS_VERSION)
     cmake_minimum_required(VERSION 3.14)
     include(FetchContent)
     FetchContent_Declare(
