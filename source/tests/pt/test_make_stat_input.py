@@ -1,18 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from deepmd.pt.utils.stat import make_stat_input,compute_output_stats
 from deepmd.pt.utils.dataset import DeepmdDataSetForLoader
-from deepmd.utils.data import DataRequirementItem
-
 
 def collate_fn(batch):
     if isinstance(batch, dict):
         batch = [batch]
     collated_batch = {}
-    for key in batch[0].keys():     
+    for key in batch[0].keys():
         data_list = [d[key] for d in batch]
         if isinstance(data_list[0], np.ndarray):
             data_np = np.stack(data_list)
@@ -20,6 +19,7 @@ def collate_fn(batch):
         else:
             collated_batch[key] = torch.tensor(data_list)
     return collated_batch
+
 
 class TestMakeStatInput(unittest.TestCase):
     @classmethod
@@ -43,7 +43,7 @@ class TestMakeStatInput(unittest.TestCase):
             dataloader = DataLoader(
                 dataset,
                 sampler=sampler,
-                batch_size=1,        
+                batch_size=1,
                 num_workers=0,
                 drop_last=False,
                 collate_fn=collate_fn,
@@ -55,7 +55,7 @@ class TestMakeStatInput(unittest.TestCase):
         lst = make_stat_input(
             datasets=self.datasets,          
             dataloaders=self.dataloaders,        
-            nbatches=1,
+            nbatches=nbatches,
             min_frames_per_element_forstat=1,
             enable_element_completion=True,
         )
