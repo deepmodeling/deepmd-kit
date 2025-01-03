@@ -1,87 +1,76 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
-from collections import (
-    defaultdict,
-)
-
+import numpy as np
 import torch
-from torch.utils.data import (
-    DataLoader,
-)
+from torch.utils.data import DataLoader
+from deepmd.pt.utils.stat import make_stat_input,compute_output_stats
+from deepmd.pt.utils.dataset import DeepmdDataSetForLoader
 
-from deepmd.pt.utils.stat import (
-    make_stat_input,
-)
-
-
-class TestDataset:
-    def __init__(self, samples):
-        self.samples = samples
-        self.element_to_frames = defaultdict(list)
-        self.mixed_type = True
-        for idx, sample in enumerate(samples):
-            atypes = sample["atype"]
-            for atype in atypes:
-                self.element_to_frames[atype].append(idx)
-
-    @property
-    def get_all_atype(self):
-        return set(self.element_to_frames.keys())
-
-    def __len__(self):
-        return len(self.samples)
-
-    def __getitem__(self, idx):
-        sample = self.samples[idx]
-        return {
-            "atype": torch.tensor(sample["atype"], dtype=torch.long),
-            "energy": torch.tensor(sample["energy"], dtype=torch.float32),
-        }
-
-    def true_types(self):
-        element_counts = defaultdict(lambda: {"count": 0, "frames": 0})
-        for idx, sample in enumerate(self.samples):
-            atypes = sample["atype"]
-            unique_atypes = set(atypes)
-            for atype in atypes:
-                element_counts[atype]["count"] += 1
-            for atype in unique_atypes:
-                element_counts[atype]["frames"] += 1
-        return dict(element_counts)
-
+def collate_fn(batch):
+    if isinstance(batch, dict):
+        batch = [batch]
+    collated_batch = {}
+    for key in batch[0].keys():     
+        data_list = [d[key] for d in batch]
+        if isinstance(data_list[0], np.ndarray):
+            data_np = np.stack(data_list)
+            collated_batch[key] = torch.from_numpy(data_np)
+        else:
+            collated_batch[key] = torch.tensor(data_list)
+    return collated_batch
 
 class TestMakeStatInput(unittest.TestCase):
-    def setUp(self):
-        self.system = TestDataset(
-            [
-                {"atype": [1], "energy": -1.0},
-                {"atype": [2], "energy": -2.0},
-            ]
-        )
-        self.datasets = [self.system]
-        self.dataloaders = [
-            DataLoader(self.system, batch_size=1, shuffle=False),
-        ]
+    @classmethod
+    def setUpClass(cls):
+        system_path = "mixed_type_data/sys.000000"
+        cls.alltype = {19, 6, 17, 12, 30, 36}
+        cls.datasets = [DeepmdDataSetForLoader(system=system_path)]
+        weights = torch.tensor([0.1] * len(cls.datasets)) 
+        sampler = torch.utils.data.WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
+        cls.dataloaders = []
+        for dataset in cls.datasets:
+            dataloader = DataLoader(
+                dataset,
+                sampler=sampler,
+                batch_size=1,        
+                num_workers=0,
+                drop_last=False,
+                collate_fn=collate_fn,
+                pin_memory=True,
+            )
+            cls.dataloaders.append(dataloader)
 
     def test_make_stat_input(self):
         nbatches = 1
         lst = make_stat_input(
-            self.datasets,
-            self.dataloaders,
+            datasets=self.datasets,          
+            dataloaders=self.dataloaders,        
             nbatches=nbatches,
             min_frames_per_element_forstat=1,
+            enable_element_completion=True,
         )
-        all_elements = self.system.get_all_atype
-        unique_elements = {1, 2}
-        self.assertEqual(unique_elements, all_elements, "make_stat_input miss elements")
+        coll_ele = set()
+        for i in lst:
+            ele = np.unique(i['atype'].cpu().numpy())
+            coll_ele.update(ele)
+        if not coll_ele == self.alltype:
+            self.assertFalse('Wrong')
 
-        expected_true_types = {
-            1: {"count": 1, "frames": 1},
-            2: {"count": 1, "frames": 1},
-        }
-        actual_true_types = self.system.true_types()
-        self.assertEqual(expected_true_types, actual_true_types, "true_types is wrong")
-
+    def test_make_stat_input_nocomplete(self):
+        nbatches = 1
+        lst = make_stat_input(
+            datasets=self.datasets,          
+            dataloaders=self.dataloaders,        
+            nbatches=nbatches,
+            min_frames_per_element_forstat=1,
+            enable_element_completion=False,
+        )
+        coll_ele = set()
+        for i in lst:
+            ele = np.unique(i['atype'].cpu().numpy())
+            coll_ele.update(ele)
+        if coll_ele == self.alltype:
+            self.assertFalse('Wrong')
 
 if __name__ == "__main__":
     unittest.main()
