@@ -1454,6 +1454,10 @@ def dpa3_repflow_args():
         "Whether to split first sub-vectors instead of linear mapping during angular message compression. "
         "The default value is False."
     )
+    doc_n_multi_edge_message = (
+        "The head number of multiple edge messages to update node feature. "
+        "Default is 1, indicating one head edge message."
+    )
     doc_axis_neuron = "The number of dimension of submatrix in the symmetrization ops."
     doc_update_angle = (
         "Where to update the angle rep. If not, only node and edge rep will be used."
@@ -1505,6 +1509,13 @@ def dpa3_repflow_args():
             optional=True,
             default=False,
             doc=doc_a_compress_use_split,
+        ),
+        Argument(
+            "n_multi_edge_message",
+            int,
+            optional=True,
+            default=1,
+            doc=doc_n_multi_edge_message,
         ),
         Argument(
             "axis_neuron",
