@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+import numpy as np
+import torch
 from collections import (
     defaultdict,
 )
@@ -8,10 +10,6 @@ from typing import (
     Optional,
     Union,
 )
-
-import numpy as np
-import torch
-
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
 )
@@ -143,6 +141,7 @@ def make_stat_input(datasets, dataloaders, nbatches, min_frames_per_element_fors
                         "sys_index": sys_index,
                         "frames": indices
                     })
+    # Complement
     if datasets[0].mixed_type and enable_element_completion:
         for elem, data in global_element_counts.items():
             indices_count = data["count"]
@@ -500,7 +499,6 @@ def compute_output_stats(
     bias_atom_e = {kk: to_torch_tensor(vv) for kk, vv in bias_atom_e.items()}
     std_atom_e = {kk: to_torch_tensor(vv) for kk, vv in std_atom_e.items()}
     return bias_atom_e, std_atom_e
-
 
 def compute_output_stats_global(
     sampled: list[dict],
