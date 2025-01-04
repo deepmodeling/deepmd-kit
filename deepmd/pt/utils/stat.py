@@ -85,6 +85,36 @@ def make_stat_input(datasets, dataloaders, nbatches, min_frames_per_element_fors
                 else:
                     pass
 
+    def process_with_oneframe(sys_indices, newele_counter):
+        for sys_info in sys_indices:
+            sys_index = sys_info['sys_index']
+            frames = sys_info['frames']
+            sys = datasets[sys_index]
+            for frame in frames:
+                newele_counter += 1
+                if not newele_counter > min_frames_per_element_forstat:
+                    frame_data = sys.__getitem__(frame)
+                    sys_stat_new = {}
+                    for dd in frame_data:
+                        if dd == "type":
+                            continue
+                        if frame_data[dd] is None:
+                            sys_stat_new[dd] = None
+                        elif isinstance(frame_data[dd], np.ndarray):
+                            if dd not in sys_stat_new:
+                                sys_stat_new[dd] = []
+                            tensor_data = torch.from_numpy(frame_data[dd])
+                            tensor_data = tensor_data.unsqueeze(0)
+                            sys_stat_new[dd].append(tensor_data)
+                        elif isinstance(frame_data[dd], np.float32):
+                            sys_stat_new[dd] = frame_data[dd]
+                        else:
+                            pass
+                    finalize_stats(sys_stat_new)
+                    lst.append(sys_stat_new)
+                else:
+                    break
+
     def finalize_stats(sys_stat):
         """Finalize statistics by concatenating tensors."""
         for key in sys_stat:
@@ -152,40 +182,18 @@ def make_stat_input(datasets, dataloaders, nbatches, min_frames_per_element_fors
                 )
         collect_elements = collect_ele.keys()
         missing_elements = total_element_types - collect_elements
+        collect_miss_element = set()
         for ele, count in collect_ele.items():
             if count < min_frames_per_element_forstat:
+                collect_miss_element.add(ele)
                 missing_elements.add(ele)
         for miss in missing_elements:
             sys_indices = global_element_counts[miss].get('indices', [])
-            newele_counter = 0
-            for sys_info in sys_indices:
-                sys_index = sys_info['sys_index']
-                frames = sys_info['frames']
-                sys = datasets[sys_index]
-                for frame in frames:
-                    newele_counter += 1
-                    if not newele_counter > min_frames_per_element_forstat:
-                        frame_data = sys.__getitem__(frame)
-                        sys_stat_new = {}
-                        for dd in frame_data:
-                            if dd == "type":
-                                continue
-                            if frame_data[dd] is None:
-                                sys_stat_new[dd] = None
-                            elif isinstance(frame_data[dd], np.ndarray):
-                                if dd not in sys_stat_new:
-                                    sys_stat_new[dd] = []
-                                tensor_data = torch.from_numpy(frame_data[dd])
-                                tensor_data = tensor_data.unsqueeze(0)
-                                sys_stat_new[dd].append(tensor_data)
-                            elif isinstance(frame_data[dd], np.float32):
-                                sys_stat_new[dd] = frame_data[dd]
-                            else:
-                                pass
-                        finalize_stats(sys_stat_new)
-                        lst.append(sys_stat_new)
-                    else:
-                        break
+            if miss in collect_miss_element:
+                newele_counter = collect_ele.get(miss, 0)
+            else:
+                newele_counter = 0
+            process_with_oneframe(sys_indices,newele_counter)
     return lst
 
 def _restore_from_file(
