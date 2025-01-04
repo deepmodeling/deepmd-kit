@@ -2830,7 +2830,7 @@ def training_args(
             "min_frames_per_element_forstat",
             int,
             optional=True,
-            doc="The minimum number of frames per element used for statistics.",
+            doc="The minimum number of frames per element used for statistics when using the mixed type.",
         ),
         Argument(
             "enable_element_completion",

@@ -36,14 +36,7 @@ from deepmd.utils.path import (
 
 log = logging.getLogger(__name__)
 
-
-def make_stat_input(
-    datasets,
-    dataloaders,
-    nbatches,
-    min_frames_per_element_forstat,
-    enable_element_completion=True,
-):
+def make_stat_input(datasets, dataloaders, nbatches, min_frames_per_element_forstat, enable_element_completion=True):
     """Pack data for statistics.
 
     Args:
@@ -65,13 +58,11 @@ def make_stat_input(
     if datasets[0].mixed_type:
         if enable_element_completion:
             log.info(
-                f"Element check enabled. "
-                f"Verifying if frames with elements meet the set of {min_frames_per_element_forstat}."
+                f'Element check enabled. '
+                f'Verifying if frames with elements meet the set of {min_frames_per_element_forstat}.'
             )
         else:
-            log.info(
-                "Element completion is disabled. Skipping missing element handling."
-            )
+            log.info("Element completion is disabled. Skipping missing element handling.")
 
     def process_batches(dataloader, sys_stat):
         """Process batches from a dataloader to collect statistics."""
@@ -100,10 +91,7 @@ def make_stat_input(
         for key in sys_stat:
             if isinstance(sys_stat[key], np.float32):
                 pass
-            elif sys_stat[key] is None or (
-                isinstance(sys_stat[key], list)
-                and (len(sys_stat[key]) == 0 or sys_stat[key][0] is None)
-            ):
+            elif sys_stat[key] is None or (isinstance(sys_stat[key], list) and (len(sys_stat[key]) == 0 or sys_stat[key][0] is None)):
                 sys_stat[key] = None
             elif isinstance(sys_stat[key][0], torch.Tensor):
                 sys_stat[key] = torch.cat(sys_stat[key], dim=0)
@@ -114,76 +102,94 @@ def make_stat_input(
         with torch.device("cpu"):
             process_batches(dataloader, sys_stat)
         if datasets[0].mixed_type:
-            if "atype" in sys_stat and isinstance(sys_stat["atype"], list):
-                collect_values = torch.unique(
-                    torch.cat(sys_stat["atype"]).flatten(), sorted=True
-                )
-                collect_elements.update(collect_values.tolist())
+            if 'atype' in sys_stat and isinstance(sys_stat['atype'], list):
+                collect_values = torch.unique(torch.cat(sys_stat['atype']).flatten(), sorted=True)
+                collect_elements.update(collect_values.tolist())  
 
         finalize_stats(sys_stat)
         lst.append(sys_stat)
 
-        # get frame index
-        if datasets[0].mixed_type:
+        #get frame index 
+        if datasets[0].mixed_type and enable_element_completion:
             element_counts = dataset.get_frame_index()
             for elem, data in element_counts.items():
                 indices = data["indices"]
+                count = data["frames"]
                 total_element_types.add(elem)
                 if elem not in global_element_counts:
-                    global_element_counts[elem] = {"frames": [], "indices": []}
-                global_element_counts[elem]["frames"].extend(indices)
-                if (
-                    len(global_element_counts[elem]["indices"])
-                    < min_frames_per_element_forstat
-                ):
-                    global_element_counts[elem]["indices"].append(
-                        {"sys_index": sys_index, "frames": indices}
-                    )
-    # Check whether the element used for statistics is complete in mixed_type
+                    global_element_counts[elem] = {"count": 0, "indices": []}
+                    if count > min_frames_per_element_forstat:
+                        global_element_counts[elem]["count"] += min_frames_per_element_forstat
+                        indices = indices[:min_frames_per_element_forstat]
+                        global_element_counts[elem]["indices"].append({
+                            "sys_index": sys_index,
+                            "frames": indices
+                        })
+                    else:
+                        global_element_counts[elem]["count"] += count
+                        global_element_counts[elem]["indices"].append({
+                            "sys_index": sys_index,
+                            "frames": indices
+                        })
+                else:
+                    if global_element_counts[elem]["count"] >= min_frames_per_element_forstat:
+                        pass
+                    else:
+                        global_element_counts[elem]["count"] += count
+                        global_element_counts[elem]["indices"].append({
+                        "sys_index": sys_index,
+                        "frames": indices
+                    })
+    for key, value in global_element_counts.items():
+        print(f"{key}: {value}\n")
     if datasets[0].mixed_type and enable_element_completion:
         for elem, data in global_element_counts.items():
-            indices_count = len(data["indices"])
+            indices_count = data["count"]
             if indices_count < min_frames_per_element_forstat:
                 log.warning(
-                    f"The number of frames with element {elem} is {indices_count}, "
-                    f"which is less than the required {min_frames_per_element_forstat}"
+                    f'The number of frames with element {elem} is {indices_count}, '
+                    f'which is less than the required {min_frames_per_element_forstat}'
                 )
         missing_elements = total_element_types - collect_elements
         for miss in missing_elements:
-            sys_indices = global_element_counts[miss].get("indices", [])
+            sys_indices = global_element_counts[miss].get('indices', [])
+            newele_counter = 0
             for sys_info in sys_indices:
-                sys_index = sys_info["sys_index"]
-                frames = sys_info["frames"]
+                sys_index = sys_info['sys_index']
+                frames = sys_info['frames']
                 sys = datasets[sys_index]
                 for frame in frames:
-                    frame_data = sys.__getitem__(frame)
-                    sys_stat_new = {}
-                    for dd in frame_data:
-                        if dd == "type":
-                            continue
-                        if frame_data[dd] is None:
-                            sys_stat_new[dd] = None
-                        elif isinstance(frame_data[dd], np.ndarray):
-                            if dd not in sys_stat_new:
-                                sys_stat_new[dd] = []
-                            tensor_data = torch.from_numpy(frame_data[dd])
-                            tensor_data = tensor_data.unsqueeze(0)
-                            sys_stat_new[dd].append(tensor_data)
-                        elif isinstance(frame_data[dd], np.float32):
-                            sys_stat_new[dd] = frame_data[dd]
-                        else:
-                            pass
-                    for key in sys_stat_new:
-                        if isinstance(sys_stat_new[key], np.float32):
-                            pass
-                        elif sys_stat_new[key] is None or sys_stat_new[key][0] is None:
-                            sys_stat_new[key] = None
-                        elif isinstance(sys_stat_new[key][0], torch.Tensor):
-                            sys_stat_new[key] = torch.cat(sys_stat_new[key], dim=0)
-                    dict_to_device(sys_stat_new)
-                    lst.append(sys_stat_new)
+                    newele_counter += 1
+                    if not newele_counter > min_frames_per_element_forstat:
+                        frame_data = sys.__getitem__(frame)
+                        sys_stat_new = {}
+                        for dd in frame_data:
+                            if dd == "type":
+                                continue
+                            if frame_data[dd] is None:
+                                sys_stat_new[dd] = None
+                            elif isinstance(frame_data[dd], np.ndarray):
+                                if dd not in sys_stat_new:
+                                    sys_stat_new[dd] = []
+                                tensor_data = torch.from_numpy(frame_data[dd])
+                                tensor_data = tensor_data.unsqueeze(0)
+                                sys_stat_new[dd].append(tensor_data)
+                            elif isinstance(frame_data[dd], np.float32):
+                                sys_stat_new[dd] = frame_data[dd]
+                            else:
+                                pass
+                        for key in sys_stat_new:
+                            if isinstance(sys_stat_new[key], np.float32):
+                                pass
+                            elif sys_stat_new[key] is None or sys_stat_new[key][0] is None:
+                                sys_stat_new[key] = None
+                            elif isinstance(sys_stat_new[key][0], torch.Tensor):
+                                sys_stat_new[key] = torch.cat(sys_stat_new[key], dim=0)
+                        dict_to_device(sys_stat_new)
+                        lst.append(sys_stat_new)
+                    else:
+                        break
     return lst
-
 
 def _restore_from_file(
     stat_file_path: DPPath,
