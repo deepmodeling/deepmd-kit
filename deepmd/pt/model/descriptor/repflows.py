@@ -86,6 +86,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         e_dim: int = 64,
         a_dim: int = 64,
         a_compress_rate: int = 0,
+        a_compress_e_rate: int = 1,
+        a_compress_use_split: bool = False,
         n_multi_edge_message: int = 1,
         axis_neuron: int = 4,
         update_angle: bool = True,
@@ -128,7 +130,14 @@ class DescrptBlockRepflows(DescriptorBlock):
         a_compress_rate : int, optional
             The compression rate for angular messages. The default value is 0, indicating no compression.
             If a non-zero integer c is provided, the node and edge dimensions will be compressed
-            to n_dim/c and e_dim/2c, respectively, within the angular message.
+            to a_dim/c and a_dim/2c, respectively, within the angular message.
+        a_compress_e_rate : int, optional
+            The extra compression rate for edge in angular message compression. The default value is 1.
+            When using angular message compression with a_compress_rate c and a_compress_e_rate c_e,
+            the edge dimension will be compressed to (c_e * a_dim / 2c) within the angular message.
+        a_compress_use_split : bool, optional
+            Whether to split first sub-vectors instead of linear mapping during angular message compression.
+            The default value is False.
         n_multi_edge_message : int, optional
             The head number of multiple edge messages to update node feature.
             Default is 1, indicating one head edge message.
@@ -185,10 +194,12 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.sec = self.sel
         self.split_sel = self.sel
         self.a_compress_rate = a_compress_rate
+        self.a_compress_e_rate = a_compress_e_rate
         self.n_multi_edge_message = n_multi_edge_message
         self.axis_neuron = axis_neuron
         self.set_davg_zero = set_davg_zero
         self.skip_stat = skip_stat
+        self.a_compress_use_split = a_compress_use_split
 
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -230,6 +241,8 @@ class DescrptBlockRepflows(DescriptorBlock):
                     e_dim=self.e_dim,
                     a_dim=self.a_dim,
                     a_compress_rate=self.a_compress_rate,
+                    a_compress_use_split=self.a_compress_use_split,
+                    a_compress_e_rate=self.a_compress_e_rate,
                     n_multi_edge_message=self.n_multi_edge_message,
                     axis_neuron=self.axis_neuron,
                     update_angle=self.update_angle,
