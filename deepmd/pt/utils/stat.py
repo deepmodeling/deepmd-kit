@@ -143,7 +143,6 @@ def make_stat_input(datasets, dataloaders, nbatches, min_frames_per_element_fors
                         "sys_index": sys_index,
                         "frames": indices
                     })
-    # Complement
     if datasets[0].mixed_type and enable_element_completion:
         for elem, data in global_element_counts.items():
             indices_count = data["count"]
