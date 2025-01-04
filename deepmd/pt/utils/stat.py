@@ -85,7 +85,7 @@ def make_stat_input(datasets, dataloaders, nbatches, min_frames_per_element_fors
                 else:
                     pass
 
-    def process_with_newframe(sys_indices, newele_counter):
+    def process_with_new_frame(sys_indices, newele_counter):
         for sys_info in sys_indices:
             sys_index = sys_info['sys_index']
             frames = sys_info['frames']
@@ -193,7 +193,7 @@ def make_stat_input(datasets, dataloaders, nbatches, min_frames_per_element_fors
                 newele_counter = collect_ele.get(miss, 0)
             else:
                 newele_counter = 0
-            process_with_oneframe(sys_indices,newele_counter)
+            process_with_new_frame(sys_indices,newele_counter)
     return lst
 
 def _restore_from_file(
