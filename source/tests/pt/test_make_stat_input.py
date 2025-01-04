@@ -37,6 +37,7 @@ class TestMakeStatInput(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         system_path = "mixed_type_data/sys.000000"
+        cls.real_ntypes = 6
         cls.datasets = DeepmdDataSetForLoader(system=system_path)
         data_requirements = [
             DataRequirementItem(
@@ -81,8 +82,8 @@ class TestMakeStatInput(unittest.TestCase):
         non_zero_count = self.count_non_zero_elements(energy)
         self.assertEqual(
             non_zero_count,
-            6,
-            f"Expected exactly 7 non-zero elements, but got {non_zero_count}.",
+            self.real_ntypes,
+            f"Expected exactly {self.real_ntypes} non-zero elements, but got {non_zero_count}.",
         )
 
     def test_make_stat_input_nocomplete(self):
@@ -99,8 +100,8 @@ class TestMakeStatInput(unittest.TestCase):
         non_zero_count = self.count_non_zero_elements(energy)
         self.assertLess(
             non_zero_count,
-            6,
-            f"Expected fewer than 7 non-zero elements, but got {non_zero_count}.",
+            self.real_ntypes,
+            f"Expected fewer than {self.real_ntypes} non-zero elements, but got {non_zero_count}.",
         )
 
 
