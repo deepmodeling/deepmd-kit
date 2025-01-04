@@ -108,5 +108,5 @@ def normalize_coord(
 
     """
     icoord = phys2inter(coord, cell)
-    icoord = paddle.remainder(icoord, paddle.full([], 1.0))
+    icoord = paddle.remainder(icoord, paddle.full([], 1.0, dtype=icoord.dtype))
     return inter2phys(icoord, cell)
