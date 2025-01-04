@@ -153,10 +153,9 @@ def make_stat_input(
                         pass
                     else:
                         global_element_counts[elem]["count"] += count
-                        global_element_counts[elem]["indices"].append({
-                        "sys_index": sys_index,
-                        "frames": indices
-                    })
+                        global_element_counts[elem]["indices"].append(
+                            {"sys_index": sys_index, "frames": indices}
+                        )
     if datasets[0].mixed_type and enable_element_completion:
         for elem, data in global_element_counts.items():
             indices_count = data["count"]
