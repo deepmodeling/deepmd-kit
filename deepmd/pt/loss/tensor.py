@@ -22,6 +22,7 @@ class TensorLoss(TaskLoss):
         pref_atomic: float = 0.0,
         pref: float = 0.0,
         inference=False,
+        enable_atomic_weight: bool = False,
         **kwargs,
     ) -> None:
         r"""Construct a loss for local and global tensors.
@@ -40,6 +41,8 @@ class TensorLoss(TaskLoss):
             The prefactor of the weight of global loss. It should be larger than or equal to 0.
         inference : bool
             If true, it will output all losses found in output, ignoring the pre-factors.
+        enable_atomic_weight : bool
+            If true, atomic weight will be used in the loss calculation.
         **kwargs
             Other keyword arguments.
         """
@@ -50,6 +53,7 @@ class TensorLoss(TaskLoss):
         self.local_weight = pref_atomic
         self.global_weight = pref
         self.inference = inference
+        self.enable_atomic_weight = enable_atomic_weight
 
         assert (
             self.local_weight >= 0.0 and self.global_weight >= 0.0
@@ -85,6 +89,12 @@ class TensorLoss(TaskLoss):
         """
         model_pred = model(**input_dict)
         del learning_rate, mae
+
+        if self.enable_atomic_weight:
+            atomic_weight = label["atom_weight"].reshape([-1, 1])
+        else:
+            atomic_weight = 1.0
+
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
         if (
@@ -103,6 +113,7 @@ class TensorLoss(TaskLoss):
             diff = (local_tensor_pred - local_tensor_label).reshape(
                 [-1, self.tensor_size]
             )
+            diff = diff * atomic_weight
             if "mask" in model_pred:
                 diff = diff[model_pred["mask"].reshape([-1]).bool()]
             l2_local_loss = torch.mean(torch.square(diff))
@@ -169,6 +180,17 @@ class TensorLoss(TaskLoss):
                     atomic=False,
                     must=False,
                     high_prec=False,
+                )
+            )
+        if self.enable_atomic_weight:
+            label_requirement.append(
+                DataRequirementItem(
+                    "atomic_weight",
+                    ndof=1,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                    default=1.0,
                 )
             )
         return label_requirement
