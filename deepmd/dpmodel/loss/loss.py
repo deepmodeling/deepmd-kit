@@ -3,12 +3,13 @@ from abc import (
     ABC,
     abstractmethod,
 )
-from typing import (
-    NoReturn,
+
+import array_api_compat
+import numpy as np
+
+from deepmd.dpmodel.common import (
+    NativeOP,
 )
-
-import torch
-
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -17,36 +18,43 @@ from deepmd.utils.plugin import (
 )
 
 
-class TaskLoss(torch.nn.Module, ABC, make_plugin_registry("loss")):
-    def __init__(self, **kwargs) -> None:
-        """Construct loss."""
-        super().__init__()
-
-    def forward(self, input_dict, model, label, natoms, learning_rate) -> NoReturn:
-        """Return loss ."""
-        raise NotImplementedError
+class Loss(NativeOP, ABC, make_plugin_registry("loss")):
+    @abstractmethod
+    def call(
+        self,
+        learning_rate: float,
+        natoms: int,
+        model_dict: dict[str, np.ndarray],
+        label_dict: dict[str, np.ndarray],
+    ) -> dict[str, np.ndarray]:
+        """Calculate loss from model results and labeled results."""
 
     @property
     @abstractmethod
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
-        pass
 
     @staticmethod
-    def display_if_exist(loss: torch.Tensor, find_property: float) -> torch.Tensor:
+    def display_if_exist(loss: np.ndarray, find_property: float) -> np.ndarray:
         """Display NaN if labeled property is not found.
 
         Parameters
         ----------
-        loss : torch.Tensor
-            the loss tensor
+        loss : np.ndarray
+            the loss scalar
         find_property : float
             whether the property is found
+
+        Returns
+        -------
+        np.ndarray
+            the loss scalar or NaN
         """
-        return loss if bool(find_property) else torch.nan
+        xp = array_api_compat.array_namespace(loss)
+        return loss if bool(find_property) else xp.nan
 
     @classmethod
-    def get_loss(cls, loss_params: dict) -> "TaskLoss":
+    def get_loss(cls, loss_params: dict) -> "Loss":
         """Get the loss module by the parameters.
 
         By default, all the parameters are directly passed to the constructor.
@@ -59,12 +67,13 @@ class TaskLoss(torch.nn.Module, ABC, make_plugin_registry("loss")):
 
         Returns
         -------
-        TaskLoss
+        Loss
             The loss module
         """
         loss = cls(**loss_params)
         return loss
 
+    @abstractmethod
     def serialize(self) -> dict:
         """Serialize the loss module.
 
@@ -73,10 +82,10 @@ class TaskLoss(torch.nn.Module, ABC, make_plugin_registry("loss")):
         dict
             The serialized loss module
         """
-        raise NotImplementedError
 
     @classmethod
-    def deserialize(cls, data: dict) -> "TaskLoss":
+    @abstractmethod
+    def deserialize(cls, data: dict) -> "Loss":
         """Deserialize the loss module.
 
         Parameters
@@ -86,7 +95,6 @@ class TaskLoss(torch.nn.Module, ABC, make_plugin_registry("loss")):
 
         Returns
         -------
-        TaskLoss
+        Loss
             The deserialized loss module
         """
-        raise NotImplementedError
