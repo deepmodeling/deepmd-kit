@@ -15,6 +15,9 @@ from deepmd.pt.model.model.model import (
 from .dp_model import (
     DPModelCommon,
 )
+from .make_hessian_model import (
+    make_hessian_model,
+)
 from .make_model import (
     make_model,
 )
@@ -33,6 +36,13 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
     ) -> None:
         DPModelCommon.__init__(self)
         DPEnergyModel_.__init__(self, *args, **kwargs)
+        self._hessian_enabled = False
+
+    def enable_hessian(self):
+        self.__class__ = make_hessian_model(type(self))
+        self.hess_fitting_def = super(type(self), self).atomic_output_def()
+        self.requires_hessian("energy")
+        self._hessian_enabled = True
 
     def translated_output_def(self):
         out_def_data = self.model_output_def().get_data()
@@ -50,6 +60,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             output_def["atom_virial"].squeeze(-3)
         if "mask" in out_def_data:
             output_def["mask"] = out_def_data["mask"]
+        if self._hessian_enabled:
+            output_def["hessian"] = out_def_data["energy_derv_r_derv_r"]
         return output_def
 
     def forward(
@@ -85,6 +97,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 model_predict["force"] = model_ret["dforce"]
             if "mask" in model_ret:
                 model_predict["mask"] = model_ret["mask"]
+            if self._hessian_enabled:
+                model_predict["hessian"] = model_ret["energy_derv_r_derv_r"].squeeze(-2)
         else:
             model_predict = model_ret
             model_predict["updated_coord"] += coord

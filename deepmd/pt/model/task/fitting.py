@@ -64,14 +64,7 @@ class Fitting(torch.nn.Module, BaseFitting):
             self.__class__ == base_class.__class__
         ), "Only fitting nets of the same type can share params!"
         if shared_level == 0:
-            # link buffers
-            if hasattr(self, "bias_atom_e"):
-                self.bias_atom_e = base_class.bias_atom_e
-            # the following will successfully link all the params except buffers, which need manually link.
-            for item in self._modules:
-                self._modules[item] = base_class._modules[item]
-        elif shared_level == 1:
-            # only not share the bias_atom_e
+            # only not share the bias_atom_e and the case_embd
             # the following will successfully link all the params except buffers, which need manually link.
             for item in self._modules:
                 self._modules[item] = base_class._modules[item]
@@ -102,6 +95,8 @@ class GeneralFitting(Fitting):
         Number of frame parameters.
     numb_aparam : int
         Number of atomic parameters.
+    dim_case_embd : int
+        Dimension of case specific embedding.
     activation_function : str
         Activation function.
     precision : str
@@ -139,6 +134,7 @@ class GeneralFitting(Fitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        dim_case_embd: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
@@ -160,6 +156,7 @@ class GeneralFitting(Fitting):
         self.resnet_dt = resnet_dt
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
+        self.dim_case_embd = dim_case_embd
         self.activation_function = activation_function
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
@@ -211,10 +208,20 @@ class GeneralFitting(Fitting):
         else:
             self.aparam_avg, self.aparam_inv_std = None, None
 
+        if self.dim_case_embd > 0:
+            self.register_buffer(
+                "case_embd",
+                torch.zeros(self.dim_case_embd, dtype=self.prec, device=device),
+                # torch.eye(self.dim_case_embd, dtype=self.prec, device=device)[0],
+            )
+        else:
+            self.case_embd = None
+
         in_dim = (
             self.dim_descrpt
             + self.numb_fparam
             + (0 if self.use_aparam_as_mask else self.numb_aparam)
+            + self.dim_case_embd
         )
 
         self.filter_layers = NetworkCollection(
@@ -274,7 +281,7 @@ class GeneralFitting(Fitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
-            "@version": 2,
+            "@version": 3,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -282,6 +289,7 @@ class GeneralFitting(Fitting):
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
+            "dim_case_embd": self.dim_case_embd,
             "activation_function": self.activation_function,
             "precision": self.precision,
             "mixed_types": self.mixed_types,
@@ -290,6 +298,7 @@ class GeneralFitting(Fitting):
             "exclude_types": self.exclude_types,
             "@variables": {
                 "bias_atom_e": to_numpy_array(self.bias_atom_e),
+                "case_embd": to_numpy_array(self.case_embd),
                 "fparam_avg": to_numpy_array(self.fparam_avg),
                 "fparam_inv_std": to_numpy_array(self.fparam_inv_std),
                 "aparam_avg": to_numpy_array(self.aparam_avg),
@@ -349,6 +358,15 @@ class GeneralFitting(Fitting):
         """Get the name to each type of atoms."""
         return self.type_map
 
+    def set_case_embd(self, case_idx: int):
+        """
+        Set the case embedding of this fitting net by the given case_idx,
+        typically concatenated with the output of the descriptor and fed into the fitting net.
+        """
+        self.case_embd = torch.eye(self.dim_case_embd, dtype=self.prec, device=device)[
+            case_idx
+        ]
+
     def __setitem__(self, key, value) -> None:
         if key in ["bias_atom_e"]:
             value = value.view([self.ntypes, self._net_out_dim()])
@@ -361,6 +379,8 @@ class GeneralFitting(Fitting):
             self.aparam_avg = value
         elif key in ["aparam_inv_std"]:
             self.aparam_inv_std = value
+        elif key in ["case_embd"]:
+            self.case_embd = value
         elif key in ["scale"]:
             self.scale = value
         else:
@@ -377,6 +397,8 @@ class GeneralFitting(Fitting):
             return self.aparam_avg
         elif key in ["aparam_inv_std"]:
             return self.aparam_inv_std
+        elif key in ["case_embd"]:
+            return self.case_embd
         elif key in ["scale"]:
             return self.scale
         else:
@@ -472,6 +494,19 @@ class GeneralFitting(Fitting):
             if xx_zeros is not None:
                 xx_zeros = torch.cat(
                     [xx_zeros, aparam],
+                    dim=-1,
+                )
+
+        if self.dim_case_embd > 0:
+            assert self.case_embd is not None
+            case_embd = torch.tile(self.case_embd.reshape([1, 1, -1]), [nf, nloc, 1])
+            xx = torch.cat(
+                [xx, case_embd],
+                dim=-1,
+            )
+            if xx_zeros is not None:
+                xx_zeros = torch.cat(
+                    [xx_zeros, case_embd],
                     dim=-1,
                 )
 

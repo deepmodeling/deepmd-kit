@@ -7,8 +7,8 @@ from deepmd.jax.fitting.fitting import (
 )
 
 __all__ = [
-    "EnergyFittingNet",
     "DOSFittingNet",
     "DipoleFittingNet",
+    "EnergyFittingNet",
     "PolarFittingNet",
 ]

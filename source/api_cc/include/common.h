@@ -33,7 +33,13 @@ struct NeighborListData {
   std::vector<int*> firstneigh;
 
  public:
-  void copy_from_nlist(const InputNlist& inlist);
+  /**
+   * @brief Copy the neighbor list from an InputNlist.
+   * @param[in] inlist The input neighbor list.
+   * @param[in] natoms The number of atoms to copy. If natoms is -1, copy all
+   * atoms.
+   */
+  void copy_from_nlist(const InputNlist& inlist, const int natoms = -1);
   void shuffle(const std::vector<int>& fwd_map);
   void shuffle(const deepmd::AtomMap& map);
   void shuffle_exclude_empty(const std::vector<int>& fwd_map);

@@ -41,10 +41,9 @@ class PropertyFittingNet(InvarFitting):
             this list is of length :math:`N_l + 1`, specifying if the hidden layers and the output layer are trainable.
     intensive
             Whether the fitting property is intensive.
-    bias_method
-            The method of applying the bias to each atomic output, user can select 'normal' or 'no_bias'.
-            If 'normal' is used, the computed bias will be added to the atomic output.
-            If 'no_bias' is used, no bias will be added to the atomic output.
+    property_name:
+            The name of fitting property, which should be consistent with the property name in the dataset.
+            If the data file is named `humo.npy`, this parameter should be "humo".
     resnet_dt
             Time-step `dt` in the resnet construction:
             :math:`y = x + dt * \phi (Wx + b)`
@@ -74,10 +73,11 @@ class PropertyFittingNet(InvarFitting):
         rcond: Optional[float] = None,
         trainable: Union[bool, list[bool]] = True,
         intensive: bool = False,
-        bias_method: str = "normal",
+        property_name: str = "property",
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        dim_case_embd: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
@@ -88,9 +88,8 @@ class PropertyFittingNet(InvarFitting):
     ) -> None:
         self.task_dim = task_dim
         self.intensive = intensive
-        self.bias_method = bias_method
         super().__init__(
-            var_name="property",
+            var_name=property_name,
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             dim_out=task_dim,
@@ -99,6 +98,7 @@ class PropertyFittingNet(InvarFitting):
             resnet_dt=resnet_dt,
             numb_fparam=numb_fparam,
             numb_aparam=numb_aparam,
+            dim_case_embd=dim_case_embd,
             rcond=rcond,
             trainable=trainable,
             activation_function=activation_function,
@@ -111,9 +111,9 @@ class PropertyFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "PropertyFittingNet":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        check_version_compatibility(data.pop("@version"), 4, 1)
         data.pop("dim_out")
-        data.pop("var_name")
+        data["property_name"] = data.pop("var_name")
         data.pop("tot_ener_zero")
         data.pop("layer_name")
         data.pop("use_aparam_as_mask", None)
@@ -129,6 +129,8 @@ class PropertyFittingNet(InvarFitting):
             **InvarFitting.serialize(self),
             "type": "property",
             "task_dim": self.task_dim,
+            "intensive": self.intensive,
         }
+        dd["@version"] = 4
 
         return dd

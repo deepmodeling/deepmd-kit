@@ -20,7 +20,7 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.env import (
-    RESERVED_PRECISON_DICT,
+    RESERVED_PRECISION_DICT,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -223,7 +223,7 @@ class DescrptSeAttenV2(DescrptDPA1):
             "use_tebd_bias": self.use_tebd_bias,
             "type_map": self.type_map,
             # make deterministic
-            "precision": RESERVED_PRECISON_DICT[obj.prec],
+            "precision": RESERVED_PRECISION_DICT[obj.prec],
             "embeddings": obj.filter_layers.serialize(),
             "embeddings_strip": obj.filter_layers_strip.serialize(),
             "attention_layers": obj.dpa1_attention.serialize(),

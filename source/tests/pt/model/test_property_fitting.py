@@ -61,7 +61,7 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.atype_ext[:, : self.nloc], dtype=int, device=env.DEVICE
         )
 
-        for nfp, nap, bias_atom_p, intensive, bias_method in itertools.product(
+        for nfp, nap, bias_atom_p, intensive in itertools.product(
             [0, 3],
             [0, 4],
             [
@@ -69,18 +69,17 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 np.array([[11, 12, 13, 4, 15], [16, 17, 18, 9, 20]]),
             ],
             [True, False],
-            ["normal", "no_bias"],
         ):
             ft0 = PropertyFittingNet(
                 self.nt,
                 self.dd0.dim_out,
                 task_dim=5,
+                property_name="foo",
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 mixed_types=self.dd0.mixed_types(),
                 bias_atom_p=bias_atom_p,
                 intensive=intensive,
-                bias_method=bias_method,
                 seed=GLOBAL_SEED,
             ).to(env.DEVICE)
 
@@ -120,36 +119,35 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 aparam=to_numpy_array(iap),
             )
             np.testing.assert_allclose(
-                to_numpy_array(ret0["property"]),
-                ret1["property"],
+                to_numpy_array(ret0[ft0.var_name]),
+                ret1[ft1.var_name],
             )
             np.testing.assert_allclose(
-                to_numpy_array(ret0["property"]),
-                to_numpy_array(ret2["property"]),
+                to_numpy_array(ret0[ft0.var_name]),
+                to_numpy_array(ret2[ft2.var_name]),
             )
             np.testing.assert_allclose(
-                to_numpy_array(ret0["property"]),
-                ret3["property"],
+                to_numpy_array(ret0[ft0.var_name]),
+                ret3[ft3.var_name],
             )
 
     def test_jit(
         self,
     ) -> None:
-        for nfp, nap, intensive, bias_method in itertools.product(
+        for nfp, nap, intensive in itertools.product(
             [0, 3],
             [0, 4],
             [True, False],
-            ["normal", "no_bias"],
         ):
             ft0 = PropertyFittingNet(
                 self.nt,
                 self.dd0.dim_out,
                 task_dim=5,
+                property_name="foo",
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 mixed_types=self.dd0.mixed_types(),
                 intensive=intensive,
-                bias_method=bias_method,
                 seed=GLOBAL_SEED,
             ).to(env.DEVICE)
             torch.jit.script(ft0)
@@ -201,6 +199,7 @@ class TestInvarianceOutCell(unittest.TestCase):
             self.nt,
             self.dd0.dim_out,
             task_dim=11,
+            property_name="bar",
             numb_fparam=0,
             numb_aparam=0,
             mixed_types=self.dd0.mixed_types(),
@@ -229,7 +228,7 @@ class TestInvarianceOutCell(unittest.TestCase):
             )
 
             ret0 = ft0(rd0, atype, gr0, fparam=None, aparam=None)
-            res.append(ret0["property"])
+            res.append(ret0[ft0.var_name])
 
         np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
 
@@ -257,21 +256,20 @@ class TestInvarianceRandomShift(unittest.TestCase):
         # use larger cell to rotate only coord and shift to the center of cell
         cell_rot = 10.0 * torch.eye(3, dtype=dtype, device=env.DEVICE)
 
-        for nfp, nap, intensive, bias_method in itertools.product(
+        for nfp, nap, intensive in itertools.product(
             [0, 3],
             [0, 4],
             [True, False],
-            ["normal", "no_bias"],
         ):
             ft0 = PropertyFittingNet(
                 self.nt,
                 self.dd0.dim_out,  # dim_descrpt
-                task_dim=9,
+                task_dim=5,
+                property_name="bar",
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 mixed_types=self.dd0.mixed_types(),
                 intensive=intensive,
-                bias_method=bias_method,
                 seed=GLOBAL_SEED,
             ).to(env.DEVICE)
             if nfp > 0:
@@ -312,7 +310,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
                 )
 
                 ret0 = ft0(rd0, atype, gr0, fparam=ifp, aparam=iap)
-                res.append(ret0["property"])
+                res.append(ret0[ft0.var_name])
             np.testing.assert_allclose(
                 to_numpy_array(res[1]),
                 to_numpy_array(res[0]),
@@ -324,6 +322,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
             self.nt,
             self.dd0.dim_out,
             task_dim=8,
+            property_name="abc",
             numb_fparam=0,
             numb_aparam=0,
             mixed_types=self.dd0.mixed_types(),
@@ -353,7 +352,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
             )
 
             ret0 = ft0(rd0, atype, gr0, fparam=None, aparam=None)
-            res.append(ret0["property"])
+            res.append(ret0[ft0.var_name])
 
         np.testing.assert_allclose(
             to_numpy_array(res[0][:, idx_perm]),
@@ -372,6 +371,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
             self.nt,
             self.dd0.dim_out,
             task_dim=11,
+            property_name="foo",
             numb_fparam=0,
             numb_aparam=0,
             mixed_types=self.dd0.mixed_types(),
@@ -400,7 +400,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
             )
 
             ret0 = ft0(rd0, atype, gr0, fparam=None, aparam=None)
-            res.append(ret0["property"])
+            res.append(ret0[ft0.var_name])
 
         np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
 
@@ -422,6 +422,7 @@ class TestPropertyModel(unittest.TestCase):
             self.nt,
             self.dd0.dim_out,
             task_dim=3,
+            property_name="bar",
             numb_fparam=0,
             numb_aparam=0,
             mixed_types=self.dd0.mixed_types(),

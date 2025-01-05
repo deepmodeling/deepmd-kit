@@ -9,7 +9,7 @@ to vastly reduce the training cost, while it's not trivial in potential models.
 Compositions and configurations of data samples or even computational parameters in upstream software (such as VASP)
 may be different between the pre-trained and target datasets, leading to energy shifts or other diversities of training data.
 
-Recently the emerging of methods such as [DPA-1](https://arxiv.org/abs/2208.08236) has brought us to a new stage where we can
+Recently the emerging of methods such as [DPA-1](https://www.nature.com/articles/s41524-024-01278-7) has brought us to a new stage where we can
 perform similar pretraining-finetuning approaches.
 They can hopefully learn the common knowledge in the pre-trained dataset (especially the `force` information)
 and thus reduce the computational cost in downstream training tasks.
@@ -19,7 +19,7 @@ and thus reduce the computational cost in downstream training tasks.
 If you have a pre-trained model `pretrained.pb`
 (here we support models using [`se_atten`](../model/train-se-atten.md) descriptor and [`ener`](../model/train-energy.md) fitting net)
 on a large dataset (for example, [OC2M](https://github.com/Open-Catalyst-Project/ocp/blob/main/DATASET.md) in
-DPA-1 [paper](https://arxiv.org/abs/2208.08236)), a finetuning strategy can be performed by simply running:
+DPA-1 [paper](https://www.nature.com/articles/s41524-024-01278-7)), a finetuning strategy can be performed by simply running:
 
 ```bash
 $ dp train input.json --finetune pretrained.pb
@@ -94,7 +94,7 @@ The model section will be overwritten (except the `type_map` subsection) by that
 
 #### Fine-tuning from a multi-task pre-trained model
 
-Additionally, within the PyTorch implementation and leveraging the flexibility offered by the framework and the multi-task training process proposed in DPA2 [paper](https://arxiv.org/abs/2312.15492),
+Additionally, within the PyTorch implementation and leveraging the flexibility offered by the framework and the multi-task training process proposed in DPA2 [paper](https://doi.org/10.1038/s41524-024-01493-2),
 we also support more general multitask pre-trained models, which includes multiple datasets for pre-training. These pre-training datasets share a common descriptor while maintaining their individual fitting nets,
 as detailed in the paper above.
 

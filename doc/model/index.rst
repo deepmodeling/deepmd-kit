@@ -14,8 +14,10 @@ Model
    sel
    train-energy
    train-energy-spin
+   train-energy-hessian
    train-fitting-tensor
    train-fitting-dos
+   train-fitting-property
    train-se-e2-a-tebd
    train-se-a-mask
    train-se-e3-tebd

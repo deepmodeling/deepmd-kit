@@ -17,10 +17,10 @@ from .polar import (
 )
 
 __all__ = [
+    "DOSFitting",
     "DipoleFittingSeA",
     "EnerFitting",
-    "DOSFitting",
+    "Fitting",
     "GlobalPolarFittingSeA",
     "PolarFittingSeA",
-    "Fitting",
 ]

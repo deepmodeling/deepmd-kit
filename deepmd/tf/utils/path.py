@@ -8,7 +8,7 @@ from deepmd.utils.path import (
 )
 
 __all__ = [
-    "DPPath",
-    "DPOSPath",
     "DPH5Path",
+    "DPOSPath",
+    "DPPath",
 ]

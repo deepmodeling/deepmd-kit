@@ -31,6 +31,7 @@ jobs:
         export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
         source/install/uv_with_retry.sh pip install --system -e .[test,jax] mpi4py
         source/install/uv_with_retry.sh pip install --system horovod --no-build-isolation
+        source/install/uv_with_retry.sh pip install --system --pre "paddlepaddle" -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/
       env:
         # Please note that uv has some issues with finding
         # existing TensorFlow package. Currently, it uses

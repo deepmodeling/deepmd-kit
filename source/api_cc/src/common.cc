@@ -232,8 +232,9 @@ template void deepmd::select_real_atoms_coord<float>(
     const int& nall,
     const bool aparam_nall);
 
-void deepmd::NeighborListData::copy_from_nlist(const InputNlist& inlist) {
-  int inum = inlist.inum;
+void deepmd::NeighborListData::copy_from_nlist(const InputNlist& inlist,
+                                               const int natoms) {
+  int inum = natoms >= 0 ? natoms : inlist.inum;
   ilist.resize(inum);
   jlist.resize(inum);
   memcpy(&ilist[0], inlist.ilist, inum * sizeof(int));
@@ -389,7 +390,13 @@ static inline void _load_library_path(std::string dso_path) {
   if (!dso_handle) {
     throw deepmd::deepmd_exception(
         dso_path +
-        " is not found! You can add the library directory to LD_LIBRARY_PATH");
+        " is not found or fails to load! You can add the library directory to "
+        "LD_LIBRARY_PATH."
+#ifndef _WIN32
+        " Error message: " +
+        std::string(dlerror())
+#endif
+    );
   }
 }
 

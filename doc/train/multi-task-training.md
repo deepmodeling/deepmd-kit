@@ -26,7 +26,7 @@ and the Adam optimizer is executed to minimize $L^{(t)}$ for one step to update 
 In the case of multi-GPU parallel training, different GPUs will independently select their tasks.
 In the DPA-2 model, this multi-task training framework is adopted.[^1]
 
-[^1]: Duo Zhang, Xinzijian Liu, Xiangyu Zhang, Chengqian Zhang, Chun Cai, Hangrui Bi, Yiming Du, Xuejian Qin, Jiameng Huang, Bowen Li, Yifan Shan, Jinzhe Zeng, Yuzhi Zhang, Siyuan Liu, Yifan Li, Junhan Chang, Xinyan Wang, Shuo Zhou, Jianchuan Liu, Xiaoshan Luo, Zhenyu Wang, Wanrun Jiang, Jing Wu, Yudi Yang, Jiyuan Yang, Manyi Yang, Fu-Qiang Gong, Linshuang Zhang, Mengchao Shi, Fu-Zhi Dai, Darrin M. York, Shi Liu, Tong Zhu, Zhicheng Zhong, Jian Lv, Jun Cheng, Weile Jia, Mohan Chen, Guolin Ke, Weinan E, Linfeng Zhang, Han Wang, [arXiv preprint arXiv:2312.15492 (2023)](https://arxiv.org/abs/2312.15492) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
+[^1]: Duo Zhang, Xinzijian Liu, Xiangyu Zhang, Chengqian Zhang, Chun Cai, Hangrui Bi, Yiming Du, Xuejian Qin, Anyang Peng, Jiameng Huang, Bowen Li, Yifan Shan, Jinzhe Zeng, Yuzhi Zhang, Siyuan Liu, Yifan Li, Junhan Chang, Xinyan Wang, Shuo Zhou, Jianchuan Liu, Xiaoshan Luo, Zhenyu Wang, Wanrun Jiang, Jing Wu, Yudi Yang, Jiyuan Yang, Manyi Yang, Fu-Qiang Gong, Linshuang Zhang, Mengchao Shi, Fu-Zhi Dai, Darrin M. York, Shi Liu, Tong Zhu, Zhicheng Zhong, Jian Lv, Jun Cheng, Weile Jia, Mohan Chen, Guolin Ke, Weinan E, Linfeng Zhang, Han Wang, DPA-2: a large atomic model as a multi-task learner. npj Comput Mater 10, 293 (2024). [DOI: 10.1038/s41524-024-01493-2](https://doi.org/10.1038/s41524-024-01493-2) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
 
 Compared with the previous TensorFlow implementation, the new support in PyTorch is more flexible and efficient.
 In particular, it makes multi-GPU parallel training and even tasks beyond DFT possible,
@@ -48,14 +48,27 @@ Specifically, there are several parts that need to be modified:
 - {ref}`model/model_dict <model/model_dict>`: The core definition of the model part and the explanation of sharing rules,
   starting with user-defined model name keys `model_key`, such as `my_model_1`.
   Each model part needs to align with the components of the single-task training {ref}`model <model>`, but with the following sharing rules:
-- - If you want to share the current model component with other tasks, which should be part of the {ref}`model/shared_dict <model/shared_dict>`,
+
+  - If you want to share the current model component with other tasks, which should be part of the {ref}`model/shared_dict <model/shared_dict>`,
     you can directly fill in the corresponding `part_key`, such as
     `"descriptor": "my_descriptor", `
     to replace the previous detailed parameters. Here, you can also specify the shared_level, such as
     `"descriptor": "my_descriptor:shared_level", `
-    and use the user-defined integer `shared_level` in the code to share the corresponding module to varying degrees
-    (default is to share all parameters, i.e., `shared_level`=0).
-    The parts that are exclusive to each model can be written following the previous definition.
+    and use the user-defined integer `shared_level` in the code to share the corresponding module to varying degrees.
+  - For descriptors, `shared_level` can be set as follows:
+    - Valid `shared_level` values are 0-1, depending on the descriptor type
+    - Each level enables different sharing behaviors:
+      - Level 0: Shares all parameters (default)
+      - Level 1: Shares type embedding only
+    - Not all descriptors support all levels (e.g., se_a only supports level 0)
+  - For fitting nets, we only support the default `shared_level`=0, where all parameters will be shared except for `bias_atom_e` and `case_embd`.
+  - To conduct multitask training, there are two typical approaches:
+    1. **Descriptor sharing only**: Share the descriptor with `shared_level`=0. See [here](../../examples/water_multi_task/pytorch_example/input_torch.json) for an example.
+    2. **Descriptor and fitting network sharing with data identification**:
+       - Share the descriptor and the fitting network with `shared_level`=0.
+       - {ref}`dim_case_embd <model[standard]/fitting_net[ener]/dim_case_embd>` must be set to the number of model branches, which will distinguish different data tasks using a one-hot embedding.
+       - See [here](../../examples/water_multi_task/pytorch_example/input_torch_sharefit.json) for an example.
+  - The parts that are exclusive to each model can be written following the previous definition.
 
 - {ref}`loss_dict <loss_dict>`: The loss settings corresponding to each task model, specified by the `model_key`.
   Each {ref}`loss_dict/model_key <loss_dict/model_key>` contains the corresponding loss settings,

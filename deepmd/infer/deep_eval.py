@@ -70,13 +70,12 @@ class DeepEvalBackend(ABC):
         "dipole_derv_c_redu": "virial",
         "dos": "atom_dos",
         "dos_redu": "dos",
-        "property": "atom_property",
-        "property_redu": "property",
         "mask_mag": "mask_mag",
         "mask": "mask",
         # old models in v1
         "global_polar": "global_polar",
         "wfc": "wfc",
+        "energy_derv_r_derv_r": "hessian",
     }
 
     @abstractmethod
@@ -275,6 +274,14 @@ class DeepEvalBackend(ABC):
     def get_has_spin(self) -> bool:
         """Check if the model has spin atom types."""
         return False
+
+    def get_has_hessian(self):
+        """Check if the model has hessian."""
+        return False
+
+    def get_var_name(self) -> str:
+        """Get the name of the fitting property."""
+        raise NotImplementedError
 
     @abstractmethod
     def get_ntypes_spin(self) -> int:
@@ -503,8 +510,7 @@ class DeepEval(ABC):
                 fparam = np.tile(fparam.reshape([-1]), [nframes, 1])
             else:
                 raise RuntimeError(
-                    "got wrong size of frame param, should be either %d x %d or %d"
-                    % (nframes, fdim, fdim)
+                    f"got wrong size of frame param, should be either {nframes} x {fdim} or {fdim}"
                 )
         if aparam is not None:
             fdim = self.get_dim_aparam()
@@ -516,8 +522,7 @@ class DeepEval(ABC):
                 aparam = np.tile(aparam.reshape([-1]), [nframes, natoms])
             else:
                 raise RuntimeError(
-                    "got wrong size of frame param, should be either %d x %d x %d or %d x %d or %d"
-                    % (nframes, natoms, fdim, natoms, fdim, fdim)
+                    f"got wrong size of frame param, should be either {nframes} x {natoms} x {fdim} or {natoms} x {fdim} or {fdim}"
                 )
         return coords, cells, atom_types, fparam, aparam, nframes, natoms
 
@@ -542,6 +547,11 @@ class DeepEval(ABC):
     def has_spin(self) -> bool:
         """Check if the model has spin."""
         return self.deep_eval.get_has_spin()
+
+    @property
+    def has_hessian(self) -> bool:
+        """Check if the model has hessian."""
+        return self.deep_eval.get_has_hessian()
 
     def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model. Only used in old implement."""

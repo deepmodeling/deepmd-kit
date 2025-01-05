@@ -74,6 +74,8 @@ class DOSFitting(Fitting):
             Number of frame parameter
     numb_aparam
             Number of atomic parameter
+    dim_case_embd
+            Dimension of case specific embedding.
     ! numb_dos (added)
             Number of gridpoints on which the DOS is evaluated (NEDOS in VASP)
     rcond
@@ -111,6 +113,7 @@ class DOSFitting(Fitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        dim_case_embd: int = 0,
         numb_dos: int = 300,
         rcond: Optional[float] = None,
         trainable: Optional[list[bool]] = None,
@@ -132,6 +135,9 @@ class DOSFitting(Fitting):
 
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
+        self.dim_case_embd = dim_case_embd
+        if dim_case_embd > 0:
+            raise ValueError("dim_case_embd is not supported in TensorFlow.")
 
         self.numb_dos = numb_dos
 
@@ -672,7 +678,7 @@ class DOSFitting(Fitting):
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data["numb_dos"] = data.pop("dim_out")
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
@@ -699,7 +705,7 @@ class DOSFitting(Fitting):
         data = {
             "@class": "Fitting",
             "type": "dos",
-            "@version": 2,
+            "@version": 3,
             "var_name": "dos",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -709,6 +715,7 @@ class DOSFitting(Fitting):
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
+            "dim_case_embd": self.dim_case_embd,
             "rcond": self.rcond,
             "trainable": self.trainable,
             "activation_function": self.activation_function,
@@ -731,6 +738,7 @@ class DOSFitting(Fitting):
                 "fparam_inv_std": self.fparam_inv_std,
                 "aparam_avg": self.aparam_avg,
                 "aparam_inv_std": self.aparam_inv_std,
+                "case_embd": None,
             },
             "type_map": self.type_map,
         }

@@ -310,7 +310,7 @@ def nlist_distinguish_types(
         inlist = torch.gather(nlist, 2, imap)
         inlist = inlist.masked_fill(~(pick_mask.to(torch.bool)), -1)
         # nloc x nsel[ii]
-        ret_nlist.append(torch.split(inlist, [ss, snsel - ss], dim=-1)[0])
+        ret_nlist.append(inlist[..., :ss])
     return torch.concat(ret_nlist, dim=-1)
 
 

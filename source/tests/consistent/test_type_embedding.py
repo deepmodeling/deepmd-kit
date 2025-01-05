@@ -17,6 +17,7 @@ from deepmd.utils.argcheck import (
 from .common import (
     INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
+    INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -45,6 +46,13 @@ if INSTALLED_ARRAY_API_STRICT:
     from ..array_api_strict.utils.type_embed import TypeEmbedNet as TypeEmbedNetStrict
 else:
     TypeEmbedNetStrict = None
+if INSTALLED_PD:
+    import paddle
+
+    from deepmd.pd.model.network.network import TypeEmbedNetConsistent as TypeEmbedNetPD
+    from deepmd.pd.utils.env import DEVICE as PD_DEVICE
+else:
+    TypeEmbedNetPD = object
 
 
 @parameterized(
@@ -79,6 +87,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
     dp_class = TypeEmbedNetDP
     pt_class = TypeEmbedNetPT
     jax_class = TypeEmbedNetJAX
+    pd_class = TypeEmbedNetPD
     array_api_strict_class = TypeEmbedNetStrict
     args = type_embedding_args()
     skip_jax = not INSTALLED_JAX
@@ -129,6 +138,12 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
             if isinstance(x, np.ndarray):
                 raise ValueError("Output is numpy array")
         return [np.array(x) if isinstance(x, jnp.ndarray) else x for x in (out,)]
+
+    def eval_pd(self, pd_obj: Any) -> Any:
+        return [
+            x.detach().cpu().numpy() if paddle.is_tensor(x) else x
+            for x in (pd_obj(device=PD_DEVICE),)
+        ]
 
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
         out = array_api_strict_obj()

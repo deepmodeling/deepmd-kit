@@ -204,16 +204,16 @@ def write_model_devi_out(
         assert devi.shape[1] == 8
     else:
         assert devi.shape[1] > 8
-    header = "%s\n%10s" % (header, "step")
+    header = f"{header}\n{'step':10s}"
     for item in "vf":
-        header += "%19s%19s%19s" % (
+        header += "{:19s}{:19s}{:19s}".format(
             f"max_devi_{item}",
             f"min_devi_{item}",
             f"avg_devi_{item}",
         )
-    header += "%19s" % "devi_e"
+    header += f'{"devi_e":19s}'
     if atomic:
-        header += "%19s" % "atm_devi_f(N)"
+        header += f"{'atm_devi_f(N)':19s}"
     with open(fname, "ab") as fp:
         np.savetxt(
             fp,
