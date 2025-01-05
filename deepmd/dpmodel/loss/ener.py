@@ -115,6 +115,8 @@ class EnergyLoss(Loss):
             force_reshape = xp.reshape(force, [-1])
             force_hat_reshape = xp.reshape(force_hat, [-1])
             diff_f = force_hat_reshape - force_reshape
+        else:
+            diff_f = None
 
         if self.relative_f is not None:
             force_hat_3 = xp.reshape(force_hat, [-1, 3])
@@ -198,7 +200,7 @@ class EnergyLoss(Loss):
             diff_gen_force = gen_force_hat - gen_force
             l2_gen_force_loss = xp.mean(xp.square(diff_gen_force))
             pref_gf = find_drdq * (
-                self.limit_pref_gff
+                self.limit_pref_gf
                 + (self.start_pref_gf - self.limit_pref_gf) * lr_ratio
             )
             l2_loss += pref_gf * l2_gen_force_loss
