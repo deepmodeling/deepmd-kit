@@ -8,10 +8,6 @@ from typing import (
     Optional,
     Union,
 )
-
-import numpy as np
-import torch
-
 from deepmd.pt.utils import (
     AtomExcludeMask,
 )
