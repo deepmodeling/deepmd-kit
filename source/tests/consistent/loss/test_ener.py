@@ -35,9 +35,9 @@ if INSTALLED_TF:
 else:
     EnerLossTF = None
 if INSTALLED_PT:
-    import torch
-
     from deepmd.pt.loss.ener import EnergyStdLoss as EnerLossPT
+    from deepmd.pt.utils.utils import to_numpy_array as torch_to_numpy
+    from deepmd.pt.utils.utils import to_torch_tensor as numpy_to_torch
 else:
     EnerLossPT = None
 if INSTALLED_PD:
@@ -162,8 +162,8 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
         }
 
     def eval_pt(self, pt_obj: Any) -> Any:
-        predict = {kk: torch.asarray(vv) for kk, vv in self.predict.items()}
-        label = {kk: torch.asarray(vv) for kk, vv in self.label.items()}
+        predict = {kk: numpy_to_torch(vv) for kk, vv in self.predict.items()}
+        label = {kk: numpy_to_torch(vv) for kk, vv in self.label.items()}
         predict["atom_energy"] = predict.pop("atom_ener")
         _, loss, more_loss = pt_obj(
             {},
@@ -172,8 +172,8 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             self.natoms,
             self.learning_rate,
         )
-        loss = to_numpy_array(loss)
-        more_loss = {kk: to_numpy_array(vv) for kk, vv in more_loss.items()}
+        loss = torch_to_numpy(loss)
+        more_loss = {kk: torch_to_numpy(vv) for kk, vv in more_loss.items()}
         return loss, more_loss
 
     def eval_dp(self, dp_obj: Any) -> Any:
