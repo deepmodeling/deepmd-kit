@@ -44,6 +44,7 @@ if INSTALLED_PD:
     import paddle
 
     from deepmd.pd.loss.ener import EnergyStdLoss as EnerLossPD
+    from deepmd.pd.utils.env import DEVICE as PD_DEVICE
 else:
     EnerLossPD = None
 if INSTALLED_JAX:
@@ -213,8 +214,12 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
         return loss, more_loss
 
     def eval_pd(self, pd_obj: Any) -> Any:
-        predict = {kk: paddle.asarray(vv) for kk, vv in self.predict.items()}
-        label = {kk: paddle.asarray(vv) for kk, vv in self.label.items()}
+        predict = {
+            kk: paddle.to_tensor(vv).to(PD_DEVICE) for kk, vv in self.predict.items()
+        }
+        label = {
+            kk: paddle.to_tensor(vv).to(PD_DEVICE) for kk, vv in self.label.items()
+        }
         predict["atom_energy"] = predict.pop("atom_ener")
         _, loss, more_loss = pd_obj(
             {},
