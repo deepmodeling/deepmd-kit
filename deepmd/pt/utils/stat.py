@@ -8,6 +8,7 @@ from typing import (
     Optional,
     Union,
 )
+
 from deepmd.pt.utils import (
     AtomExcludeMask,
 )
