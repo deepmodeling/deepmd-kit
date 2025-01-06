@@ -8,11 +8,10 @@ from typing import (
     Optional,
     Union,
 )
+
 import numpy as np
 import torch
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-)
+
 from deepmd.pt.utils import (
     AtomExcludeMask,
 )
@@ -34,6 +33,7 @@ from deepmd.utils.path import (
 )
 
 log = logging.getLogger(__name__)
+
 
 def make_stat_input(
     datasets,
@@ -103,7 +103,9 @@ def make_stat_input(
                 newele_counter += 1
                 if newele_counter <= min_frames_per_element_forstat:
                     frame_data = sys.__getitem__(frame)
-                    assert miss in frame_data['atype'], f"Missing element '{miss}' not found in frame data."
+                    assert (
+                        miss in frame_data["atype"]
+                    ), f"Missing element '{miss}' not found in frame data."
                     sys_stat_new = {}
                     for dd in frame_data:
                         if dd == "type":
@@ -210,6 +212,7 @@ def make_stat_input(
                 newele_counter = 0
             process_with_new_frame(sys_indices, newele_counter, miss)
     return lst
+
 
 def _restore_from_file(
     stat_file_path: DPPath,
