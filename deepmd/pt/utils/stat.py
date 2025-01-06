@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-import numpy as np
-import torch
 from collections import (
     defaultdict,
 )
@@ -10,9 +8,10 @@ from typing import (
     Optional,
     Union,
 )
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-)
+
+import numpy as np
+import torch
+
 from deepmd.pt.utils import (
     AtomExcludeMask,
 )
