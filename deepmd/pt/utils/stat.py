@@ -8,11 +8,18 @@ from typing import (
     Optional,
     Union,
 )
+<<<<<<< HEAD
 import numpy as np
 import torch
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
 )
+=======
+
+import numpy as np
+import torch
+
+>>>>>>> 83b7f1d894ade4452454f51e67ffee86160a71f0
 from deepmd.pt.utils import (
     AtomExcludeMask,
 )
