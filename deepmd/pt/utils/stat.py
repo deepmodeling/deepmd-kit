@@ -92,7 +92,7 @@ def make_stat_input(datasets, dataloaders, nbatches, min_frames_per_element_fors
             sys = datasets[sys_index]
             for frame in frames:
                 newele_counter += 1
-                if not newele_counter > min_frames_per_element_forstat:
+                if newele_counter <= min_frames_per_element_forstat:
                     frame_data = sys.__getitem__(frame)
                     sys_stat_new = {}
                     for dd in frame_data:
