@@ -69,7 +69,7 @@ class TestMakeStatInput(unittest.TestCase):
         return torch.sum(torch.abs(tensor) > threshold).item()
 
     def test_make_stat_input(self):
-        #3 frames would be count
+        # 3 frames would be count
         lst = make_stat_input(
             datasets=self.datasets,
             dataloaders=self.dataloaders,
@@ -88,8 +88,8 @@ class TestMakeStatInput(unittest.TestCase):
         )
 
     def test_make_stat_input_nocomplete(self):
-        #missing element：13,31,37
-        #only one frame would be count
+        # missing element：13,31,37
+        # only one frame would be count
 
         lst = make_stat_input(
             datasets=self.datasets,
@@ -127,13 +127,11 @@ class TestMakeStatInput(unittest.TestCase):
         bias_all, _ = compute_output_stats(lst_all, ntypes=57)
         energy_ori = np.array(bias_ori.get("energy").cpu()).flatten()
         energy_all = np.array(bias_all.get("energy").cpu()).flatten()
-    
+
         for i, (e_ori, e_all) in enumerate(zip(energy_ori, energy_all)):
             if e_all == 0:
                 self.assertEqual(
-                    e_ori, 
-                    0,
-                    f"Index {i}: energy_all=0, but energy_ori={e_ori}"
+                    e_ori, 0, f"Index {i}: energy_all=0, but energy_ori={e_ori}"
                 )
             else:
                 if e_ori != 0:
@@ -142,8 +140,9 @@ class TestMakeStatInput(unittest.TestCase):
                     self.assertTrue(
                         rel_diff < 0.4,
                         f"Index {i}: energy_ori={e_ori}, energy_all={e_all}, "
-                        f"relative difference {rel_diff:.2%} is too large"
+                        f"relative difference {rel_diff:.2%} is too large",
                     )
+
 
 if __name__ == "__main__":
     unittest.main()
