@@ -79,7 +79,6 @@ class TestMakeStatInput(unittest.TestCase):
         )
         bias, _ = compute_output_stats(lst, ntypes=57)
         energy = bias.get("energy")
-        print(energy)
         non_zero_count = self.count_non_zero_elements(energy)
         self.assertEqual(
             non_zero_count,
@@ -88,7 +87,7 @@ class TestMakeStatInput(unittest.TestCase):
         )
 
     def test_make_stat_input_nocomplete(self):
-        #missing element：13,31,37
+        #missing element:13,31,37
         #only one frame would be count
 
         lst = make_stat_input(
@@ -100,7 +99,6 @@ class TestMakeStatInput(unittest.TestCase):
         )
         bias, _ = compute_output_stats(lst, ntypes=57)
         energy = bias.get("energy")
-        print(energy)
         non_zero_count = self.count_non_zero_elements(energy)
         self.assertLess(
             non_zero_count,
