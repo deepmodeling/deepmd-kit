@@ -50,16 +50,11 @@ def load_library(module_name: str) -> bool:
             if PT_CXX11_ABI_FLAG != pt_cxx11_abi_flag:
                 raise RuntimeError(
                     "This deepmd-kit package was compiled with "
-                    "CXX11_ABI_FLAG=%d, but PyTorch runtime was compiled "
-                    "with CXX11_ABI_FLAG=%d. These two library ABIs are "
-                    "incompatible and thus an error is raised when loading %s. "
+                    f"CXX11_ABI_FLAG={PT_CXX11_ABI_FLAG}, but PyTorch runtime was compiled "
+                    f"with CXX11_ABI_FLAG={pt_cxx11_abi_flag}. These two library ABIs are "
+                    f"incompatible and thus an error is raised when loading {module_name}. "
                     "You need to rebuild deepmd-kit against this PyTorch "
                     "runtime."
-                    % (
-                        PT_CXX11_ABI_FLAG,
-                        pt_cxx11_abi_flag,
-                        module_name,
-                    )
                 ) from e
 
             # different versions may cause incompatibility, see TF

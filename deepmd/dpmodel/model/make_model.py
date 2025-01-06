@@ -14,7 +14,7 @@ from deepmd.dpmodel.common import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
     PRECISION_DICT,
-    RESERVED_PRECISON_DICT,
+    RESERVED_PRECISION_DICT,
     NativeOP,
 )
 from deepmd.dpmodel.model.base_model import (
@@ -169,7 +169,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)
             self.precision_dict = PRECISION_DICT
             # not supported by flax
-            # self.reverse_precision_dict = RESERVED_PRECISON_DICT
+            # self.reverse_precision_dict = RESERVED_PRECISION_DICT
             self.global_np_float_precision = GLOBAL_NP_FLOAT_PRECISION
             self.global_ener_float_precision = GLOBAL_ENER_FLOAT_PRECISION
 
@@ -373,7 +373,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             str,
         ]:
             """Cast the input data to global float type."""
-            input_prec = RESERVED_PRECISON_DICT[self.precision_dict[coord.dtype.name]]
+            input_prec = RESERVED_PRECISION_DICT[self.precision_dict[coord.dtype.name]]
             ###
             ### type checking would not pass jit, convert to coord prec anyway
             ###
@@ -382,7 +382,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 for vv in [box, fparam, aparam]
             ]
             box, fparam, aparam = _lst
-            if input_prec == RESERVED_PRECISON_DICT[self.global_np_float_precision]:
+            if input_prec == RESERVED_PRECISION_DICT[self.global_np_float_precision]:
                 return coord, box, fparam, aparam, input_prec
             else:
                 pp = self.global_np_float_precision
@@ -401,7 +401,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
         ) -> dict[str, np.ndarray]:
             """Convert the model output to the input prec."""
             do_cast = (
-                input_prec != RESERVED_PRECISON_DICT[self.global_np_float_precision]
+                input_prec != RESERVED_PRECISION_DICT[self.global_np_float_precision]
             )
             pp = self.precision_dict[input_prec]
             odef = self.model_output_def()
@@ -457,7 +457,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
             Returns
             -------
-            formated_nlist
+            formatted_nlist
                 the formatted nlist.
 
             """
@@ -551,6 +551,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
         @classmethod
         def deserialize(cls, data) -> "CM":
             return cls(atomic_model_=T_AtomicModel.deserialize(data))
+
+        def set_case_embd(self, case_idx: int):
+            self.atomic_model.set_case_embd(case_idx)
 
         def get_dim_fparam(self) -> int:
             """Get the number (dimension) of frame parameters of this atomic model."""

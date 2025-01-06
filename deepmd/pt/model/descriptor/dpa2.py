@@ -100,7 +100,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
     ) -> None:
-        r"""The DPA-2 descriptor. see https://arxiv.org/abs/2312.15492.
+        r"""The DPA-2 descriptor[1]_.
 
         Parameters
         ----------
@@ -147,6 +147,11 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         sw:                 torch.Tensor
             The switch function for decaying inverse distance.
 
+        References
+        ----------
+        .. [1] Zhang, D., Liu, X., Zhang, X. et al. DPA-2: a
+           large atomic model as a multi-task learner. npj
+           Comput Mater 10, 293 (2024). https://doi.org/10.1038/s41524-024-01493-2
         """
         super().__init__()
 
@@ -403,25 +408,8 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             ]
             self.repformers.share_params(base_class.repformers, 0, resume=resume)
         # shared_level: 1
-        # share all parameters in type_embedding and repinit
-        elif shared_level == 1:
-            self._modules["type_embedding"] = base_class._modules["type_embedding"]
-            self.repinit.share_params(base_class.repinit, 0, resume=resume)
-            if self.use_three_body:
-                self.repinit_three_body.share_params(
-                    base_class.repinit_three_body, 0, resume=resume
-                )
-        # shared_level: 2
-        # share all parameters in type_embedding and repformers
-        elif shared_level == 2:
-            self._modules["type_embedding"] = base_class._modules["type_embedding"]
-            self._modules["g1_shape_tranform"] = base_class._modules[
-                "g1_shape_tranform"
-            ]
-            self.repformers.share_params(base_class.repformers, 0, resume=resume)
-        # shared_level: 3
         # share all parameters in type_embedding
-        elif shared_level == 3:
+        elif shared_level == 1:
             self._modules["type_embedding"] = base_class._modules["type_embedding"]
         # Other shared levels
         else:

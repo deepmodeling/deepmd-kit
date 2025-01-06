@@ -180,7 +180,7 @@ class DPTrainer:
             ), "Data in mixed_type format must use ener fitting!"
 
         if self.numb_fparam > 0:
-            log.info("training with %d frame parameter(s)" % self.numb_fparam)
+            log.info(f"training with {self.numb_fparam} frame parameter(s)")
         else:
             log.info("training without frame parameter")
 
@@ -191,13 +191,12 @@ class DPTrainer:
             single_data = data
             if self.ntypes < single_data.get_ntypes():
                 raise ValueError(
-                    "The number of types of the training data is %d, but that of the "
-                    "model is only %d. The latter must be no less than the former. "
+                    f"The number of types of the training data is {single_data.get_ntypes()}, but that of the "
+                    f"model is only {self.ntypes}. The latter must be no less than the former. "
                     "You may need to reset one or both of them. Usually, the former "
                     "is given by `model/type_map` in the training parameter (if set) "
                     "or the maximum number in the training data. The latter is given "
                     "by `model/descriptor/sel` in the training parameter."
-                    % (single_data.get_ntypes(), self.ntypes)
                 )
             self.type_map = single_data.get_type_map()
             self.batch_size = data.get_batch_size()
@@ -421,14 +420,12 @@ class DPTrainer:
         is_first_step = True
         self.cur_batch = cur_batch
         log.info(
-            "start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e"
-            % (
-                run_sess(self.sess, self.learning_rate),
-                self.lr.value(cur_batch),
-                self.lr.decay_steps_,
-                self.lr.decay_rate_,
-                self.lr.value(stop_batch),
-            )
+            "start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e",
+            run_sess(self.sess, self.learning_rate),
+            self.lr.value(cur_batch),
+            self.lr.decay_steps_,
+            self.lr.decay_rate_,
+            self.lr.value(stop_batch),
         )
 
         prf_options = None
@@ -693,7 +690,7 @@ class DPTrainer:
     @staticmethod
     def print_header(fp, train_results, valid_results) -> None:
         print_str = ""
-        print_str += "# %5s" % "step"
+        print_str += "# {:5s}".format("step")
         if valid_results is not None:
             prop_fmt = "   %11s %11s"
             for k in train_results.keys():
@@ -702,7 +699,7 @@ class DPTrainer:
             prop_fmt = "   %11s"
             for k in train_results.keys():
                 print_str += prop_fmt % (k + "_trn")
-        print_str += "   %8s\n" % "lr"
+        print_str += "   {:8s}\n".format("lr")
         print_str += "# If there is no available reference data, rmse_*_{val,trn} will print nan\n"
         fp.write(print_str)
         fp.flush()
@@ -716,7 +713,7 @@ class DPTrainer:
         cur_lr,
     ) -> None:
         print_str = ""
-        print_str += "%7d" % cur_batch
+        print_str += f"{cur_batch:7d}"
         if valid_results is not None:
             prop_fmt = "   %11.2e %11.2e"
             for k in valid_results.keys():

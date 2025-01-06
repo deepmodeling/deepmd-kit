@@ -28,9 +28,6 @@ from deepmd.utils.data import (
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 
 log = logging.getLogger(__name__)
 
@@ -103,6 +100,8 @@ class DeepmdDataSystem:
         del rcut
         self.system_dirs = systems
         self.nsystems = len(self.system_dirs)
+        if self.nsystems <= 0:
+            raise ValueError("No systems provided")
         self.data_systems = []
         for ii in self.system_dirs:
             self.data_systems.append(
@@ -216,19 +215,12 @@ class DeepmdDataSystem:
             chk_ret = self.data_systems[ii].check_batch_size(self.batch_size[ii])
             if chk_ret is not None and not is_auto_bs and not self.mixed_systems:
                 warnings.warn(
-                    "system %s required batch size is larger than the size of the dataset %s (%d > %d)"
-                    % (
-                        self.system_dirs[ii],
-                        chk_ret[0],
-                        self.batch_size[ii],
-                        chk_ret[1],
-                    )
+                    f"system {self.system_dirs[ii]} required batch size is larger than the size of the dataset {chk_ret[0]} ({self.batch_size[ii]} > {chk_ret[1]})"
                 )
             chk_ret = self.data_systems[ii].check_test_size(self.test_size[ii])
             if chk_ret is not None and not is_auto_bs and not self.mixed_systems:
                 warnings.warn(
-                    "system %s required test size is larger than the size of the dataset %s (%d > %d)"
-                    % (self.system_dirs[ii], chk_ret[0], self.test_size[ii], chk_ret[1])
+                    f"system {self.system_dirs[ii]} required test size is larger than the size of the dataset {chk_ret[0]} ({self.test_size[ii]} > {chk_ret[1]})"
                 )
 
     def _load_test(self, ntests=-1) -> None:
@@ -671,22 +663,25 @@ def print_summary(
     log.info(
         f"---Summary of DataSystem: {name:13s}-----------------------------------------------"
     )
-    log.info("found %d system(s):" % nsystems)
+    log.info("found %d system(s):", nsystems)
     log.info(
-        ("{}  ".format(_format_name_length("system", sys_width)))
-        + ("%6s  %6s  %6s  %9s  %3s" % ("natoms", "bch_sz", "n_bch", "prob", "pbc"))
+        "%s  %6s  %6s  %6s  %9s  %3s",
+        _format_name_length("system", sys_width),
+        "natoms",
+        "bch_sz",
+        "n_bch",
+        "prob",
+        "pbc",
     )
     for ii in range(nsystems):
         log.info(
-            "%s  %6d  %6d  %6d  %9.3e  %3s"
-            % (
-                _format_name_length(system_dirs[ii], sys_width),
-                natoms[ii],
-                batch_size[ii],
-                nbatches[ii],
-                sys_probs[ii],
-                "T" if pbc[ii] else "F",
-            )
+            "%s %6d %6d %6d %9.3e %3s",
+            _format_name_length(system_dirs[ii], sys_width),
+            natoms[ii],
+            batch_size[ii],
+            nbatches[ii],
+            sys_probs[ii],
+            "T" if pbc[ii] else "F",
         )
     log.info(
         "--------------------------------------------------------------------------------------"
@@ -755,23 +750,6 @@ def process_systems(systems: Union[str, list[str]]) -> list[str]:
         systems = expand_sys_str(systems)
     elif isinstance(systems, list):
         systems = systems.copy()
-    help_msg = "Please check your setting for data systems"
-    # check length of systems
-    if len(systems) == 0:
-        msg = "cannot find valid a data system"
-        log.fatal(msg)
-        raise OSError(msg, help_msg)
-    # roughly check all items in systems are valid
-    for ii in systems:
-        ii = DPPath(ii)
-        if not ii.is_dir():
-            msg = f"dir {ii} is not a valid dir"
-            log.fatal(msg)
-            raise OSError(msg, help_msg)
-        if not (ii / "type.raw").is_file():
-            msg = f"dir {ii} is not a valid data system dir"
-            log.fatal(msg)
-            raise OSError(msg, help_msg)
     return systems
 
 

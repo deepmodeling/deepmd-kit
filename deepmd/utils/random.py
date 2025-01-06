@@ -56,7 +56,7 @@ def random(size=None):
     return _RANDOM_GENERATOR.random_sample(size)
 
 
-def seed(val: Optional[int] = None) -> None:
+def seed(val: Optional[Union[int, list[int]]] = None) -> None:
     """Seed the generator.
 
     Parameters

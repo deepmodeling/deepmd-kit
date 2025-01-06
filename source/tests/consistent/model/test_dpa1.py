@@ -14,6 +14,7 @@ from deepmd.env import (
 
 from ..common import (
     INSTALLED_JAX,
+    INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
     SKIP_FLAG,
@@ -37,6 +38,11 @@ from deepmd.utils.argcheck import (
     model_args,
 )
 
+if INSTALLED_PD:
+    from deepmd.pd.model.model import get_model as get_model_pd
+    from deepmd.pd.model.model.ener_model import EnergyModel as EnergyModelPD
+else:
+    EnergyModelPD = None
 if INSTALLED_JAX:
     from deepmd.jax.model.ener_model import EnergyModel as EnergyModelJAX
     from deepmd.jax.model.model import get_model as get_model_jax
@@ -90,6 +96,7 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
     tf_class = EnergyModelTF
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
+    pd_class = EnergyModelPD
     jax_class = EnergyModelJAX
     args = model_args()
 
@@ -102,6 +109,8 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
             return self.RefBackend.PT
         if not self.skip_tf:
             return self.RefBackend.TF
+        if not self.skip_pd:
+            return self.RefBackend.PD
         if not self.skip_jax:
             return self.RefBackend.JAX
         if not self.skip_dp:
@@ -119,6 +128,8 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
             return get_model_dp(data)
         elif cls is EnergyModelPT:
             return get_model_pt(data)
+        elif cls is EnergyModelPD:
+            return get_model_pd(data)
         elif cls is EnergyModelJAX:
             return get_model_jax(data)
         return cls(**data, **self.additional_data)
@@ -190,6 +201,15 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_pd(self, pd_obj: Any) -> Any:
+        return self.eval_pd_model(
+            pd_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_model(
             jax_obj,
@@ -224,6 +244,14 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
                 ret[2].ravel(),
                 ret[3].ravel(),
                 ret[4].ravel(),
+            )
+        elif backend is self.RefBackend.PD:
+            return (
+                ret["energy"].flatten(),
+                ret["atom_energy"].flatten(),
+                ret["force"].flatten(),
+                ret["virial"].flatten(),
+                ret["atom_virial"].flatten(),
             )
         elif backend is self.RefBackend.JAX:
             return (
