@@ -87,8 +87,8 @@ class TestMakeStatInput(unittest.TestCase):
         )
 
     def test_make_stat_input_nocomplete(self):
-        #missing element:13,31,37
-        #only one frame would be count
+        # missing element:13,31,37
+        # only one frame would be count
 
         lst = make_stat_input(
             datasets=self.datasets,
@@ -140,6 +140,7 @@ class TestMakeStatInput(unittest.TestCase):
                         f"Index {i}: energy_ori={e_ori}, energy_all={e_all}, "
                         f"relative difference {rel_diff:.2%} is too large",
                     )
+
 
 if __name__ == "__main__":
     unittest.main()
