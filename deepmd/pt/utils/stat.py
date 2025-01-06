@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-import numpy as np
-import torch
 from collections import (
     defaultdict,
 )
