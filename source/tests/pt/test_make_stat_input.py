@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
-
 import numpy as np
 import torch
 from torch.utils.data import (
     DataLoader,
+)
+from pathlib import (
+    Path,
 )
 
 from deepmd.pt.utils.dataset import (
@@ -17,8 +19,7 @@ from deepmd.pt.utils.stat import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
-
-
+torch.cuda.set_device(0)
 def collate_fn(batch):
     if isinstance(batch, dict):
         batch = [batch]
@@ -36,34 +37,37 @@ def collate_fn(batch):
 class TestMakeStatInput(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        system_path = "mixed_type_data/sys.000000"
-        cls.real_ntypes = 6
-        cls.datasets = DeepmdDataSetForLoader(system=system_path)
-        data_requirements = [
-            DataRequirementItem(
-                "energy",
-                ndof=1,
-                atomic=False,
-            ),
-        ]
-        cls.datasets.add_data_requirement(data_requirements)
-        cls.datasets = [cls.datasets]
-        weights = torch.tensor([0.1] * len(cls.datasets))
-        sampler = torch.utils.data.WeightedRandomSampler(
-            weights, num_samples=len(weights), replacement=True
-        )
-        cls.dataloaders = []
-        for dataset in cls.datasets:
-            dataloader = DataLoader(
-                dataset,
-                sampler=sampler,
-                batch_size=1,
-                num_workers=0,
-                drop_last=False,
-                collate_fn=collate_fn,
-                pin_memory=True,
+        with torch.device("cpu"):
+            system_path = str(Path(__file__).parent / "mixed_type_data/sys.000000")
+            cls.real_ntypes = 6
+            cls.datasets = DeepmdDataSetForLoader(system=system_path)
+            data_requirements = [
+                DataRequirementItem(
+                    "energy",
+                    ndof=1,
+                    atomic=False,
+                ),
+            ]
+            cls.datasets.add_data_requirement(data_requirements)
+            cls.datasets = [cls.datasets]
+            weights_tensor = torch.tensor([0.1] * len(cls.datasets),dtype=torch.float64, device="cpu")
+            sampler = torch.utils.data.WeightedRandomSampler(
+                weights_tensor,
+                num_samples=len(cls.datasets),
+                replacement=True,
             )
-            cls.dataloaders.append(dataloader)
+            cls.dataloaders = []
+            for dataset in cls.datasets:
+                dataloader = DataLoader(
+                    dataset,
+                    sampler=sampler,
+                    batch_size=1,
+                    num_workers=0,
+                    drop_last=False,
+                    collate_fn=collate_fn,
+                    pin_memory=False,
+                )
+                cls.dataloaders.append(dataloader)
 
     def count_non_zero_elements(self, tensor, threshold=1e-8):
         return torch.sum(torch.abs(tensor) > threshold).item()
@@ -140,7 +144,3 @@ class TestMakeStatInput(unittest.TestCase):
                         f"Index {i}: energy_ori={e_ori}, energy_all={e_all}, "
                         f"relative difference {rel_diff:.2%} is too large",
                     )
-
-
-if __name__ == "__main__":
-    unittest.main()
