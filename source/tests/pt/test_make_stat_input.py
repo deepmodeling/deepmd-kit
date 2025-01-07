@@ -21,6 +21,7 @@ from deepmd.utils.data import (
     DataRequirementItem,
 )
 
+
 def collate_fn(batch):
     if isinstance(batch, dict):
         batch = [batch]
