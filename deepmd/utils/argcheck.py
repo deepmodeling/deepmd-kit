@@ -2903,7 +2903,7 @@ def training_args(
         Argument(
             "enable_element_completion",
             bool,
-            optional=False,
+            optional=True,
             default=True,
             doc="Whether to check elements when using the mixed type",
         ),
