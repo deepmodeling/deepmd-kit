@@ -19,7 +19,7 @@ from deepmd.pt.utils.stat import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
-torch.cuda.set_device(0)
+
 def collate_fn(batch):
     if isinstance(batch, dict):
         batch = [batch]
