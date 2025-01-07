@@ -2896,6 +2896,7 @@ def training_args(
         Argument(
             "min_frames_per_element_forstat",
             int,
+            default=10,
             optional=True,
             doc="The minimum number of frames per element used for statistics when using the mixed type.",
         ),
