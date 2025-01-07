@@ -1,0 +1,5 @@
+# Memory leak from functions call below can be ignored
+fun:*paddle::framework::OperatorRegistrar*
+fun:*paddle::framework::details::OpInfoFiller*
+fun:*google::protobuf::internal::ArenaStringPtr::Set*
+fun:*paddle::framework::OpProtoAndCheckerMaker::operator*
