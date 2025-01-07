@@ -281,6 +281,13 @@ class DPTrainer:
             tf.int32, [None], name="t_mesh"
         )
         self.place_holders["is_training"] = tf.placeholder(tf.bool)
+        # update "atomic_" in self.place_holders.keys() with "atom_"
+        for kk in list(self.place_holders.keys()):
+            if "atomic_" in kk:
+                self.place_holders[kk.replace("atomic_", "atom_")] = (
+                    self.place_holders.pop(kk)
+                )
+
         self.model_pred = self.model.build(
             self.place_holders["coord"],
             self.place_holders["type"],

@@ -39,7 +39,7 @@ def make_stat_input(
     datasets,
     dataloaders,
     nbatches,
-    min_frames_per_element_forstat = 10,
+    min_frames_per_element_forstat=10,
     enable_element_completion=True,
 ):
     """Pack data for statistics.
