@@ -377,8 +377,13 @@ class DeepPotPD : public DeepPotBackend {
   int daparam;
   int aparam_nall;
   // copy neighbor list info from host
+  // config & predictor for model.forward
   std::shared_ptr<paddle_infer::Config> config;
   std::shared_ptr<paddle_infer::Predictor> predictor;
+  // config & predictor for model.forward_lower
+  std::shared_ptr<paddle_infer::Config> config_fl;
+  std::shared_ptr<paddle_infer::Predictor> predictor_fl;
+
   double rcut;
   NeighborListData nlist_data;
   int max_num_neighbors;

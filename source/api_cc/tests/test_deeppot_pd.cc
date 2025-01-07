@@ -114,56 +114,56 @@ TYPED_TEST(TestInferDeepPotAPd, cpu_build_nlist) {
   }
 }
 
-// TYPED_TEST(TestInferDeepPotAPd, cpu_build_nlist_numfv) {
-//   using VALUETYPE = TypeParam;
-//   std::vector<VALUETYPE>& coord = this->coord;
-//   std::vector<int>& atype = this->atype;
-//   std::vector<VALUETYPE>& box = this->box;
-//   std::vector<VALUETYPE>& expected_e = this->expected_e;
-//   std::vector<VALUETYPE>& expected_f = this->expected_f;
-//   std::vector<VALUETYPE>& expected_v = this->expected_v;
-//   int& natoms = this->natoms;
-//   double& expected_tot_e = this->expected_tot_e;
-//   std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
-//   deepmd::DeepPot& dp = this->dp;
-//   class MyModel : public EnergyModelTest<VALUETYPE> {
-//     deepmd::DeepPot& mydp;
-//     const std::vector<int> atype;
+TYPED_TEST(TestInferDeepPotAPd, cpu_build_nlist_numfv) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_e = this->expected_e;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_v = this->expected_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+  class MyModel : public EnergyModelTest<VALUETYPE> {
+    deepmd::DeepPot& mydp;
+    const std::vector<int> atype;
 
-//    public:
-//     MyModel(deepmd::DeepPot& dp_, const std::vector<int>& atype_)
-//         : mydp(dp_), atype(atype_) {};
-//     virtual void compute(double& ener,
-//                          std::vector<VALUETYPE>& force,
-//                          std::vector<VALUETYPE>& virial,
-//                          const std::vector<VALUETYPE>& coord,
-//                          const std::vector<VALUETYPE>& box) {
-//       mydp.compute(ener, force, virial, coord, atype, box);
-//     }
-//   };
-//   MyModel model(dp, atype);
-//   model.test_f(coord, box);
-//   model.test_v(coord, box);
-//   std::vector<VALUETYPE> box_(box);
-//   box_[1] -= 0.4;
-//   model.test_f(coord, box_);
-//   model.test_v(coord, box_);
-//   box_[2] += 0.5;
-//   model.test_f(coord, box_);
-//   model.test_v(coord, box_);
-//   box_[4] += 0.2;
-//   model.test_f(coord, box_);
-//   model.test_v(coord, box_);
-//   box_[3] -= 0.3;
-//   model.test_f(coord, box_);
-//   model.test_v(coord, box_);
-//   box_[6] -= 0.7;
-//   model.test_f(coord, box_);
-//   model.test_v(coord, box_);
-//   box_[7] += 0.6;
-//   model.test_f(coord, box_);
-//   model.test_v(coord, box_);
-// }
+   public:
+    MyModel(deepmd::DeepPot& dp_, const std::vector<int>& atype_)
+        : mydp(dp_), atype(atype_) {};
+    virtual void compute(double& ener,
+                         std::vector<VALUETYPE>& force,
+                         std::vector<VALUETYPE>& virial,
+                         const std::vector<VALUETYPE>& coord,
+                         const std::vector<VALUETYPE>& box) {
+      mydp.compute(ener, force, virial, coord, atype, box);
+    }
+  };
+  MyModel model(dp, atype);
+  model.test_f(coord, box);
+  model.test_v(coord, box);
+  std::vector<VALUETYPE> box_(box);
+  box_[1] -= 0.4;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
+  box_[2] += 0.5;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
+  box_[4] += 0.2;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
+  box_[3] -= 0.3;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
+  box_[6] -= 0.7;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
+  box_[7] += 0.6;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
+}
 
 TYPED_TEST(TestInferDeepPotAPd, cpu_build_nlist_atomic) {
   using VALUETYPE = TypeParam;
@@ -263,90 +263,88 @@ TYPED_TEST(TestInferDeepPotAPd, cpu_lmp_nlist) {
   }
 }
 
-// TYPED_TEST(TestInferDeepPotAPd, cpu_lmp_nlist_atomic) {
-//   using VALUETYPE = TypeParam;
-//   std::vector<VALUETYPE>& coord = this->coord;
-//   std::vector<int>& atype = this->atype;
-//   std::vector<VALUETYPE>& box = this->box;
-//   std::vector<VALUETYPE>& expected_e = this->expected_e;
-//   std::vector<VALUETYPE>& expected_f = this->expected_f;
-//   std::vector<VALUETYPE>& expected_v = this->expected_v;
-//   int& natoms = this->natoms;
-//   double& expected_tot_e = this->expected_tot_e;
-//   std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
-//   deepmd::DeepPot& dp = this->dp;
-//   float rc = dp.cutoff();
-//   int nloc = coord.size() / 3;
-//   std::vector<VALUETYPE> coord_cpy;
-//   std::vector<int> atype_cpy, mapping;
-//   std::vector<std::vector<int> > nlist_data;
-//   _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping, coord,
-//                           atype, box, rc);
-//   int nall = coord_cpy.size() / 3;
-//   std::vector<int> ilist(nloc), numneigh(nloc);
-//   std::vector<int*> firstneigh(nloc);
-//   deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
-//   convert_nlist(inlist, nlist_data);
-//   double ener;
-//   std::vector<VALUETYPE> force_, atom_ener_, atom_vir_, virial;
-//   std::vector<VALUETYPE> force, atom_ener, atom_vir;
-//   dp.compute(ener, force_, virial, atom_ener_, atom_vir_, coord_cpy,
-//   atype_cpy,
-//              box, nall - nloc, inlist, 0);
-//   _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
-//   _fold_back<VALUETYPE>(atom_ener, atom_ener_, mapping, nloc, nall, 1);
-//   _fold_back<VALUETYPE>(atom_vir, atom_vir_, mapping, nloc, nall, 9);
+TYPED_TEST(TestInferDeepPotAPd, cpu_lmp_nlist_atomic) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_e = this->expected_e;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_v = this->expected_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+  float rc = dp.cutoff();
+  int nloc = coord.size() / 3;
+  std::vector<VALUETYPE> coord_cpy;
+  std::vector<int> atype_cpy, mapping;
+  std::vector<std::vector<int> > nlist_data;
+  _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping, coord,
+                          atype, box, rc);
+  int nall = coord_cpy.size() / 3;
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_data);
+  double ener;
+  std::vector<VALUETYPE> force_, atom_ener_, atom_vir_, virial;
+  std::vector<VALUETYPE> force, atom_ener, atom_vir;
+  dp.compute(ener, force_, virial, atom_ener_, atom_vir_, coord_cpy, atype_cpy,
+             box, nall - nloc, inlist, 0);
+  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
+  _fold_back<VALUETYPE>(atom_ener, atom_ener_, mapping, nloc, nall, 1);
+  _fold_back<VALUETYPE>(atom_vir, atom_vir_, mapping, nloc, nall, 9);
 
-//   EXPECT_EQ(force.size(), natoms * 3);
-//   EXPECT_EQ(virial.size(), 9);
-//   EXPECT_EQ(atom_ener.size(), natoms);
-//   EXPECT_EQ(atom_vir.size(), natoms * 9);
+  EXPECT_EQ(force.size(), natoms * 3);
+  EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(atom_ener.size(), natoms);
+  EXPECT_EQ(atom_vir.size(), natoms * 9);
 
-//   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
-//   for (int ii = 0; ii < natoms * 3; ++ii) {
-//     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
-//   }
-//   for (int ii = 0; ii < 3 * 3; ++ii) {
-//     EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-//   }
-//   for (int ii = 0; ii < natoms; ++ii) {
-//     EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
-//   }
-//   for (int ii = 0; ii < natoms * 9; ++ii) {
-//     EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
-//   }
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < natoms; ++ii) {
+    EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < natoms * 9; ++ii) {
+    EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
+  }
 
-//   ener = 0.;
-//   std::fill(force_.begin(), force_.end(), 0.0);
-//   std::fill(virial.begin(), virial.end(), 0.0);
-//   std::fill(atom_ener_.begin(), atom_ener_.end(), 0.0);
-//   std::fill(atom_vir_.begin(), atom_vir_.end(), 0.0);
-//   dp.compute(ener, force_, virial, atom_ener_, atom_vir_, coord_cpy,
-//   atype_cpy,
-//              box, nall - nloc, inlist, 1);
-//   _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
-//   _fold_back<VALUETYPE>(atom_ener, atom_ener_, mapping, nloc, nall, 1);
-//   _fold_back<VALUETYPE>(atom_vir, atom_vir_, mapping, nloc, nall, 9);
+  ener = 0.;
+  std::fill(force_.begin(), force_.end(), 0.0);
+  std::fill(virial.begin(), virial.end(), 0.0);
+  std::fill(atom_ener_.begin(), atom_ener_.end(), 0.0);
+  std::fill(atom_vir_.begin(), atom_vir_.end(), 0.0);
+  dp.compute(ener, force_, virial, atom_ener_, atom_vir_, coord_cpy, atype_cpy,
+             box, nall - nloc, inlist, 1);
+  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
+  _fold_back<VALUETYPE>(atom_ener, atom_ener_, mapping, nloc, nall, 1);
+  _fold_back<VALUETYPE>(atom_vir, atom_vir_, mapping, nloc, nall, 9);
 
-//   EXPECT_EQ(force.size(), natoms * 3);
-//   EXPECT_EQ(virial.size(), 9);
-//   EXPECT_EQ(atom_ener.size(), natoms);
-//   EXPECT_EQ(atom_vir.size(), natoms * 9);
+  EXPECT_EQ(force.size(), natoms * 3);
+  EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(atom_ener.size(), natoms);
+  EXPECT_EQ(atom_vir.size(), natoms * 9);
 
-//   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
-//   for (int ii = 0; ii < natoms * 3; ++ii) {
-//     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
-//   }
-//   for (int ii = 0; ii < 3 * 3; ++ii) {
-//     EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-//   }
-//   for (int ii = 0; ii < natoms; ++ii) {
-//     EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
-//   }
-//   for (int ii = 0; ii < natoms * 9; ++ii) {
-//     EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
-//   }
-// }
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < natoms; ++ii) {
+    EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < natoms * 9; ++ii) {
+    EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
+  }
+}
 
 TYPED_TEST(TestInferDeepPotAPd, cpu_lmp_nlist_2rc) {
   using VALUETYPE = TypeParam;
@@ -472,69 +470,68 @@ TYPED_TEST(TestInferDeepPotAPd, cpu_lmp_nlist_type_sel) {
   }
 }
 
-// TYPED_TEST(TestInferDeepPotAPd, cpu_lmp_nlist_type_sel_atomic) {
-//   using VALUETYPE = TypeParam;
-//   std::vector<VALUETYPE>& coord = this->coord;
-//   std::vector<int>& atype = this->atype;
-//   std::vector<VALUETYPE>& box = this->box;
-//   std::vector<VALUETYPE>& expected_e = this->expected_e;
-//   std::vector<VALUETYPE>& expected_f = this->expected_f;
-//   std::vector<VALUETYPE>& expected_v = this->expected_v;
-//   int& natoms = this->natoms;
-//   double& expected_tot_e = this->expected_tot_e;
-//   std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
-//   deepmd::DeepPot& dp = this->dp;
-//   float rc = dp.cutoff();
+TYPED_TEST(TestInferDeepPotAPd, cpu_lmp_nlist_type_sel_atomic) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_e = this->expected_e;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_v = this->expected_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+  float rc = dp.cutoff();
 
-//   // add vir atoms
-//   int nvir = 2;
-//   std::vector<VALUETYPE> coord_vir(nvir * 3);
-//   std::vector<int> atype_vir(nvir, 2);
-//   for (int ii = 0; ii < nvir; ++ii) {
-//     coord_vir[ii] = coord[ii];
-//   }
-//   coord.insert(coord.begin(), coord_vir.begin(), coord_vir.end());
-//   atype.insert(atype.begin(), atype_vir.begin(), atype_vir.end());
-//   natoms += nvir;
-//   std::vector<VALUETYPE> expected_f_vir(nvir * 3, 0.0);
-//   expected_f.insert(expected_f.begin(), expected_f_vir.begin(),
-//                     expected_f_vir.end());
+  // add vir atoms
+  int nvir = 2;
+  std::vector<VALUETYPE> coord_vir(nvir * 3);
+  std::vector<int> atype_vir(nvir, 2);
+  for (int ii = 0; ii < nvir; ++ii) {
+    coord_vir[ii] = coord[ii];
+  }
+  coord.insert(coord.begin(), coord_vir.begin(), coord_vir.end());
+  atype.insert(atype.begin(), atype_vir.begin(), atype_vir.end());
+  natoms += nvir;
+  std::vector<VALUETYPE> expected_f_vir(nvir * 3, 0.0);
+  expected_f.insert(expected_f.begin(), expected_f_vir.begin(),
+                    expected_f_vir.end());
 
-//   // build nlist
-//   int nloc = coord.size() / 3;
-//   std::vector<VALUETYPE> coord_cpy;
-//   std::vector<int> atype_cpy, mapping;
-//   std::vector<std::vector<int> > nlist_data;
-//   _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping, coord,
-//                           atype, box, rc);
-//   int nall = coord_cpy.size() / 3;
-//   std::vector<int> ilist(nloc), numneigh(nloc);
-//   std::vector<int*> firstneigh(nloc);
-//   deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
-//   convert_nlist(inlist, nlist_data);
+  // build nlist
+  int nloc = coord.size() / 3;
+  std::vector<VALUETYPE> coord_cpy;
+  std::vector<int> atype_cpy, mapping;
+  std::vector<std::vector<int> > nlist_data;
+  _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping, coord,
+                          atype, box, rc);
+  int nall = coord_cpy.size() / 3;
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_data);
 
-//   // dp compute
-//   double ener;
-//   std::vector<VALUETYPE> force_(nall * 3, 0.0), virial(9, 0.0),
-//   atomic_energy,
-//       atomic_virial;
-//   dp.compute(ener, force_, virial, atomic_energy, atomic_virial, coord_cpy,
-//              atype_cpy, box, nall - nloc, inlist, 0);
-//   // fold back
-//   std::vector<VALUETYPE> force;
-//   _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
+  // dp compute
+  double ener;
+  std::vector<VALUETYPE> force_(nall * 3, 0.0), virial(9, 0.0), atomic_energy,
+      atomic_virial;
+  dp.compute(ener, force_, virial, atomic_energy, atomic_virial, coord_cpy,
+             atype_cpy, box, nall - nloc, inlist, 0);
+  // fold back
+  std::vector<VALUETYPE> force;
+  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
 
-//   EXPECT_EQ(force.size(), natoms * 3);
-//   EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(force.size(), natoms * 3);
+  EXPECT_EQ(virial.size(), 9);
 
-//   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
-//   for (int ii = 0; ii < natoms * 3; ++ii) {
-//     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
-//   }
-//   for (int ii = 0; ii < 3 * 3; ++ii) {
-//     EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-//   }
-// }
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+}
 
 TYPED_TEST(TestInferDeepPotAPd, print_summary) {
   deepmd::DeepPot& dp = this->dp;
@@ -548,7 +545,8 @@ class TestInferDeepPotAPdNoPbc : public ::testing::Test {
                                   00.25, 3.32, 1.68, 3.36,  3.00, 1.81,
                                   3.51,  2.51, 2.60, 4.27,  3.22, 1.56};
   std::vector<int> atype = {0, 1, 1, 0, 1, 1};
-  std::vector<VALUETYPE> box = {};
+  std::vector<VALUETYPE> box =
+      {};  // 0-size input will be supported in the future
   std::vector<VALUETYPE> expected_e = {-93.003304908874,  -185.915806542480,
                                        -185.928116717624, -93.017934934346,
                                        -185.924393412278, -185.923906740801};
@@ -602,7 +600,11 @@ class TestInferDeepPotAPdNoPbc : public ::testing::Test {
   void TearDown() override { remove("deeppot.pb"); };
 };
 
-TYPED_TEST_SUITE(TestInferDeepPotAPdNoPbc, PDValueTypes);
+/*
+NOTE: Disable TestInferDeepPotAPdNoPbc cuerrently for box is a 0-size Tensor,
+which is not fully supported in paddle yet
+*/
+// TYPED_TEST_SUITE(TestInferDeepPotAPdNoPbc, PDValueTypes);
 
 // TYPED_TEST(TestInferDeepPotAPdNoPbc, cpu_build_nlist) {
 //   using VALUETYPE = TypeParam;

@@ -60,14 +60,43 @@ void DeepPotPD::init(const std::string& model,
   config->EnableCustomPasses({"add_shadow_output_after_dead_parameter_pass"},
                              true);
 
+  // initialize inference config_fl
+  config_fl = std::make_shared<paddle_infer::Config>();
+  config_fl->DisableGlogInfo();
+  config_fl->EnableNewExecutor(true);
+  config_fl->EnableNewIR(true);
+  config_fl->EnableCustomPasses({"add_shadow_output_after_dead_parameter_pass"},
+                                true);
+
   // loading inference model
-  std::string pdmodel_path;
-  std::string pdiparams_path;
+  std::string pdmodel_path, fl_pdmodel_path;
+  std::string pdiparams_path, fl_pdiparams_path;
   if (model.find(".json") != std::string::npos) {
+    // load inference of model.forward
     pdmodel_path = model;
     pdiparams_path = model;
     pdiparams_path.replace(pdiparams_path.find(".json"), 5,
                            std::string(".pdiparams"));
+
+    // load inference of model.forward_lower
+    fl_pdmodel_path = pdmodel_path;
+    size_t last_slash_pos = fl_pdmodel_path.rfind('/');
+    size_t dot_pos = fl_pdmodel_path.rfind('.');
+    std::string filename = fl_pdmodel_path.substr(last_slash_pos + 1,
+                                                  dot_pos - last_slash_pos - 1);
+    filename = filename + "." + "forward_lower";
+    fl_pdmodel_path.replace(last_slash_pos + 1, dot_pos - last_slash_pos - 1,
+                            filename);
+
+    fl_pdiparams_path = pdiparams_path;
+    last_slash_pos = fl_pdiparams_path.rfind('/');
+    dot_pos = fl_pdiparams_path.rfind('.');
+    filename = fl_pdiparams_path.substr(last_slash_pos + 1,
+                                        dot_pos - last_slash_pos - 1);
+    filename = filename + "." + "forward_lower";
+    fl_pdiparams_path.replace(last_slash_pos + 1, dot_pos - last_slash_pos - 1,
+                              filename);
+
   } else if (model.find(".pdmodel") != std::string::npos) {
     pdmodel_path = model;
     pdiparams_path = model;
@@ -77,17 +106,17 @@ void DeepPotPD::init(const std::string& model,
     throw deepmd::deepmd_exception("Given inference model: " + model +
                                    " do not exist, please check it.");
   }
+
   const char* use_cuda_toolkit = std::getenv("USE_CUDA_TOOLKIT");
   gpu_enabled = (use_cuda_toolkit && (std::string(use_cuda_toolkit) == "1"));
   config->SetModel(pdmodel_path, pdiparams_path);
+  config_fl->SetModel(fl_pdmodel_path, fl_pdiparams_path);
   if (!gpu_enabled) {
     config->DisableGpu();
-    std::cout << "load model from: " << model << " to cpu " << std::endl;
+    config_fl->DisableGpu();
   } else {
-    config->EnableUseGpu(
-        4096, 0);  // annotate it if use cpu, default use gpu with 4G mem
-    std::cout << "load model from: " << model << " to gpu:" << gpu_id
-              << std::endl;
+    config->EnableUseGpu(4096, 0);
+    config_fl->EnableUseGpu(4096, 0);
   }
 
   // NOTE: Both set to 1 now.
@@ -98,9 +127,11 @@ void DeepPotPD::init(const std::string& model,
   num_inter_nthreads = 1;
   if (num_inter_nthreads) {
     config->SetCpuMathLibraryNumThreads(num_inter_nthreads);
+    config_fl->SetCpuMathLibraryNumThreads(num_inter_nthreads);
   }
 
   predictor = paddle_infer::CreatePredictor(*config);
+  predictor_fl = paddle_infer::CreatePredictor(*config_fl);
 
   // initialize hyper params from model buffers
   ntypes_spin = 0;
@@ -141,11 +172,11 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   int nloc = nall_real - nghost_real;
   int nframes = 1;
   std::vector<VALUETYPE> coord_wrapped = dcoord;
-  auto coord_wrapped_Tensor = predictor->GetInputHandle("coord");
+  auto coord_wrapped_Tensor = predictor_fl->GetInputHandle("coord");
   coord_wrapped_Tensor->Reshape({1, nall_real, 3});
   coord_wrapped_Tensor->CopyFromCpu(coord_wrapped.data());
 
-  auto atype_Tensor = predictor->GetInputHandle("atype");
+  auto atype_Tensor = predictor_fl->GetInputHandle("atype");
   atype_Tensor->Reshape({1, nall_real});
   atype_Tensor->CopyFromCpu(datype.data());
 
@@ -156,29 +187,30 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
     if (do_message_passing == 1 && nghost > 0) {
       throw deepmd::deepmd_exception(
           "(do_message_passing == 1 && nghost > 0) is not supported yet.");
-      int nswap = lmp_list.nswap;
-      auto sendproc_tensor = predictor->GetInputHandle("sendproc");
-      sendproc_tensor->Reshape({nswap});
-      sendproc_tensor->CopyFromCpu(lmp_list.sendproc);
-      auto recvproc_tensor = predictor->GetInputHandle("recvproc");
-      recvproc_tensor->Reshape({nswap});
-      recvproc_tensor->CopyFromCpu(lmp_list.recvproc);
-      auto firstrecv_tensor = predictor->GetInputHandle("firstrecv");
-      firstrecv_tensor->Reshape({nswap});
-      firstrecv_tensor->CopyFromCpu(lmp_list.firstrecv);
-      auto recvnum_tensor = predictor->GetInputHandle("recvnum");
-      recvnum_tensor->Reshape({nswap});
-      recvnum_tensor->CopyFromCpu(lmp_list.recvnum);
-      auto sendnum_tensor = predictor->GetInputHandle("sendnum");
-      sendnum_tensor->Reshape({nswap});
-      sendnum_tensor->CopyFromCpu(lmp_list.sendnum);
-      auto communicator_tensor = predictor->GetInputHandle("communicator");
-      communicator_tensor->Reshape({1});
-      communicator_tensor->CopyFromCpu(static_cast<int*>(lmp_list.world));
-      auto sendlist_tensor = predictor->GetInputHandle("sendlist");
+      // int nswap = lmp_list.nswap;
+      // auto sendproc_tensor = predictor_fl->GetInputHandle("sendproc");
+      // sendproc_tensor->Reshape({nswap});
+      // sendproc_tensor->CopyFromCpu(lmp_list.sendproc);
+      // auto recvproc_tensor = predictor_fl->GetInputHandle("recvproc");
+      // recvproc_tensor->Reshape({nswap});
+      // recvproc_tensor->CopyFromCpu(lmp_list.recvproc);
+      // auto firstrecv_tensor = predictor_fl->GetInputHandle("firstrecv");
+      // firstrecv_tensor->Reshape({nswap});
+      // firstrecv_tensor->CopyFromCpu(lmp_list.firstrecv);
+      // auto recvnum_tensor = predictor_fl->GetInputHandle("recvnum");
+      // recvnum_tensor->Reshape({nswap});
+      // recvnum_tensor->CopyFromCpu(lmp_list.recvnum);
+      // auto sendnum_tensor = predictor_fl->GetInputHandle("sendnum");
+      // sendnum_tensor->Reshape({nswap});
+      // sendnum_tensor->CopyFromCpu(lmp_list.sendnum);
+      // auto communicator_tensor =
+      // predictor_fl->GetInputHandle("communicator");
+      // communicator_tensor->Reshape({1});
+      // communicator_tensor->CopyFromCpu(static_cast<int*>(lmp_list.world));
+      // auto sendlist_tensor = predictor_fl->GetInputHandle("sendlist");
 
-      int total_send =
-          std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
+      // int total_send =
+      //     std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
     }
     if (do_message_passing == 1 && nghost == 0) {
       throw deepmd::deepmd_exception(
@@ -186,46 +218,35 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
     }
   }
   std::vector<int> firstneigh = createNlistTensorPD(nlist_data.jlist);
-  firstneigh_tensor = predictor->GetInputHandle("nlist");
+  firstneigh_tensor = predictor_fl->GetInputHandle("nlist");
   firstneigh_tensor->Reshape({1, nloc, (int)firstneigh.size() / (int)nloc});
   firstneigh_tensor->CopyFromCpu(firstneigh.data());
   bool do_atom_virial_tensor = atomic;
   std::unique_ptr<paddle_infer::Tensor> fparam_tensor;
   if (!fparam.empty()) {
-    throw deepmd::deepmd_exception("fparam is not supported as input yet.");
-    // fparam_tensor = predictor->GetInputHandle("fparam");
-    // fparam_tensor->Reshape({1, static_cast<int>(fparam.size())});
-    // fparam_tensor->CopyFromCpu((fparam.data()));
+    fparam_tensor = predictor_fl->GetInputHandle("fparam");
+    fparam_tensor->Reshape({1, static_cast<int>(fparam.size())});
+    fparam_tensor->CopyFromCpu((fparam.data()));
   }
   std::unique_ptr<paddle_infer::Tensor> aparam_tensor;
   if (!aparam_.empty()) {
-    throw deepmd::deepmd_exception("aparam is not supported as input yet.");
-    // aparam_tensor = predictor->GetInputHandle("aparam");
-    // aparam_tensor->Reshape({1, lmp_list.inum,
-    //          static_cast<int>(aparam_.size()) / lmp_list.inum});
-    // aparam_tensor->CopyFromCpu((aparam_.data()));
+    aparam_tensor = predictor_fl->GetInputHandle("aparam");
+    aparam_tensor->Reshape(
+        {1, lmp_list.inum, static_cast<int>(aparam_.size()) / lmp_list.inum});
+    aparam_tensor->CopyFromCpu((aparam_.data()));
   }
 
-  if (!predictor->Run()) {
+  if (!predictor_fl->Run()) {
     throw deepmd::deepmd_exception("Paddle inference run failed");
   }
-  auto output_names = predictor->GetOutputNames();
+  auto output_names = predictor_fl->GetOutputNames();
 
-  auto energy_ = predictor->GetOutputHandle(output_names[1]);
-  auto force_ = predictor->GetOutputHandle(output_names[2]);
-  auto virial_ = predictor->GetOutputHandle(output_names[3]);
-  std::vector<int> output_energy_shape = energy_->shape();
-  int output_energy_size =
-      std::accumulate(output_energy_shape.begin(), output_energy_shape.end(), 1,
-                      std::multiplies<int>());
-  std::vector<int> output_force_shape = force_->shape();
-  int output_force_size =
-      std::accumulate(output_force_shape.begin(), output_force_shape.end(), 1,
-                      std::multiplies<int>());
-  std::vector<int> output_virial_shape = virial_->shape();
-  int output_virial_size =
-      std::accumulate(output_virial_shape.begin(), output_virial_shape.end(), 1,
-                      std::multiplies<int>());
+  auto energy_ = predictor_fl->GetOutputHandle(output_names.at(1));
+  auto force_ = predictor_fl->GetOutputHandle(output_names.at(2));
+  auto virial_ = predictor_fl->GetOutputHandle(output_names.at(4));
+  int output_energy_size = numel(*energy_);
+  int output_force_size = numel(*force_);
+  int output_virial_size = numel(*virial_);
   // output energy
   ener.resize(output_energy_size);
   energy_->CopyToCpu(ener.data());
@@ -243,20 +264,19 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   select_map<VALUETYPE>(force, dforce, bkw_map, 3, nframes, fwd_map.size(),
                         nall_real);
   if (atomic) {
-    throw deepmd::deepmd_exception(
-        "Atomic virial is not supported as output yet.");
-    // auto atom_virial_ = predictor->GetOutputHandle("extended_virial");
-    // auto atom_energy_ = predictor->GetOutputHandle("atom_energy");
-    // datom_energy.resize(nall_real,
-    //                     0.0);  // resize to nall to be consistenet with TF.
-    // atom_energy_->CopyToCpu(datom_energy.data());
-    // atom_virial_->CopyToCpu(datom_virial.data());
-    // atom_energy.resize(static_cast<size_t>(nframes) * fwd_map.size());
-    // atom_virial.resize(static_cast<size_t>(nframes) * fwd_map.size() * 9);
-    // select_map<VALUETYPE>(atom_energy, datom_energy, bkw_map, 1, nframes,
-    //                       fwd_map.size(), nall_real);
-    // select_map<VALUETYPE>(atom_virial, datom_virial, bkw_map, 9, nframes,
-    //                       fwd_map.size(), nall_real);
+    auto atom_virial_ = predictor_fl->GetOutputHandle(output_names.at(3));
+    auto atom_energy_ = predictor_fl->GetOutputHandle(output_names.at(0));
+    datom_energy.resize(nall_real,
+                        0.0);  // resize to nall to be consistenet with TF.
+    atom_energy_->CopyToCpu(datom_energy.data());
+    datom_virial.resize(numel(*atom_virial_));
+    atom_virial_->CopyToCpu(datom_virial.data());
+    atom_energy.resize(static_cast<size_t>(nframes) * fwd_map.size());
+    atom_virial.resize(static_cast<size_t>(nframes) * fwd_map.size() * 9);
+    select_map<VALUETYPE>(atom_energy, datom_energy, bkw_map, 1, nframes,
+                          fwd_map.size(), nall_real);
+    select_map<VALUETYPE>(atom_virial, datom_virial, bkw_map, 9, nframes,
+                          fwd_map.size(), nall_real);
   }
 }
 template void DeepPotPD::compute<double, std::vector<ENERGYTYPE>>(
@@ -325,17 +345,16 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   }
   std::unique_ptr<paddle_infer::Tensor> fparam_tensor;
   if (!fparam.empty()) {
-    throw deepmd::deepmd_exception("fparam is not supported as input yet.");
-    // fparam_tensor = predictor->GetInputHandle("box");
-    // fparam_tensor->Reshape({1, static_cast<int>(fparam.size())});
-    // fparam_tensor->CopyFromCpu((fparam.data()));
+    fparam_tensor = predictor->GetInputHandle("box");
+    fparam_tensor->Reshape({1, static_cast<int>(fparam.size())});
+    fparam_tensor->CopyFromCpu((fparam.data()));
   }
   std::unique_ptr<paddle_infer::Tensor> aparam_tensor;
   if (!aparam.empty()) {
-    throw deepmd::deepmd_exception("fparam is not supported as input yet.");
-    // aparam_tensor = predictor->GetInputHandle("box");
-    // aparam_tensor->Reshape({1, natoms, static_cast<int>(aparam.size()) /
-    // natoms}); aparam_tensor->CopyFromCpu((aparam.data()));
+    aparam_tensor = predictor->GetInputHandle("box");
+    aparam_tensor->Reshape(
+        {1, natoms, static_cast<int>(aparam.size()) / natoms});
+    aparam_tensor->CopyFromCpu((aparam.data()));
   }
 
   bool do_atom_virial_tensor = atomic;
@@ -344,9 +363,9 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   }
 
   auto output_names = predictor->GetOutputNames();
-  auto energy_ = predictor->GetOutputHandle(output_names[1]);
-  auto force_ = predictor->GetOutputHandle(output_names[2]);
-  auto virial_ = predictor->GetOutputHandle(output_names[4]);
+  auto energy_ = predictor->GetOutputHandle(output_names.at(2));
+  auto force_ = predictor->GetOutputHandle(output_names.at(3));
+  auto virial_ = predictor->GetOutputHandle(output_names.at(5));
 
   int enery_numel = numel(*energy_);
   assert(enery_numel > 0);
@@ -364,18 +383,16 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   virial_->CopyToCpu(virial.data());
 
   if (atomic) {
-    throw deepmd::deepmd_exception(
-        "atomic virial is not supported as output yet.");
-    // auto atom_energy_ = predictor->GetOutputHandle(output_names[0]);
-    // auto atom_virial_ = predictor->GetOutputHandle(output_names[5]);
-    // int atom_energy_numel = numel(*atom_energy_);
-    // int atom_virial_numel = numel(*atom_virial_);
-    // assert(atom_energy_numel > 0);
-    // assert(atom_virial_numel > 0);
-    // atom_energy.resize(atom_energy_numel);
-    // atom_virial.resize(atom_virial_numel);
-    // atom_energy_->CopyToCpu(atom_energy.data());
-    // atom_virial_->CopyToCpu(atom_virial.data());
+    auto atom_energy_ = predictor->GetOutputHandle(output_names.at(0));
+    auto atom_virial_ = predictor->GetOutputHandle(output_names.at(1));
+    int atom_energy_numel = numel(*atom_energy_);
+    int atom_virial_numel = numel(*atom_virial_);
+    assert(atom_energy_numel > 0);
+    assert(atom_virial_numel > 0);
+    atom_energy.resize(atom_energy_numel);
+    atom_energy_->CopyToCpu(atom_energy.data());
+    atom_virial.resize(atom_virial_numel);
+    atom_virial_->CopyToCpu(atom_virial.data());
   }
 }
 
@@ -409,9 +426,7 @@ template void DeepPotPD::compute<float, std::vector<ENERGYTYPE>>(
 that need to be postprocessed */
 void DeepPotPD::get_type_map(std::string& type_map) {
   auto type_map_tensor = predictor->GetOutputHandle("buffer_type_map");
-  auto type_map_shape = type_map_tensor->shape();
-  int type_map_size = std::accumulate(
-      type_map_shape.begin(), type_map_shape.end(), 1, std::multiplies<int>());
+  int type_map_size = numel(*type_map_tensor);
 
   std::vector<int> type_map_arr(type_map_size, 0);
   type_map_tensor->CopyToCpu(type_map_arr.data());
@@ -425,9 +440,7 @@ template <typename BUFFERTYPE>
 void DeepPotPD::get_buffer(const std::string& buffer_name,
                            std::vector<BUFFERTYPE>& buffer_array) {
   auto buffer_tensor = predictor->GetOutputHandle(buffer_name);
-  auto buffer_shape = buffer_tensor->shape();
-  int buffer_size = std::accumulate(buffer_shape.begin(), buffer_shape.end(), 1,
-                                    std::multiplies<int>());
+  int buffer_size = numel(*buffer_tensor);
   buffer_array.resize(buffer_size);
   buffer_tensor->CopyToCpu(buffer_array.data());
 }
