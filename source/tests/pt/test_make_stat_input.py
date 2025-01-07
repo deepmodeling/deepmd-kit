@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from pathlib import (
+    Path,
+)
+
 import numpy as np
 import torch
 from torch.utils.data import (
     DataLoader,
-)
-from pathlib import (
-    Path,
 )
 
 from deepmd.pt.utils.dataset import (
@@ -19,7 +20,10 @@ from deepmd.pt.utils.stat import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+
 torch.cuda.set_device(0)
+
+
 def collate_fn(batch):
     if isinstance(batch, dict):
         batch = [batch]
@@ -50,7 +54,9 @@ class TestMakeStatInput(unittest.TestCase):
             ]
             cls.datasets.add_data_requirement(data_requirements)
             cls.datasets = [cls.datasets]
-            weights_tensor = torch.tensor([0.1] * len(cls.datasets),dtype=torch.float64, device="cpu")
+            weights_tensor = torch.tensor(
+                [0.1] * len(cls.datasets), dtype=torch.float64, device="cpu"
+            )
             sampler = torch.utils.data.WeightedRandomSampler(
                 weights_tensor,
                 num_samples=len(cls.datasets),
