@@ -69,7 +69,8 @@ class DPAtomicModel(BaseAtomicModel):
     def set_eval_descriptor_hook(self, enable: bool) -> None:
         """Set the hook for evaluating descriptor and clear the cache for descriptor list."""
         self.enable_eval_descriptor_hook = enable
-        self.eval_descriptor_list = []
+        # = [] does not work; See #4533
+        self.eval_descriptor_list.clear()
 
     def eval_descriptor(self) -> torch.Tensor:
         """Evaluate the descriptor."""
