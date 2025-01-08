@@ -384,12 +384,15 @@ class DescrptBlockRepflows(DescriptorBlock):
 
         # [nframes, nloc, tebd_dim]
         if comm_dict is None:
-            assert isinstance(extended_atype_embd, paddle.Tensor)  # for jit
+            if paddle.in_dynamic_mode():
+                assert isinstance(extended_atype_embd, paddle.Tensor)  # for jit
             atype_embd = extended_atype_embd[:, :nloc, :]
-            assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
+            if paddle.in_dynamic_mode():
+                assert atype_embd.shape == [nframes, nloc, self.n_dim]
         else:
             atype_embd = extended_atype_embd
-        assert isinstance(atype_embd, paddle.Tensor)  # for jit
+            if paddle.in_dynamic_mode():
+                assert isinstance(atype_embd, paddle.Tensor)  # for jit
         node_ebd = self.act(atype_embd)
         n_dim = node_ebd.shape[-1]
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
