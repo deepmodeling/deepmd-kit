@@ -53,6 +53,8 @@ from deepmd.pd.utils.dataloader import (
     get_sampler_from_params,
 )
 from deepmd.pd.utils.env import (
+    CINN,
+    DEFAULT_PRECISION,
     DEVICE,
     JIT,
     NUM_WORKERS,
@@ -631,6 +633,22 @@ class Trainer:
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
 
     def run(self):
+        if CINN:
+            from paddle import (
+                jit,
+                static,
+            )
+
+            build_strategy = static.BuildStrategy()
+            build_strategy.build_cinn_pass: bool = CINN
+            self.wrapper.forward = jit.to_static(
+                full_graph=True, build_strategy=build_strategy
+            )(self.wrapper.forward)
+            log.info(
+                "Enable CINN during training, there may be some additional "
+                "compilation time in the first traning step."
+            )
+
         fout = (
             open(
                 self.disp_file,
@@ -670,9 +688,11 @@ class Trainer:
             cur_lr = _lr.value(_step_id)
             pref_lr = cur_lr
             self.optimizer.clear_grad(set_to_zero=False)
-            input_dict, label_dict, log_dict = self.get_data(
-                is_train=True, task_key=task_key
-            )
+
+            with nvprof_context(enable_profiling, "Fetching data"):
+                input_dict, label_dict, log_dict = self.get_data(
+                    is_train=True, task_key=task_key
+                )
             if SAMPLER_RECORD:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
@@ -686,7 +706,7 @@ class Trainer:
                 with nvprof_context(enable_profiling, "Forward pass"):
                     model_pred, loss, more_loss = self.wrapper(
                         **input_dict,
-                        cur_lr=pref_lr,
+                        cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
                         label=label_dict,
                         task_key=task_key,
                     )
@@ -745,7 +765,7 @@ class Trainer:
                             return {}
                         _, loss, more_loss = self.wrapper(
                             **input_dict,
-                            cur_lr=pref_lr,
+                            cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
                             label=label_dict,
                             task_key=_task_key,
                         )
@@ -795,7 +815,7 @@ class Trainer:
                             )
                             _, loss, more_loss = self.wrapper(
                                 **input_dict,
-                                cur_lr=pref_lr,
+                                cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
                                 label=label_dict,
                                 task_key=_key,
                             )
