@@ -45,6 +45,7 @@ jobs:
     - run: |
          export CMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/libtorch
          source/install/test_cc_local.sh
+         source/install/test_cc_local_pd.sh
       env:
         OMP_NUM_THREADS: 1
         TF_INTRA_OP_PARALLELISM_THREADS: 1
