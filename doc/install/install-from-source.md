@@ -156,12 +156,6 @@ Note that PyTorch may have specific requirements for the compiler version to sup
 
 :::
 
-:::{tab-item} Paddle {{ paddle_icon }}
-
-You can set the environment variable `export DP_ENABLE_PADDLE=1` to enable customized C++ OPs in the Paddle backend.
-
-:::
-
 ::::
 
 Execute
@@ -364,11 +358,13 @@ download the TensorFlow C library from [this page](https://www.tensorflow.org/in
 
 If you want to use C++ interface of Paddle, you need to compile the Paddle inference library(C++ interface) manually from the [linux-compile-by-make](https://www.paddlepaddle.org.cn/documentation/docs/zh/develop/install/compile/linux-compile-by-make.html), then use the `.so` and `.a` files in `Paddle/build/paddle_inference_install_dir/`.
 
-We also provide a nightly pre-compiled Paddle C++ library for Linux x86_64 with CUDA 11.8/12.3 below:
+We also provide a weekly-build Paddle C++ library for Linux x86_64 with CUDA 11.8/12.3/CPU below:
 
 [Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz](https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz)
 
 [Cuda123_cudnn900_Trt8616_D1/latest/paddle_inference.tgz](https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda123_cudnn900_Trt8616_D1/latest/paddle_inference.tgz)
+
+[GITHUB_Docker_Compile_Test_Cpu_Mkl_Avx_D1/latest/paddle_inference.tgz](https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cpu_Mkl_Avx_D1/latest/paddle_inference.tgz)
 
 :::
 

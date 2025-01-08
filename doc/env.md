@@ -56,21 +56,6 @@ Control high (double) or low (float) precision of training.
 {{ tensorflow_icon }} Enable JIT. Note that this option may either improve or decrease the performance. Requires TensorFlow to support JIT.
 :::
 
-:::{envvar} PD_JIT
-
-**Choices**: `0`, `1`; **Default**: `0`
-
-{{ paddle_icon }} Enable Paddle JIT. Note that this option may either improve or decrease the performance.
-:::
-
-:::{envvar} PD_CINN
-
-**Choices**: `0`, `1`; **Default**: `0`
-
-{{ paddle_icon }} Enable Paddle CINN Compiler when `PD_JIT` is enabled. Note that this option may either improve or decrease the performance. Requires Paddle to support CINN(`paddle.device.is_compiled_with_cinn()` is `True`).
-
-:::
-
 :::{envvar} DP_INFER_BATCH_SIZE
 
 **Default**: `1024` on CPUs and as maximum as possible until out-of-memory on GPUs
