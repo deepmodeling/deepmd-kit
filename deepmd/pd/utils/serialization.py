@@ -88,7 +88,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         full_graph=True,
         input_spec=[
             InputSpec([1, -1, 3], dtype="float64", name="coord"),
-            InputSpec([1, -1], dtype="int64", name="atype"),
+            InputSpec([1, -1], dtype="int32", name="atype"),
             InputSpec([1, -1, -1], dtype="int32", name="nlist"),
             None,
             None,
