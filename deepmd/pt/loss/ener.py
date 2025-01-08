@@ -18,6 +18,9 @@ from deepmd.pt.utils.env import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 
 class EnergyStdLoss(TaskLoss):
@@ -411,6 +414,54 @@ class EnergyStdLoss(TaskLoss):
                 )
             )
         return label_requirement
+
+    def serialize(self) -> dict:
+        """Serialize the loss module.
+
+        Returns
+        -------
+        dict
+            The serialized loss module
+        """
+        return {
+            "@class": "EnergyLoss",
+            "@version": 1,
+            "starter_learning_rate": self.starter_learning_rate,
+            "start_pref_e": self.start_pref_e,
+            "limit_pref_e": self.limit_pref_e,
+            "start_pref_f": self.start_pref_f,
+            "limit_pref_f": self.limit_pref_f,
+            "start_pref_v": self.start_pref_v,
+            "limit_pref_v": self.limit_pref_v,
+            "start_pref_ae": self.start_pref_ae,
+            "limit_pref_ae": self.limit_pref_ae,
+            "start_pref_pf": self.start_pref_pf,
+            "limit_pref_pf": self.limit_pref_pf,
+            "relative_f": self.relative_f,
+            "enable_atom_ener_coeff": self.enable_atom_ener_coeff,
+            "start_pref_gf": self.start_pref_gf,
+            "limit_pref_gf": self.limit_pref_gf,
+            "numb_generalized_coord": self.numb_generalized_coord,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "TaskLoss":
+        """Deserialize the loss module.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized loss module
+
+        Returns
+        -------
+        Loss
+            The deserialized loss module
+        """
+        data = data.copy()
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        return cls(**data)
 
 
 class EnergyHessianStdLoss(EnergyStdLoss):
