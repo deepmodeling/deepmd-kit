@@ -36,6 +36,9 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.dataset import (
     DeepmdDataSetForLoader,
 )
+from deepmd.pt.utils.utils import (
+    mix_entropy,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -50,8 +53,12 @@ torch.multiprocessing.set_sharing_strategy("file_system")
 
 
 def setup_seed(seed) -> None:
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    if isinstance(seed, (list, tuple)):
+        mixed_seed = mix_entropy(seed)
+    else:
+        mixed_seed = seed
+    torch.manual_seed(mixed_seed)
+    torch.cuda.manual_seed_all(mixed_seed)
     torch.backends.cudnn.deterministic = True
     dp_random.seed(seed)
 
@@ -87,26 +94,23 @@ class DpLoaderSet(Dataset):
             with h5py.File(systems) as file:
                 systems = [os.path.join(systems, item) for item in file.keys()]
 
-        self.systems: list[DeepmdDataSetForLoader] = []
-        if len(systems) >= 100:
-            log.info(f"Constructing DataLoaders from {len(systems)} systems")
-
         def construct_dataset(system):
             return DeepmdDataSetForLoader(
                 system=system,
                 type_map=type_map,
             )
 
-        with Pool(
-            os.cpu_count()
-            // (
-                int(os.environ["LOCAL_WORLD_SIZE"])
-                if dist.is_available() and dist.is_initialized()
-                else 1
-            )
-        ) as pool:
-            self.systems = pool.map(construct_dataset, systems)
-
+        self.systems: list[DeepmdDataSetForLoader] = []
+        global_rank = dist.get_rank() if dist.is_initialized() else 0
+        if global_rank == 0:
+            log.info(f"Constructing DataLoaders from {len(systems)} systems")
+            with Pool(max(1, env.NUM_WORKERS)) as pool:
+                self.systems = pool.map(construct_dataset, systems)
+        else:
+            self.systems = [None] * len(systems)  # type: ignore
+        if dist.is_initialized():
+            dist.broadcast_object_list(self.systems)
+            assert self.systems[-1] is not None
         self.sampler_list: list[DistributedSampler] = []
         self.index = []
         self.total_batch = 0

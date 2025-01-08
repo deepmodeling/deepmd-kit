@@ -21,7 +21,7 @@ try:
     ncpus = len(os.sched_getaffinity(0))
 except AttributeError:
     ncpus = os.cpu_count()
-NUM_WORKERS = int(os.environ.get("NUM_WORKERS", min(8, ncpus)))
+NUM_WORKERS = int(os.environ.get("NUM_WORKERS", min(4, ncpus)))
 # Make sure DDP uses correct device if applicable
 LOCAL_RANK = os.environ.get("LOCAL_RANK")
 LOCAL_RANK = int(0 if LOCAL_RANK is None else LOCAL_RANK)
@@ -54,7 +54,7 @@ GLOBAL_PT_ENER_FLOAT_PRECISION = PRECISION_DICT[
 PRECISION_DICT["default"] = GLOBAL_PT_FLOAT_PRECISION
 assert VALID_PRECISION.issubset(PRECISION_DICT.keys())
 # cannot automatically generated
-RESERVED_PRECISON_DICT = {
+RESERVED_PRECISION_DICT = {
     torch.float16: "float16",
     torch.float32: "float32",
     torch.float64: "float64",
@@ -63,7 +63,7 @@ RESERVED_PRECISON_DICT = {
     torch.bfloat16: "bfloat16",
     torch.bool: "bool",
 }
-assert set(PRECISION_DICT.values()) == set(RESERVED_PRECISON_DICT.keys())
+assert set(PRECISION_DICT.values()) == set(RESERVED_PRECISION_DICT.keys())
 DEFAULT_PRECISION = "float64"
 
 # throw warnings if threads not set
@@ -87,6 +87,6 @@ __all__ = [
     "LOCAL_RANK",
     "NUM_WORKERS",
     "PRECISION_DICT",
-    "RESERVED_PRECISON_DICT",
+    "RESERVED_PRECISION_DICT",
     "SAMPLER_RECORD",
 ]

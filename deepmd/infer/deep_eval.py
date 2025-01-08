@@ -75,6 +75,7 @@ class DeepEvalBackend(ABC):
         # old models in v1
         "global_polar": "global_polar",
         "wfc": "wfc",
+        "energy_derv_r_derv_r": "hessian",
     }
 
     @abstractmethod
@@ -542,6 +543,11 @@ class DeepEval(ABC):
     def has_spin(self) -> bool:
         """Check if the model has spin."""
         return self.deep_eval.get_has_spin()
+
+    @property
+    def has_hessian(self) -> bool:
+        """Check if the model has hessian."""
+        return self.deep_eval.get_has_hessian()
 
     def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model. Only used in old implement."""

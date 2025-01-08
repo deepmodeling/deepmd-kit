@@ -220,9 +220,10 @@ def _do_work(
     seed = jdata["training"].get("seed", None)
     if seed is not None:
         # avoid the same batch sequence among workers
-        seed += run_opt.my_rank
         seed = seed % (2**32)
-    dp_random.seed(seed)
+        dp_random.seed([run_opt.my_rank, seed])
+    else:
+        dp_random.seed(seed)
 
     # setup data modifier
     modifier = get_modifier(jdata["model"].get("modifier", None))

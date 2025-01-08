@@ -64,3 +64,29 @@ class TaskLoss(torch.nn.Module, ABC, make_plugin_registry("loss")):
         """
         loss = cls(**loss_params)
         return loss
+
+    def serialize(self) -> dict:
+        """Serialize the loss module.
+
+        Returns
+        -------
+        dict
+            The serialized loss module
+        """
+        raise NotImplementedError
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "TaskLoss":
+        """Deserialize the loss module.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized loss module
+
+        Returns
+        -------
+        TaskLoss
+            The deserialized loss module
+        """
+        raise NotImplementedError

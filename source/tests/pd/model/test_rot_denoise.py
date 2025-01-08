@@ -18,8 +18,9 @@ from ...seed import (
 from ..common import (
     eval_model,
 )
-from .test_permutation_denoise import (  # model_dpa2,
+from .test_permutation_denoise import (
     model_dpa1,
+    model_dpa2,
 )
 
 dtype = paddle.float64
@@ -108,6 +109,14 @@ class RotDenoiseTest:
 class TestDenoiseModelDPA1(unittest.TestCase, RotDenoiseTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
+        self.type_split = True
+        self.model = get_model(model_params).to(env.DEVICE)
+
+
+@unittest.skip("support of the denoise is temporally disabled")
+class TestDenoiseModelDPA2(unittest.TestCase, RotDenoiseTest):
+    def setUp(self) -> None:
+        model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
 

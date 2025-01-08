@@ -58,7 +58,7 @@ from deepmd.pt.utils.auto_batch_size import (
 from deepmd.pt.utils.env import (
     DEVICE,
     GLOBAL_PT_FLOAT_PRECISION,
-    RESERVED_PRECISON_DICT,
+    RESERVED_PRECISION_DICT,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
@@ -130,7 +130,8 @@ class DeepEval(DeepEvalBackend):
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
             model = get_model(self.input_param).to(DEVICE)
-            model = torch.jit.script(model)
+            if not self.input_param.get("hessian_mode"):
+                model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
             self.dp.load_state_dict(state_dict)
         elif str(self.model_path).endswith(".pth"):
@@ -160,6 +161,7 @@ class DeepEval(DeepEvalBackend):
         self._has_spin = getattr(self.dp.model["Default"], "has_spin", False)
         if callable(self._has_spin):
             self._has_spin = self._has_spin()
+        self._has_hessian = self.model_def_script.get("hessian_mode", False)
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
@@ -242,6 +244,10 @@ class DeepEval(DeepEvalBackend):
     def get_has_spin(self):
         """Check if the model has spin atom types."""
         return self._has_spin
+
+    def get_has_hessian(self):
+        """Check if the model has hessian."""
+        return self._has_hessian
 
     def eval(
         self,
@@ -348,6 +354,7 @@ class DeepEval(DeepEvalBackend):
                     OutputVariableCategory.REDU,
                     OutputVariableCategory.DERV_R,
                     OutputVariableCategory.DERV_C_REDU,
+                    OutputVariableCategory.DERV_R_DERV_R,
                 )
             ]
 
@@ -406,7 +413,7 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
     ):
         model = self.dp.to(DEVICE)
-        prec = NP_PRECISION_DICT[RESERVED_PRECISON_DICT[GLOBAL_PT_FLOAT_PRECISION]]
+        prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
 
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
@@ -421,7 +428,7 @@ class DeepEval(DeepEvalBackend):
             device=DEVICE,
         )
         type_input = torch.tensor(
-            atom_types.astype(NP_PRECISION_DICT[RESERVED_PRECISON_DICT[torch.long]]),
+            atom_types.astype(NP_PRECISION_DICT[RESERVED_PRECISION_DICT[torch.long]]),
             dtype=torch.long,
             device=DEVICE,
         )
@@ -553,7 +560,7 @@ class DeepEval(DeepEvalBackend):
                         np.abs(shape),
                         np.nan,
                         dtype=NP_PRECISION_DICT[
-                            RESERVED_PRECISON_DICT[GLOBAL_PT_FLOAT_PRECISION]
+                            RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]
                         ],
                     )
                 )  # this is kinda hacky
@@ -577,6 +584,9 @@ class DeepEval(DeepEvalBackend):
             # Something wrong here?
             # return [nframes, *shape, natoms, 1]
             return [nframes, natoms, *odef.shape, 1]
+        elif odef.category == OutputVariableCategory.DERV_R_DERV_R:
+            return [nframes, 3 * natoms, 3 * natoms]
+            # return [nframes, *odef.shape, 3 * natoms, 3 * natoms]
         else:
             raise RuntimeError("unknown category")
 
