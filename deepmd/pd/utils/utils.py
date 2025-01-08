@@ -53,6 +53,8 @@ class ActivationFn(paddle.nn.Layer):
             return F.sigmoid(x)
         elif self.activation.lower() == "linear" or self.activation.lower() == "none":
             return x
+        elif self.activation.lower() == "silu":
+            return F.silu(x)
         else:
             raise RuntimeError(f"activation function {self.activation} not supported")
 
