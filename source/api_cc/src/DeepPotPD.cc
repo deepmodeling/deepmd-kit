@@ -106,7 +106,6 @@ void DeepPotPD::init(const std::string& model,
     throw deepmd::deepmd_exception("Given inference model: " + model +
                                    " do not exist, please check it.");
   }
-
   const char* use_cuda_toolkit = std::getenv("USE_CUDA_TOOLKIT");
   gpu_enabled = (use_cuda_toolkit && (std::string(use_cuda_toolkit) == "1"));
   config->SetModel(pdmodel_path, pdiparams_path);
@@ -114,9 +113,11 @@ void DeepPotPD::init(const std::string& model,
   if (!gpu_enabled) {
     config->DisableGpu();
     config_fl->DisableGpu();
+    std::cout << "load model from: " << model << " to cpu " << std::endl;
   } else {
     config->EnableUseGpu(4096, 0);
     config_fl->EnableUseGpu(4096, 0);
+    std::cout << "load model from: " << model << " to gpu:" << gpu_id << std::endl;
   }
 
   // NOTE: Both set to 1 now.
