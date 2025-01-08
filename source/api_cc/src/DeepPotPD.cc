@@ -117,7 +117,8 @@ void DeepPotPD::init(const std::string& model,
   } else {
     config->EnableUseGpu(4096, 0);
     config_fl->EnableUseGpu(4096, 0);
-    std::cout << "load model from: " << model << " to gpu:" << gpu_id << std::endl;
+    std::cout << "load model from: " << model << " to gpu:" << gpu_id
+              << std::endl;
   }
 
   // NOTE: Both set to 1 now.
