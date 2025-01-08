@@ -33,6 +33,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     data : dict
         The dictionary to be deserialized.
     """
+    paddle.framework.core._set_prim_all_enabled(True)
     if not model_file.endswith(".json"):
         raise ValueError("Paddle backend only supports converting .json file")
     model: paddle.nn.Layer = BaseModel.deserialize(data["model"])
