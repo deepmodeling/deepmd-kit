@@ -119,7 +119,7 @@ class TestModel(tf.test.TestCase):
             t_box,
             t_mesh,
             t_fparam,
-            suffix="dipole_se_a",
+            suffix="dipole_hybrid",
             reuse=False,
         )
         dipole = model_pred["dipole"]
