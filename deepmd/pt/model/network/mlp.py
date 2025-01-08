@@ -204,15 +204,15 @@ class MLPLayer(nn.Module):
         if not env.DP_DTYPE_PROMOTION_STRICT:
             xx = xx.to(self.prec)
         yy = F.linear(xx, self.matrix.t(), self.bias)
-        # some activation functions are in-place, prevent further modification on `yy`; needs to be cloned
-        yy = self.activate(yy).clone()
-        if self.idt is not None:
-            yy *= self.idt
+        yy = self.activate(yy)
+        yy = yy * self.idt if self.idt is not None else yy
         if self.resnet:
             if xx.shape[-1] == yy.shape[-1]:
-                yy += xx
+                yy = yy + xx
             elif 2 * xx.shape[-1] == yy.shape[-1]:
-                yy += torch.concat([xx, xx], dim=-1)
+                yy = yy + torch.concat([xx, xx], dim=-1)
+            else:
+                yy = yy
         if not env.DP_DTYPE_PROMOTION_STRICT:
             yy = yy.to(ori_prec)
         return yy
