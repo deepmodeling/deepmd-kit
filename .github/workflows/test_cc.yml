@@ -51,7 +51,9 @@ jobs:
         TF_INTER_OP_PARALLELISM_THREADS: 1
         LMP_CXX11_ABI_0: 1
         CMAKE_GENERATOR: Ninja
-        CXXFLAGS: ${{ matrix.check_memleak && '-fsanitize=leak -fsanitize-ignorelist=${{ github.workspace }}/.github/workflows/ignorelist.txt' || '' }}
+        CC: clang
+        CXX: clang++
+        CXXFLAGS: ${{ matrix.check_memleak && format('-fsanitize=leak -fsanitize-ignorelist={0}/.github/workflows/ignorelist.txt', github.workspace) || '' }}
     # test lammps
     - run: pytest --cov=deepmd source/lmp/tests
       env:
