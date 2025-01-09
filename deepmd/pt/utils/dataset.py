@@ -61,14 +61,17 @@ class DeepmdDataSetForLoader(Dataset):
         """
         element_counts = defaultdict(lambda: {"frames": 0, "indices": []})
         set_files = self._data_system.dirs
+        base_offset = 0
         for set_file in set_files:
             element_data = self._data_system._load_type_mix(set_file)
             unique_elements = np.unique(element_data)
             for elem in unique_elements:
                 frames_with_elem = np.any(element_data == elem, axis=1)
                 row_indices = np.where(frames_with_elem)[0]
+                row_indices_global = np.where(frames_with_elem)[0] + base_offset
                 element_counts[elem]["frames"] += len(row_indices)
-                element_counts[elem]["indices"].extend(row_indices.tolist())
+                element_counts[elem]["indices"].extend(row_indices_global.tolist())
+            base_offset += element_data.shape[0] 
         element_counts = dict(element_counts)
         return element_counts
 
