@@ -71,7 +71,7 @@ class DeepmdDataSetForLoader(Dataset):
                 row_indices_global = np.where(frames_with_elem)[0] + base_offset
                 element_counts[elem]["frames"] += len(row_indices)
                 element_counts[elem]["indices"].extend(row_indices_global.tolist())
-            base_offset += element_data.shape[0] 
+            base_offset += element_data.shape[0]
         element_counts = dict(element_counts)
         return element_counts
 
