@@ -105,7 +105,12 @@ def make_stat_input(
                     frame_data = sys.__getitem__(frame)
                     assert (
                         miss in frame_data["atype"]
-                    ), f"Missing element '{miss}' not found in frame data."
+                    ), (
+                        f"Element check failed. "
+                        f"If you are running in 'change-bias' mode, use '--skip-elementcheck' to disable this check. "
+                        f"If you encountered this error during model training, set 'enable_element_completion' to False "
+                        f"in the 'training' section of your input file."
+                    )
                     sys_stat_new = {}
                     for dd in frame_data:
                         if dd == "type":

@@ -386,6 +386,7 @@ def change_bias(
     numb_batch: int = 0,
     model_branch: Optional[str] = None,
     output: Optional[str] = None,
+    elem_check_stat: bool = True, 
 ) -> None:
     if input_file.endswith(".pt"):
         old_state_dict = torch.load(
@@ -472,6 +473,7 @@ def change_bias(
             data_single.systems,
             data_single.dataloaders,
             nbatches,
+            enable_element_completion = elem_check_stat,
         )
         updated_model = training.model_change_out_bias(
             model_to_change, sampled_data, _bias_adjust_mode=bias_adjust_mode
@@ -555,6 +557,7 @@ def main(args: Optional[Union[list[str], argparse.Namespace]] = None) -> None:
             numb_batch=FLAGS.numb_batch,
             model_branch=FLAGS.model_branch,
             output=FLAGS.output,
+            elem_check_stat=FLAGS.skip_elementcheck,
         )
     elif FLAGS.command == "compress":
         FLAGS.input = str(Path(FLAGS.input).with_suffix(".pth"))
