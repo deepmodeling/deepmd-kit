@@ -53,7 +53,8 @@ jobs:
         CMAKE_GENERATOR: Ninja
         CC: clang
         CXX: clang++
-        CXXFLAGS: ${{ matrix.check_memleak && format('-fsanitize=leak -fsanitize-ignorelist={0}/.github/workflows/ignorelist.txt', github.workspace) || '' }}
+        CXXFLAGS: ${{ matrix.check_memleak && '-fsanitize=leak' || '' }}
+        LSAN_OPTIONS: suppressions=${{ github.workspace }}/.github/workflows/suppr.txt
     # test lammps
     - run: pytest --cov=deepmd source/lmp/tests
       env:
