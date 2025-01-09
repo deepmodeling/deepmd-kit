@@ -334,7 +334,7 @@ def test_pair_deepmd_virial(lammps):
     for ii in range(9):
         assert np.array(
             lammps.variables[f"virial{ii}"].value
-        ) / constants.nktv2p == pytest.approx(expected_v[idx_map, ii])
+        ) / constants.nktv2p == pytest.approx(expected_v[idx_map, ii], 1e-6, 1e-9)
 
 
 def test_pair_deepmd_model_devi(lammps):
@@ -376,29 +376,31 @@ def test_pair_deepmd_model_devi_virial(lammps):
         "1 all custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)])
     )
     lammps.run(0)
-    assert lammps.eval("pe") == pytest.approx(expected_e)
+    assert lammps.eval("pe") == pytest.approx(expected_e, 1e-6, 1e-9)
     for ii in range(6):
         assert lammps.atoms[ii].force == pytest.approx(
-            expected_f[lammps.atoms[ii].id - 1]
+            expected_f[lammps.atoms[ii].id - 1], 1e-6, 1e-9
         )
     idx_map = lammps.lmp.numpy.extract_atom("id") - 1
     for ii in range(9):
         assert np.array(
             lammps.variables[f"virial{ii}"].value
-        ) / constants.nktv2p == pytest.approx(expected_v[idx_map, ii])
+        ) / constants.nktv2p == pytest.approx(expected_v[idx_map, ii], 1e-6, 1e-9)
     # load model devi
     md = np.loadtxt(md_file.resolve())
     expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
-    assert md[7:] == pytest.approx(expected_md_f)
-    assert md[4] == pytest.approx(np.max(expected_md_f))
-    assert md[5] == pytest.approx(np.min(expected_md_f))
-    assert md[6] == pytest.approx(np.mean(expected_md_f))
+    assert md[7:] == pytest.approx(expected_md_f, 1e-6, 1e-9)
+    assert md[4] == pytest.approx(np.max(expected_md_f), 1e-6, 1e-9)
+    assert md[5] == pytest.approx(np.min(expected_md_f), 1e-6, 1e-9)
+    assert md[6] == pytest.approx(np.mean(expected_md_f), 1e-6, 1e-9)
     expected_md_v = (
         np.std([np.sum(expected_v, axis=0), np.sum(expected_v2, axis=0)], axis=0) / 6
     )
-    assert md[1] == pytest.approx(np.max(expected_md_v))
-    assert md[2] == pytest.approx(np.min(expected_md_v))
-    assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
+    assert md[1] == pytest.approx(np.max(expected_md_v), 1e-6, 1e-9)
+    assert md[2] == pytest.approx(np.min(expected_md_v), 1e-6, 1e-9)
+    assert md[3] == pytest.approx(
+        np.sqrt(np.mean(np.square(expected_md_v))), 1e-6, 1e-9
+    )
 
 
 def test_pair_deepmd_model_devi_atomic_relative(lammps):
@@ -501,18 +503,24 @@ def test_pair_deepmd_virial_real(lammps_real):
     )
     lammps_real.run(0)
     assert lammps_real.eval("pe") == pytest.approx(
-        expected_e * constants.ener_metal2real
+        expected_e * constants.ener_metal2real,
+        1e-6,
+        1e-9,
     )
     for ii in range(6):
         assert lammps_real.atoms[ii].force == pytest.approx(
-            expected_f[lammps_real.atoms[ii].id - 1] * constants.force_metal2real
+            expected_f[lammps_real.atoms[ii].id - 1] * constants.force_metal2real,
+            1e-6,
+            1e-9,
         )
     idx_map = lammps_real.lmp.numpy.extract_atom("id") - 1
     for ii in range(9):
         assert np.array(
             lammps_real.variables[f"virial{ii}"].value
         ) / constants.nktv2p_real == pytest.approx(
-            expected_v[idx_map, ii] * constants.ener_metal2real
+            expected_v[idx_map, ii] * constants.ener_metal2real,
+            1e-6,
+            1e-9,
         )
 
 
@@ -560,33 +568,53 @@ def test_pair_deepmd_model_devi_virial_real(lammps_real):
     )
     lammps_real.run(0)
     assert lammps_real.eval("pe") == pytest.approx(
-        expected_e * constants.ener_metal2real
+        expected_e * constants.ener_metal2real,
+        1e-6,
+        1e-9,
     )
     for ii in range(6):
         assert lammps_real.atoms[ii].force == pytest.approx(
-            expected_f[lammps_real.atoms[ii].id - 1] * constants.force_metal2real
+            expected_f[lammps_real.atoms[ii].id - 1] * constants.force_metal2real,
+            1e-6,
+            1e-9,
         )
     idx_map = lammps_real.lmp.numpy.extract_atom("id") - 1
     for ii in range(9):
         assert np.array(
             lammps_real.variables[f"virial{ii}"].value
         ) / constants.nktv2p_real == pytest.approx(
-            expected_v[idx_map, ii] * constants.ener_metal2real
+            expected_v[idx_map, ii] * constants.ener_metal2real,
+            1e-6,
+            1e-9,
         )
     # load model devi
     md = np.loadtxt(md_file.resolve())
     expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
-    assert md[7:] == pytest.approx(expected_md_f * constants.force_metal2real)
-    assert md[4] == pytest.approx(np.max(expected_md_f) * constants.force_metal2real)
-    assert md[5] == pytest.approx(np.min(expected_md_f) * constants.force_metal2real)
-    assert md[6] == pytest.approx(np.mean(expected_md_f) * constants.force_metal2real)
+    assert md[7:] == pytest.approx(
+        expected_md_f * constants.force_metal2real, 1e-6, 1e-9
+    )
+    assert md[4] == pytest.approx(
+        np.max(expected_md_f) * constants.force_metal2real, 1e-6, 1e-9
+    )
+    assert md[5] == pytest.approx(
+        np.min(expected_md_f) * constants.force_metal2real, 1e-6, 1e-9
+    )
+    assert md[6] == pytest.approx(
+        np.mean(expected_md_f) * constants.force_metal2real, 1e-6, 1e-9
+    )
     expected_md_v = (
         np.std([np.sum(expected_v, axis=0), np.sum(expected_v2, axis=0)], axis=0) / 6
     )
-    assert md[1] == pytest.approx(np.max(expected_md_v) * constants.ener_metal2real)
-    assert md[2] == pytest.approx(np.min(expected_md_v) * constants.ener_metal2real)
+    assert md[1] == pytest.approx(
+        np.max(expected_md_v) * constants.ener_metal2real, 1e-6, 1e-9
+    )
+    assert md[2] == pytest.approx(
+        np.min(expected_md_v) * constants.ener_metal2real, 1e-6, 1e-9
+    )
     assert md[3] == pytest.approx(
-        np.sqrt(np.mean(np.square(expected_md_v))) * constants.ener_metal2real
+        np.sqrt(np.mean(np.square(expected_md_v))) * constants.ener_metal2real,
+        1e-6,
+        1e-9,
     )
 
 
