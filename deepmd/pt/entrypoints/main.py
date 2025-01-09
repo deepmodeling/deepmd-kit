@@ -386,7 +386,7 @@ def change_bias(
     numb_batch: int = 0,
     model_branch: Optional[str] = None,
     output: Optional[str] = None,
-    elem_check_stat: bool = True, 
+    elem_check_stat: bool = True,
 ) -> None:
     if input_file.endswith(".pt"):
         old_state_dict = torch.load(
@@ -473,7 +473,7 @@ def change_bias(
             data_single.systems,
             data_single.dataloaders,
             nbatches,
-            enable_element_completion = elem_check_stat,
+            enable_element_completion=elem_check_stat,
         )
         updated_model = training.model_change_out_bias(
             model_to_change, sampled_data, _bias_adjust_mode=bias_adjust_mode

@@ -103,13 +103,11 @@ def make_stat_input(
                 newele_counter += 1
                 if newele_counter <= min_frames_per_element_forstat:
                     frame_data = sys.__getitem__(frame)
-                    assert (
-                        miss in frame_data["atype"]
-                    ), (
-                        f"Element check failed. "
-                        f"If you are running in 'change-bias' mode, use '--skip-elementcheck' to disable this check. "
-                        f"If you encountered this error during model training, set 'enable_element_completion' to False "
-                        f"in the 'training' section of your input file."
+                    assert miss in frame_data["atype"], (
+                        "Element check failed. "
+                        "If you are running in 'change-bias' mode, use '--skip-elementcheck' to disable this check. "
+                        "If you encountered this error during model training, set 'enable_element_completion' to False "
+                        "in the 'training' section of your input file."
                     )
                     sys_stat_new = {}
                     for dd in frame_data:
