@@ -46,6 +46,7 @@ class DeepmdDataSetForLoader(Dataset):
     def get_frame_index_for_elements(self):
         """
         Get the frame index and the number of frames with all the elements in the system.
+        Map the remapped atom_type_mix back to their element names in type_map, 
         This function is only used in the mixed type.
 
         Returns
@@ -58,6 +59,8 @@ class DeepmdDataSetForLoader(Dataset):
                     The total number of frames in which the element appears.
                 - "indices": list of int
                     A list of row indices where the element is found in the dataset.
+        global_type_name : dict
+            The key is the element index and the value is the element name.
         """
         element_counts = defaultdict(lambda: {"frames": 0, "indices": []})
         set_files = self._data_system.dirs

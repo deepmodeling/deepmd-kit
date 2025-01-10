@@ -716,8 +716,8 @@ class DeepmdData:
         for i in range(N):
             for j in range(M):
                 old_val = int(real_type[i, j])
-                new_val = int(typemix[i, j])
-                reidx_to_name[new_val] = type_map_array[old_val]
+                re_val = int(typemix[i, j])
+                reidx_to_name[re_val] = type_map_array[old_val]
         return reidx_to_name
 
     def _make_idx_map(self, atom_type):
