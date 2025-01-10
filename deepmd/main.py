@@ -742,6 +742,13 @@ def main_parser() -> argparse.ArgumentParser:
         action="store_false", 
         help="Enable this option to skip element checks if any error occurs while retrieving statistical data.",
     )
+    parser_change_bias.add_argument(
+        "-mf",
+        "--min-frames",
+        default=10,
+        type=int,
+        help="The minimum number of frames for each element used for statistics.",
+    )
 
     # --version
     parser.add_argument(
