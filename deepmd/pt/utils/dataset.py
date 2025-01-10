@@ -46,7 +46,7 @@ class DeepmdDataSetForLoader(Dataset):
     def get_frame_index_for_elements(self):
         """
         Get the frame index and the number of frames with all the elements in the system.
-        Map the remapped atom_type_mix back to their element names in type_map, 
+        Map the remapped atom_type_mix back to their element names in type_map,
         This function is only used in the mixed type.
 
         Returns
