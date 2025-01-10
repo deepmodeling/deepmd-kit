@@ -160,7 +160,7 @@ def make_stat_input(
 
         # get frame index
         if datasets[0].mixed_type and enable_element_completion:
-            element_counts = dataset.get_frame_index()
+            element_counts = dataset.get_frame_index_for_elements()
             for elem, data in element_counts.items():
                 indices = data["indices"]
                 count = data["frames"]

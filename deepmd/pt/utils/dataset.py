@@ -43,7 +43,7 @@ class DeepmdDataSetForLoader(Dataset):
         b_data["natoms"] = self._natoms_vec
         return b_data
 
-    def get_frame_index(self):
+    def get_frame_index_for_elements(self):
         """
         Get the frame index and the number of frames with all the elements in the system.
         This function is only used in the mixed type.

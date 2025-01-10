@@ -386,7 +386,7 @@ def change_bias(
     numb_batch: int = 0,
     model_branch: Optional[str] = None,
     output: Optional[str] = None,
-    elem_check_stat: bool = True,
+    skip_elem_check: bool = True,
     min_frames: int = 10,
 ) -> None:
     if input_file.endswith(".pt"):
@@ -474,8 +474,8 @@ def change_bias(
             data_single.systems,
             data_single.dataloaders,
             nbatches,
-            min_frames_per_element_forstat=min_frames,
-            enable_element_completion=elem_check_stat,
+            min_frames_per_element_forstat = min_frames,
+            enable_element_completion = not skip_elem_check,
         )
         updated_model = training.model_change_out_bias(
             model_to_change, sampled_data, _bias_adjust_mode=bias_adjust_mode
@@ -559,7 +559,7 @@ def main(args: Optional[Union[list[str], argparse.Namespace]] = None) -> None:
             numb_batch=FLAGS.numb_batch,
             model_branch=FLAGS.model_branch,
             output=FLAGS.output,
-            elem_check_stat=FLAGS.skip_elementcheck,
+            skip_elem_check=FLAGS.skip_elementcheck,
             min_frames=FLAGS.min_frames,
         )
     elif FLAGS.command == "compress":
