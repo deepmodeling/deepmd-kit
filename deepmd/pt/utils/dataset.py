@@ -62,11 +62,13 @@ class DeepmdDataSetForLoader(Dataset):
         element_counts = defaultdict(lambda: {"frames": 0, "indices": []})
         set_files = self._data_system.dirs
         base_offset = 0
-        global_type_name = {} 
+        global_type_name = {}
         for set_file in set_files:
             element_data = self._data_system._load_type_mix(set_file)
             unique_elements = np.unique(element_data)
-            type_name = self._data_system.build_reidx_to_name_map(element_data,set_file)
+            type_name = self._data_system.build_reidx_to_name_map(
+                element_data, set_file
+            )
             for new_idx, elem_name in type_name.items():
                 if new_idx not in global_type_name:
                     global_type_name[new_idx] = elem_name
