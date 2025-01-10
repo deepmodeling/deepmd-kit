@@ -706,6 +706,20 @@ class DeepmdData:
             real_type = atom_type_mix_
         return real_type
 
+    def build_reidx_to_name_map(self,typemix, set_name: DPPath):
+        type_map = self.type_map
+        type_path = set_name / "real_atom_types.npy"
+        real_type = type_path.load_numpy().astype(np.int32).reshape([-1, self.natoms])
+        type_map_array = np.array(type_map, dtype=object)
+        reidx_to_name = {}
+        N, M = real_type.shape
+        for i in range(N):
+            for j in range(M):
+                old_val = int(real_type[i, j]) 
+                new_val = int(typemix[i, j])   
+                reidx_to_name[new_val] = type_map_array[old_val]
+        return reidx_to_name
+
     def _make_idx_map(self, atom_type):
         natoms = atom_type.shape[0]
         idx = np.arange(natoms, dtype=np.int64)

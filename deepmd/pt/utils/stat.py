@@ -60,6 +60,7 @@ def make_stat_input(
     log.info(f"Packing data for statistics from {len(datasets)} systems")
     total_element_types = set()
     global_element_counts = {}
+    global_type_name = {}
     collect_ele = defaultdict(int)
     if datasets[0].mixed_type:
         if enable_element_completion:
@@ -160,7 +161,10 @@ def make_stat_input(
 
         # get frame index
         if datasets[0].mixed_type and enable_element_completion:
-            element_counts = dataset.get_frame_index_for_elements()
+            element_counts, type_map = dataset.get_frame_index_for_elements()
+            for new_idx, elem_name in type_name.items():
+                if new_idx not in global_type_name:
+                    global_type_name[new_idx] = elem_name
             for elem, data in element_counts.items():
                 indices = data["indices"]
                 count = data["frames"]
@@ -195,10 +199,11 @@ def make_stat_input(
     if datasets[0].mixed_type and enable_element_completion:
         for elem, data in global_element_counts.items():
             indices_count = data["count"]
+            element_name = global_type_name.get(elem, f"<unknown-{elem}>")
             if indices_count < min_frames_per_element_forstat:
                 log.warning(
-                    f"The number of frames in your datasets with element {elem} is {indices_count}, "
-                    f"which is less than the required {min_frames_per_element_forstat}"
+                    f"The number of frames in your datasets with element {element_name} is {indices_count}, "
+                    f"which is less than the set {min_frames_per_element_forstat}"
                 )
         collect_elements = collect_ele.keys()
         missing_elements = total_element_types - collect_elements

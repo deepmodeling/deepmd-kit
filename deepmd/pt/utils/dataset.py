@@ -62,9 +62,14 @@ class DeepmdDataSetForLoader(Dataset):
         element_counts = defaultdict(lambda: {"frames": 0, "indices": []})
         set_files = self._data_system.dirs
         base_offset = 0
+        global_type_name = {} 
         for set_file in set_files:
             element_data = self._data_system._load_type_mix(set_file)
             unique_elements = np.unique(element_data)
+            type_name = self._data_system.build_reidx_to_name_map(element_data,set_file)
+            for new_idx, elem_name in type_name.items():
+                if new_idx not in global_type_name:
+                    global_type_name[new_idx] = elem_name
             for elem in unique_elements:
                 frames_with_elem = np.any(element_data == elem, axis=1)
                 row_indices = np.where(frames_with_elem)[0]
@@ -73,7 +78,7 @@ class DeepmdDataSetForLoader(Dataset):
                 element_counts[elem]["indices"].extend(row_indices_global.tolist())
             base_offset += element_data.shape[0]
         element_counts = dict(element_counts)
-        return element_counts
+        return element_counts, global_type_name
 
     def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
         """Add data requirement for this data system."""
