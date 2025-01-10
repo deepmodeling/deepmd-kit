@@ -57,6 +57,39 @@ def stretch_box(old_coord, old_box, new_box):
     return ncoord.reshape(old_coord.shape)
 
 
+def finite_difference_cell_energy(
+    energy_func,
+    cell: np.ndarray,
+    delta: float = 1e-4,
+) -> np.ndarray:
+    """
+    Compute cell energy derivatives via central finite differences.
+
+    Parameters
+    ----------
+    energy_func : callable
+        Function that returns a scalar energy for a given cell.
+    cell : np.ndarray
+        Cell matrix with shape (3, 3).
+    delta : float
+        Perturbation size in unitless.
+
+    Returns
+    -------
+    np.ndarray
+        Energy derivatives dE/dh with shape (3, 3).
+    """
+    deriv = np.zeros_like(cell)
+    for ii in range(3):
+        for jj in range(3):
+            perturb = np.zeros_like(cell)
+            perturb[ii, jj] = delta
+            ep = energy_func(cell + perturb)
+            em = energy_func(cell - perturb)
+            deriv[ii, jj] = (ep - em) / (2.0 * delta)
+    return deriv
+
+
 class ForceTest:
     def test(
         self,
@@ -141,11 +174,17 @@ class VirialTest:
         cell = (cell) + 5.0 * torch.eye(3, device="cpu")
         coord = torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)
         coord = torch.matmul(coord, cell)
+        spin = torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)
         atype = torch.IntTensor([0, 0, 0, 1, 1])
         # assumes input to be numpy tensor
         coord = coord.numpy()
+        spin = spin.numpy()
         cell = cell.numpy()
-        test_keys = ["energy", "force", "virial"]
+        test_spin = getattr(self, "test_spin", False)
+        if not test_spin:
+            test_keys = ["energy", "force", "virial"]
+        else:
+            test_keys = ["energy", "force", "force_mag", "virial"]
 
         def np_infer(
             new_cell,
@@ -157,6 +196,7 @@ class VirialTest:
                 ).unsqueeze(0),
                 torch.tensor(new_cell, device="cpu").unsqueeze(0),
                 atype,
+                spins=torch.tensor(spin, device=env.DEVICE).unsqueeze(0),
             )
             # detach
             ret = {key: to_numpy_array(result[key].squeeze(0)) for key in test_keys}
@@ -251,3 +291,57 @@ class TestEnergyModelSpinSeAForce(unittest.TestCase, ForceTest):
         self.type_split = False
         self.test_spin = True
         self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestEnergyModelSpinSeAVirial(unittest.TestCase, VirialTest):
+    def setUp(self) -> None:
+        model_params = copy.deepcopy(model_spin)
+        self.type_split = False
+        self.test_spin = True
+        self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestEnergyModelSpinSeAVirialShear(unittest.TestCase):
+    def setUp(self) -> None:
+        model_params = copy.deepcopy(model_spin)
+        self.model = get_model(model_params).to(env.DEVICE)
+
+    def test(self) -> None:
+        places = 5
+        delta = 1e-4
+        natoms = 5
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        atype = np.array([0, 0, 0, 1, 1], dtype=np.int32)
+
+        # === Step 1. Prepare inputs ===
+        cell = torch.rand([3, 3], dtype=dtype, device="cpu", generator=generator)
+        cell = (cell + cell.T) + 5.0 * torch.eye(3, device="cpu")
+        coord = torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)
+        coord = torch.matmul(coord, cell)
+        spin = torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)
+        coord = coord.numpy()
+        spin = spin.numpy()
+        cell = cell.numpy()
+
+        # === Step 2. Define energy and virial evaluators ===
+        def np_infer(new_cell):
+            coord_new = stretch_box(coord, cell, new_cell)
+            result = eval_model(
+                self.model,
+                coord_new.reshape(1, natoms, 3),
+                new_cell.reshape(1, 3, 3),
+                atype,
+                spins=spin.reshape(1, natoms, 3),
+            )
+            return result
+
+        def energy_func(new_cell):
+            return np_infer(new_cell)["energy"].reshape(-1)[0]
+
+        # === Step 3. Finite-difference virial by shear perturbations ===
+        dE_dh = finite_difference_cell_energy(energy_func, cell, delta=delta)
+        virial_fd = -(dE_dh.T @ cell).reshape(9)
+
+        # === Step 4. Compare with analytic virial ===
+        virial_ref = np_infer(cell)["virial"].reshape(9)
+        np.testing.assert_almost_equal(virial_fd, virial_ref, decimal=places)
