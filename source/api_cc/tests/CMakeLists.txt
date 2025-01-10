@@ -31,6 +31,8 @@ add_test(
   NAME runUnitTest_cc
   COMMAND runUnitTests_cc
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+set_tests_properties(runUnitTest_cc PROPERTIES ENVIRONMENT
+                                               "TF_DISABLE_MLIR_BRIDGE=1")
 set_target_properties(runUnitTests_cc PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
 target_compile_definitions(runUnitTests_cc PUBLIC ${prec_def})
 install(TARGETS runUnitTests_cc DESTINATION bin/)

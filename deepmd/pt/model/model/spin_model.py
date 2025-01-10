@@ -53,17 +53,31 @@ class SpinModel(torch.nn.Module):
 
     def process_spin_input(
         self, coord: torch.Tensor, atype: torch.Tensor, spin: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Generate virtual coordinates and types, concat into the input."""
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Generate virtual coordinates and types, concat into the input.
+
+        Returns
+        -------
+        coord_spin : torch.Tensor
+            Concatenated coordinates with shape (nframes, 2*nloc, 3).
+        atype_spin : torch.Tensor
+            Concatenated atom types with shape (nframes, 2*nloc).
+        coord_corr : torch.Tensor
+            Coordinate correction for virial with shape (nframes, 2*nloc, 3).
+        """
         nframes, nloc = atype.shape
         coord = coord.reshape(nframes, nloc, 3)
         spin = spin.reshape(nframes, nloc, 3)
         atype_spin = torch.concat([atype, atype + self.ntypes_real], dim=-1)
-        virtual_coord = coord + spin * (self.virtual_scale_mask.to(atype.device))[
-            atype
-        ].reshape([nframes, nloc, 1])
+        # spin_dist = s_i * \mu_i
+        spin_dist = spin * (self.virtual_scale_mask.to(atype.device))[atype].reshape(
+            [nframes, nloc, 1]
+        )
+        virtual_coord = coord + spin_dist
         coord_spin = torch.concat([coord, virtual_coord], dim=-2)
-        return coord_spin, atype_spin
+        # for spin virial corr
+        coord_corr = torch.concat([torch.zeros_like(coord), -spin_dist], dim=-2)
+        return coord_spin, atype_spin, coord_corr
 
     def process_spin_input_lower(
         self,
@@ -72,10 +86,28 @@ class SpinModel(torch.nn.Module):
         extended_spin: torch.Tensor,
         nlist: torch.Tensor,
         mapping: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    ) -> tuple[
+        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor
+    ]:
         """
         Add `extended_spin` into `extended_coord` to generate virtual atoms, and extend `nlist` and `mapping`.
-        Note that the final `extended_coord_updated` with shape [nframes, nall + nall, 3] has the following order:
+
+        Returns
+        -------
+        extended_coord_updated : torch.Tensor
+            Updated coordinates with virtual atoms, shape (nframes, 2*nall, 3).
+        extended_atype_updated : torch.Tensor
+            Updated atom types with virtual atoms, shape (nframes, 2*nall).
+        nlist_updated : torch.Tensor
+            Updated neighbor list including virtual atoms.
+        mapping_updated : torch.Tensor or None
+            Updated mapping indices, or None if input mapping is None.
+        extended_coord_corr : torch.Tensor
+            Coordinate correction for virial with shape (nframes, 2*nall, 3).
+
+        Notes
+        -----
+        The final `extended_coord_updated` with shape [nframes, nall + nall, 3] has the following order:
         - [:, :nloc]: original nloc real atoms.
         - [:, nloc: nloc + nloc]: virtual atoms corresponding to nloc real atoms.
         - [:, nloc + nloc: nloc + nall]: ghost real atoms.
@@ -83,12 +115,17 @@ class SpinModel(torch.nn.Module):
         """
         nframes, nall = extended_coord.shape[:2]
         nloc = nlist.shape[1]
-        virtual_extended_coord = extended_coord + extended_spin * (
+        extended_spin_dist = extended_spin * (
             self.virtual_scale_mask.to(extended_atype.device)
         )[extended_atype].reshape([nframes, nall, 1])
+        virtual_extended_coord = extended_coord + extended_spin_dist
         virtual_extended_atype = extended_atype + self.ntypes_real
         extended_coord_updated = concat_switch_virtual(
             extended_coord, virtual_extended_coord, nloc
+        )
+        # for spin virial corr
+        extended_coord_corr = concat_switch_virtual(
+            torch.zeros_like(extended_coord), -extended_spin_dist, nloc
         )
         extended_atype_updated = concat_switch_virtual(
             extended_atype, virtual_extended_atype, nloc
@@ -105,6 +142,7 @@ class SpinModel(torch.nn.Module):
             extended_atype_updated,
             nlist_updated,
             mapping_updated,
+            extended_coord_corr,
         )
 
     def process_spin_output(
@@ -376,7 +414,7 @@ class SpinModel(torch.nn.Module):
             sampled = sampled_func()
             spin_sampled = []
             for sys in sampled:
-                coord_updated, atype_updated = self.process_spin_input(
+                coord_updated, atype_updated, _ = self.process_spin_input(
                     sys["coord"], sys["atype"], sys["spin"]
                 )
                 tmp_dict = {
@@ -407,7 +445,9 @@ class SpinModel(torch.nn.Module):
         do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
         nframes, nloc = atype.shape
-        coord_updated, atype_updated = self.process_spin_input(coord, atype, spin)
+        coord_updated, atype_updated, coord_corr_for_virial = self.process_spin_input(
+            coord, atype, spin
+        )
         if aparam is not None:
             aparam = self.expand_aparam(aparam, nloc * 2)
         model_ret = self.backbone_model.forward_common(
@@ -417,6 +457,7 @@ class SpinModel(torch.nn.Module):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            coord_corr_for_virial=coord_corr_for_virial,
         )
         model_output_type = self.backbone_model.model_output_type()
         if "mask" in model_output_type:
@@ -439,7 +480,7 @@ class SpinModel(torch.nn.Module):
             ) = self.process_spin_output(
                 atype,
                 model_ret[f"{var_name}_derv_c"],
-                add_mag=False,
+                add_mag=True,
                 virtual_scale=False,
             )
         return model_ret
@@ -463,6 +504,7 @@ class SpinModel(torch.nn.Module):
             extended_atype_updated,
             nlist_updated,
             mapping_updated,
+            extended_coord_corr_for_virial,
         ) = self.process_spin_input_lower(
             extended_coord, extended_atype, extended_spin, nlist, mapping=mapping
         )
@@ -478,6 +520,7 @@ class SpinModel(torch.nn.Module):
             do_atomic_virial=do_atomic_virial,
             comm_dict=comm_dict,
             extra_nlist_sort=extra_nlist_sort,
+            extended_coord_corr=extended_coord_corr_for_virial,
         )
         model_output_type = self.backbone_model.model_output_type()
         if "mask" in model_output_type:
@@ -503,7 +546,7 @@ class SpinModel(torch.nn.Module):
                 extended_atype,
                 model_ret[f"{var_name}_derv_c"],
                 nloc,
-                add_mag=False,
+                add_mag=True,
                 virtual_scale=False,
             )
         return model_ret
@@ -550,6 +593,11 @@ class SpinEnergyModel(SpinModel):
             output_def["force"].squeeze(-2)
             output_def["force_mag"] = deepcopy(out_def_data["energy_derv_r_mag"])
             output_def["force_mag"].squeeze(-2)
+        if self.do_grad_c("energy"):
+            output_def["virial"] = deepcopy(out_def_data["energy_derv_c_redu"])
+            output_def["virial"].squeeze(-2)
+            output_def["atom_virial"] = deepcopy(out_def_data["energy_derv_c"])
+            output_def["atom_virial"].squeeze(-3)
         return output_def
 
     def forward(
@@ -578,7 +626,10 @@ class SpinEnergyModel(SpinModel):
         if self.backbone_model.do_grad_r("energy"):
             model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
             model_predict["force_mag"] = model_ret["energy_derv_r_mag"].squeeze(-2)
-        # not support virial by far
+        if self.backbone_model.do_grad_c("energy"):
+            model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
+            if do_atomic_virial:
+                model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-3)
         return model_predict
 
     @torch.jit.export
@@ -615,5 +666,10 @@ class SpinEnergyModel(SpinModel):
             model_predict["extended_force_mag"] = model_ret[
                 "energy_derv_r_mag"
             ].squeeze(-2)
-        # not support virial by far
+        if self.backbone_model.do_grad_c("energy"):
+            model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
+            if do_atomic_virial:
+                model_predict["extended_virial"] = model_ret["energy_derv_c"].squeeze(
+                    -3
+                )
         return model_predict
