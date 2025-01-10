@@ -184,6 +184,3 @@ class TestMakeStatInput(unittest.TestCase):
             msg=f"energy_ori and energy_new are not exactly the same!\n"
                 f"energy_ori = {energy_ori}\nenergy_new = {energy_new}"
         )
-
-if __name__ == "__main__":
-    unittest.main()
