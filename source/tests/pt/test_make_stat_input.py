@@ -23,6 +23,7 @@ from deepmd.utils.data import (
 
 
 def collate_fn(batch):
+
     if isinstance(batch, dict):
         batch = [batch]
 
@@ -127,7 +128,7 @@ class TestMakeStatInput(unittest.TestCase):
             min_frames_per_element_forstat=1,
             enable_element_completion=True,
         )
-
+        
         bias_ori, _ = compute_output_stats(lst_ori, ntypes=57)
         bias_all, _ = compute_output_stats(lst_all, ntypes=57)
         energy_ori = np.array(bias_ori.get("energy").cpu()).flatten()
@@ -147,7 +148,6 @@ class TestMakeStatInput(unittest.TestCase):
                         f"Index {i}: energy_ori={e_ori}, energy_all={e_all}, "
                         f"relative difference {rel_diff:.2%} is too large",
                     )
-
     def test_with_nomissing(self):
         lst_ori = make_stat_input(
             datasets=self.datasets,
@@ -182,14 +182,5 @@ class TestMakeStatInput(unittest.TestCase):
         self.assertTrue(
             np.array_equal(energy_ori, energy_new),
             msg=f"energy_ori and energy_new are not exactly the same!\n"
-<<<<<<< HEAD
                 f"energy_ori = {energy_ori}\nenergy_new = {energy_new}"
         )
-=======
-            f"energy_ori = {energy_ori}\nenergy_new = {energy_new}",
-        )
-
-
-if __name__ == "__main__":
-    unittest.main()
->>>>>>> 5e826bf8a23180243bd31eaefc2e920388063d43
