@@ -739,7 +739,7 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_change_bias.add_argument(
         "--skip-elementcheck",
-        action="store_false", 
+        action="store_false",
         help="Enable this option to skip element checks if any error occurs while retrieving statistical data.",
     )
     parser_change_bias.add_argument(
