@@ -703,6 +703,7 @@ def test_pair_deepmd_si(lammps_si):
     lammps_si.run(1)
 
 
+@pytest.mark.skip("skip mpi run for python paddle backend")
 @pytest.mark.skipif(
     shutil.which("mpirun") is None, reason="MPI is not installed on this system"
 )
