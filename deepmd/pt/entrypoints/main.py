@@ -474,8 +474,8 @@ def change_bias(
             data_single.systems,
             data_single.dataloaders,
             nbatches,
-            min_frames_per_element_forstat = min_frames,
-            enable_element_completion = not skip_elem_check,
+            min_frames_per_element_forstat=min_frames,
+            enable_element_completion=not skip_elem_check,
         )
         updated_model = training.model_change_out_bias(
             model_to_change, sampled_data, _bias_adjust_mode=bias_adjust_mode

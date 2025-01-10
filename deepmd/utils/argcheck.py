@@ -2787,9 +2787,7 @@ def training_args(
         "If the gradient norm exceeds this value, it will be clipped to this limit. "
         "No gradient clipping will occur if set to 0."
     )
-    doc_min_frames_per_element_forstat = (
-        "The minimum number of frames per element used for statistics when using the mixed type." 
-    )
+    doc_min_frames_per_element_forstat = "The minimum number of frames per element used for statistics when using the mixed type."
     doc_enable_element_completion = (
         "Whether to check elements when using the mixed type"
     )
