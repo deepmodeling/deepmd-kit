@@ -892,7 +892,10 @@ class ModelTestCase:
                 fdf.reshape(-1, 3), rff.reshape(-1, 3), decimal=places
             )
 
-        if not test_spin:
+        # this option can be removed after other backends support spin virial
+        test_spin_virial = getattr(self, "test_spin_virial", False)
+
+        if not test_spin or test_spin_virial:
 
             def ff_cell(bb):
                 input_dict = {
@@ -902,6 +905,8 @@ class ModelTestCase:
                     "aparam": aparam,
                     "fparam": fparam,
                 }
+                if test_spin:
+                    input_dict["spin"] = spin
                 return module(**input_dict)["energy"]
 
             fdv = (
@@ -921,13 +926,12 @@ class ModelTestCase:
                 "aparam": aparam,
                 "fparam": fparam,
             }
+            if test_spin:
+                input_dict["spin"] = spin
             rfv = module(**input_dict)["virial"]
             np.testing.assert_almost_equal(
                 fdv.reshape(-1, 9), rfv.reshape(-1, 9), decimal=places
             )
-        else:
-            # not support virial by far
-            pass
 
     @unittest.skipIf(TEST_DEVICE == "cpu" and CI, "Skip test on CPU.")
     def test_device_consistence(self) -> None:

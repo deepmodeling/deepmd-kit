@@ -251,8 +251,7 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("extended_force");
   c10::IValue force_mag_ = outputs.at("extended_force_mag");
-  // spin model not suported yet
-  // c10::IValue virial_ = outputs.at("virial");
+  c10::IValue virial_ = outputs.at("virial");
   torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
   ener.assign(cpu_energy_.data_ptr<ENERGYTYPE>(),
@@ -267,11 +266,11 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
   dforce_mag.assign(
       cpu_force_mag_.data_ptr<VALUETYPE>(),
       cpu_force_mag_.data_ptr<VALUETYPE>() + cpu_force_mag_.numel());
-  // spin model not suported yet
-  // torch::Tensor flat_virial_ = virial_.toTensor().view({-1}).to(floatType);
-  // torch::Tensor cpu_virial_ = flat_virial_.to(torch::kCPU);
-  // virial.assign(cpu_virial_.data_ptr<VALUETYPE>(),
-  //               cpu_virial_.data_ptr<VALUETYPE>() + cpu_virial_.numel());
+
+  torch::Tensor flat_virial_ = virial_.toTensor().view({-1}).to(floatType);
+  torch::Tensor cpu_virial_ = flat_virial_.to(torch::kCPU);
+  virial.assign(cpu_virial_.data_ptr<VALUETYPE>(),
+                cpu_virial_.data_ptr<VALUETYPE>() + cpu_virial_.numel());
 
   // bkw map
   force.resize(static_cast<size_t>(nframes) * fwd_map.size() * 3);
@@ -415,8 +414,7 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("force");
   c10::IValue force_mag_ = outputs.at("force_mag");
-  // spin model not suported yet
-  // c10::IValue virial_ = outputs.at("virial");
+  c10::IValue virial_ = outputs.at("virial");
   torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
   ener.assign(cpu_energy_.data_ptr<ENERGYTYPE>(),
@@ -431,11 +429,10 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
   force_mag.assign(
       cpu_force_mag_.data_ptr<VALUETYPE>(),
       cpu_force_mag_.data_ptr<VALUETYPE>() + cpu_force_mag_.numel());
-  // spin model not suported yet
-  // torch::Tensor flat_virial_ = virial_.toTensor().view({-1}).to(floatType);
-  // torch::Tensor cpu_virial_ = flat_virial_.to(torch::kCPU);
-  // virial.assign(cpu_virial_.data_ptr<VALUETYPE>(),
-  //               cpu_virial_.data_ptr<VALUETYPE>() + cpu_virial_.numel());
+  torch::Tensor flat_virial_ = virial_.toTensor().view({-1}).to(floatType);
+  torch::Tensor cpu_virial_ = flat_virial_.to(torch::kCPU);
+  virial.assign(cpu_virial_.data_ptr<VALUETYPE>(),
+                cpu_virial_.data_ptr<VALUETYPE>() + cpu_virial_.numel());
   if (atomic) {
     // c10::IValue atom_virial_ = outputs.at("atom_virial");
     c10::IValue atom_energy_ = outputs.at("atom_energy");

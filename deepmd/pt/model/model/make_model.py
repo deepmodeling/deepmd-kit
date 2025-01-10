@@ -135,6 +135,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             fparam: Optional[torch.Tensor] = None,
             aparam: Optional[torch.Tensor] = None,
             do_atomic_virial: bool = False,
+            coord_corr_for_virial: Optional[torch.Tensor] = None,
         ) -> dict[str, torch.Tensor]:
             """Return model prediction.
 
@@ -153,6 +154,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 atomic parameter. nf x nloc x nda
             do_atomic_virial
                 If calculate the atomic virial.
+            coord_corr_for_virial
+                The coordinates correction of the atoms for virial.
+                shape: nf x (nloc x 3)
 
             Returns
             -------
@@ -180,6 +184,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 mixed_types=True,
                 box=bb,
             )
+            if coord_corr_for_virial is not None:
+                coord_corr_for_virial = coord_corr_for_virial.to(cc.dtype)
+                extended_coord_corr = torch.gather(
+                    coord_corr_for_virial, 1, mapping.unsqueeze(-1).expand(-1, -1, 3)
+                )
+            else:
+                extended_coord_corr = None
+
             model_predict_lower = self.forward_common_lower(
                 extended_coord,
                 extended_atype,
@@ -188,6 +200,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 do_atomic_virial=do_atomic_virial,
                 fparam=fp,
                 aparam=ap,
+                extended_coord_corr=extended_coord_corr,
             )
             model_predict = communicate_extended_output(
                 model_predict_lower,
@@ -242,6 +255,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             do_atomic_virial: bool = False,
             comm_dict: Optional[dict[str, torch.Tensor]] = None,
             extra_nlist_sort: bool = False,
+            extended_coord_corr: Optional[torch.Tensor] = None,
         ):
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
@@ -268,6 +282,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 The data needed for communication for parallel inference.
             extra_nlist_sort
                 whether to forcibly sort the nlist.
+            extended_coord_corr
+                coordinates correction for virial in extended region. nf x (nall x 3)
 
             Returns
             -------
@@ -299,6 +315,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 cc_ext,
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
+                extended_coord_corr=extended_coord_corr,
             )
             model_predict = self.output_type_cast(model_predict, input_prec)
             return model_predict
