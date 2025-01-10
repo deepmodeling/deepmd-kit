@@ -161,7 +161,7 @@ def make_stat_input(
 
         # get frame index
         if datasets[0].mixed_type and enable_element_completion:
-            element_counts, type_map = dataset.get_frame_index_for_elements()
+            element_counts, type_name = dataset.get_frame_index_for_elements()
             for new_idx, elem_name in type_name.items():
                 if new_idx not in global_type_name:
                     global_type_name[new_idx] = elem_name
