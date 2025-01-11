@@ -32,17 +32,35 @@ if(ENABLE_PADDLE)
     # message(FATAL_ERROR "Make sure PADDLE_INFERENCE_DIR is set when
     # ENABLE_PADDLE=ON")
     if(USE_CUDA_TOOLKIT)
-      message(
-        STATUS
-          "PADDLE_INFERENCE_DIR is not defined, downloading GPU infernece lib..."
-      )
-      set(DOWNLOAD_URL
-          "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz"
-      )
+      find_package(CUDAToolkit REQUIRED)
+      string(REGEX MATCH "^[0-9]+" CUDA_MAJOR_VERSION "${CUDAToolkit_VERSION}")
+      message(STATUS "Find CUDAToolkit_VERSION: ${CUDAToolkit_VERSION}")
+      if(CUDA_MAJOR_VERSION VERSION_EQUAL "11")
+        message(
+          STATUS
+            "PADDLE_INFERENCE_DIR is not defined, downloading CUDA11.8 infernece lib to: ${CMAKE_BINARY_DIR}/"
+        )
+        set(DOWNLOAD_URL
+            "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz"
+        )
+      elseif(CUDA_MAJOR_VERSION VERSION_EQUAL "12")
+        message(
+          STATUS
+            "PADDLE_INFERENCE_DIR is not defined, downloading CUDA12.3 infernece lib to: ${CMAKE_BINARY_DIR}/"
+        )
+        set(DOWNLOAD_URL
+            "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda123_cudnn900_Trt8616_D1/latest/paddle_inference.tgz"
+        )
+      else()
+        message(
+          FATAL_ERROR
+            "Paddle inference lib only support cuda 11 or 12, but your CUDA_MAJOR_VERSION is: ${CUDA_MAJOR_VERSION}"
+        )
+      endif()
     else()
       message(
         STATUS
-          "PADDLE_INFERENCE_DIR is not defined, downloading CPU infernece lib..."
+          "PADDLE_INFERENCE_DIR is not defined, downloading CPU infernece lib to: ${CMAKE_BINARY_DIR}/"
       )
       set(DOWNLOAD_URL
           "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cpu_Mkl_Avx_D1/latest/paddle_inference.tgz"
