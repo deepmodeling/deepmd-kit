@@ -7,7 +7,7 @@ repos:
       - id: trailing-whitespace
         exclude: "^.+\\.pbtxt$"
       - id: end-of-file-fixer
-        exclude: "^.+\\.pbtxt$"
+        exclude: "^.+\\.pbtxt$|deeppot_sea.*\\.json$"
       - id: check-yaml
       - id: check-json
       - id: check-added-large-files
@@ -63,7 +63,7 @@ repos:
     rev: v19.1.6
     hooks:
       - id: clang-format
-        exclude: ^(source/3rdparty|source/lib/src/gpu/cudart/.+\.inc|.+\.ipynb$)
+        exclude: ^(source/3rdparty|source/lib/src/gpu/cudart/.+\.inc|.+\.ipynb$|.+\.json$)
   # markdown, yaml, CSS, javascript
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v4.0.0-alpha.8
