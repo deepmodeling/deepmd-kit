@@ -73,9 +73,9 @@ class DeepTensor(DeepEval):
         )
         # check model type
         model_type = self.tensors["t_tensor"][2:-2]
-        assert (
-            self.model_type == model_type
-        ), f"expect {model_type} model but got {self.model_type}"
+        assert self.model_type == model_type, (
+            f"expect {model_type} model but got {self.model_type}"
+        )
 
         # now load tensors to object attributes
         for attr_name, tensor_name in self.tensors.items():
@@ -246,14 +246,14 @@ class DeepTensor(DeepEval):
         feed_dict_test[self.t_mesh] = mesh
 
         if atomic:
-            assert (
-                "global" not in self.model_type
-            ), f"cannot do atomic evaluation with model type {self.model_type}"
+            assert "global" not in self.model_type, (
+                f"cannot do atomic evaluation with model type {self.model_type}"
+            )
             t_out = [self.t_tensor]
         else:
-            assert (
-                self._support_gfv or "global" in self.model_type
-            ), f"do not support global tensor evaluation with old {self.model_type} model"
+            assert self._support_gfv or "global" in self.model_type, (
+                f"do not support global tensor evaluation with old {self.model_type} model"
+            )
             t_out = [self.t_global_tensor if self._support_gfv else self.t_tensor]
         v_out = self.sess.run(t_out, feed_dict=feed_dict_test)
         tensor = v_out[0]

@@ -224,9 +224,9 @@ class PolarFitting(GeneralFitting):
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         assert self.mixed_types, "Only models in mixed types can perform type changing!"
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         super().change_type_map(type_map=type_map)
@@ -280,9 +280,9 @@ class PolarFitting(GeneralFitting):
         """
         xp = array_api_compat.array_namespace(descriptor, atype)
         nframes, nloc, _ = descriptor.shape
-        assert (
-            gr is not None
-        ), "Must provide the rotation matrix for polarizability fitting."
+        assert gr is not None, (
+            "Must provide the rotation matrix for polarizability fitting."
+        )
         # (nframes, nloc, _net_out_dim)
         out = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name
