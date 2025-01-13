@@ -131,6 +131,7 @@ if(ENABLE_PADDLE)
   include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}glog/include")
   include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}gflags/include")
   include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}xxhash/include")
+  list(APPEND BACKEND_INCLUDE_DIRS "${PADDLE_INFERENCE_DIR}/paddle/include")
   list(APPEND BACKEND_INCLUDE_DIRS
        "${PADDLE_LIB_THIRD_PARTY_PATH}protobuf/include")
   list(APPEND BACKEND_INCLUDE_DIRS "${PADDLE_LIB_THIRD_PARTY_PATH}glog/include")

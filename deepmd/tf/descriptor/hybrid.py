@@ -492,3 +492,21 @@ class DescrptHybrid(Descriptor):
             if hasattr(ii, "type_embedding"):
                 raise NotImplementedError("hybrid + type embedding is not supported")
         return obj
+
+    def get_dim_rot_mat_1(self) -> int:
+        """Returns the first dimension of the rotation matrix. The rotation is of shape
+        dim_1 x 3.
+
+        Returns
+        -------
+        int
+            the first dimension of the rotation matrix
+        """
+        return sum([ii.get_dim_rot_mat_1() for ii in self.descrpt_list])
+
+    def get_rot_mat(self) -> tf.Tensor:
+        """Get rotational matrix."""
+        all_rot_mat = []
+        for ii in self.descrpt_list:
+            all_rot_mat.append(ii.get_rot_mat())
+        return tf.concat(all_rot_mat, axis=2)
