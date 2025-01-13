@@ -74,7 +74,7 @@ class DescriptorTest:
         )
         # ensure get_dim_out gives the correct shape
         t_des = tf.reshape(t_des, [1, natoms[0], obj.get_dim_out()])
-        return [t_des], {
+        return [t_des, obj.get_rot_mat()], {
             t_coord: coords,
             t_type: atype,
             t_natoms: natoms,
