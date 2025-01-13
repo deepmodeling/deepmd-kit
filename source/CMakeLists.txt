@@ -131,12 +131,25 @@ if(ENABLE_PADDLE)
   include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}glog/include")
   include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}gflags/include")
   include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}xxhash/include")
+  list(APPEND BACKEND_INCLUDE_DIRS
+       "${PADDLE_LIB_THIRD_PARTY_PATH}protobuf/include")
+  list(APPEND BACKEND_INCLUDE_DIRS "${PADDLE_LIB_THIRD_PARTY_PATH}glog/include")
+  list(APPEND BACKEND_INCLUDE_DIRS
+       "${PADDLE_LIB_THIRD_PARTY_PATH}gflags/include")
+  list(APPEND BACKEND_INCLUDE_DIRS
+       "${PADDLE_LIB_THIRD_PARTY_PATH}xxhash/include")
 
   link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}protobuf/lib")
   link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}glog/lib")
   link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}gflags/lib")
   link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}xxhash/lib")
   link_directories("${PADDLE_INFERENCE_DIR}/paddle/lib")
+  list(APPEND BACKEND_LIBRARY_PATH "${PADDLE_INFERENCE_DIR}/paddle/lib")
+  list(APPEND BACKEND_LIBRARY_PATH
+       "${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib")
+  list(APPEND BACKEND_LIBRARY_PATH
+       "${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib")
+
   # if (USE_ROCM_TOOLKIT) add_definitions(-D_GLIBCXX_USE_CXX11_ABI=1) endif()
 endif(ENABLE_PADDLE)
 
