@@ -383,6 +383,9 @@ class DeepEval(DeepEvalBackend):
             # Something wrong here?
             # return [nframes, *shape, natoms, 1]
             return [nframes, natoms, *odef.shape, 1]
+        elif odef.category == OutputVariableCategory.DERV_R_DERV_R:
+            # hessian
+            return [nframes, 3 * natoms, 3 * natoms]
         else:
             raise RuntimeError("unknown category")
 

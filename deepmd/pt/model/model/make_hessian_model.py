@@ -172,11 +172,10 @@ def make_hessian_model(T_Model):
             # fparam: Optional[torch.Tensor] = None,  # nfp
             # aparam: Optional[torch.Tensor] = None,  # (nloc x nap)
             wc = wrapper_class_forward_energy(self, ci, atype, box, fparam, aparam)
-
             hess = torch.autograd.functional.hessian(
                 wc,
                 coord,
-                create_graph=False,
+                create_graph=self.training,
             )
             return hess
 

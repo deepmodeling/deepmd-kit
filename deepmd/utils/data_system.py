@@ -675,7 +675,7 @@ def print_summary(
     )
     for ii in range(nsystems):
         log.info(
-            "%s %6d %6d %6d %9.3e %3s",
+            "%s  %6d  %6d  %6d  %9.3e  %3s",
             _format_name_length(system_dirs[ii], sys_width),
             natoms[ii],
             batch_size[ii],

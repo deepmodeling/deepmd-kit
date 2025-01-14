@@ -85,6 +85,9 @@ jobs:
     - run: |
         export LD_LIBRARY_PATH=$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$GITHUB_WORKSPACE/dp_test/lib:$GITHUB_WORKSPACE/libtorch/lib:$LD_LIBRARY_PATH
         export PATH=$GITHUB_WORKSPACE/dp_test/bin:$PATH
+        cp $GITHUB_WORKSPACE/source/build_tests/paddle_inference_install_dir/paddle/lib/* $GITHUB_WORKSPACE/dp_test/lib/
+        cp $GITHUB_WORKSPACE/source/build_tests/paddle_inference_install_dir/third_party/install/onednn/lib/* $GITHUB_WORKSPACE/dp_test/lib/
+        cp $GITHUB_WORKSPACE/source/build_tests/paddle_inference_install_dir/third_party/install/mklml/lib/* $GITHUB_WORKSPACE/dp_test/lib/
         python -m pytest -s source/lmp/tests || (cat log.lammps && exit 1)
         python -m pytest source/ipi/tests
       env:

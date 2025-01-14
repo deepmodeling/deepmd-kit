@@ -27,13 +27,14 @@ In some cases, it won't work well when scaling the learning rate by worker count
 ### Scaling test
 
 Testing `examples/water/se_e2_a` on an 8-GPU host, linear acceleration can be observed with the increasing number of cards.
+In this example, the number of samples per batch on a single GPU card ({ref}`batch_size <training/training_data/batch_size>`) is set to `1`.
 
-| Num of GPU cards | Seconds every 100 samples | Samples per second | Speed up |
-| ---------------- | ------------------------- | ------------------ | -------- |
-| 1                | 1.4515                    | 68.89              | 1.00     |
-| 2                | 1.5962                    | 62.65\*2           | 1.82     |
-| 4                | 1.7635                    | 56.71\*4           | 3.29     |
-| 8                | 1.7267                    | 57.91\*8           | 6.72     |
+| Num of GPU cards | Samples per batch | Seconds every 100 batches | Samples per second | Speed up |
+| ---------------- | ----------------- | ------------------------- | ------------------ | -------- |
+| 1                | 1                 | 1.4515                    | 68.89              | 1.00     |
+| 2                | 2                 | 1.5962                    | 62.65\*2           | 1.82     |
+| 4                | 4                 | 1.7635                    | 56.71\*4           | 3.29     |
+| 8                | 8                 | 1.7267                    | 57.91\*8           | 6.72     |
 
 ### How to use
 

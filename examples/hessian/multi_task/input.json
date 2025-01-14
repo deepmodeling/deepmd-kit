@@ -1,0 +1,129 @@
+{
+  "_comment": "that's all",
+  "model": {
+    "shared_dict": {
+      "type_map_all": [
+        "C",
+        "H",
+        "N",
+        "O"
+      ],
+      "dpa1_descriptor": {
+        "type": "dpa1",
+        "sel": 120,
+        "rcut_smth": 0.5,
+        "rcut": 6.0,
+        "neuron": [
+          25,
+          50,
+          100
+        ],
+        "tebd_dim": 256,
+        "axis_neuron": 16,
+        "type_one_side": true,
+        "attn": 128,
+        "attn_layer": 0,
+        "attn_dotr": true,
+        "attn_mask": false,
+        "activation_function": "tanh",
+        "scaling_factor": 1.0,
+        "normalize": true,
+        "temperature": 1.0
+      },
+      "_comment": "that's all"
+    },
+    "model_dict": {
+      "H10C5N2O": {
+        "type_map": "type_map_all",
+        "descriptor": "dpa1_descriptor",
+        "fitting_net": {
+          "neuron": [
+            240,
+            240,
+            240
+          ],
+          "resnet_dt": true,
+          "seed": 1,
+          "_comment": " that's all"
+        }
+      },
+      "H8C4N2O": {
+        "type_map": "type_map_all",
+        "descriptor": "dpa1_descriptor",
+        "fitting_net": {
+          "neuron": [
+            240,
+            240,
+            240
+          ],
+          "resnet_dt": true,
+          "seed": 1,
+          "_comment": " that's all"
+        }
+      }
+    }
+  },
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 20000,
+    "start_lr": 0.0002,
+    "stop_lr": 3.51e-08,
+    "_comment": "that's all"
+  },
+  "loss_dict": {
+    "H10C5N2O": {
+      "type": "ener",
+      "start_pref_e": 0.02,
+      "limit_pref_e": 1,
+      "start_pref_f": 1000,
+      "limit_pref_f": 1,
+      "start_pref_v": 0,
+      "limit_pref_v": 0
+    },
+    "H8C4N2O": {
+      "type": "ener",
+      "start_pref_e": 0.02,
+      "limit_pref_e": 1,
+      "start_pref_f": 1000,
+      "limit_pref_f": 1,
+      "start_pref_v": 0,
+      "limit_pref_v": 0,
+      "start_pref_h": 10,
+      "limit_pref_h": 1
+    }
+  },
+  "training": {
+    "model_prob": {
+      "H10C5N2O": 2.0,
+      "H8C4N2O": 3.0
+    },
+    "data_dict": {
+      "H10C5N2O": {
+        "training_data": {
+          "systems": [
+            "../data/H10C5N2O/"
+          ],
+          "batch_size": 1,
+          "_comment": "that's all"
+        }
+      },
+      "H8C4N2O": {
+        "training_data": {
+          "systems": [
+            "../data/H8C4N2O/"
+          ],
+          "batch_size": 1,
+          "_comment": "that's all"
+        }
+      }
+    },
+    "numb_steps": 1,
+    "warmup_steps": 0,
+    "gradient_max_norm": 5.0,
+    "seed": 10,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 2000,
+    "_comment": "that's all"
+  }
+}
