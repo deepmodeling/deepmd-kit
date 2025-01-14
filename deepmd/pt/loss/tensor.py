@@ -55,9 +55,9 @@ class TensorLoss(TaskLoss):
         self.inference = inference
         self.enable_atomic_weight = enable_atomic_weight
 
-        assert (
-            self.local_weight >= 0.0 and self.global_weight >= 0.0
-        ), "Can not assign negative weight to `pref` and `pref_atomic`"
+        assert self.local_weight >= 0.0 and self.global_weight >= 0.0, (
+            "Can not assign negative weight to `pref` and `pref_atomic`"
+        )
         self.has_local_weight = self.local_weight > 0.0 or inference
         self.has_global_weight = self.global_weight > 0.0 or inference
         assert self.has_local_weight or self.has_global_weight, AssertionError(

@@ -693,9 +693,9 @@ def process_sys_probs(sys_probs, nbatch):
     type_filter = sys_probs >= 0
     assigned_sum_prob = np.sum(type_filter * sys_probs)
     # 1e-8 is to handle floating point error; See #1917
-    assert (
-        assigned_sum_prob <= 1.0 + 1e-8
-    ), "the sum of assigned probability should be less than 1"
+    assert assigned_sum_prob <= 1.0 + 1e-8, (
+        "the sum of assigned probability should be less than 1"
+    )
     rest_sum_prob = 1.0 - assigned_sum_prob
     if not np.isclose(rest_sum_prob, 0):
         rest_nbatch = (1 - type_filter) * nbatch

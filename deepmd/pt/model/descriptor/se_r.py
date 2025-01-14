@@ -231,9 +231,9 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         If not start from checkpoint (resume is False),
         some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
-        assert (
-            self.__class__ == base_class.__class__
-        ), "Only descriptors of the same type can share params!"
+        assert self.__class__ == base_class.__class__, (
+            "Only descriptors of the same type can share params!"
+        )
         # For SeR descriptors, the user-defined share-level
         # shared_level: 0
         if shared_level == 0:

@@ -1046,9 +1046,9 @@ class DataSystem:
         sys_weights = np.array(sys_weights)
         type_filter = sys_weights >= 0
         assigned_sum_prob = np.sum(type_filter * sys_weights)
-        assert (
-            assigned_sum_prob <= 1
-        ), "the sum of assigned probability should be less than 1"
+        assert assigned_sum_prob <= 1, (
+            "the sum of assigned probability should be less than 1"
+        )
         rest_sum_prob = 1.0 - assigned_sum_prob
         rest_nbatch = (1 - type_filter) * self.nbatches
         rest_prob = rest_sum_prob * rest_nbatch / np.sum(rest_nbatch)

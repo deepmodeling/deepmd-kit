@@ -1147,8 +1147,7 @@ def dpa2_repformer_args():
         "and `update_residual_init`."
     )
     doc_update_residual = (
-        "When update using residual mode, "
-        "the initial std of residual vector weights."
+        "When update using residual mode, the initial std of residual vector weights."
     )
     doc_update_residual_init = (
         "When update using residual mode, "

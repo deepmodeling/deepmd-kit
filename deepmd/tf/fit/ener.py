@@ -214,9 +214,9 @@ class EnerFitting(Fitting):
             self.trainable = [True for ii in range(len(self.n_neuron) + 1)]
         if isinstance(self.trainable, bool):
             self.trainable = [self.trainable] * (len(self.n_neuron) + 1)
-        assert (
-            len(self.trainable) == len(self.n_neuron) + 1
-        ), "length of trainable should be that of n_neuron + 1"
+        assert len(self.trainable) == len(self.n_neuron) + 1, (
+            "length of trainable should be that of n_neuron + 1"
+        )
         self.atom_ener = []
         self.atom_ener_v = atom_ener
         for at, ae in enumerate(atom_ener if atom_ener is not None else []):
@@ -240,9 +240,9 @@ class EnerFitting(Fitting):
         self.layer_name = layer_name
         if self.layer_name is not None:
             assert isinstance(self.layer_name, list), "layer_name should be a list"
-            assert (
-                len(self.layer_name) == len(self.n_neuron) + 1
-            ), "length of layer_name should be that of n_neuron + 1"
+            assert len(self.layer_name) == len(self.n_neuron) + 1, (
+                "length of layer_name should be that of n_neuron + 1"
+            )
         self.mixed_types = mixed_types
         self.tebd_dim = 0
 

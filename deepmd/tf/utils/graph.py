@@ -324,9 +324,9 @@ def get_fitting_net_nodes_from_graph_def(
         fitting_net_pattern = FITTING_NET_PATTERN
     fitting_net_nodes = get_pattern_nodes_from_graph_def(graph_def, fitting_net_pattern)
     for key in fitting_net_nodes.keys():
-        assert (
-            key.find("bias") > 0 or key.find("matrix") > 0 or key.find("idt") > 0
-        ), "currently, only support weight matrix, bias and idt at the model compression process!"
+        assert key.find("bias") > 0 or key.find("matrix") > 0 or key.find("idt") > 0, (
+            "currently, only support weight matrix, bias and idt at the model compression process!"
+        )
     return fitting_net_nodes
 
 
