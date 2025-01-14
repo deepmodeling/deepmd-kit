@@ -203,13 +203,6 @@ The path to the ROCM toolkit directory. If `ROCM_ROOT` is not set, it will look 
 {{ pytorch_icon }} Enable customized C++ OPs for the PyTorch backend. PyTorch can still run without customized C++ OPs, but features will be limited.
 :::
 
-:::{envvar} DP_ENABLE_PADDLE
-
-**Choices**: `0`, `1`; **Default**: `0`
-
-{{ paddle_icon }} Enable customized C++ OPs for the Paddle backend. Paddle can still run without customized C++ OPs, but features will be limited.
-:::
-
 :::{envvar} TENSORFLOW_ROOT
 
 **Type**: Path; **Default**: Detected automatically
@@ -222,13 +215,6 @@ The path to the ROCM toolkit directory. If `ROCM_ROOT` is not set, it will look 
 **Type**: Path; **Default**: Detected automatically
 
 {{ pytorch_icon }} The path to PyTorch Python library. If not given, by default, the installer only finds PyTorch under the user site-package directory (`site.getusersitepackages()`) or the system site-package directory (`sysconfig.get_path("purelib")`) due to the limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest PyTorch (or the environment variable `PYTORCH_VERSION` if given) from PyPI will be built against.
-:::
-
-:::{envvar} PADDLE_INFERENCE_DIR
-
-**Type**: Path; **Default**: None
-
-{{ paddle_icon }} The path to Paddle inference library, e.g. `/path/to/paddle_inference_install_dir`.
 :::
 
 :::{envvar} DP_ENABLE_NATIVE_OPTIMIZATION
