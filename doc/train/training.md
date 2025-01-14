@@ -26,6 +26,14 @@ $ dp --pt train input.json
 
 :::
 
+:::{tab-item} Paddle {{ paddle_icon }}
+
+```bash
+$ dp --pd train input.json
+```
+
+:::
+
 ::::
 
 where `input.json` is the name of the input script.
