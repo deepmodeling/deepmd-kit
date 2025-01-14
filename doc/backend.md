@@ -5,7 +5,7 @@
 DeePMD-kit supports multiple backends: TensorFlow and PyTorch.
 To use DeePMD-kit, you must install at least one backend.
 Each backend does not support all features.
-In the documentation, TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }} and Paddle {{ paddle_icon }} icons are used to mark whether a backend supports a feature.
+In the documentation, TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, and Paddle {{ paddle_icon }} icons are used to mark whether a backend supports a feature.
 
 ### TensorFlow {{ tensorflow_icon }}
 
@@ -42,7 +42,7 @@ Currently, this backend is developed actively, and has no support for training.
 
 [Paddle](https://www.paddlepaddle.org.cn/) version 3.0 or above is required.
 
-The `.pd` extension is used for model checkpoint storage, which is commonly utilized during training and testing in Python. The `.json` extension is for the model's computational graph in [PIR representation](https://www.paddlepaddle.org.cn/documentation/docs/zh/develop/guides/paddle_v3_features/paddle_ir_cn.html), while the `.pdiparams` extension stores model parameters. Both `.json` and `.pdiparams` files are exported together and used in model freezing and C++ inference.
+The `.pd` extension is used for model checkpoint storage, which is commonly utilized during training and testing in Python. The `.json` extension is for the model's computational graph in [PIR representation](https://www.paddlepaddle.org.cn/documentation/docs/zh/develop/guides/paddle_v3_features/paddle_ir_cn.html), while the `.pdiparams` extension stores model parameters. Both `.json` and `.pdiparams` files are exported together and used in model freezing and Python/C++ inference.
 
 ### DP {{ dpmodel_icon }}
 
