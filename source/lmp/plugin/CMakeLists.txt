@@ -8,7 +8,8 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
       lammps_download
       GIT_REPOSITORY https://github.com/lammps/lammps
       GIT_TAG ${LAMMPS_VERSION})
-    message(STATUS "STARTING DOWNLOAD LAMMPS TO: " ${LAMMPS_SOURCE_ROOT})
+    message(STATUS "STARTING DOWNLOAD LAMMPS TO: "
+                   ${lammps_download_SOURCE_DIR})
     FetchContent_MakeAvailable(lammps_download)
     set(LAMMPS_SOURCE_ROOT ${lammps_download_SOURCE_DIR})
   endif()

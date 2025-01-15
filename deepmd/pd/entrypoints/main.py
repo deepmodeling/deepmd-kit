@@ -354,26 +354,59 @@ def freeze(
         InputSpec,
     )
 
+    # coord = paddle.load("./coord.pdin")
+    # atype = paddle.load("./atype.pdin")
+    # box = paddle.load("./box.pdin")
+    # od = model.forward(coord, atype, box, do_atomic_virial=True)
+    # for k, v in od.items():
+    #     if isinstance(v, paddle.Tensor):
+    #         paddle.save(v, f'{k}.pdout')
+    # exit()
+    """ example output shape and dtype of forward
+    atom_energy: fetch_name_0 (1, 6, 1) float64
+    atom_virial: fetch_name_1 (1, 6, 1, 9) float64
+    energy: fetch_name_2 (1, 1) float64
+    force: fetch_name_3 (1, 6, 3) float64
+    mask: fetch_name_4 (1, 6) int32
+    virial: fetch_name_5 (1, 9) float64
     """
-    ** coord [None, natoms, 3] paddle.float64
-    ** atype [None, natoms] paddle.int64
-    ** nlist [None, natoms, nnei] paddle.int32
+    model.forward = paddle.jit.to_static(
+        model.forward,
+        full_graph=True,
+        input_spec=[
+            InputSpec([1, -1, 3], dtype="float64", name="coord"),  # coord
+            InputSpec([1, -1], dtype="int64", name="atype"),  # atype
+            InputSpec([1, 9], dtype="float64", name="box"),  # box
+            None,  # fparam
+            None,  # aparam
+            True,  # do_atomic_virial
+        ],
+    )
+    """ example output shape and dtype of forward_lower
+    fetch_name_0: atom_energy [1, 192, 1] paddle.float64
+    fetch_name_1: energy [1, 1] paddle.float64
+    fetch_name_2: extended_force [1, 5184, 3] paddle.float64
+    fetch_name_3: extended_virial [1, 5184, 1, 9] paddle.float64
+    fetch_name_4: virial [1, 9] paddle.float64
     """
-    # NOTE: 'FLAGS_save_cf_stack_op', 'FLAGS_prim_enable_dynamic' and
-    # 'FLAGS_enable_pir_api' shoule be enabled when freezing model.
-    jit_model = paddle.jit.to_static(
+    model.forward_lower = paddle.jit.to_static(
         model.forward_lower,
         full_graph=True,
         input_spec=[
-            InputSpec([-1, -1, 3], dtype="float64", name="coord"),
-            InputSpec([-1, -1], dtype="int32", name="atype"),
-            InputSpec([-1, -1, -1], dtype="int32", name="nlist"),
+            InputSpec([1, -1, 3], dtype="float64", name="coord"),  # extended_coord
+            InputSpec([1, -1], dtype="int32", name="atype"),  # extended_atype
+            InputSpec([1, -1, -1], dtype="int32", name="nlist"),  # nlist
+            InputSpec([1, -1], dtype="int64", name="mapping"),  # mapping
+            None,  # fparam
+            None,  # aparam
+            True,  # do_atomic_virial
+            None,  # comm_dict
         ],
     )
     if output.endswith(".json"):
         output = output[:-5]
     paddle.jit.save(
-        jit_model,
+        model,
         path=output,
         skip_prune_program=True,
     )
