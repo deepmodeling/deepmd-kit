@@ -616,8 +616,14 @@ class DescrptBlockSeA(DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            paddle.assign(paddle.to_tensor(mean).to(device=env.DEVICE), self.mean)  # pylint: disable=no-explicit-dtype
-        paddle.assign(paddle.to_tensor(stddev).to(device=env.DEVICE), self.stddev)  # pylint: disable=no-explicit-dtype
+            paddle.assign(
+                paddle.to_tensor(mean, dtype=self.mean.dtype).to(device=env.DEVICE),
+                self.mean,
+            )  # pylint: disable=no-explicit-dtype
+        paddle.assign(
+            paddle.to_tensor(stddev, dtype=self.stddev.dtype).to(device=env.DEVICE),
+            self.stddev,
+        )  # pylint: disable=no-explicit-dtype
 
     def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""

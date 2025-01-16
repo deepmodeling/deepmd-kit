@@ -25,7 +25,8 @@
       "activation_function": "tanh",
       "scaling_factor": 1.0,
       "normalize": true,
-      "temperature": 1.0
+      "temperature": 1.0,
+      "precision": "float32"
     },
     "fitting_net": {
       "neuron": [
@@ -35,6 +36,7 @@
       ],
       "resnet_dt": true,
       "seed": 1,
+      "precision": "float32",
       "_comment": " that's all"
     },
     "_comment": " that's all"

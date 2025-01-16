@@ -138,7 +138,7 @@ void DeepPotPD::init(const std::string& model,
   // initialize hyper params from model buffers
   ntypes_spin = 0;
   DeepPotPD::get_buffer<int>("buffer_has_message_passing", do_message_passing);
-  this->do_message_passing = 0;
+  // this->do_message_passing = 0;
   DeepPotPD::get_buffer<double>("buffer_rcut", rcut);
   DeepPotPD::get_buffer<int>("buffer_ntypes", ntypes);
   DeepPotPD::get_buffer<int>("buffer_dfparam", dfparam);
