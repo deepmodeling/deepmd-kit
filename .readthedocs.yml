@@ -10,5 +10,7 @@ build:
       - VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH uv pip install -r doc/requirements.txt
   apt_packages:
     - inkscape
+sphinx:
+  configuration: doc/conf.py
 formats:
   - pdf
