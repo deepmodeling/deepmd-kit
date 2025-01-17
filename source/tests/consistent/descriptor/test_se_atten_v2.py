@@ -18,6 +18,7 @@ from deepmd.env import (
 from ..common import (
     INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
+    INSTALLED_PD,
     INSTALLED_PT,
     CommonTest,
     parameterized,
@@ -44,6 +45,12 @@ if INSTALLED_ARRAY_API_STRICT:
     )
 else:
     DescrptSeAttenV2Strict = None
+if INSTALLED_PD:
+    from deepmd.pd.model.descriptor.se_atten_v2 import (
+        DescrptSeAttenV2 as DescrptSeAttenV2PD,
+    )
+else:
+    DescrptSeAttenV2PD = None
 DescrptSeAttenV2TF = None
 from deepmd.utils.argcheck import (
     descrpt_se_atten_args,
@@ -248,11 +255,40 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
             )
         )
 
+    @property
+    def skip_pd(self) -> bool:
+        (
+            tebd_dim,
+            resnet_dt,
+            type_one_side,
+            attn,
+            attn_layer,
+            attn_dotr,
+            excluded_types,
+            env_protection,
+            set_davg_zero,
+            scaling_factor,
+            normalize,
+            temperature,
+            ln_eps,
+            concat_output_tebd,
+            precision,
+            use_econf_tebd,
+            use_tebd_bias,
+        ) = self.param
+        return CommonTest.skip_pt or self.is_meaningless_zero_attention_layer_tests(
+            attn_layer,
+            attn_dotr,
+            normalize,
+            temperature,
+        )
+
     tf_class = DescrptSeAttenV2TF
     dp_class = DescrptSeAttenV2DP
     pt_class = DescrptSeAttenV2PT
     jax_class = DescrptSeAttenV2JAX
     array_api_strict_class = DescrptSeAttenV2Strict
+    pd_class = DescrptSeAttenV2PD
     args = descrpt_se_atten_args().append(Argument("ntypes", int, optional=False))
 
     def setUp(self) -> None:
@@ -332,6 +368,16 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
         return self.eval_array_api_strict_descriptor(
             array_api_strict_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def eval_pd(self, pd_obj: Any) -> Any:
+        return self.eval_pd_descriptor(
+            pd_obj,
             self.natoms,
             self.coords,
             self.atype,
