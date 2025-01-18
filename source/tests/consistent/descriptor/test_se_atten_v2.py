@@ -276,7 +276,7 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
             use_econf_tebd,
             use_tebd_bias,
         ) = self.param
-        return CommonTest.skip_pt or self.is_meaningless_zero_attention_layer_tests(
+        return not INSTALLED_PD or self.is_meaningless_zero_attention_layer_tests(
             attn_layer,
             attn_dotr,
             normalize,
