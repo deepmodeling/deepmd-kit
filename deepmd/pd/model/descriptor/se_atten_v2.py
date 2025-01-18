@@ -258,7 +258,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         obj = cls(**data)
 
         def t_cvt(xx):
-            return paddle.to_tensor(xx, dtype=obj.se_atten.prec, device=env.DEVICE)
+            return paddle.to_tensor(xx, dtype=obj.se_atten.prec, place=env.DEVICE)
 
         obj.type_embedding.embedding = TypeEmbedNetConsistent.deserialize(
             type_embedding
