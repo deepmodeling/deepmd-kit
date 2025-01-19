@@ -81,8 +81,12 @@ class NeighborStat(ABC):
 
         # do sqrt in the final
         min_nbor_dist = math.sqrt(min_nbor_dist)
-        log.info(f"Neighbor statistics: training data with minimal neighbor distance: {min_nbor_dist:f}")
-        log.info(f"Neighbor statistics: training data with maximum neighbor size: {str(max_nbor_size)} (cutoff radius: {self.rcut:f})")
+        log.info(
+            f"Neighbor statistics: training data with minimal neighbor distance: {min_nbor_dist:f}"
+        )
+        log.info(
+            f"Neighbor statistics: training data with maximum neighbor size: {max_nbor_size!s} (cutoff radius: {self.rcut:f})"
+        )
         return min_nbor_dist, max_nbor_size
 
     @abstractmethod
