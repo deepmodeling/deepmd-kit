@@ -113,7 +113,9 @@ def save_dp_model(filename: str, model_dict: dict) -> None:
                 "@version": 1,
                 "dtype": x.dtype.name,
                 "value": x.tolist(),
-            },
+            }
+            if isinstance(x, np.ndarray)
+            else x,
         )
         with open(filename, "w") as f:
             yaml.safe_dump(
