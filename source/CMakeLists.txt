@@ -14,7 +14,9 @@ set(DEEPMD_C_ROOT
     ""
     CACHE PATH "Path to imported DeePMD-kit C library")
 
-set(CMAKE_CXX_STANDARD 11)
+if(NOT DEFINED CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 11)
+endif()
 macro(set_if_higher VARIABLE VALUE)
   # ${VARIABLE} is a variable name, not a string
   if(${VARIABLE} LESS "${VALUE}")
