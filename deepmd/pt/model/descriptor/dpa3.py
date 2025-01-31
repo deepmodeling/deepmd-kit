@@ -161,6 +161,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             update_style=self.repflow_args.update_style,
             update_residual=self.repflow_args.update_residual,
             update_residual_init=self.repflow_args.update_residual_init,
+            optim_angle=self.repflow_args.optim_angle,
             skip_stat=self.repflow_args.skip_stat,
             exclude_types=exclude_types,
             env_protection=env_protection,
