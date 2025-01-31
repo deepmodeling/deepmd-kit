@@ -1568,6 +1568,12 @@ def dpa3_repflow_args():
             optional=True,
             default=False,
         ),
+        Argument(
+            "optim_edge",
+            bool,
+            optional=True,
+            default=False,
+        ),
     ]
 
 

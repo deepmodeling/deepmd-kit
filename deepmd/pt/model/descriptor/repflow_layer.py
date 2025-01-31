@@ -52,6 +52,7 @@ class RepFlowLayer(torch.nn.Module):
         axis_neuron: int = 4,
         update_angle: bool = True,  # angle
         optim_angle: bool = False,
+        optim_edge: bool = False,
         activation_function: str = "silu",
         update_style: str = "res_residual",
         update_residual: float = 0.1,
@@ -96,6 +97,7 @@ class RepFlowLayer(torch.nn.Module):
         self.seed = seed
         self.prec = PRECISION_DICT[precision]
         self.optim_angle = optim_angle
+        self.optim_edge = optim_edge
 
         assert update_residual_init in [
             "norm",
@@ -440,6 +442,50 @@ class RepFlowLayer(torch.nn.Module):
         ) + bias
         return result_update
 
+    def optim_edge_update(
+        self,
+        node_ebd: torch.Tensor,
+        node_ebd_ext: torch.Tensor,
+        edge_ebd: torch.Tensor,
+        nlist: torch.Tensor,
+        feat: str = "node",
+    ) -> torch.Tensor:
+        node_dim = node_ebd.shape[-1]
+        edge_dim = edge_ebd.shape[-1]
+        sub_node_idx = (0, node_dim)
+        sub_node_ext_idx = (node_dim, 2 * node_dim)
+        sub_edge_idx = (2 * node_dim, 2 * node_dim + edge_dim)
+
+        if feat == "node":
+            matrix, bias = self.node_edge_linear.matrix, self.node_edge_linear.bias
+        elif feat == "edge":
+            matrix, bias = self.edge_self_linear.matrix, self.edge_self_linear.bias
+        else:
+            raise NotImplementedError
+        assert 2 * node_dim + edge_dim == matrix.size()[0]
+
+        # nf * nloc * node/edge_dim
+        sub_node_update = torch.matmul(
+            node_ebd, matrix[sub_node_idx[0] : sub_node_idx[1]]
+        )
+
+        # nf * nall * node/edge_dim
+        sub_node_ext_update = torch.matmul(
+            node_ebd_ext, matrix[sub_node_ext_idx[0] : sub_node_ext_idx[1]]
+        )
+        # nf * nloc * nnei * node/edge_dim
+        sub_node_ext_update = _make_nei_g1(sub_node_ext_update, nlist)
+
+        # nf * nloc * nnei * node/edge_dim
+        sub_edge_update = torch.matmul(
+            edge_ebd, matrix[sub_edge_idx[0] : sub_edge_idx[1]]
+        )
+
+        result_update = (
+            sub_edge_update + sub_node_ext_update + sub_node_update[:, :, None, :]
+        ) + bias
+        return result_update
+
     def forward(
         self,
         node_ebd_ext: torch.Tensor,  # nf x nall x n_dim
@@ -526,19 +572,37 @@ class RepFlowLayer(torch.nn.Module):
         node_sym = self.act(self.node_sym_linear(torch.cat(node_sym_list, dim=-1)))
         n_update_list.append(node_sym)
 
-        # nb x nloc x nnei x (n_dim * 2 + e_dim)
-        edge_info = torch.cat(
-            [
-                torch.tile(node_ebd.unsqueeze(-2), [1, 1, self.nnei, 1]),
-                nei_node_ebd,
-                edge_ebd,
-            ],
-            dim=-1,
-        )
+        if not self.optim_edge:
+            # nb x nloc x nnei x (n_dim * 2 + e_dim)
+            edge_info = torch.cat(
+                [
+                    torch.tile(node_ebd.unsqueeze(-2), [1, 1, self.nnei, 1]),
+                    nei_node_ebd,
+                    edge_ebd,
+                ],
+                dim=-1,
+            )
+        else:
+            edge_info = None
 
         # node edge message
         # nb x nloc x nnei x (h * n_dim)
-        node_edge_update = self.act(self.node_edge_linear(edge_info)) * sw.unsqueeze(-1)
+        if not self.optim_edge:
+            assert edge_info is not None
+            node_edge_update = self.act(
+                self.node_edge_linear(edge_info)
+            ) * sw.unsqueeze(-1)
+        else:
+            node_edge_update = self.act(
+                self.optim_edge_update(
+                    node_ebd,
+                    node_ebd_ext,
+                    edge_ebd,
+                    nlist,
+                    "node",
+                )
+            ) * sw.unsqueeze(-1)
+
         node_edge_update = torch.sum(node_edge_update, dim=-2) / self.nnei
         if self.n_multi_edge_message > 1:
             # nb x nloc x nnei x h x n_dim
@@ -553,7 +617,19 @@ class RepFlowLayer(torch.nn.Module):
         n_updated = self.list_update(n_update_list, "node")
 
         # edge self message
-        edge_self_update = self.act(self.edge_self_linear(edge_info))
+        if not self.optim_edge:
+            assert edge_info is not None
+            edge_self_update = self.act(self.edge_self_linear(edge_info))
+        else:
+            edge_self_update = self.act(
+                self.optim_edge_update(
+                    node_ebd,
+                    node_ebd_ext,
+                    edge_ebd,
+                    nlist,
+                    "edge",
+                )
+            )
         e_update_list.append(edge_self_update)
 
         if self.update_angle:
