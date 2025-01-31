@@ -1563,16 +1563,10 @@ def dpa3_repflow_args():
             doc=doc_update_residual_init,
         ),
         Argument(
-            "optim_angle",
+            "optim_update",
             bool,
             optional=True,
-            default=False,
-        ),
-        Argument(
-            "optim_edge",
-            bool,
-            optional=True,
-            default=False,
+            default=True,
         ),
     ]
 

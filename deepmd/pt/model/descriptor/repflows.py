@@ -100,8 +100,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         env_protection: float = 0.0,
         precision: str = "float64",
         skip_stat: bool = True,
-        optim_angle: bool = False,
-        optim_edge: bool = False,
+        optim_update: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
         r"""
@@ -202,8 +201,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.set_davg_zero = set_davg_zero
         self.skip_stat = skip_stat
         self.a_compress_use_split = a_compress_use_split
-        self.optim_angle = optim_angle
-        self.optim_edge = optim_edge
+        self.optim_update = optim_update
 
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -255,8 +253,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                     update_residual=self.update_residual,
                     update_residual_init=self.update_residual_init,
                     precision=precision,
-                    optim_angle=self.optim_angle,
-                    optim_edge=self.optim_edge,
+                    optim_update=self.optim_update,
                     seed=child_seed(child_seed(seed, 1), ii),
                 )
             )
