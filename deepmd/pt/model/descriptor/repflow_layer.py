@@ -411,10 +411,7 @@ class RepFlowLayer(torch.nn.Module):
         elif feat == "angle":
             matrix, bias = self.angle_self_linear.matrix, self.angle_self_linear.bias
         else:
-            matrix, bias = None, None
             raise NotImplementedError
-        assert matrix is not None
-        assert bias is not None
         assert angle_dim + node_dim + 2 * edge_dim == matrix.size()[0]
 
         # nf * nloc * a_sel * a_sel * angle_dim
