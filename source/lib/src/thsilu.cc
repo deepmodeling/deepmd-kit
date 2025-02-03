@@ -76,7 +76,7 @@ void deepmd::thsilu_cpu(FPTYPE* out,
                         const FPTYPE b) {
 #pragma omp parallel for
   for (int ii = 0; ii < size; ii++) {
-    out[ii] = xx[ii] * tanhsilu(xx[ii], w, a, b);
+    out[ii] = tanhsilu(xx[ii], w, a, b);
   }
 }
 

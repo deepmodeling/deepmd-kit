@@ -92,7 +92,7 @@ __global__ void thsilu(FPTYPE* out,
   if (idx >= size) {
     return;
   }
-  out[idx] = xx[idx] * tanhsilu(xx[idx], w, a, b);
+  out[idx] = tanhsilu(xx[idx], w, a, b);
 }
 
 template <typename FPTYPE>
