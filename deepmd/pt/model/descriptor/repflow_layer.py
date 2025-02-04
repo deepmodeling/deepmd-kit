@@ -674,8 +674,7 @@ class RepFlowLayer(torch.nn.Module):
                     [edge_for_angle_i, edge_for_angle_j], dim=-1
                 )
                 angle_info_list = [angle_ebd]
-                if self.a_mess_has_n:
-                    angle_info_list.append(node_for_angle_info)
+                angle_info_list.append(node_for_angle_info)
                 angle_info_list.append(edge_for_angle_info)
                 # nb x nloc x a_nnei x a_nnei x (a + n_dim + e_dim*2) or (a + a/c + a/c)
                 angle_info = torch.cat(angle_info_list, dim=-1)
