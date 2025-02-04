@@ -448,7 +448,7 @@ if(BUILD_CPP_IF
   set(version_file "${generated_dir}/${CMAKE_PROJECT_NAME}ConfigVersion.cmake")
   write_basic_package_version_file(
     ${version_file}
-    VERSION $<IF:${GIT_SUMM}?${GIT_SUMM}:"0.0.0">
+    VERSION $<IF:${GIT_SUMM}?${GIT_SUMM}:0.0.0>
     COMPATIBILITY AnyNewerVersion)
   install(
     EXPORT ${targets_export_name}
