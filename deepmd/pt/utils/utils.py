@@ -36,14 +36,27 @@ class CustomSilu(torch.nn.Module):
         self.slope = float(silu_grad(threshold))
         self.const = float(silu(threshold))
 
+        if not hasattr(torch.ops.deepmd, "thsilu"):
+
+            def thsilu(
+                argument0: torch.Tensor,
+                argument1: float,
+                argument2: float,
+                argument3: float,
+            ) -> list[torch.Tensor]:
+                raise NotImplementedError(
+                    "thsilu is not available since customized PyTorch OP library is not built when freezing the model. "
+                    "See documentation for model compression for details."
+                )
+
+            # Note: this hack cannot actually save a model that can be runned using LAMMPS.
+            torch.ops.deepmd.thsilu = thsilu
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        silu_part = F.silu(x)
-        mask = x > self.threshold
-        if torch.any(mask):
-            tanh_part = torch.tanh(self.slope * (x - self.threshold)) + self.const
-            return torch.where(x < self.threshold, silu_part, tanh_part)
-        else:
-            return silu_part
+        result = torch.ops.deepmd.thsilu(
+            x.contiguous(), self.slope, self.threshold, self.const
+        )
+        return result
 
 
 class CustomDSilu(torch.nn.Module):
