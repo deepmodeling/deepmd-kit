@@ -22,14 +22,14 @@ repos:
       - id: check-toml
   # Python
   - repo: https://github.com/PyCQA/isort
-    rev: 5.13.2
+    rev: 6.0.0
     hooks:
       - id: isort
         files: \.py$
         exclude: ^source/3rdparty
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.9.3
+    rev: v0.9.4
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -154,7 +154,7 @@ repos:
         exclude: .pre-commit-config.yaml|source/lmp
   # customized pylint rules
   - repo: https://github.com/pylint-dev/pylint/
-    rev: v3.3.3
+    rev: v3.3.4
     hooks:
       - id: pylint
         entry: env PYTHONPATH=source/checker pylint
