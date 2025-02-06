@@ -1,40 +1,7 @@
-#include "thsilu.h"
-
-__device__ inline double _tanh(double x) { return tanh(x); }
-__device__ inline float _tanh(float x) { return tanhf(x); }
-
-__device__ inline double _cosh(double x) { return cosh(x); }
-__device__ inline float _cosh(float x) { return coshf(x); }
+#include "cdsilu.h"
 
 __device__ inline double _exp(double x) { return exp(x); }
 __device__ inline float _exp(float x) { return expf(x); }
-
-// custom tanh
-template <typename FPTYPE>
-__device__ inline FPTYPE ctanh(const FPTYPE x,
-                               const FPTYPE w,
-                               const FPTYPE a,
-                               const FPTYPE b) {
-  return _tanh(w * (x - a)) + b;
-}
-
-template <typename FPTYPE>
-__device__ inline FPTYPE ctanhgrad(const FPTYPE x,
-                                   const FPTYPE w,
-                                   const FPTYPE a) {
-  const FPTYPE coshwxa = _cosh(w * (x - a));
-  return w / (coshwxa * coshwxa);
-}
-
-template <typename FPTYPE>
-__device__ inline FPTYPE ctanhgradgrad(const FPTYPE x,
-                                       const FPTYPE w,
-                                       const FPTYPE a) {
-  const FPTYPE wxa = w * (x - a);
-  const FPTYPE coshwxa = _cosh(wxa);
-  const FPTYPE tanhwxa = _tanh(wxa);
-  return (FPTYPE)-2.0 * w * w * tanhwxa / (coshwxa * coshwxa);
-}
 
 // silu
 template <typename FPTYPE>
@@ -57,79 +24,103 @@ __device__ inline FPTYPE silugradgrad(const FPTYPE x) {
          (emx1 * emx1);
 }
 
-// thsilu
+// cdsilu
 
 template <typename FPTYPE>
-__device__ inline FPTYPE tanhsilu(const FPTYPE x,
-                                  const FPTYPE w,
-                                  const FPTYPE a,
-                                  const FPTYPE b) {
-  return x < a ? silu(x) : ctanh(x, w, a, b);
+__device__ inline FPTYPE customdsilu(const FPTYPE x,
+                                     const FPTYPE a,
+                                     const FPTYPE b) {
+  return ((FPTYPE)1.0 -
+          (-a + x + (FPTYPE)1.0) / (_exp(a - x - (FPTYPE)1.0) + (FPTYPE)1.0)) /
+             (_exp(a + b - x - (FPTYPE)1.0) + (FPTYPE)1.0) +
+         silu(x);
 }
 
 template <typename FPTYPE>
-__device__ inline FPTYPE tanhsilugrad(const FPTYPE x,
-                                      const FPTYPE w,
-                                      const FPTYPE a) {
-  return x < a ? silugrad(x) : ctanhgrad(x, w, a);
+__device__ inline FPTYPE customdsilugrad(const FPTYPE x,
+                                         const FPTYPE a,
+                                         const FPTYPE b) {
+  FPTYPE xbar = -a + x + (FPTYPE)1.0;
+  FPTYPE eax1 = _exp(-xbar);
+  FPTYPE eax1p1 = eax1 + (FPTYPE)1.0;
+  FPTYPE eax1p1r = (FPTYPE)1.0 / eax1p1;
+  FPTYPE eaxb1 = _exp(-xbar + b);
+  FPTYPE eaxb1p1 = eaxb1 + (FPTYPE)1.0;
+  FPTYPE eaxb1p1r = (FPTYPE)1.0 / eaxb1p1;
+  return (-xbar * eax1 * eax1p1r * eax1p1r - eax1p1r) * eaxb1p1r +
+         ((FPTYPE)1.0 - xbar * eax1p1r) * eaxb1 * eaxb1p1r * eaxb1p1r +
+         silugrad(x);
 }
 
 template <typename FPTYPE>
-__device__ inline FPTYPE tanhsilugradgrad(const FPTYPE x,
-                                          const FPTYPE w,
-                                          const FPTYPE a) {
-  return x < a ? silugradgrad(x) : ctanhgradgrad(x, w, a);
+__device__ inline FPTYPE customdsilugradgrad(const FPTYPE x,
+                                             const FPTYPE a,
+                                             const FPTYPE b) {
+  FPTYPE xbar = -a + x + (FPTYPE)1.0;
+  FPTYPE eax1 = _exp(-xbar);
+  FPTYPE eax1p1 = eax1 + (FPTYPE)1.0;
+  FPTYPE eax1p1r = (FPTYPE)1.0 / eax1p1;
+  FPTYPE eaxb1 = _exp(-xbar + b);
+  FPTYPE eaxb1p1 = eaxb1 + (FPTYPE)1.0;
+  FPTYPE eaxb1p1r = (FPTYPE)1.0 / eaxb1p1;
+  return ((FPTYPE)2.0 * (-xbar * eax1 * eax1p1r * eax1p1r - eax1p1r) * eaxb1 -
+          ((FPTYPE)1.0 - xbar * eax1p1r) * eaxb1) *
+             eaxb1p1r * eaxb1p1r +
+         (xbar * eax1 - (FPTYPE)2.0 * xbar * eax1 * eax1 * eax1p1r -
+          (FPTYPE)2.0 * eax1) *
+             eax1p1r * eax1p1r * eaxb1p1r +
+         (FPTYPE)2.0 * ((FPTYPE)1.0 - xbar * eax1p1r) * eaxb1 * eaxb1 *
+             eaxb1p1r * eaxb1p1r * eaxb1p1r +
+         silugradgrad(x);
 }
 
 template <typename FPTYPE>
-__global__ void thsilu(FPTYPE* out,
+__global__ void cdsilu(FPTYPE* out,
                        const FPTYPE* xx,
                        const int_64 size,
-                       const FPTYPE w,
                        const FPTYPE a,
                        const FPTYPE b) {
   const int_64 idx = int_64(blockIdx.x) * blockDim.x + threadIdx.x;
   if (idx >= size) {
     return;
   }
-  out[idx] = tanhsilu(xx[idx], w, a, b);
+  out[idx] = customdsilu(xx[idx], a, b);
 }
 
 template <typename FPTYPE>
-__global__ void thsilu_grad(FPTYPE* out,
+__global__ void cdsilu_grad(FPTYPE* out,
                             const FPTYPE* xx,
                             const FPTYPE* dy,
                             const int_64 size,
-                            const FPTYPE w,
-                            const FPTYPE a) {
+                            const FPTYPE a,
+                            const FPTYPE b) {
   const int_64 idx = int_64(blockIdx.x) * blockDim.x + threadIdx.x;
   if (idx >= size) {
     return;
   }
-  out[idx] = dy[idx] * tanhsilugrad(xx[idx], w, a);
+  out[idx] = dy[idx] * customdsilugrad(xx[idx], a, b);
 }
 
 template <typename FPTYPE>
-__global__ void thsilu_grad_grad(FPTYPE* out,
+__global__ void cdsilu_grad_grad(FPTYPE* out,
                                  const FPTYPE* xx,
                                  const FPTYPE* dy,
                                  const FPTYPE* dy_2,
                                  const int_64 size,
-                                 const FPTYPE w,
-                                 const FPTYPE a) {
+                                 const FPTYPE a,
+                                 const FPTYPE b) {
   const int_64 idx = int_64(blockIdx.x) * blockDim.x + threadIdx.x;
   if (idx >= size) {
     return;
   }
-  out[idx] = dy_2[idx] * tanhsilugradgrad(xx[idx], w, a);
+  out[idx] = dy_2[idx] * customdsilugradgrad(xx[idx], a, b);
 }
 
 namespace deepmd {
 template <typename FPTYPE>
-void thsilu_gpu(FPTYPE* out,
+void cdsilu_gpu(FPTYPE* out,
                 const FPTYPE* xx,
                 const int_64 size,
-                const FPTYPE w,
                 const FPTYPE a,
                 const FPTYPE b) {
   if (size <= 0) {
@@ -140,18 +131,18 @@ void thsilu_gpu(FPTYPE* out,
   const int THREAD_ITEMS = 1024;
   const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
-  thsilu<<<BLOCK_NUMS, THREAD_ITEMS>>>(out, xx, size, w, a, b);
+  cdsilu<<<BLOCK_NUMS, THREAD_ITEMS>>>(out, xx, size, a, b);
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
-void thsilu_grad_gpu(FPTYPE* out,
+void cdsilu_grad_gpu(FPTYPE* out,
                      const FPTYPE* xx,
                      const FPTYPE* dy,
                      const int_64 size,
-                     const FPTYPE w,
-                     const FPTYPE a) {
+                     const FPTYPE a,
+                     const FPTYPE b) {
   if (size <= 0) {
     return;
   }
@@ -160,19 +151,19 @@ void thsilu_grad_gpu(FPTYPE* out,
   const int THREAD_ITEMS = 1024;
   const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
-  thsilu_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(out, xx, dy, size, w, a);
+  cdsilu_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(out, xx, dy, size, a, b);
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
-void thsilu_grad_grad_gpu(FPTYPE* out,
+void cdsilu_grad_grad_gpu(FPTYPE* out,
                           const FPTYPE* xx,
                           const FPTYPE* dy,
                           const FPTYPE* dy_2,
                           const int_64 size,
-                          const FPTYPE w,
-                          const FPTYPE a) {
+                          const FPTYPE a,
+                          const FPTYPE b) {
   if (size <= 0) {
     return;
   }
@@ -181,47 +172,45 @@ void thsilu_grad_grad_gpu(FPTYPE* out,
   const int THREAD_ITEMS = 1024;
   const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
-  thsilu_grad_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(out, xx, dy, dy_2, size, w, a);
+  cdsilu_grad_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(out, xx, dy, dy_2, size, a, b);
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
 }
 
-template void thsilu_gpu<float>(float* out,
+template void cdsilu_gpu<float>(float* out,
                                 const float* x,
                                 const int_64 size,
-                                const float w,
                                 const float a,
                                 const float b);
-template void thsilu_gpu<double>(double* out,
+template void cdsilu_gpu<double>(double* out,
                                  const double* x,
                                  const int_64 size,
-                                 const double w,
                                  const double a,
                                  const double b);
-template void thsilu_grad_gpu<float>(float* out,
+template void cdsilu_grad_gpu<float>(float* out,
                                      const float* x,
                                      const float* dy,
                                      const int_64 size,
-                                     const float w,
-                                     const float a);
-template void thsilu_grad_gpu<double>(double* out,
+                                     const float a,
+                                     const float b);
+template void cdsilu_grad_gpu<double>(double* out,
                                       const double* x,
                                       const double* dy,
                                       const int_64 size,
-                                      const double w,
-                                      const double a);
-template void thsilu_grad_grad_gpu<float>(float* out,
+                                      const double a,
+                                      const double b);
+template void cdsilu_grad_grad_gpu<float>(float* out,
                                           const float* x,
                                           const float* dy,
                                           const float* dy_2,
                                           const int_64 size,
-                                          const float w,
-                                          const float a);
-template void thsilu_grad_grad_gpu<double>(double* out,
+                                          const float a,
+                                          const float b);
+template void cdsilu_grad_grad_gpu<double>(double* out,
                                            const double* x,
                                            const double* dy,
                                            const double* dy_2,
                                            const int_64 size,
-                                           const double w,
-                                           const double a);
+                                           const double a,
+                                           const double b);
 }  // namespace deepmd
