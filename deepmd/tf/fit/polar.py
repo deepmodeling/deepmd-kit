@@ -565,7 +565,7 @@ class PolarFittingSeA(Fitting):
         self.fitting_net_variables = get_fitting_net_variables_from_graph_def(
             graph_def, suffix=suffix
         )
-        if self.shift_diag
+        if self.shift_diag:
             try:
                 self.bias_atom_polar = get_tensor_by_name_from_graph(
                     graph, f"fitting_attr{suffix}/t_bias_atom_polar"
