@@ -155,7 +155,7 @@ class PolarFittingSeA(Fitting):
         if not isinstance(self.sel_type, list):
             self.sel_type = [self.sel_type]
         self.sel_type = sorted(self.sel_type)
-        self.constant_matrix = np.zeros(  # pylint: disable=no-explicit-dtype
+        self.bias_atom_polar = np.zeros(  # pylint: disable=no-explicit-dtype
             self.ntypes
         )  # self.ntypes x 1, store the average diagonal value
         # if type(self.diag_shift) is not list:
@@ -280,7 +280,7 @@ class PolarFittingSeA(Fitting):
             )
             atom_polar, _, _, _ = np.linalg.lstsq(matrix, bias, rcond=None)
             for itype in range(len(self.sel_type)):
-                self.constant_matrix[self.sel_type[itype]] = np.mean(
+                self.bias_atom_polar[self.sel_type[itype]] = np.mean(
                     np.diagonal(atom_polar[itype].reshape((3, 3)))
                 )
 
@@ -437,10 +437,10 @@ class PolarFittingSeA(Fitting):
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
             self.t_bias_atom_polar = tf.get_variable(
                 "t_bias_atom_polar",
-                self.constant_matrix.shape,
+                self.bias_atom_polar.shape,
                 dtype=GLOBAL_TF_FLOAT_PRECISION,
                 trainable=False,
-                initializer=tf.constant_initializer(self.constant_matrix),
+                initializer=tf.constant_initializer(self.bias_atom_polar),
             )
 
         inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
@@ -464,7 +464,7 @@ class PolarFittingSeA(Fitting):
             )
             if self.shift_diag:
                 # nframes x nloc_masked
-                constant_matrix = tf.reshape(
+                bias_atom_polar = tf.reshape(
                     tf.reshape(
                         tf.tile(
                             tf.repeat(self.t_bias_atom_polar, natoms[2:]), [nframes]
@@ -542,7 +542,7 @@ class PolarFittingSeA(Fitting):
             final_layer *= tf.expand_dims(tf.expand_dims(scale, -1), -1)
             if self.shift_diag:
                 final_layer += tf.expand_dims(
-                    tf.expand_dims(constant_matrix, -1), -1
+                    tf.expand_dims(bias_atom_polar, -1), -1
                 ) * tf.eye(3, batch_shape=[1, 1], dtype=GLOBAL_TF_FLOAT_PRECISION)
             outs = final_layer
 
