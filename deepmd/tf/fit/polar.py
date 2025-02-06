@@ -466,7 +466,7 @@ class PolarFittingSeA(Fitting):
                 # nframes x nloc_masked
                 constant_matrix = tf.reshape(
                     tf.reshape(
-                        tf.tile(tf.repeat(self.constant_matrix, natoms[2:]), [nframes]),
+                        tf.tile(tf.repeat(self.t_bias_atom_polar, natoms[2:]), [nframes]),
                         [nframes, -1],
                     )[nloc_mask],
                     [nframes, -1],
