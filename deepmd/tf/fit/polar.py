@@ -577,7 +577,7 @@ class PolarFittingSeA(Fitting):
             except GraphWithoutTensorError:
                 warnings.warn(
                     "You are trying to read a model trained with shift_diag=True, but the mean of the diagonal terms of the polarizability is not stored in the graph. This will lead to wrong inference results. You may train your model with the latest DeePMD-kit to avoid this issue.",
-                    stacklevel=2
+                    stacklevel=2,
                 )
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
