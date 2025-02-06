@@ -27,11 +27,9 @@ from deepmd.tf.loss.loss import (
 from deepmd.tf.loss.tensor import (
     TensorLoss,
 )
-
 from deepmd.tf.utils.errors import (
     GraphWithoutTensorError,
 )
-
 from deepmd.tf.utils.graph import (
     get_fitting_net_variables_from_graph_def,
     get_tensor_by_name_from_graph,
