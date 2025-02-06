@@ -640,6 +640,9 @@ class PolarFittingSeA(Fitting):
                 variables=self.fitting_net_variables,
                 suffix=suffix,
             ),
+            "@variables": {
+                "bias_atom_polar": self.bias_atom_polar.reshape(-1),
+            },
             "type_map": self.type_map,
         }
         return data
@@ -667,6 +670,7 @@ class PolarFittingSeA(Fitting):
             data["nets"],
             suffix=suffix,
         )
+        fitting.bias_atom_polar = data["@variables"]["bias_atom_polar"].ravel()
         return fitting
 
 
