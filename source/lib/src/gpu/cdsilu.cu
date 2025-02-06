@@ -11,17 +11,15 @@ __device__ inline FPTYPE silu(const FPTYPE x) {
 
 template <typename FPTYPE>
 __device__ inline FPTYPE silugrad(const FPTYPE x) {
-  const FPTYPE emx = _exp(-x);
-  const FPTYPE emx1 = emx + (FPTYPE)1.0;
-  return (emx * x / emx1 + (FPTYPE)1.0) / emx1;
+  const FPTYPE sig = (FPTYPE)1.0 / ((FPTYPE)1.0 + _exp(-x));
+  return sig * ((FPTYPE)1.0 + x * ((FPTYPE)1.0 - sig));
 }
 
 template <typename FPTYPE>
 __device__ inline FPTYPE silugradgrad(const FPTYPE x) {
-  const FPTYPE emx = _exp(-x);
-  const FPTYPE emx1 = emx + (FPTYPE)1.0;
-  return (((FPTYPE)2.0 * emx / emx1 - (FPTYPE)1.0) * x + (FPTYPE)2.0) * emx /
-         (emx1 * emx1);
+  const FPTYPE sig = (FPTYPE)1.0 / ((FPTYPE)1.0 + _exp(-x));
+  const FPTYPE sig_prime = sig * (1 - sig);
+  return sig_prime * (2 + x * (1 - 2 * sig));
 }
 
 // cdsilu
