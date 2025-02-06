@@ -437,7 +437,6 @@ class PolarFittingSeA(Fitting):
         start_index = 0
 
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
-            # self.t_bias_atom_polar = tf.constant(self.constant_matrix, name="t_bias_atom_polar", dtype=GLOBAL_TF_FLOAT_PRECISION)
             self.t_bias_atom_polar = tf.get_variable(
                 "t_bias_atom_polar",
                 self.constant_matrix.shape,
@@ -522,7 +521,6 @@ class PolarFittingSeA(Fitting):
                 sel_type_idx = self.sel_type.index(type_i)
                 final_layer = final_layer * self.scale[sel_type_idx]
                 final_layer = final_layer + tf.slice(self.t_bias_atom_polar, [sel_type_idx], [1]) * tf.eye(
-                # final_layer = final_layer + self.constant_matrix[sel_type_idx] * tf.eye(
                     3,
                     batch_shape=[tf.shape(inputs)[0], natoms[2 + type_i]],
                     dtype=GLOBAL_TF_FLOAT_PRECISION,
