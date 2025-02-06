@@ -27,8 +27,14 @@ from deepmd.tf.loss.loss import (
 from deepmd.tf.loss.tensor import (
     TensorLoss,
 )
+
+from deepmd.tf.utils.errors import (
+    GraphWithoutTensorError,
+)
+
 from deepmd.tf.utils.graph import (
     get_fitting_net_variables_from_graph_def,
+    get_tensor_by_name_from_graph,
 )
 from deepmd.tf.utils.network import (
     one_layer,
@@ -429,6 +435,17 @@ class PolarFittingSeA(Fitting):
         atype = input_dict.get("atype", None)
         nframes = input_dict.get("nframes")
         start_index = 0
+
+        with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
+            # self.t_bias_atom_polar = tf.constant(self.constant_matrix, name="t_bias_atom_polar", dtype=GLOBAL_TF_FLOAT_PRECISION)
+            self.t_bias_atom_polar = tf.get_variable(
+                "t_bias_atom_polar",
+                self.constant_matrix.shape,
+                dtype=GLOBAL_TF_FLOAT_PRECISION,
+                trainable=False,
+                initializer=tf.constant_initializer(self.constant_matrix),
+            )
+
         inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
         rot_mat = tf.reshape(rot_mat, [-1, self.dim_rot_mat * natoms[0]])
         if nframes is None:
@@ -504,6 +521,7 @@ class PolarFittingSeA(Fitting):
                 # shift and scale
                 sel_type_idx = self.sel_type.index(type_i)
                 final_layer = final_layer * self.scale[sel_type_idx]
+                # final_layer = final_layer + tf.slice(self.t_bias_atom_polar, [sel_type_idx], [1]) * tf.eye(
                 final_layer = final_layer + self.constant_matrix[sel_type_idx] * tf.eye(
                     3,
                     batch_shape=[tf.shape(inputs)[0], natoms[2 + type_i]],
@@ -551,6 +569,15 @@ class PolarFittingSeA(Fitting):
         self.fitting_net_variables = get_fitting_net_variables_from_graph_def(
             graph_def, suffix=suffix
         )
+        try:
+            self.bias_atom_polar = get_tensor_by_name_from_graph(
+                graph, f"fitting_attr{suffix}/t_bias_atom_polar"
+            )
+        except GraphWithoutTensorError:
+            raise RuntimeError("No bias_atom_polar in the graph.")
+            # print("No bias_atom_polar in the graph.")
+            # for compatibility, old models has no t_bias_atom_e
+            # pass
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
         """Receive the mixed precision setting.
