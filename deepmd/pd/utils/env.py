@@ -47,8 +47,7 @@ def to_bool(flag: int | bool | str) -> bool:
         flag = flag.lower()
         if flag not in ["1", "0", "true", "false"]:
             raise ValueError(
-                "flag must be either '0', '1', 'true', 'false', "
-                f"but received '{flag}'"
+                f"flag must be either '0', '1', 'true', 'false', but received '{flag}'"
             )
         return flag in ["1", "true"]
 
