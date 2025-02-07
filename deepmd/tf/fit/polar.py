@@ -155,7 +155,7 @@ class PolarFittingSeA(Fitting):
         if not isinstance(self.sel_type, list):
             self.sel_type = [self.sel_type]
         self.sel_type = sorted(self.sel_type)
-        self.bias_atom_polar = np.zeros(  # pylint: disable=no-explicit-dtype
+        self.constant_matrix = np.zeros(  # pylint: disable=no-explicit-dtype
             self.ntypes
         )  # self.ntypes x 1, store the average diagonal value
         # if type(self.diag_shift) is not list:
@@ -280,7 +280,7 @@ class PolarFittingSeA(Fitting):
             )
             atom_polar, _, _, _ = np.linalg.lstsq(matrix, bias, rcond=None)
             for itype in range(len(self.sel_type)):
-                self.bias_atom_polar[self.sel_type[itype]] = np.mean(
+                self.constant_matrix[self.sel_type[itype]] = np.mean(
                     np.diagonal(atom_polar[itype].reshape((3, 3)))
                 )
 
@@ -435,12 +435,12 @@ class PolarFittingSeA(Fitting):
         start_index = 0
 
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
-            self.t_bias_atom_polar = tf.get_variable(
-                "t_bias_atom_polar",
-                self.bias_atom_polar.shape,
+            self.t_constant_matrix = tf.get_variable(
+                "t_constant_matrix",
+                self.constant_matrix.shape,
                 dtype=GLOBAL_TF_FLOAT_PRECISION,
                 trainable=False,
-                initializer=tf.constant_initializer(self.bias_atom_polar),
+                initializer=tf.constant_initializer(self.constant_matrix),
             )
 
         inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
@@ -464,10 +464,10 @@ class PolarFittingSeA(Fitting):
             )
             if self.shift_diag:
                 # nframes x nloc_masked
-                bias_atom_polar = tf.reshape(
+                constant_matrix = tf.reshape(
                     tf.reshape(
                         tf.tile(
-                            tf.repeat(self.t_bias_atom_polar, natoms[2:]), [nframes]
+                            tf.repeat(self.t_constant_matrix, natoms[2:]), [nframes]
                         ),
                         [nframes, -1],
                     )[nloc_mask],
@@ -521,7 +521,7 @@ class PolarFittingSeA(Fitting):
                 sel_type_idx = self.sel_type.index(type_i)
                 final_layer = final_layer * self.scale[sel_type_idx]
                 final_layer = final_layer + tf.slice(
-                    self.t_bias_atom_polar, [sel_type_idx], [1]
+                    self.t_constant_matrix, [sel_type_idx], [1]
                 ) * tf.eye(
                     3,
                     batch_shape=[tf.shape(inputs)[0], natoms[2 + type_i]],
@@ -542,7 +542,7 @@ class PolarFittingSeA(Fitting):
             final_layer *= tf.expand_dims(tf.expand_dims(scale, -1), -1)
             if self.shift_diag:
                 final_layer += tf.expand_dims(
-                    tf.expand_dims(bias_atom_polar, -1), -1
+                    tf.expand_dims(constant_matrix, -1), -1
                 ) * tf.eye(3, batch_shape=[1, 1], dtype=GLOBAL_TF_FLOAT_PRECISION)
             outs = final_layer
 
@@ -571,8 +571,8 @@ class PolarFittingSeA(Fitting):
         )
         if self.shift_diag:
             try:
-                self.bias_atom_polar = get_tensor_by_name_from_graph(
-                    graph, f"fitting_attr{suffix}/t_bias_atom_polar"
+                self.constant_matrix = get_tensor_by_name_from_graph(
+                    graph, f"fitting_attr{suffix}/t_constant_matrix"
                 )
             except GraphWithoutTensorError:
                 warnings.warn(
@@ -641,7 +641,13 @@ class PolarFittingSeA(Fitting):
                 suffix=suffix,
             ),
             "@variables": {
-                "bias_atom_polar": self.bias_atom_polar.reshape(-1),
+                "fparam_avg": None,
+                "fparam_inv_std": None,
+                "aparam_avg": None,
+                "aparam_inv_std": None,
+                "case_embd": None,
+                "scale": self.scale.reshape(-1, 1),
+                "constant_matrix": self.constant_matrix.reshape(-1),
             },
             "type_map": self.type_map,
         }
@@ -661,6 +667,7 @@ class PolarFittingSeA(Fitting):
         Model
             The deserialized model
         """
+        print("executing deserialize")
         data = data.copy()
         check_version_compatibility(
             data.pop("@version", 1), 4, 1
@@ -670,7 +677,7 @@ class PolarFittingSeA(Fitting):
             data["nets"],
             suffix=suffix,
         )
-        fitting.bias_atom_polar = data["@variables"]["bias_atom_polar"].ravel()
+        fitting.constant_matrix = data["@variables"]["constant_matrix"].ravel()
         return fitting
 
 
