@@ -378,9 +378,9 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         If not start from checkpoint (resume is False),
         some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
-        assert (
-            self.__class__ == base_class.__class__
-        ), "Only descriptors of the same type can share params!"
+        assert self.__class__ == base_class.__class__, (
+            "Only descriptors of the same type can share params!"
+        )
         # For DPA1 descriptors, the user-defined share-level
         # shared_level: 0
         # share all parameters in both type_embedding and se_atten
@@ -449,9 +449,9 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         obj = self.se_atten
         obj.ntypes = len(type_map)

@@ -115,12 +115,12 @@ class DeepEval(DeepEvalBackend):
                 model_keys = list(self.input_param["model_dict"].keys())
                 if isinstance(head, int):
                     head = model_keys[0]
-                assert (
-                    head is not None
-                ), f"Head must be set for multitask model! Available heads are: {model_keys}"
-                assert (
-                    head in model_keys
-                ), f"No head named {head} in model! Available heads are: {model_keys}"
+                assert head is not None, (
+                    f"Head must be set for multitask model! Available heads are: {model_keys}"
+                )
+                assert head in model_keys, (
+                    f"No head named {head} in model! Available heads are: {model_keys}"
+                )
                 self.input_param = self.input_param["model_dict"][head]
                 state_dict_head = {"_extra_state": state_dict["_extra_state"]}
                 for item in state_dict:

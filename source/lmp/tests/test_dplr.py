@@ -372,7 +372,7 @@ def test_pair_deepmd_sr_virial(lammps) -> None:
     lammps.compute("virial real_atom centroid/stress/atom NULL pair")
     for ii in range(9):
         jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-        lammps.variable(f"virial{jj} atom c_virial[{ii+1}]")
+        lammps.variable(f"virial{jj} atom c_virial[{ii + 1}]")
     lammps.dump(
         "1 real_atom custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)])
     )

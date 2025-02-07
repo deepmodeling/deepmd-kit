@@ -551,7 +551,7 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
                 if self.layers[ii].dim_out() != self.layers[ii + 1].dim_in():
                     raise ValueError(
                         f"the dim of layer {ii} output {self.layers[ii].dim_out} ",
-                        f"does not match the dim of layer {ii+1} ",
+                        f"does not match the dim of layer {ii + 1} ",
                         f"output {self.layers[ii].dim_out}",
                     )
 

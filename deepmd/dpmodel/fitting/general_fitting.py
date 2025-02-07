@@ -242,9 +242,9 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         assert self.mixed_types, "Only models in mixed types can perform type changing!"
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map

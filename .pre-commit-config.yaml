@@ -7,7 +7,7 @@ repos:
       - id: trailing-whitespace
         exclude: "^.+\\.pbtxt$"
       - id: end-of-file-fixer
-        exclude: "^.+\\.pbtxt$"
+        exclude: "^.+\\.pbtxt$|deeppot_sea.*\\.json$"
       - id: check-yaml
       - id: check-json
       - id: check-added-large-files
@@ -22,14 +22,14 @@ repos:
       - id: check-toml
   # Python
   - repo: https://github.com/PyCQA/isort
-    rev: 5.13.2
+    rev: 6.0.0
     hooks:
       - id: isort
         files: \.py$
         exclude: ^source/3rdparty
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.8.4
+    rev: v0.9.4
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -60,10 +60,10 @@ repos:
       - id: blacken-docs
   # C++
   - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v19.1.5
+    rev: v19.1.7
     hooks:
       - id: clang-format
-        exclude: ^(source/3rdparty|source/lib/src/gpu/cudart/.+\.inc|.+\.ipynb$)
+        exclude: ^(source/3rdparty|source/lib/src/gpu/cudart/.+\.inc|.+\.ipynb$|.+\.json$)
   # markdown, yaml, CSS, javascript
   # - repo: https://github.com/pre-commit/mirrors-prettier
   #   rev: v4.0.0-alpha.8
@@ -154,7 +154,7 @@ repos:
         exclude: .pre-commit-config.yaml|source/lmp
   # customized pylint rules
   - repo: https://github.com/pylint-dev/pylint/
-    rev: v3.3.2
+    rev: v3.3.4
     hooks:
       - id: pylint
         entry: env PYTHONPATH=source/checker pylint

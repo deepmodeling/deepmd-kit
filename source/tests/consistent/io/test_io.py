@@ -213,7 +213,7 @@ class IOTest:
                     # expect all nan if not supported
                     continue
                 np.testing.assert_allclose(
-                    vv1, vv2, rtol=1e-12, atol=1e-12, err_msg=f"backend {idx+1}"
+                    vv1, vv2, rtol=1e-12, atol=1e-12, err_msg=f"backend {idx + 1}"
                 )
 
 

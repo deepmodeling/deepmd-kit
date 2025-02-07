@@ -105,7 +105,8 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         int
             the first dimension of the rotation matrix
         """
-        raise NotImplementedError
+        # by default, no rotation matrix
+        return 0
 
     def get_nlist(self) -> tuple[tf.Tensor, tf.Tensor, list[int], list[int]]:
         """Returns neighbor information.
@@ -534,3 +535,9 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
     def input_requirement(self) -> list[DataRequirementItem]:
         """Return data requirements needed for the model input."""
         return []
+
+    def get_rot_mat(self) -> tf.Tensor:
+        """Get rotational matrix."""
+        nframes = tf.shape(self.dout)[0]
+        natoms = tf.shape(self.dout)[1]
+        return tf.zeros([nframes, natoms, 0], dtype=GLOBAL_TF_FLOAT_PRECISION)

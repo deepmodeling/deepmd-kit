@@ -159,6 +159,10 @@ class TestDeepPot(unittest.TestCase):
             descpt = self.dp.eval_descriptor(result.coord, result.box, result.atype)
             expected_descpt = result.descriptor
             np.testing.assert_almost_equal(descpt.ravel(), expected_descpt.ravel())
+            # See #4533
+            descpt = self.dp.eval_descriptor(result.coord, result.box, result.atype)
+            expected_descpt = result.descriptor
+            np.testing.assert_almost_equal(descpt.ravel(), expected_descpt.ravel())
 
     def test_2frame_atm(self) -> None:
         for ii, result in enumerate(self.case.results):

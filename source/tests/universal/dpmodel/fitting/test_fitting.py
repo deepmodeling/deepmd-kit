@@ -119,9 +119,9 @@ def FittingParamDipole(
     embedding_width=None,
     numb_param=0,  # test numb_fparam, numb_aparam and dim_case_embd together
 ):
-    assert (
-        embedding_width is not None
-    ), "embedding_width for dipole fitting is required."
+    assert embedding_width is not None, (
+        "embedding_width for dipole fitting is required."
+    )
     input_dict = {
         "ntypes": ntypes,
         "dim_descrpt": dim_descrpt,

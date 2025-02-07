@@ -675,7 +675,7 @@ def print_summary(
     )
     for ii in range(nsystems):
         log.info(
-            "%s %6d %6d %6d %9.3e %3s",
+            "%s  %6d  %6d  %6d  %9.3e  %3s",
             _format_name_length(system_dirs[ii], sys_width),
             natoms[ii],
             batch_size[ii],
@@ -693,9 +693,9 @@ def process_sys_probs(sys_probs, nbatch):
     type_filter = sys_probs >= 0
     assigned_sum_prob = np.sum(type_filter * sys_probs)
     # 1e-8 is to handle floating point error; See #1917
-    assert (
-        assigned_sum_prob <= 1.0 + 1e-8
-    ), "the sum of assigned probability should be less than 1"
+    assert assigned_sum_prob <= 1.0 + 1e-8, (
+        "the sum of assigned probability should be less than 1"
+    )
     rest_sum_prob = 1.0 - assigned_sum_prob
     if not np.isclose(rest_sum_prob, 0):
         rest_nbatch = (1 - type_filter) * nbatch

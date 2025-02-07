@@ -175,9 +175,9 @@ class DPTrainer:
         self.stop_batch = stop_batch
 
         if not self.is_compress and data.mixed_type:
-            assert isinstance(
-                self.fitting, EnerFitting
-            ), "Data in mixed_type format must use ener fitting!"
+            assert isinstance(self.fitting, EnerFitting), (
+                "Data in mixed_type format must use ener fitting!"
+            )
 
         if self.numb_fparam > 0:
             log.info(f"training with {self.numb_fparam} frame parameter(s)")
@@ -281,6 +281,13 @@ class DPTrainer:
             tf.int32, [None], name="t_mesh"
         )
         self.place_holders["is_training"] = tf.placeholder(tf.bool)
+        # update "atomic_" in self.place_holders.keys() with "atom_"
+        for kk in list(self.place_holders.keys()):
+            if "atomic_" in kk:
+                self.place_holders[kk.replace("atomic_", "atom_")] = (
+                    self.place_holders.pop(kk)
+                )
+
         self.model_pred = self.model.build(
             self.place_holders["coord"],
             self.place_holders["type"],
@@ -865,9 +872,9 @@ class DPTrainer:
             ) from e
         else:
             self.model_type = bytes.decode(t_model_type)
-        assert (
-            self.model_type != "compressed_model"
-        ), "Compressed models are not supported for finetuning!"
+        assert self.model_type != "compressed_model", (
+            "Compressed models are not supported for finetuning!"
+        )
         self.model.init_variables(graph, graph_def, model_type=self.model_type)
         log.info(
             f"Changing energy bias in pretrained model for types {origin_type_map!s}... "
