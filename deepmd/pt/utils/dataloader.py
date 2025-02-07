@@ -218,11 +218,13 @@ class BackgroundConsumer(Thread):
         self._source = source  # Main DL iterator
 
     def run(self) -> None:
-        for item in self._source:
-            self._queue.put(item)  # Blocking if the queue is full
-
-        # Signal the consumer we are done; this should not happen for DataLoader
-        self._queue.put(StopIteration())
+        try:
+            for item in self._source:
+                self._queue.put(item)  # Blocking if the queue is full
+        except Exception as e:
+            self._queue.put(e)
+        else:
+            self._queue.put(StopIteration())
 
 
 QUEUESIZE = 32

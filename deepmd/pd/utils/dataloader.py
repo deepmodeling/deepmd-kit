@@ -258,11 +258,13 @@ class BackgroundConsumer(Thread):
         self._max_len = max_len  #
 
     def run(self) -> None:
-        for item in self._source:
-            self._queue.put(item)  # Blocking if the queue is full
-
-        # Signal the consumer we are done.
-        self._queue.put(_sentinel)
+        try:
+            for item in self._source:
+                self._queue.put(item)  # Blocking if the queue is full
+        except Exception as e:
+            self._queue.put(e)
+        else:
+            self._queue.put(StopIteration())
 
 
 class BufferedIterator:
