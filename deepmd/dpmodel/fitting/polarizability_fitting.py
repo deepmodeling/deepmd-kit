@@ -195,7 +195,6 @@ class PolarFitting(GeneralFitting):
         data["shift_diag"] = self.shift_diag
         data["@variables"]["scale"] = to_numpy_array(self.scale)
         data["@variables"]["constant_matrix"] = to_numpy_array(self.constant_matrix)
-        data["@variables"].pop("bias_atom_e")
         return data
 
     @classmethod
