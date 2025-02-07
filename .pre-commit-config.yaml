@@ -65,13 +65,13 @@ repos:
       - id: clang-format
         exclude: ^(source/3rdparty|source/lib/src/gpu/cudart/.+\.inc|.+\.ipynb$|.+\.json$)
   # markdown, yaml, CSS, javascript
-  # - repo: https://github.com/pre-commit/mirrors-prettier
-  #   rev: v4.0.0-alpha.8
-  #   hooks:
-  #     - id: prettier
-  #       types_or: [markdown, yaml, css]
-  #       # workflow files cannot be modified by pre-commit.ci
-  #       exclude: ^(source/3rdparty|\.github/workflows|\.clang-format)
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        types_or: [markdown, yaml, css]
+        # workflow files cannot be modified by pre-commit.ci
+        exclude: ^(source/3rdparty|\.github/workflows|\.clang-format)
   # Shell
   - repo: https://github.com/scop/pre-commit-shfmt
     rev: v3.10.0-2
@@ -83,25 +83,25 @@ repos:
     hooks:
       - id: cmake-format
       #- id: cmake-lint
-  # - repo: https://github.com/njzjz/mirrors-bibtex-tidy
-  #   rev: v1.13.0
-  #   hooks:
-  #     - id: bibtex-tidy
-  #       args:
-  #         - --curly
-  #         - --numeric
-  #         - --align=13
-  #         - --blank-lines
-  #         # disable sort: the order of keys and fields has explict meanings
-  #         #- --sort=key
-  #         - --duplicates=key,doi,citation,abstract
-  #         - --merge=combine
-  #         #- --sort-fields
-  #         #- --strip-comments
-  #         - --trailing-commas
-  #         - --encode-urls
-  #         - --remove-empty-fields
-  #         - --wrap=80
+  - repo: https://github.com/njzjz/mirrors-bibtex-tidy
+    rev: v1.13.0
+    hooks:
+      - id: bibtex-tidy
+        args:
+          - --curly
+          - --numeric
+          - --align=13
+          - --blank-lines
+          # disable sort: the order of keys and fields has explict meanings
+          #- --sort=key
+          - --duplicates=key,doi,citation,abstract
+          - --merge=combine
+          #- --sort-fields
+          #- --strip-comments
+          - --trailing-commas
+          - --encode-urls
+          - --remove-empty-fields
+          - --wrap=80
   # license header
   - repo: https://github.com/Lucas-C/pre-commit-hooks
     rev: v1.5.5
