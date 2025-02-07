@@ -38,11 +38,13 @@ inline FPTYPE customdsilugrad(const FPTYPE x, const FPTYPE a, const FPTYPE b) {
   FPTYPE eax1 = std::exp(-xbar);
   FPTYPE eax1p1 = eax1 + (FPTYPE)1.0;
   FPTYPE eax1p1r = (FPTYPE)1.0 / eax1p1;
+  FPTYPE eax1eax1p1r = 1 - eax1p1r;
   FPTYPE eaxb1 = std::exp(-xbar + b);
   FPTYPE eaxb1p1 = eaxb1 + (FPTYPE)1.0;
   FPTYPE eaxb1p1r = (FPTYPE)1.0 / eaxb1p1;
-  return (-xbar * eax1 * eax1p1r * eax1p1r - eax1p1r) * eaxb1p1r +
-         ((FPTYPE)1.0 - xbar * eax1p1r) * eaxb1 * eaxb1p1r * eaxb1p1r +
+  FPTYPE eaxb1eaxb1p1r = 1 - eaxb1p1r;
+  return (-xbar * eax1eax1p1r * eax1p1r - eax1p1r) * eaxb1p1r +
+         ((FPTYPE)1.0 - xbar * eax1p1r) * eaxb1eaxb1p1r * eaxb1p1r +
          silugrad(x);
 }
 
@@ -54,17 +56,18 @@ inline FPTYPE customdsilugradgrad(const FPTYPE x,
   FPTYPE eax1 = std::exp(-xbar);
   FPTYPE eax1p1 = eax1 + (FPTYPE)1.0;
   FPTYPE eax1p1r = (FPTYPE)1.0 / eax1p1;
+  FPTYPE eax1eax1p1r = 1 - eax1p1r;
   FPTYPE eaxb1 = std::exp(-xbar + b);
   FPTYPE eaxb1p1 = eaxb1 + (FPTYPE)1.0;
   FPTYPE eaxb1p1r = (FPTYPE)1.0 / eaxb1p1;
-  return ((FPTYPE)2.0 * (-xbar * eax1 * eax1p1r * eax1p1r - eax1p1r) * eaxb1 -
-          ((FPTYPE)1.0 - xbar * eax1p1r) * eaxb1) *
-             eaxb1p1r * eaxb1p1r +
-         (xbar * eax1 - (FPTYPE)2.0 * xbar * eax1 * eax1 * eax1p1r -
-          (FPTYPE)2.0 * eax1) *
-             eax1p1r * eax1p1r * eaxb1p1r +
-         (FPTYPE)2.0 * ((FPTYPE)1.0 - xbar * eax1p1r) * eaxb1 * eaxb1 *
-             eaxb1p1r * eaxb1p1r * eaxb1p1r +
+  FPTYPE eaxb1eaxb1p1r = 1 - eaxb1p1r;
+  return ((FPTYPE)2.0 * (-xbar * eax1eax1p1r * eax1p1r - eax1p1r) -
+          ((FPTYPE)1.0 - xbar * eax1p1r)) *
+             eaxb1eaxb1p1r * eaxb1p1r +
+         (xbar - (FPTYPE)2.0 * xbar * eax1eax1p1r - (FPTYPE)2.0) * eax1eax1p1r *
+             eax1p1r * eaxb1p1r +
+         (FPTYPE)2.0 * ((FPTYPE)1.0 - xbar * eax1p1r) * eaxb1eaxb1p1r *
+             eaxb1eaxb1p1r * eaxb1p1r +
          silugradgrad(x);
 }
 
