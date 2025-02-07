@@ -667,7 +667,6 @@ class PolarFittingSeA(Fitting):
         Model
             The deserialized model
         """
-        print("executing deserialize")
         data = data.copy()
         check_version_compatibility(
             data.pop("@version", 1), 4, 1
