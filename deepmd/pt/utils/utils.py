@@ -56,7 +56,7 @@ class CustomSiluJit(torch.nn.Module):
         # First-order gradient kernel
         self.backward_code = f"""
         template <typename T>
-        T custom_silu_backward(T x, T grad_output) {{
+        T custom_silu_backward(T x) {{
             const T threshold = {self.threshold};
             const T slope = {self.slope};
 
@@ -67,14 +67,14 @@ class CustomSiluJit(torch.nn.Module):
             T grad_tanh = slope * (1 - tanh_term * tanh_term);
 
             T grad = (x > threshold) ? grad_tanh : grad_silu;
-            return grad * grad_output;
+            return grad;
         }}
         """
 
         # Corrected second-order gradient kernel (FIXED HERE)
         self.double_backward_code = f"""
         template <typename T>
-        T custom_silu_double_backward(T x, T grad_grad_output) {{
+        T custom_silu_double_backward(T x, T grad_grad_output, T grad_output) {{
             const T threshold = {self.threshold};
             const T slope = {self.slope};
 
@@ -87,7 +87,7 @@ class CustomSiluJit(torch.nn.Module):
                 T sig_prime = sig * (1 - sig);
                 grad_grad = sig_prime * (2 + x * (1 - 2 * sig));  // FIXED COEFFICIENT
             }}
-            return grad_grad * grad_grad_output;
+            return grad_output * grad_grad * grad_grad_output;
         }}
         """
 
@@ -113,13 +113,16 @@ class CustomSiluJit(torch.nn.Module):
         class CustomSiluBackward(torch.autograd.Function):
             @staticmethod
             def forward(ctx, x, grad_output):
-                ctx.save_for_backward(x)
-                return self.jitted_backward(x, grad_output)
+                grad = self.jitted_backward(x)
+                ctx.save_for_backward(x, grad_output, grad)
+                return grad * grad_output
 
             @staticmethod
             def backward(ctx, grad_grad_output):
-                (x,) = ctx.saved_tensors
-                return self.jitted_double_backward(x, grad_grad_output), None
+                (x, grad_output, grad) = ctx.saved_tensors
+                return self.jitted_double_backward(
+                    x, grad_grad_output, grad_output
+                ), grad * grad_grad_output
 
         self.CustomSiluForward = CustomSiluForward
 
