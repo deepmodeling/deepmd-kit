@@ -477,7 +477,9 @@ def compute_output_stats_global(
         # subtract the model bias and output the delta bias
 
         stats_input = {
-            kk: merged_output[kk] - model_pred[kk].reshape(merged_output[kk].shape) for kk in keys if kk in merged_output
+            kk: merged_output[kk] - model_pred[kk].reshape(merged_output[kk].shape)
+            for kk in keys
+            if kk in merged_output
         }
 
     bias_atom_e = {}
