@@ -1256,9 +1256,9 @@ def get_loss(loss_params, start_lr, _ntypes, _model):
         loss_params["tensor_name"] = tensor_name
         loss_params["tensor_size"] = _model.model_output_def()[tensor_name].output_size
         label_name = tensor_name
+        loss_params["label_name"] = label_name
         if label_name == "polarizability":
             label_name = "polar"
-        loss_params["label_name"] = label_name
         loss_params["tensor_name"] = label_name
         return TensorLoss(**loss_params)
     elif loss_type == "property":
