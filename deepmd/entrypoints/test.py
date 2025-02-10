@@ -134,7 +134,7 @@ def test(
         )
 
         if isinstance(dp, DeepPot):
-            err = test_ener(
+            err, find_energy, find_force, find_virial = test_ener(
                 dp,
                 data,
                 system,
@@ -143,6 +143,29 @@ def test(
                 atomic,
                 append_detail=(cc != 0),
             )
+            err_part = {}
+
+            if find_energy == 1:
+                err_part['mae_e'] = err['mae_e']
+                err_part['mae_ea'] = err['mae_ea']
+                err_part['rmse_e'] = err['rmse_e']
+                err_part['rmse_ea'] = err['rmse_ea']
+
+            if find_force == 1:
+                if 'rmse_f' in err:
+                    err_part['mae_f'] = err['mae_f']
+                    err_part['rmse_f'] = err['rmse_f']
+                else:
+                    err_part['mae_fr'] = err['mae_fr']
+                    err_part['rmse_fr'] = err['rmse_fr']
+                    err_part['mae_fm'] = err['mae_fm']
+                    err_part['rmse_fm'] = err['rmse_fm']
+            if find_virial == 1:
+                err_part['mae_v'] = err['mae_v']
+                err_part['rmse_v'] = err['rmse_v']
+                
+            err = err_part
+
         elif isinstance(dp, DeepDOS):
             err = test_dos(
                 dp,
@@ -305,6 +328,9 @@ def test_ener(
         data.add("force_mag", 3, atomic=True, must=False, high_prec=False)
 
     test_data = data.get_test()
+    find_energy = test_data.get('find_energy')
+    find_force = test_data.get('find_force')
+    find_virial = test_data.get('find_virial')
     mixed_type = data.mixed_type
     natoms = len(test_data["type"][0])
     nframes = test_data["box"].shape[0]
@@ -430,16 +456,17 @@ def test_ener(
     log.info(f"Energy RMSE        : {rmse_e:e} eV")
     log.info(f"Energy MAE/Natoms  : {mae_ea:e} eV")
     log.info(f"Energy RMSE/Natoms : {rmse_ea:e} eV")
-    if not out_put_spin:
-        log.info(f"Force  MAE         : {mae_f:e} eV/A")
-        log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
-    else:
-        log.info(f"Force atom MAE      : {mae_fr:e} eV/A")
-        log.info(f"Force atom RMSE     : {rmse_fr:e} eV/A")
-        log.info(f"Force spin MAE      : {mae_fm:e} eV/uB")
-        log.info(f"Force spin RMSE     : {rmse_fm:e} eV/uB")
+    if find_force == 1:
+        if not out_put_spin:
+            log.info(f"Force  MAE         : {mae_f:e} eV/A")
+            log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
+        else:
+            log.info(f"Force atom MAE      : {mae_fr:e} eV/A")
+            log.info(f"Force atom RMSE     : {rmse_fr:e} eV/A")
+            log.info(f"Force spin MAE      : {mae_fm:e} eV/uB")
+            log.info(f"Force spin RMSE     : {rmse_fm:e} eV/uB")
 
-    if data.pbc and not out_put_spin:
+    if data.pbc and not out_put_spin and find_virial == 1:
         log.info(f"Virial MAE         : {mae_v:e} eV")
         log.info(f"Virial RMSE        : {rmse_v:e} eV")
         log.info(f"Virial MAE/Natoms  : {mae_va:e} eV")
@@ -542,7 +569,7 @@ def test_ener(
             "rmse_f": (rmse_f, force.size),
             "rmse_v": (rmse_v, virial.size),
             "rmse_va": (rmse_va, virial.size),
-        }
+        }, find_energy, find_force, find_virial
     else:
         return {
             "mae_e": (mae_e, energy.size),
@@ -557,7 +584,7 @@ def test_ener(
             "rmse_fm": (rmse_fm, force_m.size),
             "rmse_v": (rmse_v, virial.size),
             "rmse_va": (rmse_va, virial.size),
-        }
+        }, find_energy, find_force, find_virial
 
 
 def print_ener_sys_avg(avg: dict[str, float]) -> None:
