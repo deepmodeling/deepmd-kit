@@ -638,7 +638,6 @@ class PolarFittingSeA(Fitting):
                 "fparam_inv_std": None,
                 "aparam_avg": None,
                 "aparam_inv_std": None,
-                "case_embd": None,
                 "scale": self.scale.reshape(-1, 1),
                 "constant_matrix": self.constant_matrix.reshape(-1),
             },
