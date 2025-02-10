@@ -64,6 +64,25 @@ class CustomDSilu(torch.nn.Module):
         super().__init__()
         self.threshold = threshold
         self.sig_s = sig_s
+        self.ex_threshold = float(np.exp(threshold - 1))
+        self.ex_threshold_shift = float(np.exp(threshold - 1 + sig_s))
+
+    def forward(self, x):
+        exp_mx = torch.exp(-x)
+        silu_x = x * (1 / (1 + exp_mx))
+        exp_mx_threshold = exp_mx * self.ex_threshold
+        silu_x_threshold = (x - (self.threshold - 1)) * (1 / (1 + exp_mx_threshold))
+        exp_mx_threshold_shift = exp_mx * self.ex_threshold_shift
+        sig_threshold_shift = 1 / (1 + exp_mx_threshold_shift)
+        result = silu_x + sig_threshold_shift * (1 - silu_x_threshold)
+        return result
+
+
+class CustomDSiluOp(torch.nn.Module):
+    def __init__(self, threshold=3.0, sig_s=3.0):
+        super().__init__()
+        self.threshold = threshold
+        self.sig_s = sig_s
 
     def forward(self, x):
         result = torch.ops.deepmd.cdsilu(x.contiguous(), self.threshold, self.sig_s)
@@ -86,7 +105,13 @@ class ActivationFn(torch.nn.Module):
             threshold = (
                 float(self.activation.split(":")[-1]) if ":" in self.activation else 3.0
             )
-            self.custom_dsilu = CustomDSilu(threshold=threshold)
+            SILU_OP = os.environ.get("SILU_OP", "default")
+            if SILU_OP == "default":
+                self.custom_dsilu = CustomDSilu(threshold=threshold)
+            elif SILU_OP == "op":
+                self.custom_dsilu = CustomDSiluOp(threshold=threshold)
+            else:
+                raise ValueError(f"Not defined SILU_OP: {SILU_OP}!")
         else:
             self.custom_dsilu = None
 
