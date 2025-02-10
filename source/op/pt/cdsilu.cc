@@ -152,12 +152,14 @@ class CdsiluGradOp : public torch::autograd::Function<CdsiluGradOp> {
     // load data
     torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
     torch::Tensor x_tensor = saved_variables[0];
-    torch::Tensor dy_tensor = saved_variables[1];
+    torch::Tensor y_tensor = saved_variables[1];
+    torch::Tensor dy_tensor = saved_variables[2];
     torch::Tensor dy2_tensor = grad_output[0];
     FPTYPE a = ctx->saved_data["a"].toDouble();
     FPTYPE b = ctx->saved_data["b"].toDouble();
     return {CdsiluGradGradOp::apply(x_tensor, dy_tensor, dy2_tensor, a, b)[0],
-            at::Tensor(), at::Tensor(), at::Tensor()};
+            CdsiluGradOp::apply(x_tensor, dy2_tensor, a, b)[0], at::Tensor(),
+            at::Tensor()};
   }
 };
 

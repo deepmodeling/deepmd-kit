@@ -152,12 +152,14 @@ class ThsiluGradOp : public torch::autograd::Function<ThsiluGradOp> {
     // load data
     torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
     torch::Tensor x_tensor = saved_variables[0];
-    torch::Tensor dy_tensor = saved_variables[1];
+    torch::Tensor y_tensor = saved_variables[1];
+    torch::Tensor dy_tensor = saved_variables[2];
     torch::Tensor dy2_tensor = grad_output[0];
     FPTYPE w = ctx->saved_data["w"].toDouble();
     FPTYPE a = ctx->saved_data["a"].toDouble();
     return {ThsiluGradGradOp::apply(x_tensor, dy_tensor, dy2_tensor, w, a)[0],
-            at::Tensor(), at::Tensor(), at::Tensor()};
+            ThsiluGradOp::apply(x_tensor, dy_tensor, w, a)[0], at::Tensor(),
+            at::Tensor()};
   }
 };
 

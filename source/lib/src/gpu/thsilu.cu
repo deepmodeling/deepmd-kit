@@ -119,7 +119,7 @@ __global__ void thsilu_grad_grad(FPTYPE* out,
   if (idx >= size) {
     return;
   }
-  out[idx] = dy_2[idx] * tanhsilugradgrad(xx[idx], w, a);
+  out[idx] = dy[idx] * dy_2[idx] * tanhsilugradgrad(xx[idx], w, a);
 }
 
 namespace deepmd {

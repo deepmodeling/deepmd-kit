@@ -101,7 +101,7 @@ void deepmd::thsilu_grad_grad_cpu(FPTYPE* out,
                                   const FPTYPE a) {
 #pragma omp parallel for
   for (int ii = 0; ii < size; ii++) {
-    out[ii] = dy_2[ii] * tanhsilugradgrad(xx[ii], w, a);
+    out[ii] = dy[ii] * dy_2[ii] * tanhsilugradgrad(xx[ii], w, a);
   }
 }
 

@@ -114,7 +114,7 @@ __global__ void cdsilu_grad_grad(FPTYPE* out,
   if (idx >= size) {
     return;
   }
-  out[idx] = dy_2[idx] * customdsilugradgrad(xx[idx], a, b);
+  out[idx] = dy[idx] * dy_2[idx] * customdsilugradgrad(xx[idx], a, b);
 }
 
 namespace deepmd {
