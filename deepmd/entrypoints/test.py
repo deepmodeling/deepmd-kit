@@ -146,24 +146,24 @@ def test(
             err_part = {}
 
             if find_energy == 1:
-                err_part['mae_e'] = err['mae_e']
-                err_part['mae_ea'] = err['mae_ea']
-                err_part['rmse_e'] = err['rmse_e']
-                err_part['rmse_ea'] = err['rmse_ea']
+                err_part["mae_e"] = err["mae_e"]
+                err_part["mae_ea"] = err["mae_ea"]
+                err_part["rmse_e"] = err["rmse_e"]
+                err_part["rmse_ea"] = err["rmse_ea"]
 
             if find_force == 1:
-                if 'rmse_f' in err:
-                    err_part['mae_f'] = err['mae_f']
-                    err_part['rmse_f'] = err['rmse_f']
+                if "rmse_f" in err:
+                    err_part["mae_f"] = err["mae_f"]
+                    err_part["rmse_f"] = err["rmse_f"]
                 else:
-                    err_part['mae_fr'] = err['mae_fr']
-                    err_part['rmse_fr'] = err['rmse_fr']
-                    err_part['mae_fm'] = err['mae_fm']
-                    err_part['rmse_fm'] = err['rmse_fm']
+                    err_part["mae_fr"] = err["mae_fr"]
+                    err_part["rmse_fr"] = err["rmse_fr"]
+                    err_part["mae_fm"] = err["mae_fm"]
+                    err_part["rmse_fm"] = err["rmse_fm"]
             if find_virial == 1:
-                err_part['mae_v'] = err['mae_v']
-                err_part['rmse_v'] = err['rmse_v']
-                
+                err_part["mae_v"] = err["mae_v"]
+                err_part["rmse_v"] = err["rmse_v"]
+
             err = err_part
 
         elif isinstance(dp, DeepDOS):
@@ -328,9 +328,9 @@ def test_ener(
         data.add("force_mag", 3, atomic=True, must=False, high_prec=False)
 
     test_data = data.get_test()
-    find_energy = test_data.get('find_energy')
-    find_force = test_data.get('find_force')
-    find_virial = test_data.get('find_virial')
+    find_energy = test_data.get("find_energy")
+    find_force = test_data.get("find_force")
+    find_virial = test_data.get("find_virial")
     mixed_type = data.mixed_type
     natoms = len(test_data["type"][0])
     nframes = test_data["box"].shape[0]
@@ -558,33 +558,43 @@ def test_ener(
             append=append_detail,
         )
     if not out_put_spin:
-        return {
-            "mae_e": (mae_e, energy.size),
-            "mae_ea": (mae_ea, energy.size),
-            "mae_f": (mae_f, force.size),
-            "mae_v": (mae_v, virial.size),
-            "mae_va": (mae_va, virial.size),
-            "rmse_e": (rmse_e, energy.size),
-            "rmse_ea": (rmse_ea, energy.size),
-            "rmse_f": (rmse_f, force.size),
-            "rmse_v": (rmse_v, virial.size),
-            "rmse_va": (rmse_va, virial.size),
-        }, find_energy, find_force, find_virial
+        return (
+            {
+                "mae_e": (mae_e, energy.size),
+                "mae_ea": (mae_ea, energy.size),
+                "mae_f": (mae_f, force.size),
+                "mae_v": (mae_v, virial.size),
+                "mae_va": (mae_va, virial.size),
+                "rmse_e": (rmse_e, energy.size),
+                "rmse_ea": (rmse_ea, energy.size),
+                "rmse_f": (rmse_f, force.size),
+                "rmse_v": (rmse_v, virial.size),
+                "rmse_va": (rmse_va, virial.size),
+            },
+            find_energy,
+            find_force,
+            find_virial,
+        )
     else:
-        return {
-            "mae_e": (mae_e, energy.size),
-            "mae_ea": (mae_ea, energy.size),
-            "mae_fr": (mae_fr, force_r.size),
-            "mae_fm": (mae_fm, force_m.size),
-            "mae_v": (mae_v, virial.size),
-            "mae_va": (mae_va, virial.size),
-            "rmse_e": (rmse_e, energy.size),
-            "rmse_ea": (rmse_ea, energy.size),
-            "rmse_fr": (rmse_fr, force_r.size),
-            "rmse_fm": (rmse_fm, force_m.size),
-            "rmse_v": (rmse_v, virial.size),
-            "rmse_va": (rmse_va, virial.size),
-        }, find_energy, find_force, find_virial
+        return (
+            {
+                "mae_e": (mae_e, energy.size),
+                "mae_ea": (mae_ea, energy.size),
+                "mae_fr": (mae_fr, force_r.size),
+                "mae_fm": (mae_fm, force_m.size),
+                "mae_v": (mae_v, virial.size),
+                "mae_va": (mae_va, virial.size),
+                "rmse_e": (rmse_e, energy.size),
+                "rmse_ea": (rmse_ea, energy.size),
+                "rmse_fr": (rmse_fr, force_r.size),
+                "rmse_fm": (rmse_fm, force_m.size),
+                "rmse_v": (rmse_v, virial.size),
+                "rmse_va": (rmse_va, virial.size),
+            },
+            find_energy,
+            find_force,
+            find_virial,
+        )
 
 
 def print_ener_sys_avg(avg: dict[str, float]) -> None:
