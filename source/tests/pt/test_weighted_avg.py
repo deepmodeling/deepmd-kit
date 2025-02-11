@@ -4,7 +4,7 @@ from deepmd.utils.weight_avg import (
 import unittest
 import numpy as np
 
-def test(all_sys):
+def fake_test(all_sys):
     err_coll = []
     for sys_data in all_sys:
         err, find_energy, find_force, find_virial = sys_data
@@ -30,7 +30,7 @@ def test(all_sys):
     avg_err = weighted_average(err_coll)
     return avg_err
 
-def test_ori(all_sys):
+def fake_test_ori(all_sys):
     err_coll = []
     for sys_data in all_sys:
         err, _, _, _ = sys_data
@@ -52,7 +52,7 @@ class TestWeightedAverage(unittest.TestCase):
         expected_mae_ea = (4*2 +6*3 +8*5)/10
         expected_rmse_ea = np.sqrt((5**2*2 +7**2*3 +9**2*5)/10)
         
-        avg_err = test(all_sys)
+        avg_err = fake_test(all_sys)
         self.assertAlmostEqual(avg_err['mae_e'], expected_mae_e)
         self.assertAlmostEqual(avg_err['rmse_e'], expected_rmse_e)
         self.assertAlmostEqual(avg_err['mae_ea'], expected_mae_ea)
@@ -60,7 +60,7 @@ class TestWeightedAverage(unittest.TestCase):
         self.assertAlmostEqual(avg_err['mae_f'], 0)
         self.assertAlmostEqual(avg_err['mae_v'], 0)
         
-        avg_err_ori = test_ori(all_sys)
+        avg_err_ori = fake_test_ori(all_sys)
         self.assertAlmostEqual(avg_err['mae_e'], avg_err_ori['mae_e'])
         self.assertNotEqual(avg_err['mae_f'], avg_err_ori['rmse_f'])
         self.assertNotEqual(avg_err['mae_v'], avg_err_ori['rmse_v'])
@@ -74,11 +74,11 @@ class TestWeightedAverage(unittest.TestCase):
             ({'mae_e': (6,5), 'mae_ea': (8,5), 'rmse_e': (7,5), 'rmse_ea': (9,5),'mae_f': (2,3), 'rmse_f': (1,3), 'mae_v': (3,5), 'rmse_v': (3,3)}, 1,0,0),
         ]
         
-        avg_err = test(all_sys)
+        avg_err = fake_test(all_sys)
         expected_mae_f = (2*3 +1*3 )/(3+3)
         self.assertAlmostEqual(avg_err['mae_f'], expected_mae_f)
 
-        avg_err_ori = test_ori(all_sys)
+        avg_err_ori = fake_test_ori(all_sys)
         self.assertAlmostEqual(avg_err['mae_e'], avg_err_ori['mae_e'])
         self.assertNotEqual(avg_err['mae_f'], avg_err_ori['mae_f'])
         self.assertNotEqual(avg_err['mae_v'], avg_err_ori['mae_v'])
@@ -90,11 +90,11 @@ class TestWeightedAverage(unittest.TestCase):
             ({'mae_e': (6,5), 'mae_ea': (8,5), 'rmse_e': (7,5), 'rmse_ea': (9,5),'mae_f': (2,3), 'rmse_f': (1,3), 'mae_v': (3,5), 'rmse_v': (3,3)}, 1,1,0),
         ]
         
-        avg_err = test(all_sys)
+        avg_err = fake_test(all_sys)
         expected_mae_v = (3*5 +1*5 )/(5+5)
         self.assertAlmostEqual(avg_err['mae_v'], expected_mae_v)
 
-        avg_err_ori = test_ori(all_sys)
+        avg_err_ori = fake_test_ori(all_sys)
         self.assertAlmostEqual(avg_err['mae_e'], avg_err_ori['mae_e'])
         self.assertAlmostEqual(avg_err['mae_f'], avg_err_ori['mae_f'])
         self.assertNotEqual(avg_err['mae_v'], avg_err_ori['rmse_v'])
