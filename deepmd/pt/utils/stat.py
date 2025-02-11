@@ -95,7 +95,56 @@ def make_stat_input(
                 else:
                     pass
 
+    def finalize_stats(sys_stat):
+        """Finalize statistics by concatenating tensors."""
+        for key in sys_stat:
+            if isinstance(sys_stat[key], np.float32):
+                pass
+            elif sys_stat[key] is None or (
+                isinstance(sys_stat[key], list)
+                and (len(sys_stat[key]) == 0 or sys_stat[key][0] is None)
+            ):
+                sys_stat[key] = None
+            elif isinstance(sys_stat[key][0], torch.Tensor):
+                sys_stat[key] = torch.cat(sys_stat[key], dim=0)
+        dict_to_device(sys_stat)
+    
+    def process_element_counts(sys_index, dataset, min_frames_per_element_forstat):
+        """Process and update global element counts."""
+        element_counts, type_name = dataset.get_frame_index_for_elements()
+        for new_idx, elem_name in type_name.items():
+            if new_idx not in global_type_name:
+                global_type_name[new_idx] = elem_name
+        for elem, data in element_counts.items():
+            indices = data["indices"]
+            count = data["frames"]
+            total_element_types.add(elem)
+            if elem not in global_element_counts:
+                global_element_counts[elem] = {"count": 0, "indices": []}
+            if count > min_frames_per_element_forstat:
+                global_element_counts[elem]["count"] += min_frames_per_element_forstat
+                indices = indices[:min_frames_per_element_forstat]
+                global_element_counts[elem]["indices"].append({"sys_index": sys_index, "frames": indices})
+            else:
+                global_element_counts[elem]["count"] += count
+                global_element_counts[elem]["indices"].append({"sys_index": sys_index, "frames": indices})
+
+    def process_missing_elements(min_frames_per_element_forstat, global_element_counts, total_element_types, collect_ele):
+        """Handle missing elements and check element completeness."""
+        collect_elements = collect_ele.keys()
+        missing_elements = total_element_types - collect_elements
+        collect_miss_element = set()
+        for ele, count in collect_ele.items():
+            if count < min_frames_per_element_forstat:
+                collect_miss_element.add(ele)
+                missing_elements.add(ele)
+        for miss in missing_elements:
+            sys_indices = global_element_counts[miss].get("indices", [])
+            newele_counter = collect_ele.get(miss, 0) if miss in collect_miss_element else 0
+            process_with_new_frame(sys_indices, newele_counter, miss)
+
     def process_with_new_frame(sys_indices, newele_counter, miss):
+        """Process frames with missing elements."""
         for sys_info in sys_indices:
             sys_index = sys_info["sys_index"]
             frames = sys_info["frames"]
@@ -124,26 +173,10 @@ def make_stat_input(
                             sys_stat_new[dd].append(tensor_data)
                         elif isinstance(frame_data[dd], np.float32):
                             sys_stat_new[dd] = frame_data[dd]
-                        else:
-                            pass
                     finalize_stats(sys_stat_new)
                     lst.append(sys_stat_new)
                 else:
                     break
-
-    def finalize_stats(sys_stat):
-        """Finalize statistics by concatenating tensors."""
-        for key in sys_stat:
-            if isinstance(sys_stat[key], np.float32):
-                pass
-            elif sys_stat[key] is None or (
-                isinstance(sys_stat[key], list)
-                and (len(sys_stat[key]) == 0 or sys_stat[key][0] is None)
-            ):
-                sys_stat[key] = None
-            elif isinstance(sys_stat[key][0], torch.Tensor):
-                sys_stat[key] = torch.cat(sys_stat[key], dim=0)
-        dict_to_device(sys_stat)
 
     for sys_index, (dataset, dataloader) in enumerate(zip(datasets, dataloaders)):
         sys_stat = {}
@@ -159,67 +192,14 @@ def make_stat_input(
         finalize_stats(sys_stat)
         lst.append(sys_stat)
 
-        # get frame index
         if datasets[0].mixed_type and enable_element_completion:
-            element_counts, type_name = dataset.get_frame_index_for_elements()
-            for new_idx, elem_name in type_name.items():
-                if new_idx not in global_type_name:
-                    global_type_name[new_idx] = elem_name
-            for elem, data in element_counts.items():
-                indices = data["indices"]
-                count = data["frames"]
-                total_element_types.add(elem)
-                if elem not in global_element_counts:
-                    global_element_counts[elem] = {"count": 0, "indices": []}
-                    if count > min_frames_per_element_forstat:
-                        global_element_counts[elem]["count"] += (
-                            min_frames_per_element_forstat
-                        )
-                        indices = indices[:min_frames_per_element_forstat]
-                        global_element_counts[elem]["indices"].append(
-                            {"sys_index": sys_index, "frames": indices}
-                        )
-                    else:
-                        global_element_counts[elem]["count"] += count
-                        global_element_counts[elem]["indices"].append(
-                            {"sys_index": sys_index, "frames": indices}
-                        )
-                else:
-                    if (
-                        global_element_counts[elem]["count"]
-                        >= min_frames_per_element_forstat
-                    ):
-                        pass
-                    else:
-                        global_element_counts[elem]["count"] += count
-                        global_element_counts[elem]["indices"].append(
-                            {"sys_index": sys_index, "frames": indices}
-                        )
-    # Complement
+            process_element_counts(sys_index, dataset, min_frames_per_element_forstat)
+
     if datasets[0].mixed_type and enable_element_completion:
-        for elem, data in global_element_counts.items():
-            indices_count = data["count"]
-            element_name = global_type_name.get(elem, f"<unknown-{elem}>")
-            if indices_count < min_frames_per_element_forstat:
-                log.warning(
-                    f"The number of frames in your datasets with element {element_name} is {indices_count}, "
-                    f"which is less than the set {min_frames_per_element_forstat}"
-                )
-        collect_elements = collect_ele.keys()
-        missing_elements = total_element_types - collect_elements
-        collect_miss_element = set()
-        for ele, count in collect_ele.items():
-            if count < min_frames_per_element_forstat:
-                collect_miss_element.add(ele)
-                missing_elements.add(ele)
-        for miss in missing_elements:
-            sys_indices = global_element_counts[miss].get("indices", [])
-            if miss in collect_miss_element:
-                newele_counter = collect_ele.get(miss, 0)
-            else:
-                newele_counter = 0
-            process_with_new_frame(sys_indices, newele_counter, miss)
+        process_missing_elements(min_frames_per_element_forstat, global_element_counts, total_element_types, collect_ele)
+
     return lst
+
 
 
 def _restore_from_file(
