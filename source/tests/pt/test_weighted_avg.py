@@ -1,8 +1,12 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+import unittest
+
+import numpy as np
+
 from deepmd.utils.weight_avg import (
     weighted_average,
 )
-import unittest
-import numpy as np
+
 
 def fake_test(all_sys):
     err_coll = []
@@ -10,22 +14,22 @@ def fake_test(all_sys):
         err, find_energy, find_force, find_virial = sys_data
         err_part = {}
         if find_energy == 1:
-            err_part['mae_e'] = err['mae_e']
-            err_part['mae_ea'] = err['mae_ea']
-            err_part['rmse_e'] = err['rmse_e']
-            err_part['rmse_ea'] = err['rmse_ea']
+            err_part["mae_e"] = err["mae_e"]
+            err_part["mae_ea"] = err["mae_ea"]
+            err_part["rmse_e"] = err["rmse_e"]
+            err_part["rmse_ea"] = err["rmse_ea"]
         if find_force == 1:
-            if 'rmse_f' in err:
-                err_part['mae_f'] = err['mae_f']
-                err_part['rmse_f'] = err['rmse_f']
+            if "rmse_f" in err:
+                err_part["mae_f"] = err["mae_f"]
+                err_part["rmse_f"] = err["rmse_f"]
             else:
-                err_part['mae_fr'] = err['mae_fr']
-                err_part['rmse_fr'] = err['rmse_fr']
-                err_part['mae_fm'] = err['mae_fm']
-                err_part['rmse_fm'] = err['rmse_fm']
+                err_part["mae_fr"] = err["mae_fr"]
+                err_part["rmse_fr"] = err["rmse_fr"]
+                err_part["mae_fm"] = err["mae_fm"]
+                err_part["rmse_fm"] = err["rmse_fm"]
         if find_virial == 1:
-            err_part['mae_v'] = err['mae_v']
-            err_part['rmse_v'] = err['rmse_v']
+            err_part["mae_v"] = err["mae_v"]
+            err_part["rmse_v"] = err["rmse_v"]
         err_coll.append(err_part)
     avg_err = weighted_average(err_coll)
     return avg_err
@@ -38,14 +42,55 @@ def fake_test_ori(all_sys):
     avg_err = weighted_average(err_coll)
     return avg_err
 
+
 class TestWeightedAverage(unittest.TestCase):
-
     def test_case1_energy_only(self):
-
         all_sys = [
-            ({'mae_e': (2,2), 'mae_ea': (4,2), 'rmse_e': (3,2), 'rmse_ea': (5,2),'mae_f': (2,3), 'rmse_f': (1,3), 'mae_v': (3,5), 'rmse_v': (3,3)}, 1,0,0),
-            ({'mae_e': (4,3), 'mae_ea': (6,3), 'rmse_e': (5,3), 'rmse_ea': (7,3),'mae_f': (2,3), 'rmse_f': (1,3), 'mae_v': (3,5), 'rmse_v': (3,3)}, 1,0,0),
-            ({'mae_e': (6,5), 'mae_ea': (8,5), 'rmse_e': (7,5), 'rmse_ea': (9,5),'mae_f': (2,3), 'rmse_f': (1,3), 'mae_v': (3,5), 'rmse_v': (3,3)}, 1,0,0),
+            (
+                {
+                    "mae_e": (2, 2),
+                    "mae_ea": (4, 2),
+                    "rmse_e": (3, 2),
+                    "rmse_ea": (5, 2),
+                    "mae_f": (2, 3),
+                    "rmse_f": (1, 3),
+                    "mae_v": (3, 5),
+                    "rmse_v": (3, 3),
+                },
+                1,
+                0,
+                0,
+            ),
+            (
+                {
+                    "mae_e": (4, 3),
+                    "mae_ea": (6, 3),
+                    "rmse_e": (5, 3),
+                    "rmse_ea": (7, 3),
+                    "mae_f": (2, 3),
+                    "rmse_f": (1, 3),
+                    "mae_v": (3, 5),
+                    "rmse_v": (3, 3),
+                },
+                1,
+                0,
+                0,
+            ),
+            (
+                {
+                    "mae_e": (6, 5),
+                    "mae_ea": (8, 5),
+                    "rmse_e": (7, 5),
+                    "rmse_ea": (9, 5),
+                    "mae_f": (2, 3),
+                    "rmse_f": (1, 3),
+                    "mae_v": (3, 5),
+                    "rmse_v": (3, 3),
+                },
+                1,
+                0,
+                0,
+            ),
         ]
         expected_mae_e = (2*2 +4*3 +6*5)/(2+3+5)
         expected_rmse_e = np.sqrt((3**2*2 +5**2*3 +7**2*5)/(2+3+5))
@@ -69,9 +114,51 @@ class TestWeightedAverage(unittest.TestCase):
 
     def test_case2_energy_force(self):
         all_sys = [
-            ({'mae_e': (2,2), 'mae_ea': (4,2), 'rmse_e': (3,2), 'rmse_ea': (5,2),'mae_f': (2,3), 'rmse_f': (1,3), 'mae_v': (3,5), 'rmse_v': (3,3)}, 1,1,0),
-            ({'mae_e': (4,3), 'mae_ea': (6,3), 'rmse_e': (5,3), 'rmse_ea': (7,3),'mae_f': (1,3), 'rmse_f': (1,3), 'mae_v': (3,5), 'rmse_v': (3,3)}, 1,1,0),
-            ({'mae_e': (6,5), 'mae_ea': (8,5), 'rmse_e': (7,5), 'rmse_ea': (9,5),'mae_f': (2,3), 'rmse_f': (1,3), 'mae_v': (3,5), 'rmse_v': (3,3)}, 1,0,0),
+            (
+                {
+                    "mae_e": (2, 2),
+                    "mae_ea": (4, 2),
+                    "rmse_e": (3, 2),
+                    "rmse_ea": (5, 2),
+                    "mae_f": (2, 3),
+                    "rmse_f": (1, 3),
+                    "mae_v": (3, 5),
+                    "rmse_v": (3, 3),
+                },
+                1,
+                1,
+                0,
+            ),
+            (
+                {
+                    "mae_e": (4, 3),
+                    "mae_ea": (6, 3),
+                    "rmse_e": (5, 3),
+                    "rmse_ea": (7, 3),
+                    "mae_f": (1, 3),
+                    "rmse_f": (1, 3),
+                    "mae_v": (3, 5),
+                    "rmse_v": (3, 3),
+                },
+                1,
+                1,
+                0,
+            ),
+            (
+                {
+                    "mae_e": (6, 5),
+                    "mae_ea": (8, 5),
+                    "rmse_e": (7, 5),
+                    "rmse_ea": (9, 5),
+                    "mae_f": (2, 3),
+                    "rmse_f": (1, 3),
+                    "mae_v": (3, 5),
+                    "rmse_v": (3, 3),
+                },
+                1,
+                0,
+                0,
+            ),
         ]
         
         avg_err = fake_test(all_sys)
@@ -85,9 +172,51 @@ class TestWeightedAverage(unittest.TestCase):
 
     def test_case3_all_components(self):
         all_sys = [
-            ({'mae_e': (2,2), 'mae_ea': (4,2), 'rmse_e': (3,2), 'rmse_ea': (5,2),'mae_f': (2,3), 'rmse_f': (1,3), 'mae_v': (3,5), 'rmse_v': (3,3)}, 1,1,1),
-            ({'mae_e': (4,3), 'mae_ea': (6,3), 'rmse_e': (5,3), 'rmse_ea': (7,3),'mae_f': (2,3), 'rmse_f': (1,3), 'mae_v': (1,5), 'rmse_v': (2,3)}, 1,1,1),
-            ({'mae_e': (6,5), 'mae_ea': (8,5), 'rmse_e': (7,5), 'rmse_ea': (9,5),'mae_f': (2,3), 'rmse_f': (1,3), 'mae_v': (3,5), 'rmse_v': (3,3)}, 1,1,0),
+            (
+                {
+                    "mae_e": (2, 2),
+                    "mae_ea": (4, 2),
+                    "rmse_e": (3, 2),
+                    "rmse_ea": (5, 2),
+                    "mae_f": (2, 3),
+                    "rmse_f": (1, 3),
+                    "mae_v": (3, 5),
+                    "rmse_v": (3, 3),
+                },
+                1,
+                1,
+                1,
+            ),
+            (
+                {
+                    "mae_e": (4, 3),
+                    "mae_ea": (6, 3),
+                    "rmse_e": (5, 3),
+                    "rmse_ea": (7, 3),
+                    "mae_f": (2, 3),
+                    "rmse_f": (1, 3),
+                    "mae_v": (1, 5),
+                    "rmse_v": (2, 3),
+                },
+                1,
+                1,
+                1,
+            ),
+            (
+                {
+                    "mae_e": (6, 5),
+                    "mae_ea": (8, 5),
+                    "rmse_e": (7, 5),
+                    "rmse_ea": (9, 5),
+                    "mae_f": (2, 3),
+                    "rmse_f": (1, 3),
+                    "mae_v": (3, 5),
+                    "rmse_v": (3, 3),
+                },
+                1,
+                1,
+                0,
+            ),
         ]
         
         avg_err = fake_test(all_sys)
@@ -99,5 +228,5 @@ class TestWeightedAverage(unittest.TestCase):
         self.assertAlmostEqual(avg_err['mae_f'], avg_err_ori['mae_f'])
         self.assertNotEqual(avg_err['mae_v'], avg_err_ori['rmse_v'])
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
