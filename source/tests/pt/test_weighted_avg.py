@@ -34,6 +34,7 @@ def fake_test(all_sys):
     avg_err = weighted_average(err_coll)
     return avg_err
 
+
 def fake_test_ori(all_sys):
     err_coll = []
     for sys_data in all_sys:
@@ -91,19 +92,19 @@ class TestWeightedAverage(unittest.TestCase):
                 0,
             ),
         ]
-        expected_mae_e = (2*2 +4*3 +6*5)/(2+3+5)
-        expected_rmse_e = np.sqrt((3**2*2 +5**2*3 +7**2*5)/(2+3+5))
-        expected_mae_ea = (4*2 +6*3 +8*5)/10
-        expected_rmse_ea = np.sqrt((5**2*2 +7**2*3 +9**2*5)/10)
-        
+        expected_mae_e = (2 * 2 + 4 * 3 + 6 * 5) / (2 + 3 + 5)
+        expected_rmse_e = np.sqrt((3**2 * 2 + 5**2 * 3 + 7**2 * 5) / (2 + 3 + 5))
+        expected_mae_ea = (4 * 2 + 6 * 3 + 8 * 5) / 10
+        expected_rmse_ea = np.sqrt((5**2 * 2 + 7**2 * 3 + 9**2 * 5) / 10)
+
         avg_err = fake_test(all_sys)
-        self.assertAlmostEqual(avg_err['mae_e'], expected_mae_e)
-        self.assertAlmostEqual(avg_err['rmse_e'], expected_rmse_e)
-        self.assertAlmostEqual(avg_err['mae_ea'], expected_mae_ea)
-        self.assertAlmostEqual(avg_err['rmse_ea'], expected_rmse_ea)
-        self.assertAlmostEqual(avg_err['mae_f'], 0)
-        self.assertAlmostEqual(avg_err['mae_v'], 0)
-        
+        self.assertAlmostEqual(avg_err["mae_e"], expected_mae_e)
+        self.assertAlmostEqual(avg_err["rmse_e"], expected_rmse_e)
+        self.assertAlmostEqual(avg_err["mae_ea"], expected_mae_ea)
+        self.assertAlmostEqual(avg_err["rmse_ea"], expected_rmse_ea)
+        self.assertAlmostEqual(avg_err["mae_f"], 0)
+        self.assertAlmostEqual(avg_err["mae_v"], 0)
+
         avg_err_ori = fake_test_ori(all_sys)
         self.assertAlmostEqual(avg_err['mae_e'], avg_err_ori['mae_e'])
         self.assertNotEqual(avg_err['mae_f'], avg_err_ori['rmse_f'])
@@ -157,15 +158,15 @@ class TestWeightedAverage(unittest.TestCase):
                 0,
             ),
         ]
-        
+
         avg_err = fake_test(all_sys)
-        expected_mae_f = (2*3 +1*3 )/(3+3)
-        self.assertAlmostEqual(avg_err['mae_f'], expected_mae_f)
+        expected_mae_f = (2 * 3 + 1 * 3) / (3 + 3)
+        self.assertAlmostEqual(avg_err["mae_f"], expected_mae_f)
 
         avg_err_ori = fake_test_ori(all_sys)
-        self.assertAlmostEqual(avg_err['mae_e'], avg_err_ori['mae_e'])
-        self.assertNotEqual(avg_err['mae_f'], avg_err_ori['mae_f'])
-        self.assertNotEqual(avg_err['mae_v'], avg_err_ori['mae_v'])
+        self.assertAlmostEqual(avg_err["mae_e"], avg_err_ori["mae_e"])
+        self.assertNotEqual(avg_err["mae_f"], avg_err_ori["mae_f"])
+        self.assertNotEqual(avg_err["mae_v"], avg_err_ori["mae_v"])
 
     def test_case3_all_components(self):
         all_sys = [
@@ -215,15 +216,16 @@ class TestWeightedAverage(unittest.TestCase):
                 0,
             ),
         ]
-        
+
         avg_err = fake_test(all_sys)
-        expected_mae_v = (3*5 +1*5 )/(5+5)
-        self.assertAlmostEqual(avg_err['mae_v'], expected_mae_v)
+        expected_mae_v = (3 * 5 + 1 * 5) / (5 + 5)
+        self.assertAlmostEqual(avg_err["mae_v"], expected_mae_v)
 
         avg_err_ori = fake_test_ori(all_sys)
-        self.assertAlmostEqual(avg_err['mae_e'], avg_err_ori['mae_e'])
-        self.assertAlmostEqual(avg_err['mae_f'], avg_err_ori['mae_f'])
-        self.assertNotEqual(avg_err['mae_v'], avg_err_ori['rmse_v'])
+        self.assertAlmostEqual(avg_err["mae_e"], avg_err_ori["mae_e"])
+        self.assertAlmostEqual(avg_err["mae_f"], avg_err_ori["mae_f"])
+        self.assertNotEqual(avg_err["mae_v"], avg_err_ori["rmse_v"])
+
 
 if __name__ == "__main__":
     unittest.main()
