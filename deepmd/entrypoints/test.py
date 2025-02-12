@@ -134,8 +134,7 @@ def test(
         )
 
         if isinstance(dp, DeepPot):
-            # err, find_energy, find_force, find_virial = test_ener(
-            err = test_ener(
+            err, find_energy, find_force, find_virial = test_ener(
                 dp,
                 data,
                 system,
@@ -144,28 +143,28 @@ def test(
                 atomic,
                 append_detail=(cc != 0),
             )
-            # err_part = {}
+            err_part = {}
 
-            # if find_energy == 1:
-            #     err_part["mae_e"] = err["mae_e"]
-            #     err_part["mae_ea"] = err["mae_ea"]
-            #     err_part["rmse_e"] = err["rmse_e"]
-            #     err_part["rmse_ea"] = err["rmse_ea"]
+            if find_energy == 1:
+                err_part["mae_e"] = err["mae_e"]
+                err_part["mae_ea"] = err["mae_ea"]
+                err_part["rmse_e"] = err["rmse_e"]
+                err_part["rmse_ea"] = err["rmse_ea"]
 
-            # if find_force == 1:
-            #     if "rmse_f" in err:
-            #         err_part["mae_f"] = err["mae_f"]
-            #         err_part["rmse_f"] = err["rmse_f"]
-            #     else:
-            #         err_part["mae_fr"] = err["mae_fr"]
-            #         err_part["rmse_fr"] = err["rmse_fr"]
-            #         err_part["mae_fm"] = err["mae_fm"]
-            #         err_part["rmse_fm"] = err["rmse_fm"]
-            # if find_virial == 1:
-            #     err_part["mae_v"] = err["mae_v"]
-            #     err_part["rmse_v"] = err["rmse_v"]
+            if find_force == 1:
+                if "rmse_f" in err:
+                    err_part["mae_f"] = err["mae_f"]
+                    err_part["rmse_f"] = err["rmse_f"]
+                else:
+                    err_part["mae_fr"] = err["mae_fr"]
+                    err_part["rmse_fr"] = err["rmse_fr"]
+                    err_part["mae_fm"] = err["mae_fm"]
+                    err_part["rmse_fm"] = err["rmse_fm"]
+            if find_virial == 1:
+                err_part["mae_v"] = err["mae_v"]
+                err_part["rmse_v"] = err["rmse_v"]
 
-            # err = err_part
+            err = err_part
 
         elif isinstance(dp, DeepDOS):
             err = test_dos(
@@ -570,7 +569,7 @@ def test_ener(
             "rmse_f": (rmse_f, force.size),
             "rmse_v": (rmse_v, virial.size),
             "rmse_va": (rmse_va, virial.size),
-        }  # find_energy,find_force,find_virial,
+        } ,find_energy,find_force,find_virial,
     else:
         return {
             "mae_e": (mae_e, energy.size),
@@ -585,7 +584,7 @@ def test_ener(
             "rmse_fm": (rmse_fm, force_m.size),
             "rmse_v": (rmse_v, virial.size),
             "rmse_va": (rmse_va, virial.size),
-        }  # find_energy,find_force,find_virial,
+        } ,find_energy,find_force,find_virial,
 
 
 def print_ener_sys_avg(avg: dict[str, float]) -> None:
