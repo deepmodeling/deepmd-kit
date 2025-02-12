@@ -43,6 +43,7 @@ def fake_test_ori(all_sys):
     avg_err = weighted_average(err_coll)
     return avg_err
 
+
 class TestWeightedAverage(unittest.TestCase):
     def test_case1_energy_only(self):
         all_sys = [
@@ -106,9 +107,9 @@ class TestWeightedAverage(unittest.TestCase):
         self.assertAlmostEqual(avg_err["mae_v"], 0)
 
         avg_err_ori = fake_test_ori(all_sys)
-        self.assertAlmostEqual(avg_err['mae_e'], avg_err_ori['mae_e'])
-        self.assertNotEqual(avg_err['mae_f'], avg_err_ori['rmse_f'])
-        self.assertNotEqual(avg_err['mae_v'], avg_err_ori['rmse_v'])
+        self.assertAlmostEqual(avg_err["mae_e"], avg_err_ori["mae_e"])
+        self.assertNotEqual(avg_err["mae_f"], avg_err_ori["rmse_f"])
+        self.assertNotEqual(avg_err["mae_v"], avg_err_ori["rmse_v"])
 
     def test_case2_energy_force(self):
         all_sys = [
