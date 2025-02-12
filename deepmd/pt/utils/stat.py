@@ -152,9 +152,9 @@ def make_stat_input(
             newele_counter = (
                 collect_ele.get(miss, 0) if miss in collect_miss_element else 0
             )
-            process_with_new_frame(sys_indices, newele_counter, miss)
+            process_with_new_frame(sys_indices, newele_counter)
 
-    def process_with_new_frame(sys_indices, newele_counter, miss):
+    def process_with_new_frame(sys_indices, newele_counter):
         """Process frames with missing elements."""
         for sys_info in sys_indices:
             sys_index = sys_info["sys_index"]
