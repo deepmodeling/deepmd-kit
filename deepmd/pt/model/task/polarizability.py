@@ -107,9 +107,9 @@ class PolarFittingNet(GeneralFitting):
             self.scale = [1.0 for _ in range(ntypes)]
         else:
             if isinstance(self.scale, list):
-                assert (
-                    len(self.scale) == ntypes
-                ), "Scale should be a list of length ntypes."
+                assert len(self.scale) == ntypes, (
+                    "Scale should be a list of length ntypes."
+                )
             elif isinstance(self.scale, float):
                 self.scale = [self.scale for _ in range(ntypes)]
             else:
@@ -168,9 +168,9 @@ class PolarFittingNet(GeneralFitting):
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         assert self.mixed_types, "Only models in mixed types can perform type changing!"
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         super().change_type_map(type_map=type_map)
@@ -234,9 +234,9 @@ class PolarFittingNet(GeneralFitting):
         aparam: Optional[torch.Tensor] = None,
     ):
         nframes, nloc, _ = descriptor.shape
-        assert (
-            gr is not None
-        ), "Must provide the rotation matrix for polarizability fitting."
+        assert gr is not None, (
+            "Must provide the rotation matrix for polarizability fitting."
+        )
         # cast the input to internal precsion
         gr = gr.to(self.prec)
         # (nframes, nloc, _net_out_dim)

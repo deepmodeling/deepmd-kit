@@ -39,14 +39,12 @@ def replace_model_params_with_pretrained_model(
     pretrained_jdata = json.loads(t_jdata)
 
     # Check the model type
-    assert (
-        pretrained_jdata["model"]["descriptor"]["type"]
-        in [
-            "se_atten",
-            "se_atten_v2",
-        ]
-        and pretrained_jdata["model"]["fitting_net"]["type"] in ["ener"]
-    ), "The finetune process only supports models pretrained with 'se_atten' or 'se_atten_v2' descriptor and 'ener' fitting_net!"
+    assert pretrained_jdata["model"]["descriptor"]["type"] in [
+        "se_atten",
+        "se_atten_v2",
+    ] and pretrained_jdata["model"]["fitting_net"]["type"] in ["ener"], (
+        "The finetune process only supports models pretrained with 'se_atten' or 'se_atten_v2' descriptor and 'ener' fitting_net!"
+    )
 
     # Check the type map
     pretrained_type_map = pretrained_jdata["model"]["type_map"]

@@ -470,9 +470,9 @@ class DescrptSeA(DescrptSe):
             The suffix of the scope
         """
         # do some checks before the mocel compression process
-        assert (
-            not self.filter_resnet_dt
-        ), "Model compression error: descriptor resnet_dt must be false!"
+        assert not self.filter_resnet_dt, (
+            "Model compression error: descriptor resnet_dt must be false!"
+        )
         for tt in self.exclude_types:
             if (tt[0] not in range(self.ntypes)) or (tt[1] not in range(self.ntypes)):
                 raise RuntimeError(

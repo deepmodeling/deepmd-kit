@@ -96,9 +96,9 @@ class MultiTaskTrainTest:
             self.origin_config["training"]["data_dict"]["model_2"]
         )
         self.origin_config["training"]["data_dict"]["model_3"]["stat_file"] = (
-            self.origin_config[
-                "training"
-            ]["data_dict"]["model_3"]["stat_file"].replace("model_2", "model_3")
+            self.origin_config["training"]["data_dict"]["model_3"]["stat_file"].replace(
+                "model_2", "model_3"
+            )
         )
 
         # add model_4
@@ -115,9 +115,9 @@ class MultiTaskTrainTest:
             self.origin_config["training"]["data_dict"]["model_2"]
         )
         self.origin_config["training"]["data_dict"]["model_4"]["stat_file"] = (
-            self.origin_config[
-                "training"
-            ]["data_dict"]["model_4"]["stat_file"].replace("model_2", "model_4")
+            self.origin_config["training"]["data_dict"]["model_4"]["stat_file"].replace(
+                "model_2", "model_4"
+            )
         )
 
         # set finetune rules

@@ -248,9 +248,9 @@ class Trainer:
             return get_sample
 
         def get_lr(lr_params):
-            assert (
-                lr_params.get("type", "exp") == "exp"
-            ), "Only learning rate `exp` is supported!"
+            assert lr_params.get("type", "exp") == "exp", (
+                "Only learning rate `exp` is supported!"
+            )
             lr_params["stop_steps"] = self.num_steps - self.warmup_steps
             lr_exp = LearningRateExp(**lr_params)
             return lr_exp
@@ -261,9 +261,9 @@ class Trainer:
             missing_keys = [
                 key for key in self.model_keys if key not in self.optim_dict
             ]
-            assert (
-                not missing_keys
-            ), f"These keys are not in optim_dict: {missing_keys}!"
+            assert not missing_keys, (
+                f"These keys are not in optim_dict: {missing_keys}!"
+            )
             self.opt_type = {}
             self.opt_param = {}
             for model_key in self.model_keys:
@@ -392,9 +392,9 @@ class Trainer:
         # Learning rate
         self.warmup_steps = training_params.get("warmup_steps", 0)
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
-        assert (
-            self.num_steps - self.warmup_steps > 0 or self.warmup_steps == 0
-        ), "Warm up steps must be less than total training steps!"
+        assert self.num_steps - self.warmup_steps > 0 or self.warmup_steps == 0, (
+            "Warm up steps must be less than total training steps!"
+        )
         if self.multi_task and config.get("learning_rate_dict", None) is not None:
             self.lr_exp = {}
             for model_key in self.model_keys:
@@ -1261,13 +1261,11 @@ def get_loss(loss_params, start_lr, _ntypes, _model):
         if "mask" in model_output_type:
             model_output_type.pop(model_output_type.index("mask"))
         tensor_name = model_output_type[0]
-        loss_params["tensor_name"] = tensor_name
         loss_params["tensor_size"] = _model.model_output_def()[tensor_name].output_size
-        label_name = tensor_name
-        if label_name == "polarizability":
-            label_name = "polar"
-        loss_params["label_name"] = label_name
-        loss_params["tensor_name"] = label_name
+        loss_params["label_name"] = tensor_name
+        if tensor_name == "polarizability":
+            tensor_name = "polar"
+        loss_params["tensor_name"] = tensor_name
         return TensorLoss(**loss_params)
     elif loss_type == "property":
         task_dim = _model.get_task_dim()
@@ -1320,9 +1318,9 @@ def get_model_for_wrapper(
 
 
 def get_case_embd_config(_model_params):
-    assert (
-        "model_dict" in _model_params
-    ), "Only support setting case embedding for multi-task model!"
+    assert "model_dict" in _model_params, (
+        "Only support setting case embedding for multi-task model!"
+    )
     model_keys = list(_model_params["model_dict"])
     sorted_model_keys = sorted(model_keys)
     numb_case_embd_list = [

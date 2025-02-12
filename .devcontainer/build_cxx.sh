@@ -11,6 +11,7 @@ mkdir -p ${SCRIPT_PATH}/../buildcxx/
 cd ${SCRIPT_PATH}/../buildcxx/
 cmake -D ENABLE_TENSORFLOW=ON \
 	-D ENABLE_PYTORCH=ON \
+	-D ENABLE_PADDLE=ON \
 	-D CMAKE_INSTALL_PREFIX=${SCRIPT_PATH}/../dp/ \
 	-D LAMMPS_VERSION=stable_29Aug2024_update1 \
 	-D CMAKE_BUILD_TYPE=Debug \

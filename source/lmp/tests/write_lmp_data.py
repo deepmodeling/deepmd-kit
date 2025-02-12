@@ -43,7 +43,7 @@ def write_lmp_data_full(
         f.write(f"{box[6]:.10e} {box[7]:.10e} {box[8]:.10e} xy xz yz\n")
         f.write("\nMasses\n\n")
         for i in range(3):
-            f.write(f"{i+1:d} {mass_list[i]:.10e}\n")
+            f.write(f"{i + 1:d} {mass_list[i]:.10e}\n")
         f.write("\nAtoms\n\n")
         for i in range(natom):
             f.write(
