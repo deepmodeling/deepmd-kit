@@ -560,7 +560,7 @@ def main(args: Optional[Union[list[str], argparse.Namespace]] = None) -> None:
             model_branch=FLAGS.model_branch,
             output=FLAGS.output,
             skip_elem_check=FLAGS.skip_elementcheck,
-            min_frames=FLAGS.min_frames,
+            min_frames=FLAGS.minframes_eachelement,
         )
     elif FLAGS.command == "compress":
         FLAGS.input = str(Path(FLAGS.input).with_suffix(".pth"))
