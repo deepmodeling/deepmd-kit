@@ -558,33 +558,43 @@ def test_ener(
             append=append_detail,
         )
     if not out_put_spin:
-        return {
-            "mae_e": (mae_e, energy.size),
-            "mae_ea": (mae_ea, energy.size),
-            "mae_f": (mae_f, force.size),
-            "mae_v": (mae_v, virial.size),
-            "mae_va": (mae_va, virial.size),
-            "rmse_e": (rmse_e, energy.size),
-            "rmse_ea": (rmse_ea, energy.size),
-            "rmse_f": (rmse_f, force.size),
-            "rmse_v": (rmse_v, virial.size),
-            "rmse_va": (rmse_va, virial.size),
-        } ,find_energy,find_force,find_virial,
+        return (
+            {
+                "mae_e": (mae_e, energy.size),
+                "mae_ea": (mae_ea, energy.size),
+                "mae_f": (mae_f, force.size),
+                "mae_v": (mae_v, virial.size),
+                "mae_va": (mae_va, virial.size),
+                "rmse_e": (rmse_e, energy.size),
+                "rmse_ea": (rmse_ea, energy.size),
+                "rmse_f": (rmse_f, force.size),
+                "rmse_v": (rmse_v, virial.size),
+                "rmse_va": (rmse_va, virial.size),
+            },
+            find_energy,
+            find_force,
+            find_virial,
+        )
     else:
-        return {
-            "mae_e": (mae_e, energy.size),
-            "mae_ea": (mae_ea, energy.size),
-            "mae_fr": (mae_fr, force_r.size),
-            "mae_fm": (mae_fm, force_m.size),
-            "mae_v": (mae_v, virial.size),
-            "mae_va": (mae_va, virial.size),
-            "rmse_e": (rmse_e, energy.size),
-            "rmse_ea": (rmse_ea, energy.size),
-            "rmse_fr": (rmse_fr, force_r.size),
-            "rmse_fm": (rmse_fm, force_m.size),
-            "rmse_v": (rmse_v, virial.size),
-            "rmse_va": (rmse_va, virial.size),
-        } ,find_energy,find_force,find_virial,
+        return (
+            {
+                "mae_e": (mae_e, energy.size),
+                "mae_ea": (mae_ea, energy.size),
+                "mae_fr": (mae_fr, force_r.size),
+                "mae_fm": (mae_fm, force_m.size),
+                "mae_v": (mae_v, virial.size),
+                "mae_va": (mae_va, virial.size),
+                "rmse_e": (rmse_e, energy.size),
+                "rmse_ea": (rmse_ea, energy.size),
+                "rmse_fr": (rmse_fr, force_r.size),
+                "rmse_fm": (rmse_fm, force_m.size),
+                "rmse_v": (rmse_v, virial.size),
+                "rmse_va": (rmse_va, virial.size),
+            },
+            find_energy,
+            find_force,
+            find_virial,
+        )
 
 
 def print_ener_sys_avg(avg: dict[str, float]) -> None:
