@@ -108,7 +108,7 @@ def make_stat_input(
             elif isinstance(sys_stat[key][0], torch.Tensor):
                 sys_stat[key] = torch.cat(sys_stat[key], dim=0)
         dict_to_device(sys_stat)
-    
+
     def process_element_counts(sys_index, dataset, min_frames_per_element_forstat):
         """Process and update global element counts."""
         element_counts, type_name = dataset.get_frame_index_for_elements()
@@ -124,12 +124,21 @@ def make_stat_input(
             if count > min_frames_per_element_forstat:
                 global_element_counts[elem]["count"] += min_frames_per_element_forstat
                 indices = indices[:min_frames_per_element_forstat]
-                global_element_counts[elem]["indices"].append({"sys_index": sys_index, "frames": indices})
+                global_element_counts[elem]["indices"].append(
+                    {"sys_index": sys_index, "frames": indices}
+                )
             else:
                 global_element_counts[elem]["count"] += count
-                global_element_counts[elem]["indices"].append({"sys_index": sys_index, "frames": indices})
+                global_element_counts[elem]["indices"].append(
+                    {"sys_index": sys_index, "frames": indices}
+                )
 
-    def process_missing_elements(min_frames_per_element_forstat, global_element_counts, total_element_types, collect_ele):
+    def process_missing_elements(
+        min_frames_per_element_forstat,
+        global_element_counts,
+        total_element_types,
+        collect_ele,
+    ):
         """Handle missing elements and check element completeness."""
         collect_elements = collect_ele.keys()
         missing_elements = total_element_types - collect_elements
@@ -140,7 +149,9 @@ def make_stat_input(
                 missing_elements.add(ele)
         for miss in missing_elements:
             sys_indices = global_element_counts[miss].get("indices", [])
-            newele_counter = collect_ele.get(miss, 0) if miss in collect_miss_element else 0
+            newele_counter = (
+                collect_ele.get(miss, 0) if miss in collect_miss_element else 0
+            )
             process_with_new_frame(sys_indices, newele_counter, miss)
 
     def process_with_new_frame(sys_indices, newele_counter, miss):
@@ -196,10 +207,14 @@ def make_stat_input(
             process_element_counts(sys_index, dataset, min_frames_per_element_forstat)
 
     if datasets[0].mixed_type and enable_element_completion:
-        process_missing_elements(min_frames_per_element_forstat, global_element_counts, total_element_types, collect_ele)
+        process_missing_elements(
+            min_frames_per_element_forstat,
+            global_element_counts,
+            total_element_types,
+            collect_ele,
+        )
 
     return lst
-
 
 
 def _restore_from_file(

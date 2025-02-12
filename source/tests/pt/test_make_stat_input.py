@@ -1,11 +1,26 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
-from pathlib import Path
+from pathlib import (
+    Path,
+)
+
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
-from deepmd.pt.utils.dataset import DeepmdDataSetForLoader
-from deepmd.pt.utils.stat import compute_output_stats, make_stat_input
-from deepmd.utils.data import DataRequirementItem
+from torch.utils.data import (
+    DataLoader,
+)
+
+from deepmd.pt.utils.dataset import (
+    DeepmdDataSetForLoader,
+)
+from deepmd.pt.utils.stat import (
+    compute_output_stats,
+    make_stat_input,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
+
 
 def collate_fn(batch):
     if isinstance(batch, dict):
@@ -26,6 +41,7 @@ def collate_fn(batch):
                 out[key] = items
 
     return out
+
 
 class TestMakeStatInput(unittest.TestCase):
     @classmethod
@@ -71,13 +87,13 @@ class TestMakeStatInput(unittest.TestCase):
         energy = bias.get("energy")
         non_zero_count = self.count_non_zero_elements(energy)
         self.assertEqual(
-            non_zero_count, 
+            non_zero_count,
             self.real_ntypes,
-            f"Expected exactly {self.real_ntypes} non-zero elements in energy, but got {non_zero_count}."
+            f"Expected exactly {self.real_ntypes} non-zero elements in energy, but got {non_zero_count}.",
         )
 
     def test_process_missing_elements(self):
-        #3 frames would be count
+        # 3 frames would be count
         lst = make_stat_input(
             datasets=self.datasets,
             dataloaders=self.dataloaders,
@@ -91,9 +107,9 @@ class TestMakeStatInput(unittest.TestCase):
                 energy = sys_stat["energy"]
                 non_zero_count = self.count_non_zero_elements(energy)
                 self.assertLess(
-                    non_zero_count, 
-                    self.real_ntypes, 
-                    f"Expected fewer than {self.real_ntypes} non-zero elements due to missing elements."
+                    non_zero_count,
+                    self.real_ntypes,
+                    f"Expected fewer than {self.real_ntypes} non-zero elements due to missing elements.",
                 )
 
     def test_with_missing_elements_and_new_frames(self):
@@ -116,9 +132,11 @@ class TestMakeStatInput(unittest.TestCase):
                 energy = sys_stat["energy"]
                 missing_elements.append(self.count_non_zero_elements(energy))
 
-        # 
-        self.assertGreater(len(missing_elements), 0, "Expected missing elements to be processed.")
-        
+        #
+        self.assertGreater(
+            len(missing_elements), 0, "Expected missing elements to be processed."
+        )
+
         lst_new = make_stat_input(
             datasets=self.datasets,
             dataloaders=self.dataloaders,
@@ -127,13 +145,13 @@ class TestMakeStatInput(unittest.TestCase):
             enable_element_completion=True,
         )
 
-        # 
+        #
         for original, new in zip(lst, lst_new):
             energy_ori = np.array(original["energy"].cpu()).flatten()
             energy_new = np.array(new["energy"].cpu()).flatten()
             self.assertTrue(
                 np.allclose(energy_ori, energy_new),
-                msg=f"Energy values don't match. Original: {energy_ori}, New: {energy_new}"
+                msg=f"Energy values don't match. Original: {energy_ori}, New: {energy_new}",
             )
 
     def test_bias(self):
@@ -173,8 +191,8 @@ class TestMakeStatInput(unittest.TestCase):
                     )
 
     def test_with_nomissing(self):
-        #missing element:13,31,37
-        #only one frame would be count
+        # missing element:13,31,37
+        # only one frame would be count
         lst_ori = make_stat_input(
             datasets=self.datasets,
             dataloaders=self.dataloaders,
@@ -210,6 +228,7 @@ class TestMakeStatInput(unittest.TestCase):
             msg=f"energy_ori and energy_new are not exactly the same!\n"
             f"energy_ori = {energy_ori}\nenergy_new = {energy_new}",
         )
+
 
 if __name__ == "__main__":
     unittest.main()
