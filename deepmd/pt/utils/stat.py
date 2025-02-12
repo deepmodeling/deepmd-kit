@@ -165,7 +165,7 @@ def make_stat_input(
                 if newele_counter <= min_frames_per_element_forstat:
                     frame_data = sys.__getitem__(frame)
                     if miss not in frame_data["atype"]:
-                        raise ValueError(  
+                        raise ValueError(
                             "Element check failed. "
                             "If you are running in 'change-bias' mode, use '--skip-elementcheck' to disable this check. "
                             "If you encountered this error during model training, set 'enable_element_completion' to False "
