@@ -131,7 +131,7 @@ class TestMakeStatInput(unittest.TestCase):
             if "energy" in sys_stat:
                 energy = sys_stat["energy"]
                 missing_elements.append(self.count_non_zero_elements(energy))
-                
+
         self.assertGreater(
             len(missing_elements), 0, "Expected missing elements to be processed."
         )
