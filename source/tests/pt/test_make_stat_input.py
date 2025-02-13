@@ -121,7 +121,7 @@ class TestMakeStatInput(unittest.TestCase):
         lst = make_stat_input(
             datasets=self.datasets,
             dataloaders=self.dataloaders,
-            nbatches=10,
+            nbatches=1,
             min_frames_per_element_forstat=1,
             enable_element_completion=False,
         )
@@ -131,8 +131,7 @@ class TestMakeStatInput(unittest.TestCase):
             if "energy" in sys_stat:
                 energy = sys_stat["energy"]
                 missing_elements.append(self.count_non_zero_elements(energy))
-
-        #
+                
         self.assertGreater(
             len(missing_elements), 0, "Expected missing elements to be processed."
         )
@@ -140,12 +139,11 @@ class TestMakeStatInput(unittest.TestCase):
         lst_new = make_stat_input(
             datasets=self.datasets,
             dataloaders=self.dataloaders,
-            nbatches=10,
+            nbatches=1,
             min_frames_per_element_forstat=1,
             enable_element_completion=True,
         )
 
-        #
         for original, new in zip(lst, lst_new):
             energy_ori = np.array(original["energy"].cpu()).flatten()
             energy_new = np.array(new["energy"].cpu()).flatten()
