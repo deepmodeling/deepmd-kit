@@ -14,6 +14,7 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 
+
 def _make_fake_data_pt(sys_natoms, sys_nframes, avgs, stds):
     merged_output_stat = []
     nsys = len(sys_natoms)
@@ -68,6 +69,7 @@ def _brute_aparam_pt(data, ndim):
     std = np.std(all_data, axis=0)
     return avg, std
 
+
 class TestEnerFittingStat(unittest.TestCase):
     def test(self) -> None:
         descrpt = DescrptSeA(6.0, 5.8, [46, 92], neuron=[25, 50, 100], axis_neuron=16)
@@ -77,7 +79,7 @@ class TestEnerFittingStat(unittest.TestCase):
             neuron=[240, 240, 240],
             resnet_dt=True,
             numb_fparam=2,
-            numb_aparam=2, 
+            numb_aparam=2,
         )
         avgs = [0, 10]
         stds = [2, 0.4]
@@ -88,6 +90,10 @@ class TestEnerFittingStat(unittest.TestCase):
         arefa, arefs = _brute_aparam_pt(all_data, len(avgs))
         fitting.compute_input_stats(all_data)
         np.testing.assert_almost_equal(frefa, to_numpy_array(fitting.fparam_avg))
-        np.testing.assert_almost_equal(1.0/frefs, to_numpy_array(fitting.fparam_inv_std))
+        np.testing.assert_almost_equal(
+            1.0 / frefs, to_numpy_array(fitting.fparam_inv_std)
+        )
         np.testing.assert_almost_equal(arefa, to_numpy_array(fitting.aparam_avg))
-        np.testing.assert_almost_equal(1.0/arefs, to_numpy_array(fitting.aparam_inv_std))
+        np.testing.assert_almost_equal(
+            1.0 / arefs, to_numpy_array(fitting.aparam_inv_std)
+        )

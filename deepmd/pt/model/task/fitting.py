@@ -139,6 +139,7 @@ class Fitting(torch.nn.Module, BaseFitting):
                 )
             )
 
+
 class GeneralFitting(Fitting):
     """Construct a general fitting net.
 
