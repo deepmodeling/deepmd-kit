@@ -105,6 +105,8 @@ class Fitting(torch.nn.Module, BaseFitting):
             cat_data = torch.reshape(cat_data, [-1, self.numb_fparam])
             fparam_avg = torch.mean(cat_data, dim=0)
             fparam_std = torch.std(cat_data, dim=0, unbiased=False)
+            epsilon = 1e-12
+            fparam_std = torch.where(fparam_std < epsilon, torch.tensor(epsilon, dtype=fparam_std.dtype, device=fparam_std.device), fparam_std)
             fparam_inv_std = 1.0 / fparam_std
             self.fparam_avg.copy_(
                 torch.tensor(fparam_avg, device=env.DEVICE, dtype=self.fparam_avg.dtype)
@@ -129,6 +131,8 @@ class Fitting(torch.nn.Module, BaseFitting):
             sumn = sum(sys_sumn)
             aparam_avg = sumv / sumn
             aparam_std = torch.sqrt(sumv2 / sumn - (sumv / sumn) ** 2)
+            epsilon = 1e-12
+            aparam_std = torch.where(aparam_std < epsilon, torch.tensor(epsilon, dtype=aparam_std.dtype, device=aparam_std.device), aparam_std)
             aparam_inv_std = 1.0 / aparam_std
             self.aparam_avg.copy_(
                 torch.tensor(aparam_avg, device=env.DEVICE, dtype=self.aparam_avg.dtype)
