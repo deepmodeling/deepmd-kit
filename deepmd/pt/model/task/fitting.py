@@ -94,7 +94,6 @@ class Fitting(torch.nn.Module, BaseFitting):
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
             The path to the stat file.
-
         """
         if callable(merged):
             sampled = merged()
@@ -139,7 +138,6 @@ class Fitting(torch.nn.Module, BaseFitting):
                     aparam_inv_std, device=env.DEVICE, dtype=self.aparam_inv_std.dtype
                 )
             )
-
 
 class GeneralFitting(Fitting):
     """Construct a general fitting net.
