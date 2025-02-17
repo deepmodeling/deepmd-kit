@@ -1,10 +1,10 @@
-# Descriptor DPA-2 {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
+# Descriptor DPA-2 {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
 
 :::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
+**Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, DP {{ dpmodel_icon }}
 :::
 
-The DPA-2 model implementation. See https://doi.org/10.1038/s41524-024-01493-2 for more details.
+The DPA-2 model implementation. See [DPA-2 paper](https://doi.org/10.1038/s41524-024-01493-2) for more details.
 
 Training example: `examples/water/dpa2/input_torch_medium.json`, see [README](../../examples/water/dpa2/README.md) for inputs in different levels.
 

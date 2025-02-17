@@ -9,12 +9,15 @@ if(ENABLE_TENSORFLOW)
   # JAX requires TF C interface, contained in TF C++ library
   set(ENABLE_JAX ON)
 endif()
+option(ENABLE_PADDLE "Enable Paddle interface" OFF)
 option(BUILD_TESTING "Build test and enable coverage" OFF)
 set(DEEPMD_C_ROOT
     ""
     CACHE PATH "Path to imported DeePMD-kit C library")
 
-set(CMAKE_CXX_STANDARD 11)
+if(NOT DEFINED CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 11)
+endif()
 macro(set_if_higher VARIABLE VALUE)
   # ${VARIABLE} is a variable name, not a string
   if(${VARIABLE} LESS "${VALUE}")
@@ -25,6 +28,133 @@ if(NOT DEEPMD_C_ROOT)
   # we can still allow C++ 11 for programs linked to the C library
   set_if_higher(CMAKE_CXX_STANDARD 14)
 endif()
+
+if(ENABLE_PADDLE)
+  if(NOT DEFINED PADDLE_INFERENCE_DIR)
+    # message(FATAL_ERROR "Make sure PADDLE_INFERENCE_DIR is set when
+    # ENABLE_PADDLE=ON")
+    if(USE_CUDA_TOOLKIT)
+      find_package(CUDAToolkit REQUIRED)
+      string(REGEX MATCH "^[0-9]+" CUDA_MAJOR_VERSION "${CUDAToolkit_VERSION}")
+      message(STATUS "Find CUDAToolkit_VERSION: ${CUDAToolkit_VERSION}")
+      if(CUDA_MAJOR_VERSION VERSION_EQUAL "11")
+        message(
+          STATUS
+            "PADDLE_INFERENCE_DIR is not defined, downloading CUDA11.8 infernece lib to: ${CMAKE_BINARY_DIR}/"
+        )
+        set(DOWNLOAD_URL
+            "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz"
+        )
+      elseif(CUDA_MAJOR_VERSION VERSION_EQUAL "12")
+        message(
+          STATUS
+            "PADDLE_INFERENCE_DIR is not defined, downloading CUDA12.3 infernece lib to: ${CMAKE_BINARY_DIR}/"
+        )
+        set(DOWNLOAD_URL
+            "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda123_cudnn900_Trt8616_D1/latest/paddle_inference.tgz"
+        )
+      else()
+        message(
+          FATAL_ERROR
+            "Paddle inference lib only support cuda 11 or 12, but your CUDA_MAJOR_VERSION is: ${CUDA_MAJOR_VERSION}"
+        )
+      endif()
+    else()
+      message(
+        STATUS
+          "PADDLE_INFERENCE_DIR is not defined, downloading CPU infernece lib to: ${CMAKE_BINARY_DIR}/"
+      )
+      set(DOWNLOAD_URL
+          "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cpu_Mkl_Avx_D1/latest/paddle_inference.tgz"
+      )
+    endif()
+    set(TGZ_FILE "${CMAKE_BINARY_DIR}/paddle_inference.tgz")
+    set(EXTRACTED_DIR "${CMAKE_BINARY_DIR}/paddle_inference_install_dir")
+    file(DOWNLOAD ${DOWNLOAD_URL} ${TGZ_FILE})
+    message(STATUS "Downloading finished, extracting...")
+    execute_process(COMMAND ${CMAKE_COMMAND} -E tar -xzvf ${TGZ_FILE}
+                    OUTPUT_QUIET)
+    file(REMOVE ${TGZ_FILE})
+    set(PADDLE_INFERENCE_DIR
+        ${EXTRACTED_DIR}
+        CACHE PATH
+              "Path to 'paddle_inference_install_dir' or 'paddle_inference'")
+  else()
+    message(
+      STATUS "PADDLE_INFERENCE_DIR is already defined: ${PADDLE_INFERENCE_DIR}")
+  endif()
+
+  link_directories(
+    ${PADDLE_INFERENCE_DIR}/paddle/lib
+    ${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib
+    ${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib)
+
+  # Check and append to existing CMAKE_BUILD_RPATH
+  if(DEFINED CMAKE_BUILD_RPATH)
+    list(APPEND CMAKE_BUILD_RPATH "${PADDLE_INFERENCE_DIR}/paddle/lib"
+         "${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib"
+         "${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib")
+  else()
+    set(CMAKE_BUILD_RPATH
+        "${PADDLE_INFERENCE_DIR}/paddle/lib"
+        "${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib"
+        "${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib")
+  endif()
+
+  # Check and append to existing CMAKE_INSTALL_RPATH
+  if(DEFINED CMAKE_INSTALL_RPATH)
+    list(APPEND CMAKE_INSTALL_RPATH "${PADDLE_INFERENCE_DIR}/paddle/lib"
+         "${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib"
+         "${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib")
+  else()
+    set(CMAKE_INSTALL_RPATH
+        "${PADDLE_INFERENCE_DIR}/paddle/lib"
+        "${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib"
+        "${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib")
+  endif()
+
+  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+  message(STATUS "Final PADDLE_INFERENCE_DIR is set to ${PADDLE_INFERENCE_DIR}")
+
+  set(PADDLE_INFERENCE_DIR
+      ${PADDLE_INFERENCE_DIR}
+      CACHE PATH "Path to 'paddle_inference_install_dir' or 'paddle_inference'")
+
+  # used in api_cc
+  set(PADDLE_LIBRARIES
+      "${PADDLE_INFERENCE_DIR}/paddle/lib/libpaddle_inference.so"
+      CACHE PATH "Path to libpaddle_inference.so")
+
+  include_directories("${PADDLE_INFERENCE_DIR}/")
+  set(PADDLE_LIB_THIRD_PARTY_PATH
+      "${PADDLE_INFERENCE_DIR}/third_party/install/")
+
+  include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}protobuf/include")
+  include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}glog/include")
+  include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}gflags/include")
+  include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}xxhash/include")
+  list(APPEND BACKEND_INCLUDE_DIRS "${PADDLE_INFERENCE_DIR}/paddle/include")
+  list(APPEND BACKEND_INCLUDE_DIRS
+       "${PADDLE_LIB_THIRD_PARTY_PATH}protobuf/include")
+  list(APPEND BACKEND_INCLUDE_DIRS "${PADDLE_LIB_THIRD_PARTY_PATH}glog/include")
+  list(APPEND BACKEND_INCLUDE_DIRS
+       "${PADDLE_LIB_THIRD_PARTY_PATH}gflags/include")
+  list(APPEND BACKEND_INCLUDE_DIRS
+       "${PADDLE_LIB_THIRD_PARTY_PATH}xxhash/include")
+
+  link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}protobuf/lib")
+  link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}glog/lib")
+  link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}gflags/lib")
+  link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}xxhash/lib")
+  link_directories("${PADDLE_INFERENCE_DIR}/paddle/lib")
+  list(APPEND BACKEND_LIBRARY_PATH "${PADDLE_INFERENCE_DIR}/paddle/lib")
+  list(APPEND BACKEND_LIBRARY_PATH
+       "${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib")
+  list(APPEND BACKEND_LIBRARY_PATH
+       "${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib")
+
+  # if (USE_ROCM_TOOLKIT) add_definitions(-D_GLIBCXX_USE_CXX11_ABI=1) endif()
+endif(ENABLE_PADDLE)
 
 if(BUILD_TESTING)
   enable_testing()
@@ -279,9 +409,13 @@ if(NOT DEEPMD_C_ROOT)
   if(ENABLE_JAX)
     message(STATUS "- JAX")
   endif()
+  if(ENABLE_PADDLE)
+    message(STATUS "- Paddle")
+  endif()
   if(NOT ENABLE_TENSORFLOW
      AND NOT ENABLE_PYTORCH
      AND NOT ENABLE_JAX
+     AND NOT ENABLE_PADDLE
      AND NOT BUILD_PY_IF)
     message(FATAL_ERROR "No backend is enabled.")
   endif()
@@ -446,7 +580,7 @@ if(BUILD_CPP_IF
   set(version_file "${generated_dir}/${CMAKE_PROJECT_NAME}ConfigVersion.cmake")
   write_basic_package_version_file(
     ${version_file}
-    VERSION $<IF:${GIT_SUMM}?${GIT_SUMM}:"0.0.0">
+    VERSION $<IF:${GIT_SUMM}?${GIT_SUMM}:0.0.0>
     COMPATIBILITY AnyNewerVersion)
   install(
     EXPORT ${targets_export_name}

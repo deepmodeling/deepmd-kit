@@ -1,14 +1,14 @@
-# Descriptor `"se_atten"` {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
+# Descriptor `"se_atten"` {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, DP {{ dpmodel_icon }}
 :::
 
 ![ALT](../images/model_se_atten.png "model_se_atten")
 
 Here we propose DPA-1, a Deep Potential model with a novel attention mechanism, which is highly effective for representing the conformation and chemical spaces of atomic systems and learning the PES.
 
-See [this paper](https://arxiv.org/abs/2208.08236) for more information. DPA-1 is implemented as a new descriptor `"se_atten"` for model training, which can be used after simply editing the input.json.
+See [this paper](https://www.nature.com/articles/s41524-024-01278-7) for more information. DPA-1 is implemented as a new descriptor `"se_atten"` for model training, which can be used after simply editing the input.json.
 
 ## Theory
 
@@ -71,7 +71,7 @@ Then layer normalization is added in a residual way to finally obtain the self-a
 Next, we will list the detailed settings in input.json and the data format, especially for large systems with dozens of elements. An example of DPA-1 input can be found in `examples/water/se_atten/input.json`.
 
 The notation of `se_atten` is short for the smooth edition of Deep Potential with an attention mechanism.
-This descriptor was described in detail in [the DPA-1 paper](https://arxiv.org/abs/2208.08236) and the images above.
+This descriptor was described in detail in [the DPA-1 paper](https://www.nature.com/articles/s41524-024-01278-7) and the images above.
 
 In this example, we will train a DPA-1 model for a water system. A complete training input script of this example can be found in the directory:
 

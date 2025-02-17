@@ -1147,8 +1147,7 @@ def dpa2_repformer_args():
         "and `update_residual_init`."
     )
     doc_update_residual = (
-        "When update using residual mode, "
-        "the initial std of residual vector weights."
+        "When update using residual mode, the initial std of residual vector weights."
     )
     doc_update_residual_init = (
         "When update using residual mode, "
@@ -1581,6 +1580,9 @@ def fitting_property():
     doc_task_dim = "The dimension of outputs of fitting net"
     doc_intensive = "Whether the fitting property is intensive"
     doc_property_name = "The names of fitting property, which should be consistent with the property name in the dataset."
+    doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be\n\n\
+- bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
+- list of bool: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of this list should be equal to len(`neuron`)+1."
     return [
         Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
         Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
@@ -1616,6 +1618,13 @@ def fitting_property():
             str,
             optional=False,
             doc=doc_property_name,
+        ),
+        Argument(
+            "trainable",
+            [list[bool], bool],
+            optional=True,
+            default=True,
+            doc=doc_trainable,
         ),
     ]
 
@@ -2179,6 +2188,8 @@ def loss_ener():
     doc_limit_pref_f = limit_pref("force")
     doc_start_pref_v = start_pref("virial", abbr="v")
     doc_limit_pref_v = limit_pref("virial")
+    doc_start_pref_h = start_pref("hessian", abbr="h")  # prefactor of hessian
+    doc_limit_pref_h = limit_pref("hessian")
     doc_start_pref_ae = start_pref("atomic energy", label="atom_ener", abbr="ae")
     doc_limit_pref_ae = limit_pref("atomic energy")
     doc_start_pref_pf = start_pref(
@@ -2232,6 +2243,20 @@ def loss_ener():
             optional=True,
             default=0.00,
             doc=doc_limit_pref_v,
+        ),
+        Argument(
+            "start_pref_h",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_start_pref_h,
+        ),
+        Argument(
+            "limit_pref_h",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_limit_pref_h,
         ),
         Argument(
             "start_pref_ae",

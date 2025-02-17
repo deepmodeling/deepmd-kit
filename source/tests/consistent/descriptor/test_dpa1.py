@@ -442,7 +442,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
         )
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
-        return (ret[0],)
+        return (ret[0], ret[1])
 
     @property
     def rtol(self) -> float:

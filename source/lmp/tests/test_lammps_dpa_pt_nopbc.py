@@ -318,7 +318,7 @@ def test_pair_deepmd_virial(lammps) -> None:
     lammps.compute("virial all centroid/stress/atom NULL pair")
     for ii in range(9):
         jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-        lammps.variable(f"virial{jj} atom c_virial[{ii+1}]")
+        lammps.variable(f"virial{jj} atom c_virial[{ii + 1}]")
     lammps.dump(
         "1 all custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)])
     )
@@ -369,7 +369,7 @@ def test_pair_deepmd_model_devi_virial(lammps) -> None:
     lammps.compute("virial all centroid/stress/atom NULL pair")
     for ii in range(9):
         jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-        lammps.variable(f"virial{jj} atom c_virial[{ii+1}]")
+        lammps.variable(f"virial{jj} atom c_virial[{ii + 1}]")
     lammps.dump(
         "1 all custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)])
     )
@@ -493,7 +493,7 @@ def test_pair_deepmd_virial_real(lammps_real) -> None:
     lammps_real.compute("virial all centroid/stress/atom NULL pair")
     for ii in range(9):
         jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-        lammps_real.variable(f"virial{jj} atom c_virial[{ii+1}]")
+        lammps_real.variable(f"virial{jj} atom c_virial[{ii + 1}]")
     lammps_real.dump(
         "1 all custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)])
     )
@@ -552,7 +552,7 @@ def test_pair_deepmd_model_devi_virial_real(lammps_real) -> None:
     lammps_real.compute("virial all centroid/stress/atom NULL pair")
     for ii in range(9):
         jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-        lammps_real.variable(f"virial{jj} atom c_virial[{ii+1}]")
+        lammps_real.variable(f"virial{jj} atom c_virial[{ii + 1}]")
     lammps_real.dump(
         "1 all custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)])
     )

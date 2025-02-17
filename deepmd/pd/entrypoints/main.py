@@ -46,6 +46,7 @@ from deepmd.pd.utils.dataloader import (
 )
 from deepmd.pd.utils.env import (
     DEVICE,
+    LOCAL_RANK,
 )
 from deepmd.pd.utils.finetune import (
     get_finetune_rules,
@@ -232,7 +233,8 @@ def train(
     output: str = "out.json",
 ) -> None:
     log.info("Configuration path: %s", input_file)
-    SummaryPrinter()()
+    if LOCAL_RANK == 0:
+        SummaryPrinter()()
     with open(input_file) as fin:
         config = json.load(fin)
     # ensure suffix, as in the command line help, we say "path prefix of checkpoint files"
@@ -247,9 +249,9 @@ def train(
     if multi_task:
         config["model"], shared_links = preprocess_shared_params(config["model"])
         # handle the special key
-        assert (
-            "RANDOM" not in config["model"]["model_dict"]
-        ), "Model name can not be 'RANDOM' in multi-task mode!"
+        assert "RANDOM" not in config["model"]["model_dict"], (
+            "Model name can not be 'RANDOM' in multi-task mode!"
+        )
 
     # update fine-tuning config
     finetune_links = None
@@ -404,9 +406,9 @@ def change_bias(
     multi_task = "model_dict" in model_params
     bias_adjust_mode = "change-by-statistic" if mode == "change" else "set-by-statistic"
     if multi_task:
-        assert (
-            model_branch is not None
-        ), "For multitask model, the model branch must be set!"
+        assert model_branch is not None, (
+            "For multitask model, the model branch must be set!"
+        )
         assert model_branch in model_params["model_dict"], (
             f"For multitask model, the model branch must be in the 'model_dict'! "
             f"Available options are : {list(model_params['model_dict'].keys())}."
@@ -427,12 +429,12 @@ def change_bias(
 
     if bias_value is not None:
         # use user-defined bias
-        assert model_to_change.model_type in [
-            "ener"
-        ], "User-defined bias is only available for energy model!"
-        assert (
-            len(bias_value) == len(type_map)
-        ), f"The number of elements in the bias should be the same as that in the type_map: {type_map}."
+        assert model_to_change.model_type in ["ener"], (
+            "User-defined bias is only available for energy model!"
+        )
+        assert len(bias_value) == len(type_map), (
+            f"The number of elements in the bias should be the same as that in the type_map: {type_map}."
+        )
         old_bias = model_to_change.get_out_bias()
         bias_to_set = paddle.to_tensor(
             bias_value, dtype=old_bias.dtype, place=old_bias.place

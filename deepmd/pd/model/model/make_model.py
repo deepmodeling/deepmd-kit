@@ -28,7 +28,7 @@ from deepmd.pd.utils.env import (
     GLOBAL_PD_ENER_FLOAT_PRECISION,
     GLOBAL_PD_FLOAT_PRECISION,
     PRECISION_DICT,
-    RESERVED_PRECISON_DICT,
+    RESERVED_PRECISION_DICT,
 )
 from deepmd.pd.utils.nlist import (
     extend_input_and_build_neighbor_list,
@@ -76,7 +76,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             else:
                 self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)
             self.precision_dict = PRECISION_DICT
-            self.reverse_precision_dict = RESERVED_PRECISON_DICT
+            self.reverse_precision_dict = RESERVED_PRECISION_DICT
             self.global_pd_float_precision = GLOBAL_PD_FLOAT_PRECISION
             self.global_pd_ener_float_precision = GLOBAL_PD_ENER_FLOAT_PRECISION
 

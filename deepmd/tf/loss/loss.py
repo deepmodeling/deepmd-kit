@@ -95,3 +95,55 @@ class Loss(metaclass=ABCMeta):
     @abstractmethod
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the loss module.
+
+        Parameters
+        ----------
+        suffix : str
+            The suffix of the loss module
+
+        Returns
+        -------
+        dict
+            The serialized loss module
+        """
+        raise NotImplementedError
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = "") -> "Loss":
+        """Deserialize the loss module.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized loss module
+        suffix : str
+            The suffix of the loss module
+
+        Returns
+        -------
+        Loss
+            The deserialized loss module
+        """
+        raise NotImplementedError
+
+    def init_variables(
+        self,
+        graph: tf.Graph,
+        graph_def: tf.GraphDef,
+        suffix: str = "",
+    ) -> None:
+        """No actual effect.
+
+        Parameters
+        ----------
+        graph : tf.Graph
+            The input frozen model graph
+        graph_def : tf.GraphDef
+            The input frozen model graph_def
+        suffix : str, optional
+            The suffix of the scope
+        """
+        pass

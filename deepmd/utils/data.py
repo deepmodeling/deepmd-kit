@@ -79,9 +79,9 @@ class DeepmdData:
         self.natoms = len(self.atom_type)
         # load atom type map
         self.type_map = self._load_type_map(root)
-        assert (
-            optional_type_map or self.type_map is not None
-        ), f"System {sys_path} must have type_map.raw in this mode! "
+        assert optional_type_map or self.type_map is not None, (
+            f"System {sys_path} must have type_map.raw in this mode! "
+        )
         if self.type_map is not None:
             assert len(self.type_map) >= max(self.atom_type) + 1
         # check pbc
@@ -196,9 +196,9 @@ class DeepmdData:
         assert key_in in self.data_dict, "cannot find input key"
         assert self.data_dict[key_in]["atomic"], "reduced property should be atomic"
         assert key_out not in self.data_dict, "output key should not have been added"
-        assert (
-            self.data_dict[key_in]["repeat"] == 1
-        ), "reduced properties should not have been repeated"
+        assert self.data_dict[key_in]["repeat"] == 1, (
+            "reduced properties should not have been repeated"
+        )
 
         self.data_dict[key_out] = {
             "ndof": self.data_dict[key_in]["ndof"],
@@ -569,7 +569,9 @@ class DeepmdData:
             ).T
             assert (
                 atom_type_nums.sum(axis=-1) + ghost_nums.sum(axis=-1) == natoms
-            ).all(), f"some types in 'real_atom_types.npy' of set {set_name} are not contained in {self.get_ntypes()} types!"
+            ).all(), (
+                f"some types in 'real_atom_types.npy' of set {set_name} are not contained in {self.get_ntypes()} types!"
+            )
             data["real_natoms_vec"] = np.concatenate(
                 (
                     np.tile(np.array([natoms, natoms], dtype=np.int32), (nframes, 1)),
@@ -660,9 +662,24 @@ class DeepmdData:
                                 f"({nframes}, {natoms_sel}, {ndof_}) or"
                                 f"({nframes}, {natoms}, {ndof_})"
                             )
-                    data = data.reshape([nframes, natoms, -1])
-                    data = data[:, idx_map, :]
-                    data = data.reshape([nframes, -1])
+                    if key == "hessian":
+                        data = data.reshape(nframes, 3 * natoms, 3 * natoms)
+                        # get idx_map for hessian
+                        num_chunks, chunk_size = len(idx_map), 3
+                        idx_map_hess = np.arange(num_chunks * chunk_size)  # pylint: disable=no-explicit-dtype
+                        idx_map_hess = idx_map_hess.reshape(num_chunks, chunk_size)
+                        idx_map_hess = idx_map_hess[idx_map]
+                        idx_map_hess = idx_map_hess.flatten()
+                        data = data[:, idx_map_hess, :]
+                        data = data[:, :, idx_map_hess]
+                        data = data.reshape([nframes, -1])
+                        ndof = (
+                            3 * ndof * 3 * ndof
+                        )  # size of hessian is 3Natoms * 3Natoms
+                    else:
+                        data = data.reshape([nframes, natoms, -1])
+                        data = data[:, idx_map, :]
+                        data = data.reshape([nframes, -1])
                 data = np.reshape(data, [nframes, ndof])
             except ValueError as err_message:
                 explanation = "This error may occur when your label mismatch it's name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`."

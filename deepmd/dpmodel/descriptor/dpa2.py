@@ -543,9 +543,9 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             )
         self.rcsl_list.sort()
         for ii in range(1, len(self.rcsl_list)):
-            assert (
-                self.rcsl_list[ii - 1][1] <= self.rcsl_list[ii][1]
-            ), "rcut and sel are not in the same order"
+            assert self.rcsl_list[ii - 1][1] <= self.rcsl_list[ii][1], (
+                "rcut and sel are not in the same order"
+            )
         self.rcut_list = [ii[0] for ii in self.rcsl_list]
         self.nsel_list = [ii[1] for ii in self.rcsl_list]
         self.use_econf_tebd = use_econf_tebd
@@ -678,9 +678,9 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map
         self.type_embedding.change_type_map(type_map=type_map)

@@ -72,7 +72,7 @@ class DeprecateAction(argparse.Action):
     def __init__(self, *args, **kwargs) -> None:
         self.call_count = 0
         if "help" in kwargs:
-            kwargs["help"] = f'[DEPRECATED] {kwargs["help"]}'
+            kwargs["help"] = f"[DEPRECATED] {kwargs['help']}"
         super().__init__(*args, **kwargs)
 
     def __call__(self, parser, namespace, values, option_string=None):

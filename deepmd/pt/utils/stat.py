@@ -477,7 +477,9 @@ def compute_output_stats_global(
         # subtract the model bias and output the delta bias
 
         stats_input = {
-            kk: merged_output[kk] - model_pred[kk] for kk in keys if kk in merged_output
+            kk: merged_output[kk] - model_pred[kk].reshape(merged_output[kk].shape)
+            for kk in keys
+            if kk in merged_output
         }
 
     bias_atom_e = {}
@@ -604,9 +606,9 @@ def compute_output_stats_atomic(
             # correction for missing types
             missing_types = ntypes - merged_natoms[kk].max() - 1
             if missing_types > 0:
-                assert (
-                    bias_atom_e[kk].dtype is std_atom_e[kk].dtype
-                ), "bias and std should be of the same dtypes"
+                assert bias_atom_e[kk].dtype is std_atom_e[kk].dtype, (
+                    "bias and std should be of the same dtypes"
+                )
                 nan_padding = np.empty(
                     (missing_types, bias_atom_e[kk].shape[1]),
                     dtype=bias_atom_e[kk].dtype,

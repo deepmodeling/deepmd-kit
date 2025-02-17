@@ -35,7 +35,7 @@ from deepmd.pd.utils.auto_batch_size import (
 from deepmd.pd.utils.env import (
     DEVICE,
     GLOBAL_PD_FLOAT_PRECISION,
-    RESERVED_PRECISON_DICT,
+    RESERVED_PRECISION_DICT,
     enable_prim,
 )
 from deepmd.pd.utils.utils import (
@@ -92,12 +92,12 @@ class DeepEval(DeepEvalBackend):
                 model_keys = list(self.input_param["model_dict"].keys())
                 if isinstance(head, int):
                     head = model_keys[0]
-                assert (
-                    head is not None
-                ), f"Head must be set for multitask model! Available heads are: {model_keys}"
-                assert (
-                    head in model_keys
-                ), f"No head named {head} in model! Available heads are: {model_keys}"
+                assert head is not None, (
+                    f"Head must be set for multitask model! Available heads are: {model_keys}"
+                )
+                assert head in model_keys, (
+                    f"No head named {head} in model! Available heads are: {model_keys}"
+                )
                 self.input_param = self.input_param["model_dict"][head]
                 state_dict_head = {"_extra_state": state_dict["_extra_state"]}
                 for item in state_dict:
@@ -355,7 +355,7 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
     ):
         model = self.dp.to(DEVICE)
-        prec = NP_PRECISION_DICT[RESERVED_PRECISON_DICT[GLOBAL_PD_FLOAT_PRECISION]]
+        prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PD_FLOAT_PRECISION]]
 
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
@@ -370,7 +370,7 @@ class DeepEval(DeepEvalBackend):
             place=DEVICE,
         )
         type_input = paddle.to_tensor(
-            atom_types.astype(NP_PRECISION_DICT[RESERVED_PRECISON_DICT[paddle.int64]]),
+            atom_types.astype(NP_PRECISION_DICT[RESERVED_PRECISION_DICT[paddle.int64]]),
             dtype=paddle.int64,
             place=DEVICE,
         )
