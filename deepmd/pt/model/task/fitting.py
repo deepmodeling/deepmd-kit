@@ -75,6 +75,71 @@ class Fitting(torch.nn.Module, BaseFitting):
         else:
             raise NotImplementedError
 
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], list[dict]], list[dict]],
+        path: Optional[DPPath] = None,
+    ) -> None:
+        """
+        Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
+        if callable(merged):
+            sampled = merged()
+        else:
+            sampled = merged
+        # stat fparam
+        if self.numb_fparam > 0:
+            cat_data = torch.cat([frame["fparam"] for frame in sampled], dim=0)
+            cat_data = torch.reshape(cat_data, [-1, self.numb_fparam])
+            fparam_avg = torch.mean(cat_data, dim=0)
+            fparam_std = torch.std(cat_data, dim=0, unbiased=False)
+            fparam_inv_std = 1.0 / fparam_std
+            self.fparam_avg.copy_(
+                torch.tensor(fparam_avg, device=env.DEVICE, dtype=self.fparam_avg.dtype)
+            )
+            self.fparam_inv_std.copy_(
+                torch.tensor(
+                    fparam_inv_std, device=env.DEVICE, dtype=self.fparam_inv_std.dtype
+                )
+            )
+        # stat aparam
+        if self.numb_aparam > 0:
+            sys_sumv = []
+            sys_sumv2 = []
+            sys_sumn = []
+            for ss_ in [frame["aparam"] for frame in sampled]:
+                ss = torch.reshape(ss_, [-1, self.numb_aparam])
+                sys_sumv.append(torch.sum(ss, dim=0))
+                sys_sumv2.append(torch.sum(ss * ss, dim=0))
+                sys_sumn.append(ss.shape[0])
+            sumv = torch.sum(torch.stack(sys_sumv), dim=0)
+            sumv2 = torch.sum(torch.stack(sys_sumv2), dim=0)
+            sumn = sum(sys_sumn)
+            aparam_avg = sumv / sumn
+            aparam_std = torch.sqrt(sumv2 / sumn - (sumv / sumn) ** 2)
+            aparam_inv_std = 1.0 / aparam_std
+            self.aparam_avg.copy_(
+                torch.tensor(aparam_avg, device=env.DEVICE, dtype=self.aparam_avg.dtype)
+            )
+            self.aparam_inv_std.copy_(
+                torch.tensor(
+                    aparam_inv_std, device=env.DEVICE, dtype=self.aparam_inv_std.dtype
+                )
+            )
+
 
 class GeneralFitting(Fitting):
     """Construct a general fitting net.
@@ -412,48 +477,6 @@ class GeneralFitting(Fitting):
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
         pass
-
-    def compute_input_stats(
-        self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
-    ) -> None:
-        """
-        Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
-
-        Parameters
-        ----------
-        merged : Union[Callable[[], list[dict]], list[dict]]
-            - list[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
-                originating from the `i`-th data system.
-            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
-                only when needed. Since the sampling process can be slow and memory-intensive,
-                the lazy function helps by only sampling once.
-        path : Optional[DPPath]
-            The path to the stat file.
-
-        """
-        if callable(merged):
-            sampled = merged()
-        else:
-            sampled = merged
-        # stat fparam
-        if self.numb_fparam > 0:
-            cat_data = torch.cat([frame["fparam"] for frame in sampled], dim=0)
-            cat_data = torch.reshape(cat_data, [-1, self.numb_fparam])
-            fparam_avg = torch.mean(cat_data, axis=0)
-            fparam_std = torch.std(cat_data, axis=0)
-            fparam_inv_std = 1.0 / fparam_std
-            self.fparam_avg.copy_(
-                torch.tensor(fparam_avg, device=env.DEVICE, dtype=self.fparam_avg.dtype)
-            )
-            self.fparam_inv_std.copy_(
-                torch.tensor(
-                    fparam_inv_std, device=env.DEVICE, dtype=self.fparam_inv_std.dtype
-                )
-            )
-        # TODO: stat aparam
 
     def _extend_f_avg_std(self, xx: torch.Tensor, nb: int) -> torch.Tensor:
         return torch.tile(xx.view([1, self.numb_fparam]), [nb, 1])
