@@ -65,7 +65,7 @@
     "_comment": " that's all"
   },
   "training": {
-    "stat_file": "./dpa2.hdf5",
+    "stat_file": "./dpa3.hdf5",
     "training_data": {
       "systems": [
         "../data/data_0",
