@@ -82,7 +82,7 @@ class TestEnerFittingStat(unittest.TestCase):
             numb_aparam=3,
         )
         avgs = [0, 10, 100]
-        stds = [2, 0.4, 0.0001]
+        stds = [2, 0.4, 0.00001]
         sys_natoms = [10, 100]
         sys_nframes = [5, 2]
         all_data = _make_fake_data_pt(sys_natoms, sys_nframes, avgs, stds)
