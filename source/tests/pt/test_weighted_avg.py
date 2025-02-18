@@ -37,7 +37,7 @@ class TestDeepPotModel(unittest.TestCase):
 
         # Define the base_data to simulate the test_ener output
         base_data = [
-            { 
+            {
                 "mae_e": (2.0, 5),
                 "mae_ea": (1.5, 5),
                 "rmse_e": (2.5, 5),
@@ -49,7 +49,7 @@ class TestDeepPotModel(unittest.TestCase):
                 "mae_va": (0.8, 5),
                 "rmse_va": (1.0, 5),
             },
-            { 
+            {
                 "mae_e": (3.0, 10),
                 "mae_ea": (2.5, 10),
                 "rmse_e": (3.5, 10),
@@ -61,7 +61,7 @@ class TestDeepPotModel(unittest.TestCase):
                 "mae_va": (1.5, 10),
                 "rmse_va": (2.0, 10),
             },
-            { 
+            {
                 "mae_e": (4.0, 15),
                 "mae_ea": (3.5, 15),
                 "rmse_e": (4.5, 15),
@@ -103,7 +103,7 @@ class TestDeepPotModel(unittest.TestCase):
             type_map="mock_type_map",
             sort_atoms=False,
         )
-        mock_test_ener.assert_called_once() 
+        mock_test_ener.assert_called_once()
         mock_weighted_avg.assert_called_once()
 
         # Check if the file was opened (mocked)
