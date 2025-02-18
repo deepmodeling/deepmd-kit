@@ -254,7 +254,7 @@ def get_standard_model(model_params):
     preset_out_bias = _convert_preset_out_bias_to_array(
         preset_out_bias, model_params["type_map"]
     )
-    data_stat_protect = model_params.get("data_stat_protect")
+    data_stat_protect = model_params.get("data_stat_protect", 1e-2)
 
     if fitting_net_type == "dipole":
         modelcls = DipoleModel
