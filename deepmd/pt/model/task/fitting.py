@@ -40,9 +40,6 @@ from deepmd.utils.finetune import (
     get_index_between_two_maps,
     map_atom_exclude_types,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
@@ -107,7 +104,9 @@ class Fitting(torch.nn.Module, BaseFitting):
             fparam_std = torch.std(cat_data, dim=0, unbiased=False)
             fparam_std = torch.where(
                 fparam_std < protection,
-                torch.tensor(protection, dtype=fparam_std.dtype, device=fparam_std.device),
+                torch.tensor(
+                    protection, dtype=fparam_std.dtype, device=fparam_std.device
+                ),
                 fparam_std,
             )
             fparam_inv_std = 1.0 / fparam_std
@@ -136,7 +135,9 @@ class Fitting(torch.nn.Module, BaseFitting):
             aparam_std = torch.sqrt(sumv2 / sumn - (sumv / sumn) ** 2)
             aparam_std = torch.where(
                 aparam_std < protection,
-                torch.tensor(protection, dtype=aparam_std.dtype, device=aparam_std.device),
+                torch.tensor(
+                    protection, dtype=aparam_std.dtype, device=aparam_std.device
+                ),
                 aparam_std,
             )
             aparam_inv_std = 1.0 / aparam_std
