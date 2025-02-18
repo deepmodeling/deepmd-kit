@@ -628,7 +628,6 @@ def test_ener(
     return dict_to_return
 
 
-
 def print_ener_sys_avg(avg: dict[str, float]) -> None:
     """Print errors summary for energy type potential.
 
