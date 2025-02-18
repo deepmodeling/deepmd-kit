@@ -5,15 +5,17 @@ from unittest.mock import (
     patch,
 )
 
-from deepmd.entrypoints.test import test  
+from deepmd.entrypoints.test import (
+    test,
+)
 
 
 class TestDeepPotModel(unittest.TestCase):
-    @patch("deepmd.entrypoints.test.DeepEval")  
+    @patch("deepmd.entrypoints.test.DeepEval")
     @patch("deepmd.entrypoints.test.DeepmdData")
-    @patch("deepmd.entrypoints.test.test_ener") 
-    @patch("deepmd.entrypoints.test.weighted_average") 
-    @patch("builtins.open")  
+    @patch("deepmd.entrypoints.test.test_ener")
+    @patch("deepmd.entrypoints.test.weighted_average")
+    @patch("builtins.open")
     def test_deep_pot(
         self,
         mock_open,
@@ -72,16 +74,16 @@ class TestDeepPotModel(unittest.TestCase):
         ]
 
         mock_test_ener.return_value = (
-            base_data[0],  
-            1,  
-            1,  
-            1, 
+            base_data[0],
+            1,
+            1,
+            1,
         )
 
         test(
             model="mock_model_path",
             system="mock_system_path",
-            datafile="mock_datafile.txt",  
+            datafile="mock_datafile.txt",
             numb_test=10,
             rand_seed=None,
             shuffle_test=True,
