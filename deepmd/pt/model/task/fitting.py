@@ -78,7 +78,7 @@ class Fitting(torch.nn.Module, BaseFitting):
     def compute_input_stats(
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        protection: float = 1e-2,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
@@ -92,8 +92,8 @@ class Fitting(torch.nn.Module, BaseFitting):
             - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
-        path : Optional[DPPath]
-            The path to the stat file.
+        protection : float
+            Divided-by-zero protection
         """
         if callable(merged):
             sampled = merged()
@@ -105,10 +105,9 @@ class Fitting(torch.nn.Module, BaseFitting):
             cat_data = torch.reshape(cat_data, [-1, self.numb_fparam])
             fparam_avg = torch.mean(cat_data, dim=0)
             fparam_std = torch.std(cat_data, dim=0, unbiased=False)
-            epsilon = 1e-12
             fparam_std = torch.where(
-                fparam_std < epsilon,
-                torch.tensor(epsilon, dtype=fparam_std.dtype, device=fparam_std.device),
+                fparam_std < protection,
+                torch.tensor(protection, dtype=fparam_std.dtype, device=fparam_std.device),
                 fparam_std,
             )
             fparam_inv_std = 1.0 / fparam_std
@@ -135,10 +134,9 @@ class Fitting(torch.nn.Module, BaseFitting):
             sumn = sum(sys_sumn)
             aparam_avg = sumv / sumn
             aparam_std = torch.sqrt(sumv2 / sumn - (sumv / sumn) ** 2)
-            epsilon = 1e-12
             aparam_std = torch.where(
-                aparam_std < epsilon,
-                torch.tensor(epsilon, dtype=aparam_std.dtype, device=aparam_std.device),
+                aparam_std < protection,
+                torch.tensor(protection, dtype=aparam_std.dtype, device=aparam_std.device),
                 aparam_std,
             )
             aparam_inv_std = 1.0 / aparam_std

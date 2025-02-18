@@ -78,22 +78,26 @@ class TestEnerFittingStat(unittest.TestCase):
             descrpt.get_dim_out(),
             neuron=[240, 240, 240],
             resnet_dt=True,
-            numb_fparam=2,
-            numb_aparam=2,
+            numb_fparam=3,
+            numb_aparam=3,
         )
-        avgs = [0, 10]
-        stds = [2, 0.4]
+        avgs = [0, 10, 100]
+        stds = [2, 0.4, 0.0001]
         sys_natoms = [10, 100]
         sys_nframes = [5, 2]
         all_data = _make_fake_data_pt(sys_natoms, sys_nframes, avgs, stds)
         frefa, frefs = _brute_fparam_pt(all_data, len(avgs))
         arefa, arefs = _brute_aparam_pt(all_data, len(avgs))
-        fitting.compute_input_stats(all_data)
+        fitting.compute_input_stats(all_data, protection=1e-2)
+        frefs_inv = 1.0 / frefs
+        arefs_inv = 1.0 / arefs
+        frefs_inv[frefs_inv > 100] = 100
+        arefs_inv[arefs_inv > 100] = 100
         np.testing.assert_almost_equal(frefa, to_numpy_array(fitting.fparam_avg))
         np.testing.assert_almost_equal(
-            1.0 / frefs, to_numpy_array(fitting.fparam_inv_std)
+            frefs_inv, to_numpy_array(fitting.fparam_inv_std)
         )
         np.testing.assert_almost_equal(arefa, to_numpy_array(fitting.aparam_avg))
         np.testing.assert_almost_equal(
-            1.0 / arefs, to_numpy_array(fitting.aparam_inv_std)
+            arefs_inv, to_numpy_array(fitting.aparam_inv_std)
         )
