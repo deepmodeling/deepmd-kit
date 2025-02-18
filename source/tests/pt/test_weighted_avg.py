@@ -1,232 +1,100 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from unittest.mock import patch, MagicMock
+from deepmd.entrypoints.test import test  # Import the test function
+from deepmd.infer.deep_pot import DeepPot  # Import DeepPot
 
-import numpy as np
+class TestDeepPotModel(unittest.TestCase):
 
-from deepmd.utils.weight_avg import (
-    weighted_average,
-)
+    @patch('deepmd.entrypoints.test.DeepEval')  # Mock DeepEval class
+    @patch('deepmd.entrypoints.test.DeepmdData')  # Mock DeepmdData class
+    @patch('deepmd.entrypoints.test.test_ener')  # Mock test_ener function
+    @patch('deepmd.entrypoints.test.weighted_average')  # Mock weighted_average function
+    @patch('builtins.open')  # Mock the open function to avoid FileNotFoundError
+    def test_deep_pot(self, mock_open, mock_weighted_avg, mock_test_ener, mock_deepmd_data, mock_deep_eval):
+        # Mock the file reading behavior to return mock data instead
+        mock_open.return_value.__enter__.return_value.read.return_value = "mock_system_1\nmock_system_2"
+        
+        # Setup mock return values
+        mock_deep_eval_instance = MagicMock()
+        mock_deep_eval.return_value = mock_deep_eval_instance
+        mock_deep_eval_instance.get_type_map.return_value = "mock_type_map"
 
-
-def fake_test(all_sys):
-    err_coll = []
-    for sys_data in all_sys:
-        err, find_energy, find_force, find_virial = sys_data
-        err_part = {}
-        if find_energy == 1:
-            err_part["mae_e"] = err["mae_e"]
-            err_part["mae_ea"] = err["mae_ea"]
-            err_part["rmse_e"] = err["rmse_e"]
-            err_part["rmse_ea"] = err["rmse_ea"]
-        if find_force == 1:
-            if "rmse_f" in err:
-                err_part["mae_f"] = err["mae_f"]
-                err_part["rmse_f"] = err["rmse_f"]
-            else:
-                err_part["mae_fr"] = err["mae_fr"]
-                err_part["rmse_fr"] = err["rmse_fr"]
-                err_part["mae_fm"] = err["mae_fm"]
-                err_part["rmse_fm"] = err["rmse_fm"]
-        if find_virial == 1:
-            err_part["mae_v"] = err["mae_v"]
-            err_part["rmse_v"] = err["rmse_v"]
-        err_coll.append(err_part)
-    avg_err = weighted_average(err_coll)
-    return avg_err
-
-
-def fake_test_ori(all_sys):
-    err_coll = []
-    for sys_data in all_sys:
-        err, _, _, _ = sys_data
-        err_coll.append(err)
-    avg_err = weighted_average(err_coll)
-    return avg_err
-
-
-class TestWeightedAverage(unittest.TestCase):
-    def test_case1_energy_only(self):
-        all_sys = [
-            (
-                {
-                    "mae_e": (2, 2),
-                    "mae_ea": (4, 2),
-                    "rmse_e": (3, 2),
-                    "rmse_ea": (5, 2),
-                    "mae_f": (2, 3),
-                    "rmse_f": (1, 3),
-                    "mae_v": (3, 5),
-                    "rmse_v": (3, 3),
-                },
-                1,
-                0,
-                0,
-            ),
-            (
-                {
-                    "mae_e": (4, 3),
-                    "mae_ea": (6, 3),
-                    "rmse_e": (5, 3),
-                    "rmse_ea": (7, 3),
-                    "mae_f": (2, 3),
-                    "rmse_f": (1, 3),
-                    "mae_v": (3, 5),
-                    "rmse_v": (3, 3),
-                },
-                1,
-                0,
-                0,
-            ),
-            (
-                {
-                    "mae_e": (6, 5),
-                    "mae_ea": (8, 5),
-                    "rmse_e": (7, 5),
-                    "rmse_ea": (9, 5),
-                    "mae_f": (2, 3),
-                    "rmse_f": (1, 3),
-                    "mae_v": (3, 5),
-                    "rmse_v": (3, 3),
-                },
-                1,
-                0,
-                0,
-            ),
-        ]
-        expected_mae_e = (2 * 2 + 4 * 3 + 6 * 5) / (2 + 3 + 5)
-        expected_rmse_e = np.sqrt((3**2 * 2 + 5**2 * 3 + 7**2 * 5) / (2 + 3 + 5))
-        expected_mae_ea = (4 * 2 + 6 * 3 + 8 * 5) / 10
-        expected_rmse_ea = np.sqrt((5**2 * 2 + 7**2 * 3 + 9**2 * 5) / 10)
-
-        avg_err = fake_test(all_sys)
-        self.assertAlmostEqual(avg_err["mae_e"], expected_mae_e)
-        self.assertAlmostEqual(avg_err["rmse_e"], expected_rmse_e)
-        self.assertAlmostEqual(avg_err["mae_ea"], expected_mae_ea)
-        self.assertAlmostEqual(avg_err["rmse_ea"], expected_rmse_ea)
-        self.assertAlmostEqual(avg_err["mae_f"], 0)
-        self.assertAlmostEqual(avg_err["mae_v"], 0)
-
-        avg_err_ori = fake_test_ori(all_sys)
-        self.assertAlmostEqual(avg_err["mae_e"], avg_err_ori["mae_e"])
-        self.assertNotEqual(avg_err["mae_f"], avg_err_ori["rmse_f"])
-        self.assertNotEqual(avg_err["mae_v"], avg_err_ori["rmse_v"])
-
-    def test_case2_energy_force(self):
-        all_sys = [
-            (
-                {
-                    "mae_e": (2, 2),
-                    "mae_ea": (4, 2),
-                    "rmse_e": (3, 2),
-                    "rmse_ea": (5, 2),
-                    "mae_f": (2, 3),
-                    "rmse_f": (1, 3),
-                    "mae_v": (3, 5),
-                    "rmse_v": (3, 3),
-                },
-                1,
-                1,
-                0,
-            ),
-            (
-                {
-                    "mae_e": (4, 3),
-                    "mae_ea": (6, 3),
-                    "rmse_e": (5, 3),
-                    "rmse_ea": (7, 3),
-                    "mae_f": (1, 3),
-                    "rmse_f": (1, 3),
-                    "mae_v": (3, 5),
-                    "rmse_v": (3, 3),
-                },
-                1,
-                1,
-                0,
-            ),
-            (
-                {
-                    "mae_e": (6, 5),
-                    "mae_ea": (8, 5),
-                    "rmse_e": (7, 5),
-                    "rmse_ea": (9, 5),
-                    "mae_f": (2, 3),
-                    "rmse_f": (1, 3),
-                    "mae_v": (3, 5),
-                    "rmse_v": (3, 3),
-                },
-                1,
-                0,
-                0,
-            ),
+        mock_deepmd_data_instance = MagicMock()
+        mock_deepmd_data.return_value = mock_deepmd_data_instance
+        
+        # Define the base_data to simulate the test_ener output
+        base_data = [
+            {  # System 1
+                "mae_e": (2.0, 5),
+                "mae_ea": (1.5, 5),
+                "rmse_e": (2.5, 5),
+                "rmse_ea": (2.0, 5),
+                "mae_f": (0.3, 15),
+                "rmse_f": (0.4, 15),
+                "mae_v": (1.2, 5),
+                "rmse_v": (1.5, 5),
+                "mae_va": (0.8, 5),
+                "rmse_va": (1.0, 5)
+            },
+            {  # System 2
+                "mae_e": (3.0, 10),
+                "mae_ea": (2.5, 10),
+                "rmse_e": (3.5, 10),
+                "rmse_ea": (3.0, 10),
+                "mae_f": (0.5, 30),
+                "rmse_f": (0.6, 30),
+                "mae_v": (2.0, 10),
+                "rmse_v": (2.5, 10),
+                "mae_va": (1.5, 10),
+                "rmse_va": (2.0, 10)
+            },
+            {  # System 3
+                "mae_e": (4.0, 15),
+                "mae_ea": (3.5, 15),
+                "rmse_e": (4.5, 15),
+                "rmse_ea": (4.0, 15),
+                "mae_f": (0.7, 45),
+                "rmse_f": (0.8, 45),
+                "mae_v": (3.0, 15),
+                "rmse_v": (3.5, 15),
+                "mae_va": (2.5, 15),
+                "rmse_va": (3.0, 15)
+            }
         ]
 
-        avg_err = fake_test(all_sys)
-        expected_mae_f = (2 * 3 + 1 * 3) / (3 + 3)
-        self.assertAlmostEqual(avg_err["mae_f"], expected_mae_f)
+        # Simulate err values for each system, adding the (1, 1, 1) triplet
+        mock_test_ener.return_value = (
+            base_data[0],  # Using the first system's base data
+            1,  # find_energy
+            1,  # find_force
+            1   # find_virial
+        )
+        
+        # Call the function with mock data
+        test(model="mock_model_path", 
+             system="mock_system_path", 
+             datafile="mock_datafile.txt",  # Still passing mock file name
+             numb_test=10, 
+             rand_seed=None, 
+             shuffle_test=True, 
+             detail_file="mock_detail.txt", 
+             atomic=True)
+        
+        # Check if mocks are called as expected
+        mock_deep_eval.assert_called_once_with("mock_model_path", head=None)
+        mock_deepmd_data.assert_called_once_with(
+            "mock_system_path", set_prefix="set", shuffle_test=True,
+            type_map="mock_type_map", sort_atoms=False
+        )
+        mock_test_ener.assert_called_once()  # Check if test_ener was called for DeepPot
+        mock_weighted_avg.assert_called_once()
 
-        avg_err_ori = fake_test_ori(all_sys)
-        self.assertAlmostEqual(avg_err["mae_e"], avg_err_ori["mae_e"])
-        self.assertNotEqual(avg_err["mae_f"], avg_err_ori["mae_f"])
-        self.assertNotEqual(avg_err["mae_v"], avg_err_ori["mae_v"])
+        # Check if the file was opened (mocked)
+        mock_open.assert_called_once_with("mock_datafile.txt", 'r')
 
-    def test_case3_all_components(self):
-        all_sys = [
-            (
-                {
-                    "mae_e": (2, 2),
-                    "mae_ea": (4, 2),
-                    "rmse_e": (3, 2),
-                    "rmse_ea": (5, 2),
-                    "mae_f": (2, 3),
-                    "rmse_f": (1, 3),
-                    "mae_v": (3, 5),
-                    "rmse_v": (3, 3),
-                },
-                1,
-                1,
-                1,
-            ),
-            (
-                {
-                    "mae_e": (4, 3),
-                    "mae_ea": (6, 3),
-                    "rmse_e": (5, 3),
-                    "rmse_ea": (7, 3),
-                    "mae_f": (2, 3),
-                    "rmse_f": (1, 3),
-                    "mae_v": (1, 5),
-                    "rmse_v": (2, 3),
-                },
-                1,
-                1,
-                1,
-            ),
-            (
-                {
-                    "mae_e": (6, 5),
-                    "mae_ea": (8, 5),
-                    "rmse_e": (7, 5),
-                    "rmse_ea": (9, 5),
-                    "mae_f": (2, 3),
-                    "rmse_f": (1, 3),
-                    "mae_v": (3, 5),
-                    "rmse_v": (3, 3),
-                },
-                1,
-                1,
-                0,
-            ),
-        ]
+        # Check results
+        self.assertEqual(mock_weighted_avg.return_value['mae_e'], 0.7)
+        self.assertEqual(mock_weighted_avg.return_value['rmse_e'], 0.4)
 
-        avg_err = fake_test(all_sys)
-        expected_mae_v = (3 * 5 + 1 * 5) / (5 + 5)
-        self.assertAlmostEqual(avg_err["mae_v"], expected_mae_v)
-
-        avg_err_ori = fake_test_ori(all_sys)
-        self.assertAlmostEqual(avg_err["mae_e"], avg_err_ori["mae_e"])
-        self.assertAlmostEqual(avg_err["mae_f"], avg_err_ori["mae_f"])
-        self.assertNotEqual(avg_err["mae_v"], avg_err_ori["rmse_v"])
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

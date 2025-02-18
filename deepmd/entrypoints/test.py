@@ -622,6 +622,11 @@ def test_ener(
             find_force,
             find_virial,
         )
+    if dp.has_hessian:
+        dict_to_return["mae_h"] = (mae_h, hessian.size)
+        dict_to_return["rmse_h"] = (rmse_h, hessian.size)
+    return dict_to_return
+
 
 
 def print_ener_sys_avg(avg: dict[str, float]) -> None:
