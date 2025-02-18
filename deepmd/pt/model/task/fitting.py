@@ -40,9 +40,6 @@ from deepmd.utils.finetune import (
     get_index_between_two_maps,
     map_atom_exclude_types,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
