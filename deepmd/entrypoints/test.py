@@ -253,12 +253,11 @@ def save_txt_file(
     with fname.open(flags) as fp:
         np.savetxt(fp, data, header=header)
 
-
-
 def test_ener_err(find_energy,find_force,find_virial,
                     energy, force,virial,
                     mae_e,mae_ea,mae_f,mae_v,mae_va,
                     rmse_e,rmse_ea,rmse_f,rmse_v,rmse_va):
+    """If not out_put_spin, make the err dictionary for test ener"""
     err = {}
     if find_energy == 1:
         err["mae_e"] = (mae_e, energy.size)
@@ -275,19 +274,21 @@ def test_ener_err(find_energy,find_force,find_virial,
         err["rmse_va"] = (rmse_va, virial.size)
     return err
 
-def test_ener_err_ops(find_energy,find_force,find_virial,
+def test_ener_err_ops(find_energy,find_force_r,find_force_m,find_virial,
                         energy, force_r,force_m,virial,
                         mae_e,mae_ea,mae_fr,mae_fm,mae_v,mae_va,
                         rmse_e,rmse_ea,rmse_fr,rmse_fm,rmse_v,rmse_va):
+    """If out_put_spin, make the err dictionary for test ener"""
     err = {}
     if find_energy == 1:
         err["mae_e"] = (mae_e, energy.size)
         err["mae_ea"] = (mae_ea, energy.size)
         err["rmse_e"] = (rmse_e, energy.size)
         err["rmse_ea"] = (rmse_ea, energy.size)
-    if find_force == 1:
+    if find_force_r == 1:
         err["mae_fr"] = (mae_fr, force_r.size)
         err["rmse_fr"] = (rmse_fr, force_r.size)
+    if find_force_m == 1:
         err["mae_fm"] = (mae_fm, force_m.size)
         err["rmse_fm"] = (rmse_fm, force_m.size)
     if find_virial == 1:
@@ -296,7 +297,6 @@ def test_ener_err_ops(find_energy,find_force,find_virial,
         err["rmse_v"] = (rmse_v, virial.size)
         err["rmse_va"] = (rmse_va, virial.size)
     return err
-
 
 def test_ener(
     dp: "DeepPot",
@@ -354,6 +354,8 @@ def test_ener(
     find_energy = test_data.get("find_energy")
     find_force = test_data.get("find_force")
     find_virial = test_data.get("find_virial")
+    find_force_r = test_data.get("find_force_real")
+    find_force_m = test_data.get("find_force_mag")
     mixed_type = data.mixed_type
     natoms = len(test_data["type"][0])
     nframes = test_data["box"].shape[0]
@@ -487,15 +489,15 @@ def test_ener(
         log.info(f"Energy RMSE        : {rmse_e:e} eV")
         log.info(f"Energy MAE/Natoms  : {mae_ea:e} eV")
         log.info(f"Energy RMSE/Natoms : {rmse_ea:e} eV")
-    if find_force == 1:
-        if not out_put_spin:
-            log.info(f"Force  MAE         : {mae_f:e} eV/A")
-            log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
-        else:
-            log.info(f"Force atom MAE      : {mae_fr:e} eV/A")
-            log.info(f"Force atom RMSE     : {rmse_fr:e} eV/A")
-            log.info(f"Force spin MAE      : {mae_fm:e} eV/uB")
-            log.info(f"Force spin RMSE     : {rmse_fm:e} eV/uB")
+    if not out_put_spin and find_force == 1:
+        log.info(f"Force  MAE         : {mae_f:e} eV/A")
+        log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
+    if out_put_spin and find_force_r == 1:
+        log.info(f"Force atom MAE      : {mae_fr:e} eV/A")
+        log.info(f"Force atom RMSE     : {rmse_fr:e} eV/A")
+    if out_put_spin and find_force_m == 1:
+        log.info(f"Force spin MAE      : {mae_fm:e} eV/uB")
+        log.info(f"Force spin RMSE     : {rmse_fm:e} eV/uB")
     if data.pbc and not out_put_spin and find_virial == 1:
         log.info(f"Virial MAE         : {mae_v:e} eV")
         log.info(f"Virial RMSE        : {rmse_v:e} eV")
@@ -612,7 +614,7 @@ def test_ener(
                              mae_e,mae_ea,mae_f,mae_v,mae_va,
                              rmse_e,rmse_ea,rmse_f,rmse_v,rmse_va)
     else:
-        return test_ener_err_ops(find_energy,find_force,find_virial,
+        return test_ener_err_ops(find_energy,find_force_r,find_force_m,find_virial,
                                 energy, force_r,force_m,virial,
                                 mae_e,mae_ea,mae_fr,mae_fm,mae_v,mae_va,
                                 rmse_e,rmse_ea,rmse_fr,rmse_fm,rmse_v,rmse_va)
