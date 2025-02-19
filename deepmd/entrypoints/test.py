@@ -254,7 +254,7 @@ def save_txt_file(
         np.savetxt(fp, data, header=header)
 
 
-def test_ener_err(
+def ener_err(
     find_energy,
     find_force,
     find_virial,
@@ -289,7 +289,7 @@ def test_ener_err(
     return err
 
 
-def test_ener_err_ops(
+def ener_err_ops(
     find_energy,
     find_force_r,
     find_force_m,
@@ -642,7 +642,7 @@ def test_ener(
                 append=append_detail,
             )
     if not out_put_spin:
-        return test_ener_err(
+        return ener_err(
             find_energy,
             find_force,
             find_virial,
@@ -661,7 +661,7 @@ def test_ener(
             rmse_va,
         )
     else:
-        return test_ener_err_ops(
+        return ener_err_ops(
             find_energy,
             find_force_r,
             find_force_m,

@@ -4,9 +4,10 @@ import unittest
 import numpy as np
 
 from deepmd.entrypoints.test import (
-    test_ener_err,
-    test_ener_err_ops,
+    ener_err,
+    ener_err_ops,
 )
+
 
 
 class TestEnerErrFunctions(unittest.TestCase):
@@ -174,7 +175,7 @@ class TestEnerErrFunctions(unittest.TestCase):
                 mae_e, mae_ea, mae_f, mae_v, mae_va = 0.1, 0.1, 0.1, 0.1, 0.1
                 rmse_e, rmse_ea, rmse_f, rmse_v, rmse_va = 0.2, 0.2, 0.2, 0.2, 0.2
 
-                err = test_ener_err(
+                err = ener_err(
                     find_energy,
                     find_force,
                     find_virial,
@@ -421,7 +422,7 @@ class TestEnerErrFunctions(unittest.TestCase):
                     0.2,
                     0.2,
                 )
-                err = test_ener_err_ops(
+                err = ener_err_ops(
                     find_energy,
                     find_force_r,
                     find_force_m,
