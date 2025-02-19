@@ -9,7 +9,6 @@ from deepmd.entrypoints.test import (
 )
 
 
-
 class TestEnerErrFunctions(unittest.TestCase):
     def test_test_ener_err(self):
         test_ener_err_params = [
