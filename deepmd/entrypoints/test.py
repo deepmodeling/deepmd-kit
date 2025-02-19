@@ -642,7 +642,7 @@ def test_ener(
                 append=append_detail,
             )
     if not out_put_spin:
-        return ener_err(
+        dict_to_return = ener_err(
             find_energy,
             find_force,
             find_virial,
@@ -661,7 +661,7 @@ def test_ener(
             rmse_va,
         )
     else:
-        return ener_err_ops(
+        dict_to_return = ener_err_ops(
             find_energy,
             find_force_r,
             find_force_m,
@@ -683,7 +683,6 @@ def test_ener(
             rmse_v,
             rmse_va,
         )
-
     if dp.has_hessian:
         dict_to_return["mae_h"] = (mae_h, hessian.size)
         dict_to_return["rmse_h"] = (rmse_h, hessian.size)
