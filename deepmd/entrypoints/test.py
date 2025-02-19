@@ -291,7 +291,8 @@ def test_ener_err(
 
 def test_ener_err_ops(
     find_energy,
-    find_force,
+    find_force_r,
+    find_force_m,
     find_virial,
     energy,
     force_r,
@@ -661,7 +662,8 @@ def test_ener(
     else:
         return test_ener_err_ops(
             find_energy,
-            find_force,
+            find_force_r,
+            find_force_m,
             find_virial,
             energy,
             force_r,
