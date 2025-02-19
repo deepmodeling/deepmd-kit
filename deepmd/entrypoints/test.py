@@ -253,11 +253,25 @@ def save_txt_file(
     with fname.open(flags) as fp:
         np.savetxt(fp, data, header=header)
 
-def test_ener_err(find_energy,find_force,find_virial,
-                    energy, force,virial,
-                    mae_e,mae_ea,mae_f,mae_v,mae_va,
-                    rmse_e,rmse_ea,rmse_f,rmse_v,rmse_va):
-    """If not out_put_spin, make the err dictionary for test ener"""
+
+def test_ener_err(
+    find_energy,
+    find_force,
+    find_virial,
+    energy,
+    force,
+    virial,
+    mae_e,
+    mae_ea,
+    mae_f,
+    mae_v,
+    mae_va,
+    rmse_e,
+    rmse_ea,
+    rmse_f,
+    rmse_v,
+    rmse_va,
+):
     err = {}
     if find_energy == 1:
         err["mae_e"] = (mae_e, energy.size)
@@ -274,11 +288,28 @@ def test_ener_err(find_energy,find_force,find_virial,
         err["rmse_va"] = (rmse_va, virial.size)
     return err
 
-def test_ener_err_ops(find_energy,find_force_r,find_force_m,find_virial,
-                        energy, force_r,force_m,virial,
-                        mae_e,mae_ea,mae_fr,mae_fm,mae_v,mae_va,
-                        rmse_e,rmse_ea,rmse_fr,rmse_fm,rmse_v,rmse_va):
-    """If out_put_spin, make the err dictionary for test ener"""
+
+def test_ener_err_ops(
+    find_energy,
+    find_force,
+    find_virial,
+    energy,
+    force_r,
+    force_m,
+    virial,
+    mae_e,
+    mae_ea,
+    mae_fr,
+    mae_fm,
+    mae_v,
+    mae_va,
+    rmse_e,
+    rmse_ea,
+    rmse_fr,
+    rmse_fm,
+    rmse_v,
+    rmse_va,
+):
     err = {}
     if find_energy == 1:
         err["mae_e"] = (mae_e, energy.size)
@@ -609,15 +640,46 @@ def test_ener(
                 append=append_detail,
             )
     if not out_put_spin:
-        return test_ener_err(find_energy,find_force,find_virial,
-                             energy, force,virial,
-                             mae_e,mae_ea,mae_f,mae_v,mae_va,
-                             rmse_e,rmse_ea,rmse_f,rmse_v,rmse_va)
+        return test_ener_err(
+            find_energy,
+            find_force,
+            find_virial,
+            energy,
+            force,
+            virial,
+            mae_e,
+            mae_ea,
+            mae_f,
+            mae_v,
+            mae_va,
+            rmse_e,
+            rmse_ea,
+            rmse_f,
+            rmse_v,
+            rmse_va,
+        )
     else:
-        return test_ener_err_ops(find_energy,find_force_r,find_force_m,find_virial,
-                                energy, force_r,force_m,virial,
-                                mae_e,mae_ea,mae_fr,mae_fm,mae_v,mae_va,
-                                rmse_e,rmse_ea,rmse_fr,rmse_fm,rmse_v,rmse_va)
+        return test_ener_err_ops(
+            find_energy,
+            find_force,
+            find_virial,
+            energy,
+            force_r,
+            force_m,
+            virial,
+            mae_e,
+            mae_ea,
+            mae_fr,
+            mae_fm,
+            mae_v,
+            mae_va,
+            rmse_e,
+            rmse_ea,
+            rmse_fr,
+            rmse_fm,
+            rmse_v,
+            rmse_va,
+        )
 
     if dp.has_hessian:
         dict_to_return["mae_h"] = (mae_h, hessian.size)
