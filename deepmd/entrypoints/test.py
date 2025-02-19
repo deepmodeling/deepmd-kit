@@ -329,6 +329,7 @@ def test_ener_err_ops(
         err["rmse_va"] = (rmse_va, virial.size)
     return err
 
+
 def test_ener(
     dp: "DeepPot",
     data: DeepmdData,
