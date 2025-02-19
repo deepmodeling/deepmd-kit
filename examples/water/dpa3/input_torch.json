@@ -8,10 +8,10 @@
     "descriptor": {
       "type": "dpa3",
       "repflow": {
-        "n_dim": 128,
-        "e_dim": 64,
+        "n_dim": 256,
+        "e_dim": 128,
         "a_dim": 32,
-        "nlayers": 6,
+        "nlayers": 3,
         "e_rcut": 6.0,
         "e_rcut_smth": 5.0,
         "e_sel": 120,
@@ -51,7 +51,7 @@
     "type": "exp",
     "decay_steps": 5000,
     "start_lr": 0.001,
-    "stop_lr": 1e-5,
+    "stop_lr": 3e-5,
     "_comment": "that's all"
   },
   "loss": {
@@ -59,9 +59,9 @@
     "start_pref_e": 0.2,
     "limit_pref_e": 20,
     "start_pref_f": 100,
-    "limit_pref_f": 20,
-    "start_pref_v": 0,
-    "limit_pref_v": 0,
+    "limit_pref_f": 60,
+    "start_pref_v": 0.02,
+    "limit_pref_v": 1,
     "_comment": " that's all"
   },
   "training": {
