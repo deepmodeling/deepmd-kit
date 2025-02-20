@@ -30,7 +30,7 @@ def _make_fake_data_pt(sys_natoms, sys_nframes, avgs, stds):
                     loc=avgs[jj], scale=stds[jj], size=(sys_nframes[ii], 1)
                 )
             )
-            np.random.seed(220*ii+1636*jj)
+            np.random.seed(220 * ii + 1636 * jj)
             tmp_data_a.append(
                 np.random.normal(  # noqa: NPY002
                     loc=avgs[jj], scale=stds[jj], size=(sys_nframes[ii], sys_natoms[ii])
