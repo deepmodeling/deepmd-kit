@@ -64,10 +64,10 @@ def make_stat_input(
     global_element_counts = {}
     global_type_name = {}
     collect_ele = defaultdict(int)
-    
+
     if datasets[0].mixed_type:
         if enable_element_completion:
-            log.info(f"Element check enabled...")
+            log.info("Element check enabled...")
         else:
             log.info("Element completion is disabled...")
 
@@ -87,8 +87,12 @@ def make_stat_input(
 
         if datasets[0].mixed_type and enable_element_completion:
             process_element_counts(
-                sys_index, dataset, min_frames_per_element_forstat,
-                global_element_counts, global_type_name, total_element_types
+                sys_index,
+                dataset,
+                min_frames_per_element_forstat,
+                global_element_counts,
+                global_type_name,
+                total_element_types,
             )
 
     if datasets[0].mixed_type and enable_element_completion:
@@ -98,10 +102,11 @@ def make_stat_input(
             total_element_types,
             collect_ele,
             datasets,
-            lst
+            lst,
         )
 
     return lst
+
 
 def process_batches(dataloader, sys_stat, nbatches):
     """Process batches from the dataloader and collect statistics."""
@@ -123,23 +128,29 @@ def process_batches(dataloader, sys_stat, nbatches):
             elif isinstance(stat_data[dd], np.float32):
                 sys_stat[dd] = stat_data[dd]
 
+
 def finalize_stats(sys_stat):
     """Finalize statistics by ensuring data is properly formatted and consolidated."""
     for key in sys_stat:
         if isinstance(sys_stat[key], np.float32):
             pass
         elif sys_stat[key] is None or (
-            isinstance(sys_stat[key], list) and 
-            (len(sys_stat[key]) == 0 or sys_stat[key][0] is None)
+            isinstance(sys_stat[key], list)
+            and (len(sys_stat[key]) == 0 or sys_stat[key][0] is None)
         ):
             sys_stat[key] = None
         elif isinstance(sys_stat[key][0], torch.Tensor):
             sys_stat[key] = torch.cat(sys_stat[key], dim=0)
-    dict_to_device(sys_stat)  
+    dict_to_device(sys_stat)
+
 
 def process_element_counts(
-    sys_index, dataset, min_frames, 
-    global_element_counts, global_type_name, total_element_types
+    sys_index,
+    dataset,
+    min_frames,
+    global_element_counts,
+    global_type_name,
+    total_element_types,
 ):
     """Count element occurrences in the dataset and update global statistics."""
     element_counts, type_name = dataset.get_frame_index_for_elements()
@@ -157,13 +168,13 @@ def process_element_counts(
             indices = indices[:min_frames]
         else:
             global_element_counts[elem]["count"] += count
-        global_element_counts[elem]["indices"].append({
-            "sys_index": sys_index, "frames": indices
-        })
+        global_element_counts[elem]["indices"].append(
+            {"sys_index": sys_index, "frames": indices}
+        )
+
 
 def process_missing_elements(
-    min_frames, global_element_counts, 
-    total_element_types, collect_ele, datasets, lst
+    min_frames, global_element_counts, total_element_types, collect_ele, datasets, lst
 ):
     """Handle missing elements by adding them to the statistics."""
     collect_elements = collect_ele.keys()
@@ -177,19 +188,18 @@ def process_missing_elements(
         sys_indices = global_element_counts[miss].get("indices", [])
         newele_counter = collect_ele.get(miss, 0) if miss in collect_miss_element else 0
         process_with_new_frame(
-            sys_indices, newele_counter, min_frames, 
-            datasets, lst, collect_ele, miss
+            sys_indices, newele_counter, min_frames, datasets, lst, collect_ele, miss
         )
 
+
 def process_with_new_frame(
-    sys_indices, newele_counter, min_frames, 
-    datasets, lst, collect_ele, miss
+    sys_indices, newele_counter, min_frames, datasets, lst, collect_ele, miss
 ):
     """Process missing elements by adding new frames until the minimum is reached."""
     for sys_info in sys_indices:
         sys_index = sys_info["sys_index"]
         frames = sys_info["frames"]
-        sys = datasets if isinstance(datasets, list) else [datasets]  
+        sys = datasets if isinstance(datasets, list) else [datasets]
         sys = sys[sys_index]
         for frame in frames:
             newele_counter += 1
@@ -211,7 +221,7 @@ def process_with_new_frame(
                     sys_stat_new[dd] = frame_data[dd]
             finalize_stats(sys_stat_new)
             lst.append(sys_stat_new)
-    collect_ele[miss] = newele_counter 
+    collect_ele[miss] = newele_counter
 
 
 def _restore_from_file(
