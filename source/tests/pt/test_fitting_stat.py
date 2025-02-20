@@ -24,8 +24,8 @@ def _make_fake_data_pt(sys_natoms, sys_nframes, avgs, stds):
         tmp_data_f = []
         tmp_data_a = []
         for jj in range(ndof):
-            np.random.seed(2025*ii+220*jj)
-            tmp_data_f.append(  # noqa: NPY002
+            np.random.seed(2025 * ii + 220 * jj)
+            tmp_data_f.append(
                 np.random.normal(
                     loc=avgs[jj], scale=stds[jj], size=(sys_nframes[ii], 1)
                 )
