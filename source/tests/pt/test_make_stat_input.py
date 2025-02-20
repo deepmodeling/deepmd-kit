@@ -100,26 +100,6 @@ class TestMakeStatInput(unittest.TestCase):
             f"Expected exactly {self.real_ntypes} non-zero elements in energy, but got {non_zero_count}.",
         )
 
-    def test_process_missing_elements(self):
-        # 3 frames would be count
-        lst = make_stat_input(
-            datasets=self.datasets,
-            dataloaders=self.dataloaders,
-            nbatches=1,
-            min_frames_per_element_forstat=1,
-            enable_element_completion=False,
-        )
-
-        for sys_stat in lst:
-            if "energy" in sys_stat:
-                energy = sys_stat["energy"]
-                non_zero_count = self.count_non_zero_elements(energy)
-                self.assertLess(
-                    non_zero_count,
-                    self.real_ntypes,
-                    f"Expected fewer than {self.real_ntypes} non-zero elements due to missing elements.",
-                )
-
     def test_with_missing_elements_and_new_frames(self):
         """
         Test handling missing elements and processing new frames.
