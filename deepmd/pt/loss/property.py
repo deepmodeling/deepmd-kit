@@ -23,8 +23,13 @@ log = logging.getLogger(__name__)
 class PropertyLoss(TaskLoss):
     def __init__(
         self,
+        start_learning_rate: float,
         task_dim,
         var_name: str,
+        start_pref_property: float = 1.00,
+        limit_pref_property: float = 1.00,
+        start_pref_aproperty: float = 0.0,
+        limit_pref_aproperty: float = 0.0,
         loss_func: str = "smooth_mae",
         metric: list = ["mae"],
         beta: float = 1.00,
@@ -57,6 +62,11 @@ class PropertyLoss(TaskLoss):
             Whether the property is intensive.
         """
         super().__init__()
+        self.starter_learning_rate = starter_learning_rate
+        self.start_pref_property = start_pref_property
+        self.limit_pref_property = limit_pref_property
+        self.start_pref_aproperty = start_pref_aproperty
+        self.limit_pref_aproperty = limit_pref_aproperty
         self.task_dim = task_dim
         self.loss_func = loss_func
         self.metric = metric
