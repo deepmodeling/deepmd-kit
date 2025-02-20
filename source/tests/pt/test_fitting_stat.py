@@ -26,9 +26,7 @@ def _make_fake_data_pt(sys_natoms, sys_nframes, avgs, stds):
         for jj in range(ndof):
             rng = np.random.default_rng(2025 * ii + 220 * jj)
             tmp_data_f.append(
-                rng.normal(
-                    loc=avgs[jj], scale=stds[jj], size=(sys_nframes[ii], 1)
-                )
+                rng.normal(loc=avgs[jj], scale=stds[jj], size=(sys_nframes[ii], 1))
             )
             rng = np.random.default_rng(220 * ii + 1636 * jj)
             tmp_data_a.append(
