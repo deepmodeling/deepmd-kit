@@ -16,10 +16,16 @@ from deepmd.pt.utils.dataset import (
 from deepmd.pt.utils.stat import (
     compute_output_stats,
     make_stat_input,
+    process_batches,
+    finalize_stats,
+    process_element_counts,
+    process_with_new_frame,
+    process_missing_elements,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from collections import defaultdict
 
 
 def collate_fn(batch):
@@ -227,6 +233,73 @@ class TestMakeStatInput(unittest.TestCase):
             f"energy_ori = {energy_ori}\nenergy_new = {energy_new}",
         )
 
+    def test_process_batches(self):
+        with torch.device("cpu"):
+            dataloader = self.dataloaders[0]
+            sys_stat = {}
+            process_batches(dataloader, sys_stat, nbatches=1)
+            self.assertTrue("energy" in sys_stat, "Expected 'energy' to be in sys_stat")
+            self.assertGreater(len(sys_stat["energy"]), 0, "Expected non-zero 'energy' values")
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_finalize_stats(self):
+        with torch.device("cpu"):
+            sys_stat1 = {
+                "param1": np.float32(1.23)
+            }
+            finalize_stats(sys_stat1)
+            assert sys_stat1["param1"] == np.float32(1.23), "Test Case 1 Failed"
+
+            sys_stat2 = {
+                "param2": None,
+                "param3": [],
+                "param4": [None],
+            }
+            finalize_stats(sys_stat2)
+            assert sys_stat2["param2"] is None, "Test Case 2a Failed"
+            assert sys_stat2["param3"] is None, "Test Case 2b Failed"
+            assert sys_stat2["param4"] is None, "Test Case 2c Failed"
+
+            tensor1 = torch.tensor([1.0, 2.0])
+            tensor2 = torch.tensor([3.0, 4.0])
+            sys_stat3 = {
+                "param5": [tensor1, tensor2],
+            }
+            finalize_stats(sys_stat3)
+            assert torch.equal(sys_stat3["param5"], torch.tensor([1.0, 2.0, 3.0, 4.0])), "Test Case 3 Failed"
+
+    def test_process_element_counts(self):
+        dataset = self.datasets[0]
+        global_element_counts = {}
+        global_type_name = {}
+        total_element_types = set()
+        process_element_counts(0, dataset, min_frames=1, 
+                               global_element_counts=global_element_counts, 
+                               global_type_name=global_type_name, 
+                               total_element_types=total_element_types)
+        self.assertGreater(len(global_element_counts), 0, "Expected global_element_counts to contain elements")
+
+    def test_process_with_new_frame(self):
+        sys_indices = [{"sys_index": 0, "frames": [0, 1]}]
+        newele_counter = 0
+        collect_ele = defaultdict(int)
+        datasets = self.datasets
+        lst = []
+        miss = 1 
+        process_with_new_frame(sys_indices, newele_counter, 1, datasets, lst, collect_ele, miss)
+        self.assertGreater(len(lst), 0, "Expected lst to contain new frames after processing")
+
+    def test_process_missing_elements(self):
+        #if miss 30
+        min_frames = 1
+        dataset = self.datasets[0]
+        global_element_counts = {}
+        global_type_name = {}
+        total_element_types = set()
+        process_element_counts(0, dataset, min_frames, 
+                               global_element_counts=global_element_counts, 
+                               global_type_name=global_type_name, 
+                               total_element_types=total_element_types)
+        collect_ele = {np.int32(key): value for key, value in {'36': 1, '6': 1, '12': 1, '17': 1, '19': 1}.items()}
+        lst = []
+        process_missing_elements(min_frames, global_element_counts, total_element_types, collect_ele, dataset, lst)
+        assert 30 in lst[0]['atype'], "Error: 30 not found in lst[0]['atype']"
