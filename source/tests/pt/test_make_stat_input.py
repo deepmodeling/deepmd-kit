@@ -280,8 +280,12 @@ class TestMakeStatInput(unittest.TestCase):
             global_type_name=global_type_name,
             total_element_types=total_element_types,
         )
-        self.assertEqual(len(global_element_counts), 6, "global_element_counts must contain 6 keys")
-        self.assertEqual(len(total_element_types), 6, "total_element_types must contain 6 objects")
+        self.assertEqual(
+            len(global_element_counts), 6, "global_element_counts must contain 6 keys"
+        )
+        self.assertEqual(
+            len(total_element_types), 6, "total_element_types must contain 6 objects"
+        )
         collect_ele = {
             np.int32(key): value
             for key, value in {"36": 1, "6": 1, "12": 1, "17": 1, "19": 1}.items()
