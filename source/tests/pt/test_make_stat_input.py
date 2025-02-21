@@ -251,25 +251,6 @@ class TestMakeStatInput(unittest.TestCase):
                 sys_stat3["param5"], torch.tensor([1.0, 2.0, 3.0, 4.0])
             ), "Test Case 3 Failed"
 
-    def test_process_element_counts(self):
-        dataset = self.datasets[0]
-        global_element_counts = {}
-        global_type_name = {}
-        total_element_types = set()
-        process_element_counts(
-            0,
-            dataset,
-            min_frames=1,
-            global_element_counts=global_element_counts,
-            global_type_name=global_type_name,
-            total_element_types=total_element_types,
-        )
-        self.assertGreater(
-            len(global_element_counts),
-            0,
-            "Expected global_element_counts to contain elements",
-        )
-
     def test_process_with_new_frame(self):
         sys_indices = [{"sys_index": 0, "frames": [0, 1]}]
         newele_counter = 0
@@ -284,8 +265,8 @@ class TestMakeStatInput(unittest.TestCase):
             len(lst), 0, "Expected lst to contain new frames after processing"
         )
 
-    def test_process_missing_elements(self):
-        # if miss 30
+    def test_process_element_count_and_missing_elements(self):
+        # Missing atype is 30
         min_frames = 1
         dataset = self.datasets[0]
         global_element_counts = {}
@@ -299,6 +280,8 @@ class TestMakeStatInput(unittest.TestCase):
             global_type_name=global_type_name,
             total_element_types=total_element_types,
         )
+        self.assertEqual(len(global_element_counts), 6, "global_element_counts must contain 6 keys")
+        self.assertEqual(len(total_element_types), 6, "total_element_types must contain 6 objects")
         collect_ele = {
             np.int32(key): value
             for key, value in {"36": 1, "6": 1, "12": 1, "17": 1, "19": 1}.items()
