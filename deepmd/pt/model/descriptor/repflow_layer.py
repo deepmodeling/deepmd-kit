@@ -50,7 +50,7 @@ class RepFlowLayer(torch.nn.Module):
         a_compress_e_rate: int = 1,
         n_multi_edge_message: int = 1,
         axis_neuron: int = 4,
-        update_angle: bool = True,  # angle
+        update_angle: bool = True,
         optim_update: bool = True,
         activation_function: str = "silu",
         update_style: str = "res_residual",
@@ -846,6 +846,7 @@ class RepFlowLayer(torch.nn.Module):
             "update_residual": self.update_residual,
             "update_residual_init": self.update_residual_init,
             "precision": self.precision,
+            "optim_update": self.optim_update,
             "node_self_mlp": self.node_self_mlp.serialize(),
             "node_sym_linear": self.node_sym_linear.serialize(),
             "node_edge_linear": self.node_edge_linear.serialize(),

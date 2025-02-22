@@ -1458,6 +1458,15 @@ def dpa3_repflow_args():
         "Default is 1, indicating one head edge message."
     )
     doc_axis_neuron = "The number of dimension of submatrix in the symmetrization ops."
+    doc_fix_stat_std = (
+        "If non-zero (default is 0.3), use this constant as the normalization standard deviation "
+        "instead of computing it from data statistics."
+    )
+    doc_skip_stat = (
+        "(Deprecated, kept only for compatibility.) This parameter is obsolete and will be removed. "
+        "If set to True, it forces fix_stat_std=0.3 for backward compatibility. "
+        "Transition to fix_stat_std parameter immediately."
+    )
     doc_update_angle = (
         "Where to update the angle rep. If not, only node and edge rep will be used."
     )
@@ -1477,6 +1486,10 @@ def dpa3_repflow_args():
         "When update using residual mode, "
         "the initialization mode of residual vector weights."
         "Supported modes are: ['norm', 'const']."
+    )
+    doc_optim_update = (
+        "Whether to enable the optimized update method. "
+        "Uses a more efficient process when enabled. Defaults to True"
     )
 
     return [
@@ -1523,10 +1536,18 @@ def dpa3_repflow_args():
             doc=doc_axis_neuron,
         ),
         Argument(
+            "fix_stat_std",
+            float,
+            optional=True,
+            default=0.3,
+            doc=doc_fix_stat_std,
+        ),
+        Argument(
             "skip_stat",
             bool,
             optional=True,
             default=False,
+            doc=doc_skip_stat,
         ),
         Argument(
             "update_angle",
@@ -1561,6 +1582,7 @@ def dpa3_repflow_args():
             bool,
             optional=True,
             default=True,
+            doc=doc_optim_update,
         ),
     ]
 

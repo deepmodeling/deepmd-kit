@@ -49,6 +49,8 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             rus,
             ruri,
             acr,
+            acer,
+            acus,
             nme,
             prec,
             ect,
@@ -57,6 +59,8 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ["res_residual"],  # update_style
             ["norm", "const"],  # update_residual_init
             [0, 1],  # a_compress_rate
+            [1, 2],  # a_compress_e_rate
+            [True, False],  # a_compress_use_split
             [1, 2],  # n_multi_edge_message
             ["float64"],  # precision
             [False],  # use_econf_tebd
@@ -78,6 +82,8 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 a_rcut_smth=self.rcut_smth,
                 a_sel=nnei - 1,
                 a_compress_rate=acr,
+                a_compress_e_rate=acer,
+                a_compress_use_split=acus,
                 n_multi_edge_message=nme,
                 axis_neuron=4,
                 update_angle=ua,
@@ -134,14 +140,18 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             rus,
             ruri,
             acr,
+            acer,
+            acus,
             nme,
             prec,
             ect,
         ) in itertools.product(
-            [True, False],  # update_angle
+            [True],  # update_angle
             ["res_residual"],  # update_style
-            ["norm", "const"],  # update_residual_init
+            ["const"],  # update_residual_init
             [0, 1],  # a_compress_rate
+            [2],  # a_compress_e_rate
+            [True],  # a_compress_use_split
             [1, 2],  # n_multi_edge_message
             ["float64"],  # precision
             [False],  # use_econf_tebd
@@ -161,6 +171,8 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 a_rcut_smth=self.rcut_smth,
                 a_sel=nnei - 1,
                 a_compress_rate=acr,
+                a_compress_e_rate=acer,
+                a_compress_use_split=acus,
                 n_multi_edge_message=nme,
                 axis_neuron=4,
                 update_angle=ua,

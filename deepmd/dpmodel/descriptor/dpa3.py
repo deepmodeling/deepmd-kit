@@ -23,6 +23,7 @@ class RepFlowArgs:
         update_style: str = "res_residual",
         update_residual: float = 0.1,
         update_residual_init: str = "const",
+        fix_stat_std: float = 0.3,
         skip_stat: bool = False,
         optim_update: bool = True,
     ) -> None:
@@ -80,6 +81,16 @@ class RepFlowArgs:
             When update using residual mode, the initial std of residual vector weights.
         update_residual_init : str, optional
             When update using residual mode, the initialization mode of residual vector weights.
+        fix_stat_std : float, optional
+            If non-zero (default is 0.3), use this constant as the normalization standard deviation
+            instead of computing it from data statistics.
+        skip_stat : bool, optional
+            (Deprecated, kept only for compatibility.) This parameter is obsolete and will be removed.
+            If set to True, it forces fix_stat_std=0.3 for backward compatibility.
+            Transition to fix_stat_std parameter immediately.
+        optim_update : bool, optional
+            Whether to enable the optimized update method.
+            Uses a more efficient process when enabled. Defaults to True
         """
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -98,6 +109,9 @@ class RepFlowArgs:
         self.update_style = update_style
         self.update_residual = update_residual
         self.update_residual_init = update_residual_init
+        self.fix_stat_std = (
+            fix_stat_std if not skip_stat else 0.3
+        )  # backward compatibility
         self.skip_stat = skip_stat
         self.a_compress_e_rate = a_compress_e_rate
         self.a_compress_use_split = a_compress_use_split
@@ -130,6 +144,8 @@ class RepFlowArgs:
             "update_style": self.update_style,
             "update_residual": self.update_residual,
             "update_residual_init": self.update_residual_init,
+            "fix_stat_std": self.fix_stat_std,
+            "optim_update": self.optim_update,
         }
 
     @classmethod

@@ -99,7 +99,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         precision: str = "float64",
-        skip_stat: bool = True,
+        fix_stat_std: float = 0.3,
         optim_update: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
@@ -158,6 +158,12 @@ class DescrptBlockRepflows(DescriptorBlock):
             When update using residual mode, the initial std of residual vector weights.
         update_residual_init : str, optional
             When update using residual mode, the initialization mode of residual vector weights.
+        fix_stat_std : float, optional
+            If non-zero (default is 0.3), use this constant as the normalization standard deviation
+            instead of computing it from data statistics.
+        optim_update : bool, optional
+            Whether to enable the optimized update method.
+            Uses a more efficient process when enabled. Defaults to True
         ntypes : int
             Number of element types
         activation_function : str, optional
@@ -199,7 +205,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.n_multi_edge_message = n_multi_edge_message
         self.axis_neuron = axis_neuron
         self.set_davg_zero = set_davg_zero
-        self.skip_stat = skip_stat
+        self.fix_stat_std = fix_stat_std
+        self.set_stddev_constant = fix_stat_std != 0.0
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
 
@@ -262,8 +269,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         wanted_shape = (self.ntypes, self.nnei, 4)
         mean = torch.zeros(wanted_shape, dtype=self.prec, device=env.DEVICE)
         stddev = torch.ones(wanted_shape, dtype=self.prec, device=env.DEVICE)
-        if self.skip_stat:
-            stddev = stddev * 0.3
+        if self.set_stddev_constant:
+            stddev = stddev * self.fix_stat_std
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
         self.stats = None
@@ -554,7 +561,7 @@ class DescrptBlockRepflows(DescriptorBlock):
             The path to the stat file.
 
         """
-        if self.skip_stat and self.set_davg_zero:
+        if self.set_stddev_constant and self.set_davg_zero:
             return
         env_mat_stat = EnvMatStatSe(self)
         if path is not None:
@@ -574,9 +581,10 @@ class DescrptBlockRepflows(DescriptorBlock):
             self.mean.copy_(
                 torch.tensor(mean, device=env.DEVICE, dtype=self.mean.dtype)
             )
-        self.stddev.copy_(
-            torch.tensor(stddev, device=env.DEVICE, dtype=self.stddev.dtype)
-        )
+        if not self.set_stddev_constant:
+            self.stddev.copy_(
+                torch.tensor(stddev, device=env.DEVICE, dtype=self.stddev.dtype)
+            )
 
     def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
