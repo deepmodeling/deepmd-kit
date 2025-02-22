@@ -10,6 +10,7 @@ from deepmd.pt.model.atomic_model import (
 from deepmd.pt.model.descriptor import (
     DescrptDPA1,
     DescrptDPA2,
+    DescrptDPA3,
     DescrptHybrid,
     DescrptSeA,
     DescrptSeR,
@@ -55,6 +56,8 @@ from ...dpmodel.descriptor.test_descriptor import (
     DescriptorParamDPA1List,
     DescriptorParamDPA2,
     DescriptorParamDPA2List,
+    DescriptorParamDPA3,
+    DescriptorParamDPA3List,
     DescriptorParamHybrid,
     DescriptorParamHybridMixed,
     DescriptorParamHybridMixedTTebd,
@@ -93,6 +96,7 @@ defalut_des_param = [
     DescriptorParamSeTTebd,
     DescriptorParamDPA1,
     DescriptorParamDPA2,
+    DescriptorParamDPA3,
     DescriptorParamHybrid,
     DescriptorParamHybridMixed,
 ]
@@ -117,6 +121,7 @@ defalut_fit_param = [
             ],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
+            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
             (DescriptorParamHybrid, DescrptHybrid),
             (DescriptorParamHybridMixed, DescrptHybrid),
             (DescriptorParamHybridMixedTTebd, DescrptHybrid),
@@ -131,6 +136,7 @@ defalut_fit_param = [
             (DescriptorParamSeTTebd, DescrptSeTTebd),
             (DescriptorParamDPA1, DescrptDPA1),
             (DescriptorParamDPA2, DescrptDPA2),
+            (DescriptorParamDPA3, DescrptDPA3),
         ),  # descrpt_class_param & class
         (
             *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
@@ -219,6 +225,7 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
             ],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
+            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
             (DescriptorParamHybrid, DescrptHybrid),
             (DescriptorParamHybridMixed, DescrptHybrid),
             (DescriptorParamHybridMixedTTebd, DescrptHybrid),
@@ -233,6 +240,7 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
             (DescriptorParamSeTTebd, DescrptSeTTebd),
             (DescriptorParamDPA1, DescrptDPA1),
             (DescriptorParamDPA2, DescrptDPA2),
+            (DescriptorParamDPA3, DescrptDPA3),
         ),  # descrpt_class_param & class
         (
             *[(param_func, DOSFittingNet) for param_func in FittingParamDosList],
@@ -316,6 +324,7 @@ class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
             *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
+            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
             (DescriptorParamHybrid, DescrptHybrid),
             (DescriptorParamHybridMixed, DescrptHybrid),
         ),  # descrpt_class_param & class
@@ -326,6 +335,7 @@ class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
             (DescriptorParamSeA, DescrptSeA),
             (DescriptorParamDPA1, DescrptDPA1),
             (DescriptorParamDPA2, DescrptDPA2),
+            (DescriptorParamDPA3, DescrptDPA3),
         ),  # descrpt_class_param & class
         (
             *[(param_func, DipoleFittingNet) for param_func in FittingParamDipoleList],
@@ -409,6 +419,7 @@ class TestDipoleModelPT(unittest.TestCase, DipoleModelTest, PTTestCase):
             *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
+            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
             (DescriptorParamHybrid, DescrptHybrid),
             (DescriptorParamHybridMixed, DescrptHybrid),
         ),  # descrpt_class_param & class
@@ -419,6 +430,7 @@ class TestDipoleModelPT(unittest.TestCase, DipoleModelTest, PTTestCase):
             (DescriptorParamSeA, DescrptSeA),
             (DescriptorParamDPA1, DescrptDPA1),
             (DescriptorParamDPA2, DescrptDPA2),
+            (DescriptorParamDPA3, DescrptDPA3),
         ),  # descrpt_class_param & class
         (
             *[(param_func, PolarFittingNet) for param_func in FittingParamPolarList],
@@ -721,6 +733,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
             *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
+            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
             (DescriptorParamHybrid, DescrptHybrid),
             (DescriptorParamHybridMixed, DescrptHybrid),
         ),  # descrpt_class_param & class
@@ -731,6 +744,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
             (DescriptorParamSeA, DescrptSeA),
             (DescriptorParamDPA1, DescrptDPA1),
             (DescriptorParamDPA2, DescrptDPA2),
+            (DescriptorParamDPA3, DescrptDPA3),
         ),  # descrpt_class_param & class
         (
             *[
@@ -812,6 +826,7 @@ class TestPropertyModelPT(unittest.TestCase, PropertyModelTest, PTTestCase):
         (
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
+            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
             (DescriptorParamHybridMixed, DescrptHybrid),
             (DescriptorParamHybridMixedTTebd, DescrptHybrid),
         ),  # descrpt_class_param & class
@@ -821,6 +836,7 @@ class TestPropertyModelPT(unittest.TestCase, PropertyModelTest, PTTestCase):
         (
             (DescriptorParamDPA1, DescrptDPA1),
             (DescriptorParamDPA2, DescrptDPA2),
+            (DescriptorParamDPA3, DescrptDPA3),
         ),  # descrpt_class_param & class
         (
             *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
