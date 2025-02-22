@@ -189,8 +189,8 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         self.env_protection = env_protection
         self.trainable = trainable
 
-        assert self.repflows.e_rcut > self.repflows.a_rcut
-        assert self.repflows.e_sel > self.repflows.a_sel
+        assert self.repflows.e_rcut >= self.repflows.a_rcut
+        assert self.repflows.e_sel >= self.repflows.a_sel
 
         self.rcut = self.repflows.get_rcut()
         self.rcut_smth = self.repflows.get_rcut_smth()

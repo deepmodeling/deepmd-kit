@@ -532,7 +532,7 @@ class RepFlowLayer(torch.nn.Module):
         """
         nb, nloc, nnei, _ = edge_ebd.shape
         nall = node_ebd_ext.shape[1]
-        node_ebd, _ = torch.split(node_ebd_ext, [nloc, nall - nloc], dim=1)
+        node_ebd = node_ebd_ext[:, :nloc, :]
         assert (nb, nloc) == node_ebd.shape[:2]
         assert (nb, nloc, nnei) == h2.shape[:3]
         del a_nlist  # may be used in the future

@@ -5,6 +5,7 @@ import unittest
 import numpy as np
 import torch
 
+from deepmd.dpmodel.descriptor.dpa3 import DescrptDPA3 as DPDescrptDPA3
 from deepmd.dpmodel.descriptor.dpa3 import (
     RepFlowArgs,
 )
@@ -122,6 +123,17 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             np.testing.assert_allclose(
                 rd0.detach().cpu().numpy(),
                 rd1.detach().cpu().numpy(),
+                rtol=rtol,
+                atol=atol,
+            )
+            # dp impl
+            dd2 = DPDescrptDPA3.deserialize(dd0.serialize())
+            rd2, _, _, _, _ = dd2.call(
+                self.coord_ext, self.atype_ext, self.nlist, self.mapping
+            )
+            np.testing.assert_allclose(
+                rd0.detach().cpu().numpy(),
+                rd2,
                 rtol=rtol,
                 atol=atol,
             )
