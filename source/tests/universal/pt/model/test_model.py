@@ -657,6 +657,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
         (FittingParam, Fitting) = cls.param[1]
         cls.epsilon_dict["test_smooth"] = 1e-6
         cls.aprec_dict["test_smooth"] = 5e-5
+        cls.aprec_dict["test_rot"] = 1e-10  # for test stability
         # set special precision
         if Descrpt in [DescrptDPA2, DescrptHybrid]:
             cls.epsilon_dict["test_smooth"] = 1e-8
