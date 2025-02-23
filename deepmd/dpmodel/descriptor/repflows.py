@@ -383,7 +383,9 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
         node_ebd = self.act(atype_embd)
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
-        edge_input, h2 = xp.split(dmatrix, [1], axis=-1)
+        # edge_input, h2 = xp.split(dmatrix, [1], axis=-1)
+        edge_input = dmatrix[:, :, :, :1]
+        h2 = dmatrix[:, :, :, 1:]
         # nb x nloc x nnei x e_dim
         edge_ebd = self.act(self.edge_embd(edge_input))
 
