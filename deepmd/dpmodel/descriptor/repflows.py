@@ -804,18 +804,20 @@ class RepFlowLayer(NativeOP):
 
         # nf * nloc * a_sel * a_sel * angle_dim
         sub_angle_update = xp.matmul(
-            angle_ebd, matrix[sub_angle_idx[0] : sub_angle_idx[1]]
+            angle_ebd, matrix[sub_angle_idx[0] : sub_angle_idx[1], :]
         )
 
         # nf * nloc * angle_dim
-        sub_node_update = xp.matmul(node_ebd, matrix[sub_node_idx[0] : sub_node_idx[1]])
+        sub_node_update = xp.matmul(
+            node_ebd, matrix[sub_node_idx[0] : sub_node_idx[1], :]
+        )
 
         # nf * nloc * a_nnei * angle_dim
         sub_edge_update_ij = xp.matmul(
-            edge_ebd, matrix[sub_edge_idx_ij[0] : sub_edge_idx_ij[1]]
+            edge_ebd, matrix[sub_edge_idx_ij[0] : sub_edge_idx_ij[1], :]
         )
         sub_edge_update_ik = xp.matmul(
-            edge_ebd, matrix[sub_edge_idx_ik[0] : sub_edge_idx_ik[1]]
+            edge_ebd, matrix[sub_edge_idx_ik[0] : sub_edge_idx_ik[1], :]
         )
 
         result_update = (
@@ -850,17 +852,21 @@ class RepFlowLayer(NativeOP):
         assert 2 * node_dim + edge_dim == matrix.shape[0]
 
         # nf * nloc * node/edge_dim
-        sub_node_update = xp.matmul(node_ebd, matrix[sub_node_idx[0] : sub_node_idx[1]])
+        sub_node_update = xp.matmul(
+            node_ebd, matrix[sub_node_idx[0] : sub_node_idx[1], :]
+        )
 
         # nf * nall * node/edge_dim
         sub_node_ext_update = xp.matmul(
-            node_ebd_ext, matrix[sub_node_ext_idx[0] : sub_node_ext_idx[1]]
+            node_ebd_ext, matrix[sub_node_ext_idx[0] : sub_node_ext_idx[1], :]
         )
         # nf * nloc * nnei * node/edge_dim
         sub_node_ext_update = _make_nei_g1(sub_node_ext_update, nlist)
 
         # nf * nloc * nnei * node/edge_dim
-        sub_edge_update = xp.matmul(edge_ebd, matrix[sub_edge_idx[0] : sub_edge_idx[1]])
+        sub_edge_update = xp.matmul(
+            edge_ebd, matrix[sub_edge_idx[0] : sub_edge_idx[1], :]
+        )
 
         result_update = (
             sub_edge_update + sub_node_ext_update + sub_node_update[:, :, xp.newaxis, :]
