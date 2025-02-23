@@ -400,8 +400,8 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
             coord_ext,
             atype_ext,
             a_nlist,
-            self.mean[:, : self.a_sel],
-            self.stddev[:, : self.a_sel],
+            self.mean[:, : self.a_sel, :],
+            self.stddev[:, : self.a_sel, :],
         )
 
         # nb x nloc x a_nnei
