@@ -70,12 +70,14 @@ def make_stat_input(
             log.info("Element check enabled...")
         else:
             log.info("Element completion is disabled...")
+    
+    do_element_completion = datasets[0].mixed_type and enable_element_completion
 
     for sys_index, (dataset, dataloader) in enumerate(zip(datasets, dataloaders)):
         sys_stat = {}
         with torch.device("cpu"):
             process_batches(dataloader, sys_stat, nbatches)
-            if datasets[0].mixed_type and enable_element_completion:
+            if do_element_completion:
                 element_data = torch.cat(sys_stat["atype"], dim=0)
                 collect_values = torch.unique(element_data.flatten(), sorted=True)
                 for elem in collect_values.tolist():
@@ -85,7 +87,7 @@ def make_stat_input(
         finalize_stats(sys_stat)
         lst.append(sys_stat)
 
-        if datasets[0].mixed_type and enable_element_completion:
+        if do_element_completion:
             process_element_counts(
                 sys_index,
                 dataset,
@@ -95,7 +97,7 @@ def make_stat_input(
                 total_element_types,
             )
 
-    if datasets[0].mixed_type and enable_element_completion:
+    if do_element_completion:
         process_missing_elements(
             min_frames_per_element_forstat,
             global_element_counts,
@@ -109,7 +111,7 @@ def make_stat_input(
 
 
 def process_batches(dataloader, sys_stat, nbatches):
-    """Process batches from the dataloader and collect statistics."""
+    """Process nbatches frames from each system."""
     iterator = iter(dataloader)
     numb_batches = min(nbatches, len(dataloader))
     for _ in range(numb_batches):
