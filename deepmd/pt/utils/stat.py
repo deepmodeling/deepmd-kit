@@ -70,7 +70,7 @@ def make_stat_input(
             log.info("Element check enabled...")
         else:
             log.info("Element completion is disabled...")
-    
+
     do_element_completion = datasets[0].mixed_type and enable_element_completion
 
     for sys_index, (dataset, dataloader) in enumerate(zip(datasets, dataloaders)):
