@@ -6,7 +6,6 @@ import unittest
 from copy import (
     deepcopy,
 )
-import logging
 
 import numpy as np
 import torch
@@ -18,8 +17,6 @@ from deepmd.pt.entrypoints.main import (
 from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
-
-from deepmd.entrypoints.test import test_ener as dp_test_ener
 
 
 class DPTest:
