@@ -79,6 +79,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         pair_exclude_types: list[tuple[int, int]] = [],
         rcond: Optional[float] = None,
         preset_out_bias: Optional[dict[str, np.ndarray]] = None,
+        data_stat_protect: float = 1e-2,
     ) -> None:
         torch.nn.Module.__init__(self)
         BaseAtomicModel_.__init__(self)
@@ -87,6 +88,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self.reinit_pair_exclude(pair_exclude_types)
         self.rcond = rcond
         self.preset_out_bias = preset_out_bias
+        self.data_stat_protect = data_stat_protect
 
     def init_out_stat(self) -> None:
         """Initialize the output bias."""
