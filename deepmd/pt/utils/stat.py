@@ -34,6 +34,7 @@ from deepmd.utils.path import (
 
 log = logging.getLogger(__name__)
 
+
 def make_stat_input(
     datasets,
     dataloaders,
@@ -65,7 +66,11 @@ def make_stat_input(
     collect_ele = defaultdict(int)
 
     if datasets[0].mixed_type:
-        log.info("Element check enabled..." if enable_element_completion else "Element completion is disabled...")
+        log.info(
+            "Element check enabled..."
+            if enable_element_completion
+            else "Element completion is disabled..."
+        )
 
     do_element_completion = datasets[0].mixed_type and enable_element_completion
 
@@ -105,6 +110,7 @@ def make_stat_input(
 
     return lst
 
+
 def process_batches(dataloader, sys_stat, nbatches):
     """Process nbatches frames from each system."""
     iterator = iter(dataloader)
@@ -140,6 +146,7 @@ def finalize_stats(sys_stat):
             sys_stat[key] = torch.cat(sys_stat[key], dim=0)
     dict_to_device(sys_stat)
 
+
 def process_element_counts(
     sys_index,
     dataset,
@@ -168,6 +175,7 @@ def process_element_counts(
             {"sys_index": sys_index, "frames": indices}
         )
 
+
 def process_missing_elements(
     min_frames, global_element_counts, total_element_types, collect_ele, datasets, lst
 ):
@@ -185,6 +193,7 @@ def process_missing_elements(
         process_with_new_frame(
             sys_indices, newele_counter, min_frames, datasets, lst, collect_ele, miss
         )
+
 
 def process_with_new_frame(
     sys_indices, newele_counter, min_frames, datasets, lst, collect_ele, miss
