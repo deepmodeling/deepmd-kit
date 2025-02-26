@@ -26,30 +26,29 @@ Before running TensorBoard, make sure you have generated summary data in a log
 directory by modifying the input script, setting {ref}`tensorboard <training/tensorboard>` to true in the training subsection will enable the TensorBoard data analysis. eg. **water_se_a.json**.
 
 ```json
-    "training" : {
-	"systems":	["../data/"],
-	"stop_batch":	1000000,
-	"batch_size":	1,
+"training": {
+   "systems": ["../data/"],
+   "stop_batch": 1000000,
+   "batch_size": 1,
 
-	"seed":		1,
+   "seed": 1,
+   "_comment": " display and restart",
+   "_comment": " frequencies counted in batch",
+   "disp_file": "lcurve.out",
+   "disp_freq": 100,
+   "numb_test": 10,
+   "save_freq": 1000,
+   "save_ckpt": "model.ckpt",
 
-	"_comment": " display and restart",
-	"_comment": " frequencies counted in batch",
-	"disp_file":	"lcurve.out",
-	"disp_freq":	100,
-	"numb_test":	10,
-	"save_freq":	1000,
-	"save_ckpt":	"model.ckpt",
-
-	"disp_training":true,
-	"time_training":true,
-	"tensorboard":	true,
-	"tensorboard_log_dir":"log",
-	"tensorboard_freq": 1000,
-	"profiling":	false,
-	"profiling_file":"timeline.json",
-	"_comment":	"that's all"
-    }
+   "disp_training": true,
+   "time_training": true,
+   "tensorboard": true,
+   "tensorboard_log_dir": "log",
+   "tensorboard_freq": 1000,
+   "profiling": false,
+   "profiling_file": "timeline.json",
+   "_comment": "that's all"
+}
 ```
 
 Once you have event files, run TensorBoard and provide the log directory. This
