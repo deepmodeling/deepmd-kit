@@ -32,4 +32,6 @@ class DescrptDPA3(DescrptDPA3DP):
             value = DescrptBlockRepflows.deserialize(value.serialize())
         elif name in {"type_embedding"}:
             value = TypeEmbedNet.deserialize(value.serialize())
+        else:
+            pass
         return super().__setattr__(name, value)

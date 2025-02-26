@@ -57,6 +57,72 @@ from .repflows import (
 
 
 class RepFlowArgs:
+    r"""The constructor for the RepFlowArgs class which defines the parameters of the repflow block in DPA3 descriptor.
+
+    Parameters
+    ----------
+    n_dim : int, optional
+        The dimension of node representation.
+    e_dim : int, optional
+        The dimension of edge representation.
+    a_dim : int, optional
+        The dimension of angle representation.
+    nlayers : int, optional
+        Number of repflow layers.
+    e_rcut : float, optional
+        The edge cut-off radius.
+    e_rcut_smth : float, optional
+        Where to start smoothing for edge. For example the 1/r term is smoothed from rcut to rcut_smth.
+    e_sel : int, optional
+        Maximally possible number of selected edge neighbors.
+    a_rcut : float, optional
+        The angle cut-off radius.
+    a_rcut_smth : float, optional
+        Where to start smoothing for angle. For example the 1/r term is smoothed from rcut to rcut_smth.
+    a_sel : int, optional
+        Maximally possible number of selected angle neighbors.
+    a_compress_rate : int, optional
+        The compression rate for angular messages. The default value is 0, indicating no compression.
+        If a non-zero integer c is provided, the node and edge dimensions will be compressed
+        to a_dim/c and a_dim/2c, respectively, within the angular message.
+    a_compress_e_rate : int, optional
+        The extra compression rate for edge in angular message compression. The default value is 1.
+        When using angular message compression with a_compress_rate c and a_compress_e_rate c_e,
+        the edge dimension will be compressed to (c_e * a_dim / 2c) within the angular message.
+    a_compress_use_split : bool, optional
+        Whether to split first sub-vectors instead of linear mapping during angular message compression.
+        The default value is False.
+    n_multi_edge_message : int, optional
+        The head number of multiple edge messages to update node feature.
+        Default is 1, indicating one head edge message.
+    axis_neuron : int, optional
+        The number of dimension of submatrix in the symmetrization ops.
+    update_angle : bool, optional
+        Where to update the angle rep. If not, only node and edge rep will be used.
+    update_style : str, optional
+        Style to update a representation.
+        Supported options are:
+        -'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n)
+        -'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)
+        -'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n)
+        where `r1`, `r2` ... `r3` are residual weights defined by `update_residual`
+        and `update_residual_init`.
+    update_residual : float, optional
+        When update using residual mode, the initial std of residual vector weights.
+    update_residual_init : str, optional
+        When update using residual mode, the initialization mode of residual vector weights.
+    fix_stat_std : float, optional
+        If non-zero (default is 0.3), use this constant as the normalization standard deviation
+        instead of computing it from data statistics.
+    skip_stat : bool, optional
+        (Deprecated, kept only for compatibility.) This parameter is obsolete and will be removed.
+        If set to True, it forces fix_stat_std=0.3 for backward compatibility.
+        Transition to fix_stat_std parameter immediately.
+    optim_update : bool, optional
+        Whether to enable the optimized update method.
+        Uses a more efficient process when enabled. Defaults to True
+    """
+
     def __init__(
         self,
         n_dim: int = 128,
@@ -82,71 +148,6 @@ class RepFlowArgs:
         skip_stat: bool = False,
         optim_update: bool = True,
     ) -> None:
-        r"""The constructor for the RepFlowArgs class which defines the parameters of the repflow block in DPA3 descriptor.
-
-        Parameters
-        ----------
-        n_dim : int, optional
-            The dimension of node representation.
-        e_dim : int, optional
-            The dimension of edge representation.
-        a_dim : int, optional
-            The dimension of angle representation.
-        nlayers : int, optional
-            Number of repflow layers.
-        e_rcut : float, optional
-            The edge cut-off radius.
-        e_rcut_smth : float, optional
-            Where to start smoothing for edge. For example the 1/r term is smoothed from rcut to rcut_smth.
-        e_sel : int, optional
-            Maximally possible number of selected edge neighbors.
-        a_rcut : float, optional
-            The angle cut-off radius.
-        a_rcut_smth : float, optional
-            Where to start smoothing for angle. For example the 1/r term is smoothed from rcut to rcut_smth.
-        a_sel : int, optional
-            Maximally possible number of selected angle neighbors.
-        a_compress_rate : int, optional
-            The compression rate for angular messages. The default value is 0, indicating no compression.
-            If a non-zero integer c is provided, the node and edge dimensions will be compressed
-            to a_dim/c and a_dim/2c, respectively, within the angular message.
-        a_compress_e_rate : int, optional
-            The extra compression rate for edge in angular message compression. The default value is 1.
-            When using angular message compression with a_compress_rate c and a_compress_e_rate c_e,
-            the edge dimension will be compressed to (c_e * a_dim / 2c) within the angular message.
-        a_compress_use_split : bool, optional
-            Whether to split first sub-vectors instead of linear mapping during angular message compression.
-            The default value is False.
-        n_multi_edge_message : int, optional
-            The head number of multiple edge messages to update node feature.
-            Default is 1, indicating one head edge message.
-        axis_neuron : int, optional
-            The number of dimension of submatrix in the symmetrization ops.
-        update_angle : bool, optional
-            Where to update the angle rep. If not, only node and edge rep will be used.
-        update_style : str, optional
-            Style to update a representation.
-            Supported options are:
-            -'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n)
-            -'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)
-            -'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n)
-            where `r1`, `r2` ... `r3` are residual weights defined by `update_residual`
-            and `update_residual_init`.
-        update_residual : float, optional
-            When update using residual mode, the initial std of residual vector weights.
-        update_residual_init : str, optional
-            When update using residual mode, the initialization mode of residual vector weights.
-        fix_stat_std : float, optional
-            If non-zero (default is 0.3), use this constant as the normalization standard deviation
-            instead of computing it from data statistics.
-        skip_stat : bool, optional
-            (Deprecated, kept only for compatibility.) This parameter is obsolete and will be removed.
-            If set to True, it forces fix_stat_std=0.3 for backward compatibility.
-            Transition to fix_stat_std parameter immediately.
-        optim_update : bool, optional
-            Whether to enable the optimized update method.
-            Uses a more efficient process when enabled. Defaults to True
-        """
         self.n_dim = n_dim
         self.e_dim = e_dim
         self.a_dim = a_dim
@@ -210,6 +211,36 @@ class RepFlowArgs:
 
 @BaseDescriptor.register("dpa3")
 class DescrptDPA3(NativeOP, BaseDescriptor):
+    r"""The DPA-3 descriptor.
+
+    Parameters
+    ----------
+    repflow : Union[RepFlowArgs, dict]
+        The arguments used to initialize the repflow block, see docstr in `RepFlowArgs` for details information.
+    concat_output_tebd : bool, optional
+        Whether to concat type embedding at the output of the descriptor.
+    activation_function : str, optional
+        The activation function in the embedding net.
+    precision : str, optional
+        The precision of the embedding net parameters.
+    exclude_types : list[list[int]], optional
+        The excluded pairs of types which have no interaction with each other.
+        For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    env_protection : float, optional
+        Protection parameter to prevent division by zero errors during environment matrix calculations.
+        For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
+    trainable : bool, optional
+        If the parameters are trainable.
+    seed : int, optional
+        Random seed for parameter initialization.
+    use_econf_tebd : bool, Optional
+        Whether to use electronic configuration type embedding.
+    use_tebd_bias : bool, Optional
+        Whether to use bias in the type embedding layer.
+    type_map : list[str], Optional
+        A list of strings. Give the name to each type of atoms.
+    """
+
     def __init__(
         self,
         ntypes: int,
@@ -227,50 +258,6 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
     ) -> None:
-        r"""The DPA-3 descriptor.
-
-        Parameters
-        ----------
-        repflow : Union[RepFlowArgs, dict]
-            The arguments used to initialize the repflow block, see docstr in `RepFlowArgs` for details information.
-        concat_output_tebd : bool, optional
-            Whether to concat type embedding at the output of the descriptor.
-        activation_function : str, optional
-            The activation function in the embedding net.
-        precision : str, optional
-            The precision of the embedding net parameters.
-        exclude_types : list[list[int]], optional
-            The excluded pairs of types which have no interaction with each other.
-            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
-        env_protection : float, optional
-            Protection parameter to prevent division by zero errors during environment matrix calculations.
-            For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
-        trainable : bool, optional
-            If the parameters are trainable.
-        seed : int, optional
-            Random seed for parameter initialization.
-        use_econf_tebd : bool, Optional
-            Whether to use electronic configuration type embedding.
-        use_tebd_bias : bool, Optional
-            Whether to use bias in the type embedding layer.
-        type_map : list[str], Optional
-            A list of strings. Give the name to each type of atoms.
-
-        Returns
-        -------
-        descriptor:         torch.Tensor
-            the descriptor of shape nb x nloc x n_dim.
-            invariant single-atom representation.
-        g2:                 torch.Tensor
-            invariant pair-atom representation.
-        h2:                 torch.Tensor
-            equivariant pair-atom representation.
-        rot_mat:            torch.Tensor
-            rotation matrix for equivariant fittings
-        sw:                 torch.Tensor
-            The switch function for decaying inverse distance.
-
-        """
         super().__init__()
 
         def init_subclass_params(sub_data, sub_class):

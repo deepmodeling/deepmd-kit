@@ -36,6 +36,8 @@ class DescrptBlockRepflows(DescrptBlockRepflowsDP):
             pass
         elif name == "emask":
             value = PairExcludeMask(value.ntypes, value.exclude_types)
+        else:
+            pass
 
         return super().__setattr__(name, value)
 
@@ -58,4 +60,6 @@ class RepFlowLayer(RepFlowLayerDP):
                 value = NativeLayer.deserialize(value.serialize())
         elif name in {"n_residual", "e_residual", "a_residual"}:
             value = [ArrayAPIVariable(to_jax_array(vv)) for vv in value]
+        else:
+            pass
         return super().__setattr__(name, value)

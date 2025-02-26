@@ -63,6 +63,36 @@ from .repflows import (
 
 @BaseDescriptor.register("dpa3")
 class DescrptDPA3(BaseDescriptor, torch.nn.Module):
+    r"""The DPA-3 descriptor.
+
+    Parameters
+    ----------
+    repflow : Union[RepFlowArgs, dict]
+        The arguments used to initialize the repflow block, see docstr in `RepFlowArgs` for details information.
+    concat_output_tebd : bool, optional
+        Whether to concat type embedding at the output of the descriptor.
+    activation_function : str, optional
+        The activation function in the embedding net.
+    precision : str, optional
+        The precision of the embedding net parameters.
+    exclude_types : list[list[int]], optional
+        The excluded pairs of types which have no interaction with each other.
+        For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    env_protection : float, optional
+        Protection parameter to prevent division by zero errors during environment matrix calculations.
+        For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
+    trainable : bool, optional
+        If the parameters are trainable.
+    seed : int, optional
+        Random seed for parameter initialization.
+    use_econf_tebd : bool, Optional
+        Whether to use electronic configuration type embedding.
+    use_tebd_bias : bool, Optional
+        Whether to use bias in the type embedding layer.
+    type_map : list[str], Optional
+        A list of strings. Give the name to each type of atoms.
+    """
+
     def __init__(
         self,
         ntypes: int,
@@ -80,50 +110,6 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
     ) -> None:
-        r"""The DPA-3 descriptor.
-
-        Parameters
-        ----------
-        repflow : Union[RepFlowArgs, dict]
-            The arguments used to initialize the repflow block, see docstr in `RepFlowArgs` for details information.
-        concat_output_tebd : bool, optional
-            Whether to concat type embedding at the output of the descriptor.
-        activation_function : str, optional
-            The activation function in the embedding net.
-        precision : str, optional
-            The precision of the embedding net parameters.
-        exclude_types : list[list[int]], optional
-            The excluded pairs of types which have no interaction with each other.
-            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
-        env_protection : float, optional
-            Protection parameter to prevent division by zero errors during environment matrix calculations.
-            For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
-        trainable : bool, optional
-            If the parameters are trainable.
-        seed : int, optional
-            Random seed for parameter initialization.
-        use_econf_tebd : bool, Optional
-            Whether to use electronic configuration type embedding.
-        use_tebd_bias : bool, Optional
-            Whether to use bias in the type embedding layer.
-        type_map : list[str], Optional
-            A list of strings. Give the name to each type of atoms.
-
-        Returns
-        -------
-        descriptor:         torch.Tensor
-            the descriptor of shape nb x nloc x n_dim.
-            invariant single-atom representation.
-        g2:                 torch.Tensor
-            invariant pair-atom representation.
-        h2:                 torch.Tensor
-            equivariant pair-atom representation.
-        rot_mat:            torch.Tensor
-            rotation matrix for equivariant fittings
-        sw:                 torch.Tensor
-            The switch function for decaying inverse distance.
-
-        """
         super().__init__()
 
         def init_subclass_params(sub_data, sub_class):
@@ -189,8 +175,14 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         self.env_protection = env_protection
         self.trainable = trainable
 
-        assert self.repflows.e_rcut >= self.repflows.a_rcut
-        assert self.repflows.e_sel >= self.repflows.a_sel
+        assert self.repflows.e_rcut >= self.repflows.a_rcut, (
+            f"Edge radial cutoff (e_rcut: {self.repflows.e_rcut}) "
+            f"must be greater than or equal to angular cutoff (a_rcut: {self.repflows.a_rcut})!"
+        )
+        assert self.repflows.e_sel >= self.repflows.a_sel, (
+            f"Edge sel number (e_sel: {self.repflows.e_sel}) "
+            f"must be greater than or equal to angular sel (a_sel: {self.repflows.a_sel})!"
+        )
 
         self.rcut = self.repflows.get_rcut()
         self.rcut_smth = self.repflows.get_rcut_smth()
