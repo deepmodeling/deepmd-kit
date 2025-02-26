@@ -24,7 +24,7 @@ from deepmd.pt.entrypoints.main import (
 from deepmd.utils.data import (
     DeepmdData,
 )
-import numpy as np
+
 from .model.test_permutation import (
     model_se_e2_a,
     model_spin,
