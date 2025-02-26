@@ -2,6 +2,7 @@
 
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import bisect
+from functools import lru_cache
 import logging
 from typing import (
     Optional,
@@ -501,6 +502,7 @@ class DeepmdData:
             data["box"] = None
         return data
 
+    @lru_cache(1)
     def _load_set(self, set_name: DPPath):
         # get nframes
         if not isinstance(set_name, DPPath):
