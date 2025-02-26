@@ -447,9 +447,9 @@ def test_ener(
         log.info(f"Energy MAE/Natoms  : {mae_ea:e} eV")
         log.info(f"Energy RMSE/Natoms : {rmse_ea:e} eV")
         dict_to_return["mae_e"] = (mae_e, energy.size)
-        dict_to_return["mae_ea"] = (mae_e, energy.size)
-        dict_to_return["mae_ea"] = (rmse_e, energy.size)
-        dict_to_return["mae_ea"] = (rmse_e, energy.size)
+        dict_to_return["mae_ea"] = (mae_ea, energy.size)
+        dict_to_return["rmse_e"] = (rmse_e, energy.size)
+        dict_to_return["rmse_ea"] = (rmse_ea, energy.size)
     if not out_put_spin and find_force == 1:
         log.info(f"Force  MAE         : {mae_f:e} eV/A")
         log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
