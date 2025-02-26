@@ -66,7 +66,7 @@ class Test_testener_without_spin(unittest.TestCase):
         torch.jit.save(model, self.tmp_model.name)
 
     def test_dp_test_ener_without_spin(self) -> None:
-        dp = DeepEval(self.tmp_model.name,head='PyTorch')
+        dp = DeepEval(self.tmp_model.name, head="PyTorch")
         system = self.config["training"]["validation_data"]["systems"][0]
         data = DeepmdData(
             sys_path=system,
@@ -164,7 +164,6 @@ class Test_testener_with_virial(unittest.TestCase):
         self.assertNotIn("mae_fm", err, "'mae_fm' key is missing in the result")
         self.assertIn("mae_v", err, "'mae_v' key should not be present in the result")
         self.assertIn("mae_f", err, "'mae_f' key should not be present in the result")
-    
         os.unlink(self.tmp_model.name)
 
     def tearDown(self) -> None:
@@ -192,30 +191,30 @@ class Test_testener_spin(unittest.TestCase):
         data_file = [str(Path(__file__).parent / "NiO/data/single")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
-        model_spin=model_spin = {
-                    "type_map": ["O", "H", "B"],
-                    "descriptor": {
-                        "type": "se_e2_a",
-                        "sel": [46, 92, 4],
-                        "rcut_smth": 0.50,
-                        "rcut": 4.00,
-                        "neuron": [25, 50, 100],
-                        "resnet_dt": False,
-                        "axis_neuron": 16,
-                        "seed": 1,
-                    },
-                    "fitting_net": {
-                        "neuron": [24, 24, 24],
-                        "resnet_dt": True,
-                        "seed": 1,
-                    },
-                    "data_stat_nbatch": 20,
-                    "spin": {
-                        "use_spin": [True, False, False],
-                        "virtual_scale": [0.3140],
-                        "_comment": " that's all",
-                    },
-                }
+        model_spin = model_spin = {
+            "type_map": ["O", "H", "B"],
+            "descriptor": {
+                "type": "se_e2_a",
+                "sel": [46, 92, 4],
+                "rcut_smth": 0.50,
+                "rcut": 4.00,
+                "neuron": [25, 50, 100],
+                "resnet_dt": False,
+                "axis_neuron": 16,
+                "seed": 1,
+            },
+            "fitting_net": {
+                "neuron": [24, 24, 24],
+                "resnet_dt": True,
+                "seed": 1,
+            },
+            "data_stat_nbatch": 20,
+            "spin": {
+                "use_spin": [True, False, False],
+                "virtual_scale": [0.3140],
+                "_comment": " that's all",
+            },
+        }
         self.config["model"] = deepcopy(model_spin)
         self.config["model"]["type_map"] = ["Ni", "O", "B"]
         self.input_json = "test_dp_test.json"
@@ -227,7 +226,7 @@ class Test_testener_spin(unittest.TestCase):
         torch.jit.save(model, self.tmp_model.name)
 
     def test_dp_test_ener_with_spin(self) -> None:
-        dp = DeepEval(self.tmp_model.name,head='PyTorch')
+        dp = DeepEval(self.tmp_model.name, head="PyTorch")
         system = self.config["training"]["validation_data"]["systems"][0]
         data = DeepmdData(
             sys_path=system,
