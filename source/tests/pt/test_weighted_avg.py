@@ -61,6 +61,7 @@ class Test_testener(unittest.TestCase):
             json.dump(self.config, fp, indent=4)
         trainer = get_trainer(deepcopy(self.config))
         with torch.device("cpu"):
+            
             input_dict, _, _ = trainer.get_data(is_train=False)
         input_dict.pop("spin", None)
         model = torch.jit.script(trainer.model)
