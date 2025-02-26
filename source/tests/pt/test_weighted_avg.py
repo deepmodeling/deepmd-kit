@@ -28,7 +28,10 @@ from deepmd.utils.data import (
 from deepmd.utils.weight_avg import (
     weighted_average,
 )
-
+from .model.test_permutation import (
+    model_se_e2_a,
+    model_spin,
+)
 
 class Test_testener_without_spin(unittest.TestCase):
     def setUp(self) -> None:
@@ -41,26 +44,6 @@ class Test_testener_without_spin(unittest.TestCase):
         data_file = [str(Path(__file__).parent / "water/data/single")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
-        model_se_e2_a = {
-    "type_map": ["O", "H", "B"],
-    "descriptor": {
-        "type": "se_e2_a",
-        "sel": [46, 92, 4],
-        "rcut_smth": 0.50,
-        "rcut": 4.00,
-        "neuron": [25, 50, 100],
-        "resnet_dt": False,
-        "axis_neuron": 16,
-        "seed": 1,
-    },
-    "fitting_net": {
-        "neuron": [24, 24, 24],
-        "resnet_dt": True,
-        "seed": 1,
-    },
-    "data_stat_nbatch": 20,
-}
-
         self.config["model"] = deepcopy(model_se_e2_a)
         self.input_json = "test_dp_test.json"
         with open(self.input_json, "w") as fp:
@@ -110,7 +93,6 @@ class Test_testener_without_spin(unittest.TestCase):
             if f in ["stat_files"]:
                 shutil.rmtree(f)
 
-
 class Test_testener_with_virial(unittest.TestCase):
     def setUp(self) -> None:
         self.detail_file = "test_dp_test_ener_detail"
@@ -122,25 +104,6 @@ class Test_testener_with_virial(unittest.TestCase):
         data_file = [str(Path(__file__).parent / "water/data/single")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
-        model_se_e2_a = {
-    "type_map": ["O", "H", "B"],
-    "descriptor": {
-        "type": "se_e2_a",
-        "sel": [46, 92, 4],
-        "rcut_smth": 0.50,
-        "rcut": 4.00,
-        "neuron": [25, 50, 100],
-        "resnet_dt": False,
-        "axis_neuron": 16,
-        "seed": 1,
-    },
-    "fitting_net": {
-        "neuron": [24, 24, 24],
-        "resnet_dt": True,
-        "seed": 1,
-    },
-    "data_stat_nbatch": 20,
-}
         self.config["model"] = deepcopy(model_se_e2_a)
         self.input_json = "test_dp_test.json"
         with open(self.input_json, "w") as fp:
@@ -211,25 +174,6 @@ class Test_testener_with_multisys(unittest.TestCase):
         data_file = [str(Path(__file__).parent / "water/data/single")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
-        model_se_e2_a = {
-    "type_map": ["O", "H", "B"],
-    "descriptor": {
-        "type": "se_e2_a",
-        "sel": [46, 92, 4],
-        "rcut_smth": 0.50,
-        "rcut": 4.00,
-        "neuron": [25, 50, 100],
-        "resnet_dt": False,
-        "axis_neuron": 16,
-        "seed": 1,
-    },
-    "fitting_net": {
-        "neuron": [24, 24, 24],
-        "resnet_dt": True,
-        "seed": 1,
-    },
-    "data_stat_nbatch": 20,
-}
         self.config["model"] = deepcopy(model_se_e2_a)
         self.input_json = "test_dp_test.json"
         with open(self.input_json, "w") as fp:
@@ -322,30 +266,6 @@ class Test_testener_spin(unittest.TestCase):
         data_file = [str(Path(__file__).parent / "NiO/data/single")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
-        model_spin = {
-    "type_map": ["O", "H", "B"],
-    "descriptor": {
-        "type": "se_e2_a",
-        "sel": [46, 92, 4],
-        "rcut_smth": 0.50,
-        "rcut": 4.00,
-        "neuron": [25, 50, 100],
-        "resnet_dt": False,
-        "axis_neuron": 16,
-        "seed": 1,
-    },
-    "fitting_net": {
-        "neuron": [24, 24, 24],
-        "resnet_dt": True,
-        "seed": 1,
-    },
-    "data_stat_nbatch": 20,
-    "spin": {
-        "use_spin": [True, False, False],
-        "virtual_scale": [0.3140],
-        "_comment": " that's all",
-    },
-}
         self.config["model"] = deepcopy(model_spin)
         self.config["model"]["type_map"] = ["Ni", "O", "B"]
         self.input_json = "test_dp_test.json"
