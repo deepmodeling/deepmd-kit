@@ -65,7 +65,7 @@ class Test_testener_without_spin(unittest.TestCase):
         torch.jit.save(model, self.tmp_model.name)
 
     def test_dp_test_ener_without_spin(self) -> None:
-        dp = DeepEval(self.tmp_model.name,head='PyTorch')
+        dp = DeepEval(self.tmp_model.name, head="PyTorch")
         system = self.config["training"]["validation_data"]["systems"][0]
         data = DeepmdData(
             sys_path=system,
@@ -75,13 +75,13 @@ class Test_testener_without_spin(unittest.TestCase):
             sort_atoms=False,
         )
         err = dp_test_ener(
-                dp,
-                data,
-                system,
-                numb_test=1,
-                detail_file=None,
-                has_atom_ener=False,
-            )
+            dp,
+            data,
+            system,
+            numb_test=1,
+            detail_file=None,
+            has_atom_ener=False,
+        )
         print(err)
         os.unlink(self.tmp_model.name)
 
@@ -96,6 +96,7 @@ class Test_testener_without_spin(unittest.TestCase):
             if f in ["stat_files"]:
                 shutil.rmtree(f)
 
+
 class Test_testener_spin(unittest.TestCase):
     def setUp(self) -> None:
         self.detail_file = "test_dp_test_ener_spin_detail"
@@ -107,30 +108,30 @@ class Test_testener_spin(unittest.TestCase):
         data_file = [str(Path(__file__).parent / "NiO/data/single")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
-        model_spin=model_spin = {
-                    "type_map": ["O", "H", "B"],
-                    "descriptor": {
-                        "type": "se_e2_a",
-                        "sel": [46, 92, 4],
-                        "rcut_smth": 0.50,
-                        "rcut": 4.00,
-                        "neuron": [25, 50, 100],
-                        "resnet_dt": False,
-                        "axis_neuron": 16,
-                        "seed": 1,
-                    },
-                    "fitting_net": {
-                        "neuron": [24, 24, 24],
-                        "resnet_dt": True,
-                        "seed": 1,
-                    },
-                    "data_stat_nbatch": 20,
-                    "spin": {
-                        "use_spin": [True, False, False],
-                        "virtual_scale": [0.3140],
-                        "_comment": " that's all",
-                    },
-                }
+        model_spin = model_spin = {
+            "type_map": ["O", "H", "B"],
+            "descriptor": {
+                "type": "se_e2_a",
+                "sel": [46, 92, 4],
+                "rcut_smth": 0.50,
+                "rcut": 4.00,
+                "neuron": [25, 50, 100],
+                "resnet_dt": False,
+                "axis_neuron": 16,
+                "seed": 1,
+            },
+            "fitting_net": {
+                "neuron": [24, 24, 24],
+                "resnet_dt": True,
+                "seed": 1,
+            },
+            "data_stat_nbatch": 20,
+            "spin": {
+                "use_spin": [True, False, False],
+                "virtual_scale": [0.3140],
+                "_comment": " that's all",
+            },
+        }
         self.config["model"] = deepcopy(model_spin)
         self.config["model"]["type_map"] = ["Ni", "O", "B"]
         self.input_json = "test_dp_test.json"
@@ -142,7 +143,7 @@ class Test_testener_spin(unittest.TestCase):
         torch.jit.save(model, self.tmp_model.name)
 
     def test_dp_test_ener_with_spin(self) -> None:
-        dp = DeepEval(self.tmp_model.name,head='PyTorch')
+        dp = DeepEval(self.tmp_model.name, head="PyTorch")
         system = self.config["training"]["validation_data"]["systems"][0]
         data = DeepmdData(
             sys_path=system,
@@ -153,13 +154,13 @@ class Test_testener_spin(unittest.TestCase):
         )
 
         err = dp_test_ener(
-                dp,
-                data,
-                system,
-                numb_test=1,
-                detail_file=None,
-                has_atom_ener=False,
-            )
+            dp,
+            data,
+            system,
+            numb_test=1,
+            detail_file=None,
+            has_atom_ener=False,
+        )
         print(err)
         os.unlink(self.tmp_model.name)
 
