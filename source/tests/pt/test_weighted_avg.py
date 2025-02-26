@@ -89,7 +89,9 @@ class Test_testener_without_spin(unittest.TestCase):
             has_atom_ener=False,
         )
         self.assertIn("mae_e", err, "'mae_e' key is missing in the result")
-        self.assertNotIn("mae_fm", err, "'mae_fm' key should not be present in the result")
+        self.assertNotIn(
+            "mae_fm", err, "'mae_fm' key should not be present in the result"
+        )
         self.assertNotIn(
             "mae_v", err, "'mae_v' key should not be present in the result"
         )
@@ -173,7 +175,9 @@ class Test_testener_with_virial(unittest.TestCase):
             has_atom_ener=False,
         )
         self.assertIn("mae_e", err, "'mae_e' key is missing in the result")
-        self.assertNotIn("mae_fm", err, "'mae_fm' key should not be present in the result")
+        self.assertNotIn(
+            "mae_fm", err, "'mae_fm' key should not be present in the result"
+        )
         self.assertIn("mae_v", err, "'mae_v' key is missing in the result")
         self.assertIn("mae_f", err, "'mae_f' key is missing in the result")
         os.unlink(self.tmp_model.name)
