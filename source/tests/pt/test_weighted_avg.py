@@ -27,10 +27,12 @@ from deepmd.utils.data import (
 from deepmd.utils.weight_avg import (
     weighted_average,
 )
+
 from .model.test_permutation import (
     model_se_e2_a,
     model_spin,
 )
+
 
 class Test_testener_without_spin(unittest.TestCase):
     def setUp(self) -> None:
@@ -91,6 +93,7 @@ class Test_testener_without_spin(unittest.TestCase):
                 os.remove(f)
             if f in ["stat_files"]:
                 shutil.rmtree(f)
+
 
 class Test_testener_with_virial(unittest.TestCase):
     def setUp(self) -> None:
@@ -320,6 +323,7 @@ class Test_testener_spin(unittest.TestCase):
                 os.remove(f)
             if f in ["stat_files"]:
                 shutil.rmtree(f)
+
 
 if __name__ == "__main__":
     unittest.main()
