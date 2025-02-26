@@ -24,7 +24,6 @@ from deepmd.pt.entrypoints.main import (
 from deepmd.utils.data import (
     DeepmdData,
 )
-
 from deepmd.utils.weight_avg import (
     weighted_average,
 )
@@ -163,6 +162,7 @@ class Test_testener_with_virial(unittest.TestCase):
             if os.path.exists(virial_path_fake):
                 os.remove(virial_path_fake)
 
+
 class Test_testener_with_multisys(unittest.TestCase):
     def setUp(self) -> None:
         self.detail_file = "test_dp_test_ener_detail"
@@ -203,7 +203,7 @@ class Test_testener_with_multisys(unittest.TestCase):
             has_atom_ener=False,
         )
         err.append(err_novirial)
-        ener_nv,weight_nv = err_novirial['mae_e']
+        ener_nv, weight_nv = err_novirial["mae_e"]
         virial_path_fake = os.path.join(
             self.config["training"]["validation_data"]["systems"][0],
             "set.000",
@@ -225,15 +225,19 @@ class Test_testener_with_multisys(unittest.TestCase):
             detail_file=None,
             has_atom_ener=False,
         )
-        ener_v, weight_v = err_virial['mae_e']
-        mae_v,_ = err_virial['mae_v']
-        weight=weight_nv+weight_v
-        ener=(ener_v*weight_v)+(ener_nv*weight_nv)
-        mae_e_expected = ener/weight
+        ener_v, weight_v = err_virial["mae_e"]
+        mae_v, _ = err_virial["mae_v"]
+        weight = weight_nv + weight_v
+        ener = (ener_v * weight_v) + (ener_nv * weight_nv)
+        mae_e_expected = ener / weight
         err.append(err_virial)
         avg_err = weighted_average(err)
-        assert avg_err["mae_v"] == mae_v, f"Expected mae_v in avg_err to be {mae_v} but got {avg_err['mae_v']}"
-        assert avg_err["mae_e"] == mae_e_expected, f"Expected mae_e in avg_err to be {mae_e_expected} but got {avg_err['mae_e']}"
+        assert avg_err["mae_v"] == mae_v, (
+            f"Expected mae_v in avg_err to be {mae_v} but got {avg_err['mae_v']}"
+        )
+        assert avg_err["mae_e"] == mae_e_expected, (
+            f"Expected mae_e in avg_err to be {mae_e_expected} but got {avg_err['mae_e']}"
+        )
 
         os.unlink(self.tmp_model.name)
 
@@ -254,6 +258,7 @@ class Test_testener_with_multisys(unittest.TestCase):
             )
             if os.path.exists(virial_path_fake):
                 os.remove(virial_path_fake)
+
 
 class Test_testener_spin(unittest.TestCase):
     def setUp(self) -> None:
@@ -315,7 +320,6 @@ class Test_testener_spin(unittest.TestCase):
                 os.remove(f)
             if f in ["stat_files"]:
                 shutil.rmtree(f)
-
 
 if __name__ == "__main__":
     unittest.main()
