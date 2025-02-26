@@ -744,7 +744,9 @@ class DescrptBlockSeA(DescriptorBlock):
                     "Compressed environment is not implemented yet."
                 )
             else:
-                if rr.numel() > 0:
+                # NOTE: ontrol flow with double backward is not supported well yet by paddle.jit
+                # if rr.numel() > 0:
+                if True:
                     rr = rr * mm.unsqueeze(2).astype(rr.dtype)
                     ss = rr[:, :, :1]
                     if self.compress:

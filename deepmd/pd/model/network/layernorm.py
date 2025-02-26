@@ -15,7 +15,6 @@ from deepmd.pd.model.network.init import (
     zeros_,
 )
 from deepmd.pd.utils import (
-    decomp,
     env,
 )
 from deepmd.pd.utils.env import (
@@ -100,8 +99,9 @@ class LayerNorm(nn.Layer):
         yy: paddle.Tensor
             The output.
         """
+        # NOTE: ontrol flow with double backward is not supported well yet by paddle.jit
         # if xx.numel() > 0:
-        if decomp.numel(xx):
+        if True:
             variance, mean = (
                 paddle.var(xx, axis=-1, unbiased=False, keepdim=True),
                 paddle.mean(xx, axis=-1, keepdim=True),
