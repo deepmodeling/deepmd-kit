@@ -34,7 +34,6 @@ from deepmd.utils.path import (
 
 log = logging.getLogger(__name__)
 
-
 def make_stat_input(
     datasets,
     dataloaders,
@@ -106,7 +105,6 @@ def make_stat_input(
 
     return lst
 
-
 def process_batches(dataloader, sys_stat, nbatches):
     """Process nbatches frames from each system."""
     iterator = iter(dataloader)
@@ -170,7 +168,6 @@ def process_element_counts(
             {"sys_index": sys_index, "frames": indices}
         )
 
-
 def process_missing_elements(
     min_frames, global_element_counts, total_element_types, collect_ele, datasets, lst
 ):
@@ -188,7 +185,6 @@ def process_missing_elements(
         process_with_new_frame(
             sys_indices, newele_counter, min_frames, datasets, lst, collect_ele, miss
         )
-
 
 def process_with_new_frame(
     sys_indices, newele_counter, min_frames, datasets, lst, collect_ele, miss
