@@ -42,7 +42,7 @@ def make_stat_input(
     min_frames_per_element_forstat=10,
     enable_element_completion=True,
 ):
-    """Get list for statistics from datasets.
+    """Pack data for statistics with element completion.
 
     Parameters
     ----------
@@ -56,7 +56,7 @@ def make_stat_input(
     Returns
     -------
     list
-        A list containing the statistics for each dataset processed.
+        A list of dicts, each of which contains data from a system.
     """
     lst = []
     log.info(f"Packing data for statistics from {len(datasets)} systems")
@@ -66,11 +66,8 @@ def make_stat_input(
     collect_ele = defaultdict(int)
 
     if datasets[0].mixed_type:
-        if enable_element_completion:
-            log.info("Element check enabled...")
-        else:
-            log.info("Element completion is disabled...")
-    
+        log.info("Element check enabled..." if enable_element_completion else "Element completion is disabled...")
+
     do_element_completion = datasets[0].mixed_type and enable_element_completion
 
     for sys_index, (dataset, dataloader) in enumerate(zip(datasets, dataloaders)):
@@ -132,7 +129,7 @@ def process_batches(dataloader, sys_stat, nbatches):
 
 
 def finalize_stats(sys_stat):
-    """Finalize statistics by ensuring data is properly formatted and consolidated."""
+    """Finalize statistics based on the data type."""
     for key in sys_stat:
         if isinstance(sys_stat[key], np.float32):
             pass
@@ -144,7 +141,6 @@ def finalize_stats(sys_stat):
         elif isinstance(sys_stat[key][0], torch.Tensor):
             sys_stat[key] = torch.cat(sys_stat[key], dim=0)
     dict_to_device(sys_stat)
-
 
 def process_element_counts(
     sys_index,
