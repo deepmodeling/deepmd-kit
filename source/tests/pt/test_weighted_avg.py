@@ -11,6 +11,7 @@ from pathlib import (
     Path,
 )
 
+import numpy as np
 import torch
 
 from deepmd.entrypoints.test import test_ener as dp_test_ener
@@ -61,18 +62,20 @@ class Test_testener_without_spin(unittest.TestCase):
             sort_atoms=False,
         )
         err = dp_test_ener(
-                dp,
-                data,
-                system,
-                numb_test=1,
-                detail_file=None,
-                has_atom_ener=False,
-            )
+            dp,
+            data,
+            system,
+            numb_test=1,
+            detail_file=None,
+            has_atom_ener=False,
+        )
         self.assertIn("mae_e", err, "'mae_e' key is missing in the result")
         self.assertNotIn("mae_fm", err, "'mae_fm' key is missing in the result")
-        self.assertNotIn("mae_v", err, "'mae_v' key should not be present in the result")
+        self.assertNotIn(
+            "mae_v", err, "'mae_v' key should not be present in the result"
+        )
         self.assertIn("mae_f", err, "'mae_f' key should not be present in the result")
-    
+
         os.unlink(self.tmp_model.name)
 
     def tearDown(self) -> None:
@@ -85,6 +88,7 @@ class Test_testener_without_spin(unittest.TestCase):
                 os.remove(f)
             if f in ["stat_files"]:
                 shutil.rmtree(f)
+
 
 class Test_testener_with_virial(unittest.TestCase):
     def setUp(self) -> None:
@@ -107,9 +111,13 @@ class Test_testener_with_virial(unittest.TestCase):
         torch.jit.save(model, self.tmp_model.name)
 
     def test_dp_test_ener_with_virial(self) -> None:
-        virial_path_fake = os.path.join(self.config["training"]["validation_data"]["systems"][0], 'set.000', 'virial.npy')
-        np.save(virial_path_fake,np.ones([1, 9], dtype=np.float64))
-        dp = DeepEval(self.tmp_model.name,head='PyTorch')
+        virial_path_fake = os.path.join(
+            self.config["training"]["validation_data"]["systems"][0],
+            "set.000",
+            "virial.npy",
+        )
+        np.save(virial_path_fake, np.ones([1, 9], dtype=np.float64))
+        dp = DeepEval(self.tmp_model.name, head="PyTorch")
         system = self.config["training"]["validation_data"]["systems"][0]
         data = DeepmdData(
             sys_path=system,
@@ -119,13 +127,13 @@ class Test_testener_with_virial(unittest.TestCase):
             sort_atoms=False,
         )
         err = dp_test_ener(
-                dp,
-                data,
-                system,
-                numb_test=1,
-                detail_file=None,
-                has_atom_ener=False,
-            )
+            dp,
+            data,
+            system,
+            numb_test=1,
+            detail_file=None,
+            has_atom_ener=False,
+        )
         self.assertIn("mae_e", err, "'mae_e' key is missing in the result")
         self.assertNotIn("mae_fm", err, "'mae_fm' key is missing in the result")
         self.assertIn("mae_v", err, "'mae_v' key should not be present in the result")
@@ -142,10 +150,15 @@ class Test_testener_with_virial(unittest.TestCase):
                 os.remove(f)
             if f in ["stat_files"]:
                 shutil.rmtree(f)
-            virial_path_fake = os.path.join(self.config["training"]["validation_data"]["systems"][0], 'set.000', 'virial.npy')
+            virial_path_fake = os.path.join(
+                self.config["training"]["validation_data"]["systems"][0],
+                "set.000",
+                "virial.npy",
+            )
             if os.path.exists(virial_path_fake):
                 os.remove(virial_path_fake)
-                
+
+
 class Test_testener_spin(unittest.TestCase):
     def setUp(self) -> None:
         self.detail_file = "test_dp_test_ener_spin_detail"
@@ -179,17 +192,21 @@ class Test_testener_spin(unittest.TestCase):
         )
 
         err = dp_test_ener(
-                dp,
-                data,
-                system,
-                numb_test=1,
-                detail_file=None,
-                has_atom_ener=False,
-            )
+            dp,
+            data,
+            system,
+            numb_test=1,
+            detail_file=None,
+            has_atom_ener=False,
+        )
         self.assertIn("mae_e", err, "'mae_e' key is missing in the result")
         self.assertIn("mae_fm", err, "'mae_fm' key is missing in the result")
-        self.assertNotIn("mae_v", err, "'mae_v' key should not be present in the result")
-        self.assertNotIn("mae_f", err, "'mae_f' key should not be present in the result")
+        self.assertNotIn(
+            "mae_v", err, "'mae_v' key should not be present in the result"
+        )
+        self.assertNotIn(
+            "mae_f", err, "'mae_f' key should not be present in the result"
+        )
         os.unlink(self.tmp_model.name)
 
     def tearDown(self) -> None:
@@ -202,6 +219,7 @@ class Test_testener_spin(unittest.TestCase):
                 os.remove(f)
             if f in ["stat_files"]:
                 shutil.rmtree(f)
+
 
 if __name__ == "__main__":
     unittest.main()
