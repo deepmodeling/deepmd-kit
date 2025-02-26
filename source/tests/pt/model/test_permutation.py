@@ -173,7 +173,7 @@ model_dpa3 = {
         "type": "dpa3",
         "repflow": {
             "n_dim": 20,
-            "e_dim": 20,
+            "e_dim": 10,
             "a_dim": 8,
             "nlayers": 6,
             "e_rcut": 6.0,
