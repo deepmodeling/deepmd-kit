@@ -197,11 +197,11 @@ class TestDataModifier(tf.test.TestCase):
 
     def test_modify(self) -> None:
         dcm = DipoleChargeModifier(
-            os.path.join(modifier_datapath, "dipole.pb"),
-            [-1, -3],
-            [1, 1, 1, 1, 1],
-            1,
-            0.25,
+            model_name=os.path.join(modifier_datapath, "dipole.pb"),
+            model_charge_map=[-1, -3],
+            sys_charge_map=[1, 1, 1, 1, 1],
+            ewald_h=1,
+            ewald_beta=0.25,
         )
         ve0, vf0, vv0 = dcm.eval(self.coords0, self.box0, self.atom_types0)
         ve1, vf1, vv1 = dcm.eval(self.coords1, self.box1, self.atom_types1)
