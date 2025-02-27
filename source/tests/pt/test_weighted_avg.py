@@ -139,11 +139,17 @@ class Test_testener_without_spin(unittest.TestCase):
         err.append(err_virial)
         avg_err = weighted_average(err)
 
-        self.assertEqual(avg_err["mae_v"], mae_v, 
-                         f"Expected mae_v in avg_err to be {mae_v} but got {avg_err['mae_v']}")
+        self.assertEqual(
+            avg_err["mae_v"],
+            mae_v,
+            f"Expected mae_v in avg_err to be {mae_v} but got {avg_err['mae_v']}",
+        )
 
-        self.assertEqual(avg_err["mae_e"], mae_e_expected, 
-                         f"Expected mae_e in avg_err to be {mae_e_expected} but got {avg_err['mae_e']}")
+        self.assertEqual(
+            avg_err["mae_e"],
+            mae_e_expected,
+            f"Expected mae_e in avg_err to be {mae_e_expected} but got {avg_err['mae_e']}",
+        )
 
         os.unlink(self.tmp_model.name)
 
@@ -164,6 +170,7 @@ class Test_testener_without_spin(unittest.TestCase):
             )
             if os.path.exists(virial_path_fake):
                 os.remove(virial_path_fake)
+
 
 class Test_testener_spin(unittest.TestCase):
     def setUp(self) -> None:
