@@ -42,7 +42,8 @@ class SummaryPrinter(ABC):
         "Please read and cite:",
         "Wang, Zhang, Han and E, Comput.Phys.Comm. 228, 178-184 (2018)",
         "Zeng et al, J. Chem. Phys., 159, 054801 (2023)",
-        "Zeng et al, arxiv:2502.19161See https://deepmd.rtfd.io/credits/ for details.",
+        "Zeng et al, arxiv:2502.19161",
+        "See https://deepmd.rtfd.io/credits/ for details.",
     )
 
     BUILD: ClassVar = {
