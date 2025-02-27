@@ -77,7 +77,7 @@ See [our v2 paper](https://doi.org/10.1063/5.0155600) for details of all feature
 - The DPA-2 model.
 - Plugin mechanisms for external models.
 
-See [our v3 paper](https://doi.org/10.1063/5.0155600) for details of all features until v3.0.
+See [our v3 paper](https://doi.org/10.48550/arXiv.2502.19161) for details of all features until v3.0.
 
 ## Install and use DeePMD-kit
 
