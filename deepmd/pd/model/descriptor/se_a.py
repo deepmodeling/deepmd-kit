@@ -20,6 +20,7 @@ from deepmd.pd.model.descriptor import (
 )
 from deepmd.pd.utils import (
     env,
+    decomp,
 )
 from deepmd.pd.utils.env import (
     PRECISION_DICT,
@@ -744,9 +745,8 @@ class DescrptBlockSeA(DescriptorBlock):
                     "Compressed environment is not implemented yet."
                 )
             else:
-                # NOTE: ontrol flow with double backward is not supported well yet by paddle.jit
-                # if rr.numel() > 0:
-                if True:
+                # NOTE: control flow with double backward is not supported well yet by paddle.jit
+                if not paddle.framework.in_dynamic_mode() or decomp.numel(rr) > 0:
                     rr = rr * mm.unsqueeze(2).astype(rr.dtype)
                     ss = rr[:, :, :1]
                     if self.compress:
