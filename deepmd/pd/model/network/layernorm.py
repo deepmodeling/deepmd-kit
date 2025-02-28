@@ -15,8 +15,8 @@ from deepmd.pd.model.network.init import (
     zeros_,
 )
 from deepmd.pd.utils import (
-    env,
     decomp,
+    env,
 )
 from deepmd.pd.utils.env import (
     DEFAULT_PRECISION,

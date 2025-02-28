@@ -19,8 +19,8 @@ from deepmd.pd.model.descriptor import (
     prod_env_mat,
 )
 from deepmd.pd.utils import (
-    env,
     decomp,
+    env,
 )
 from deepmd.pd.utils.env import (
     PRECISION_DICT,

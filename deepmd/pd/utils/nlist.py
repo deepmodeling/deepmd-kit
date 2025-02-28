@@ -7,8 +7,8 @@ from typing import (
 import paddle
 
 from deepmd.pd.utils import (
-    env,
     decomp,
+    env,
 )
 from deepmd.pd.utils.region import (
     normalize_coord,
