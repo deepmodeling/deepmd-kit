@@ -899,6 +899,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         # nfnl x nnei
         exclude_mask = xp.reshape(exclude_mask, (nf * nloc, nnei))
+        exclude_mask = xp.astype(exclude_mask, xp.bool)
         # nfnl x nnei
         nlist = xp.reshape(nlist, (nf * nloc, nnei))
         nlist = xp.where(exclude_mask, nlist, xp.full_like(nlist, -1))
