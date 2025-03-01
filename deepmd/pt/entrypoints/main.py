@@ -333,9 +333,7 @@ def train(
         json.dump(config, fp, indent=4)
 
     # Initialize DDP
-    local_rank = os.environ.get("LOCAL_RANK")
-    if local_rank is not None:
-        local_rank = int(local_rank)
+    if os.environ.get("LOCAL_RANK") is not None:
         dist.init_process_group(backend="cuda:nccl,cpu:gloo")
 
     trainer = get_trainer(
