@@ -363,6 +363,7 @@ def train(
     if dist.is_available() and dist.is_initialized():
         dist.destroy_process_group()
 
+
 def freeze(
     model: str,
     output: str = "frozen_model.pth",
