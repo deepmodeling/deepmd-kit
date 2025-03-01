@@ -1031,8 +1031,6 @@ class Trainer:
                 log.info(
                     f"The profiling trace have been saved to: {self.profiling_file}"
                 )
-        if dist.is_available() and dist.is_initialized():
-            dist.destroy_process_group()
 
     def save_model(self, save_path, lr=0.0, step=0) -> None:
         module = (
