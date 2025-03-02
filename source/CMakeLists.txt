@@ -14,7 +14,9 @@ set(DEEPMD_C_ROOT
     ""
     CACHE PATH "Path to imported DeePMD-kit C library")
 
-set(CMAKE_CXX_STANDARD 11)
+if(NOT DEFINED CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 11)
+endif()
 macro(set_if_higher VARIABLE VALUE)
   # ${VARIABLE} is a variable name, not a string
   if(${VARIABLE} LESS "${VALUE}")
@@ -446,7 +448,7 @@ if(BUILD_CPP_IF
   set(version_file "${generated_dir}/${CMAKE_PROJECT_NAME}ConfigVersion.cmake")
   write_basic_package_version_file(
     ${version_file}
-    VERSION $<IF:${GIT_SUMM}?${GIT_SUMM}:"0.0.0">
+    VERSION $<IF:${GIT_SUMM}?${GIT_SUMM}:0.0.0>
     COMPATIBILITY AnyNewerVersion)
   install(
     EXPORT ${targets_export_name}

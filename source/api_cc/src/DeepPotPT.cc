@@ -143,7 +143,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   int natoms = atype.size();
   auto options = torch::TensorOptions().dtype(torch::kFloat64);
   torch::ScalarType floatType = torch::kFloat64;
-  if (std::is_same_v<VALUETYPE, float>) {
+  if (std::is_same<VALUETYPE, float>::value) {
     options = torch::TensorOptions().dtype(torch::kFloat32);
     floatType = torch::kFloat32;
   }
@@ -341,7 +341,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   int natoms = atype.size();
   auto options = torch::TensorOptions().dtype(torch::kFloat64);
   torch::ScalarType floatType = torch::kFloat64;
-  if (std::is_same_v<VALUETYPE, float>) {
+  if (std::is_same<VALUETYPE, float>::value) {
     options = torch::TensorOptions().dtype(torch::kFloat32);
     floatType = torch::kFloat32;
   }
