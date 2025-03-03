@@ -298,7 +298,6 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             )
             # add weight to atomic_output
             kw = next(iter(self.atomic_output_def().var_defs.keys()))
-            atomic_weight = torch.ones_like(atomic_ret[kw])
             if atomic_weight is not None:
                 # atomic_weight: nf x nloc x dim
                 atomic_ret[kw] = atomic_ret[kw] * atomic_weight.reshape(
