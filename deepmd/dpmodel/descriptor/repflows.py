@@ -366,6 +366,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         nframes, nloc, nnei = nlist.shape
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
+        exclude_mask = xp.astype(exclude_mask, xp.bool)
         # nb x nloc x nnei
         nlist = xp.where(exclude_mask, nlist, xp.full_like(nlist, -1))
         # nb x nloc x nnei x 4, nb x nloc x nnei x 3, nb x nloc x nnei x 1
