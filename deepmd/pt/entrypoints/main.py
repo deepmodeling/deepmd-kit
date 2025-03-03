@@ -61,6 +61,7 @@ from deepmd.pt.utils.dataloader import (
 )
 from deepmd.pt.utils.env import (
     DEVICE,
+    LOCAL_RANK,
 )
 from deepmd.pt.utils.finetune import (
     get_finetune_rules,
@@ -254,7 +255,8 @@ def train(
     output: str = "out.json",
 ) -> None:
     log.info("Configuration path: %s", input_file)
-    SummaryPrinter()()
+    if LOCAL_RANK == 0:
+        SummaryPrinter()()
     with open(input_file) as fin:
         config = json.load(fin)
     # ensure suffix, as in the command line help, we say "path prefix of checkpoint files"

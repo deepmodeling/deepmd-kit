@@ -2,6 +2,7 @@
 import logging
 from typing import (
     Optional,
+    Union,
 )
 
 import torch
@@ -88,6 +89,7 @@ class PropertyFittingNet(InvarFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
+        trainable: Union[bool, list[bool]] = True,
         seed: Optional[int] = None,
         **kwargs,
     ) -> None:
@@ -107,6 +109,7 @@ class PropertyFittingNet(InvarFitting):
             activation_function=activation_function,
             precision=precision,
             mixed_types=mixed_types,
+            trainable=trainable,
             seed=seed,
             **kwargs,
         )

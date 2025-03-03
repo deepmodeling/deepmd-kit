@@ -393,6 +393,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
     ):
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
+        exclude_mask = xp.astype(exclude_mask, xp.bool)
         nlist = xp.where(exclude_mask, nlist, xp.full_like(nlist, -1))
         # nf x nloc x nnei x 4
         dmatrix, diff, sw = self.env_mat.call(
