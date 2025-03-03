@@ -60,6 +60,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
+        atomic_weight: Optional[torch.Tensor] = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common(
             coord,
@@ -68,6 +69,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            atomic_weight=atomic_weight,
         )
         if self.get_fitting_net() is not None:
             model_predict = {}
@@ -98,6 +100,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
+        atomic_weight: Optional[torch.Tensor] = None,
     ):
         model_ret = self.forward_common_lower(
             extended_coord,
@@ -108,6 +111,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
             extra_nlist_sort=self.need_sorted_nlist_for_lower(),
+            atomic_weight=atomic_weight,
         )
         if self.get_fitting_net() is not None:
             model_predict = {}
