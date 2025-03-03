@@ -297,12 +297,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 comm_dict=comm_dict,
             )
             # add weight to atomic_output
-            kw = self.atomic_model.fitting_net.var_name
-            if atomic_weight is not None:
-                # atomic_weight: nf x nloc x dim
-                atomic_ret[kw] = atomic_ret[kw] * atomic_weight.view(
-                    [atomic_ret[kw].shape[0], atomic_ret[kw].shape[1], -1]
-                )
+            if hasattr(self.atomic_model, "fitting_net"):
+                if hasattr(self.atomic_model.fitting_net, "var_name"):
+                    kw = self.atomic_model.fitting_net.var_name
+                    if atomic_weight is not None:
+                        # atomic_weight: nf x nloc x dim
+                        atomic_ret[kw] = atomic_ret[kw] * atomic_weight.view(
+                            [atomic_ret[kw].shape[0], atomic_ret[kw].shape[1], -1]
+                        )
             model_predict = fit_output_to_model_output(
                 atomic_ret,
                 self.atomic_output_def(),
