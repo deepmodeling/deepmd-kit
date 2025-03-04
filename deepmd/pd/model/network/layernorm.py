@@ -100,8 +100,8 @@ class LayerNorm(nn.Layer):
         yy: paddle.Tensor
             The output.
         """
-        # if xx.numel() > 0:
-        if decomp.numel(xx):
+        # NOTE: control flow with double backward is not supported well yet by paddle.jit
+        if not paddle.framework.in_dynamic_mode() or decomp.numel(xx) > 0:
             variance, mean = (
                 paddle.var(xx, axis=-1, unbiased=False, keepdim=True),
                 paddle.mean(xx, axis=-1, keepdim=True),
