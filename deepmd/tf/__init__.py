@@ -21,7 +21,7 @@ from .infer import (
     DeepEval,
     DeepPotential,
 )
-from .infer.data_modifier import (
+from .modifier import (
     DipoleChargeModifier,
 )
 
