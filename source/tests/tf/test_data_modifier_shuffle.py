@@ -8,11 +8,11 @@ from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     tf,
 )
-from deepmd.tf.infer.data_modifier import (
-    DipoleChargeModifier,
-)
 from deepmd.tf.infer.deep_dipole import (
     DeepDipole,
+)
+from deepmd.tf.modifier import (
+    DipoleChargeModifier,
 )
 from deepmd.tf.train.run_options import (
     RunOptions,

@@ -7,7 +7,7 @@ import numpy as np
 from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd.tf.infer import (
+from deepmd.tf.modifier import (
     DipoleChargeModifier,
 )
 from deepmd.tf.utils.convert import (
