@@ -1562,6 +1562,12 @@ def dpa3_repflow_args():
             default="const",
             doc=doc_update_residual_init,
         ),
+        Argument(
+            "optim_update",
+            bool,
+            optional=True,
+            default=True,
+        ),
     ]
 
 
@@ -2521,6 +2527,24 @@ def loss_ener():
             optional=True,
             default=0,
             doc=doc_numb_generalized_coord,
+        ),
+        Argument(
+            "use_huber",
+            bool,
+            optional=True,
+            default=False,
+        ),
+        Argument(
+            "huber_delta",
+            float,
+            optional=True,
+            default=0.01,
+        ),
+        Argument(
+            "torch_huber",
+            bool,
+            optional=True,
+            default=False,
         ),
     ]
 
