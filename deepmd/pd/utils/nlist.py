@@ -100,7 +100,7 @@ def build_neighbor_list(
     # real atom.
 
     # NOTE: control flow with double backward is not supported well yet by paddle.jit
-    if not paddle.framework.in_dynamic_mode() or decomp.numel(coord) > 0:
+    if not paddle.in_dynamic_mode() or decomp.numel(coord) > 0:
         xmax = paddle.max(coord) + 2.0 * rcut
     else:
         xmax = paddle.zeros([], dtype=coord.dtype).to(device=coord.place) + 2.0 * rcut
@@ -244,7 +244,7 @@ def build_directional_neighbor_list(
     # fill virtual atoms with large coords so they are not neighbors of any
     # real atom.
     # NOTE: control flow with double backward is not supported well yet by paddle.jit
-    if not paddle.framework.in_dynamic_mode() or decomp.numel(coord_neig) > 0:
+    if not paddle.in_dynamic_mode() or decomp.numel(coord_neig) > 0:
         xmax = paddle.max(coord_cntl) + 2.0 * rcut
     else:
         xmax = (
