@@ -138,12 +138,13 @@ class DP(Calculator):
         self.results["virial"] = v[0].reshape(3, 3)
 
         # convert virial into stress for lattice relaxation
-        if "stress" in properties:
-            if sum(atoms.get_pbc()) > 0:
-                # the usual convention (tensile stress is positive)
-                # stress = -virial / volume
-                stress = -0.5 * (v[0].copy() + v[0].copy().T) / atoms.get_volume()
-                # Voigt notation
-                self.results["stress"] = stress.flat[[0, 4, 8, 5, 2, 1]]
-            else:
-                raise PropertyNotImplementedError
+        if cell is not None:
+            # the usual convention (tensile stress is positive)
+            # stress = -virial / volume
+            stress = -0.5 * (v[0].copy() + v[0].copy().T) / atoms.get_volume()
+            # Voigt notation
+            self.results["stress"] = stress.flat[[0, 4, 8, 5, 2, 1]]
+        elif "stress" in properties:
+            raise PropertyNotImplementedError
+        else:
+            pass
