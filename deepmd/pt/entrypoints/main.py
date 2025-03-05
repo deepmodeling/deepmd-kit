@@ -105,12 +105,6 @@ def get_trainer(
 ):
     multi_task = "model_dict" in config.get("model", {})
 
-    # Initialize DDP
-    local_rank = os.environ.get("LOCAL_RANK")
-    if local_rank is not None:
-        local_rank = int(local_rank)
-        dist.init_process_group(backend="cuda:nccl,cpu:gloo")
-
     def prepare_trainer_input_single(
         model_params_single, data_dict_single, rank=0, seed=None
     ):
@@ -338,6 +332,10 @@ def train(
     with open(output, "w") as fp:
         json.dump(config, fp, indent=4)
 
+    # Initialize DDP
+    if os.environ.get("LOCAL_RANK") is not None:
+        dist.init_process_group(backend="cuda:nccl,cpu:gloo")
+
     trainer = get_trainer(
         config,
         init_model,
@@ -360,6 +358,8 @@ def train(
                     min_nbor_dist[model_item], dtype=torch.float64, device=DEVICE
                 )
     trainer.run()
+    if dist.is_available() and dist.is_initialized():
+        dist.destroy_process_group()
 
 
 def freeze(
