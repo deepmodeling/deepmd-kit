@@ -92,6 +92,9 @@ class Fitting(torch.nn.Module, BaseFitting):
         protection : float
             Divided-by-zero protection
         """
+        if self.numb_fparam == 0 and self.numb_aparam == 0:
+            # skip data statistics
+            return
         if callable(merged):
             sampled = merged()
         else:

@@ -53,6 +53,7 @@ _ACTIVATION = Literal[
     "tanh",
     "gelu",
     "gelu_tf",
+    "silu",
     "none",
     "linear",
 ]
