@@ -244,7 +244,7 @@ class DPAtomicModel(BaseAtomicModel):
         )
         assert descriptor is not None
         if self.enable_eval_descriptor_hook:
-            self.eval_descriptor_list.append(descriptor)
+            self.eval_descriptor_list.append(descriptor.detach())
         # energy, force
         fit_ret = self.fitting_net(
             descriptor,
@@ -299,6 +299,9 @@ class DPAtomicModel(BaseAtomicModel):
             return sampled
 
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
+        self.fitting_net.compute_input_stats(
+            wrapped_sampler, protection=self.data_stat_protect
+        )
         self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
     def get_dim_fparam(self) -> int:

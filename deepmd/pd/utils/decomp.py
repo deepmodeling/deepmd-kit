@@ -131,8 +131,7 @@ def numel(x: paddle.Tensor) -> int:
     if paddle.in_dynamic_mode():
         return np.prod(x.shape)
 
-    return True
-    # return paddle.numel(x)
+    return paddle.numel(x)
 
 
 # alias for decomposed functions for convinience
