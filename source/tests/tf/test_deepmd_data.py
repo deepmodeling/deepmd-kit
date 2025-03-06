@@ -381,6 +381,7 @@ class TestData(unittest.TestCase):
     def _comp_np_mat2(self, first, second) -> None:
         np.testing.assert_almost_equal(first, second, places)
 
+
 class TestDataMixType(unittest.TestCase):
     def setUp(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
@@ -457,6 +458,7 @@ class TestDataMixType(unittest.TestCase):
 
     def tearDown(self) -> None:
         shutil.rmtree(self.data_name)
+
 
 class TestH5Data(unittest.TestCase):
     def setUp(self) -> None:
