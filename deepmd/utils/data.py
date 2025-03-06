@@ -94,7 +94,6 @@ class DeepmdData:
                 raise ValueError(
                     f"Elements {missing_elements} are not present in the provided `type_map`."
                 )
-
             if not self.mixed_type:
                 atom_type_ = [
                     type_map.index(self.type_map[ii]) for ii in self.atom_type

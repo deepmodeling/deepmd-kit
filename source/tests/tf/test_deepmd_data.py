@@ -431,15 +431,15 @@ class TestDataMixType(unittest.TestCase):
         np.save(path, self.box_tar)
         # real_atom_types
         path = os.path.join(self.data_name, "set.foo", "real_atom_types.npy")
-        self.real_atom_types = np.full(shape=(self.nframes, self.natoms), fill_value=[1, 0])
+        self.real_atom_types = rng.integers(0, 2, size=[self.nframes, self.natoms])
         np.save(path, self.real_atom_types)
         # real_atom_types bar
         path = os.path.join(self.data_name, "set.bar", "real_atom_types.npy")
-        self.real_atom_types_bar = np.full(shape=(self.nframes, self.natoms), fill_value=[1, 0])
+        self.real_atom_types_bar = rng.integers(0, 2, size=[self.nframes, self.natoms])
         np.save(path, self.real_atom_types_bar)
         # real_atom_types tar
         path = os.path.join(self.data_name, "set.tar", "real_atom_types.npy")
-        self.real_atom_types_tar = np.full(shape=(2, self.natoms), fill_value=[1, 0])
+        self.real_atom_types_tar = rng.integers(0, 2, size=[2, self.natoms])
         np.save(path, self.real_atom_types_tar)
 
     def test_init_type_map(self) -> None:
