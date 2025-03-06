@@ -179,7 +179,7 @@ class TestData(unittest.TestCase):
 
     def test_init_type_map_error(self) -> None:
         with self.assertRaises(ValueError):
-            dd = DeepmdData(self.data_name, type_map=["bar"])
+            DeepmdData(self.data_name, type_map=["bar"])
 
     def test_load_set(self) -> None:
         dd = (
@@ -454,7 +454,7 @@ class TestDataMixType(unittest.TestCase):
 
     def test_init_type_map_error(self) -> None:
         with self.assertRaises(ValueError):
-            dd = DeepmdData(self.data_name, type_map=["foo"])
+            DeepmdData(self.data_name, type_map=["foo"])
 
     def tearDown(self) -> None:
         shutil.rmtree(self.data_name)
