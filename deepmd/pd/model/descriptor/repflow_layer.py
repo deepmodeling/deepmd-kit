@@ -484,7 +484,10 @@ class RepFlowLayer(paddle.nn.Layer):
         )
 
         result_update = (
-            sub_edge_update + sub_node_ext_update + sub_node_update[:, :, None, :]
+            sub_edge_update
+            + sub_node_ext_update
+            # + sub_node_update[:, :, None, :]
+            + sub_node_update.unsqueeze(-2)
         ) + bias
         return result_update
 

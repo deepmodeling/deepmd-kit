@@ -633,6 +633,9 @@ class Trainer:
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
 
     def run(self):
+        # print(self.model)
+        # exit()
+
         if CINN:
             from paddle import (
                 jit,

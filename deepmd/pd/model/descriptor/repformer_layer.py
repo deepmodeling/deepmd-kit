@@ -188,6 +188,7 @@ class Atten2Map(paddle.nn.Layer):
         nlist_mask: paddle.Tensor,  # nb x nloc x nnei
         sw: paddle.Tensor,  # nb x nloc x nnei
     ) -> paddle.Tensor:
+        exit()
         (
             nb,
             nloc,
