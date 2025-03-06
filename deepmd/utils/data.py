@@ -89,6 +89,12 @@ class DeepmdData:
         # enforce type_map if necessary
         self.enforce_type_map = False
         if type_map is not None and self.type_map is not None and len(type_map):
+            missing_elements = [elem for elem in self.type_map if elem not in type_map]
+            if missing_elements:
+                raise ValueError(
+                    f"Elements {missing_elements} are not present in the provided `type_map`."
+                )
+
             if not self.mixed_type:
                 atom_type_ = [
                     type_map.index(self.type_map[ii]) for ii in self.atom_type
