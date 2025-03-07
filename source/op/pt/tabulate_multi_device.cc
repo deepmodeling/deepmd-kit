@@ -61,6 +61,10 @@ void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_a_gpu(descriptor, table, table_info, em_x, em,
                                      two_embed, nloc, nnei, last_layer_size);
+#else
+    throw std::runtime_error(
+        "The input tensor is on the GPU, but the GPU support for the "
+        "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_a_cpu(descriptor, table, table_info, em_x, em,
@@ -110,6 +114,10 @@ void TabulateFusionSeAGradForward(const torch::Tensor& table_tensor,
     deepmd::tabulate_fusion_se_a_grad_gpu(dy_dem_x, dy_dem, dy_dtwo, table,
                                           table_info, em_x, em, two_embed, dy,
                                           nloc, nnei, last_layer_size);
+#else
+    throw std::runtime_error(
+        "The input tensor is on the GPU, but the GPU support for the "
+        "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_a_grad_cpu(dy_dem_x, dy_dem, dy_dtwo, table,
@@ -166,6 +174,10 @@ void TabulateFusionSeAGradGradForward(const torch::Tensor& table_tensor,
     deepmd::tabulate_fusion_se_a_grad_grad_gpu(
         dz_dy, table, table_info, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem,
         dz_dy_dtwo, nloc, nnei, last_layer_size, is_sorted);
+#else
+    throw std::runtime_error(
+        "The input tensor is on the GPU, but the GPU support for the "
+        "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     TORCH_CHECK(last_layer_size <= 1024,
                 "In the process of model compression, the size of the "
@@ -212,6 +224,10 @@ void TabulateFusionSeTForward(const torch::Tensor& table_tensor,
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_t_gpu(descriptor, table, table_info, em_x, em,
                                      nloc, nnei_i, nnei_j, last_layer_size);
+#else
+    throw std::runtime_error(
+        "The input tensor is on the GPU, but the GPU support for the "
+        "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_t_cpu(descriptor, table, table_info, em_x, em,
@@ -254,6 +270,10 @@ void TabulateFusionSeTGradForward(const torch::Tensor& table_tensor,
     deepmd::tabulate_fusion_se_t_grad_gpu(dy_dem_x, dy_dem, table, table_info,
                                           em_x, em, dy, nloc, nnei_i, nnei_j,
                                           last_layer_size);
+#else
+    throw std::runtime_error(
+        "The input tensor is on the GPU, but the GPU support for the "
+        "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_t_grad_cpu(dy_dem_x, dy_dem, table, table_info,
@@ -300,6 +320,10 @@ void TabulateFusionSeTGradGradForward(const torch::Tensor& table_tensor,
     deepmd::tabulate_fusion_se_t_grad_grad_gpu(dz_dy, table, table_info, em_x,
                                                em, dz_dy_dem_x, dz_dy_dem, nloc,
                                                nnei_i, nnei_j, last_layer_size);
+#else
+    throw std::runtime_error(
+        "The input tensor is on the GPU, but the GPU support for the "
+        "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     TORCH_CHECK(last_layer_size <= 1024,
                 "In the process of model compression, the size of the "
@@ -340,6 +364,10 @@ void TabulateFusionSeRForward(const torch::Tensor& table_tensor,
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_r_gpu(descriptor, table, table_info, em, nloc,
                                      nnei, last_layer_size);
+#else
+    throw std::runtime_error(
+        "The input tensor is on the GPU, but the GPU support for the "
+        "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_r_cpu(descriptor, table, table_info, em, nloc,
@@ -376,6 +404,10 @@ void TabulateFusionSeRGradForward(const torch::Tensor& table_tensor,
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_r_grad_gpu(dy_dem, table, table_info, em, dy,
                                           nloc, nnei, last_layer_size);
+#else
+    throw std::runtime_error(
+        "The input tensor is on the GPU, but the GPU support for the "
+        "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   } else if (device == "CPU") {
     deepmd::tabulate_fusion_se_r_grad_cpu(dy_dem, table, table_info, em, dy,
@@ -412,6 +444,10 @@ void TabulateFusionSeRGradGradForward(const torch::Tensor& table_tensor,
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     deepmd::tabulate_fusion_se_r_grad_grad_gpu(
         dz_dy, table, table_info, em, dz_dy_dem, nloc, nnei, last_layer_size);
+#else
+    throw std::runtime_error(
+        "The input tensor is on the GPU, but the GPU support for the "
+        "customized OP library is not enabled.");
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     TORCH_CHECK(last_layer_size <= 1024,
                 "In the process of model compression, the size of the "
