@@ -83,13 +83,11 @@ class PropertyLoss(TaskLoss):
             and self.limit_pref_aproperty >= 0.0
         ), "Can not assign negative weight to `pref` and `pref_atomic`"
 
-        self.has_property = (start_pref_property != 0.0 and limit_pref_property != 0.0)
-        self.has_aproperty = (start_pref_aproperty != 0.0 and limit_pref_aproperty != 0.0)
+        self.has_property = start_pref_property != 0.0 and limit_pref_property != 0.0
+        self.has_aproperty = start_pref_aproperty != 0.0 and limit_pref_aproperty != 0.0
 
-        assert self.has_property or self.has_aproperty, (
-            AssertionError(
-                "Can not assian zero weight both to `pref` and `pref_atomic`"
-            )
+        assert self.has_property or self.has_aproperty, AssertionError(
+            "Can not assian zero weight both to `pref` and `pref_atomic`"
         )
 
     def forward(self, input_dict, model, label, natoms, learning_rate=0.0, mae=False):
@@ -126,10 +124,12 @@ class PropertyLoss(TaskLoss):
 
         coef = learning_rate / self.starter_learning_rate
         pref_property = (
-            self.limit_pref_property + (self.start_pref_property - self.limit_pref_property) * coef
+            self.limit_pref_property
+            + (self.start_pref_property - self.limit_pref_property) * coef
         )
         pref_aproperty = (
-            self.limit_pref_aproperty + (self.start_pref_aproperty - self.limit_pref_aproperty) * coef
+            self.limit_pref_aproperty
+            + (self.start_pref_aproperty - self.limit_pref_aproperty) * coef
         )
 
         if self.out_std is None:
@@ -218,7 +218,11 @@ class PropertyLoss(TaskLoss):
                     )
                 ).detach()
 
-        if self.has_aproperty and f"atom_{self.var_name}" in model_pred and f"atom_{self.var_name}" in label:
+        if (
+            self.has_aproperty
+            and f"atom_{self.var_name}" in model_pred
+            and f"atom_{self.var_name}" in label
+        ):
             # loss
             if self.loss_func == "smooth_mae":
                 loss += pref_aproperty * F.smooth_l1_loss(
