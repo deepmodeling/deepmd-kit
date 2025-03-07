@@ -2742,6 +2742,10 @@ def loss_property():
     doc_loss_func = "The loss function to minimize, such as 'mae','smooth_mae'."
     doc_metric = "The metric for display. This list can include 'smooth_mae', 'mae', 'mse' and 'rmse'."
     doc_beta = "The 'beta' parameter in 'smooth_mae' loss."
+    doc_start_pref_property = start_pref("property")
+    doc_limit_pref_property = limit_pref("property")
+    doc_start_pref_aproperty = start_pref("atomic property")
+    doc_limit_pref_aproperty = limit_pref("atomic property")
     return [
         Argument(
             "loss_func",
@@ -2763,6 +2767,34 @@ def loss_property():
             optional=True,
             default=1.00,
             doc=doc_beta,
+        ),
+        Argument(
+            "start_pref_property",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_start_pref_property,
+        ),
+        Argument(
+            "limit_pref_property",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_limit_pref_property,
+        ),
+        Argument(
+            "start_pref_aproperty",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_start_pref_aproperty,
+        ),
+        Argument(
+            "limit_pref_aproperty",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_limit_pref_aproperty,
         ),
     ]
 
