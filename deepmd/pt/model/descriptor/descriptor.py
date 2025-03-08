@@ -138,7 +138,10 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         if shared_level == 0:
             # link buffers
             if hasattr(self, "mean"):
-                if not resume:
+                if not resume and (
+                    not getattr(self, "set_stddev_constant", False)
+                    or not getattr(self, "set_davg_zero", False)
+                ):
                     # in case of change params during resume
                     base_env = EnvMatStatSe(base_class)
                     base_env.stats = base_class.stats

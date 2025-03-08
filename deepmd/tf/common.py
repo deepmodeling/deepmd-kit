@@ -128,6 +128,22 @@ def gelu_tf(x: tf.Tensor) -> tf.Tensor:
     return (lambda x: gelu_wrapper(x))(x)
 
 
+def silu(x: tf.Tensor) -> tf.Tensor:
+    """The sigmoid-weighted linear unit.
+
+    Parameters
+    ----------
+    x : tf.Tensor
+        float Tensor to perform activation
+
+    Returns
+    -------
+    tf.Tensor
+        `x` with the SiLU activation applied
+    """
+    return x * tf.sigmoid(x)
+
+
 ACTIVATION_FN_DICT = {
     "relu": tf.nn.relu,
     "relu6": tf.nn.relu6,
@@ -136,6 +152,7 @@ ACTIVATION_FN_DICT = {
     "tanh": tf.nn.tanh,
     "gelu": gelu,
     "gelu_tf": gelu_tf,
+    "silu": silu,
     "linear": lambda x: x,
     "none": lambda x: x,
 }
