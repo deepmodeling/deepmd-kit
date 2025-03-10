@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-import torch
 import logging
+
+import torch
 
 from deepmd.pt.model.task.denoise import (
     DenoiseNet,
@@ -10,9 +11,9 @@ from deepmd.pt.model.task.denoise import (
 from .dp_atomic_model import (
     DPAtomicModel,
 )
-from IPython import embed
 
 log = logging.getLogger(__name__)
+
 
 class DPDenoiseAtomicModel(DPAtomicModel):
     def __init__(self, descriptor, fitting, type_map, **kwargs):
@@ -28,10 +29,10 @@ class DPDenoiseAtomicModel(DPAtomicModel):
         atype: torch.Tensor,
     ):
         # hack !!!
-        ret["virial"] = ret["virial"]/240
-        ret["force"] = ret["force"]/29
+        ret["virial"] = ret["virial"] / 240
+        ret["force"] = ret["force"] / 29
 
-        '''
+        """
         virial = ret["virial"]  # 原始形状 [nbz, nloc, 6]
 
         # 批量处理所有元素（保留梯度）
@@ -57,5 +58,5 @@ class DPDenoiseAtomicModel(DPAtomicModel):
 
         # 恢复原始形状 [nbz, nloc, 3, 3] -> [nbz, nloc, 9]
         ret["virial"] = matrices.view(virial.shape[0], virial.shape[1], 9)
-        '''
+        """
         return ret

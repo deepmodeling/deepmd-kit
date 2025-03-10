@@ -17,6 +17,9 @@ DPModel = make_model(DPAtomicModel)
 from .base_atomic_model import (
     BaseAtomicModel,
 )
+from .denoise_atomic_model import (
+    DPDenoiseAtomicModel,
+)
 from .dipole_atomic_model import (
     DPDipoleAtomicModel,
 )
@@ -42,14 +45,12 @@ from .polar_atomic_model import (
 from .property_atomic_model import (
     DPPropertyAtomicModel,
 )
-from .denoise_atomic_model import (
-    DPDenoiseAtomicModel
-)
 
 __all__ = [
     "BaseAtomicModel",
     "DPAtomicModel",
     "DPDOSAtomicModel",
+    "DPDenoiseAtomicModel",
     "DPDipoleAtomicModel",
     "DPEnergyAtomicModel",
     "DPPolarAtomicModel",
@@ -57,5 +58,4 @@ __all__ = [
     "DPZBLLinearEnergyAtomicModel",
     "LinearEnergyAtomicModel",
     "PairTabAtomicModel",
-    "DPDenoiseAtomicModel",
 ]

@@ -18,7 +18,6 @@ from .dp_model import (
 from .make_model import (
     make_model,
 )
-from IPython import embed
 
 DPDenoiseModel_ = make_model(DPDenoiseAtomicModel)
 
@@ -37,7 +36,7 @@ class DenoiseModel(DPModelCommon, DPDenoiseModel_):
 
     def translated_output_def(self):
         pass
-        '''
+        """
         out_def_data = self.model_output_def().get_data()
         output_def = {
             f"atom_{self.get_var_name()}": out_def_data[self.get_var_name()],
@@ -46,7 +45,7 @@ class DenoiseModel(DPModelCommon, DPDenoiseModel_):
         if "mask" in out_def_data:
             output_def["mask"] = out_def_data["mask"]
         return output_def
-        '''
+        """
 
     def forward(
         self,
@@ -86,7 +85,7 @@ class DenoiseModel(DPModelCommon, DPDenoiseModel_):
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
         pass
-        '''
+        """
         model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,
@@ -104,4 +103,4 @@ class DenoiseModel(DPModelCommon, DPDenoiseModel_):
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
         return model_predict
-        '''
+        """

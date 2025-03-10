@@ -33,6 +33,9 @@ from deepmd.utils.spin import (
     Spin,
 )
 
+from .denoise_model import (
+    DenoiseModel,
+)
 from .dipole_model import (
     DipoleModel,
 )
@@ -68,9 +71,6 @@ from .polar_model import (
 )
 from .property_model import (
     PropertyModel,
-)
-from .denoise_model import (
-    DenoiseModel,
 )
 from .spin_model import (
     SpinEnergyModel,

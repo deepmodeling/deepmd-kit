@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import logging
 from typing import (
     Optional,
     Union,
@@ -8,6 +7,11 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel import (
+    FittingOutputDef,
+    OutputVariableDef,
+    fitting_check_output,
+)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
@@ -15,36 +19,23 @@ from deepmd.pt.model.network.mlp import (
     FittingNet,
     NetworkCollection,
 )
-from deepmd.dpmodel import (
-    FittingOutputDef,
-    OutputVariableDef,
-    fitting_check_output,
-)
-from deepmd.pt.model.network.network import (
-    ResidualDeep,
-)
 from deepmd.pt.model.task.fitting import (
     Fitting,
-    GeneralFitting,
-)
-from deepmd.pt.model.task.invar_fitting import (
-    InvarFitting,
 )
 from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.env import (
+    DEFAULT_PRECISION,
     PRECISION_DICT,
 )
 from deepmd.pt.utils.exclude_mask import (
     AtomExcludeMask,
 )
-from deepmd.pt.utils.env import (
-    DEFAULT_PRECISION,
-)
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
+
 
 @Fitting.register("denoise")
 @fitting_check_output
@@ -104,15 +95,15 @@ class DenoiseNet(Fitting):
             The condition number for the regression of atomic energy.
         seed : int, optional
             Random seed.
-        exclude_types: list[int]
+        exclude_types : list[int]
             Atomic contributions of the excluded atom types are set zero.
         trainable : Union[list[bool], bool]
             If the parameters in the fitting net are trainable.
             Now this only supports setting all the parameters in the fitting net at one state.
             When in list[bool], the trainable will be True only if all the boolean parameters are True.
-        type_map: list[str], Optional
+        type_map : list[str], Optional
             A list of strings. Give the name to each type of atoms.
-        use_aparam_as_mask: bool
+        use_aparam_as_mask : bool
             If True, the aparam will not be used in fitting net for embedding.
         """
         super().__init__()
@@ -227,7 +218,7 @@ class DenoiseNet(Fitting):
                 for ii in range(self.ntypes if not self.mixed_types else 1)
             ],
         )
-        
+
         # TODO: Type denoise
 
         # set trainable
@@ -328,7 +319,6 @@ class DenoiseNet(Fitting):
             "spin": None,
         }
 
-
     def deserialize(self) -> "DenoiseNet":
         data = data.copy()
         variables = data.pop("@variables")
@@ -348,7 +338,7 @@ class DenoiseNet(Fitting):
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.numb_aparam
-    
+
     # make jit happy
     exclude_types: list[int]
 
@@ -537,7 +527,7 @@ class DenoiseNet(Fitting):
             )  # Shape is [nf, nloc, 3]
             # direct cell fitting
             atom_strain_components = self.filter_layers_cell.networks[0](xx)
-            outs = outs + atom_strain_components # Shape is [nframes, natoms[0], 6]
+            outs = outs + atom_strain_components  # Shape is [nframes, natoms[0], 6]
         else:
             vec_out = torch.zeros(
                 (nf, nloc, 3),
@@ -559,18 +549,14 @@ class DenoiseNet(Fitting):
                     torch.bmm(vec_out_type, gr).squeeze(-2).view(nf, nloc, 3)
                 )  # Shape is [nf, nloc, 3]
                 vec_out_type = torch.where(mask, vec_out_type, 0.0)
-                vec_out = (
-                    vec_out + vec_out_type
-                )  # Shape is [nframes, natoms[0], 3]
+                vec_out = vec_out + vec_out_type  # Shape is [nframes, natoms[0], 3]
             # direct cell fitting
             for type_i, ll in enumerate(self.filter_layers_cell.networks):
                 mask = (atype == type_i).unsqueeze(-1)
                 mask = torch.tile(mask, (1, 1, 1))
                 atom_strain_components = ll(xx)
                 atom_strain_components = torch.where(mask, atom_strain_components, 0.0)
-                outs = (
-                    outs + atom_strain_components
-                )  # Shape is [nframes, natoms[0], 6]
+                outs = outs + atom_strain_components  # Shape is [nframes, natoms[0], 6]
         # nf x nloc
         mask = self.emask(atype).to(torch.bool)
         # nf x nloc x nod

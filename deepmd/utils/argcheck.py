@@ -1861,6 +1861,7 @@ def fitting_property():
         ),
     ]
 
+
 @fitting_args_plugin.register("denoise", doc=doc_only_pt_supported)
 def fitting_denoise():
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
@@ -1900,6 +1901,7 @@ def fitting_denoise():
         Argument("precision", str, optional=True, default="default", doc=doc_precision),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
+
 
 @fitting_args_plugin.register("polar", doc=doc_polar)
 def fitting_polar():
@@ -2805,6 +2807,7 @@ def loss_property():
         ),
     ]
 
+
 @loss_args_plugin.register("denoise")
 def loss_denoise():
     doc_mask_token = "Whether to mask the token"
@@ -2813,7 +2816,9 @@ def loss_denoise():
     doc_token_loss = "The preference factor for token denoise."
     doc_coord_loss = "The preference factor for coordinate denoise."
     doc_cell_loss = "The preference factor for cell denoise."
-    doc_noise_type = "The type of noise to add to the coordinate. It can be 'uniform' or 'gaussian'."
+    doc_noise_type = (
+        "The type of noise to add to the coordinate. It can be 'uniform' or 'gaussian'."
+    )
     doc_coord_noise = "The magnitude of noise to add to the coordinate."
     doc_cell_pert_fraction = "A value determines how much will cell deform."
     doc_noise_mode = "'prob' means the noise is added with a probability.'fix_num' means the noise is added with a fixed number."
@@ -2920,6 +2925,7 @@ def loss_denoise():
             doc=doc_loss_func,
         ),
     ]
+
 
 # YWolfeee: Modified to support tensor type of loss args.
 @loss_args_plugin.register("tensor")
