@@ -22,6 +22,9 @@ from .se_a import (
     DescrptBlockSeA,
     DescrptSeA,
 )
+from .se_atten_v2 import (
+    DescrptSeAttenV2,
+)
 from .se_t_tebd import (
     DescrptBlockSeTTebd,
     DescrptSeTTebd,
@@ -37,6 +40,7 @@ __all__ = [
     "DescrptDPA1",
     "DescrptDPA2",
     "DescrptSeA",
+    "DescrptSeAttenV2",
     "DescrptSeTTebd",
     "prod_env_mat",
 ]

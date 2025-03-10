@@ -177,6 +177,10 @@ class TestData(unittest.TestCase):
         self.assertEqual(dd.atom_type[1], 1)
         self.assertEqual(dd.type_map, ["bar", "foo", "tar"])
 
+    def test_init_type_map_error(self) -> None:
+        with self.assertRaises(ValueError):
+            DeepmdData(self.data_name, type_map=["bar"])
+
     def test_load_set(self) -> None:
         dd = (
             DeepmdData(self.data_name)
@@ -376,6 +380,84 @@ class TestData(unittest.TestCase):
 
     def _comp_np_mat2(self, first, second) -> None:
         np.testing.assert_almost_equal(first, second, places)
+
+
+class TestDataMixType(unittest.TestCase):
+    def setUp(self) -> None:
+        rng = np.random.default_rng(GLOBAL_SEED)
+        self.data_name = "test_data"
+        os.makedirs(self.data_name, exist_ok=True)
+        os.makedirs(os.path.join(self.data_name, "set.foo"), exist_ok=True)
+        os.makedirs(os.path.join(self.data_name, "set.bar"), exist_ok=True)
+        os.makedirs(os.path.join(self.data_name, "set.tar"), exist_ok=True)
+        np.savetxt(os.path.join(self.data_name, "type.raw"), np.array([0, 0]), fmt="%d")
+        np.savetxt(
+            os.path.join(self.data_name, "type_map.raw"),
+            np.array(["foo", "bar"]),
+            fmt="%s",
+        )
+        self.nframes = 5
+        self.natoms = 2
+        # coord
+        path = os.path.join(self.data_name, "set.foo", "coord.npy")
+        self.coord = rng.random([self.nframes, self.natoms, 3])
+        np.save(path, np.reshape(self.coord, [self.nframes, -1]))
+        self.coord = self.coord[:, [1, 0], :]
+        self.coord = self.coord.reshape([self.nframes, -1])
+        # coord bar
+        path = os.path.join(self.data_name, "set.bar", "coord.npy")
+        self.coord_bar = rng.random([self.nframes, 3 * self.natoms])
+        np.save(path, self.coord_bar)
+        self.coord_bar = self.coord_bar.reshape([self.nframes, self.natoms, 3])
+        self.coord_bar = self.coord_bar[:, [1, 0], :]
+        self.coord_bar = self.coord_bar.reshape([self.nframes, -1])
+        # coord tar
+        path = os.path.join(self.data_name, "set.tar", "coord.npy")
+        self.coord_tar = rng.random([2, 3 * self.natoms])
+        np.save(path, self.coord_tar)
+        self.coord_tar = self.coord_tar.reshape([2, self.natoms, 3])
+        self.coord_tar = self.coord_tar[:, [1, 0], :]
+        self.coord_tar = self.coord_tar.reshape([2, -1])
+        # box
+        path = os.path.join(self.data_name, "set.foo", "box.npy")
+        self.box = rng.random([self.nframes, 9])
+        np.save(path, self.box)
+        # box bar
+        path = os.path.join(self.data_name, "set.bar", "box.npy")
+        self.box_bar = rng.random([self.nframes, 9])
+        np.save(path, self.box_bar)
+        # box tar
+        path = os.path.join(self.data_name, "set.tar", "box.npy")
+        self.box_tar = rng.random([2, 9])
+        np.save(path, self.box_tar)
+        # real_atom_types
+        path = os.path.join(self.data_name, "set.foo", "real_atom_types.npy")
+        self.real_atom_types = rng.integers(0, 2, size=[self.nframes, self.natoms])
+        np.save(path, self.real_atom_types)
+        # real_atom_types bar
+        path = os.path.join(self.data_name, "set.bar", "real_atom_types.npy")
+        self.real_atom_types_bar = rng.integers(0, 2, size=[self.nframes, self.natoms])
+        np.save(path, self.real_atom_types_bar)
+        # real_atom_types tar
+        path = os.path.join(self.data_name, "set.tar", "real_atom_types.npy")
+        self.real_atom_types_tar = rng.integers(0, 2, size=[2, self.natoms])
+        np.save(path, self.real_atom_types_tar)
+
+    def test_init_type_map(self) -> None:
+        dd = DeepmdData(self.data_name, type_map=["bar", "foo", "tar"])
+        self.assertEqual(dd.enforce_type_map, True)
+        self.assertEqual(dd.type_map, ["bar", "foo", "tar"])
+        self.assertEqual(dd.mixed_type, True)
+        self.assertEqual(dd.type_idx_map[0], 1)
+        self.assertEqual(dd.type_idx_map[1], 0)
+        self.assertEqual(dd.type_idx_map[2], -1)
+
+    def test_init_type_map_error(self) -> None:
+        with self.assertRaises(ValueError):
+            DeepmdData(self.data_name, type_map=["foo"])
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.data_name)
 
 
 class TestH5Data(unittest.TestCase):

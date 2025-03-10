@@ -47,7 +47,7 @@ def forward_common_atomic(
             kk_redu = get_reduce_name(kk)
             model_predict[kk_redu] = jnp.sum(vv, axis=atom_axis)
             kk_derv_r, kk_derv_c = get_deriv_name(kk)
-            if vdef.c_differentiable:
+            if vdef.r_differentiable:
 
                 def eval_output(
                     cc_ext,

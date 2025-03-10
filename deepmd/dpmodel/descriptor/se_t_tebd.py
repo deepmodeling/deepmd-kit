@@ -682,6 +682,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         exclude_mask = xp.reshape(exclude_mask, (nf * nloc, nnei))
         # nfnl x nnei
         nlist = xp.reshape(nlist, (nf * nloc, nnei))
+        exclude_mask = xp.astype(exclude_mask, xp.bool)
         nlist = xp.where(exclude_mask, nlist, xp.full_like(nlist, -1))
         # nfnl x nnei
         nlist_mask = nlist != -1
