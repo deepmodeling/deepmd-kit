@@ -892,6 +892,10 @@ class DPTrainer:
         bias_adjust_mode="change-by-statistic",
     ) -> None:
         full_type_map = data.get_type_map()
+        if len(full_type_map) == 0:
+            raise ValueError(
+                "The type_map.raw file must be provided in the input data."
+            )
         self.model.change_energy_bias(
             data,
             frozen_model,

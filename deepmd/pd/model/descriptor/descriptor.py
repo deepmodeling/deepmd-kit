@@ -143,11 +143,15 @@ class DescriptorBlock(paddle.nn.Layer, ABC, make_plugin_registry("DescriptorBloc
                     mean, stddev = base_env()
                     if not base_class.set_davg_zero:
                         paddle.assign(
-                            paddle.to_tensor(mean).to(device=env.DEVICE),
+                            paddle.to_tensor(mean, dtype=base_class.mean.dtype).to(
+                                device=env.DEVICE
+                            ),
                             base_class.mean,
                         )
                     paddle.assign(
-                        paddle.to_tensor(stddev).to(device=env.DEVICE),
+                        paddle.to_tensor(stddev, dtype=base_class.stddev.dtype).to(
+                            device=env.DEVICE
+                        ),
                         base_class.stddev,
                     )
                 # must share, even if not do stat

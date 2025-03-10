@@ -19,6 +19,7 @@ from deepmd.pd.model.descriptor import (
     prod_env_mat,
 )
 from deepmd.pd.utils import (
+    decomp,
     env,
 )
 from deepmd.pd.utils.env import (
@@ -615,8 +616,14 @@ class DescrptBlockSeA(DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            paddle.assign(paddle.to_tensor(mean).to(device=env.DEVICE), self.mean)  # pylint: disable=no-explicit-dtype
-        paddle.assign(paddle.to_tensor(stddev).to(device=env.DEVICE), self.stddev)  # pylint: disable=no-explicit-dtype
+            paddle.assign(
+                paddle.to_tensor(mean, dtype=self.mean.dtype).to(device=env.DEVICE),
+                self.mean,
+            )  # pylint: disable=no-explicit-dtype
+        paddle.assign(
+            paddle.to_tensor(stddev, dtype=self.stddev.dtype).to(device=env.DEVICE),
+            self.stddev,
+        )  # pylint: disable=no-explicit-dtype
 
     def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
@@ -744,7 +751,8 @@ class DescrptBlockSeA(DescriptorBlock):
                     "Compressed environment is not implemented yet."
                 )
             else:
-                if rr.numel() > 0:
+                # NOTE: control flow with double backward is not supported well yet by paddle.jit
+                if not paddle.in_dynamic_mode() or decomp.numel(rr) > 0:
                     rr = rr * mm.unsqueeze(2).astype(rr.dtype)
                     ss = rr[:, :, :1]
                     if self.compress:
