@@ -54,6 +54,7 @@ _ACTIVATION = Literal[
     "gelu",
     "gelu_tf",
     "silu",
+    "custom_silu",
     "none",
     "linear",
 ]

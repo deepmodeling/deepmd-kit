@@ -32,10 +32,45 @@ if TYPE_CHECKING:
     )
 
 
+class CustomSilu(paddle.nn.Layer):
+    def __init__(self, threshold=3.0):
+        super().__init__()
+
+        def sigmoid(x):
+            return 1 / (1 + np.exp(-x))
+
+        def silu(x):
+            return x * sigmoid(x)
+
+        def silu_grad(x):
+            sig = sigmoid(x)
+            return sig + x * sig * (1 - sig)
+
+        self.threshold = threshold
+        self.slope = float(silu_grad(threshold))
+        self.const = float(silu(threshold))
+
+    def forward(self, x: paddle.Tensor) -> paddle.Tensor:
+        silu_part = F.silu(x)
+        mask = x >= self.threshold
+        if paddle.any(mask):
+            tanh_part = paddle.tanh(self.slope * (x - self.threshold)) + self.const
+            return paddle.where(x < self.threshold, silu_part, tanh_part)
+        else:
+            return silu_part
+
+
 class ActivationFn(paddle.nn.Layer):
     def __init__(self, activation: str | None):
         super().__init__()
         self.activation: str = activation if activation is not None else "linear"
+        if self.activation.lower().startswith("custom_silu"):
+            threshold = (
+                float(self.activation.split(":")[-1]) if ":" in self.activation else 3.0
+            )
+            self.custom_silu = CustomSilu(threshold=threshold)
+        else:
+            self.custom_silu = None
 
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
         """Returns the tensor after applying activation function corresponding to `activation`."""
@@ -53,6 +88,9 @@ class ActivationFn(paddle.nn.Layer):
             return F.sigmoid(x)
         elif self.activation.lower() == "silu":
             return F.silu(x)
+        elif self.activation.lower().startswith("custom_silu"):
+            assert self.custom_silu is not None
+            return self.custom_silu(x)
         elif self.activation.lower() == "linear" or self.activation.lower() == "none":
             return x
         else:
