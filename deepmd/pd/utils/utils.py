@@ -51,6 +51,8 @@ class ActivationFn(paddle.nn.Layer):
             return F.softplus(x)
         elif self.activation.lower() == "sigmoid":
             return F.sigmoid(x)
+        elif self.activation.lower() == "silu":
+            return F.silu(x)
         elif self.activation.lower() == "linear" or self.activation.lower() == "none":
             return x
         else:
