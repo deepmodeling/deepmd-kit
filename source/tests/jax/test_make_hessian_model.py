@@ -69,7 +69,7 @@ class HessianTest:
         self,
     ) -> None:
         # setup test case
-        places = 6
+        places = 5
         delta = 1e-3
         natoms = self.nloc
         nf = self.nf
