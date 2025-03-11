@@ -58,6 +58,7 @@ def make_jax_dp_atomic_model_from_dpmodel(
             mapping: Optional[jnp.ndarray] = None,
             fparam: Optional[jnp.ndarray] = None,
             aparam: Optional[jnp.ndarray] = None,
+            atomic_weight: Optional[jnp.ndarray] = None,
         ) -> dict[str, jnp.ndarray]:
             return super().forward_common_atomic(
                 extended_coord,
@@ -66,6 +67,7 @@ def make_jax_dp_atomic_model_from_dpmodel(
                 mapping=mapping,
                 fparam=fparam,
                 aparam=aparam,
+                atomic_weight=atomic_weight,
             )
 
     return jax_atomic_model

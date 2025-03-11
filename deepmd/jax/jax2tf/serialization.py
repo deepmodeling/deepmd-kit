@@ -40,7 +40,13 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
 
         def exported_whether_do_atomic_virial(do_atomic_virial, has_ghost_atoms):
             def call_lower_with_fixed_do_atomic_virial(
-                coord, atype, nlist, mapping, fparam, aparam
+                coord,
+                atype,
+                nlist,
+                mapping,
+                fparam,
+                aparam,
+                atomic_weight,
             ):
                 return call_lower(
                     coord,
@@ -49,6 +55,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                     mapping,
                     fparam,
                     aparam,
+                    atomic_weight=atomic_weight,
                     do_atomic_virial=do_atomic_virial,
                 )
 
@@ -68,12 +75,14 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                     f"(nf, nloc + {nghost})",
                     f"(nf, {model.get_dim_fparam()})",
                     f"(nf, nloc, {model.get_dim_aparam()})",
+                    "(nf, nloc, 1)",
                 ],
                 with_gradient=True,
             )
 
         # Save a function that can take scalar inputs.
         # We need to explicit set the function name, so C++ can find it.
+        # bug: replace 1 with fitting output dim
         @tf.function(
             autograph=False,
             input_signature=[
@@ -83,24 +92,32 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                 tf.TensorSpec([None, None], tf.int64),
                 tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
                 tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
+                tf.TensorSpec([None, None, 1], tf.float64),
             ],
         )
         def call_lower_without_atomic_virial(
-            coord, atype, nlist, mapping, fparam, aparam
+            coord,
+            atype,
+            nlist,
+            mapping,
+            fparam,
+            aparam,
+            atomic_weight,
         ):
             nlist = format_nlist(coord, nlist, model.get_nnei(), model.get_rcut())
             return tf.cond(
                 tf.shape(coord)[1] == tf.shape(nlist)[1],
                 lambda: exported_whether_do_atomic_virial(
                     do_atomic_virial=False, has_ghost_atoms=False
-                )(coord, atype, nlist, mapping, fparam, aparam),
+                )(coord, atype, nlist, mapping, fparam, aparam, atomic_weight),
                 lambda: exported_whether_do_atomic_virial(
                     do_atomic_virial=False, has_ghost_atoms=True
-                )(coord, atype, nlist, mapping, fparam, aparam),
+                )(coord, atype, nlist, mapping, fparam, aparam, atomic_weight),
             )
 
         tf_model.call_lower = call_lower_without_atomic_virial
 
+        # bug: replace 1 with fitting output dim
         @tf.function(
             autograph=False,
             input_signature=[
@@ -110,18 +127,21 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                 tf.TensorSpec([None, None], tf.int64),
                 tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
                 tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
+                tf.TensorSpec([None, None, 1], tf.float64),
             ],
         )
-        def call_lower_with_atomic_virial(coord, atype, nlist, mapping, fparam, aparam):
+        def call_lower_with_atomic_virial(
+            coord, atype, nlist, mapping, fparam, aparam, atomic_weight
+        ):
             nlist = format_nlist(coord, nlist, model.get_nnei(), model.get_rcut())
             return tf.cond(
                 tf.shape(coord)[1] == tf.shape(nlist)[1],
                 lambda: exported_whether_do_atomic_virial(
                     do_atomic_virial=True, has_ghost_atoms=False
-                )(coord, atype, nlist, mapping, fparam, aparam),
+                )(coord, atype, nlist, mapping, fparam, aparam, atomic_weight),
                 lambda: exported_whether_do_atomic_virial(
                     do_atomic_virial=True, has_ghost_atoms=True
-                )(coord, atype, nlist, mapping, fparam, aparam),
+                )(coord, atype, nlist, mapping, fparam, aparam, atomic_weight),
             )
 
         tf_model.call_lower_atomic_virial = call_lower_with_atomic_virial
@@ -138,6 +158,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                 box: Optional[tnp.ndarray] = None,
                 fparam: Optional[tnp.ndarray] = None,
                 aparam: Optional[tnp.ndarray] = None,
+                atomic_weight: Optional[tnp.ndarray] = None,
             ):
                 """Return model prediction.
 
@@ -173,11 +194,13 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                     box=box,
                     fparam=fparam,
                     aparam=aparam,
+                    atomic_weight=atomic_weight,
                     do_atomic_virial=do_atomic_virial,
                 )
 
             return call
 
+        # bug: replace 1 with fitting output dim
         @tf.function(
             autograph=True,
             input_signature=[
@@ -186,6 +209,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                 tf.TensorSpec([None, None, None], tf.float64),
                 tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
                 tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
+                tf.TensorSpec([None, None, 1], tf.float64),
             ],
         )
         def call_with_atomic_virial(
@@ -194,13 +218,15 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             box: tnp.ndarray,
             fparam: tnp.ndarray,
             aparam: tnp.ndarray,
+            atomic_weight: tnp.ndarray,
         ):
             return make_call_whether_do_atomic_virial(do_atomic_virial=True)(
-                coord, atype, box, fparam, aparam
+                coord, atype, box, fparam, aparam, atomic_weight
             )
 
         tf_model.call_atomic_virial = call_with_atomic_virial
 
+        # bug: replace 1 with fitting output dim
         @tf.function(
             autograph=True,
             input_signature=[
@@ -209,6 +235,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                 tf.TensorSpec([None, None, None], tf.float64),
                 tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
                 tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
+                tf.TensorSpec([None, None, 1], tf.float64),
             ],
         )
         def call_without_atomic_virial(
@@ -217,9 +244,10 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             box: tnp.ndarray,
             fparam: tnp.ndarray,
             aparam: tnp.ndarray,
+            atomic_weight: tnp.ndarray,
         ):
             return make_call_whether_do_atomic_virial(do_atomic_virial=False)(
-                coord, atype, box, fparam, aparam
+                coord, atype, box, fparam, aparam, atomic_weight
             )
 
         tf_model.call = call_without_atomic_virial

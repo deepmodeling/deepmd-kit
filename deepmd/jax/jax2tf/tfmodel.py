@@ -79,6 +79,7 @@ class TFModelWrapper(tf.Module):
         fparam: Optional[jnp.ndarray] = None,
         aparam: Optional[jnp.ndarray] = None,
         do_atomic_virial: bool = False,
+        atomic_weight: Optional[jnp.ndarray] = None,
     ) -> Any:
         """Return model prediction.
 
@@ -105,7 +106,9 @@ class TFModelWrapper(tf.Module):
             The keys are defined by the `ModelOutputDef`.
 
         """
-        return self.call(coord, atype, box, fparam, aparam, do_atomic_virial)
+        return self.call(
+            coord, atype, box, fparam, aparam, do_atomic_virial, atomic_weight
+        )
 
     def call(
         self,
@@ -115,6 +118,7 @@ class TFModelWrapper(tf.Module):
         fparam: Optional[jnp.ndarray] = None,
         aparam: Optional[jnp.ndarray] = None,
         do_atomic_virial: bool = False,
+        atomic_weight: Optional[jnp.ndarray] = None,
     ):
         """Return model prediction.
 
@@ -157,12 +161,17 @@ class TFModelWrapper(tf.Module):
                 (coord.shape[0], coord.shape[1], self.get_dim_aparam()),
                 dtype=jnp.float64,
             )
+        if atomic_weight is None:
+            atomic_weight = jnp.empty(
+                (coord.shape[0], coord.shape[1], 1), dtype=jnp.float64
+            )
         return call(
             coord,
             atype,
             box,
             fparam,
             aparam,
+            atomic_weight,
         )
 
     def model_output_def(self):
@@ -179,6 +188,7 @@ class TFModelWrapper(tf.Module):
         fparam: Optional[jnp.ndarray] = None,
         aparam: Optional[jnp.ndarray] = None,
         do_atomic_virial: bool = False,
+        atomic_weight: Optional[jnp.ndarray] = None,
     ):
         if do_atomic_virial:
             call_lower = self._call_lower_atomic_virial
@@ -194,6 +204,10 @@ class TFModelWrapper(tf.Module):
                 (extended_coord.shape[0], nlist.shape[1], self.get_dim_aparam()),
                 dtype=jnp.float64,
             )
+        if atomic_weight is None:
+            atomic_weight = jnp.empty(
+                (extended_coord.shape[0], nlist.shape[1], 1), dtype=jnp.float
+            )
         return call_lower(
             extended_coord,
             extended_atype,
@@ -201,6 +215,7 @@ class TFModelWrapper(tf.Module):
             mapping,
             fparam,
             aparam,
+            atomic_weight,
         )
 
     def get_type_map(self) -> list[str]:

@@ -30,6 +30,7 @@ def model_call_from_call_lower(
             tnp.ndarray,
             tnp.ndarray,
             tnp.ndarray,
+            tnp.ndarray,
             bool,
         ],
         dict[str, tnp.ndarray],
@@ -43,6 +44,7 @@ def model_call_from_call_lower(
     box: tnp.ndarray,
     fparam: tnp.ndarray,
     aparam: tnp.ndarray,
+    atomic_weight: tnp.ndarray,
     do_atomic_virial: bool = False,
 ):
     """Return model prediction from lower interface.
@@ -72,8 +74,8 @@ def model_call_from_call_lower(
     """
     atype_shape = tf.shape(atype)
     nframes, nloc = atype_shape[0], atype_shape[1]
-    cc, bb, fp, ap = coord, box, fparam, aparam
-    del coord, box, fparam, aparam
+    cc, bb, fp, ap, aw = coord, box, fparam, aparam, atomic_weight
+    del coord, box, fparam, aparam, atomic_weight
     if tf.shape(bb)[-1] != 0:
         coord_normalized = normalize_coord(
             cc.reshape(nframes, nloc, 3),
@@ -102,6 +104,7 @@ def model_call_from_call_lower(
         mapping,
         fparam=fp,
         aparam=ap,
+        atomic_weight=aw,
     )
     model_predict = communicate_extended_output(
         model_predict_lower,

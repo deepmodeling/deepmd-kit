@@ -57,7 +57,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             do_atomic_virial: bool, has_ghost_atoms: bool
         ):
             def call_lower_with_fixed_do_atomic_virial(
-                coord, atype, nlist, mapping, fparam, aparam
+                coord, atype, nlist, mapping, fparam, aparam, atomic_weight
             ):
                 return call_lower(
                     coord,
@@ -66,6 +66,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                     mapping,
                     fparam,
                     aparam,
+                    atomic_weight,
                     do_atomic_virial=do_atomic_virial,
                 )
 

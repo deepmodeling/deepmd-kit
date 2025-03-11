@@ -27,6 +27,7 @@ def forward_common_atomic(
     fparam: Optional[jnp.ndarray] = None,
     aparam: Optional[jnp.ndarray] = None,
     do_atomic_virial: bool = False,
+    atomic_weight: Optional[jnp.ndarray] = None,
 ):
     atomic_ret = self.atomic_model.forward_common_atomic(
         extended_coord,
@@ -35,6 +36,7 @@ def forward_common_atomic(
         mapping=mapping,
         fparam=fparam,
         aparam=aparam,
+        atomic_weight=atomic_weight,
     )
     atomic_output_def = self.atomic_output_def()
     model_predict = {}
@@ -56,6 +58,7 @@ def forward_common_atomic(
                     mapping,
                     fparam,
                     aparam,
+                    atomic_weight,
                     *,
                     _kk=kk,
                     _atom_axis=atom_axis,
@@ -67,6 +70,9 @@ def forward_common_atomic(
                         mapping=mapping[None, ...] if mapping is not None else None,
                         fparam=fparam[None, ...] if fparam is not None else None,
                         aparam=aparam[None, ...] if aparam is not None else None,
+                        atomic_weight=atomic_weight[None, ...]
+                        if atomic_weight is not None
+                        else None,
                     )
                     return jnp.sum(atomic_ret[_kk][0], axis=_atom_axis)
 
@@ -79,6 +85,7 @@ def forward_common_atomic(
                     mapping,
                     fparam,
                     aparam,
+                    atomic_weight,
                 )
                 # extended_force: [nf, nall, *def, 3]
                 def_ndim = len(vdef.shape)
@@ -101,6 +108,7 @@ def forward_common_atomic(
                         mapping,
                         fparam,
                         aparam,
+                        atomic_weight,
                         *,
                         _kk=kk,
                         _atom_axis=atom_axis - 1,
@@ -113,6 +121,9 @@ def forward_common_atomic(
                             mapping=mapping[None, ...] if mapping is not None else None,
                             fparam=fparam[None, ...] if fparam is not None else None,
                             aparam=aparam[None, ...] if aparam is not None else None,
+                            atomic_weight=atomic_weight[None, ...]
+                            if atomic_weight is not None
+                            else None,
                         )
                         nloc = nlist.shape[0]
                         cc_loc = jax.lax.stop_gradient(cc_ext)[:nloc, ...]
@@ -130,6 +141,7 @@ def forward_common_atomic(
                         mapping,
                         fparam,
                         aparam,
+                        atomic_weight,
                     )
                     # move the first 3 to the last
                     # [nf, *def, nall, 3, 3]
