@@ -144,7 +144,7 @@ def silu(x: tf.Tensor) -> tf.Tensor:
     return x * tf.sigmoid(x)
 
 
-def get_custom_silu(activation_function: str = "custom_silu"):
+def get_silut(activation_function: str = "silut"):
     import numpy as np
 
     def sigmoid(x):
@@ -163,7 +163,7 @@ def get_custom_silu(activation_function: str = "custom_silu"):
     slope = float(silu_grad(threshold))
     const = float(silu(threshold))
 
-    def custom_silu(x: tf.Tensor) -> tf.Tensor:
+    def silut(x: tf.Tensor) -> tf.Tensor:
         """The customized sigmoid-weighted linear unit with tanh.
 
         Parameters
@@ -174,7 +174,7 @@ def get_custom_silu(activation_function: str = "custom_silu"):
         Returns
         -------
         tf.Tensor
-            `x` with the custom_silu activation applied
+            `x` with the SiLUT activation applied
         """
         return tf.where(
             x < threshold,
@@ -182,7 +182,7 @@ def get_custom_silu(activation_function: str = "custom_silu"):
             tf.nn.tanh(slope * (x - threshold)) + const,
         )
 
-    return custom_silu
+    return silut
 
 
 ACTIVATION_FN_DICT = {
@@ -194,7 +194,7 @@ ACTIVATION_FN_DICT = {
     "gelu": gelu,
     "gelu_tf": gelu_tf,
     "silu": silu,
-    "custom_silu": get_custom_silu("custom_silu"),
+    "silut": get_silut("silut"),
     "linear": lambda x: x,
     "none": lambda x: x,
 }
@@ -224,10 +224,8 @@ def get_activation_func(
     if activation_fn is None:
         activation_fn = "none"
     assert activation_fn is not None
-    if activation_fn.lower().startswith("custom_silu"):
-        ACTIVATION_FN_DICT[activation_fn.lower()] = get_custom_silu(
-            activation_fn.lower()
-        )
+    if activation_fn.lower().startswith("silut"):
+        ACTIVATION_FN_DICT[activation_fn.lower()] = get_silut(activation_fn.lower())
     if activation_fn.lower() not in ACTIVATION_FN_DICT:
         raise RuntimeError(f"{activation_fn} is not a valid activation function")
     return ACTIVATION_FN_DICT[activation_fn.lower()]

@@ -22,7 +22,7 @@ from .env import PRECISION_DICT as PT_PRECISION_DICT
 
 
 @torch.jit.script
-def custom_silu_forward(
+def silut_forward(
     x: torch.Tensor, threshold: float, slope: float, const_val: float
 ) -> torch.Tensor:
     sig = torch.sigmoid(x)
@@ -32,7 +32,7 @@ def custom_silu_forward(
 
 
 @torch.jit.script
-def custom_silu_backward(
+def silut_backward(
     x: torch.Tensor, grad_output: torch.Tensor, threshold: float, slope: float
 ):
     sig = torch.sigmoid(x)
@@ -46,7 +46,7 @@ def custom_silu_backward(
 
 
 @torch.jit.script
-def custom_silu_double_backward(
+def silut_double_backward(
     x: torch.Tensor,
     grad_grad_output: torch.Tensor,
     grad_output: torch.Tensor,
@@ -67,14 +67,14 @@ def custom_silu_double_backward(
     return grad_output * grad_grad * grad_grad_output
 
 
-class CustomSiluFunction(torch.autograd.Function):
+class SiLUTFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, threshold, slope, const_val):
         ctx.save_for_backward(x)
         ctx.threshold = threshold
         ctx.slope = slope
         ctx.const_val = const_val
-        return custom_silu_forward(x, threshold, slope, const_val)
+        return silut_forward(x, threshold, slope, const_val)
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -82,16 +82,16 @@ class CustomSiluFunction(torch.autograd.Function):
         threshold = ctx.threshold
         slope = ctx.slope
 
-        grad_input = CustomSiluGradFunction.apply(x, grad_output, threshold, slope)
+        grad_input = SiLUTGradFunction.apply(x, grad_output, threshold, slope)
         return grad_input, None, None, None
 
 
-class CustomSiluGradFunction(torch.autograd.Function):
+class SiLUTGradFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, grad_output, threshold, slope):
         ctx.threshold = threshold
         ctx.slope = slope
-        grad_input, grad = custom_silu_backward(x, grad_output, threshold, slope)
+        grad_input, grad = silut_backward(x, grad_output, threshold, slope)
         ctx.save_for_backward(x, grad_output, grad)
         return grad_input
 
@@ -101,13 +101,13 @@ class CustomSiluGradFunction(torch.autograd.Function):
         threshold = ctx.threshold
         slope = ctx.slope
 
-        grad_input = custom_silu_double_backward(
+        grad_input = silut_double_backward(
             x, grad_grad_output, grad_output, threshold, slope
         )
         return grad_input, grad * grad_grad_output, None, None
 
 
-class CustomSiluScript(torch.nn.Module):
+class SiLUTScript(torch.nn.Module):
     def __init__(self, threshold: float = 3.0):
         super().__init__()
         self.threshold = threshold
@@ -120,10 +120,10 @@ class CustomSiluScript(torch.nn.Module):
         self.const_val = float(threshold * sigmoid_threshold)
 
     def forward(self, x):
-        return CustomSiluFunction.apply(x, self.threshold, self.slope, self.const_val)
+        return SiLUTFunction.apply(x, self.threshold, self.slope, self.const_val)
 
 
-class CustomSilu(torch.nn.Module):
+class SiLUT(torch.nn.Module):
     def __init__(self, threshold=3.0):
         super().__init__()
 
@@ -155,18 +155,20 @@ class ActivationFn(torch.nn.Module):
     def __init__(self, activation: Optional[str]) -> None:
         super().__init__()
         self.activation: str = activation if activation is not None else "linear"
-        if self.activation.lower().startswith("custom_silu"):
+        if self.activation.lower().startswith(
+            "silut"
+        ) or self.activation.lower().startswith("custom_silu"):
             threshold = (
                 float(self.activation.split(":")[-1]) if ":" in self.activation else 3.0
             )
             if env.CUSTOM_OP_USE_JIT:
                 # for efficient training but can not be jit
-                self.custom_silu = CustomSiluScript(threshold=threshold)
+                self.silut = SiLUTScript(threshold=threshold)
             else:
                 # for jit freeze
-                self.custom_silu = CustomSilu(threshold=threshold)
+                self.silut = SiLUT(threshold=threshold)
         else:
-            self.custom_silu = None
+            self.silut = None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Returns the tensor after applying activation function corresponding to `activation`."""
@@ -186,9 +188,11 @@ class ActivationFn(torch.nn.Module):
             return torch.sigmoid(x)
         elif self.activation.lower() == "silu":
             return F.silu(x)
-        elif self.activation.lower().startswith("custom_silu"):
-            assert self.custom_silu is not None
-            return self.custom_silu(x)
+        elif self.activation.lower().startswith(
+            "silut"
+        ) or self.activation.lower().startswith("custom_silu"):
+            assert self.silut is not None
+            return self.silut(x)
         elif self.activation.lower() == "linear" or self.activation.lower() == "none":
             return x
         else:

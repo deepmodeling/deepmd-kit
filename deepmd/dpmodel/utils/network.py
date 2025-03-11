@@ -326,7 +326,9 @@ def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.nda
             return x / (1 + xp.exp(-x))
 
         return fn
-    elif activation_function.startswith("custom_silu"):
+    elif activation_function.startswith("silut") or activation_function.startswith(
+        "custom_silu"
+    ):
 
         def sigmoid(x):
             return 1 / (1 + np.exp(-x))
