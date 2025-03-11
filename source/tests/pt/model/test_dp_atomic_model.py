@@ -73,6 +73,13 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 to_numpy_array(ret0["energy"]),
                 to_numpy_array(ret1["energy"]),
             )
+            # add test for atomic_weight
+            aw = torch.rand([nf, nloc, 1], dtype=dtype, device=env.DEVICE)
+            ret2 = md0.forward_common_atomic(*args, atomic_weight=aw)
+            np.testing.assert_allclose(
+                to_numpy_array(ret0["energy"] * aw.reshape(nf, nloc, -1)),
+                to_numpy_array(ret2["energy"]),
+            )
 
     def test_dp_consistency(self) -> None:
         nf, nloc, nnei = self.nlist.shape
@@ -100,6 +107,14 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(
             ret0["energy"],
             to_numpy_array(ret1["energy"]),
+        )
+        # add test for atomic_weight
+        aw = torch.rand([nf, nloc, 1], dtype=dtype, device=env.DEVICE)
+        ret2 = md0.forward_common_atomic(*args0, atomic_weight=to_numpy_array(aw))
+        ret3 = md1.forward_common_atomic(*args1, atomic_weight=aw)
+        np.testing.assert_allclose(
+            ret2["energy"],
+            to_numpy_array(ret3["energy"]),
         )
 
     def test_jit(self) -> None:

@@ -63,6 +63,7 @@ def model_call_from_call_lower(
     fparam: Optional[np.ndarray] = None,
     aparam: Optional[np.ndarray] = None,
     do_atomic_virial: bool = False,
+    atomic_weight: Optional[np.ndarray] = None,
 ):
     """Return model prediction from lower interface.
 
@@ -121,6 +122,7 @@ def model_call_from_call_lower(
         fparam=fp,
         aparam=ap,
         do_atomic_virial=do_atomic_virial,
+        atomic_weight=atomic_weight,
     )
     model_predict = communicate_extended_output(
         model_predict_lower,
@@ -224,6 +226,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             fparam: Optional[np.ndarray] = None,
             aparam: Optional[np.ndarray] = None,
             do_atomic_virial: bool = False,
+            atomic_weight: Optional[np.ndarray] = None,
         ) -> dict[str, np.ndarray]:
             """Return model prediction.
 
@@ -250,8 +253,12 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 The keys are defined by the `ModelOutputDef`.
 
             """
-            cc, bb, fp, ap, input_prec = self.input_type_cast(
-                coord, box=box, fparam=fparam, aparam=aparam
+            cc, bb, fp, ap, aw, input_prec = self.input_type_cast(
+                coord,
+                box=box,
+                fparam=fparam,
+                aparam=aparam,
+                atomic_weight=atomic_weight,
             )
             del coord, box, fparam, aparam
             model_predict = model_call_from_call_lower(
@@ -266,6 +273,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 fparam=fp,
                 aparam=ap,
                 do_atomic_virial=do_atomic_virial,
+                atomic_weight=aw,
             )
             model_predict = self.output_type_cast(model_predict, input_prec)
             return model_predict
@@ -279,6 +287,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             fparam: Optional[np.ndarray] = None,
             aparam: Optional[np.ndarray] = None,
             do_atomic_virial: bool = False,
+            atomic_weight: Optional[np.ndarray] = None,
         ):
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
@@ -316,8 +325,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 nlist,
                 extra_nlist_sort=self.need_sorted_nlist_for_lower(),
             )
-            cc_ext, _, fp, ap, input_prec = self.input_type_cast(
-                extended_coord, fparam=fparam, aparam=aparam
+            cc_ext, _, fp, ap, aw, input_prec = self.input_type_cast(
+                extended_coord,
+                fparam=fparam,
+                aparam=aparam,
+                atomic_weight=atomic_weight,
             )
             del extended_coord, fparam, aparam
             model_predict = self.forward_common_atomic(
@@ -328,6 +340,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 fparam=fp,
                 aparam=ap,
                 do_atomic_virial=do_atomic_virial,
+                atomic_weight=aw,
             )
             model_predict = self.output_type_cast(model_predict, input_prec)
             return model_predict
@@ -341,6 +354,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             fparam: Optional[np.ndarray] = None,
             aparam: Optional[np.ndarray] = None,
             do_atomic_virial: bool = False,
+            atomic_weight: Optional[np.ndarray] = None,
         ):
             atomic_ret = self.atomic_model.forward_common_atomic(
                 extended_coord,
@@ -349,6 +363,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 mapping=mapping,
                 fparam=fparam,
                 aparam=aparam,
+                atomic_weight=atomic_weight,
             )
             return fit_output_to_model_output(
                 atomic_ret,
@@ -365,8 +380,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             box: Optional[np.ndarray] = None,
             fparam: Optional[np.ndarray] = None,
             aparam: Optional[np.ndarray] = None,
+            atomic_weight: Optional[np.ndarray] = None,
         ) -> tuple[
             np.ndarray,
+            Optional[np.ndarray],
             Optional[np.ndarray],
             Optional[np.ndarray],
             Optional[np.ndarray],
@@ -379,11 +396,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             ###
             _lst: list[Optional[np.ndarray]] = [
                 vv.astype(coord.dtype) if vv is not None else None
-                for vv in [box, fparam, aparam]
+                for vv in [box, fparam, aparam, atomic_weight]
             ]
-            box, fparam, aparam = _lst
+            box, fparam, aparam, atomic_weight = _lst
             if input_prec == RESERVED_PRECISION_DICT[self.global_np_float_precision]:
-                return coord, box, fparam, aparam, input_prec
+                return coord, box, fparam, aparam, atomic_weight, input_prec
             else:
                 pp = self.global_np_float_precision
                 return (
@@ -391,6 +408,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                     box.astype(pp) if box is not None else None,
                     fparam.astype(pp) if fparam is not None else None,
                     aparam.astype(pp) if aparam is not None else None,
+                    atomic_weight.astype(pp) if atomic_weight is not None else None,
                     input_prec,
                 )
 
