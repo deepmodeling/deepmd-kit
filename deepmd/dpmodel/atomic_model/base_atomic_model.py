@@ -171,6 +171,9 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             frame parameters, shape: nf x dim_fparam
         aparam
             atomic parameter, shape: nf x nloc x dim_aparam
+        atomic_weight
+            atomic weights for scaling outputs, shape: nf x nloc x dim_aw
+            if provided, all output values will be multiplied by this weight.
 
         Returns
         -------

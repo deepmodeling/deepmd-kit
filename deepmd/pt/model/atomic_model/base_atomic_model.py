@@ -227,6 +227,9 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             atomic parameter, shape: nf x nloc x dim_aparam
         comm_dict
             The data needed for communication for parallel inference.
+        atomic_weight
+            atomic weights for scaling outputs, shape: nf x nloc x dim_aw
+            if provided, all output values will be multiplied by this weight.
 
         Returns
         -------
