@@ -10,28 +10,30 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
 )
-from deepmd.jax.common import (
-    to_jax_array,
-)
-from deepmd.jax.descriptor.se_e2_a import (
-    DescrptSeA,
-)
-from deepmd.jax.env import (
-    jax,
-    jnp,
-)
-from deepmd.jax.fitting.fitting import (
-    EnergyFittingNet,
-)
-from deepmd.jax.model import (
-    EnergyModel,
-)
 
-from ..seed import (
-    GLOBAL_SEED,
-)
+if sys.version_info >= (3, 10):
+    from deepmd.jax.common import (
+        to_jax_array,
+    )
+    from deepmd.jax.descriptor.se_e2_a import (
+        DescrptSeA,
+    )
+    from deepmd.jax.env import (
+        jax,
+        jnp,
+    )
+    from deepmd.jax.fitting.fitting import (
+        EnergyFittingNet,
+    )
+    from deepmd.jax.model import (
+        EnergyModel,
+    )
 
-dtype = jnp.float64
+    from ..seed import (
+        GLOBAL_SEED,
+    )
+
+    dtype = jnp.float64
 
 
 def finite_hessian(f, x, delta=1e-6):

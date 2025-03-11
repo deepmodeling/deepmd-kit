@@ -7,23 +7,25 @@ import numpy as np
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
-from deepmd.jax.common import (
-    to_jax_array,
-)
-from deepmd.jax.descriptor.se_e2_a import (
-    DescrptSeA,
-)
-from deepmd.jax.env import (
-    jnp,
-)
-from deepmd.jax.fitting.fitting import (
-    EnergyFittingNet,
-)
-from deepmd.jax.model.ener_model import (
-    EnergyModel,
-)
 
-dtype = jnp.float64
+if sys.version_info >= (3, 10):
+    from deepmd.jax.common import (
+        to_jax_array,
+    )
+    from deepmd.jax.descriptor.se_e2_a import (
+        DescrptSeA,
+    )
+    from deepmd.jax.env import (
+        jnp,
+    )
+    from deepmd.jax.fitting.fitting import (
+        EnergyFittingNet,
+    )
+    from deepmd.jax.model.ener_model import (
+        EnergyModel,
+    )
+
+    dtype = jnp.float64
 
 
 @unittest.skipIf(
