@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import sys
 import unittest
 
 import numpy as np
@@ -132,6 +133,10 @@ class HessianTest:
         )
 
 
+@unittest.skipIf(
+    sys.version_info < (3, 10),
+    "JAX requires Python 3.10 or later",
+)
 class TestDPModel(unittest.TestCase, HessianTest):
     def setUp(self) -> None:
         jax.random.key(2)

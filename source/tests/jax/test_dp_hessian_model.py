@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import sys
 import unittest
 
 import numpy as np
@@ -25,6 +26,10 @@ from deepmd.jax.model.ener_model import (
 dtype = jnp.float64
 
 
+@unittest.skipIf(
+    sys.version_info < (3, 10),
+    "JAX requires Python 3.10 or later",
+)
 class TestCaseSingleFrameWithoutNlist:
     def setUp(self) -> None:
         # nloc == 3, nall == 4
@@ -49,6 +54,10 @@ class TestCaseSingleFrameWithoutNlist:
         self.atol = 1e-12
 
 
+@unittest.skipIf(
+    sys.version_info < (3, 10),
+    "JAX requires Python 3.10 or later",
+)
 class TestEnergyHessianModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
     def setUp(self):
         TestCaseSingleFrameWithoutNlist.setUp(self)
