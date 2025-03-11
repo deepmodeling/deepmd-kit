@@ -203,6 +203,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        atomic_weight: Optional[torch.Tensor] = None,
     ) -> dict[str, torch.Tensor]:
         """Common interface for atomic inference.
 
@@ -271,6 +272,10 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 ret_dict[kk].reshape([out_shape[0], out_shape[1], out_shape2])
                 * atom_mask[:, :, None]
             ).view(out_shape)
+            if atomic_weight is not None:
+                ret_dict[kk] = ret_dict[kk] * atomic_weight.view(
+                    [out_shape[0], out_shape[1], -1]
+                )
         ret_dict["mask"] = atom_mask
 
         return ret_dict
@@ -284,6 +289,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        atomic_weight: Optional[torch.Tensor] = None,
     ) -> dict[str, torch.Tensor]:
         return self.forward_common_atomic(
             extended_coord,
@@ -293,6 +299,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             fparam=fparam,
             aparam=aparam,
             comm_dict=comm_dict,
+            atomic_weight=atomic_weight,
         )
 
     def change_type_map(
