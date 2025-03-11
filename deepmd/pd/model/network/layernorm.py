@@ -101,7 +101,7 @@ class LayerNorm(nn.Layer):
             The output.
         """
         # NOTE: control flow with double backward is not supported well yet by paddle.jit
-        if not paddle.framework.in_dynamic_mode() or decomp.numel(xx) > 0:
+        if not paddle.in_dynamic_mode() or decomp.numel(xx) > 0:
             variance, mean = (
                 paddle.var(xx, axis=-1, unbiased=False, keepdim=True),
                 paddle.mean(xx, axis=-1, keepdim=True),
