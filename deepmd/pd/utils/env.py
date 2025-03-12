@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import logging
 import os
 
@@ -32,7 +36,39 @@ else:
 
 paddle.device.set_device(DEVICE)
 
-JIT = False
+
+def to_bool(flag: int | bool | str) -> bool:
+    if isinstance(flag, int):
+        if flag not in [0, 1]:
+            raise ValueError(f"flag must be either 0 or 1, but received {flag}")
+        return bool(flag)
+
+    elif isinstance(flag, str):
+        flag = flag.lower()
+        if flag not in ["1", "0", "true", "false"]:
+            raise ValueError(
+                f"flag must be either '0', '1', 'true', 'false', but received '{flag}'"
+            )
+        return flag in ["1", "true"]
+
+    elif isinstance(flag, bool):
+        return flag
+
+    else:
+        raise ValueError(
+            f"flag must be either int, bool, or str, but received {type(flag).__name__}"
+        )
+
+
+JIT = to_bool(os.environ.get("JIT", False))
+CINN = to_bool(os.environ.get("CINN", False))
+if CINN:
+    assert paddle.device.is_compiled_with_cinn(), (
+        "CINN is set to True, but PaddlePaddle is not compiled with CINN support. "
+        "Ensure that your PaddlePaddle installation supports CINN by checking your "
+        "installation or recompiling with CINN enabled."
+    )
+
 CACHE_PER_SYS = 5  # keep at most so many sets per sys in memory
 ENERGY_BIAS_TRAINABLE = True
 
@@ -138,14 +174,23 @@ def enable_prim(enable: bool = True):
     ]
     EAGER_COMP_OP_BLACK_LIST = list(set(EAGER_COMP_OP_BLACK_LIST))
 
-    """Enable running program in primitive C++ API in eager/static mode."""
-    from paddle.framework import (
-        core,
-    )
+    """Enable running program with primitive operators in eager/static mode."""
+    if JIT or CINN:
+        # jit mode
+        paddle.framework.core._set_prim_all_enabled(enable)
+        if enable:
+            # No need to set a blacklist for now in JIT mode.
+            pass
+    else:
+        # eager mode
+        paddle.framework.core.set_prim_eager_enabled(enable)
+        if enable:
+            # Set a blacklist (i.e., disable several composite operators) in eager mode
+            # to enhance computational performance.
+            paddle.framework.core._set_prim_backward_blacklist(
+                *EAGER_COMP_OP_BLACK_LIST
+            )
 
-    core.set_prim_eager_enabled(enable)
-    if enable:
-        paddle.framework.core._set_prim_backward_blacklist(*EAGER_COMP_OP_BLACK_LIST)
     log = logging.getLogger(__name__)
     log.info(f"{'Enable' if enable else 'Disable'} prim in eager and static mode.")
 

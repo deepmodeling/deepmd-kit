@@ -33,6 +33,9 @@ from deepmd.utils.spin import (
     Spin,
 )
 
+from .denoise_model import (
+    DenoiseModel,
+)
 from .dipole_model import (
     DipoleModel,
 )
@@ -68,9 +71,6 @@ from .polar_model import (
 )
 from .property_model import (
     PropertyModel,
-)
-from .denoise_model import (
-    DenoiseModel,
 )
 from .spin_model import (
     SpinEnergyModel,
@@ -264,6 +264,7 @@ def get_standard_model(model_params):
     preset_out_bias = _convert_preset_out_bias_to_array(
         preset_out_bias, model_params["type_map"]
     )
+    data_stat_protect = model_params.get("data_stat_protect", 1e-2)
 
     if fitting_net_type == "dipole":
         modelcls = DipoleModel
@@ -287,6 +288,7 @@ def get_standard_model(model_params):
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
         preset_out_bias=preset_out_bias,
+        data_stat_protect=data_stat_protect,
     )
     model.model_def_script = json.dumps(model_params_old)
     return model

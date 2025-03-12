@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-import torch
 import logging
+
+import torch
 
 from deepmd.pt.model.task.denoise import (
     DenoiseNet,
@@ -12,6 +13,7 @@ from .dp_atomic_model import (
 )
 
 log = logging.getLogger(__name__)
+
 
 class DPDenoiseAtomicModel(DPAtomicModel):
     def __init__(self, descriptor, fitting, type_map, **kwargs):

@@ -36,7 +36,7 @@ class DenoiseModel(DPModelCommon, DPDenoiseModel_):
 
     def translated_output_def(self):
         pass
-        '''
+        """
         out_def_data = self.model_output_def().get_data()
         output_def = {
             f"atom_{self.get_var_name()}": out_def_data[self.get_var_name()],
@@ -45,7 +45,7 @@ class DenoiseModel(DPModelCommon, DPDenoiseModel_):
         if "mask" in out_def_data:
             output_def["mask"] = out_def_data["mask"]
         return output_def
-        '''
+        """
 
     def forward(
         self,

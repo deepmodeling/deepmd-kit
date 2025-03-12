@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import logging
 from typing import (
     Optional,
     Union,
@@ -8,6 +7,11 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel import (
+    FittingOutputDef,
+    OutputVariableDef,
+    fitting_check_output,
+)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
@@ -15,36 +19,23 @@ from deepmd.pt.model.network.mlp import (
     FittingNet,
     NetworkCollection,
 )
-from deepmd.dpmodel import (
-    FittingOutputDef,
-    OutputVariableDef,
-    fitting_check_output,
-)
-from deepmd.pt.model.network.network import (
-    ResidualDeep,
-)
 from deepmd.pt.model.task.fitting import (
     Fitting,
-    GeneralFitting,
-)
-from deepmd.pt.model.task.invar_fitting import (
-    InvarFitting,
 )
 from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.env import (
+    DEFAULT_PRECISION,
     PRECISION_DICT,
 )
 from deepmd.pt.utils.exclude_mask import (
     AtomExcludeMask,
 )
-from deepmd.pt.utils.env import (
-    DEFAULT_PRECISION,
-)
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
+
 
 @Fitting.register("denoise")
 @fitting_check_output
@@ -107,15 +98,15 @@ class DenoiseNet(Fitting):
             The condition number for the regression of atomic energy.
         seed : int, optional
             Random seed.
-        exclude_types: list[int]
+        exclude_types : list[int]
             Atomic contributions of the excluded atom types are set zero.
         trainable : Union[list[bool], bool]
             If the parameters in the fitting net are trainable.
             Now this only supports setting all the parameters in the fitting net at one state.
             When in list[bool], the trainable will be True only if all the boolean parameters are True.
-        type_map: list[str], Optional
+        type_map : list[str], Optional
             A list of strings. Give the name to each type of atoms.
-        use_aparam_as_mask: bool
+        use_aparam_as_mask : bool
             If True, the aparam will not be used in fitting net for embedding.
         """
         super().__init__()
@@ -359,7 +350,6 @@ class DenoiseNet(Fitting):
             "spin": None,
         }
 
-
     def deserialize(self) -> "DenoiseNet":
         data = data.copy()
         variables = data.pop("@variables")
@@ -381,7 +371,7 @@ class DenoiseNet(Fitting):
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.numb_aparam
-    
+
     # make jit happy
     exclude_types: list[int]
 
