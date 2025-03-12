@@ -21,7 +21,6 @@ from .env import (
 from .env import PRECISION_DICT as PT_PRECISION_DICT
 
 
-@torch.jit.script
 def silut_forward(
     x: torch.Tensor, threshold: float, slope: float, const_val: float
 ) -> torch.Tensor:
@@ -31,7 +30,6 @@ def silut_forward(
     return torch.where(x >= threshold, tanh_part, silu)
 
 
-@torch.jit.script
 def silut_backward(
     x: torch.Tensor, grad_output: torch.Tensor, threshold: float, slope: float
 ):
@@ -45,7 +43,6 @@ def silut_backward(
     return grad * grad_output, grad
 
 
-@torch.jit.script
 def silut_double_backward(
     x: torch.Tensor,
     grad_grad_output: torch.Tensor,
@@ -67,46 +64,6 @@ def silut_double_backward(
     return grad_output * grad_grad * grad_grad_output
 
 
-class SiLUTFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x, threshold, slope, const_val):
-        ctx.save_for_backward(x)
-        ctx.threshold = threshold
-        ctx.slope = slope
-        ctx.const_val = const_val
-        return silut_forward(x, threshold, slope, const_val)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        (x,) = ctx.saved_tensors
-        threshold = ctx.threshold
-        slope = ctx.slope
-
-        grad_input = SiLUTGradFunction.apply(x, grad_output, threshold, slope)
-        return grad_input, None, None, None
-
-
-class SiLUTGradFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x, grad_output, threshold, slope):
-        ctx.threshold = threshold
-        ctx.slope = slope
-        grad_input, grad = silut_backward(x, grad_output, threshold, slope)
-        ctx.save_for_backward(x, grad_output, grad)
-        return grad_input
-
-    @staticmethod
-    def backward(ctx, grad_grad_output):
-        (x, grad_output, grad) = ctx.saved_tensors
-        threshold = ctx.threshold
-        slope = ctx.slope
-
-        grad_input = silut_double_backward(
-            x, grad_grad_output, grad_output, threshold, slope
-        )
-        return grad_input, grad * grad_grad_output, None, None
-
-
 class SiLUTScript(torch.nn.Module):
     def __init__(self, threshold: float = 3.0):
         super().__init__()
@@ -118,9 +75,57 @@ class SiLUTScript(torch.nn.Module):
             sigmoid_threshold + threshold * sigmoid_threshold * (1 - sigmoid_threshold)
         )
         self.const_val = float(threshold * sigmoid_threshold)
+        self.get_script_code()
+
+    def get_script_code(self):
+        silut_forward_script = torch.jit.script(silut_forward)
+        silut_backward_script = torch.jit.script(silut_backward)
+        silut_double_backward_script = torch.jit.script(silut_double_backward)
+
+        class SiLUTFunction(torch.autograd.Function):
+            @staticmethod
+            def forward(ctx, x, threshold, slope, const_val):
+                ctx.save_for_backward(x)
+                ctx.threshold = threshold
+                ctx.slope = slope
+                ctx.const_val = const_val
+                return silut_forward_script(x, threshold, slope, const_val)
+
+            @staticmethod
+            def backward(ctx, grad_output):
+                (x,) = ctx.saved_tensors
+                threshold = ctx.threshold
+                slope = ctx.slope
+
+                grad_input = SiLUTGradFunction.apply(x, grad_output, threshold, slope)
+                return grad_input, None, None, None
+
+        class SiLUTGradFunction(torch.autograd.Function):
+            @staticmethod
+            def forward(ctx, x, grad_output, threshold, slope):
+                ctx.threshold = threshold
+                ctx.slope = slope
+                grad_input, grad = silut_backward_script(
+                    x, grad_output, threshold, slope
+                )
+                ctx.save_for_backward(x, grad_output, grad)
+                return grad_input
+
+            @staticmethod
+            def backward(ctx, grad_grad_output):
+                (x, grad_output, grad) = ctx.saved_tensors
+                threshold = ctx.threshold
+                slope = ctx.slope
+
+                grad_input = silut_double_backward_script(
+                    x, grad_grad_output, grad_output, threshold, slope
+                )
+                return grad_input, grad * grad_grad_output, None, None
+
+        self.SiLUTFunction = SiLUTFunction
 
     def forward(self, x):
-        return SiLUTFunction.apply(x, self.threshold, self.slope, self.const_val)
+        return self.SiLUTFunction.apply(x, self.threshold, self.slope, self.const_val)
 
 
 class SiLUT(torch.nn.Module):
