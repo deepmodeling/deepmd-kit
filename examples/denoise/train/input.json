@@ -1,0 +1,99 @@
+{
+    "_comment": "that's all",
+    "model": {
+      "type_map": [
+        "H",
+        "O",
+        "Ru",
+        "Pt",
+        "Ir",
+        "Pd",
+        "Ag",
+        "MASKED_TOKEN"
+      ],
+      "descriptor": {
+        "type": "dpa1",
+        "sel": 120,
+        "rcut_smth": 0.5,
+        "rcut": 6.0,
+        "neuron": [
+          25,
+          50,
+          100
+        ],
+        "tebd_dim": 8,
+        "axis_neuron": 16,
+        "type_one_side": true,
+        "attn": 128,
+        "attn_layer": 0,
+        "attn_dotr": true,
+        "attn_mask": false,
+        "activation_function": "tanh",
+        "scaling_factor": 1.0,
+        "normalize": true,
+        "temperature": 1.0
+      },
+      "fitting_net": {
+        "type": "denoise",
+        "neuron": [
+          240,
+          240,
+          240
+        ],
+        "resnet_dt": true,
+        "precision": "float64",
+        "seed": 1,
+        "_comment": " that's all"
+      },
+      "_comment": " that's all"
+    },
+    "learning_rate": {
+      "type": "exp",
+      "decay_steps": 5000,
+      "start_lr": 0.001,
+      "stop_lr": 3.51e-08,
+      "_comment": "that's all"
+    },
+    "loss": {
+      "type": "denoise",
+      "mask_token": true,
+      "mask_coord": true,
+      "mask_cell": true,
+      "coord_loss": 1.0,
+      "cell_loss": 1.0,
+      "token_loss": 1.0,
+      "noise_type": "gaussian",
+      "coord_noise": 0.06,
+      "noise_mode": "prob",
+      "mask_prob": 0.2,
+      "cell_pert_fraction": 0.008,
+      "same_mask": true,
+      "loss_func": "rmse",
+      "_comment": " that's all"
+    },
+    "training": {
+      "training_data": {
+        "systems": [
+          "../data/data_0",
+          "../data/data_1"
+        ],
+        "batch_size": 2,
+        "_comment": "that's all"
+      },
+      "validation_data": {
+        "systems": [
+          "../data/data_2"
+        ],
+        "batch_size": 1,
+        "_comment": "that's all"
+      },
+      "numb_steps": 1000000,
+      "warmup_steps": 0,
+      "gradient_max_norm": 5.0,
+      "seed": 10,
+      "disp_file": "lcurve.out",
+      "disp_freq": 200,
+      "save_freq": 2000,
+      "_comment": "that's all"
+    }
+  }

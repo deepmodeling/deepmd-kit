@@ -40,6 +40,7 @@ def get_cell_perturb_matrix(cell_pert_fraction: float):
 class DenoiseLoss(TaskLoss):
     def __init__(
         self,
+        ntypes: int,
         mask_token: bool = False,
         mask_coord: bool = True,
         mask_cell: bool = False,
@@ -52,6 +53,7 @@ class DenoiseLoss(TaskLoss):
         noise_mode: str = "prob",
         mask_num: int = 1,
         mask_prob: float = 0.2,
+        same_mask: bool = False,
         loss_func: str = "rmse",
         **kwargs,
     ) -> None:
@@ -89,6 +91,7 @@ class DenoiseLoss(TaskLoss):
             Other keyword arguments.
         """
         super().__init__()
+        self.mask_type_idx = ntypes-1
         self.mask_token = mask_token
         self.mask_coord = mask_coord
         self.mask_cell = mask_cell
@@ -101,6 +104,7 @@ class DenoiseLoss(TaskLoss):
         self.noise_mode = noise_mode
         self.mask_num = mask_num
         self.mask_prob = mask_prob
+        self.same_mask = same_mask
         self.loss_func = loss_func
 
     def forward(self, input_dict, model, label, natoms, learning_rate, mae=False):
@@ -137,10 +141,11 @@ class DenoiseLoss(TaskLoss):
         label["clean_box"] = input_dict["box"].clone().detach()
         origin_frac_coord = phys2inter(label["clean_coord"], label["clean_box"].reshape(nbz,3,3))
         label["clean_frac_coord"] = origin_frac_coord.clone().detach()
+        label["clean_type"] = input_dict["atype"].clone().detach().to(torch.int64)
         if self.mask_cell:
-            strain_components_all = torch.zeros((nbz,3), dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
+            strain_components_all = torch.zeros((nbz,6), dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
             for ii in range(nbz):
-                cell_perturb_matrix, strain_components = get_cell_perturb_matrix_HEA(self.cell_noise)
+                cell_perturb_matrix, strain_components = get_cell_perturb_matrix(self.cell_pert_fraction)
                 # left-multiplied by `cell_perturb_matrix`` to get the noise box
                 input_dict["box"][ii] = torch.matmul(cell_perturb_matrix, input_dict["box"][ii].reshape(3,3)).reshape(-1)
                 input_dict["coord"][ii] = torch.matmul(origin_frac_coord[ii].reshape(nloc,3), input_dict["box"][ii].reshape(3,3))
@@ -165,14 +170,14 @@ class DenoiseLoss(TaskLoss):
             for ii in range(nbz):
                 noise_on_coord = 0.0
                 coord_mask_res = np.random.choice(range(nloc), mask_num, replace=False).tolist()
-                coord_mask = np.isin(range(nloc), coord_mask_res) # nloc
+                coord_mask = np.isin(range(nloc), coord_mask_res)
                 if self.noise_type == "uniform":
                     noise_on_coord = np.random.uniform(
-                        low=-self.noise, high=self.noise, size=(mask_num, 3)
+                        low=-self.noise, high=self.coord_noise, size=(mask_num, 3)
                     )
                 elif self.noise_type == "gaussian":
                     noise_on_coord = np.random.normal(
-                        loc=0.0, scale=self.noise, size=(mask_num, 3)
+                        loc=0.0, scale=self.coord_noise, size=(mask_num, 3)
                     )
                 else:
                     raise NotImplementedError(f"Unknown noise type {self.noise_type}!")
@@ -186,8 +191,16 @@ class DenoiseLoss(TaskLoss):
             label["updated_coord"] = ((label["clean_frac_coord"] - frac_coord) @ label["clean_box"].reshape(nbz,3,3)).clone().detach()
         
         if self.mask_token:
-            # TODO: mask_token
-            pass
+            type_mask_all = torch.zeros(input_dict["atype"].shape, dtype=torch.bool, device=env.DEVICE)
+            for ii in range(nbz):
+                if self.same_mask:
+                    type_mask = coord_mask_all[ii].clone()
+                else:
+                    type_mask_res = np.random.choice(range(nloc), self.mask_num, replace=False).tolist()
+                    type_mask = np.isin(range(nloc), type_mask_res)
+                input_dict["atype"][ii][type_mask] = self.mask_type_idx
+                type_mask_all[ii] = torch.tensor(type_mask, dtype=torch.bool, device=env.DEVICE)
+            label["type_mask"] = type_mask_all
 
         if (not self.mask_coord) and (not self.mask_cell) and (not self.mask_token):
             raise RuntimeError("At least one of mask_coord, mask_cell and mask_token should be True!")
@@ -197,6 +210,7 @@ class DenoiseLoss(TaskLoss):
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
 
+        # cell and coord loss
         diff_coord = (label["updated_coord"] - model_pred["updated_coord"]).reshape(-1)
         diff_cell = (label["strain_components"] - model_pred["strain_components"]).reshape(-1)
         if self.loss_func == "rmse":
@@ -217,6 +231,18 @@ class DenoiseLoss(TaskLoss):
             loss += self.coord_loss * l1_coord_loss.to(GLOBAL_PT_FLOAT_PRECISION) + self.cell_loss * l1_cell_loss.to(GLOBAL_PT_FLOAT_PRECISION)
         else:
             raise RuntimeError(f"Unknown loss function {self.loss_func}!")
+        # token loss
+        type_mask = label["type_mask"]
+        masked_logits = model_pred["logits"][type_mask]
+        masked_target = label["clean_type"][type_mask]
+        token_loss = F.nll_loss(
+            F.log_softmax(masked_logits, dim=-1),
+            masked_target,
+            reduction="mean",
+        )
+        more_loss["token_loss"] = token_loss.detach()
+        loss += self.token_loss * token_loss.to(GLOBAL_PT_FLOAT_PRECISION)
+        
         return model_pred, loss, more_loss
 
     @property

@@ -69,6 +69,9 @@ class DenoiseNet(Fitting):
         trainable: Union[bool, list[bool]] = True,
         type_map: Optional[list[str]] = None,
         use_aparam_as_mask: bool = False,
+        coord_noise: Optional[float] = None,
+        cell_pert_fraction: Optional[float] = None,
+        noise_type: Optional[str] = None,
         **kwargs,
     ) -> None:
         """Construct a direct token, coordinate and cell fitting net.
@@ -132,6 +135,9 @@ class DenoiseNet(Fitting):
         self.seed = seed
         self.type_map = type_map
         self.use_aparam_as_mask = use_aparam_as_mask
+        self.coord_noise = coord_noise
+        self.cell_pert_fraction = cell_pert_fraction
+        self.noise_type = noise_type
         # order matters, should be place after the assignment of ntypes
         self.reinit_exclude(exclude_types)
         self.trainable = trainable
@@ -227,8 +233,25 @@ class DenoiseNet(Fitting):
                 for ii in range(self.ntypes if not self.mixed_types else 1)
             ],
         )
-        
-        # TODO: Type denoise
+
+        self.filter_layers_token = NetworkCollection(
+            1 if not self.mixed_types else 0,
+            self.ntypes,
+            network_type="fitting_network",
+            networks=[
+                FittingNet(
+                    in_dim,
+                    self.ntypes-1,
+                    self.neuron,
+                    self.activation_function,
+                    self.resnet_dt,
+                    self.precision,
+                    bias_out=True,
+                    seed=child_seed(self.seed, ii),
+                )
+                for ii in range(self.ntypes if not self.mixed_types else 1)
+            ],
+        )
 
         # set trainable
         for param in self.parameters():
@@ -283,6 +306,13 @@ class DenoiseNet(Fitting):
                     r_differentiable=False,
                     c_differentiable=False,
                 ),
+                OutputVariableDef(
+                    "logits",
+                    [self.ntypes-1],
+                    reducible=False,
+                    r_differentiable=False,
+                    c_differentiable=False,
+                ),
             ]
         )
 
@@ -304,6 +334,7 @@ class DenoiseNet(Fitting):
             "mixed_types": self.mixed_types,
             "cell_nets": self.filter_layers_cell.serialize(),
             "coord_nets": self.filter_layers_coord.serialize(),
+            "token_nets": self.filter_layers_token.serialize(),
             "rcond": self.rcond,
             "exclude_types": self.exclude_types,
             "@variables": {
@@ -334,11 +365,13 @@ class DenoiseNet(Fitting):
         variables = data.pop("@variables")
         cell_nets = data.pop("cell_nets")
         coord_nets = data.pop("coord_nets")
+        token_nets = data.pop("token_nets")
         obj = cls(**data)
         for kk in variables.keys():
             obj[kk] = to_torch_tensor(variables[kk])
         obj.filter_layers_cell = NetworkCollection.deserialize(cell_nets)
         obj.filter_layers_coord = NetworkCollection.deserialize(coord_nets)
+        obj.filter_layers_token = NetworkCollection.deserialize(token_nets)
         return obj
 
     def get_dim_fparam(self) -> int:
@@ -369,6 +402,15 @@ class DenoiseNet(Fitting):
     def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
+
+    def get_coord_noise(self):
+        return self.coord_noise
+
+    def get_cell_pert_fraction(self):
+        return self.cell_pert_fraction
+    
+    def get_noise_type(self):
+        return self.noise_type
 
     def set_case_embd(self, case_idx: int):
         """
@@ -518,65 +560,76 @@ class DenoiseNet(Fitting):
                     dim=-1,
                 )
 
-        outs = torch.zeros(
-            (nf, nloc, 6),
-            dtype=self.prec,
-            device=descriptor.device,
-        )  # jit assertion
         if self.mixed_types:
-            # direct coord fitting
-            vec_out = self.filter_layers_coord.networks[0](xx)
-            assert list(vec_out.size()) == [nf, nloc, self.out_dim]
-            # (nf x nloc) x 1 x od
-            vec_out = vec_out.view(-1, 1, self.out_dim)
+            # coord fitting
+            updated_coord = self.filter_layers_coord.networks[0](xx)
+            assert list(updated_coord.size()) == [nf, nloc, self.out_dim]
+            updated_coord = updated_coord.view(-1, 1, self.out_dim) # (nf x nloc) x 1 x od
             assert gr is not None
-            # (nf x nloc) x od x 3
-            gr = gr.view(-1, self.out_dim, 3)
-            vec_out = (
-                torch.bmm(vec_out, gr).squeeze(-2).view(nf, nloc, 3)
-            )  # Shape is [nf, nloc, 3]
-            # direct cell fitting
-            atom_strain_components = self.filter_layers_cell.networks[0](xx)
-            outs = outs + atom_strain_components # Shape is [nframes, natoms[0], 6]
+            gr = gr.view(-1, self.out_dim, 3) # (nf x nloc) x od x 3
+            updated_coord = (
+                torch.bmm(updated_coord, gr).squeeze(-2).view(nf, nloc, 3)
+            )  # [nf, nloc, 3]
+            # cell fitting
+            strain_components = self.filter_layers_cell.networks[0](xx) # [nframes, natoms[0], 6]
+            # token fitting
+            logits = self.filter_layers_token.networks[0](xx) # [nframes, natoms[0], ntypes-1]
         else:
-            vec_out = torch.zeros(
+            strain_components = torch.zeros(
+                (nf, nloc, 6),
+                dtype=self.prec,
+                device=descriptor.device,
+            )
+            updated_coord = torch.zeros(
                 (nf, nloc, 3),
                 dtype=self.prec,
                 device=descriptor.device,
-            )  # jit assertion
-            # direct coord fitting
+            )
+            logits = torch.zeros(
+                (nf, nloc, self.ntypes-1),
+                dtype=self.prec,
+                device=descriptor.device,
+            )
+            # coord fitting
             for type_i, ll in enumerate(self.filter_layers_coord.networks):
                 mask = (atype == type_i).unsqueeze(-1)
                 mask = torch.tile(mask, (1, 1, 1))
-                vec_out_type = ll(xx)
-                assert list(vec_out_type.size()) == [nf, nloc, self.out_dim]
-                # (nf x nloc) x 1 x od
-                vec_out_type = vec_out_type.view(-1, 1, self.out_dim)
+                updated_coord_type = ll(xx)
+                assert list(updated_coord_type.size()) == [nf, nloc, self.out_dim]
+                updated_coord_type = updated_coord_type.view(-1, 1, self.out_dim) # (nf x nloc) x 1 x od
                 assert gr is not None
-                # (nf x nloc) x od x 3
-                gr = gr.view(-1, self.out_dim, 3)
-                vec_out_type = (
-                    torch.bmm(vec_out_type, gr).squeeze(-2).view(nf, nloc, 3)
-                )  # Shape is [nf, nloc, 3]
-                vec_out_type = torch.where(mask, vec_out_type, 0.0)
-                vec_out = (
-                    vec_out + vec_out_type
-                )  # Shape is [nframes, natoms[0], 3]
-            # direct cell fitting
+                gr = gr.view(-1, self.out_dim, 3) # (nf x nloc) x od x 3
+                updated_coord_type = (
+                    torch.bmm(updated_coord_type, gr).squeeze(-2).view(nf, nloc, 3)
+                )  # [nf, nloc, 3]
+                updated_coord_type = torch.where(mask, updated_coord_type, 0.0)
+                updated_coord = (
+                    updated_coord + updated_coord_type
+                )  # [nframes, natoms[0], 3]
+            # cell fitting
             for type_i, ll in enumerate(self.filter_layers_cell.networks):
                 mask = (atype == type_i).unsqueeze(-1)
                 mask = torch.tile(mask, (1, 1, 1))
-                atom_strain_components = ll(xx)
-                atom_strain_components = torch.where(mask, atom_strain_components, 0.0)
-                outs = (
-                    outs + atom_strain_components
-                )  # Shape is [nframes, natoms[0], 6]
+                strain_components_type = ll(xx)
+                strain_components_type = torch.where(mask, strain_components_type, 0.0)
+                strain_components = (
+                    strain_components + strain_components_type
+                )  # [nframes, natoms[0], 6]
+            # token fitting
+            for type_i, ll in enumerate(self.filter_layers_token.networks):
+                mask = (atype == type_i).unsqueeze(-1)
+                mask = torch.tile(mask, (1, 1, 1))
+                logits_type = ll(xx)
+                logits_type = torch.where(mask, logits_type, 0.0)
+                logits = logits + logits_type
         # nf x nloc
         mask = self.emask(atype).to(torch.bool)
         # nf x nloc x nod
-        outs = torch.where(mask[:, :, None], outs, 0.0)
-        vec_out = torch.where(mask[:, :, None], vec_out, 0.0)
+        strain_components = torch.where(mask[:, :, None], strain_components, 0.0)
+        updated_coord = torch.where(mask[:, :, None], updated_coord, 0.0)
+        logits = torch.where(mask[:, :, None], logits, 0.0)
         return {
-            "strain_components": outs.to(env.GLOBAL_PT_FLOAT_PRECISION),
-            "updated_coord": vec_out,
+            "strain_components": strain_components,
+            "updated_coord": updated_coord,
+            "logits": logits,
         }

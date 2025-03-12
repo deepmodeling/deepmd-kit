@@ -2576,6 +2576,7 @@ def loss_denoise():
     doc_noise_mode = "'prob' means the noise is added with a probability.'fix_num' means the noise is added with a fixed number."
     doc_mask_num = "The number of atoms to mask coordinates. It is only used when noise_mode is 'fix_num'."
     doc_mask_prob = "The probability of masking coordinates. It is only used when noise_mode is 'prob'."
+    doc_same_mask = "Whether mask same atoms when masking coordinates and token."
     doc_loss_func = "The loss function to minimize, it can be 'mae' or 'rmse'."
     return [
         Argument(
@@ -2612,13 +2613,6 @@ def loss_denoise():
             optional=True,
             default=1.0,
             doc=doc_coord_loss,
-        ),
-        Argument(
-            "token_loss",
-            float,
-            optional=True,
-            default=1.0,
-            doc=doc_token_loss,
         ),
         Argument(
             "cell_loss",
@@ -2668,6 +2662,13 @@ def loss_denoise():
             optional=True,
             default=0.2,
             doc=doc_mask_prob,
+        ),
+        Argument(
+            "same_mask",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_same_mask,
         ),
         Argument(
             "loss_func",
