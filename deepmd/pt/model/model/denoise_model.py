@@ -85,5 +85,5 @@ class DenoiseModel(DPModelCommon, DPDenoiseModel_):
         do_atomic_virial: bool = False,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
-        #TODO: implement forward_lower
+        # TODO: implement forward_lower
         pass
