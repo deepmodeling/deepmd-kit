@@ -505,13 +505,13 @@ class DescrptBlockRepflows(DescriptorBlock):
                     torch.tensor(
                         real_nloc,
                         dtype=torch.int32,
-                        device=env.DEVICE,
-                    ),  # should be int of c++
+                        device=torch.device("cpu"),
+                    ),  # should be int of c++, placed on cpu
                     torch.tensor(
                         real_nall - real_nloc,
                         dtype=torch.int32,
-                        device=env.DEVICE,
-                    ),  # should be int of c++
+                        device=torch.device("cpu"),
+                    ),  # should be int of c++, placed on cpu
                 )
                 node_ebd_ext = ret[0].unsqueeze(0)
                 if has_spin:
