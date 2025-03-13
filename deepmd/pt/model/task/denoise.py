@@ -32,6 +32,14 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.exclude_mask import (
     AtomExcludeMask,
 )
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+    to_torch_tensor,
+)
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+    map_atom_exclude_types,
+)
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
@@ -350,7 +358,7 @@ class DenoiseNet(Fitting):
             "spin": None,
         }
 
-    def deserialize(self) -> "DenoiseNet":
+    def deserialize(cls, data: dict) -> "DenoiseNet":
         data = data.copy()
         variables = data.pop("@variables")
         cell_nets = data.pop("cell_nets")
@@ -464,22 +472,11 @@ class DenoiseNet(Fitting):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
     ) -> dict[str, torch.Tensor]:
-        """Based on embedding net output, alculate total energy.
-
-        Args:
-        - inputs: Embedding matrix. Its shape is [nframes, natoms[0], self.dim_descrpt].
-        - natoms: Tell atom count and element count. Its shape is [2+self.ntypes].
-
-        Returns
-        -------
-        - `torch.Tensor`: Total energy with shape [nframes, natoms[0]].
-        """
         # cast the input to internal precsion
         xx = descriptor.to(self.prec)
         fparam = fparam.to(self.prec) if fparam is not None else None
         aparam = aparam.to(self.prec) if aparam is not None else None
 
-        xx_zeros = None
         nf, nloc, nd = xx.shape
 
         if nd != self.dim_descrpt:
@@ -507,11 +504,6 @@ class DenoiseNet(Fitting):
                 [xx, fparam],
                 dim=-1,
             )
-            if xx_zeros is not None:
-                xx_zeros = torch.cat(
-                    [xx_zeros, fparam],
-                    dim=-1,
-                )
         # check aparam dim, concate to input descriptor
         if self.numb_aparam > 0 and not self.use_aparam_as_mask:
             assert aparam is not None, "aparam should not be None"
@@ -531,11 +523,6 @@ class DenoiseNet(Fitting):
                 [xx, aparam],
                 dim=-1,
             )
-            if xx_zeros is not None:
-                xx_zeros = torch.cat(
-                    [xx_zeros, aparam],
-                    dim=-1,
-                )
 
         if self.dim_case_embd > 0:
             assert self.case_embd is not None
@@ -544,11 +531,6 @@ class DenoiseNet(Fitting):
                 [xx, case_embd],
                 dim=-1,
             )
-            if xx_zeros is not None:
-                xx_zeros = torch.cat(
-                    [xx_zeros, case_embd],
-                    dim=-1,
-                )
 
         if self.mixed_types:
             # coord fitting

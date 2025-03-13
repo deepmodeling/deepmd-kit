@@ -131,6 +131,7 @@ class DenoiseLoss(TaskLoss):
         more_loss: dict[str, torch.Tensor]
             Other losses for display.
         """
+        rng = np.random.default_rng()
         nloc = input_dict["atype"].shape[1]
         nbz = input_dict["atype"].shape[0]
         input_dict["box"] = input_dict["box"].cuda()
@@ -177,15 +178,14 @@ class DenoiseLoss(TaskLoss):
                 input_dict["atype"].shape, dtype=torch.bool, device=env.DEVICE
             )
             for ii in range(nbz):
-                noise_on_coord = 0.0
-                coord_mask_res = np.random.choice(range(nloc), mask_num, replace=False).tolist()
+                coord_mask_res = rng.choice(range(nloc), mask_num, replace=False).tolist()
                 coord_mask = np.isin(range(nloc), coord_mask_res)
                 if self.noise_type == "uniform":
-                    noise_on_coord = np.random.uniform(
+                    noise_on_coord = rng.uniform(
                         low=-self.noise, high=self.coord_noise, size=(mask_num, 3)
                     )
                 elif self.noise_type == "gaussian":
-                    noise_on_coord = np.random.normal(
+                    noise_on_coord = rng.normal(
                         loc=0.0, scale=self.coord_noise, size=(mask_num, 3)
                     )
                 else:
@@ -222,7 +222,7 @@ class DenoiseLoss(TaskLoss):
                 if self.same_mask:
                     type_mask = coord_mask_all[ii].clone()
                 else:
-                    type_mask_res = np.random.choice(range(nloc), self.mask_num, replace=False).tolist()
+                    type_mask_res = rng.choice(range(nloc), self.mask_num, replace=False).tolist()
                     type_mask = np.isin(range(nloc), type_mask_res)
                 input_dict["atype"][ii][type_mask] = self.mask_type_idx
                 type_mask_all[ii] = torch.tensor(type_mask, dtype=torch.bool, device=env.DEVICE)

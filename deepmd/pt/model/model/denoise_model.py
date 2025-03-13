@@ -85,5 +85,21 @@ class DenoiseModel(DPModelCommon, DPDenoiseModel_):
         do_atomic_virial: bool = False,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
-        #TODO: implement forward_lower
-        pass
+        model_ret = self.forward_common_lower(
+            extended_coord,
+            extended_atype,
+            nlist,
+            mapping,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
+            extra_nlist_sort=self.need_sorted_nlist_for_lower(),
+        )
+        model_predict = {}
+        model_predict["updated_coord"] = model_ret["updated_coord"]
+        model_predict["atom_strain_components"] = model_ret["strain_components"]
+        model_predict["strain_components"] = model_ret["strain_components_redu"]
+        model_predict["logits"] = model_ret["logits"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
+        return model_predict        
