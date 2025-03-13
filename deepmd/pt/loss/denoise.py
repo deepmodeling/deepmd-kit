@@ -182,7 +182,9 @@ class DenoiseLoss(TaskLoss):
                 input_dict["atype"].shape, dtype=torch.bool, device=env.DEVICE
             )
             for ii in range(nbz):
-                coord_mask_res = rng.choice(range(nloc), mask_num, replace=False).tolist()
+                coord_mask_res = rng.choice(
+                    range(nloc), mask_num, replace=False
+                ).tolist()
                 coord_mask = np.isin(range(nloc), coord_mask_res)
                 if self.noise_type == "uniform":
                     noise_on_coord = rng.uniform(
@@ -228,7 +230,9 @@ class DenoiseLoss(TaskLoss):
                 if self.same_mask:
                     type_mask = coord_mask_all[ii].clone()
                 else:
-                    type_mask_res = rng.choice(range(nloc), self.mask_num, replace=False).tolist()
+                    type_mask_res = rng.choice(
+                        range(nloc), self.mask_num, replace=False
+                    ).tolist()
                     type_mask = np.isin(range(nloc), type_mask_res)
                 input_dict["atype"][ii][type_mask] = self.mask_type_idx
                 type_mask_all[ii] = torch.tensor(

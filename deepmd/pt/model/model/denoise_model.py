@@ -102,4 +102,4 @@ class DenoiseModel(DPModelCommon, DPDenoiseModel_):
         model_predict["logits"] = model_ret["logits"]
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
-        return model_predict        
+        return model_predict
