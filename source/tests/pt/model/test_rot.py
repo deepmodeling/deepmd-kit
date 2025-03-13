@@ -25,6 +25,7 @@ from .test_permutation import (  # model_dpau,
     model_se_e2_a,
     model_spin,
     model_zbl,
+    model_denoise,
 )
 
 dtype = torch.float64
@@ -51,7 +52,10 @@ class RotTest:
         )
 
         test_spin = getattr(self, "test_spin", False)
-        if not test_spin:
+        test_denoise = getattr(self, "test_denoise", False)
+        if test_denoise:
+            test_keys = ["strain_components", "updated_coord", "logits"]
+        elif not test_spin:
             test_keys = ["energy", "force", "virial"]
         else:
             test_keys = ["energy", "force", "force_mag"]
@@ -66,6 +70,7 @@ class RotTest:
             cell.unsqueeze(0),
             atype,
             spins=spin.unsqueeze(0),
+            denoise=test_denoise,
         )
         ret0 = {key: result_0[key].squeeze(0) for key in test_keys}
         result_1 = eval_model(
@@ -74,12 +79,13 @@ class RotTest:
             cell.unsqueeze(0),
             atype,
             spins=spin_rot.unsqueeze(0),
+            denoise=test_denoise,
         )
         ret1 = {key: result_1[key].squeeze(0) for key in test_keys}
         for key in test_keys:
-            if key in ["energy"]:
+            if key in ["energy", "strain_components", "logits"]:
                 torch.testing.assert_close(ret0[key], ret1[key], rtol=prec, atol=prec)
-            elif key in ["force", "force_mag"]:
+            elif key in ["force", "force_mag", "updated_coord"]:
                 torch.testing.assert_close(
                     torch.matmul(ret0[key], rmat), ret1[key], rtol=prec, atol=prec
                 )
@@ -116,6 +122,7 @@ class RotTest:
             cell.unsqueeze(0),
             atype,
             spins=spin.unsqueeze(0),
+            denoise=test_denoise,
         )
         ret0 = {key: result_0[key].squeeze(0) for key in test_keys}
         result_1 = eval_model(
@@ -124,12 +131,13 @@ class RotTest:
             cell_rot.unsqueeze(0),
             atype,
             spins=spin_rot.unsqueeze(0),
+            denoise=test_denoise,
         )
         ret1 = {key: result_1[key].squeeze(0) for key in test_keys}
         for key in test_keys:
-            if key in ["energy"]:
+            if key in ["energy", "strain_components", "logits"]:
                 torch.testing.assert_close(ret0[key], ret1[key], rtol=prec, atol=prec)
-            elif key in ["force", "force_mag"]:
+            elif key in ["force", "force_mag", "updated_coord"]:
                 torch.testing.assert_close(
                     torch.matmul(ret0[key], rmat), ret1[key], rtol=prec, atol=prec
                 )
@@ -212,6 +220,12 @@ class TestEnergyModelSpinSeA(unittest.TestCase, RotTest):
         self.test_spin = True
         self.model = get_model(model_params).to(env.DEVICE)
 
+class TestDenoiseModelDPA1(unittest.TestCase, RotTest):
+    def setUp(self) -> None:
+        model_params = copy.deepcopy(model_denoise)
+        self.type_split = False
+        self.test_denoise = True
+        self.model = get_model(model_params).to(env.DEVICE)
 
 if __name__ == "__main__":
     unittest.main()

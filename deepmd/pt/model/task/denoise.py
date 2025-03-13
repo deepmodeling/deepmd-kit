@@ -358,6 +358,7 @@ class DenoiseNet(Fitting):
             "spin": None,
         }
 
+    @classmethod
     def deserialize(cls, data: dict) -> "DenoiseNet":
         data = data.copy()
         variables = data.pop("@variables")

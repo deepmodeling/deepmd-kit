@@ -377,6 +377,35 @@ model_property = {
     },
 }
 
+model_denoise = {
+    "type_map": ["H", "C", "N", "O", "MASKED_TOKEN"],
+    "descriptor": {
+        "type": "se_atten",
+        "sel": 40,
+        "rcut_smth": 0.5,
+        "rcut": 4.0,
+        "neuron": [25, 50, 100],
+        "axis_neuron": 16,
+        "attn": 64,
+        "attn_layer": 2,
+        "attn_dotr": True,
+        "attn_mask": False,
+        "activation_function": "tanh",
+        "scaling_factor": 1.0,
+        "normalize": False,
+        "temperature": 1.0,
+        "set_davg_zero": True,
+        "type_one_side": True,
+        "seed": 1,
+    },
+    "fitting_net": {
+        "type": "denoise",
+        "neuron": [24,24,24],
+        "resnet_dt": True,
+        "seed": 1,
+        "_comment": " that's all"
+    },
+}
 
 class PermutationTest:
     def test(
@@ -396,7 +425,10 @@ class PermutationTest:
         atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
         idx_perm = [1, 0, 4, 3, 2]
         test_spin = getattr(self, "test_spin", False)
-        if not test_spin:
+        test_denoise = getattr(self, "test_denoise", False)
+        if test_denoise:
+            test_keys = ["strain_components", "updated_coord", "logits"]
+        elif not test_spin:
             test_keys = ["energy", "force", "virial"]
         else:
             test_keys = ["energy", "force", "force_mag", "virial"]
@@ -406,6 +438,7 @@ class PermutationTest:
             cell.unsqueeze(0),
             atype,
             spins=spin.unsqueeze(0),
+            denoise=test_denoise,
         )
         ret0 = {key: result_0[key].squeeze(0) for key in test_keys}
         result_1 = eval_model(
@@ -414,13 +447,14 @@ class PermutationTest:
             cell.unsqueeze(0),
             atype[idx_perm],
             spins=spin[idx_perm].unsqueeze(0),
+            denoise=test_denoise,
         )
         ret1 = {key: result_1[key].squeeze(0) for key in test_keys}
         prec = 1e-10
         for key in test_keys:
-            if key in ["energy"]:
+            if key in ["energy", "strain_components"]:
                 torch.testing.assert_close(ret0[key], ret1[key], rtol=prec, atol=prec)
-            elif key in ["force", "force_mag"]:
+            elif key in ["force", "force_mag", "updated_coord", "logits"]:
                 torch.testing.assert_close(
                     ret0[key][idx_perm], ret1[key], rtol=prec, atol=prec
                 )
@@ -500,6 +534,12 @@ class TestEnergyModelSpinSeA(unittest.TestCase, PermutationTest):
         self.test_spin = True
         self.model = get_model(model_params).to(env.DEVICE)
 
+class TestDenoiseModelDPA1(unittest.TestCase, PermutationTest):
+    def setUp(self) -> None:
+        model_params = copy.deepcopy(model_denoise)
+        self.type_split = False
+        self.test_denoise = True
+        self.model = get_model(model_params).to(env.DEVICE)
 
 # class TestEnergyFoo(unittest.TestCase):
 #   def test(self):

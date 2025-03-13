@@ -102,9 +102,9 @@ def _get_standard_model_components(model_params, ntypes):
             f"When using denoise fitting, the last element in `type_map` must be 'MASKED_TOKEN', but got '{model_params['type_map'][-1]}'"
         )
         fitting_net["out_dim"] = descriptor.get_dim_emb()
-        fitting_net["coord_noise"] = model_params["coord_noise"]
-        fitting_net["cell_pert_fraction"] = model_params["cell_pert_fraction"]
-        fitting_net["noise_type"] = model_params["noise_type"]
+        fitting_net["coord_noise"] = model_params.get("coord_noise", 0.2)
+        fitting_net["cell_pert_fraction"] = model_params.get("cell_pert_fraction", 0.0)
+        fitting_net["noise_type"] = model_params.get("noise_type", "gaussian")
     if not grad_force:
         fitting_net["out_dim"] = descriptor.get_dim_emb()
         if "ener" in fitting_net["type"]:

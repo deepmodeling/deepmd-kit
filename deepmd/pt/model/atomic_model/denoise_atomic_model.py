@@ -36,6 +36,6 @@ class DPDenoiseAtomicModel(DPAtomicModel):
             coord_std = self.fitting_net.get_coord_noise() / 1.732
         else:
             raise RuntimeError(f"Unknown noise type {noise_type}")
-        ret["strain_components"] = ret["strain_components"] * cell_std
-        ret["updated_coord"] = ret["updated_coord"] * coord_std
+        ret["strain_components"] = ret["strain_components"] * cell_std if cell_std>0 else ret["strain_components"]
+        ret["updated_coord"] = ret["updated_coord"] * coord_std if coord_std>0 else ret["updated_coord"]
         return ret
