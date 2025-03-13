@@ -3,6 +3,9 @@
 import array_api_compat
 import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    xp_scatter_sum,
+)
 from deepmd.dpmodel.common import (
     GLOBAL_ENER_FLOAT_PRECISION,
 )
@@ -98,20 +101,12 @@ def communicate_extended_output(
                     mapping = xp.reshape(mapping, (mldims + [1] * len(derv_r_ext_dims)))
                     mapping = xp.tile(mapping, [1] * len(mldims) + derv_r_ext_dims)
                     force = xp.zeros(vldims + derv_r_ext_dims, dtype=vv.dtype)
-                    # jax only
-                    if array_api_compat.is_jax_array(force):
-                        from deepmd.jax.common import (
-                            scatter_sum,
-                        )
-
-                        force = scatter_sum(
-                            force,
-                            1,
-                            mapping,
-                            model_ret[kk_derv_r],
-                        )
-                    else:
-                        raise NotImplementedError("Only JAX arrays are supported.")
+                    force = xp_scatter_sum(
+                        force,
+                        1,
+                        mapping,
+                        model_ret[kk_derv_r],
+                    )
                     new_ret[kk_derv_r] = force
                 else:
                     # name holders
@@ -127,20 +122,12 @@ def communicate_extended_output(
                         vldims + derv_c_ext_dims,
                         dtype=vv.dtype,
                     )
-                    # jax only
-                    if array_api_compat.is_jax_array(virial):
-                        from deepmd.jax.common import (
-                            scatter_sum,
-                        )
-
-                        virial = scatter_sum(
-                            virial,
-                            1,
-                            mapping,
-                            model_ret[kk_derv_c],
-                        )
-                    else:
-                        raise NotImplementedError("Only JAX arrays are supported.")
+                    virial = xp_scatter_sum(
+                        virial,
+                        1,
+                        mapping,
+                        model_ret[kk_derv_c],
+                    )
                     new_ret[kk_derv_c] = virial
                     new_ret[kk_derv_c + "_redu"] = xp.sum(new_ret[kk_derv_c], axis=1)
                 else:

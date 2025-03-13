@@ -2,6 +2,8 @@
 """Utilities for the array API."""
 
 import array_api_compat
+import array_api_extra as xpx
+import numpy as np
 from packaging.version import (
     Version,
 )
@@ -48,7 +50,11 @@ def xp_swapaxes(a, axis1, axis2):
 
 def xp_take_along_axis(arr, indices, axis):
     xp = array_api_compat.array_namespace(arr)
-    if Version(xp.__array_api_version__) >= Version("2024.12"):
+    if (
+        Version(xp.__array_api_version__) >= Version("2024.12")
+        or array_api_compat.is_numpy_array(arr)
+        or array_api_compat.is_jax_array(arr)
+    ):
         # see: https://github.com/data-apis/array-api-strict/blob/d086c619a58f35c38240592ef994aa19ca7beebc/array_api_strict/_indexing_functions.py#L30-L39
         return xp.take_along_axis(arr, indices, axis=axis)
     arr = xp_swapaxes(arr, axis, -1)
@@ -73,3 +79,22 @@ def xp_take_along_axis(arr, indices, axis):
     out = xp.take(arr, indices)
     out = xp.reshape(out, shape)
     return xp_swapaxes(out, axis, -1)
+
+
+def xp_ravel(input: np.ndarray) -> np.ndarray:
+    """Flattens the input tensor."""
+    xp = array_api_compat.array_namespace(input)
+    return xp.reshape(input, [-1])
+
+
+def xp_scatter_sum(input, dim, index: np.ndarray, src: np.ndarray) -> np.ndarray:
+    """Reduces all values from the src tensor to the indices specified in the index tensor."""
+    xp = array_api_compat.array_namespace(input)
+    idx = xp.arange(input.size, dtype=xp.int64)
+    idx = xp.reshape(idx, input.shape)
+    new_idx = xp_take_along_axis(idx, index, axis=dim)
+    new_idx = xp_ravel(new_idx)
+    shape = input.shape
+    input = xp_ravel(input)
+    input = xpx.at(input, new_idx).add(xp_ravel(src))
+    return xp.reshape(input, shape)
