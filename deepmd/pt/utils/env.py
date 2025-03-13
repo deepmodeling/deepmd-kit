@@ -77,6 +77,7 @@ if intra_nthreads > 0:
 
 __all__ = [
     "CACHE_PER_SYS",
+    "CUSTOM_OP_USE_JIT",
     "DEFAULT_PRECISION",
     "DEVICE",
     "ENERGY_BIAS_TRAINABLE",
