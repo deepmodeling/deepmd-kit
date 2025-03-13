@@ -28,6 +28,7 @@ class DPDenoiseAtomicModel(DPAtomicModel):
         ret: dict[str, torch.Tensor],
         atype: torch.Tensor,
     ):
+        # Scale values to appropriate magnitudes
         noise_type = self.fitting_net.get_noise_type()
         cell_std = self.fitting_net.get_cell_pert_fraction() / 1.732
         if noise_type == "gaussian":

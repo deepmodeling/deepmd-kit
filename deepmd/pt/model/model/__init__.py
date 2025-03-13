@@ -291,6 +291,8 @@ def get_standard_model(model_params):
         preset_out_bias=preset_out_bias,
         data_stat_protect=data_stat_protect,
     )
+    if model_params.get("hessian_mode"):
+        model.enable_hessian()
     model.model_def_script = json.dumps(model_params_old)
     return model
 

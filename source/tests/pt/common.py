@@ -292,7 +292,7 @@ def eval_model(
                 [nframes, 6], dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
             )
         )
-        atom_component_out = (
+        atom_strain_components_out = (
             torch.cat(atom_strain_components_out)
             if atom_strain_components_out
             else torch.zeros(
