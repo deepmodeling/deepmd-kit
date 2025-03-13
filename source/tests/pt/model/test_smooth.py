@@ -18,6 +18,7 @@ from ..common import (
     eval_model,
 )
 from .test_permutation import (  # model_dpau,
+    model_denoise,
     model_dos,
     model_dpa1,
     model_dpa2,
@@ -25,7 +26,6 @@ from .test_permutation import (  # model_dpau,
     model_se_e2_a,
     model_spin,
     model_zbl,
-    model_denoise,
 )
 
 dtype = torch.float64
@@ -258,6 +258,7 @@ class TestEnergyModelSpinSeA(unittest.TestCase, SmoothTest):
         self.model = get_model(model_params).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
 
+
 class TestDenoiseModelDPA1(unittest.TestCase, SmoothTest):
     def setUp(self) -> None:
         model_params = copy.deepcopy(model_denoise)
@@ -265,6 +266,7 @@ class TestDenoiseModelDPA1(unittest.TestCase, SmoothTest):
         self.test_denoise = True
         self.model = get_model(model_params).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
+
 
 # class TestEnergyFoo(unittest.TestCase):
 #   def test(self):

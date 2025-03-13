@@ -66,7 +66,7 @@ def eval_model(
     force_mag_out = []
     virial_out = []
     atomic_virial_out = []
-    strain_components_out  = []
+    strain_components_out = []
     atom_strain_components_out = []
     updated_coord_out = []
     logits_out = []
@@ -194,7 +194,9 @@ def eval_model(
             if "strain_components" in batch_output:
                 strain_components_out.append(batch_output["strain_components"])
             if "atom_strain_components" in batch_output:
-                atom_strain_components_out.append(batch_output["atom_strain_components"])
+                atom_strain_components_out.append(
+                    batch_output["atom_strain_components"]
+                )
             if "updated_coord" in batch_output:
                 updated_coord_out.append(batch_output["updated_coord"])
             if "logits" in batch_output:
@@ -235,7 +237,9 @@ def eval_model(
             else np.zeros([nframes, natoms, 6])  # pylint: disable=no-explicit-dtype
         )
         updated_coord_out = (
-            np.concatenate(updated_coord_out) if updated_coord_out else np.zeros([nframes, natoms, 3])
+            np.concatenate(updated_coord_out)
+            if updated_coord_out
+            else np.zeros([nframes, natoms, 3])
         )
         logits_out = np.concatenate(logits_out) if logits_out else None
     else:
@@ -301,7 +305,7 @@ def eval_model(
             else torch.zeros(
                 [nframes, natoms, 3], dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
             )
-            )
+        )
         logits_out = torch.cat(logits_out) if logits_out else None
     if denoise:
         results_dict = {

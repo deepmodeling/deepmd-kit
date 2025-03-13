@@ -18,6 +18,7 @@ from ..common import (
     eval_model,
 )
 from .test_permutation import (  # model_dpau,
+    model_denoise,
     model_dos,
     model_dpa1,
     model_dpa2,
@@ -25,7 +26,6 @@ from .test_permutation import (  # model_dpau,
     model_se_e2_a,
     model_spin,
     model_zbl,
-    model_denoise,
 )
 
 dtype = torch.float64
@@ -220,12 +220,14 @@ class TestEnergyModelSpinSeA(unittest.TestCase, RotTest):
         self.test_spin = True
         self.model = get_model(model_params).to(env.DEVICE)
 
+
 class TestDenoiseModelDPA1(unittest.TestCase, RotTest):
     def setUp(self) -> None:
         model_params = copy.deepcopy(model_denoise)
         self.type_split = False
         self.test_denoise = True
         self.model = get_model(model_params).to(env.DEVICE)
+
 
 if __name__ == "__main__":
     unittest.main()

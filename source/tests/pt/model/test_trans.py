@@ -18,6 +18,7 @@ from ..common import (
     eval_model,
 )
 from .test_permutation import (  # model_dpau,
+    model_denoise,
     model_dos,
     model_dpa1,
     model_dpa2,
@@ -25,7 +26,6 @@ from .test_permutation import (  # model_dpau,
     model_se_e2_a,
     model_spin,
     model_zbl,
-    model_denoise,
 )
 
 dtype = torch.float64
@@ -82,7 +82,14 @@ class TransTest:
         ret1 = {key: result_1[key].squeeze(0) for key in test_keys}
         prec = 1e-7
         for key in test_keys:
-            if key in ["energy", "force", "force_mag", "strain_components", "updated_coord", "logits"]:
+            if key in [
+                "energy",
+                "force",
+                "force_mag",
+                "strain_components",
+                "updated_coord",
+                "logits",
+            ]:
                 torch.testing.assert_close(ret0[key], ret1[key], rtol=prec, atol=prec)
             elif key == "virial":
                 if not hasattr(self, "test_virial") or self.test_virial:
@@ -160,12 +167,14 @@ class TestEnergyModelSpinSeA(unittest.TestCase, TransTest):
         self.test_spin = True
         self.model = get_model(model_params).to(env.DEVICE)
 
+
 class TestDenoiseModelDPA1(unittest.TestCase, TransTest):
     def setUp(self) -> None:
         model_params = copy.deepcopy(model_denoise)
         self.type_split = False
         self.test_denoise = True
         self.model = get_model(model_params).to(env.DEVICE)
+
 
 if __name__ == "__main__":
     unittest.main()

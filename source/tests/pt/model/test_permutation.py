@@ -400,12 +400,13 @@ model_denoise = {
     },
     "fitting_net": {
         "type": "denoise",
-        "neuron": [24,24,24],
+        "neuron": [24, 24, 24],
         "resnet_dt": True,
         "seed": 1,
-        "_comment": " that's all"
+        "_comment": " that's all",
     },
 }
+
 
 class PermutationTest:
     def test(
@@ -534,12 +535,14 @@ class TestEnergyModelSpinSeA(unittest.TestCase, PermutationTest):
         self.test_spin = True
         self.model = get_model(model_params).to(env.DEVICE)
 
+
 class TestDenoiseModelDPA1(unittest.TestCase, PermutationTest):
     def setUp(self) -> None:
         model_params = copy.deepcopy(model_denoise)
         self.type_split = False
         self.test_denoise = True
         self.model = get_model(model_params).to(env.DEVICE)
+
 
 # class TestEnergyFoo(unittest.TestCase):
 #   def test(self):
