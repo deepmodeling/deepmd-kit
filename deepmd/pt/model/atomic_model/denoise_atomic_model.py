@@ -29,11 +29,11 @@ class DPDenoiseAtomicModel(DPAtomicModel):
         atype: torch.Tensor,
     ):
         noise_type = self.fitting_net.get_noise_type()
-        cell_std = self.fitting_net.get_cell_pert_fraction()/1.732
+        cell_std = self.fitting_net.get_cell_pert_fraction() / 1.732
         if noise_type == "gaussian":
             coord_std = self.fitting_net.get_coord_noise()
         elif noise_type == "uniform":
-            coord_std = self.fitting_net.get_coord_noise()/1.732
+            coord_std = self.fitting_net.get_coord_noise() / 1.732
         else:
             raise RuntimeError(f"Unknown noise type {noise_type}")
         ret["strain_components"] = ret["strain_components"] * cell_std

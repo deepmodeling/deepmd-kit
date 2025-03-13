@@ -240,7 +240,7 @@ class DenoiseNet(Fitting):
             networks=[
                 FittingNet(
                     in_dim,
-                    self.ntypes-1,
+                    self.ntypes - 1,
                     self.neuron,
                     self.activation_function,
                     self.resnet_dt,
@@ -307,7 +307,7 @@ class DenoiseNet(Fitting):
                 ),
                 OutputVariableDef(
                     "logits",
-                    [self.ntypes-1],
+                    [self.ntypes - 1],
                     reducible=False,
                     r_differentiable=False,
                     c_differentiable=False,
@@ -406,7 +406,7 @@ class DenoiseNet(Fitting):
 
     def get_cell_pert_fraction(self):
         return self.cell_pert_fraction
-    
+
     def get_noise_type(self):
         return self.noise_type
 
@@ -536,16 +536,22 @@ class DenoiseNet(Fitting):
             # coord fitting
             updated_coord = self.filter_layers_coord.networks[0](xx)
             assert list(updated_coord.size()) == [nf, nloc, self.out_dim]
-            updated_coord = updated_coord.view(-1, 1, self.out_dim) # (nf x nloc) x 1 x od
+            updated_coord = updated_coord.view(
+                -1, 1, self.out_dim
+            )  # (nf x nloc) x 1 x od
             assert gr is not None
-            gr = gr.view(-1, self.out_dim, 3) # (nf x nloc) x od x 3
+            gr = gr.view(-1, self.out_dim, 3)  # (nf x nloc) x od x 3
             updated_coord = (
                 torch.bmm(updated_coord, gr).squeeze(-2).view(nf, nloc, 3)
             )  # [nf, nloc, 3]
             # cell fitting
-            strain_components = self.filter_layers_cell.networks[0](xx) # [nframes, natoms[0], 6]
+            strain_components = self.filter_layers_cell.networks[0](
+                xx
+            )  # [nframes, natoms[0], 6]
             # token fitting
-            logits = self.filter_layers_token.networks[0](xx) # [nframes, natoms[0], ntypes-1]
+            logits = self.filter_layers_token.networks[0](
+                xx
+            )  # [nframes, natoms[0], ntypes-1]
         else:
             strain_components = torch.zeros(
                 (nf, nloc, 6),
@@ -558,7 +564,7 @@ class DenoiseNet(Fitting):
                 device=descriptor.device,
             )
             logits = torch.zeros(
-                (nf, nloc, self.ntypes-1),
+                (nf, nloc, self.ntypes - 1),
                 dtype=self.prec,
                 device=descriptor.device,
             )
@@ -568,9 +574,11 @@ class DenoiseNet(Fitting):
                 mask = torch.tile(mask, (1, 1, 1))
                 updated_coord_type = ll(xx)
                 assert list(updated_coord_type.size()) == [nf, nloc, self.out_dim]
-                updated_coord_type = updated_coord_type.view(-1, 1, self.out_dim) # (nf x nloc) x 1 x od
+                updated_coord_type = updated_coord_type.view(
+                    -1, 1, self.out_dim
+                )  # (nf x nloc) x 1 x od
                 assert gr is not None
-                gr = gr.view(-1, self.out_dim, 3) # (nf x nloc) x od x 3
+                gr = gr.view(-1, self.out_dim, 3)  # (nf x nloc) x od x 3
                 updated_coord_type = (
                     torch.bmm(updated_coord_type, gr).squeeze(-2).view(nf, nloc, 3)
                 )  # [nf, nloc, 3]
