@@ -326,6 +326,37 @@ def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.nda
             return x / (1 + xp.exp(-x))
 
         return fn
+    elif activation_function.startswith("silut") or activation_function.startswith(
+        "custom_silu"
+    ):
+
+        def sigmoid(x):
+            return 1 / (1 + np.exp(-x))
+
+        def silu(x):
+            return x * sigmoid(x)
+
+        def silu_grad(x):
+            sig = sigmoid(x)
+            return sig + x * sig * (1 - sig)
+
+        threshold = (
+            float(activation_function.split(":")[-1])
+            if ":" in activation_function
+            else 3.0
+        )
+        slope = float(silu_grad(threshold))
+        const = float(silu(threshold))
+
+        def fn(x):
+            xp = array_api_compat.array_namespace(x)
+            return xp.where(
+                x < threshold,
+                x * (1 / (1 + xp.exp(-x))),
+                xp.tanh(slope * (x - threshold)) + const,
+            )
+
+        return fn
     elif activation_function.lower() in ("none", "linear"):
 
         def fn(x):
