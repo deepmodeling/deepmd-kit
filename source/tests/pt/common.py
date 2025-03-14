@@ -313,6 +313,8 @@ def eval_model(
             "updated_coord": updated_coord_out,
             "logits": logits_out,
         }
+        if atomic:
+            results_dict["atom_strain_components"] = atom_strain_components_out
         return results_dict
     else:
         results_dict = {

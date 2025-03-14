@@ -50,19 +50,18 @@ device = env.DEVICE
 class DenoiseNet(Fitting):
     def __init__(
         self,
-        ntypes,
-        dim_descrpt,
-        neuron,
-        bias_atom_e=None,
-        out_dim=1,
-        resnet_dt=True,
+        ntypes: int,
+        dim_descrpt: int,
+        neuron: list[int] = [128, 128, 128],
+        bias_atom_e: Optional[torch.Tensor] = None,
+        out_dim: int = 1,
+        resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        rcond: Optional[float] = None,
         seed: Optional[Union[int, list[int]]] = None,
         exclude_types: list[int] = [],
         trainable: Union[bool, list[bool]] = True,
@@ -102,8 +101,6 @@ class DenoiseNet(Fitting):
         mixed_types : bool
             If true, use a uniform fitting net for all atom types, otherwise use
             different fitting nets for different atom types.
-        rcond : float, optional
-            The condition number for the regression of atomic energy.
         seed : int, optional
             Random seed.
         exclude_types : list[int]
@@ -130,7 +127,6 @@ class DenoiseNet(Fitting):
         self.activation_function = activation_function
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
-        self.rcond = rcond
         self.seed = seed
         self.type_map = type_map
         self.use_aparam_as_mask = use_aparam_as_mask
@@ -320,6 +316,7 @@ class DenoiseNet(Fitting):
         return {
             "@class": "Fitting",
             "@version": 3,
+            "type": "denoise",
             "ntypes": self.ntypes,
             "out_dim": self.out_dim,
             "dim_descrpt": self.dim_descrpt,
@@ -334,7 +331,6 @@ class DenoiseNet(Fitting):
             "cell_nets": self.filter_layers_cell.serialize(),
             "coord_nets": self.filter_layers_coord.serialize(),
             "token_nets": self.filter_layers_token.serialize(),
-            "rcond": self.rcond,
             "exclude_types": self.exclude_types,
             "@variables": {
                 "bias_atom_e": to_numpy_array(self.bias_atom_e),
@@ -345,22 +341,13 @@ class DenoiseNet(Fitting):
                 "aparam_inv_std": to_numpy_array(self.aparam_inv_std),
             },
             "type_map": self.type_map,
-            # "tot_ener_zero": self.tot_ener_zero ,
-            # "trainable": self.trainable ,
-            # "atom_ener": self.atom_ener ,
-            # "layer_name": self.layer_name ,
-            # "spin": self.spin ,
-            ## NOTICE:  not supported by far
-            "tot_ener_zero": False,
-            "trainable": [self.trainable] * (len(self.neuron) + 1),
-            "layer_name": None,
-            "use_aparam_as_mask": self.use_aparam_as_mask,
-            "spin": None,
         }
 
     @classmethod
     def deserialize(cls, data: dict) -> "DenoiseNet":
         data = data.copy()
+        data.pop("@class")
+        data.pop("type")
         variables = data.pop("@variables")
         cell_nets = data.pop("cell_nets")
         coord_nets = data.pop("coord_nets")
@@ -403,12 +390,15 @@ class DenoiseNet(Fitting):
         return self.type_map
 
     def get_coord_noise(self):
+        """Get the noise level of the coordinates."""
         return self.coord_noise
 
     def get_cell_pert_fraction(self):
+        """Get the fraction of the cell perturbation."""
         return self.cell_pert_fraction
 
     def get_noise_type(self):
+        """Get the noise type."""
         return self.noise_type
 
     def set_case_embd(self, case_idx: int):
@@ -473,6 +463,29 @@ class DenoiseNet(Fitting):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
     ) -> dict[str, torch.Tensor]:
+        """Calculate the fitting.
+
+        Parameters
+        ----------
+        descriptor
+            input descriptor. shape: nf x nloc x nd
+        atype
+            the atom type. shape: nf x nloc
+        gr
+            The rotationally equivariant and permutationally invariant single particle
+            representation. shape: nf x nloc x ng x 3
+        g2
+            The rotationally invariant pair-partical representation.
+            shape: nf x nloc x nnei x ng
+        h2
+            The rotationally equivariant pair-partical representation.
+            shape: nf x nloc x nnei x 3
+        fparam
+            The frame parameter. shape: nf x nfp. nfp being `numb_fparam`
+        aparam
+            The atomic parameter. shape: nf x nloc x nap. nap being `numb_aparam`
+
+        """
         # cast the input to internal precsion
         xx = descriptor.to(self.prec)
         fparam = fparam.to(self.prec) if fparam is not None else None
@@ -572,7 +585,7 @@ class DenoiseNet(Fitting):
             # coord fitting
             for type_i, ll in enumerate(self.filter_layers_coord.networks):
                 mask = (atype == type_i).unsqueeze(-1)
-                mask = torch.tile(mask, (1, 1, 1))
+                mask = torch.tile(mask, (1, 1, 3))
                 updated_coord_type = ll(xx)
                 assert list(updated_coord_type.size()) == [nf, nloc, self.out_dim]
                 updated_coord_type = updated_coord_type.view(
@@ -590,7 +603,7 @@ class DenoiseNet(Fitting):
             # cell fitting
             for type_i, ll in enumerate(self.filter_layers_cell.networks):
                 mask = (atype == type_i).unsqueeze(-1)
-                mask = torch.tile(mask, (1, 1, 1))
+                mask = torch.tile(mask, (1, 1, 6))
                 strain_components_type = ll(xx)
                 strain_components_type = torch.where(mask, strain_components_type, 0.0)
                 strain_components = (
@@ -599,7 +612,7 @@ class DenoiseNet(Fitting):
             # token fitting
             for type_i, ll in enumerate(self.filter_layers_token.networks):
                 mask = (atype == type_i).unsqueeze(-1)
-                mask = torch.tile(mask, (1, 1, 1))
+                mask = torch.tile(mask, (1, 1, self.ntypes - 1))
                 logits_type = ll(xx)
                 logits_type = torch.where(mask, logits_type, 0.0)
                 logits = logits + logits_type
