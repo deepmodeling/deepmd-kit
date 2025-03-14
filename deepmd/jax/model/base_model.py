@@ -8,6 +8,7 @@ from deepmd.dpmodel.model.base_model import (
 )
 from deepmd.dpmodel.output_def import (
     get_deriv_name,
+    get_hessian_name,
     get_reduce_name,
 )
 from deepmd.jax.env import (
@@ -87,6 +88,18 @@ def forward_common_atomic(
                 )
 
                 model_predict[kk_derv_r] = extended_force
+                if vdef.r_hessian:
+                    # [nf, *def, nall, 3, nall, 3]
+                    hessian = jax.vmap(jax.hessian(eval_output, argnums=0))(
+                        extended_coord,
+                        extended_atype,
+                        nlist,
+                        mapping,
+                        fparam,
+                        aparam,
+                    )
+                    kk_hessian = get_hessian_name(kk)
+                    model_predict[kk_hessian] = hessian
             if vdef.c_differentiable:
                 assert vdef.r_differentiable
                 # avr: [nf, *def, nall, 3, 3]
