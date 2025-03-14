@@ -55,6 +55,8 @@ doc_ener = "Fit an energy model (potential energy surface)."
 doc_dos = "Fit a density of states model. The total density of states / site-projected density of states labels should be provided by `dos.npy` or `atom_dos.npy` in each data system. The file has number of frames lines and number of energy grid columns (times number of atoms in `atom_dos.npy`). See `loss` parameter."
 doc_dipole = "Fit an atomic dipole model. Global dipole labels or atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file either has number of frames lines and 3 times of number of selected atoms columns, or has number of frames lines and 3 columns. See `loss` parameter."
 doc_polar = "Fit an atomic polarizability model. Global polarizazbility labels or atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file with has number of frames lines and 9 times of number of selected atoms columns, or has number of frames lines and 9 columns. See `loss` parameter."
+# modifier
+doc_dipole_charge = "Use WFCC to model the electronic structure of the system. Correct the long-range interaction."
 
 
 def list_to_doc(xx):
@@ -2015,6 +2017,10 @@ def fitting_variant_type_args():
 
 
 #  --- Modifier configurations: --- #
+modifier_args_plugin = ArgsPlugin()
+
+
+@modifier_args_plugin.register("dipole_charge", doc=doc_dipole_charge)
 def modifier_dipole_charge():
     doc_model_name = "The name of the frozen dipole model file."
     doc_model_charge_map = f"The charge of the WFCC. The list length should be the same as the {make_link('sel_type', 'model[standard]/fitting_net[dipole]/sel_type')}. "
@@ -2035,14 +2041,9 @@ def modifier_dipole_charge():
 
 def modifier_variant_type_args():
     doc_modifier_type = "The type of modifier."
-    doc_dipole_charge = "Use WFCC to model the electronic structure of the system. Correct the long-range interaction."
     return Variant(
         "type",
-        [
-            Argument(
-                "dipole_charge", dict, modifier_dipole_charge(), doc=doc_dipole_charge
-            ),
-        ],
+        modifier_args_plugin.get_all_argument(),
         optional=False,
         doc=doc_modifier_type,
     )

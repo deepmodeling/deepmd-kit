@@ -7,7 +7,7 @@ import numpy as np
 from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd.tf.infer import (
+from deepmd.tf.modifier import (
     DipoleChargeModifier,
 )
 from deepmd.tf.utils.convert import (
@@ -32,7 +32,11 @@ class TestDipoleCharge(unittest.TestCase):
             "dipolecharge_d.pb",
         )
         cls.dp = DipoleChargeModifier(
-            "dipolecharge_d.pb", [-1.0, -3.0], [1.0, 1.0, 1.0, 1.0, 1.0], 4.0, 0.2
+            model_name="dipolecharge_d.pb",
+            model_charge_map=[-1.0, -3.0],
+            sys_charge_map=[1.0, 1.0, 1.0, 1.0, 1.0],
+            ewald_h=4.0,
+            ewald_beta=0.2,
         )
 
     def setUp(self) -> None:
