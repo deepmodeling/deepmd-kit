@@ -24,7 +24,7 @@ def get_cell_perturb_matrix(cell_pert_fraction: float):
     # TODO: user fix some component
     if cell_pert_fraction < 0:
         raise RuntimeError("cell_pert_fraction can not be negative")
-    e0 = torch.rand(6)
+    e0 = torch.rand(6, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
     e = e0 * 2 * cell_pert_fraction - cell_pert_fraction
     cell_pert_matrix = torch.tensor(
         [
