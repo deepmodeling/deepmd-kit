@@ -139,7 +139,7 @@ class DeepEval(DeepEvalBackend):
 
         # looks ugly...
         if self.modifier_type == "dipole_charge":
-            from deepmd.tf.infer.data_modifier import (
+            from deepmd.tf.modifier import (
                 DipoleChargeModifier,
             )
 
