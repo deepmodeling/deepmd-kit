@@ -7,7 +7,6 @@ from deepmd.pt.loss import (
     EnergyStdLoss,
     PropertyLoss,
     TensorLoss,
-    DenoiseLoss,
 )
 
 from ....consistent.common import (
@@ -22,7 +21,6 @@ from ...dpmodel.loss.test_loss import (
     LossParamEnergySpinList,
     LossParamPropertyList,
     LossParamTensorList,
-    LossParamDenoiseList,
 )
 from ..backend import (
     PTTestCase,
