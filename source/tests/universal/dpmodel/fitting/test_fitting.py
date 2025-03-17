@@ -5,12 +5,12 @@ from collections import (
 )
 
 from deepmd.dpmodel.fitting import (
+    DenoiseFitting,
     DipoleFitting,
     DOSFittingNet,
     EnergyFittingNet,
     PolarFitting,
     PropertyFittingNet,
-    DenoiseFitting,
 )
 
 from ....consistent.common import (
@@ -245,7 +245,9 @@ def FittingParamDenoise(
     embedding_width=None,
     numb_param=0,  # test numb_fparam, numb_aparam and dim_case_embd together
 ):
-    assert embedding_width is not None, "embedding_width for denoise fitting is required."
+    assert embedding_width is not None, (
+        "embedding_width for denoise fitting is required."
+    )
     input_dict = {
         "ntypes": ntypes,
         "dim_descrpt": dim_descrpt,
@@ -283,7 +285,7 @@ FittingParamDenoise = FittingParamDenoiseList[0]
         (FittingParamDipole, DipoleFitting),
         (FittingParamPolar, PolarFitting),
         (FittingParamProperty, PropertyFittingNet),
-        (FittingParamDenoise, DenoiseFitting)
+        (FittingParamDenoise, DenoiseFitting),
     ),  # class_param & class
     (True, False),  # mixed_types
 )

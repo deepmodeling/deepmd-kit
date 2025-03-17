@@ -192,7 +192,10 @@ class FittingTestCase(TestCaseSingleFrameWithNlist):
                 gr=self.mock_gr,
             )
             for var in var_names:
-                np.testing.assert_allclose(result_old[var], result_new[var],)
+                np.testing.assert_allclose(
+                    result_old[var],
+                    result_new[var],
+                )
 
 
 def remap_exclude_types(exclude_types, ori_tm, new_tm):

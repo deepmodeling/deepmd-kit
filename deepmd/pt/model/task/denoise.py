@@ -588,7 +588,11 @@ class DenoiseFittingNet(Fitting):
                 mask = (atype == type_i).unsqueeze(-1)
                 mask = torch.tile(mask, (1, 1, 3))
                 updated_coord_type = ll(xx)
-                assert list(updated_coord_type.size()) == [nf, nloc, self.embedding_width]
+                assert list(updated_coord_type.size()) == [
+                    nf,
+                    nloc,
+                    self.embedding_width,
+                ]
                 updated_coord_type = updated_coord_type.view(
                     -1, 1, self.embedding_width
                 )  # (nf x nloc) x 1 x od

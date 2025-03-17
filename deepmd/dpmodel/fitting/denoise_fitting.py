@@ -12,15 +12,14 @@ from deepmd.dpmodel import (
     PRECISION_DICT,
     NativeOP,
 )
+from deepmd.dpmodel.common import (
+    cast_precision,
+    get_xp_precision,
+    to_numpy_array,
+)
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
-    fitting_check_output,
-)
-from deepmd.dpmodel.common import (
-    get_xp_precision,
-    to_numpy_array,
-    cast_precision,
 )
 from deepmd.dpmodel.utils import (
     AtomExcludeMask,
@@ -490,10 +489,18 @@ class DenoiseFitting(NativeOP, BaseFitting):
             for type_i in range(self.ntypes):
                 mask = xp.tile(xp.reshape((atype == type_i), [nf, nloc, 1]), (1, 1, 3))
                 updated_coord_type = self.coord_nets[(type_i,)](xx)
-                assert list(updated_coord_type.shape) == [nf, nloc, self.embedding_width]
-                updated_coord_type = xp.reshape(updated_coord_type, (-1, 1, self.embedding_width)) # (nf * nloc, 1, embedding_width)
-                gr = xp.reshape(gr, (nf * nloc, -1, 3)) # (nf * nloc, embedding_width, 3)
-                updated_coord_type = updated_coord_type @ gr # (nf, nloc, 3)
+                assert list(updated_coord_type.shape) == [
+                    nf,
+                    nloc,
+                    self.embedding_width,
+                ]
+                updated_coord_type = xp.reshape(
+                    updated_coord_type, (-1, 1, self.embedding_width)
+                )  # (nf * nloc, 1, embedding_width)
+                gr = xp.reshape(
+                    gr, (nf * nloc, -1, 3)
+                )  # (nf * nloc, embedding_width, 3)
+                updated_coord_type = updated_coord_type @ gr  # (nf, nloc, 3)
                 updated_coord_type = xp.reshape(updated_coord_type, (nf, nloc, 3))
                 updated_coord_type = xp.where(
                     mask, updated_coord_type, xp.zeros_like(updated_coord_type)
@@ -522,14 +529,16 @@ class DenoiseFitting(NativeOP, BaseFitting):
             # coord fitting
             updated_coord = self.coord_nets[()](xx)
             assert list(updated_coord.shape) == [nf, nloc, self.embedding_width]
-            updated_coord = xp.reshape(updated_coord, (-1, 1, self.embedding_width)) # (nf * nloc, 1, embedding_width)
-            gr = xp.reshape(gr, (nf * nloc, -1, 3)) # (nf * nloc, embedding_width, 3)
-            updated_coord = updated_coord @ gr # (nf, nloc, 3)
+            updated_coord = xp.reshape(
+                updated_coord, (-1, 1, self.embedding_width)
+            )  # (nf * nloc, 1, embedding_width)
+            gr = xp.reshape(gr, (nf * nloc, -1, 3))  # (nf * nloc, embedding_width, 3)
+            updated_coord = updated_coord @ gr  # (nf, nloc, 3)
             updated_coord = xp.reshape(updated_coord, (nf, nloc, 3))
             # cell fitting
-            strain_components = self.cell_nets[()](xx) # [nf, nloc, 6]
+            strain_components = self.cell_nets[()](xx)  # [nf, nloc, 6]
             # token fitting
-            logits = self.token_nets[()](xx) # [nf, natoms[0], ntypes-1]
+            logits = self.token_nets[()](xx)  # [nf, natoms[0], ntypes-1]
         # nf x nloc
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         exclude_mask = xp.astype(exclude_mask, xp.bool)
