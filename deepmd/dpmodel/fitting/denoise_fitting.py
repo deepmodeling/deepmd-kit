@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from abc import (
-    abstractmethod,
-)
 from typing import (
-    Any,
     Optional,
     Union,
 )
@@ -115,7 +111,7 @@ class DenoiseFitting(NativeOP, BaseFitting):
         use_aparam_as_mask: bool = False,
         coord_noise: Optional[float] = None,
         cell_pert_fraction: Optional[float] = None,
-        noise_type: Optional[str] = None,       
+        noise_type: Optional[str] = None,
     ) -> None:
         self.ntypes = ntypes
         self.dim_descrpt = dim_descrpt
@@ -492,9 +488,7 @@ class DenoiseFitting(NativeOP, BaseFitting):
             )
             # coord fitting
             for type_i in range(self.ntypes):
-                mask = xp.tile(
-                    xp.reshape((atype == type_i), [nf, nloc, 1]), (1, 1, 3)
-                )
+                mask = xp.tile(xp.reshape((atype == type_i), [nf, nloc, 1]), (1, 1, 3))
                 updated_coord_type = self.coord_nets[(type_i,)](xx)
                 assert list(updated_coord_type.shape) == [nf, nloc, self.embedding_width]
                 updated_coord_type = xp.reshape(updated_coord_type, (-1, 1, self.embedding_width)) # (nf * nloc, 1, embedding_width)
@@ -504,12 +498,12 @@ class DenoiseFitting(NativeOP, BaseFitting):
                 updated_coord_type = xp.where(
                     mask, updated_coord_type, xp.zeros_like(updated_coord_type)
                 )
-                updated_coord = updated_coord + updated_coord_type  # Shape is [nf, nloc, 3]
+                updated_coord = (
+                    updated_coord + updated_coord_type
+                )  # Shape is [nf, nloc, 3]
             # cell fitting
             for type_i in range(self.ntypes):
-                mask = xp.tile(
-                    xp.reshape((atype == type_i), [nf, nloc, 1]), (1, 1, 6)
-                )
+                mask = xp.tile(xp.reshape((atype == type_i), [nf, nloc, 1]), (1, 1, 6))
                 strain_components_type = self.cell_nets[(type_i,)](xx)
                 strain_components_type = xp.where(
                     mask, strain_components_type, xp.zeros_like(strain_components_type)
@@ -518,12 +512,11 @@ class DenoiseFitting(NativeOP, BaseFitting):
             # token fitting
             for type_i in range(self.ntypes):
                 mask = xp.tile(
-                    xp.reshape((atype == type_i), [nf, nloc, 1]), (1, 1, self.ntypes - 1)
+                    xp.reshape((atype == type_i), [nf, nloc, 1]),
+                    (1, 1, self.ntypes - 1),
                 )
                 logits_type = self.token_nets[(type_i,)](xx)
-                logits_type = xp.where(
-                    mask, logits_type, xp.zeros_like(logits_type)
-                )
+                logits_type = xp.where(mask, logits_type, xp.zeros_like(logits_type))
                 logits = logits + logits_type
         else:
             # coord fitting
@@ -541,8 +534,14 @@ class DenoiseFitting(NativeOP, BaseFitting):
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         exclude_mask = xp.astype(exclude_mask, xp.bool)
         # nf x nloc x od
-        strain_components = xp.where(exclude_mask[:, :, None], strain_components, xp.zeros_like(strain_components))
-        updated_coord = xp.where(exclude_mask[:, :, None], updated_coord, xp.zeros_like(updated_coord))
+        strain_components = xp.where(
+            exclude_mask[:, :, None],
+            strain_components,
+            xp.zeros_like(strain_components),
+        )
+        updated_coord = xp.where(
+            exclude_mask[:, :, None], updated_coord, xp.zeros_like(updated_coord)
+        )
         logits = xp.where(exclude_mask[:, :, None], logits, xp.zeros_like(logits))
 
         return {
