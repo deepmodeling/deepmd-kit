@@ -16,9 +16,15 @@ from deepmd.dpmodel import (
     PRECISION_DICT,
     NativeOP,
 )
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    OutputVariableDef,
+    fitting_check_output,
+)
 from deepmd.dpmodel.common import (
     get_xp_precision,
     to_numpy_array,
+    cast_precision,
 )
 from deepmd.dpmodel.utils import (
     AtomExcludeMask,
@@ -34,6 +40,9 @@ from deepmd.env import (
 from deepmd.utils.finetune import (
     get_index_between_two_maps,
     map_atom_exclude_types,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .base_fitting import (
@@ -89,9 +98,9 @@ class DenoiseFitting(NativeOP, BaseFitting):
         self,
         ntypes: int,
         dim_descrpt: int,
+        embedding_width: int,
         neuron: list[int] = [120, 120, 120],
         bias_atom_e: Optional[np.ndarray] = None,
-        out_dim: int = 1,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -111,13 +120,15 @@ class DenoiseFitting(NativeOP, BaseFitting):
         self.ntypes = ntypes
         self.dim_descrpt = dim_descrpt
         self.neuron = neuron
-        self.out_dim = out_dim
+        self.embedding_width = embedding_width
         self.resnet_dt = resnet_dt
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
         self.dim_case_embd = dim_case_embd
         self.trainable = trainable
         self.type_map = type_map
+        self.seed = seed
+        self.var_name = ["strain_components", "updated_coord", "logits"]
         if self.trainable is None:
             self.trainable = [True for ii in range(len(self.neuron) + 1)]
         if isinstance(self.trainable, bool):
@@ -137,10 +148,10 @@ class DenoiseFitting(NativeOP, BaseFitting):
         # init constants
         if bias_atom_e is None:
             self.bias_atom_e = np.zeros(
-                [self.ntypes, self.out_dim], dtype=GLOBAL_NP_FLOAT_PRECISION
+                [self.ntypes, self.embedding_width], dtype=GLOBAL_NP_FLOAT_PRECISION
             )
         else:
-            assert bias_atom_e.shape == (self.ntypes, self.out_dim)
+            assert bias_atom_e.shape == (self.ntypes, self.embedding_width)
             self.bias_atom_e = bias_atom_e.astype(GLOBAL_NP_FLOAT_PRECISION)
         if self.numb_fparam > 0:
             self.fparam_avg = np.zeros(self.numb_fparam, dtype=self.prec)
@@ -170,7 +181,7 @@ class DenoiseFitting(NativeOP, BaseFitting):
             networks=[
                 FittingNet(
                     in_dim,
-                    self.out_dim,
+                    self.embedding_width,
                     self.neuron,
                     self.activation_function,
                     self.resnet_dt,
@@ -314,7 +325,7 @@ class DenoiseFitting(NativeOP, BaseFitting):
             "@version": 3,
             "type": "denoise",
             "ntypes": self.ntypes,
-            "out_dim": self.out_dim,
+            "embedding_width": self.embedding_width,
             "dim_descrpt": self.dim_descrpt,
             "neuron": self.neuron,
             "resnet_dt": self.resnet_dt,
@@ -344,6 +355,7 @@ class DenoiseFitting(NativeOP, BaseFitting):
         data = data.copy()
         data.pop("@class")
         data.pop("type")
+        check_version_compatibility(data.pop("@version"), 3, 1)
         variables = data.pop("@variables")
         cell_nets = data.pop("cell_nets")
         coord_nets = data.pop("coord_nets")
@@ -356,7 +368,36 @@ class DenoiseFitting(NativeOP, BaseFitting):
         obj.token_nets = NetworkCollection.deserialize(token_nets)
         return obj
 
-    def _call_common(
+    def output_def(self):
+        return FittingOutputDef(
+            [
+                OutputVariableDef(
+                    "strain_components",
+                    [6],
+                    reducible=True,
+                    r_differentiable=False,
+                    c_differentiable=False,
+                    intensive=True,
+                ),
+                OutputVariableDef(
+                    "updated_coord",
+                    [3],
+                    reducible=False,
+                    r_differentiable=False,
+                    c_differentiable=False,
+                ),
+                OutputVariableDef(
+                    "logits",
+                    [self.ntypes - 1],
+                    reducible=False,
+                    r_differentiable=False,
+                    c_differentiable=False,
+                ),
+            ]
+        )
+
+    @cast_precision
+    def call(
         self,
         descriptor: np.ndarray,
         atype: np.ndarray,
@@ -455,11 +496,11 @@ class DenoiseFitting(NativeOP, BaseFitting):
                     xp.reshape((atype == type_i), [nf, nloc, 1]), (1, 1, 3)
                 )
                 updated_coord_type = self.coord_nets[(type_i,)](xx)
-                assert list(updated_coord_type.shape) == [nf, nloc, self.out_dim]
-                updated_coord_type = xp.reshape(updated_coord_type, (-1, 1, self.out_dim)) # (nf * nloc, 1, out_dim)
-                gr = xp.reshape(gr, (nframes * nloc, -1, 3)) # (nf * nloc, out_dim, 3)
+                assert list(updated_coord_type.shape) == [nf, nloc, self.embedding_width]
+                updated_coord_type = xp.reshape(updated_coord_type, (-1, 1, self.embedding_width)) # (nf * nloc, 1, embedding_width)
+                gr = xp.reshape(gr, (nf * nloc, -1, 3)) # (nf * nloc, embedding_width, 3)
                 updated_coord_type = updated_coord_type @ gr # (nf, nloc, 3)
-                updated_coord_type = xp.reshape(updated_coord_type, (nframes, nloc, 3))
+                updated_coord_type = xp.reshape(updated_coord_type, (nf, nloc, 3))
                 updated_coord_type = xp.where(
                     mask, updated_coord_type, xp.zeros_like(updated_coord_type)
                 )
@@ -487,15 +528,15 @@ class DenoiseFitting(NativeOP, BaseFitting):
         else:
             # coord fitting
             updated_coord = self.coord_nets[()](xx)
-            assert list(updated_coord.shape) == [nf, nloc, self.out_dim]
-            updated_coord = xp.reshape(updated_coord, (-1, 1, self.out_dim)) # (nf * nloc, 1, out_dim)
-            gr = xp.reshape(gr, (nframes * nloc, -1, 3)) # (nf * nloc, out_dim, 3)
+            assert list(updated_coord.shape) == [nf, nloc, self.embedding_width]
+            updated_coord = xp.reshape(updated_coord, (-1, 1, self.embedding_width)) # (nf * nloc, 1, embedding_width)
+            gr = xp.reshape(gr, (nf * nloc, -1, 3)) # (nf * nloc, embedding_width, 3)
             updated_coord = updated_coord @ gr # (nf, nloc, 3)
-            updated_coord = xp.reshape(updated_coord, (nframes, nloc, 3))
+            updated_coord = xp.reshape(updated_coord, (nf, nloc, 3))
             # cell fitting
-            strain_components = self.cell_nets[()](xx) # [nframes, nloc, 6]
+            strain_components = self.cell_nets[()](xx) # [nf, nloc, 6]
             # token fitting
-            logits = self.token_nets[()](xx) # [nframes, natoms[0], ntypes-1]
+            logits = self.token_nets[()](xx) # [nf, natoms[0], ntypes-1]
         # nf x nloc
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         exclude_mask = xp.astype(exclude_mask, xp.bool)

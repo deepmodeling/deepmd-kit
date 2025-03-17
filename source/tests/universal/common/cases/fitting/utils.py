@@ -76,33 +76,38 @@ class FittingTestCase(TestCaseSingleFrameWithNlist):
         )
         self.module = self.module.deserialize(serialize_dict)
         ff = self.forward_wrapper(self.module)
-        var_name = self.module.var_name
-        if var_name == "polar":
-            var_name = "polarizability"
+        var_names = self.module.var_name
+        if isinstance(var_names, str):
+            var_names = [var_names]
+        var_names = ["polarizability" if v == "polar" else v for v in var_names]
 
         for em in [[0], [1]]:
             ex_pair = AtomExcludeMask(self.nt, em)
             atom_mask = ex_pair.build_type_exclude_mask(atype_device)
             # exclude neighbors in the output
-            rd = ff(
+            result = ff(
                 self.mock_descriptor,
                 self.atype_ext[:, : self.nloc],
                 gr=self.mock_gr,
-            )[var_name]
-            for _ in range(len(rd.shape) - len(atom_mask.shape)):
-                atom_mask = atom_mask[..., None]
-            rd = rd * atom_mask
+            )
+            for var in var_names:
+                rd = result[var]
+                _atom_mask = atom_mask.copy()
+                for _ in range(len(rd.shape) - len(_atom_mask.shape)):
+                    _atom_mask = _atom_mask[..., None]
+                rd_masked = rd * _atom_mask
+                # normal nlist but use exclude_types params
+                serialize_dict_em = deepcopy(serialize_dict)
+                serialize_dict_em.update({"exclude_types": em})
+                ff_ex = self.forward_wrapper(self.module.deserialize(serialize_dict_em))
+                result_ex = ff_ex(
+                    self.mock_descriptor,
+                    self.atype_ext[:, : self.nloc],
+                    gr=self.mock_gr,
+                )
+                rd_ex = result_ex[var]
 
-            # normal nlist but use exclude_types params
-            serialize_dict_em = deepcopy(serialize_dict)
-            serialize_dict_em.update({"exclude_types": em})
-            ff_ex = self.forward_wrapper(self.module.deserialize(serialize_dict_em))
-            rd_ex = ff_ex(
-                self.mock_descriptor,
-                self.atype_ext[:, : self.nloc],
-                gr=self.mock_gr,
-            )[var_name]
-            np.testing.assert_allclose(rd, rd_ex)
+                np.testing.assert_allclose(rd_masked, rd_ex)
 
     def test_change_type_map(self) -> None:
         if not self.module.mixed_types:
@@ -168,23 +173,26 @@ class FittingTestCase(TestCaseSingleFrameWithNlist):
                 size=serialize_dict["@variables"]["bias_atom_e"].shape
             )
             old_tm_module = old_tm_module.deserialize(serialize_dict)
-            var_name = old_tm_module.var_name
-            if var_name == "polar":
-                var_name = "polarizability"
+            var_names = old_tm_module.var_name
+            if isinstance(var_names, str):
+                var_names = [var_names]
+            var_names = ["polarizability" if v == "polar" else v for v in var_names]
             old_tm_ff = self.forward_wrapper(old_tm_module)
-            rd_old_tm = old_tm_ff(
+
+            result_old = old_tm_ff(
                 self.mock_descriptor,
                 old_tm_index[atype_device],
                 gr=self.mock_gr,
-            )[var_name]
+            )
             old_tm_module.change_type_map(new_tm)
             new_tm_ff = self.forward_wrapper(old_tm_module)
-            rd_new_tm = new_tm_ff(
+            result_new = new_tm_ff(
                 self.mock_descriptor,
                 new_tm_index[atype_device],
                 gr=self.mock_gr,
-            )[var_name]
-            np.testing.assert_allclose(rd_old_tm, rd_new_tm)
+            )
+            for var in var_names:
+                np.testing.assert_allclose(result_old[var], result_new[var],)
 
 
 def remap_exclude_types(exclude_types, ori_tm, new_tm):

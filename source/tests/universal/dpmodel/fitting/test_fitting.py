@@ -10,6 +10,7 @@ from deepmd.dpmodel.fitting import (
     EnergyFittingNet,
     PolarFitting,
     PropertyFittingNet,
+    DenoiseFitting,
 )
 
 from ....consistent.common import (
@@ -234,6 +235,47 @@ FittingParamPropertyList = parameterize_func(
 FittingParamProperty = FittingParamPropertyList[0]
 
 
+def FittingParamDenoise(
+    ntypes,
+    dim_descrpt,
+    mixed_types,
+    type_map,
+    exclude_types=[],
+    precision="float64",
+    embedding_width=None,
+    numb_param=0,  # test numb_fparam, numb_aparam and dim_case_embd together
+):
+    assert embedding_width is not None, "embedding_width for denoise fitting is required."
+    input_dict = {
+        "ntypes": ntypes,
+        "dim_descrpt": dim_descrpt,
+        "mixed_types": mixed_types,
+        "type_map": type_map,
+        "embedding_width": embedding_width,
+        "exclude_types": exclude_types,
+        "seed": GLOBAL_SEED,
+        "precision": precision,
+        "numb_fparam": numb_param,
+        "numb_aparam": numb_param,
+        "dim_case_embd": numb_param,
+    }
+    return input_dict
+
+
+FittingParamDenoiseList = parameterize_func(
+    FittingParamDenoise,
+    OrderedDict(
+        {
+            "exclude_types": ([], [0]),
+            "precision": ("float64",),
+            "numb_param": (0, 2),
+        }
+    ),
+)
+# to get name for the default function
+FittingParamDenoise = FittingParamDenoiseList[0]
+
+
 @parameterized(
     (
         (FittingParamEnergy, EnergyFittingNet),
@@ -241,6 +283,7 @@ FittingParamProperty = FittingParamPropertyList[0]
         (FittingParamDipole, DipoleFitting),
         (FittingParamPolar, PolarFitting),
         (FittingParamProperty, PropertyFittingNet),
+        (FittingParamDenoise, DenoiseFitting)
     ),  # class_param & class
     (True, False),  # mixed_types
 )

@@ -47,14 +47,14 @@ device = env.DEVICE
 
 @Fitting.register("denoise")
 @fitting_check_output
-class DenoiseNet(Fitting):
+class DenoiseFittingNet(Fitting):
     def __init__(
         self,
         ntypes: int,
         dim_descrpt: int,
+        embedding_width: int,
         neuron: list[int] = [128, 128, 128],
         bias_atom_e: Optional[torch.Tensor] = None,
-        out_dim: int = 1,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -86,7 +86,7 @@ class DenoiseNet(Fitting):
             Average energy per atom for each element.
         resnet_dt : bool
             Using time-step in the ResNet construction.
-        out_dim : int
+        embedding_width : int
             The output dimension of the fitting net.
         numb_fparam : int
             Number of frame parameters.
@@ -120,7 +120,7 @@ class DenoiseNet(Fitting):
         self.neuron = neuron
         self.mixed_types = mixed_types
         self.resnet_dt = resnet_dt
-        self.out_dim = out_dim
+        self.embedding_width = embedding_width
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
         self.dim_case_embd = dim_case_embd
@@ -128,6 +128,7 @@ class DenoiseNet(Fitting):
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
         self.seed = seed
+        self.var_name = ["strain_components", "updated_coord", "logits"]
         self.type_map = type_map
         self.use_aparam_as_mask = use_aparam_as_mask
         self.coord_noise = coord_noise
@@ -198,7 +199,7 @@ class DenoiseNet(Fitting):
             networks=[
                 FittingNet(
                     in_dim,
-                    self.out_dim,
+                    self.embedding_width,
                     self.neuron,
                     self.activation_function,
                     self.resnet_dt,
@@ -318,7 +319,7 @@ class DenoiseNet(Fitting):
             "@version": 3,
             "type": "denoise",
             "ntypes": self.ntypes,
-            "out_dim": self.out_dim,
+            "embedding_width": self.embedding_width,
             "dim_descrpt": self.dim_descrpt,
             "neuron": self.neuron,
             "resnet_dt": self.resnet_dt,
@@ -344,7 +345,7 @@ class DenoiseNet(Fitting):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "DenoiseNet":
+    def deserialize(cls, data: dict) -> "DenoiseFittingNet":
         data = data.copy()
         data.pop("@class")
         data.pop("type")
@@ -549,12 +550,12 @@ class DenoiseNet(Fitting):
         if self.mixed_types:
             # coord fitting
             updated_coord = self.filter_layers_coord.networks[0](xx)
-            assert list(updated_coord.size()) == [nf, nloc, self.out_dim]
+            assert list(updated_coord.size()) == [nf, nloc, self.embedding_width]
             updated_coord = updated_coord.view(
-                -1, 1, self.out_dim
+                -1, 1, self.embedding_width
             )  # (nf x nloc) x 1 x od
             assert gr is not None
-            gr = gr.view(-1, self.out_dim, 3)  # (nf x nloc) x od x 3
+            gr = gr.view(-1, self.embedding_width, 3)  # (nf x nloc) x od x 3
             updated_coord = (
                 torch.bmm(updated_coord, gr).squeeze(-2).view(nf, nloc, 3)
             )  # [nf, nloc, 3]
@@ -587,12 +588,12 @@ class DenoiseNet(Fitting):
                 mask = (atype == type_i).unsqueeze(-1)
                 mask = torch.tile(mask, (1, 1, 3))
                 updated_coord_type = ll(xx)
-                assert list(updated_coord_type.size()) == [nf, nloc, self.out_dim]
+                assert list(updated_coord_type.size()) == [nf, nloc, self.embedding_width]
                 updated_coord_type = updated_coord_type.view(
-                    -1, 1, self.out_dim
+                    -1, 1, self.embedding_width
                 )  # (nf x nloc) x 1 x od
                 assert gr is not None
-                gr = gr.view(-1, self.out_dim, 3)  # (nf x nloc) x od x 3
+                gr = gr.view(-1, self.embedding_width, 3)  # (nf x nloc) x od x 3
                 updated_coord_type = (
                     torch.bmm(updated_coord_type, gr).squeeze(-2).view(nf, nloc, 3)
                 )  # [nf, nloc, 3]

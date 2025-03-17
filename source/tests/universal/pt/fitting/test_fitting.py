@@ -7,6 +7,7 @@ from deepmd.pt.model.task import (
     EnergyFittingNet,
     PolarFittingNet,
     PropertyFittingNet,
+    DenoiseFittingNet,
 )
 
 from ....consistent.common import (
@@ -21,6 +22,7 @@ from ...dpmodel.fitting.test_fitting import (
     FittingParamEnergy,
     FittingParamPolar,
     FittingParamProperty,
+    FittingParamDenoise,
 )
 from ..backend import (
     PTTestCase,
@@ -34,6 +36,7 @@ from ..backend import (
         (FittingParamDipole, DipoleFittingNet),
         (FittingParamPolar, PolarFittingNet),
         (FittingParamProperty, PropertyFittingNet),
+        (FittingParamDenoise, DenoiseFittingNet)
     ),  # class_param & class
     (True, False),  # mixed_types
 )
