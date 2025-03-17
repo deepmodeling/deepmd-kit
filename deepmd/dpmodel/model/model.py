@@ -19,6 +19,9 @@ from deepmd.dpmodel.fitting.ener_fitting import (
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
+from deepmd.dpmodel.model.denoise_model import (
+    DenoiseModel,
+)
 from deepmd.dpmodel.model.dipole_model import (
     DipoleModel,
 )
@@ -36,9 +39,6 @@ from deepmd.dpmodel.model.polar_model import (
 )
 from deepmd.dpmodel.model.property_model import (
     PropertyModel,
-)
-from deepmd.dpmodel.model.denoise_model import (
-    DenoiseModel,
 )
 from deepmd.dpmodel.model.spin_model import (
     SpinModel,

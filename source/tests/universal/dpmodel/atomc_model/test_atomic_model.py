@@ -15,12 +15,12 @@ from deepmd.dpmodel.descriptor import (
     DescrptSeT,
 )
 from deepmd.dpmodel.fitting import (
+    DenoiseFitting,
     DipoleFitting,
     DOSFittingNet,
     EnergyFittingNet,
     PolarFitting,
     PropertyFittingNet,
-    DenoiseFitting,
 )
 
 from ....consistent.common import (
@@ -31,13 +31,13 @@ from ....utils import (
     TEST_DEVICE,
 )
 from ...common.cases.atomic_model.atomic_model import (
+    DenoiseAtomicModelTest,
     DipoleAtomicModelTest,
     DosAtomicModelTest,
     EnerAtomicModelTest,
     PolarAtomicModelTest,
     PropertyAtomicModelTest,
     ZBLAtomicModelTest,
-    DenoiseAtomicModelTest,
 )
 from ...dpmodel.descriptor.test_descriptor import (
     DescriptorParamDPA1,
@@ -61,6 +61,8 @@ from ..backend import (
     DPTestCase,
 )
 from ..fitting.test_fitting import (
+    FittingParamDenoise,
+    FittingParamDenoiseList,
     FittingParamDipole,
     FittingParamDipoleList,
     FittingParamDos,
@@ -71,8 +73,6 @@ from ..fitting.test_fitting import (
     FittingParamPolarList,
     FittingParamProperty,
     FittingParamPropertyList,
-    FittingParamDenoise,
-    FittingParamDenoiseList,
 )
 
 
@@ -490,10 +490,7 @@ class TestPropertyAtomicModelDP(unittest.TestCase, PropertyAtomicModelTest, DPTe
             (DescriptorParamDPA2, DescrptDPA2),
         ),  # descrpt_class_param & class
         (
-            *[
-                (param_func, DenoiseFitting)
-                for param_func in FittingParamDenoiseList
-            ],
+            *[(param_func, DenoiseFitting) for param_func in FittingParamDenoiseList],
         ),  # fitting_class_param & class
     ),
 )

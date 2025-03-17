@@ -15,24 +15,24 @@ from deepmd.pt.model.descriptor import (
     DescrptSeT,
 )
 from deepmd.pt.model.task import (
+    DenoiseFittingNet,
     DipoleFittingNet,
     DOSFittingNet,
     EnergyFittingNet,
     PolarFittingNet,
     PropertyFittingNet,
-    DenoiseFittingNet,
 )
 
 from ....consistent.common import (
     parameterized,
 )
 from ...common.cases.atomic_model.atomic_model import (
+    DenoiseAtomicModelTest,
     DipoleAtomicModelTest,
     DosAtomicModelTest,
     EnerAtomicModelTest,
     PolarAtomicModelTest,
     PropertyAtomicModelTest,
-    DenoiseAtomicModelTest,
     ZBLAtomicModelTest,
 )
 from ...dpmodel.descriptor.test_descriptor import (
@@ -51,6 +51,8 @@ from ...dpmodel.descriptor.test_descriptor import (
     DescriptorParamSeTList,
 )
 from ...dpmodel.fitting.test_fitting import (
+    FittingParamDenoise,
+    FittingParamDenoiseList,
     FittingParamDipole,
     FittingParamDipoleList,
     FittingParamDos,
@@ -61,8 +63,6 @@ from ...dpmodel.fitting.test_fitting import (
     FittingParamPolarList,
     FittingParamProperty,
     FittingParamPropertyList,
-    FittingParamDenoise,
-    FittingParamDenoiseList,
 )
 from ...dpmodel.model.test_model import (
     skip_model_tests,

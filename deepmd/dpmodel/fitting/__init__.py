@@ -23,18 +23,15 @@ from .polarizability_fitting import (
 from .property_fitting import (
     PropertyFittingNet,
 )
-from .denoise_fitting import (
-    DenoiseFitting,
-)
 
 __all__ = [
     "DOSFittingNet",
+    "DenoiseFitting",
     "DenoiseFitting",
     "DipoleFitting",
     "EnergyFittingNet",
     "InvarFitting",
     "PolarFitting",
     "PropertyFittingNet",
-    "DenoiseFitting",
     "make_base_fitting",
 ]

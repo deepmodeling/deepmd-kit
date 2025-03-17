@@ -44,6 +44,7 @@ from .base_fitting import (
     BaseFitting,
 )
 
+
 @BaseFitting.register("denoise")
 class DenoiseFitting(NativeOP, BaseFitting):
     r"""Deoise fitting class.
