@@ -24,6 +24,9 @@ from .make_model import (
 from .property_model import (
     PropertyModel,
 )
+from .denoise_model import (
+    DenoiseModel,
+)
 from .spin_model import (
     SpinModel,
 )
@@ -32,6 +35,7 @@ __all__ = [
     "DPModelCommon",
     "EnergyModel",
     "PropertyModel",
+    "DenoiseModel",
     "SpinModel",
     "make_model",
 ]

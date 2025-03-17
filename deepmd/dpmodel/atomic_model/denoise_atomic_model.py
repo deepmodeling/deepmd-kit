@@ -1,32 +1,27 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import numpy as np
 
-import logging
-
-import torch
-
-from deepmd.pt.model.task.denoise import (
-    DenoiseFittingNet,
+from deepmd.dpmodel.fitting.denoise_fitting import (
+    DenoiseFitting,
 )
 
 from .dp_atomic_model import (
     DPAtomicModel,
 )
 
-log = logging.getLogger(__name__)
-
 
 class DPDenoiseAtomicModel(DPAtomicModel):
     def __init__(self, descriptor, fitting, type_map, **kwargs):
-        if not isinstance(fitting, DenoiseFittingNet):
+        if not isinstance(fitting, DenoiseFitting):
             raise TypeError(
-                "fitting must be an instance of DenoiseFittingNet for DPDenoiseAtomicModel"
+                "fitting must be an instance of DenoiseFitting for DPDenoiseAtomicModel"
             )
         super().__init__(descriptor, fitting, type_map, **kwargs)
 
     def apply_out_stat(
         self,
-        ret: dict[str, torch.Tensor],
-        atype: torch.Tensor,
+        ret: dict[str, np.ndarray],
+        atype: np.ndarray,
     ):
         """Apply the stat to each atomic output.
 

@@ -20,6 +20,7 @@ from deepmd.dpmodel.fitting import (
     EnergyFittingNet,
     PolarFitting,
     PropertyFittingNet,
+    DenoiseFitting,
 )
 
 from ....consistent.common import (
@@ -36,6 +37,7 @@ from ...common.cases.atomic_model.atomic_model import (
     PolarAtomicModelTest,
     PropertyAtomicModelTest,
     ZBLAtomicModelTest,
+    DenoiseAtomicModelTest,
 )
 from ...dpmodel.descriptor.test_descriptor import (
     DescriptorParamDPA1,
@@ -69,6 +71,8 @@ from ..fitting.test_fitting import (
     FittingParamPolarList,
     FittingParamProperty,
     FittingParamPropertyList,
+    FittingParamDenoise,
+    FittingParamDenoiseList,
 )
 
 
@@ -435,6 +439,69 @@ class TestPropertyAtomicModelDP(unittest.TestCase, PropertyAtomicModelTest, DPTe
     @classmethod
     def setUpClass(cls) -> None:
         PropertyAtomicModelTest.setUpClass()
+        (DescriptorParam, Descrpt) = cls.param[0]
+        (FittingParam, Fitting) = cls.param[1]
+        cls.input_dict_ds = DescriptorParam(
+            len(cls.expected_type_map),
+            cls.expected_rcut,
+            cls.expected_rcut / 2,
+            cls.expected_sel,
+            cls.expected_type_map,
+        )
+        # set skip tests
+        skiptest, skip_reason = skip_model_tests(cls)
+        if skiptest:
+            raise cls.skipTest(cls, skip_reason)
+        ds = Descrpt(**cls.input_dict_ds)
+        cls.input_dict_ft = FittingParam(
+            ntypes=len(cls.expected_type_map),
+            dim_descrpt=ds.get_dim_out(),
+            mixed_types=ds.mixed_types(),
+            type_map=cls.expected_type_map,
+            embedding_width=ds.get_dim_emb(),
+        )
+        ft = Fitting(
+            **cls.input_dict_ft,
+        )
+        cls.module = DPAtomicModel(
+            ds,
+            ft,
+            type_map=cls.expected_type_map,
+        )
+        cls.output_def = cls.module.atomic_output_def().get_data()
+        cls.expected_has_message_passing = ds.has_message_passing()
+        cls.expected_sel_type = ft.get_sel_type()
+        cls.expected_dim_fparam = ft.get_dim_fparam()
+        cls.expected_dim_aparam = ft.get_dim_aparam()
+
+
+@parameterized(
+    des_parameterized=(
+        (
+            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
+            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
+            (DescriptorParamHybridMixed, DescrptHybrid),
+        ),  # descrpt_class_param & class
+        ((FittingParamDenoise, DenoiseFitting),),  # fitting_class_param & class
+    ),
+    fit_parameterized=(
+        (
+            (DescriptorParamDPA1, DescrptDPA1),
+            (DescriptorParamDPA2, DescrptDPA2),
+        ),  # descrpt_class_param & class
+        (
+            *[
+                (param_func, DenoiseFitting)
+                for param_func in FittingParamDenoiseList
+            ],
+        ),  # fitting_class_param & class
+    ),
+)
+@unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
+class TestDenoiseAtomicModelDP(unittest.TestCase, DenoiseAtomicModelTest, DPTestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        DenoiseAtomicModelTest.setUpClass()
         (DescriptorParam, Descrpt) = cls.param[0]
         (FittingParam, Fitting) = cls.param[1]
         cls.input_dict_ds = DescriptorParam(

@@ -44,7 +44,7 @@ from .base_fitting import (
     BaseFitting,
 )
 
-
+@BaseFitting.register("denoise")
 class DenoiseFitting(NativeOP, BaseFitting):
     r"""Deoise fitting class.
 
@@ -124,6 +124,9 @@ class DenoiseFitting(NativeOP, BaseFitting):
         self.type_map = type_map
         self.seed = seed
         self.var_name = ["strain_components", "updated_coord", "logits"]
+        self.coord_noise = coord_noise
+        self.cell_pert_fraction = cell_pert_fraction
+        self.noise_type = noise_type
         if self.trainable is None:
             self.trainable = [True for ii in range(len(self.neuron) + 1)]
         if isinstance(self.trainable, bool):
@@ -244,6 +247,18 @@ class DenoiseFitting(NativeOP, BaseFitting):
     def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
+
+    def get_coord_noise(self):
+        """Get the noise level of the coordinates."""
+        return self.coord_noise
+
+    def get_cell_pert_fraction(self):
+        """Get the fraction of the cell perturbation."""
+        return self.cell_pert_fraction
+
+    def get_noise_type(self):
+        """Get the noise type."""
+        return self.noise_type
 
     def set_case_embd(self, case_idx: int):
         """
@@ -430,8 +445,8 @@ class DenoiseFitting(NativeOP, BaseFitting):
         # check input dim
         if nd != self.dim_descrpt:
             raise ValueError(
-                "get an input descriptor of dim {nd},"
-                "which is not consistent with {self.dim_descrpt}."
+                f"get an input descriptor of dim {nd},"
+                f"which is not consistent with {self.dim_descrpt}."
             )
         xx = descriptor
 
