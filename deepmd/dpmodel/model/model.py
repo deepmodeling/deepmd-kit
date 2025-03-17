@@ -64,13 +64,13 @@ def _get_standard_model_components(data, ntypes):
     fitting_net["dim_descrpt"] = descriptor.get_dim_out()
     grad_force = "direct" not in fitting_net["type"]
     if fitting_net["type"] in ["denoise"]:
-        assert model_params["type_map"][-1] == "MASKED_TOKEN", (
+        assert data["type_map"][-1] == "MASKED_TOKEN", (
             f"When using denoise fitting, the last element in `type_map` must be 'MASKED_TOKEN', but got '{model_params['type_map'][-1]}'"
         )
         fitting_net["embedding_width"] = descriptor.get_dim_emb()
-        fitting_net["coord_noise"] = model_params.get("coord_noise", 0.2)
-        fitting_net["cell_pert_fraction"] = model_params.get("cell_pert_fraction", 0.0)
-        fitting_net["noise_type"] = model_params.get("noise_type", "gaussian")
+        fitting_net["coord_noise"] = data.get("coord_noise", 0.2)
+        fitting_net["cell_pert_fraction"] = data.get("cell_pert_fraction", 0.0)
+        fitting_net["noise_type"] = data.get("noise_type", "gaussian")
     if not grad_force:
         fitting_net["out_dim"] = descriptor.get_dim_emb()
         if "ener" in fitting_net["type"]:

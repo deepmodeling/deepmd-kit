@@ -18,6 +18,9 @@ from .loss import (
 from .property import (
     PropertyLoss,
 )
+from .denoise import (
+    DenoiseLoss,
+)
 from .tensor import (
     TensorLoss,
 )
@@ -29,6 +32,7 @@ __all__ = [
     "EnergySpinLoss",
     "EnergyStdLoss",
     "PropertyLoss",
+    "DenoiseLoss",
     "TaskLoss",
     "TensorLoss",
 ]
