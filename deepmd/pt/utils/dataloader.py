@@ -136,7 +136,7 @@ class DpLoaderSet(Dataset):
                 ]
                 len_after = len(self.systems)
                 if len_before != len_after:
-                    logging.warning(
+                    log.warning(
                         f"Remove {len_before - len_after} systems with more than {rule} atoms"
                     )
                 ceiling = False
