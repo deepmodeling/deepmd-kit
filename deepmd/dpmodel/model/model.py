@@ -65,7 +65,7 @@ def _get_standard_model_components(data, ntypes):
     grad_force = "direct" not in fitting_net["type"]
     if fitting_net["type"] in ["denoise"]:
         assert data["type_map"][-1] == "MASKED_TOKEN", (
-            f"When using denoise fitting, the last element in `type_map` must be 'MASKED_TOKEN', but got '{model_params['type_map'][-1]}'"
+            f"When using denoise fitting, the last element in `type_map` must be 'MASKED_TOKEN', but got '{data['type_map'][-1]}'"
         )
         fitting_net["embedding_width"] = descriptor.get_dim_emb()
         fitting_net["coord_noise"] = data.get("coord_noise", 0.2)

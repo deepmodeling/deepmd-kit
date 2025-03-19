@@ -260,6 +260,9 @@ def FittingParamDenoise(
         "numb_fparam": numb_param,
         "numb_aparam": numb_param,
         "dim_case_embd": numb_param,
+        "coord_noise": 0.2,
+        "cell_pert_fraction": 0.008,
+        "noise_type": "gaussian",
     }
     return input_dict
 

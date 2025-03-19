@@ -333,6 +333,9 @@ class DenoiseFittingNet(Fitting):
             "coord_nets": self.filter_layers_coord.serialize(),
             "token_nets": self.filter_layers_token.serialize(),
             "exclude_types": self.exclude_types,
+            "coord_noise": self.coord_noise,
+            "cell_pert_fraction": self.cell_pert_fraction,
+            "noise_type": self.noise_type,
             "@variables": {
                 "bias_atom_e": to_numpy_array(self.bias_atom_e),
                 "case_embd": to_numpy_array(self.case_embd),

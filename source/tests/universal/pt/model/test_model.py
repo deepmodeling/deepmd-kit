@@ -25,6 +25,7 @@ from deepmd.pt.model.model import (
     LinearEnergyModel,
     PolarModel,
     PropertyModel,
+    DenoiseModel,
     SpinEnergyModel,
 )
 from deepmd.pt.model.task import (
@@ -33,6 +34,7 @@ from deepmd.pt.model.task import (
     EnergyFittingNet,
     PolarFittingNet,
     PropertyFittingNet,
+    DenoiseFittingNet,
 )
 from deepmd.utils.spin import (
     Spin,
@@ -48,6 +50,7 @@ from ...common.cases.model.model import (
     LinearEnerModelTest,
     PolarModelTest,
     PropertyModelTest,
+    DenoiseModelTest,
     SpinEnerModelTest,
     ZBLModelTest,
 )
@@ -81,6 +84,8 @@ from ...dpmodel.fitting.test_fitting import (
     FittingParamPolarList,
     FittingParamProperty,
     FittingParamPropertyList,
+    FittingParamDenoise,
+    FittingParamDenoiseList,
 )
 from ...dpmodel.model.test_model import (
     skip_model_tests,
@@ -106,6 +111,7 @@ defalut_fit_param = [
     FittingParamDipole,
     FittingParamPolar,
     FittingParamProperty,
+    FittingParamDenoise,
 ]
 
 
@@ -919,3 +925,95 @@ class TestLinearEnergyModelPT(unittest.TestCase, LinearEnerModelTest, PTTestCase
         cls.expected_dim_fparam = ft1.get_dim_fparam()
         cls.expected_dim_aparam = ft1.get_dim_aparam()
         cls.expected_sel_type = ft1.get_sel_type()
+
+
+@parameterized(
+    des_parameterized=(
+        (
+            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
+            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
+            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
+            (DescriptorParamHybrid, DescrptHybrid),
+            (DescriptorParamHybridMixed, DescrptHybrid),
+        ),  # descrpt_class_param & class
+        ((FittingParamDenoise, DenoiseFittingNet),),  # fitting_class_param & class
+    ),
+    fit_parameterized=(
+        (
+            (DescriptorParamDPA1, DescrptDPA1),
+            (DescriptorParamDPA2, DescrptDPA2),
+            (DescriptorParamDPA3, DescrptDPA3),
+        ),  # descrpt_class_param & class
+        (
+            *[
+                (param_func, DenoiseFittingNet)
+                for param_func in FittingParamDenoiseList
+            ],
+        ),  # fitting_class_param & class
+    ),
+)
+class TestDenoiseModelPT(unittest.TestCase, DenoiseModelTest, PTTestCase):
+    @property
+    def modules_to_test(self):
+        skip_test_jit = getattr(self, "skip_test_jit", False)
+        modules = PTTestCase.modules_to_test.fget(self)
+        if not skip_test_jit:
+            # for Model, we can test script module API
+            modules += [
+                self._script_module
+                if hasattr(self, "_script_module")
+                else self.script_module
+            ]
+        return modules
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        DenoiseModelTest.setUpClass()
+        (DescriptorParam, Descrpt) = cls.param[0]
+        (FittingParam, Fitting) = cls.param[1]
+        # set special precision
+        #if Descrpt in [DescrptDPA2]:
+        #    cls.epsilon_dict["test_smooth"] = 1e-8
+        cls.input_dict_ds = DescriptorParam(
+            len(cls.expected_type_map),
+            cls.expected_rcut,
+            cls.expected_rcut / 2,
+            cls.expected_sel,
+            cls.expected_type_map,
+        )
+
+        # set skip tests
+        skiptest, skip_reason = skip_model_tests(cls)
+        if skiptest:
+            raise cls.skipTest(cls, skip_reason)
+
+        ds = Descrpt(**cls.input_dict_ds)
+        cls.input_dict_ft = FittingParam(
+            ntypes=len(cls.expected_type_map),
+            dim_descrpt=ds.get_dim_out(),
+            mixed_types=ds.mixed_types(),
+            type_map=cls.expected_type_map,
+            embedding_width=ds.get_dim_emb(),
+        )
+        ft = Fitting(
+            **cls.input_dict_ft,
+        )
+        cls.module = DenoiseModel(
+            ds,
+            ft,
+            type_map=cls.expected_type_map,
+        )
+        # only test jit API once for different models
+        if (
+            DescriptorParam not in defalut_des_param
+            or FittingParam not in defalut_fit_param
+        ):
+            cls.skip_test_jit = True
+        else:
+            with torch.jit.optimized_execution(False):
+                cls._script_module = torch.jit.script(cls.module)
+        cls.output_def = cls.module.translated_output_def()
+        cls.expected_has_message_passing = ds.has_message_passing()
+        cls.expected_sel_type = ft.get_sel_type()
+        cls.expected_dim_fparam = ft.get_dim_fparam()
+        cls.expected_dim_aparam = ft.get_dim_aparam()

@@ -35,17 +35,16 @@ class DenoiseModel(DPModelCommon, DPDenoiseModel_):
         DPDenoiseModel_.__init__(self, *args, **kwargs)
 
     def translated_output_def(self):
-        pass
-        """
         out_def_data = self.model_output_def().get_data()
         output_def = {
-            f"atom_{self.get_var_name()}": out_def_data[self.get_var_name()],
-            self.get_var_name(): out_def_data[f"{self.get_var_name()}_redu"],
+            "strain_components": out_def_data["strain_components_redu"],
+            "atom_strain_components": out_def_data["strain_components"],
+            "updated_coord": out_def_data["updated_coord"],
+            "logits": out_def_data["logits"]
         }
         if "mask" in out_def_data:
             output_def["mask"] = out_def_data["mask"]
         return output_def
-        """
 
     def forward(
         self,
