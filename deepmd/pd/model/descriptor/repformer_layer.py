@@ -991,7 +991,7 @@ class RepformerLayer(paddle.nn.Layer):
             else:
                 invnnei = paddle.rsqrt(
                     float(nnei)
-                    * paddle.ones((nb, nloc, 1, 1), dtype=g2.dtype).to(device=g2.place)
+                    * paddle.ones([nb, nloc, 1, 1], dtype=g2.dtype).to(device=g2.place)
                 )
         # nb x nloc x 3 x ng2
         h2g2 = paddle.matmul(paddle.transpose(h2, [0, 1, 3, 2]), g2) * invnnei

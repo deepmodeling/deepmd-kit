@@ -350,20 +350,19 @@ class EnergyStdLoss(TaskLoss):
                 drdq_reshape = drdq.reshape(
                     [-1, natoms * 3, self.numb_generalized_coord]
                 )
-
-                # gen_force_label = paddle.einsum(
-                #     "bij,bi->bj", drdq_reshape, force_label_reshape_nframes
-                # )
-                gen_force_label = (
-                    drdq_reshape * force_label_reshape_nframes.unsqueeze(-1)
-                ).sum([-2])
-
-                # gen_force = paddle.einsum(
-                #     "bij,bi->bj", drdq_reshape, force_reshape_nframes
-                # )
-                gen_force = (drdq_reshape * force_reshape_nframes.unsqueeze(-1)).sum(
-                    [-2]
+                gen_force_label = paddle.einsum(
+                    "bij,bi->bj", drdq_reshape, force_label_reshape_nframes
                 )
+                # gen_force_label = (
+                #     drdq_reshape * force_label_reshape_nframes.unsqueeze(-1)
+                # ).sum([-2])
+
+                gen_force = paddle.einsum(
+                    "bij,bi->bj", drdq_reshape, force_reshape_nframes
+                )
+                # gen_force = (drdq_reshape * force_reshape_nframes.unsqueeze(-1)).sum(
+                #     [-2]
+                # )
 
                 diff_gen_force = gen_force_label - gen_force
                 l2_gen_force_loss = paddle.square(diff_gen_force).mean()

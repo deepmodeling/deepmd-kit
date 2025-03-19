@@ -562,7 +562,7 @@ def compute_output_stats_atomic(
     }
     # reshape merged data to [nf, nloc, ndim]
     merged_output = {
-        kk: merged_output[kk].reshape((*merged_natoms[kk].shape, -1))
+        kk: merged_output[kk].reshape([*merged_natoms[kk].shape, -1])
         for kk in merged_output
     }
 

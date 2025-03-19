@@ -57,7 +57,7 @@ class LayerNorm(nn.Layer):
             shape=[num_in],
             dtype=self.prec,
             default_initializer=nn.initializer.Assign(
-                empty_t((num_in,), self.prec),
+                empty_t([num_in], self.prec),
             ),
         )
         self.bias = self.create_parameter(

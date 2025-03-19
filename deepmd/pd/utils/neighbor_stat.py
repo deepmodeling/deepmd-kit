@@ -101,7 +101,7 @@ class NeighborStatOP(paddle.nn.Layer):
         # count the number of neighbors
         if not self.mixed_types:
             mask = rr2 < self.rcut**2
-            nnei = paddle.zeros((nframes, nloc, self.ntypes), dtype=paddle.int64)
+            nnei = paddle.zeros([nframes, nloc, self.ntypes], dtype=paddle.int64)
             for ii in range(self.ntypes):
                 nnei[:, :, ii] = paddle.sum(
                     mask & ((extend_atype == ii)[:, None, :]), axis=-1

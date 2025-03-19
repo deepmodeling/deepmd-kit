@@ -309,7 +309,7 @@ class RepFlowLayer(paddle.nn.Layer):
         edge_ebd = _apply_nlist_mask(edge_ebd, nlist_mask)
         edge_ebd = _apply_switch(edge_ebd, sw)
         invnnei = paddle.rsqrt(
-            *paddle.full((nb, nloc, 1, 1), nnei, dtype=edge_ebd.dtype).to(
+            paddle.full([nb, nloc, 1, 1], nnei, dtype=edge_ebd.dtype).to(
                 device=edge_ebd.place
             )
         )
@@ -435,12 +435,12 @@ class RepFlowLayer(paddle.nn.Layer):
 
         result_update = (
             sub_angle_update
-            # + sub_node_update[:, :, None, None, :].unsqueeze([-2, -2])
-            # + sub_edge_update_ij[:, :, None, :, :].unsqueeze([2])
-            # + sub_edge_update_ik[:, :, :, None, :].unsqueeze([3])
-            + sub_node_update.unsqueeze([-2, -2])
-            + sub_edge_update_ij.unsqueeze([2])
-            + sub_edge_update_ik.unsqueeze([3])
+            + sub_node_update[:, :, None, None, :]
+            + sub_edge_update_ij[:, :, None, :, :]
+            + sub_edge_update_ik[:, :, :, None, :]
+            # + sub_node_update.unsqueeze([-2, -2])
+            # + sub_edge_update_ij.unsqueeze([2])
+            # + sub_edge_update_ik.unsqueeze([3])
         ) + bias
         return result_update
 
@@ -484,10 +484,7 @@ class RepFlowLayer(paddle.nn.Layer):
         )
 
         result_update = (
-            sub_edge_update
-            + sub_node_ext_update
-            # + sub_node_update[:, :, None, :]
-            + sub_node_update.unsqueeze(-2)
+            sub_edge_update + sub_node_ext_update + sub_node_update[:, :, None, :]
         ) + bias
         return result_update
 
@@ -712,7 +709,9 @@ class RepFlowLayer(paddle.nn.Layer):
 
             # nb x nloc x a_nnei x a_nnei x e_dim
             weighted_edge_angle_update = (
-                edge_angle_update * a_sw.unsqueeze([-1, -1]) * a_sw.unsqueeze([2, -1])
+                edge_angle_update  # * a_sw.unsqueeze([-1, -1]) * a_sw.unsqueeze([2, -1])
+                * a_sw[:, :, :, None, None]
+                * a_sw[:, :, None, :, None]
             )
             # nb x nloc x a_nnei x e_dim
             reduced_edge_angle_update = paddle.sum(
