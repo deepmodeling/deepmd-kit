@@ -18,6 +18,7 @@ from deepmd.pt.model.descriptor import (
     DescrptSeTTebd,
 )
 from deepmd.pt.model.model import (
+    DenoiseModel,
     DipoleModel,
     DOSModel,
     DPZBLModel,
@@ -25,16 +26,15 @@ from deepmd.pt.model.model import (
     LinearEnergyModel,
     PolarModel,
     PropertyModel,
-    DenoiseModel,
     SpinEnergyModel,
 )
 from deepmd.pt.model.task import (
+    DenoiseFittingNet,
     DipoleFittingNet,
     DOSFittingNet,
     EnergyFittingNet,
     PolarFittingNet,
     PropertyFittingNet,
-    DenoiseFittingNet,
 )
 from deepmd.utils.spin import (
     Spin,
@@ -44,13 +44,13 @@ from ....consistent.common import (
     parameterized,
 )
 from ...common.cases.model.model import (
+    DenoiseModelTest,
     DipoleModelTest,
     DosModelTest,
     EnerModelTest,
     LinearEnerModelTest,
     PolarModelTest,
     PropertyModelTest,
-    DenoiseModelTest,
     SpinEnerModelTest,
     ZBLModelTest,
 )
@@ -74,6 +74,8 @@ from ...dpmodel.descriptor.test_descriptor import (
     DescriptorParamSeTTebdList,
 )
 from ...dpmodel.fitting.test_fitting import (
+    FittingParamDenoise,
+    FittingParamDenoiseList,
     FittingParamDipole,
     FittingParamDipoleList,
     FittingParamDos,
@@ -84,8 +86,6 @@ from ...dpmodel.fitting.test_fitting import (
     FittingParamPolarList,
     FittingParamProperty,
     FittingParamPropertyList,
-    FittingParamDenoise,
-    FittingParamDenoiseList,
 )
 from ...dpmodel.model.test_model import (
     skip_model_tests,
@@ -972,7 +972,7 @@ class TestDenoiseModelPT(unittest.TestCase, DenoiseModelTest, PTTestCase):
         (DescriptorParam, Descrpt) = cls.param[0]
         (FittingParam, Fitting) = cls.param[1]
         # set special precision
-        #if Descrpt in [DescrptDPA2]:
+        # if Descrpt in [DescrptDPA2]:
         #    cls.epsilon_dict["test_smooth"] = 1e-8
         cls.input_dict_ds = DescriptorParam(
             len(cls.expected_type_map),
