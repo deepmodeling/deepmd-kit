@@ -36,6 +36,9 @@ from deepmd.pt.model.model import (
     get_model,
     get_zbl_model,
 )
+from deepmd.pt.modifier import (
+    BaseModifier,
+)
 from deepmd.pt.optimizer import (
     KFOptimizerWrapper,
     LKFOptimizer,
@@ -134,6 +137,16 @@ class Trainer:
         )
         self.num_model = len(self.model_keys)
 
+        # modifier for the training data
+        modifier_params = model_params.get("modifier", None)
+        if modifier_params is not None:
+            assert self.multi_task is False, (
+                "Modifier is not supported for multi-task training!"
+            )
+            self.modifier = get_data_modifier(modifier_params)
+        else:
+            self.modifier = None
+
         # Iteration config
         self.num_steps = training_params["numb_steps"]
         self.disp_file = training_params.get("disp_file", "lcurve.out")
@@ -215,11 +228,25 @@ class Trainer:
             _stat_file_path,
             _data_requirement,
             finetune_has_new_type=False,
+            modifier=None,
         ):
             _data_requirement += get_additional_data_requirement(_model)
             _training_data.add_data_requirement(_data_requirement)
             if _validation_data is not None:
                 _validation_data.add_data_requirement(_data_requirement)
+
+            # modify data
+            if modifier is not None:
+                log.info(f"Using {modifier.modifier_type} as data modifier")
+                for _data in [_training_data, _validation_data]:
+                    if _data is not None:
+                        all_sampled = make_stat_input(
+                            _data.systems,
+                            _data.dataloaders,
+                            -1,
+                        )
+                        for sampled in all_sampled:
+                            modifier.modify_data(sampled)
 
             @functools.lru_cache
             def get_sample():
@@ -315,6 +342,7 @@ class Trainer:
                 finetune_has_new_type=self.finetune_links["Default"].get_has_new_type()
                 if self.finetune_links is not None
                 else False,
+                modifier=self.modifier,
             )
             (
                 self.training_dataloader,
@@ -353,6 +381,7 @@ class Trainer:
                     ].get_has_new_type()
                     if self.finetune_links is not None
                     else False,
+                    modifier=self.modifier,
                 )
                 (
                     self.training_dataloader[model_key],
@@ -1043,10 +1072,13 @@ class Trainer:
         optim_state_dict = deepcopy(self.optimizer.state_dict())
         for item in optim_state_dict["param_groups"]:
             item["lr"] = float(item["lr"])
-        torch.save(
-            {"model": module.state_dict(), "optimizer": optim_state_dict},
-            save_path,
-        )
+        save_dict = {
+            "model": module.state_dict(),
+            "optimizer": optim_state_dict,
+        }
+        if self.modifier is not None:
+            save_dict["data_modifier"] = self.modifier.state_dict()
+        torch.save(save_dict, save_path)
         checkpoint_dir = save_path.parent
         checkpoint_files = [
             f
@@ -1352,3 +1384,16 @@ def model_change_out_bias(
         f"to {to_numpy_array(new_bias).reshape(-1)!s}."
     )
     return _model
+
+
+def get_data_modifier(_modifier_params: dict[str, Any]):
+    modifier_params = deepcopy(_modifier_params)
+    try:
+        modifier_type = modifier_params.pop("type")
+    except KeyError:
+        raise ValueError("Data modifier type not specified!") from None
+    return (
+        BaseModifier.get_class_by_type(modifier_type)
+        .get_modifier(modifier_params)
+        .to(DEVICE)
+    )

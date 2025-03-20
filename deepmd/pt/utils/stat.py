@@ -47,12 +47,16 @@ def make_stat_input(datasets, dataloaders, nbatches):
     - a list of dicts, each of which contains data from a system
     """
     lst = []
-    log.info(f"Packing data for statistics from {len(datasets)} systems")
+    if nbatches > 0:
+        log.info(f"Packing data for statistics from {len(datasets)} systems")
     for i in range(len(datasets)):
         sys_stat = {}
         with torch.device("cpu"):
             iterator = iter(dataloaders[i])
-            numb_batches = min(nbatches, len(dataloaders[i]))
+            if nbatches == -1:
+                numb_batches = len(dataloaders[i])
+            else:
+                numb_batches = min(nbatches, len(dataloaders[i]))
             for _ in range(numb_batches):
                 try:
                     stat_data = next(iterator)
