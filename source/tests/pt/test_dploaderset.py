@@ -76,6 +76,10 @@ class TestSampler(unittest.TestCase):
             self.assertRaises(AssertionError, self.get_batch_sizes, "filter:191")
             self.assertIn("Remove 1 systems with more than 191 atoms", cm.output[-1])
 
+        # test: unknown batch_size: str
+        with self.assertRaises(ValueError, msg="Unsupported batch size rule: unknown"):
+            self.get_batch_sizes("unknown")
+
 
 if __name__ == "__main__":
     unittest.main()
