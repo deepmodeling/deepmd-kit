@@ -127,8 +127,8 @@ class DpLoaderSet(Dataset):
             elif batch_size.startswith("max:"):
                 rule = int(batch_size.split(":")[1])
                 ceiling = False
-            elif batch_size.startswith("cap:"):
-                # remove system with more than `cap` atoms
+            elif batch_size.startswith("filter:"):
+                # remove system with more than `filter` atoms
                 rule = int(batch_size.split(":")[1])
                 len_before = len(self.systems)
                 self.systems = [
