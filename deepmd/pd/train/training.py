@@ -1082,7 +1082,7 @@ class Trainer:
             "fparam",
             "aparam",
         ]
-        input_dict = {item_key: None for item_key in input_keys}
+        input_dict = dict.fromkeys(input_keys)
         label_dict = {}
         for item_key in batch_data:
             if item_key in input_keys:

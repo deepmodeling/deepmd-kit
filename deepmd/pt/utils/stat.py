@@ -469,7 +469,7 @@ def compute_output_stats_global(
             for kk in keys
         }
     else:
-        assigned_atom_ener = {kk: None for kk in keys}
+        assigned_atom_ener = dict.fromkeys(keys)
 
     if model_pred is None:
         stats_input = merged_output
