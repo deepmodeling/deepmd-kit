@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import unittest
-from pathlib import Path
-
+from pathlib import (
+    Path,
+)
 
 from deepmd.common import (
     expand_sys_str,
@@ -10,14 +12,15 @@ from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
 )
 
+
 class TestSampler(unittest.TestCase):
     def setUp(self) -> None:
-        with open(
-            str(Path(__file__).parent / "water/se_e2_a.json")
-        ) as fin:
+        with open(str(Path(__file__).parent / "water/se_e2_a.json")) as fin:
             content = fin.read()
         config = json.loads(content)
-        data_file = [str(Path(__file__).parent / "model/water/data/data_0"),]
+        data_file = [
+            str(Path(__file__).parent / "model/water/data/data_0"),
+        ]
         config["training"]["training_data"]["systems"] = data_file
         config["training"]["validation_data"]["systems"] = data_file
         model_config = config["model"]
@@ -29,7 +32,8 @@ class TestSampler(unittest.TestCase):
         self.type_map = model_config["type_map"]
         if isinstance(self.systems, str):
             self.systems = expand_sys_str(self.systems)
-    def get_batch_sizes(self,batch_size) -> list[int]:
+
+    def get_batch_sizes(self, batch_size) -> list[int]:
         dataset = DpLoaderSet(
             self.systems,
             batch_size,
@@ -38,6 +42,7 @@ class TestSampler(unittest.TestCase):
             shuffle=False,
         )
         return dataset.batch_sizes[0]
+
     def test_batchsize(self) -> None:
         # 192 atoms, 1 system
         assert len(self.systems) == 1
@@ -70,6 +75,7 @@ class TestSampler(unittest.TestCase):
         with self.assertLogs() as cm:
             self.assertRaises(AssertionError, self.get_batch_sizes, "filter:191")
             self.assertIn("Remove 1 systems with more than 191 atoms", cm.output[-1])
+
 
 if __name__ == "__main__":
     unittest.main()
