@@ -33,7 +33,7 @@ class TestSampler(unittest.TestCase):
         if isinstance(self.systems, str):
             self.systems = expand_sys_str(self.systems)
 
-    def get_batch_sizes(self, batch_size) -> list[int]:
+    def get_batch_sizes(self, batch_size) -> int:
         dataset = DpLoaderSet(
             self.systems,
             batch_size,
