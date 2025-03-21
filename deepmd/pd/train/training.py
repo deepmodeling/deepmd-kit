@@ -639,10 +639,9 @@ class Trainer:
                 static,
             )
 
-            build_strategy = static.BuildStrategy()
-            build_strategy.build_cinn_pass: bool = CINN
+            backend = "CINN" if CINN else None
             self.wrapper.forward = jit.to_static(
-                full_graph=True, build_strategy=build_strategy
+                full_graph=True, backend=backend
             )(self.wrapper.forward)
             log.info(
                 "Enable CINN during training, there may be some additional "
