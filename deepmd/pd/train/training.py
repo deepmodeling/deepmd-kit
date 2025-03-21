@@ -636,14 +636,12 @@ class Trainer:
         if CINN:
             from paddle import (
                 jit,
-                static,
             )
 
-            build_strategy = static.BuildStrategy()
-            build_strategy.build_cinn_pass: bool = CINN
-            self.wrapper.forward = jit.to_static(
-                full_graph=True, build_strategy=build_strategy
-            )(self.wrapper.forward)
+            backend = "CINN" if CINN else None
+            self.wrapper.forward = jit.to_static(full_graph=True, backend=backend)(
+                self.wrapper.forward
+            )
             log.info(
                 "Enable CINN during training, there may be some additional "
                 "compilation time in the first traning step."
