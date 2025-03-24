@@ -139,7 +139,10 @@ class DpLoaderSet(Dataset):
                     log.warning(
                         f"Remove {len_before - len_after} systems with more than {rule} atoms"
                     )
-                assert len(self.systems) > 0, "No system left after removing"
+                if len(self.systems) == 0:
+                    raise ValueError(
+                        f"No system left after removing systems with more than {rule} atoms"
+                    )
                 ceiling = False
             else:
                 raise ValueError(f"Unsupported batch size rule: {batch_size}")
