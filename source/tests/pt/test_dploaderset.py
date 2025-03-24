@@ -73,7 +73,7 @@ class TestSampler(unittest.TestCase):
         self.assertEqual(self.get_batch_sizes("filter:193"), 1)
         self.assertEqual(self.get_batch_sizes("filter:192"), 1)
         with self.assertLogs(logger="deepmd") as cm:
-            self.assertRaises(AssertionError, self.get_batch_sizes, "filter:191")
+            self.assertRaises(ValueError, self.get_batch_sizes, "filter:191")
         self.assertIn("Remove 1 systems with more than 191 atoms", cm.output[-1])
 
         # test: unknown batch_size: str
