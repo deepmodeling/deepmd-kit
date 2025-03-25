@@ -28,6 +28,9 @@ from deepmd.dpmodel.utils.network import (
     NativeLayer,
     get_activation_fn,
 )
+from deepmd.dpmodel.utils.safe_gradient import (
+    safe_for_vector_norm,
+)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
@@ -414,7 +417,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         if not self.direct_dist:
             g2, h2 = xp.split(dmatrix, [1], axis=-1)
         else:
-            g2, h2 = xp.linalg.vector_norm(diff, axis=-1, keepdims=True), diff
+            g2, h2 = safe_for_vector_norm(diff, axis=-1, keepdims=True), diff
             g2 = g2 / self.rcut
             h2 = h2 / self.rcut
         # nf x nloc x nnei x ng2
