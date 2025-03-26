@@ -971,9 +971,6 @@ class TestDenoiseModelPT(unittest.TestCase, DenoiseModelTest, PTTestCase):
         DenoiseModelTest.setUpClass()
         (DescriptorParam, Descrpt) = cls.param[0]
         (FittingParam, Fitting) = cls.param[1]
-        # set special precision
-        #if Descrpt in [DescrptDPA2]:
-        #    cls.epsilon_dict["test_smooth"] = 1e-8
         cls.input_dict_ds = DescriptorParam(
             len(cls.expected_type_map),
             cls.expected_rcut,
