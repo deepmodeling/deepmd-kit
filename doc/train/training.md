@@ -29,7 +29,12 @@ $ dp --pt train input.json
 :::{tab-item} Paddle {{ paddle_icon }}
 
 ```bash
+# training model in eager mode
 $ dp --pd train input.json
+
+# [experimental] training model with CINN compiler for better performance,
+# see: https://www.paddlepaddle.org.cn/documentation/docs/zh/develop/guides/paddle_v3_features/cinn_cn.html
+$ CINN=1 dp --pd train input.json
 ```
 
 :::

@@ -594,7 +594,9 @@ class Trainer:
         # author: iProzd
         if self.opt_type == "Adam":
             self.optimizer = torch.optim.Adam(
-                self.wrapper.parameters(), lr=self.lr_exp.start_lr, fused=True
+                self.wrapper.parameters(),
+                lr=self.lr_exp.start_lr,
+                fused=False if DEVICE.type == "cpu" else True,
             )
             if optimizer_state_dict is not None and self.restart_training:
                 self.optimizer.load_state_dict(optimizer_state_dict)

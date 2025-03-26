@@ -40,7 +40,7 @@ class DenoiseModel(DPModelCommon, DPDenoiseModel_):
             "strain_components": out_def_data["strain_components_redu"],
             "atom_strain_components": out_def_data["strain_components"],
             "updated_coord": out_def_data["updated_coord"],
-            "logits": out_def_data["logits"]
+            "logits": out_def_data["logits"],
         }
         if "mask" in out_def_data:
             output_def["mask"] = out_def_data["mask"]
