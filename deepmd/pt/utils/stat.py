@@ -281,6 +281,10 @@ def compute_output_stats(
     intensive : bool, optional
         Whether the fitting target is intensive.
     """
+    # in denoise mode, label is created in loss, so we don't need to compute the bias
+    if ("strain_components" in keys) or ("updated_coord" in keys) or ("logits" in keys):
+        keys = []
+
     # try to restore the bias from stat file
     bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
 

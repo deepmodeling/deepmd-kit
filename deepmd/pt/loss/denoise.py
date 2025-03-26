@@ -92,7 +92,8 @@ class DenoiseLoss(TaskLoss):
             Other keyword arguments.
         """
         super().__init__()
-        self.mask_type_idx = ntypes - 1
+        self.ntypes = ntypes
+        self.mask_type_idx = self.ntypes - 1
         self.mask_token = mask_token
         self.mask_coord = mask_coord
         self.mask_cell = mask_cell
@@ -300,11 +301,27 @@ class DenoiseLoss(TaskLoss):
     @property
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
-        return []
-
-    def serialize(self) -> dict:
-        pass
-
-    @classmethod
-    def deserialize(cls, data: dict) -> "TaskLoss":
-        pass
+        label_requirement = [
+            DataRequirementItem(
+                "strain_components",
+                ndof=6,
+                atomic=False,
+                must=False,
+                high_prec=False,
+            ),
+            DataRequirementItem(
+                "updated_coord",
+                ndof=3,
+                atomic=True,
+                must=False,
+                high_prec=False,
+            ),
+            DataRequirementItem(
+                "logits",
+                ndof=self.ntypes - 1,
+                atomic=True,
+                must=False,
+                high_prec=False,
+            ),
+        ]
+        return label_requirement
