@@ -27,6 +27,9 @@ from deepmd.dpmodel.utils.network import (
     NativeLayer,
     get_activation_fn,
 )
+from deepmd.dpmodel.utils.safe_gradient import (
+    safe_for_vector_norm,
+)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
@@ -415,7 +418,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
         # nf x nloc x a_nnei x 3
         normalized_diff_i = a_diff / (
-            xp.linalg.vector_norm(a_diff, axis=-1, keepdims=True) + 1e-6
+            safe_for_vector_norm(a_diff, axis=-1, keepdims=True) + 1e-6
         )
         # nf x nloc x 3 x a_nnei
         normalized_diff_j = xp.matrix_transpose(normalized_diff_i)
