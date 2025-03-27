@@ -121,6 +121,9 @@ class RepFlowArgs:
     optim_update : bool, optional
         Whether to enable the optimized update method.
         Uses a more efficient process when enabled. Defaults to True
+    smooth_edge_update : bool, optional
+        Whether to make edge update smooth.
+        If True, the edge update from angle message will not use self as padding.
     """
 
     def __init__(
@@ -147,6 +150,7 @@ class RepFlowArgs:
         fix_stat_std: float = 0.3,
         skip_stat: bool = False,
         optim_update: bool = True,
+        smooth_edge_update: bool = False,
     ) -> None:
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -172,6 +176,7 @@ class RepFlowArgs:
         self.a_compress_e_rate = a_compress_e_rate
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
+        self.smooth_edge_update = smooth_edge_update
 
     def __getitem__(self, key):
         if hasattr(self, key):
@@ -297,6 +302,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             update_residual_init=self.repflow_args.update_residual_init,
             fix_stat_std=self.repflow_args.fix_stat_std,
             optim_update=self.repflow_args.optim_update,
+            smooth_edge_update=self.repflow_args.smooth_edge_update,
             exclude_types=exclude_types,
             env_protection=env_protection,
             precision=precision,

@@ -130,6 +130,9 @@ class DescrptBlockRepflows(DescriptorBlock):
     fix_stat_std : float, optional
         If non-zero (default is 0.3), use this constant as the normalization standard deviation
         instead of computing it from data statistics.
+    smooth_edge_update : bool, optional
+        Whether to make edge update smooth.
+        If True, the edge update from angle message will not use self as padding.
     optim_update : bool, optional
         Whether to enable the optimized update method.
         Uses a more efficient process when enabled. Defaults to True
@@ -179,6 +182,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         env_protection: float = 0.0,
         precision: str = "float64",
         fix_stat_std: float = 0.3,
+        smooth_edge_update: bool = False,
         optim_update: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
@@ -210,6 +214,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.set_stddev_constant = fix_stat_std != 0.0
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
+        self.smooth_edge_update = smooth_edge_update
 
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -262,6 +267,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                     update_residual_init=self.update_residual_init,
                     precision=precision,
                     optim_update=self.optim_update,
+                    smooth_edge_update=self.smooth_edge_update,
                     seed=child_seed(child_seed(seed, 1), ii),
                 )
             )

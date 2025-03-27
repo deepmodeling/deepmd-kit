@@ -1493,6 +1493,10 @@ def dpa3_repflow_args():
         "Whether to enable the optimized update method. "
         "Uses a more efficient process when enabled. Defaults to True"
     )
+    doc_smooth_edge_update = (
+        "Whether to make edge update smooth."
+        "If True, the edge update from angle message will not use self as padding."
+    )
 
     return [
         # repflow args
@@ -1585,6 +1589,13 @@ def dpa3_repflow_args():
             optional=True,
             default=True,
             doc=doc_optim_update,
+        ),
+        Argument(
+            "smooth_edge_update",
+            bool,
+            optional=True,
+            default=False,  # for compatability, will be True in the future
+            doc=doc_smooth_edge_update,
         ),
     ]
 
