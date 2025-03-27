@@ -17,6 +17,9 @@ from deepmd.tf.infer.deep_dipole import DeepDipoleOld as DeepDipole
 from deepmd.tf.infer.ewald_recp import (
     EwaldRecp,
 )
+from deepmd.tf.modifier.base_modifier import (
+    BaseModifier,
+)
 from deepmd.tf.utils.data import (
     DeepmdData,
 )
@@ -25,7 +28,8 @@ from deepmd.tf.utils.sess import (
 )
 
 
-class DipoleChargeModifier(DeepDipole):
+@BaseModifier.register("dipole_charge")
+class DipoleChargeModifier(DeepDipole, BaseModifier):
     """Parameters
     ----------
     model_name
@@ -39,6 +43,9 @@ class DipoleChargeModifier(DeepDipole):
     ewald_beta
             Splitting parameter of the Ewald sum. Unit: A^{-1}
     """
+
+    def __new__(cls, *args, model_name=None, **kwargs):
+        return super().__new__(cls, model_name)
 
     def __init__(
         self,
@@ -81,6 +88,44 @@ class DipoleChargeModifier(DeepDipole):
         assert self.ndescrpt == self.ndescrpt_a + self.ndescrpt_r
         self.force = None
         self.ntypes = len(self.sel_a)
+
+    def serialize(self) -> dict:
+        """Serialize the modifier.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        data = {
+            "@class": "Modifier",
+            "type": self.modifier_prefix,
+            "@version": 3,
+            "model_name": self.model_name,
+            "model_charge_map": self.model_charge_map,
+            "sys_charge_map": self.sys_charge_map,
+            "ewald_h": self.ewald_h,
+            "ewald_beta": self.ewald_beta,
+        }
+        return data
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "BaseModifier":
+        """Deserialize the modifier.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        BaseModel
+            The deserialized modifier
+        """
+        data = data.copy()
+        modifier = cls(**data)
+        return modifier
 
     def build_fv_graph(self) -> tf.Tensor:
         """Build the computational graph for the force and virial inference."""
