@@ -36,7 +36,7 @@ with results tabulated below to guide scenario-specific hyperparameter selection
 | DPA2-L6 (medium) | Default         | 6       | -       | -      | -     | -       | -      | 1e-3     | 3.51e-08 | 0.02\|1, 1000\|1, 0.02\|1 | 12.12             | 109.3          | 83.1              | 12.2                   |
 
 The loss prefactors (0.2|20, 100|60, 0.02|1) correspond to (`start_pref_e`|`limit_pref_e`, `start_pref_f`|`limit_pref_f`, `start_pref_v`|`limit_pref_v`) respectively.
-Virial RMSE were averaged exclusively for systems containing virial labels (`Alloy`, `AlMgCu`, `W`, and `Boron`).
+Virial RMSEs were averaged exclusively for systems containing virial labels (`Alloy`, `AlMgCu`, `W`, and `Boron`).
 
 Note that we set `float32` in all DPA-3 models, while `float64` in other models by default.
 
