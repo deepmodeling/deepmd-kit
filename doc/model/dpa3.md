@@ -53,7 +53,7 @@ If one runs LAMMPS with MPI, the customized OP library for the C++ interface sho
 If one runs LAMMPS with MPI and CUDA devices, it is recommended to compile the customized OP library for the C++ interface with a [CUDA-Aware MPI](https://developer.nvidia.com/mpi-solutions-gpus) library and CUDA,
 otherwise the communication between GPU cards falls back to the slower CPU implementation.
 
-## Limiations of the JAX backend with LAMMPS {{ jax_icon }}
+## Limitations of the JAX backend with LAMMPS {{ jax_icon }}
 
 When using the JAX backend, 2 or more MPI ranks are not supported. One must set `map` to `yes` using the [`atom_modify`](https://docs.lammps.org/atom_modify.html) command.
 
