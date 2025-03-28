@@ -34,6 +34,9 @@ from deepmd.infer.deep_pot import (
 from deepmd.infer.deep_property import (
     DeepProperty,
 )
+from deepmd.infer.deep_denoise import (
+    DeepDenoise,
+)
 from deepmd.infer.deep_wfc import (
     DeepWFC,
 )
@@ -174,6 +177,8 @@ def test(
             err = test_polar(
                 dp, data, numb_test, detail_file, atomic=False
             )  # YWolfeee: downward compatibility
+        elif isinstance(dp, DeepDenoise):
+            raise NotImplementedError("DeepDenoise is not supported in test mode.")
         log.info("# ----------------------------------------------- ")
         err_coll.append(err)
 
