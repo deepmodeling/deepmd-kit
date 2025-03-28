@@ -1494,7 +1494,7 @@ def dpa3_repflow_args():
         "Uses a more efficient process when enabled. Defaults to True"
     )
     doc_smooth_edge_update = (
-        "Whether to make edge update smooth."
+        "Whether to make edge update smooth. "
         "If True, the edge update from angle message will not use self as padding."
     )
 
