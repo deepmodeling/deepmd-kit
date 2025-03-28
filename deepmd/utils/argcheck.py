@@ -1594,7 +1594,7 @@ def dpa3_repflow_args():
             "smooth_edge_update",
             bool,
             optional=True,
-            default=False,  # for compatability, will be True in the future
+            default=False,  # For compatability. This will be True in the future
             doc=doc_smooth_edge_update,
         ),
     ]
