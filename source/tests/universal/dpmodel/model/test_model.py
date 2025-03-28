@@ -227,6 +227,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, DPTestCase):
         if Descrpt in [DescrptSeA, DescrptSeR, DescrptSeT]:
             spin_sel = cls.expected_sel + cls.expected_sel
         else:
+            cls.expected_sel = [i * 2 for i in cls.expected_sel]
             spin_sel = cls.expected_sel
         pair_exclude_types = spin.get_pair_exclude_types()
         atom_exclude_types = spin.get_atom_exclude_types()
