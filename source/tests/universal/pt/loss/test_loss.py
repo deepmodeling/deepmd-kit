@@ -2,11 +2,11 @@
 import unittest
 
 from deepmd.pt.loss import (
+    DenoiseLoss,
     DOSLoss,
     EnergySpinLoss,
     EnergyStdLoss,
     PropertyLoss,
-    DenoiseLoss,
     TensorLoss,
 )
 
@@ -17,11 +17,11 @@ from ...common.cases.loss.loss import (
     LossTest,
 )
 from ...dpmodel.loss.test_loss import (
+    LossParamDenoiseList,
     LossParamDosList,
     LossParamEnergyList,
     LossParamEnergySpinList,
     LossParamPropertyList,
-    LossParamDenoiseList,
     LossParamTensorList,
 )
 from ..backend import (
