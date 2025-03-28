@@ -1117,9 +1117,9 @@ class RepFlowLayer(NativeOP):
 
             # nb x nloc x a_nnei x a_nnei x e_dim
             weighted_edge_angle_update = (
-                edge_angle_update
-                * a_sw[:, :, :, xp.newaxis, xp.newaxis]
+                a_sw[:, :, :, xp.newaxis, xp.newaxis]
                 * a_sw[:, :, xp.newaxis, :, xp.newaxis]
+                * edge_angle_update
             )
             # nb x nloc x a_nnei x e_dim
             reduced_edge_angle_update = xp.sum(weighted_edge_angle_update, axis=-2) / (
