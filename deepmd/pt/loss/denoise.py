@@ -135,7 +135,8 @@ class DenoiseLoss(TaskLoss):
         rng = np.random.default_rng()
         nloc = input_dict["atype"].shape[1]
         nbz = input_dict["atype"].shape[0]
-        input_dict["box"] = input_dict["box"].cuda()
+        if torch.cuda.is_available():
+            input_dict["box"] = input_dict["box"].cuda()
 
         # TODO: Change lattice to lower triangular matrix
 
@@ -177,7 +178,7 @@ class DenoiseLoss(TaskLoss):
                 if mask_num == 0:
                     mask_num = 1
             else:
-                NotImplementedError(f"Unknown noise mode {self.noise_mode}!")
+                raise NotImplementedError(f"Unknown noise mode {self.noise_mode}!")
 
             coord_mask_all = torch.zeros(
                 input_dict["atype"].shape, dtype=torch.bool, device=env.DEVICE
@@ -231,8 +232,9 @@ class DenoiseLoss(TaskLoss):
                 if self.same_mask:
                     type_mask = coord_mask_all[ii].clone()
                 else:
+                    mask_count = min(self.mask_num, nloc)
                     type_mask_res = rng.choice(
-                        range(nloc), self.mask_num, replace=False
+                        range(nloc), mask_count, replace=False
                     ).tolist()
                     type_mask = np.isin(range(nloc), type_mask_res)
                 input_dict["atype"][ii][type_mask] = self.mask_type_idx

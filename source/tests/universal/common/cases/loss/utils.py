@@ -62,7 +62,7 @@ class LossTestCase:
             )
             labels.update({"type_mask": torch.tensor([[False]*natoms, [False]*natoms], dtype=torch.bool, device=env.DEVICE)})
             input_dict = {}
-            input_dict["box"] = torch.tensor([[1,0,0,0,1,0,0,0,1]] * nframes,dtype=env.GLOBAL_PT_FLOAT_PRECISION)
+            input_dict["box"] = torch.tensor([[1,0,0,0,1,0,0,0,1]] * nframes,dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
             input_dict["atype"] = torch.tensor([[0]*natoms,[0]*natoms],dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
             input_dict["coord"] = torch.tensor([[[0]*3]*natoms]*nframes,dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
             _, loss, more_loss = module(
