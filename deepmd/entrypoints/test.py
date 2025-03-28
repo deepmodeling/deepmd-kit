@@ -15,6 +15,9 @@ import numpy as np
 from deepmd.common import (
     expand_sys_str,
 )
+from deepmd.infer.deep_denoise import (
+    DeepDenoise,
+)
 from deepmd.infer.deep_dipole import (
     DeepDipole,
 )
@@ -33,9 +36,6 @@ from deepmd.infer.deep_pot import (
 )
 from deepmd.infer.deep_property import (
     DeepProperty,
-)
-from deepmd.infer.deep_denoise import (
-    DeepDenoise,
 )
 from deepmd.infer.deep_wfc import (
     DeepWFC,

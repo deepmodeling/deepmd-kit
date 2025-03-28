@@ -16,10 +16,7 @@ from deepmd.dpmodel.output_def import (
 from .deep_eval import (
     DeepEval,
 )
-from deepmd.pt.utils.region import (
-    phys2inter,
-    inter2phys,
-)
+
 
 class DeepDenoise(DeepEval):
     """Given structures with noise, denoising them to get relaxed structures.
@@ -39,7 +36,7 @@ class DeepDenoise(DeepEval):
     **kwargs : dict
         Keyword arguments.
     """
-    
+
     @property
     def output_def(self) -> ModelOutputDef:
         """
@@ -131,8 +128,9 @@ class DeepDenoise(DeepEval):
             aparam=aparam,
             **kwargs,
         )
-        
-        #TODO: 
+
+        # TODO:
         return None
+
 
 __all__ = ["DeepDenoise"]
