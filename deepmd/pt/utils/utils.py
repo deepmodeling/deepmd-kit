@@ -54,7 +54,7 @@ def silut_double_backward(
     sig = torch.sigmoid(x)
 
     sig_prime = sig * (1 - sig)
-    grad_silu = sig * (1 + x * (1 - sig))
+    grad_silu = sig + x * sig_prime
     grad_grad_silu = sig_prime * (2 + x * (1 - 2 * sig))
 
     # Tanh branch
