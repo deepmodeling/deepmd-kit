@@ -26,21 +26,21 @@ def silut_forward(
 ) -> torch.Tensor:
     sig = torch.sigmoid(x)
     silu = x * sig
-    tanh_part = torch.tanh(slope * (x - threshold)) + const_val
-    return torch.where(x >= threshold, tanh_part, silu)
+    tanh = torch.tanh(slope * (x - threshold)) + const_val
+    return torch.where(x >= threshold, tanh, silu)
 
 
 def silut_backward(
     x: torch.Tensor, grad_output: torch.Tensor, threshold: float, slope: float
-):
+) -> torch.Tensor:
     sig = torch.sigmoid(x)
     grad_silu = sig * (1 + x * (1 - sig))
 
-    tanh_term = torch.tanh(slope * (x - threshold))
-    grad_tanh = slope * (1 - tanh_term.pow(2))
+    tanh = torch.tanh(slope * (x - threshold))
+    grad_tanh = slope * (1 - tanh * tanh)
 
     grad = torch.where(x >= threshold, grad_tanh, grad_silu)
-    return grad * grad_output, grad
+    return grad * grad_output
 
 
 def silut_double_backward(
@@ -49,19 +49,23 @@ def silut_double_backward(
     grad_output: torch.Tensor,
     threshold: float,
     slope: float,
-) -> torch.Tensor:
-    # Tanh branch
-    tanh_term = torch.tanh(slope * (x - threshold))
-    grad_grad = -2 * slope * slope * tanh_term * (1 - tanh_term * tanh_term)
-
+) -> tuple[torch.Tensor, torch.Tensor]:
     # SiLU branch
-    sig = 1.0 / (1.0 + torch.exp(-x))
+    sig = torch.sigmoid(x)
+
     sig_prime = sig * (1 - sig)
-    silu_term = sig_prime * (2 + x * (1 - 2 * sig))
+    grad_silu = sig * (1 + x * (1 - sig))
+    grad_grad_silu = sig_prime * (2 + x * (1 - 2 * sig))
 
-    grad_grad = torch.where(x >= threshold, grad_grad, silu_term)
+    # Tanh branch
+    tanh = torch.tanh(slope * (x - threshold))
+    tanh_square = tanh * tanh  #  .square is slow for jit.script!
+    grad_tanh = slope * (1 - tanh_square)
+    grad_grad_tanh = -2 * slope * tanh * grad_tanh
 
-    return grad_output * grad_grad * grad_grad_output
+    grad = torch.where(x >= threshold, grad_tanh, grad_silu)
+    grad_grad = torch.where(x >= threshold, grad_grad_tanh, grad_grad_silu)
+    return grad_output * grad_grad * grad_grad_output, grad * grad_grad_output
 
 
 class SiLUTScript(torch.nn.Module):
@@ -105,22 +109,20 @@ class SiLUTScript(torch.nn.Module):
             def forward(ctx, x, grad_output, threshold, slope):
                 ctx.threshold = threshold
                 ctx.slope = slope
-                grad_input, grad = silut_backward_script(
-                    x, grad_output, threshold, slope
-                )
-                ctx.save_for_backward(x, grad_output, grad)
+                grad_input = silut_backward_script(x, grad_output, threshold, slope)
+                ctx.save_for_backward(x, grad_output)
                 return grad_input
 
             @staticmethod
             def backward(ctx, grad_grad_output):
-                (x, grad_output, grad) = ctx.saved_tensors
+                (x, grad_output) = ctx.saved_tensors
                 threshold = ctx.threshold
                 slope = ctx.slope
 
-                grad_input = silut_double_backward_script(
+                grad_input, grad_mul_grad_grad_output = silut_double_backward_script(
                     x, grad_grad_output, grad_output, threshold, slope
                 )
-                return grad_input, grad * grad_grad_output, None, None
+                return grad_input, grad_mul_grad_grad_output, None, None
 
         self.SiLUTFunction = SiLUTFunction
 
