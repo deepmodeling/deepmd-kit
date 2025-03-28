@@ -207,6 +207,7 @@ class RepFlowArgs:
             "update_residual_init": self.update_residual_init,
             "fix_stat_std": self.fix_stat_std,
             "optim_update": self.optim_update,
+            "smooth_edge_update": self.smooth_edge_update,
         }
 
     @classmethod

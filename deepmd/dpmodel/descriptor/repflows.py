@@ -1247,7 +1247,7 @@ class RepFlowLayer(NativeOP):
             The serialized networks.
         """
         data = {
-            "@class": "RepformerLayer",
+            "@class": "RepFlowLayer",
             "@version": 1,
             "e_rcut": self.e_rcut,
             "e_rcut_smth": self.e_rcut_smth,
@@ -1271,6 +1271,7 @@ class RepFlowLayer(NativeOP):
             "update_residual_init": self.update_residual_init,
             "precision": self.precision,
             "optim_update": self.optim_update,
+            "smooth_edge_update": self.smooth_edge_update,
             "node_self_mlp": self.node_self_mlp.serialize(),
             "node_sym_linear": self.node_sym_linear.serialize(),
             "node_edge_linear": self.node_edge_linear.serialize(),

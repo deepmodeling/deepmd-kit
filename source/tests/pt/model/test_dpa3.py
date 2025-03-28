@@ -90,6 +90,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 update_angle=ua,
                 update_style=rus,
                 update_residual_init=ruri,
+                smooth_edge_update=True,
             )
 
             # dpa3 new impl
@@ -190,6 +191,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 update_angle=ua,
                 update_style=rus,
                 update_residual_init=ruri,
+                smooth_edge_update=True,
             )
 
             # dpa3 new impl
