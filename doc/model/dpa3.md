@@ -4,11 +4,11 @@
 **Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
 :::
 
-DPA3 is an advanced interatomic potential leveraging the message passing architecture.
-Designed as a large atomic model (LAM), DPA3 is tailored to integrate and simultaneously train on datasets from various disciplines,
+DPA-3 is an advanced interatomic potential leveraging the message passing architecture.
+Designed as a large atomic model (LAM), DPA-3 is tailored to integrate and simultaneously train on datasets from various disciplines,
 encompassing diverse chemical and materials systems across different research domains.
 Its model design ensures exceptional fitting accuracy and robust generalization both within and beyond the training domain.
-Furthermore, DPA3 maintains energy conservation and respects the physical symmetries of the potential energy surface,
+Furthermore, DPA-3 maintains energy conservation and respects the physical symmetries of the potential energy surface,
 making it a dependable tool for a wide range of scientific applications.
 
 Reference: will be released soon.
