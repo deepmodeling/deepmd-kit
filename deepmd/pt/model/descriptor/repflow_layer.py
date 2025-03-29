@@ -52,6 +52,7 @@ class RepFlowLayer(torch.nn.Module):
         axis_neuron: int = 4,
         update_angle: bool = True,
         optim_update: bool = True,
+        smooth_edge_update: bool = False,
         activation_function: str = "silu",
         update_style: str = "res_residual",
         update_residual: float = 0.1,
@@ -96,6 +97,7 @@ class RepFlowLayer(torch.nn.Module):
         self.seed = seed
         self.prec = PRECISION_DICT[precision]
         self.optim_update = optim_update
+        self.smooth_edge_update = smooth_edge_update
 
         assert update_residual_init in [
             "norm",
@@ -718,20 +720,22 @@ class RepFlowLayer(torch.nn.Module):
                 ],
                 dim=2,
             )
-            full_mask = torch.concat(
-                [
-                    a_nlist_mask,
-                    torch.zeros(
-                        [nb, nloc, self.nnei - self.a_sel],
-                        dtype=a_nlist_mask.dtype,
-                        device=a_nlist_mask.device,
-                    ),
-                ],
-                dim=-1,
-            )
-            padding_edge_angle_update = torch.where(
-                full_mask.unsqueeze(-1), padding_edge_angle_update, edge_ebd
-            )
+            if not self.smooth_edge_update:
+                # will be deprecated in the future
+                full_mask = torch.concat(
+                    [
+                        a_nlist_mask,
+                        torch.zeros(
+                            [nb, nloc, self.nnei - self.a_sel],
+                            dtype=a_nlist_mask.dtype,
+                            device=a_nlist_mask.device,
+                        ),
+                    ],
+                    dim=-1,
+                )
+                padding_edge_angle_update = torch.where(
+                    full_mask.unsqueeze(-1), padding_edge_angle_update, edge_ebd
+                )
             e_update_list.append(
                 self.act(self.edge_angle_linear2(padding_edge_angle_update))
             )
@@ -823,7 +827,7 @@ class RepFlowLayer(torch.nn.Module):
             The serialized networks.
         """
         data = {
-            "@class": "RepformerLayer",
+            "@class": "RepFlowLayer",
             "@version": 1,
             "e_rcut": self.e_rcut,
             "e_rcut_smth": self.e_rcut_smth,
@@ -847,6 +851,7 @@ class RepFlowLayer(torch.nn.Module):
             "update_residual_init": self.update_residual_init,
             "precision": self.precision,
             "optim_update": self.optim_update,
+            "smooth_edge_update": self.smooth_edge_update,
             "node_self_mlp": self.node_self_mlp.serialize(),
             "node_sym_linear": self.node_sym_linear.serialize(),
             "node_edge_linear": self.node_edge_linear.serialize(),

@@ -129,8 +129,7 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
             cls.epsilon_dict["test_smooth"] = 1e-6
         if Descrpt in [DescrptSeT, DescrptSeTTebd]:
             # computational expensive
-            cls.expected_sel = [i // 4 for i in cls.expected_sel]
-            cls.expected_rcut = cls.expected_rcut / 2
+            cls.expected_sel = [i // 2 for i in cls.expected_sel]
         cls.input_dict_ds = DescriptorParam(
             len(cls.expected_type_map),
             cls.expected_rcut,
@@ -216,8 +215,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, DPTestCase):
             cls.epsilon_dict["test_smooth"] = 1e-8
         if Descrpt in [DescrptSeT, DescrptSeTTebd]:
             # computational expensive
-            cls.expected_sel = [i // 4 for i in cls.expected_sel]
-            cls.expected_rcut = cls.expected_rcut / 2
+            cls.expected_sel = [i // 2 for i in cls.expected_sel]
 
         spin = Spin(
             use_spin=cls.spin_dict["use_spin"],
@@ -229,6 +227,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, DPTestCase):
         if Descrpt in [DescrptSeA, DescrptSeR, DescrptSeT]:
             spin_sel = cls.expected_sel + cls.expected_sel
         else:
+            cls.expected_sel = [i * 2 for i in cls.expected_sel]
             spin_sel = cls.expected_sel
         pair_exclude_types = spin.get_pair_exclude_types()
         atom_exclude_types = spin.get_atom_exclude_types()
