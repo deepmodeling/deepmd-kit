@@ -2448,10 +2448,10 @@ def loss_ener():
     doc_enable_atom_ener_coeff = "If true, the energy will be computed as \\sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
     doc_use_huber = (
         "Enables Huber loss calculation for energy/force/virial terms with user-defined threshold delta (D). "
-        "The loss function smoothly transitions between L2 and L1 loss: "
-        "- For absolute prediction errors within D: quadratic loss (0.5 * (error**2)) "
-        "- For absolute errors exceeding D: linear loss (D * |error| - 0.5 * D) "
-        "Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D). "
+        "The loss function smoothly transitions between L2 and L1 loss: \n\n"
+        "- For absolute prediction errors within D: quadratic loss (0.5 * (error**2)) \n\n"
+        "- For absolute errors exceeding D: linear loss (D * \\|error\\| - 0.5 * D) \n\n"
+        "Formula: loss = 0.5 * (error**2) if \\|error\\| <= D else D * (\\|error\\| - 0.5 * D). "
     )
     doc_huber_delta = "The threshold value used for Huber loss, controlling transition between L2 and L1 loss. "
     return [
