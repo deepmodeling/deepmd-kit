@@ -277,8 +277,8 @@ class EnergyStdLoss(TaskLoss):
                         loss += (pref_f * l2_force_loss).to(GLOBAL_PD_FLOAT_PRECISION)
                     else:
                         l_huber_loss = custom_huber_loss(
-                            force_pred.reshape(-1),
-                            force_label.reshape(-1),
+                            force_pred.reshape([-1]),
+                            force_label.reshape([-1]),
                             delta=self.huber_delta,
                         )
                         loss += pref_f * l_huber_loss
@@ -364,8 +364,8 @@ class EnergyStdLoss(TaskLoss):
                 loss += atom_norm * (pref_v * l2_virial_loss)
             else:
                 l_huber_loss = custom_huber_loss(
-                    atom_norm * model_pred["virial"].reshape(-1),
-                    atom_norm * label["virial"].reshape(-1),
+                    atom_norm * model_pred["virial"].reshape([-1]),
+                    atom_norm * label["virial"].reshape([-1]),
                     delta=self.huber_delta,
                 )
                 loss += pref_v * l_huber_loss

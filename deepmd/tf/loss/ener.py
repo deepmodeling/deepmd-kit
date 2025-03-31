@@ -160,6 +160,8 @@ class EnerStdLoss(Loss):
         if self.has_gf:
             drdq = label_dict["drdq"]
             find_drdq = label_dict["find_drdq"]
+        else:
+            find_drdq = 0.0
 
         if self.enable_atom_ener_coeff:
             # when ener_coeff (\nu) is defined, the energy is defined as
@@ -177,11 +179,15 @@ class EnerStdLoss(Loss):
             l2_ener_loss = tf.reduce_mean(
                 tf.square(energy - energy_hat), name="l2_" + suffix
             )
+        else:
+            l2_ener_loss = 0.0
 
         if self.has_f or self.has_pf or self.relative_f or self.has_gf:
             force_reshape = tf.reshape(force, [-1])
             force_hat_reshape = tf.reshape(force_hat, [-1])
             diff_f = force_hat_reshape - force_reshape
+        else:
+            diff_f = 0.0
 
         if self.relative_f is not None:
             force_hat_3 = tf.reshape(force_hat, [-1, 3])
@@ -192,6 +198,8 @@ class EnerStdLoss(Loss):
 
         if self.has_f:
             l2_force_loss = tf.reduce_mean(tf.square(diff_f), name="l2_force_" + suffix)
+        else:
+            l2_force_loss = 0.0
 
         if self.has_pf:
             atom_pref_reshape = tf.reshape(atom_pref, [-1])
@@ -199,6 +207,8 @@ class EnerStdLoss(Loss):
                 tf.multiply(tf.square(diff_f), atom_pref_reshape),
                 name="l2_pref_force_" + suffix,
             )
+        else:
+            l2_pref_force_loss = 0.0
 
         if self.has_gf:
             drdq = label_dict["drdq"]
@@ -215,6 +225,8 @@ class EnerStdLoss(Loss):
             l2_gen_force_loss = tf.reduce_mean(
                 tf.square(diff_gen_force), name="l2_gen_force_" + suffix
             )
+        else:
+            l2_gen_force_loss = 0.0
 
         if self.has_v:
             virial_reshape = tf.reshape(virial, [-1])
@@ -223,6 +235,8 @@ class EnerStdLoss(Loss):
                 tf.square(virial_hat_reshape - virial_reshape),
                 name="l2_virial_" + suffix,
             )
+        else:
+            l2_virial_loss = 0.0
 
         if self.has_ae:
             atom_ener_reshape = tf.reshape(atom_ener, [-1])
@@ -231,6 +245,8 @@ class EnerStdLoss(Loss):
                 tf.square(atom_ener_hat_reshape - atom_ener_reshape),
                 name="l2_atom_ener_" + suffix,
             )
+        else:
+            l2_atom_ener_loss = 0.0
 
         atom_norm = 1.0 / global_cvt_2_tf_float(natoms[0])
         atom_norm_ener = 1.0 / global_cvt_2_ener_float(natoms[0])
@@ -289,6 +305,8 @@ class EnerStdLoss(Loss):
                     / self.starter_learning_rate
                 )
             )
+        else:
+            pref_gf = 0.0
 
         loss = 0
         more_loss = {}
