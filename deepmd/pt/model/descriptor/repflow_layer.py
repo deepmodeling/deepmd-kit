@@ -449,9 +449,8 @@ class RepFlowLayer(torch.nn.Module):
 
         node_dim = node_ebd.shape[-1]
         edge_dim = edge_ebd.shape[-1]
-        assert 2 * node_dim + edge_dim == matrix.size()[0]
         # node_dim, node_dim, edge_dim
-        node, node_ext, edge = torch.split(matrix, node_dim)
+        node, node_ext, edge = torch.split(matrix, [node_dim, node_dim, edge_dim])
 
         # nf * nloc * node/edge_dim
         sub_node_update = torch.matmul(node_ebd, node)
