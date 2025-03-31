@@ -796,42 +796,35 @@ class RepFlowLayer(NativeOP):
         feat: str = "edge",
     ) -> np.ndarray:
         xp = array_api_compat.array_namespace(angle_ebd, node_ebd, edge_ebd)
-        angle_dim = angle_ebd.shape[-1]
-        node_dim = node_ebd.shape[-1]
-        edge_dim = edge_ebd.shape[-1]
-        sub_angle_idx = (0, angle_dim)
-        sub_node_idx = (angle_dim, angle_dim + node_dim)
-        sub_edge_idx_ij = (angle_dim + node_dim, angle_dim + node_dim + edge_dim)
-        sub_edge_idx_ik = (
-            angle_dim + node_dim + edge_dim,
-            angle_dim + node_dim + 2 * edge_dim,
-        )
 
         if feat == "edge":
+            assert self.edge_angle_linear1 is not None
             matrix, bias = self.edge_angle_linear1.w, self.edge_angle_linear1.b
         elif feat == "angle":
+            assert self.angle_self_linear is not None
             matrix, bias = self.angle_self_linear.w, self.angle_self_linear.b
         else:
             raise NotImplementedError
-        assert angle_dim + node_dim + 2 * edge_dim == matrix.shape[0]
+        assert bias is not None
+
+        angle_dim = angle_ebd.shape[-1]
+        node_dim = node_ebd.shape[-1]
+        edge_dim = edge_ebd.shape[-1]
+        angle_dim = angle_ebd.shape[-1]
+        node_dim = node_ebd.shape[-1]
+        edge_dim = edge_ebd.shape[-1]
+        # angle_dim, node_dim, edge_dim, edge_dim
+        sub_angle, sub_node, sub_edge_ij, sub_edge_ik = xp.split(
+            matrix, [angle_dim, node_dim, edge_dim, edge_dim]
+        )
 
         # nf * nloc * a_sel * a_sel * angle_dim
-        sub_angle_update = xp.matmul(
-            angle_ebd, matrix[sub_angle_idx[0] : sub_angle_idx[1], :]
-        )
-
+        sub_angle_update = xp.matmul(angle_ebd, sub_angle)
         # nf * nloc * angle_dim
-        sub_node_update = xp.matmul(
-            node_ebd, matrix[sub_node_idx[0] : sub_node_idx[1], :]
-        )
-
+        sub_node_update = xp.matmul(node_ebd, sub_node)
         # nf * nloc * a_nnei * angle_dim
-        sub_edge_update_ij = xp.matmul(
-            edge_ebd, matrix[sub_edge_idx_ij[0] : sub_edge_idx_ij[1], :]
-        )
-        sub_edge_update_ik = xp.matmul(
-            edge_ebd, matrix[sub_edge_idx_ik[0] : sub_edge_idx_ik[1], :]
-        )
+        sub_edge_update_ij = xp.matmul(edge_ebd, sub_edge_ij)
+        sub_edge_update_ik = xp.matmul(edge_ebd, sub_edge_ik)
 
         result_update = (
             sub_angle_update
@@ -850,11 +843,6 @@ class RepFlowLayer(NativeOP):
         feat: str = "node",
     ) -> np.ndarray:
         xp = array_api_compat.array_namespace(node_ebd, node_ebd_ext, edge_ebd, nlist)
-        node_dim = node_ebd.shape[-1]
-        edge_dim = edge_ebd.shape[-1]
-        sub_node_idx = (0, node_dim)
-        sub_node_ext_idx = (node_dim, 2 * node_dim)
-        sub_edge_idx = (2 * node_dim, 2 * node_dim + edge_dim)
 
         if feat == "node":
             matrix, bias = self.node_edge_linear.w, self.node_edge_linear.b
@@ -862,24 +850,19 @@ class RepFlowLayer(NativeOP):
             matrix, bias = self.edge_self_linear.w, self.edge_self_linear.b
         else:
             raise NotImplementedError
-        assert 2 * node_dim + edge_dim == matrix.shape[0]
-
+        node_dim = node_ebd.shape[-1]
+        edge_dim = edge_ebd.shape[-1]
+        node, node_ext, edge = xp.split(matrix, [node_dim, node_dim, edge_dim])
         # nf * nloc * node/edge_dim
-        sub_node_update = xp.matmul(
-            node_ebd, matrix[sub_node_idx[0] : sub_node_idx[1], :]
-        )
+        sub_node_update = xp.matmul(node_ebd, node)
 
         # nf * nall * node/edge_dim
-        sub_node_ext_update = xp.matmul(
-            node_ebd_ext, matrix[sub_node_ext_idx[0] : sub_node_ext_idx[1], :]
-        )
+        sub_node_ext_update = xp.matmul(node_ebd_ext, node_ext)
         # nf * nloc * nnei * node/edge_dim
         sub_node_ext_update = _make_nei_g1(sub_node_ext_update, nlist)
 
         # nf * nloc * nnei * node/edge_dim
-        sub_edge_update = xp.matmul(
-            edge_ebd, matrix[sub_edge_idx[0] : sub_edge_idx[1], :]
-        )
+        sub_edge_update = xp.matmul(edge_ebd, edge)
 
         result_update = (
             sub_edge_update + sub_node_ext_update + sub_node_update[:, :, xp.newaxis, :]
