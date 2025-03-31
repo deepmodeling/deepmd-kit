@@ -40,7 +40,7 @@ repos:
         types_or: [python, pyi, jupyter]
   - repo: https://github.com/pycqa/flake8
     # flake8 cannot autofix
-    rev: "7.1.2"
+    rev: "7.2.0"
     hooks:
       - id: flake8
         additional_dependencies:
