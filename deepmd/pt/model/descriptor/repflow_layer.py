@@ -397,42 +397,31 @@ class RepFlowLayer(torch.nn.Module):
         edge_ebd: torch.Tensor,
         feat: str = "edge",
     ) -> torch.Tensor:
-        angle_dim = angle_ebd.shape[-1]
-        node_dim = node_ebd.shape[-1]
-        edge_dim = edge_ebd.shape[-1]
-        sub_angle_idx = (0, angle_dim)
-        sub_node_idx = (angle_dim, angle_dim + node_dim)
-        sub_edge_idx_ij = (angle_dim + node_dim, angle_dim + node_dim + edge_dim)
-        sub_edge_idx_ik = (
-            angle_dim + node_dim + edge_dim,
-            angle_dim + node_dim + 2 * edge_dim,
-        )
-
         if feat == "edge":
+            assert self.edge_angle_linear1 is not None
             matrix, bias = self.edge_angle_linear1.matrix, self.edge_angle_linear1.bias
         elif feat == "angle":
+            assert self.angle_self_linear is not None
             matrix, bias = self.angle_self_linear.matrix, self.angle_self_linear.bias
         else:
             raise NotImplementedError
-        assert angle_dim + node_dim + 2 * edge_dim == matrix.size()[0]
+        assert bias is not None
+
+        angle_dim = angle_ebd.shape[-1]
+        node_dim = node_ebd.shape[-1]
+        edge_dim = edge_ebd.shape[-1]
+        # angle_dim, node_dim, edge_dim, edge_dim
+        sub_angle, sub_node, sub_edge_ij, sub_edge_ik = torch.split(
+            matrix, [angle_dim, node_dim, edge_dim, edge_dim]
+        )
 
         # nf * nloc * a_sel * a_sel * angle_dim
-        sub_angle_update = torch.matmul(
-            angle_ebd, matrix[sub_angle_idx[0] : sub_angle_idx[1]]
-        )
-
+        sub_angle_update = torch.matmul(angle_ebd, sub_angle)
         # nf * nloc * angle_dim
-        sub_node_update = torch.matmul(
-            node_ebd, matrix[sub_node_idx[0] : sub_node_idx[1]]
-        )
-
+        sub_node_update = torch.matmul(node_ebd, sub_node)
         # nf * nloc * a_nnei * angle_dim
-        sub_edge_update_ij = torch.matmul(
-            edge_ebd, matrix[sub_edge_idx_ij[0] : sub_edge_idx_ij[1]]
-        )
-        sub_edge_update_ik = torch.matmul(
-            edge_ebd, matrix[sub_edge_idx_ik[0] : sub_edge_idx_ik[1]]
-        )
+        sub_edge_update_ij = torch.matmul(edge_ebd, sub_edge_ij)
+        sub_edge_update_ik = torch.matmul(edge_ebd, sub_edge_ik)
 
         result_update = (
             sub_angle_update
@@ -450,36 +439,28 @@ class RepFlowLayer(torch.nn.Module):
         nlist: torch.Tensor,
         feat: str = "node",
     ) -> torch.Tensor:
-        node_dim = node_ebd.shape[-1]
-        edge_dim = edge_ebd.shape[-1]
-        sub_node_idx = (0, node_dim)
-        sub_node_ext_idx = (node_dim, 2 * node_dim)
-        sub_edge_idx = (2 * node_dim, 2 * node_dim + edge_dim)
-
         if feat == "node":
             matrix, bias = self.node_edge_linear.matrix, self.node_edge_linear.bias
         elif feat == "edge":
             matrix, bias = self.edge_self_linear.matrix, self.edge_self_linear.bias
         else:
             raise NotImplementedError
+        assert bias is not None
+
+        node_dim = node_ebd.shape[-1]
+        edge_dim = edge_ebd.shape[-1]
         assert 2 * node_dim + edge_dim == matrix.size()[0]
+        # node_dim, node_dim, edge_dim
+        node, node_ext, edge = torch.split(matrix, node_dim)
 
         # nf * nloc * node/edge_dim
-        sub_node_update = torch.matmul(
-            node_ebd, matrix[sub_node_idx[0] : sub_node_idx[1]]
-        )
-
+        sub_node_update = torch.matmul(node_ebd, node)
         # nf * nall * node/edge_dim
-        sub_node_ext_update = torch.matmul(
-            node_ebd_ext, matrix[sub_node_ext_idx[0] : sub_node_ext_idx[1]]
-        )
+        sub_node_ext_update = torch.matmul(node_ebd_ext, node_ext)
         # nf * nloc * nnei * node/edge_dim
         sub_node_ext_update = _make_nei_g1(sub_node_ext_update, nlist)
-
         # nf * nloc * nnei * node/edge_dim
-        sub_edge_update = torch.matmul(
-            edge_ebd, matrix[sub_edge_idx[0] : sub_edge_idx[1]]
-        )
+        sub_edge_update = torch.matmul(edge_ebd, edge)
 
         result_update = (
             sub_edge_update + sub_node_ext_update + sub_node_update[:, :, None, :]
