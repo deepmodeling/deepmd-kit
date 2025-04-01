@@ -810,10 +810,12 @@ class RepFlowLayer(NativeOP):
         angle_dim = angle_ebd.shape[-1]
         node_dim = node_ebd.shape[-1]
         edge_dim = edge_ebd.shape[-1]
-        # angle_dim, node_dim, edge_dim, edge_dim
-        sub_angle, sub_node, sub_edge_ij, sub_edge_ik = xp.split(
-            matrix, [angle_dim, node_dim, edge_dim, edge_dim]
-        )
+
+        # Array API does not provide a way to split the array
+        sub_angle = matrix[:angle_dim, ...] # angle_dim
+        sub_node = matrix[angle_dim:angle_dim+node_dim, ...] # node_dim
+        sub_edge_ij = matrix[angle_dim+node_dim:angle_dim+node_dim+edge_dim, ...] # edge_dim
+        sub_edge_ik = matrix[angle_dim+node_dim+edge_dim:, ...] # edge_dim
 
         # nf * nloc * a_sel * a_sel * angle_dim
         sub_angle_update = xp.matmul(angle_ebd, sub_angle)
@@ -850,7 +852,11 @@ class RepFlowLayer(NativeOP):
         node_dim = node_ebd.shape[-1]
         edge_dim = edge_ebd.shape[-1]
         assert node_dim * 2 + edge_dim == matrix.shape[0]
-        node, node_ext, edge, _ = xp.split(matrix, [node_dim, node_dim, edge_dim])
+        # Array API does not provide a way to split the array
+        node = matrix[:node_dim, ...] # node_dim
+        node_ext = matrix[node_dim:2*node_dim, ...] # node_dim
+        edge = matrix[2*node_dim:2*node_dim + edge_dim, ...] # edge_dim
+
         # nf * nloc * node/edge_dim
         sub_node_update = xp.matmul(node_ebd, node)
 
