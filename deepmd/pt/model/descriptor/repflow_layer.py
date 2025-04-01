@@ -632,7 +632,7 @@ class RepFlowLayer(torch.nn.Module):
                 edge_ebd_for_angle = edge_ebd
 
             # nb x nloc x a_nnei x e_dim
-            edge_for_angle = edge_ebd_for_angle[..., :self.a_sel, :]
+            edge_for_angle = edge_ebd_for_angle[..., : self.a_sel, :]
             # nb x nloc x a_nnei x e_dim
             edge_for_angle = torch.where(
                 a_nlist_mask.unsqueeze(-1), edge_for_angle, 0.0
@@ -680,9 +680,7 @@ class RepFlowLayer(torch.nn.Module):
 
             # nb x nloc x a_nnei x a_nnei x e_dim
             weighted_edge_angle_update = (
-                a_sw[..., None, None]
-                * a_sw[..., None, :, None]
-                * edge_angle_update
+                a_sw[..., None, None] * a_sw[..., None, :, None] * edge_angle_update
             )
             # nb x nloc x a_nnei x e_dim
             reduced_edge_angle_update = torch.sum(
