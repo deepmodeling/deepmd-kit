@@ -810,9 +810,6 @@ class RepFlowLayer(NativeOP):
         angle_dim = angle_ebd.shape[-1]
         node_dim = node_ebd.shape[-1]
         edge_dim = edge_ebd.shape[-1]
-        angle_dim = angle_ebd.shape[-1]
-        node_dim = node_ebd.shape[-1]
-        edge_dim = edge_ebd.shape[-1]
         # angle_dim, node_dim, edge_dim, edge_dim
         sub_angle, sub_node, sub_edge_ij, sub_edge_ik = xp.split(
             matrix, [angle_dim, node_dim, edge_dim, edge_dim]
