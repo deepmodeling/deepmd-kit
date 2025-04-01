@@ -834,11 +834,12 @@ class RepFlowLayer(NativeOP):
         )
 
         result_update = (
-            sub_angle_update
+            bias
             + sub_node_update[:, :, xp.newaxis, xp.newaxis, :]
             + sub_edge_update_ij[:, :, xp.newaxis, :, :]
             + sub_edge_update_ik[:, :, :, xp.newaxis, :]
-        ) + bias
+            + sub_angle_update
+        )
         return result_update
 
     def optim_edge_update(
@@ -882,8 +883,11 @@ class RepFlowLayer(NativeOP):
         )
 
         result_update = (
-            sub_edge_update + sub_node_ext_update + sub_node_update[:, :, xp.newaxis, :]
-        ) + bias
+            bias
+            + sub_node_update[:, :, xp.newaxis, :]
+            + sub_edge_update
+            + sub_node_ext_update
+        )
         return result_update
 
     def call(

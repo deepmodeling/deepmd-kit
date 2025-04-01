@@ -435,11 +435,12 @@ class RepFlowLayer(torch.nn.Module):
         )
 
         result_update = (
-            sub_angle_update
+            bias
             + sub_node_update[:, :, None, None, :]
             + sub_edge_update_ij[:, :, None, :, :]
             + sub_edge_update_ik[:, :, :, None, :]
-        ) + bias
+            + sub_angle_update
+        )
         return result_update
 
     def optim_edge_update(
@@ -482,8 +483,11 @@ class RepFlowLayer(torch.nn.Module):
         )
 
         result_update = (
-            sub_edge_update + sub_node_ext_update + sub_node_update[:, :, None, :]
-        ) + bias
+            bias
+            + sub_node_update[:, :, None, :]
+            + sub_edge_update
+            + sub_node_ext_update
+        )
         return result_update
 
     def forward(
