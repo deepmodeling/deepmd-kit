@@ -106,7 +106,7 @@ class EnergyStdLoss(TaskLoss):
             - For absolute errors exceeding D: linear loss (D * |error| - 0.5 * D)
             Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D).
         huber_delta : float
-            The threshold value used for Huber loss, controlling transition between L2 and L1 loss.
+            The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
         **kwargs
             Other keyword arguments.
         """

@@ -2453,7 +2453,7 @@ def loss_ener():
         "- For absolute errors exceeding D: linear loss D * (\\|error\\| - 0.5 * D) \n\n"
         "Formula: loss = 0.5 * (error**2) if \\|error\\| <= D else D * (\\|error\\| - 0.5 * D). "
     )
-    doc_huber_delta = "The threshold value used for Huber loss, controlling transition between L2 and L1 loss. "
+    doc_huber_delta = "The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss. "
     return [
         Argument(
             "start_pref_e",
