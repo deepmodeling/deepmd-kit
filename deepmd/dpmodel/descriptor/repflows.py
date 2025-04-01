@@ -849,7 +849,8 @@ class RepFlowLayer(NativeOP):
             raise NotImplementedError
         node_dim = node_ebd.shape[-1]
         edge_dim = edge_ebd.shape[-1]
-        node, node_ext, edge = xp.split(matrix, [node_dim, node_dim, edge_dim])
+        assert node_dim * 2 + edge_dim == matrix.shape[0]
+        node, node_ext, edge, _ = xp.split(matrix, [node_dim, node_dim, edge_dim])
         # nf * nloc * node/edge_dim
         sub_node_update = xp.matmul(node_ebd, node)
 
