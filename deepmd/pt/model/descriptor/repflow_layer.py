@@ -463,10 +463,7 @@ class RepFlowLayer(torch.nn.Module):
         sub_edge_update = torch.matmul(edge_ebd, edge)
 
         result_update = (
-            bias
-            + sub_node_update.unsqueeze(2)
-            + sub_edge_update
-            + sub_node_ext_update
+            bias + sub_node_update.unsqueeze(2) + sub_edge_update + sub_node_ext_update
         )
         return result_update
 
