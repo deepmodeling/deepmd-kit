@@ -810,7 +810,7 @@ class RepFlowLayer(NativeOP):
         angle_dim = angle_ebd.shape[-1]
         node_dim = node_ebd.shape[-1]
         edge_dim = edge_ebd.shape[-1]
-
+        assert angle_dim + node_dim + 2 * edge_dim == matrix.shape[0]
         # Array API does not provide a way to split the array
         sub_angle = matrix[:angle_dim, ...]  # angle_dim
         sub_node = matrix[angle_dim : angle_dim + node_dim, ...]  # node_dim
