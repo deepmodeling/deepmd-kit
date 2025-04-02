@@ -2446,6 +2446,14 @@ def loss_ener():
     doc_numb_generalized_coord = "The dimension of generalized coordinates. Required when generalized force loss is used."
     doc_relative_f = "If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label."
     doc_enable_atom_ener_coeff = "If true, the energy will be computed as \\sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
+    doc_use_huber = (
+        "Enables Huber loss calculation for energy/force/virial terms with user-defined threshold delta (D). "
+        "The loss function smoothly transitions between L2 and L1 loss: \n\n"
+        "- For absolute prediction errors within D: quadratic loss 0.5 * (error**2) \n\n"
+        "- For absolute errors exceeding D: linear loss D * (\\|error\\| - 0.5 * D) \n\n"
+        "Formula: loss = 0.5 * (error**2) if \\|error\\| <= D else D * (\\|error\\| - 0.5 * D). "
+    )
+    doc_huber_delta = "The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss. "
     return [
         Argument(
             "start_pref_e",
@@ -2559,6 +2567,20 @@ def loss_ener():
             optional=True,
             default=0,
             doc=doc_numb_generalized_coord,
+        ),
+        Argument(
+            "use_huber",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_huber,
+        ),
+        Argument(
+            "huber_delta",
+            float,
+            optional=True,
+            default=0.01,
+            doc=doc_huber_delta,
         ),
     ]
 

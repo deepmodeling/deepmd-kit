@@ -17,6 +17,16 @@ from deepmd.utils.version import (
 )
 
 
+def custom_huber_loss(predictions, targets, delta=1.0):
+    xp = array_api_compat.array_namespace(predictions, targets)
+    error = targets - predictions
+    abs_error = xp.abs(error)
+    quadratic_loss = 0.5 * error**2
+    linear_loss = delta * (abs_error - 0.5 * delta)
+    loss = xp.where(abs_error <= delta, quadratic_loss, linear_loss)
+    return xp.mean(loss)
+
+
 class EnergyLoss(Loss):
     def __init__(
         self,
@@ -36,6 +46,8 @@ class EnergyLoss(Loss):
         start_pref_gf: float = 0.0,
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
+        use_huber=False,
+        huber_delta=0.01,
         **kwargs,
     ) -> None:
         self.starter_learning_rate = starter_learning_rate
@@ -63,6 +75,14 @@ class EnergyLoss(Loss):
         if self.has_gf and self.numb_generalized_coord < 1:
             raise RuntimeError(
                 "When generalized force loss is used, the dimension of generalized coordinates should be larger than 0"
+            )
+        self.use_huber = use_huber
+        self.huber_delta = huber_delta
+        if self.use_huber and (
+            self.has_pf or self.has_gf or self.relative_f is not None
+        ):
+            raise RuntimeError(
+                "Huber loss is not implemented for force with atom_pref, generalized force and relative force. "
             )
 
     def call(
@@ -144,15 +164,31 @@ class EnergyLoss(Loss):
             self.limit_pref_pf + (self.start_pref_pf - self.limit_pref_pf) * lr_ratio
         )
 
-        l2_loss = 0
+        loss = 0
         more_loss = {}
         if self.has_e:
             l2_ener_loss = xp.mean(xp.square(energy - energy_hat))
-            l2_loss += atom_norm_ener * (pref_e * l2_ener_loss)
+            if not self.use_huber:
+                loss += atom_norm_ener * (pref_e * l2_ener_loss)
+            else:
+                l_huber_loss = custom_huber_loss(
+                    atom_norm_ener * energy,
+                    atom_norm_ener * energy_hat,
+                    delta=self.huber_delta,
+                )
+                loss += pref_e * l_huber_loss
             more_loss["l2_ener_loss"] = self.display_if_exist(l2_ener_loss, find_energy)
         if self.has_f:
             l2_force_loss = xp.mean(xp.square(diff_f))
-            l2_loss += pref_f * l2_force_loss
+            if not self.use_huber:
+                loss += pref_f * l2_force_loss
+            else:
+                l_huber_loss = custom_huber_loss(
+                    xp.reshape(force, [-1]),
+                    xp.reshape(force_hat, [-1]),
+                    delta=self.huber_delta,
+                )
+                loss += pref_f * l_huber_loss
             more_loss["l2_force_loss"] = self.display_if_exist(
                 l2_force_loss, find_force
             )
@@ -162,7 +198,15 @@ class EnergyLoss(Loss):
             l2_virial_loss = xp.mean(
                 xp.square(virial_hat_reshape - virial_reshape),
             )
-            l2_loss += atom_norm * (pref_v * l2_virial_loss)
+            if not self.use_huber:
+                loss += atom_norm * (pref_v * l2_virial_loss)
+            else:
+                l_huber_loss = custom_huber_loss(
+                    atom_norm * virial_reshape,
+                    atom_norm * virial_hat_reshape,
+                    delta=self.huber_delta,
+                )
+                loss += pref_v * l_huber_loss
             more_loss["l2_virial_loss"] = self.display_if_exist(
                 l2_virial_loss, find_virial
             )
@@ -172,7 +216,15 @@ class EnergyLoss(Loss):
             l2_atom_ener_loss = xp.mean(
                 xp.square(atom_ener_hat_reshape - atom_ener_reshape),
             )
-            l2_loss += pref_ae * l2_atom_ener_loss
+            if not self.use_huber:
+                loss += pref_ae * l2_atom_ener_loss
+            else:
+                l_huber_loss = custom_huber_loss(
+                    atom_ener_reshape,
+                    atom_ener_hat_reshape,
+                    delta=self.huber_delta,
+                )
+                loss += pref_ae * l_huber_loss
             more_loss["l2_atom_ener_loss"] = self.display_if_exist(
                 l2_atom_ener_loss, find_atom_ener
             )
@@ -181,7 +233,7 @@ class EnergyLoss(Loss):
             l2_pref_force_loss = xp.mean(
                 xp.multiply(xp.square(diff_f), atom_pref_reshape),
             )
-            l2_loss += pref_pf * l2_pref_force_loss
+            loss += pref_pf * l2_pref_force_loss
             more_loss["l2_pref_force_loss"] = self.display_if_exist(
                 l2_pref_force_loss, find_atom_pref
             )
@@ -203,14 +255,14 @@ class EnergyLoss(Loss):
                 self.limit_pref_gf
                 + (self.start_pref_gf - self.limit_pref_gf) * lr_ratio
             )
-            l2_loss += pref_gf * l2_gen_force_loss
+            loss += pref_gf * l2_gen_force_loss
             more_loss["l2_gen_force_loss"] = self.display_if_exist(
                 l2_gen_force_loss, find_drdq
             )
 
-        self.l2_l = l2_loss
+        self.l2_l = loss
         self.l2_more = more_loss
-        return l2_loss, more_loss
+        return loss, more_loss
 
     @property
     def label_requirement(self) -> list[DataRequirementItem]:
@@ -300,7 +352,7 @@ class EnergyLoss(Loss):
         """
         return {
             "@class": "EnergyLoss",
-            "@version": 1,
+            "@version": 2,
             "starter_learning_rate": self.starter_learning_rate,
             "start_pref_e": self.start_pref_e,
             "limit_pref_e": self.limit_pref_e,
@@ -317,6 +369,8 @@ class EnergyLoss(Loss):
             "start_pref_gf": self.start_pref_gf,
             "limit_pref_gf": self.limit_pref_gf,
             "numb_generalized_coord": self.numb_generalized_coord,
+            "use_huber": self.use_huber,
+            "huber_delta": self.huber_delta,
         }
 
     @classmethod
@@ -334,6 +388,6 @@ class EnergyLoss(Loss):
             The deserialized loss module
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         return cls(**data)
