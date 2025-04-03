@@ -98,7 +98,7 @@ One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to instal
 To install Paddle, run
 
 ```sh
-# cu123
+# cu126
 pip install paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
 # cu118
 pip install paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/
