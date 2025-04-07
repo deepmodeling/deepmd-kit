@@ -190,10 +190,10 @@ Switch to the TensorFlow {{ tensorflow_icon }} tab for more information.
 
 :::::{tab-set}
 
-::::{tab-item} CUDA 12.3
+::::{tab-item} CUDA 12.6
 
 ```bash
-pip install paddlepaddle-gpu==3.0.0rc0 -i https://www.paddlepaddle.org.cn/packages/stable/cu123/
+pip install paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
 pip install deepmd-kit
 ```
 
@@ -202,7 +202,7 @@ pip install deepmd-kit
 ::::{tab-item} CUDA 11.8
 
 ```bash
-pip install paddlepaddle-gpu==3.0.0rc0 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/
+pip install paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/
 pip install deepmd-kit
 ```
 
@@ -211,7 +211,7 @@ pip install deepmd-kit
 ::::{tab-item} CPU
 
 ```bash
-pip install paddlepaddle==3.0.0rc0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+pip install paddlepaddle==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
 pip install deepmd-kit
 ```
 

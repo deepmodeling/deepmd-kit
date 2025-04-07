@@ -37,21 +37,23 @@ if(ENABLE_PADDLE)
       find_package(CUDAToolkit REQUIRED)
       string(REGEX MATCH "^[0-9]+" CUDA_MAJOR_VERSION "${CUDAToolkit_VERSION}")
       message(STATUS "Find CUDAToolkit_VERSION: ${CUDAToolkit_VERSION}")
+      # "6ed5dd3" is the commit id of paddle release/3.0, see:
+      # https://github.com/PaddlePaddle/Paddle/tree/v3.0.0
       if(CUDA_MAJOR_VERSION VERSION_EQUAL "11")
         message(
           STATUS
-            "PADDLE_INFERENCE_DIR is not defined, downloading CUDA11.8 infernece lib to: ${CMAKE_BINARY_DIR}/"
+            "PADDLE_INFERENCE_DIR is not defined, downloading CUDA11.8 inference lib to: ${CMAKE_BINARY_DIR}/"
         )
         set(DOWNLOAD_URL
-            "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz"
+            "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn897_Trt8616_D1/6ed5dd3833c32c3b21e14b1fb1a71f5a535a0fcc/paddle_inference.tgz"
         )
       elseif(CUDA_MAJOR_VERSION VERSION_EQUAL "12")
         message(
           STATUS
-            "PADDLE_INFERENCE_DIR is not defined, downloading CUDA12.3 infernece lib to: ${CMAKE_BINARY_DIR}/"
+            "PADDLE_INFERENCE_DIR is not defined, downloading CUDA12.6 inference lib to: ${CMAKE_BINARY_DIR}/"
         )
         set(DOWNLOAD_URL
-            "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda123_cudnn900_Trt8616_D1/latest/paddle_inference.tgz"
+            "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda126_cudnn951_Trt105018_D1/6ed5dd3833c32c3b21e14b1fb1a71f5a535a0fcc/paddle_inference.tgz"
         )
       else()
         message(
@@ -62,10 +64,10 @@ if(ENABLE_PADDLE)
     else()
       message(
         STATUS
-          "PADDLE_INFERENCE_DIR is not defined, downloading CPU infernece lib to: ${CMAKE_BINARY_DIR}/"
+          "PADDLE_INFERENCE_DIR is not defined, downloading CPU inference lib to: ${CMAKE_BINARY_DIR}/"
       )
       set(DOWNLOAD_URL
-          "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cpu_Mkl_Avx_D1/latest/paddle_inference.tgz"
+          "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cpu_Mkl_Avx_D1/6ed5dd3833c32c3b21e14b1fb1a71f5a535a0fcc/paddle_inference.tgz"
       )
     endif()
     set(TGZ_FILE "${CMAKE_BINARY_DIR}/paddle_inference.tgz")

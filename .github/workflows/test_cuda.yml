@@ -51,7 +51,7 @@ jobs:
     - run: |
         export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
         export TENSORFLOW_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
-        source/install/uv_with_retry.sh pip install --system --pre https://paddle-whl.bj.bcebos.com/nightly/cu123/paddlepaddle-gpu/paddlepaddle_gpu-3.0.0.dev20241126-cp311-cp311-linux_x86_64.whl
+        pip install "paddlepaddle-gpu==3.0.0" -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
         source/install/uv_with_retry.sh pip install --system -v -e .[gpu,test,lmp,cu12,torch,jax] mpi4py --reinstall-package deepmd-kit
       env:
         DP_VARIANT: cuda
