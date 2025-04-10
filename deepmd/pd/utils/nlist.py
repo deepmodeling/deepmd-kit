@@ -37,13 +37,6 @@ def extend_input_and_build_neighbor_list(
     extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
         coord_normalized, atype, box_gpu, rcut, box
     )
-    # import numpy as np
-    # np.save("coord_normalized_pd", coord_normalized.detach().cpu().numpy())
-    # np.save("extended_coord_pd", extended_coord.detach().cpu().numpy())
-    # exit()
-    # import numpy as np
-    # extended_coord = paddle.to_tensor(np.load("extended_coord_pt.npy"))
-    # extended_coord.stop_gradient = False
     nlist = build_neighbor_list(
         extended_coord,
         extended_atype,
