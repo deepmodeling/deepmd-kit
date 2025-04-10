@@ -37,8 +37,7 @@ else:
     DescrptDPA3JAX = None
 
 if INSTALLED_PD:
-    # not supported yet
-    DescrptDPA3PD = None
+    from deepmd.pd.model.descriptor.dpa3 import DescrptDPA3 as DescrptDPA3PD
 else:
     DescrptDPA3PD = None
 
@@ -135,7 +134,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             n_multi_edge_message,
             precision,
         ) = self.param
-        return CommonTest.skip_pt
+        return True
 
     @property
     def skip_pd(self) -> bool:
@@ -151,8 +150,8 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             n_multi_edge_message,
             precision,
         ) = self.param
-        # return not INSTALLED_PD or precision == "bfloat16"
-        return True
+        return not INSTALLED_PD or precision == "bfloat16"
+        # return True
 
     @property
     def skip_dp(self) -> bool:

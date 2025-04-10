@@ -290,7 +290,7 @@ class DPTabulate(BaseTabulate):
     def _layer_1(self, x, w, b):
         w = paddle.to_tensor(w).to(env.DEVICE)
         b = paddle.to_tensor(b).to(env.DEVICE)
-        t = paddle.cat([x, x], dim=1)
+        t = paddle.concat([x, x], axis=1)
         return t, self.activation_fn(paddle.matmul(x, w) + b) + t
 
     def _get_descrpt_type(self) -> str:
@@ -574,7 +574,7 @@ def unaggregated_dy_dx(
     if width == size:
         dz_drou += dy_dx
     if width == 2 * size:
-        dy_dx = paddle.cat((dy_dx, dy_dx), dim=1)
+        dy_dx = paddle.concat((dy_dx, dy_dx), axis=1)
         dz_drou += dy_dx
 
     return dz_drou
@@ -619,7 +619,7 @@ def unaggregated_dy2_dx(
     if width == size:
         dz_drou += dy2_dx
     if width == 2 * size:
-        dy2_dx = paddle.cat((dy2_dx, dy2_dx), dim=1)
+        dy2_dx = paddle.concat((dy2_dx, dy2_dx), axis=1)
         dz_drou += dy2_dx
 
     return dz_drou

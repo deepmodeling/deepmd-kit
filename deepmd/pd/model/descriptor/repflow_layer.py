@@ -716,9 +716,9 @@ class RepFlowLayer(paddle.nn.Layer):
                         paddle.zeros(
                             [nb, nloc, self.nnei - self.a_sel],
                             dtype=a_nlist_mask.dtype,
-                        ).to(a_nlist_mask.device),
+                        ).to(a_nlist_mask.place),
                     ],
-                    dim=-1,
+                    axis=-1,
                 )
                 padding_edge_angle_update = paddle.where(
                     full_mask.unsqueeze(-1), padding_edge_angle_update, edge_ebd
