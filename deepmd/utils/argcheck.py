@@ -2456,12 +2456,6 @@ def loss_ener():
     doc_huber_delta = "The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss. "
     return [
         Argument(
-            "use_l1_all",
-            bool,
-            optional=True,
-            default=False,
-        ),
-        Argument(
             "start_pref_e",
             [float, int],
             optional=True,

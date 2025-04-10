@@ -176,7 +176,7 @@ class TensorLoss(Loss):
         if self.enable_atomic_weight:
             data_requirements.append(
                 DataRequirementItem(
-                    "atom_weight",
+                    "atomic_weight",
                     1,
                     atomic=True,
                     must=False,

@@ -23,16 +23,15 @@ The {ref}`fitting_net <model[standard]/fitting_net>` section tells DP which fitt
 The JSON of `property` type should be provided like
 
 ```json
-	"fitting_net" : {
-		"type": "property",
+"fitting_net" : {
+	"type": "property",
         "intensive": true,
         "property_name": "band_prop",
         "task_dim": 3,
-		"neuron": [240,240,240],
-		"resnet_dt": true,
-		"fparam": 0,
-		"seed": 1,
-	},
+	"neuron": [240,240,240],
+	"resnet_dt": true,
+	"seed": 1,
+},
 ```
 
 - `type` specifies which type of fitting net should be used. It should be `property`.
@@ -48,11 +47,11 @@ DeepProperty supports trainings of the global system (one or more global labels 
 The loss section should be provided like
 
 ```json
-	"loss" : {
-		"type": "property",
-        "metric": ["mae"],
-        "loss_func": "smooth_mae"
-	},
+"loss" : {
+	"type": "property",
+	"metric": ["mae"],
+	"loss_func": "smooth_mae"
+},
 ```
 
 - {ref}`type <loss/type>` should be written as `property` as a distinction from `ener` mode.

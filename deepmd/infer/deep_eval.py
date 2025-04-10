@@ -275,6 +275,10 @@ class DeepEvalBackend(ABC):
         """Check if the model has spin atom types."""
         return False
 
+    def get_has_hessian(self):
+        """Check if the model has hessian."""
+        return False
+
     def get_var_name(self) -> str:
         """Get the name of the fitting property."""
         raise NotImplementedError

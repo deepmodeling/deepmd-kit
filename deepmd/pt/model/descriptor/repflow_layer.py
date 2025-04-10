@@ -99,9 +99,11 @@ class RepFlowLayer(torch.nn.Module):
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
 
-        assert update_residual_init in [], (
-            "'update_residual_init' only support 'norm' or 'const'!"
-        )
+        assert update_residual_init in [
+            "norm",
+            "const",
+        ], "'update_residual_init' only support 'norm' or 'const'!"
+
         self.update_residual = update_residual
         self.update_residual_init = update_residual_init
         self.n_residual = []
