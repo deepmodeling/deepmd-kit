@@ -507,7 +507,7 @@ def unaggregated_dy_dx_s(
 
     grad_xbar_y = grad(xbar, y, functype)
 
-    w = paddle.flatten(w)[: y.shape[1]].repeat(y.shape[0], 1)
+    w = paddle.flatten(w)[: y.shape[1]].tile([y.shape[0], 1])
 
     dy_dx = grad_xbar_y * w
 
@@ -536,7 +536,7 @@ def unaggregated_dy2_dx_s(
 
     grad_grad_result = grad_grad(xbar, y, functype)
 
-    w_flattened = paddle.flatten(w)[: y.shape[1]].repeat(y.shape[0], 1)
+    w_flattened = paddle.flatten(w)[: y.shape[1]].tile([y.shape[0], 1])
 
     dy2_dx = grad_grad_result * w_flattened * w_flattened
 
