@@ -168,6 +168,45 @@ model_dpa2 = {
     },
 }
 
+model_dpa3 = {
+    "type_map": ["O", "H", "B"],
+    "descriptor": {
+        "type": "dpa3",
+        "repflow": {
+            "n_dim": 20,
+            "e_dim": 10,
+            "a_dim": 8,
+            "nlayers": 6,
+            "e_rcut": 6.0,
+            "e_rcut_smth": 3.0,
+            "e_sel": 20,
+            "a_rcut": 4.0,
+            "a_rcut_smth": 2.0,
+            "a_sel": 10,
+            "axis_neuron": 4,
+            "a_compress_rate": 1,
+            "a_compress_e_rate": 2,
+            "a_compress_use_split": True,
+            "update_angle": True,
+            "update_style": "res_residual",
+            "update_residual": 0.1,
+            "update_residual_init": "const",
+            "smooth_edge_update": True,
+        },
+        "activation_function": "silut:10.0",
+        "use_tebd_bias": False,
+        "precision": "float32",
+        "concat_output_tebd": False,
+    },
+    "fitting_net": {
+        "neuron": [24, 24],
+        "resnet_dt": True,
+        "precision": "float32",
+        "activation_function": "silut:10.0",
+        "seed": 1,
+    },
+}
+
 model_dpa2tebd = {
     "type_map": ["O", "H", "B"],
     "descriptor": {

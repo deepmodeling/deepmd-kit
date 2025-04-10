@@ -1068,10 +1068,10 @@ class Trainer:
                 continue
             elif not isinstance(batch_data[key], list):
                 if batch_data[key] is not None:
-                    batch_data[key] = batch_data[key].to(DEVICE, non_blocking=True)
+                    batch_data[key] = batch_data[key].to(DEVICE, blocking=False)
             else:
                 batch_data[key] = [
-                    item.to(DEVICE, non_blocking=True) for item in batch_data[key]
+                    item.to(DEVICE, blocking=False) for item in batch_data[key]
                 ]
         # we may need a better way to classify which are inputs and which are labels
         # now wrapper only supports the following inputs:
