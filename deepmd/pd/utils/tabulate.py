@@ -128,7 +128,7 @@ class DPTabulate(BaseTabulate):
         tuple[np.ndarray, np.ndarray, np.ndarray]
             Values, first derivatives, and second derivatives
         """
-        xx = paddle.to_tensor(xx).view([-1, 1]).to(env.DEVICE)
+        xx = paddle.to_tensor(xx).reshape([-1, 1]).to(env.DEVICE)
         for layer in range(self.layer_size):
             if layer == 0:
                 xbar = paddle.matmul(
@@ -565,7 +565,7 @@ def unaggregated_dy_dx(
 
     grad_ybar_z = grad(ybar, z, functype)
 
-    dy_dx = dy_dx.view([-1])[: (length * size)].view([length, size])
+    dy_dx = dy_dx.reshape([-1])[: (length * size)].reshape([length, size])
 
     accumulator = dy_dx @ w
 
@@ -606,8 +606,8 @@ def unaggregated_dy2_dx(
     grad_ybar_z = grad(ybar, z, functype)
     grad_grad_ybar_z = grad_grad(ybar, z, functype)
 
-    dy2_dx = dy2_dx.view([-1])[: (length * size)].view([length, size])
-    dy_dx = dy_dx.view([-1])[: (length * size)].view([length, size])
+    dy2_dx = dy2_dx.reshape([-1])[: (length * size)].reshape([length, size])
+    dy_dx = dy_dx.reshape([-1])[: (length * size)].reshape([length, size])
 
     accumulator1 = dy2_dx @ w
     accumulator2 = dy_dx @ w
