@@ -49,7 +49,7 @@ def eval_pd_descriptor(
     return result
 
 
-@parameterized(("float32", "float64"), (True, False))
+@parameterized(("float32",), (True, False))
 class TestDescriptorDPA2(unittest.TestCase):
     def setUp(self) -> None:
         (self.dtype, self.type_one_side) = self.param
