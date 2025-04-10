@@ -633,9 +633,6 @@ class Trainer:
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
 
     def run(self):
-        # print(self.model)
-        # exit()
-
         if CINN:
             from paddle import (
                 jit,
@@ -1190,6 +1187,11 @@ def get_additional_data_requirement(_model):
     return additional_data_requirement
 
 
+def whether_hessian(loss_params):
+    loss_type = loss_params.get("type", "ener")
+    return loss_type == "ener" and loss_params.get("start_pref_h", 0.0) > 0.0
+
+
 def get_loss(loss_params, start_lr, _ntypes, _model):
     loss_type = loss_params.get("type", "ener")
     if loss_type == "ener":
@@ -1207,8 +1209,14 @@ def get_single_model(
     return model
 
 
-def get_model_for_wrapper(_model_params, resuming=False):
+def get_model_for_wrapper(
+    _model_params,
+    resuming=False,
+    _loss_params=None,
+):
     if "model_dict" not in _model_params:
+        if _loss_params is not None and whether_hessian(_loss_params):
+            _model_params["hessian_mode"] = True
         _model = get_single_model(
             _model_params,
         )
@@ -1217,6 +1225,8 @@ def get_model_for_wrapper(_model_params, resuming=False):
         model_keys = list(_model_params["model_dict"])
         do_case_embd, case_embd_index = get_case_embd_config(_model_params)
         for _model_key in model_keys:
+            if _loss_params is not None and whether_hessian(_loss_params[_model_key]):
+                _model_params["model_dict"][_model_key]["hessian_mode"] = True
             _model[_model_key] = get_single_model(
                 _model_params["model_dict"][_model_key],
             )

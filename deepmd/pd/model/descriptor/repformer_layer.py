@@ -110,7 +110,8 @@ def _make_nei_g1(
     # index: nb x (nloc x nnei) x ng1
     index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand([-1, -1, ng1])
     # gg1  : nb x (nloc x nnei) x ng1
-    gg1 = paddle.take_along_axis(g1_ext, axis=1, indices=index)
+    # print('&', g1_ext.shape, index.shape, index.dtype, index.min().item(), index.max().item())
+    gg1 = paddle.take_along_axis(g1_ext, indices=index, axis=1, broadcast=False)
     # gg1  : nb x nloc x nnei x ng1
     gg1 = gg1.reshape([nb, nloc, nnei, ng1])
     return gg1
@@ -188,7 +189,6 @@ class Atten2Map(paddle.nn.Layer):
         nlist_mask: paddle.Tensor,  # nb x nloc x nnei
         sw: paddle.Tensor,  # nb x nloc x nnei
     ) -> paddle.Tensor:
-        exit()
         (
             nb,
             nloc,

@@ -380,6 +380,10 @@ class DescrptBlockRepflows(DescriptorBlock):
             self.e_rcut_smth,
             protection=self.env_protection,
         )
+        # print(dmatrix.min().item(), dmatrix.mean().item(), dmatrix.max().item())
+        # print(diff.min().item(), diff.mean().item(), diff.max().item())
+        # print(sw.min().item(), sw.mean().item(), sw.max().item())
+        # exit()
         nlist_mask = nlist != -1
         sw = paddle.squeeze(sw, -1)
         # beyond the cutoff sw should be 0.0
@@ -457,7 +461,10 @@ class DescrptBlockRepflows(DescriptorBlock):
             # node_ebd_ext: nb x nall x n_dim
             if comm_dict is None:
                 assert mapping is not None
-                node_ebd_ext = paddle.take_along_axis(node_ebd, mapping, 1)
+                # print('%', node_ebd.shape, mapping.shape, mapping.dtype, mapping.min().item(), mapping.max().item())
+                node_ebd_ext = paddle.take_along_axis(
+                    node_ebd, mapping, 1, broadcast=False
+                )
             else:
                 raise NotImplementedError("border_op is not supported in paddle yet")
                 # has_spin = "has_spin" in comm_dict
@@ -516,6 +523,12 @@ class DescrptBlockRepflows(DescriptorBlock):
                 #     node_ebd_ext = concat_switch_virtual(
                 #         node_ebd_real_ext, node_ebd_virtual_ext, real_nloc
                 #     )
+            # print(node_ebd_ext.min().item(), node_ebd_ext.mean().item(), node_ebd_ext.max().item())
+            # print(edge_ebd.min().item(), edge_ebd.mean().item(), edge_ebd.max().item())
+            # print(h2.min().item(), h2.mean().item(), h2.max().item())
+            # print(angle_ebd.min().item(), angle_ebd.mean().item(), angle_ebd.max().item())
+            # print(sw.min().item(), sw.mean().item(), sw.max().item())
+            # print(a_sw.min().item(), a_sw.mean().item(), a_sw.max().item())
             node_ebd, edge_ebd, angle_ebd = ll.forward(
                 node_ebd_ext,
                 edge_ebd,
@@ -528,7 +541,12 @@ class DescrptBlockRepflows(DescriptorBlock):
                 a_nlist_mask,
                 a_sw,
             )
+            # print(node_ebd.min().item(), node_ebd.mean().item(), node_ebd.max().item())
+            # print(edge_ebd.min().item(), edge_ebd.mean().item(), edge_ebd.max().item())
+            # print(angle_ebd.min().item(), angle_ebd.mean().item(), angle_ebd.max().item())
+            # print('\n')
 
+        # exit()
         # nb x nloc x 3 x e_dim
         h2g2 = RepFlowLayer._cal_hg(edge_ebd, h2, nlist_mask, sw)
         # (nb x nloc) x e_dim x 3

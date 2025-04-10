@@ -664,7 +664,9 @@ class RepFlowLayer(paddle.nn.Layer):
             edge_for_angle = edge_ebd_for_angle[:, :, : self.a_sel, :]
             # nb x nloc x a_nnei x e_dim
             edge_for_angle = paddle.where(
-                a_nlist_mask.unsqueeze(-1), edge_for_angle, 0.0
+                a_nlist_mask.unsqueeze(-1),
+                edge_for_angle,
+                paddle.zeros_like(edge_for_angle),
             ).astype(edge_for_angle.dtype)
             if not self.optim_update:
                 # nb x nloc x a_nnei x a_nnei x n_dim
