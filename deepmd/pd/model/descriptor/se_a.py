@@ -60,6 +60,12 @@ from deepmd.pd.model.network.mlp import (
 from deepmd.pd.utils.exclude_mask import (
     PairExcludeMask,
 )
+from deepmd.pd.utils.tabulate import (
+    DPTabulate,
+)
+from deepmd.pd.utils.utils import (
+    ActivationFn,
+)
 
 from .base_descriptor import (
     BaseDescriptor,
@@ -252,7 +258,29 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         check_frequency
             The overflow check frequency
         """
-        raise ValueError("Enable compression is not supported.")
+        if self.compress:
+            raise ValueError("Compression is already enabled.")
+        data = self.serialize()
+        self.table = DPTabulate(
+            self,
+            data["neuron"],
+            data["type_one_side"],
+            data["exclude_types"],
+            ActivationFn(data["activation_function"]),
+        )
+        self.table_config = [
+            table_extrapolate,
+            table_stride_1,
+            table_stride_2,
+            check_frequency,
+        ]
+        self.lower, self.upper = self.table.build(
+            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+        )
+        self.sea.enable_compression(
+            self.table.data, self.table_config, self.lower, self.upper
+        )
+        self.compress = True
 
     def forward(
         self,
