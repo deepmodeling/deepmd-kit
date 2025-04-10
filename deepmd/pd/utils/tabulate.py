@@ -426,7 +426,7 @@ class DPTabulate(BaseTabulate):
     def _convert_numpy_to_tensor(self) -> None:
         """Convert self.data from np.ndarray to paddle.Tensor."""
         for ii in self.data:
-            self.data[ii] = paddle.tensor(self.data[ii], device=env.DEVICE)  # pylint: disable=no-explicit-dtype
+            self.data[ii] = paddle.to_tensor(self.data[ii], place=env.DEVICE)  # pylint: disable=no-explicit-dtype
 
     @cached_property
     def _n_all_excluded(self) -> int:
