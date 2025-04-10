@@ -121,6 +121,7 @@ defalut_fit_param = [
             ],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
+            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
             (DescriptorParamHybrid, DescrptHybrid),
             (DescriptorParamHybridMixed, DescrptHybrid),
             (DescriptorParamHybridMixedTTebd, DescrptHybrid),
@@ -135,6 +136,7 @@ defalut_fit_param = [
             (DescriptorParamSeTTebd, DescrptSeTTebd),
             (DescriptorParamDPA1, DescrptDPA1),
             (DescriptorParamDPA2, DescrptDPA2),
+            (DescriptorParamDPA3, DescrptDPA3),
         ),  # descrpt_class_param & class
         (
             *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
@@ -165,8 +167,7 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
             cls.epsilon_dict["test_smooth"] = 1e-8
         if Descrpt in [DescrptSeT, DescrptSeTTebd]:
             # computational expensive
-            cls.expected_sel = [i // 4 for i in cls.expected_sel]
-            cls.expected_rcut = cls.expected_rcut / 2
+            cls.expected_sel = [i // 2 for i in cls.expected_sel]
         cls.input_dict_ds = DescriptorParam(
             len(cls.expected_type_map),
             cls.expected_rcut,
@@ -270,8 +271,7 @@ class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
             cls.epsilon_dict["test_smooth"] = 1e-8
         if Descrpt in [DescrptSeT, DescrptSeTTebd]:
             # computational expensive
-            cls.expected_sel = [i // 4 for i in cls.expected_sel]
-            cls.expected_rcut = cls.expected_rcut / 2
+            cls.expected_sel = [i // 2 for i in cls.expected_sel]
         cls.input_dict_ds = DescriptorParam(
             len(cls.expected_type_map),
             cls.expected_rcut,
@@ -655,13 +655,13 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
         (FittingParam, Fitting) = cls.param[1]
         cls.epsilon_dict["test_smooth"] = 1e-6
         cls.aprec_dict["test_smooth"] = 5e-5
+        cls.aprec_dict["test_rot"] = 1e-10  # for test stability
         # set special precision
         if Descrpt in [DescrptDPA2, DescrptHybrid]:
             cls.epsilon_dict["test_smooth"] = 1e-8
         if Descrpt in [DescrptSeT, DescrptSeTTebd]:
             # computational expensive
-            cls.expected_sel = [i // 4 for i in cls.expected_sel]
-            cls.expected_rcut = cls.expected_rcut / 2
+            cls.expected_sel = [i // 2 for i in cls.expected_sel]
 
         spin = Spin(
             use_spin=cls.spin_dict["use_spin"],
@@ -673,6 +673,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
         if Descrpt in [DescrptSeA, DescrptSeR, DescrptSeT]:
             spin_sel = cls.expected_sel + cls.expected_sel
         else:
+            cls.expected_sel = [i * 2 for i in cls.expected_sel]
             spin_sel = cls.expected_sel
         pair_exclude_types = spin.get_pair_exclude_types()
         atom_exclude_types = spin.get_atom_exclude_types()

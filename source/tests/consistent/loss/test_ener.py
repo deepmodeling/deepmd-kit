@@ -21,6 +21,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
+    parameterized,
 )
 from .common import (
     LossTest,
@@ -55,9 +56,13 @@ if INSTALLED_ARRAY_API_STRICT:
     import array_api_strict
 
 
+@parameterized(
+    (False, True),  # use_huber
+)
 class TestEner(CommonTest, LossTest, unittest.TestCase):
     @property
     def data(self) -> dict:
+        (use_huber,) = self.param
         return {
             "start_pref_e": 0.02,
             "limit_pref_e": 1.0,
@@ -67,8 +72,9 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             "limit_pref_v": 1.0,
             "start_pref_ae": 1.0,
             "limit_pref_ae": 1.0,
-            "start_pref_pf": 1.0,
-            "limit_pref_pf": 1.0,
+            "start_pref_pf": 1.0 if not use_huber else 0.0,
+            "limit_pref_pf": 1.0 if not use_huber else 0.0,
+            "use_huber": use_huber,
         }
 
     skip_tf = CommonTest.skip_tf

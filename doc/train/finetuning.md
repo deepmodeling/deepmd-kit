@@ -1,7 +1,7 @@
-# Finetune the pre-trained model {{ tensorflow_icon }} {{ pytorch_icon }}
+# Finetune the pre-trained model {{ tensorflow_icon }} {{ pytorch_icon }} {{ paddle_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
 :::
 
 Pretraining-and-finetuning is a widely used approach in other fields such as Computer Vision (CV) or Natural Language Processing (NLP)
@@ -196,3 +196,69 @@ This will initiate multitask fine-tuning, where for branches `PRE_DATA1` and `PR
 it is akin to continuing training in `init-model` mode, whereas for `DOWNSTREAM_DATA`,
 fine-tuning will be based on the fitting net from `PRE_DATA1`.
 You can set `model_prob` for each dataset just the same as that in normal multitask training.
+
+## Paddle Implementation {{ paddle_icon }}
+
+In Paddle version, we have introduced an updated, more adaptable approach to fine-tuning. This methodology encompasses two primary variations:
+
+### Single-task fine-tuning
+
+#### Fine-tuning from a single-task pre-trained model
+
+By saying "single-task pre-trained", we refer to a model pre-trained on one single dataset.
+This fine-tuning method is similar to the fine-tune approach supported by TensorFlow.
+It utilizes a single-task pre-trained model (`pretrained.pd`) and modifies the energy bias within its fitting net before continuing with training.
+The command for this operation is:
+
+```bash
+$ dp --pd train input.json --finetune pretrained.pd
+```
+
+In this case, it is important to note that the fitting net weights, except the energy bias, will be automatically set to those in the pre-trained model. This default setting is consistent with the implementations in TensorFlow.
+If you wish to conduct fine-tuning using a randomly initialized fitting net in this scenario, you can manually adjust the `--model-branch` parameter to "RANDOM":
+
+```bash
+$ dp --pd train input.json --finetune pretrained.pd --model-branch RANDOM
+```
+
+The model section in input.json **must be the same as that in the pretrained model**.
+If you do not know the model params in the pretrained model, you can add `--use-pretrain-script` in the fine-tuning command:
+
+```bash
+$ dp --pd train input.json --finetune pretrained.pd --use-pretrain-script
+```
+
+The model section will be overwritten (except the `type_map` subsection) by that in the pretrained model and then the input.json can be simplified as follows:
+
+```json
+    "model": {
+        "type_map":     ["O", "H"],
+        "descriptor" :  {},
+        "fitting_net" : {}
+    }
+```
+
+#### Fine-tuning from a multi-task pre-trained model
+
+Additionally, within the Paddle implementation and leveraging the flexibility offered by the framework and the multi-task training process proposed in DPA2 [paper](https://arxiv.org/abs/2312.15492),
+we also support more general multitask pre-trained models, which includes multiple datasets for pre-training. These pre-training datasets share a common descriptor while maintaining their individual fitting nets,
+as detailed in the paper above.
+
+For fine-tuning using this multitask pre-trained model (`multitask_pretrained.pd`),
+one can select a specific branch (e.g., `CHOOSEN_BRANCH`) included in `multitask_pretrained.pd` for fine-tuning with the following command:
+
+```bash
+$ dp --pd train input.json --finetune multitask_pretrained.pd --model-branch CHOOSEN_BRANCH
+```
+
+:::{note}
+One can check the available model branches in multi-task pre-trained model by refering to the documentation of the pre-trained model or by using the following command:
+
+```bash
+$ dp --pd show multitask_pretrained.pd model-branch
+```
+
+:::
+
+This command will start fine-tuning based on the pre-trained model's descriptor and the selected branch's fitting net.
+If --model-branch is not set or set to "RANDOM", a randomly initialized fitting net will be used.

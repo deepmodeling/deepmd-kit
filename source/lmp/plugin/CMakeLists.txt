@@ -8,8 +8,10 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
       lammps_download
       GIT_REPOSITORY https://github.com/lammps/lammps
       GIT_TAG ${LAMMPS_VERSION})
+    message(STATUS "STARTING DOWNLOAD LAMMPS TO: "
+                   ${CMAKE_BINARY_DIR}/_deps/lammps_download-src)
     FetchContent_MakeAvailable(lammps_download)
-    set(LAMMPS_SOURCE_ROOT ${lammps_download_SOURCE_DIR})
+    set(LAMMPS_SOURCE_ROOT ${CMAKE_BINARY_DIR}/_deps/lammps_download-src)
   endif()
   set(LAMMPS_HEADER_DIR ${LAMMPS_SOURCE_ROOT}/src)
   message(STATUS "LAMMPS_HEADER_DIR is ${LAMMPS_HEADER_DIR}")

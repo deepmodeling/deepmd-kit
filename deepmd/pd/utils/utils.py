@@ -3,7 +3,6 @@ from __future__ import (
     annotations,
 )
 
-import os
 from contextlib import (
     contextmanager,
 )
@@ -33,7 +32,7 @@ if TYPE_CHECKING:
     )
 
 
-class CustomSilu(paddle.nn.Layer):
+class SiLUT(paddle.nn.Layer):
     def __init__(self, threshold=3.0):
         super().__init__()
 
@@ -51,26 +50,9 @@ class CustomSilu(paddle.nn.Layer):
         self.slope = float(silu_grad(threshold))
         self.const = float(silu(threshold))
 
-        # if not hasattr(paddle.ops.deepmd, "thsilu"):
-        if True:
-
-            def thsilu(
-                argument0: paddle.Tensor,
-                argument1: float,
-                argument2: float,
-                argument3: float,
-            ) -> list[paddle.Tensor]:
-                raise NotImplementedError(
-                    "thsilu is not available since customized PyTorch OP library is not built when freezing the model. "
-                    "See documentation for model compression for details."
-                )
-
-            # Note: this hack cannot actually save a model that can be runned using LAMMPS.
-            # paddle.ops.deepmd.thsilu = thsilu
-
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
         silu_part = F.silu(x)
-        mask = x > self.threshold
+        mask = x >= self.threshold
         if paddle.any(mask):
             tanh_part = paddle.tanh(self.slope * (x - self.threshold)) + self.const
             return paddle.where(x < self.threshold, silu_part, tanh_part)
@@ -82,22 +64,15 @@ class ActivationFn(paddle.nn.Layer):
     def __init__(self, activation: str | None):
         super().__init__()
         self.activation: str = activation if activation is not None else "linear"
-        if self.activation.startswith("custom_silu"):
+        if self.activation.lower().startswith(
+            "silut"
+        ) or self.activation.lower().startswith("custom_silu"):
             threshold = (
                 float(self.activation.split(":")[-1]) if ":" in self.activation else 3.0
             )
-            # get op method from environment
-            SILU_OP = os.environ.get("SILU_OP", "default")
-            if SILU_OP == "default":
-                self.custom_silu = CustomSilu(threshold=threshold)
-            # elif SILU_OP == "op":
-            #     self.custom_silu = CustomSiluOp(threshold=threshold)
-            # elif SILU_OP == "jit":
-            #     self.custom_silu = CustomSiluJit(threshold=threshold)
-            else:
-                raise ValueError(f"Not defined SILU_OP: {SILU_OP}!")
+            self.silut = SiLUT(threshold=threshold)
         else:
-            self.custom_silu = None
+            self.silut = None
 
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
         """Returns the tensor after applying activation function corresponding to `activation`."""
@@ -115,9 +90,11 @@ class ActivationFn(paddle.nn.Layer):
             return F.sigmoid(x)
         elif self.activation.lower() == "silu":
             return F.silu(x)
-        elif self.activation.startswith("custom_silu"):
-            assert self.custom_silu is not None
-            return self.custom_silu(x)
+        elif self.activation.lower().startswith(
+            "silut"
+        ) or self.activation.lower().startswith("custom_silu"):
+            assert self.silut is not None
+            return self.silut(x)
         elif self.activation.lower() == "linear" or self.activation.lower() == "none":
             return x
         else:

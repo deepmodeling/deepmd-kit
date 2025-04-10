@@ -4,6 +4,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Callable,
     Optional,
     Union,
 )
@@ -60,9 +61,9 @@ class Fitting(torch.nn.Module, BaseFitting):
         If not start from checkpoint (resume is False),
         some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
-        assert (
-            self.__class__ == base_class.__class__
-        ), "Only fitting nets of the same type can share params!"
+        assert self.__class__ == base_class.__class__, (
+            "Only fitting nets of the same type can share params!"
+        )
         if shared_level == 0:
             # only not share the bias_atom_e and the case_embd
             # the following will successfully link all the params except buffers, which need manually link.
@@ -70,6 +71,87 @@ class Fitting(torch.nn.Module, BaseFitting):
                 self._modules[item] = base_class._modules[item]
         else:
             raise NotImplementedError
+
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], list[dict]], list[dict]],
+        protection: float = 1e-2,
+    ) -> None:
+        """
+        Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        protection : float
+            Divided-by-zero protection
+        """
+        if self.numb_fparam == 0 and self.numb_aparam == 0:
+            # skip data statistics
+            return
+        if callable(merged):
+            sampled = merged()
+        else:
+            sampled = merged
+        # stat fparam
+        if self.numb_fparam > 0:
+            cat_data = torch.cat([frame["fparam"] for frame in sampled], dim=0)
+            cat_data = torch.reshape(cat_data, [-1, self.numb_fparam])
+            fparam_avg = torch.mean(cat_data, dim=0)
+            fparam_std = torch.std(cat_data, dim=0, unbiased=False)
+            fparam_std = torch.where(
+                fparam_std < protection,
+                torch.tensor(
+                    protection, dtype=fparam_std.dtype, device=fparam_std.device
+                ),
+                fparam_std,
+            )
+            fparam_inv_std = 1.0 / fparam_std
+            self.fparam_avg.copy_(
+                torch.tensor(fparam_avg, device=env.DEVICE, dtype=self.fparam_avg.dtype)
+            )
+            self.fparam_inv_std.copy_(
+                torch.tensor(
+                    fparam_inv_std, device=env.DEVICE, dtype=self.fparam_inv_std.dtype
+                )
+            )
+        # stat aparam
+        if self.numb_aparam > 0:
+            sys_sumv = []
+            sys_sumv2 = []
+            sys_sumn = []
+            for ss_ in [frame["aparam"] for frame in sampled]:
+                ss = torch.reshape(ss_, [-1, self.numb_aparam])
+                sys_sumv.append(torch.sum(ss, dim=0))
+                sys_sumv2.append(torch.sum(ss * ss, dim=0))
+                sys_sumn.append(ss.shape[0])
+            sumv = torch.sum(torch.stack(sys_sumv), dim=0)
+            sumv2 = torch.sum(torch.stack(sys_sumv2), dim=0)
+            sumn = sum(sys_sumn)
+            aparam_avg = sumv / sumn
+            aparam_std = torch.sqrt(sumv2 / sumn - (sumv / sumn) ** 2)
+            aparam_std = torch.where(
+                aparam_std < protection,
+                torch.tensor(
+                    protection, dtype=aparam_std.dtype, device=aparam_std.device
+                ),
+                aparam_std,
+            )
+            aparam_inv_std = 1.0 / aparam_std
+            self.aparam_avg.copy_(
+                torch.tensor(aparam_avg, device=env.DEVICE, dtype=self.aparam_avg.dtype)
+            )
+            self.aparam_inv_std.copy_(
+                torch.tensor(
+                    aparam_inv_std, device=env.DEVICE, dtype=self.aparam_inv_std.dtype
+                )
+            )
 
 
 class GeneralFitting(Fitting):
@@ -259,9 +341,9 @@ class GeneralFitting(Fitting):
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         assert self.mixed_types, "Only models in mixed types can perform type changing!"
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map

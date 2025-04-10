@@ -25,6 +25,15 @@ from .loss import (
 )
 
 
+def custom_huber_loss(predictions, targets, delta=1.0):
+    error = targets - predictions
+    abs_error = tf.abs(error)
+    quadratic_loss = 0.5 * tf.pow(error, 2)
+    linear_loss = delta * (abs_error - 0.5 * delta)
+    loss = tf.where(abs_error <= delta, quadratic_loss, linear_loss)
+    return tf.reduce_mean(loss)
+
+
 class EnerStdLoss(Loss):
     r"""Standard loss function for DP models.
 
@@ -64,6 +73,14 @@ class EnerStdLoss(Loss):
         The prefactor of generalized force loss at the end of the training.
     numb_generalized_coord : int
         The dimension of generalized coordinates.
+    use_huber : bool
+        Enables Huber loss calculation for energy/force/virial terms with user-defined threshold delta (D).
+        The loss function smoothly transitions between L2 and L1 loss:
+        - For absolute prediction errors within D: quadratic loss (0.5 * (error**2))
+        - For absolute errors exceeding D: linear loss (D * |error| - 0.5 * D)
+        Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D).
+    huber_delta : float
+        The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
     **kwargs
         Other keyword arguments.
     """
@@ -86,6 +103,8 @@ class EnerStdLoss(Loss):
         start_pref_gf: float = 0.0,
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
+        use_huber=False,
+        huber_delta=0.01,
         **kwargs,
     ) -> None:
         self.starter_learning_rate = starter_learning_rate
@@ -114,6 +133,14 @@ class EnerStdLoss(Loss):
             raise RuntimeError(
                 "When generalized force loss is used, the dimension of generalized coordinates should be larger than 0"
             )
+        self.use_huber = use_huber
+        self.huber_delta = huber_delta
+        if self.use_huber and (
+            self.has_pf or self.has_gf or self.relative_f is not None
+        ):
+            raise RuntimeError(
+                "Huber loss is not implemented for force with atom_pref, generalized force and relative force. "
+            )
 
     def build(self, learning_rate, natoms, model_dict, label_dict, suffix):
         energy = model_dict["energy"]
@@ -133,6 +160,8 @@ class EnerStdLoss(Loss):
         if self.has_gf:
             drdq = label_dict["drdq"]
             find_drdq = label_dict["find_drdq"]
+        else:
+            find_drdq = 0.0
 
         if self.enable_atom_ener_coeff:
             # when ener_coeff (\nu) is defined, the energy is defined as
@@ -150,11 +179,15 @@ class EnerStdLoss(Loss):
             l2_ener_loss = tf.reduce_mean(
                 tf.square(energy - energy_hat), name="l2_" + suffix
             )
+        else:
+            l2_ener_loss = 0.0
 
         if self.has_f or self.has_pf or self.relative_f or self.has_gf:
             force_reshape = tf.reshape(force, [-1])
             force_hat_reshape = tf.reshape(force_hat, [-1])
             diff_f = force_hat_reshape - force_reshape
+        else:
+            diff_f = 0.0
 
         if self.relative_f is not None:
             force_hat_3 = tf.reshape(force_hat, [-1, 3])
@@ -165,6 +198,8 @@ class EnerStdLoss(Loss):
 
         if self.has_f:
             l2_force_loss = tf.reduce_mean(tf.square(diff_f), name="l2_force_" + suffix)
+        else:
+            l2_force_loss = 0.0
 
         if self.has_pf:
             atom_pref_reshape = tf.reshape(atom_pref, [-1])
@@ -172,6 +207,8 @@ class EnerStdLoss(Loss):
                 tf.multiply(tf.square(diff_f), atom_pref_reshape),
                 name="l2_pref_force_" + suffix,
             )
+        else:
+            l2_pref_force_loss = 0.0
 
         if self.has_gf:
             drdq = label_dict["drdq"]
@@ -188,6 +225,8 @@ class EnerStdLoss(Loss):
             l2_gen_force_loss = tf.reduce_mean(
                 tf.square(diff_gen_force), name="l2_gen_force_" + suffix
             )
+        else:
+            l2_gen_force_loss = 0.0
 
         if self.has_v:
             virial_reshape = tf.reshape(virial, [-1])
@@ -196,6 +235,8 @@ class EnerStdLoss(Loss):
                 tf.square(virial_hat_reshape - virial_reshape),
                 name="l2_virial_" + suffix,
             )
+        else:
+            l2_virial_loss = 0.0
 
         if self.has_ae:
             atom_ener_reshape = tf.reshape(atom_ener, [-1])
@@ -204,6 +245,8 @@ class EnerStdLoss(Loss):
                 tf.square(atom_ener_hat_reshape - atom_ener_reshape),
                 name="l2_atom_ener_" + suffix,
             )
+        else:
+            l2_atom_ener_loss = 0.0
 
         atom_norm = 1.0 / global_cvt_2_tf_float(natoms[0])
         atom_norm_ener = 1.0 / global_cvt_2_ener_float(natoms[0])
@@ -262,40 +305,74 @@ class EnerStdLoss(Loss):
                     / self.starter_learning_rate
                 )
             )
+        else:
+            pref_gf = 0.0
 
-        l2_loss = 0
+        loss = 0
         more_loss = {}
         if self.has_e:
-            l2_loss += atom_norm_ener * (pref_e * l2_ener_loss)
+            if not self.use_huber:
+                loss += atom_norm_ener * (pref_e * l2_ener_loss)
+            else:
+                l_huber_loss = custom_huber_loss(
+                    atom_norm_ener * energy,
+                    atom_norm_ener * energy_hat,
+                    delta=self.huber_delta,
+                )
+                loss += pref_e * l_huber_loss
             more_loss["l2_ener_loss"] = self.display_if_exist(l2_ener_loss, find_energy)
         if self.has_f:
-            l2_loss += global_cvt_2_ener_float(pref_f * l2_force_loss)
+            if not self.use_huber:
+                loss += global_cvt_2_ener_float(pref_f * l2_force_loss)
+            else:
+                l_huber_loss = custom_huber_loss(
+                    tf.reshape(force, [-1]),
+                    tf.reshape(force_hat, [-1]),
+                    delta=self.huber_delta,
+                )
+                loss += pref_f * l_huber_loss
             more_loss["l2_force_loss"] = self.display_if_exist(
                 l2_force_loss, find_force
             )
         if self.has_v:
-            l2_loss += global_cvt_2_ener_float(atom_norm * (pref_v * l2_virial_loss))
+            if not self.use_huber:
+                loss += global_cvt_2_ener_float(atom_norm * (pref_v * l2_virial_loss))
+            else:
+                l_huber_loss = custom_huber_loss(
+                    atom_norm * tf.reshape(virial, [-1]),
+                    atom_norm * tf.reshape(virial_hat, [-1]),
+                    delta=self.huber_delta,
+                )
+                loss += pref_v * l_huber_loss
             more_loss["l2_virial_loss"] = self.display_if_exist(
                 l2_virial_loss, find_virial
             )
         if self.has_ae:
-            l2_loss += global_cvt_2_ener_float(pref_ae * l2_atom_ener_loss)
+            if not self.use_huber:
+                loss += global_cvt_2_ener_float(pref_ae * l2_atom_ener_loss)
+            else:
+                l_huber_loss = custom_huber_loss(
+                    tf.reshape(atom_ener, [-1]),
+                    tf.reshape(atom_ener_hat, [-1]),
+                    delta=self.huber_delta,
+                )
+                loss += pref_ae * l_huber_loss
             more_loss["l2_atom_ener_loss"] = self.display_if_exist(
                 l2_atom_ener_loss, find_atom_ener
             )
         if self.has_pf:
-            l2_loss += global_cvt_2_ener_float(pref_pf * l2_pref_force_loss)
+            loss += global_cvt_2_ener_float(pref_pf * l2_pref_force_loss)
             more_loss["l2_pref_force_loss"] = self.display_if_exist(
                 l2_pref_force_loss, find_atom_pref
             )
         if self.has_gf:
-            l2_loss += global_cvt_2_ener_float(pref_gf * l2_gen_force_loss)
+            loss += global_cvt_2_ener_float(pref_gf * l2_gen_force_loss)
             more_loss["l2_gen_force_loss"] = self.display_if_exist(
                 l2_gen_force_loss, find_drdq
             )
 
         # only used when tensorboard was set as true
-        self.l2_loss_summary = tf.summary.scalar("l2_loss_" + suffix, tf.sqrt(l2_loss))
+        self.l2_loss_summary = tf.summary.scalar("l2_loss_" + suffix, tf.sqrt(loss))
         if self.has_e:
             self.l2_loss_ener_summary = tf.summary.scalar(
                 "l2_ener_loss_" + suffix,
@@ -324,9 +401,9 @@ class EnerStdLoss(Loss):
                 "l2_gen_force_loss_" + suffix, tf.sqrt(l2_gen_force_loss)
             )
 
-        self.l2_l = l2_loss
+        self.l2_l = loss
         self.l2_more = more_loss
-        return l2_loss, more_loss
+        return loss, more_loss
 
     def eval(self, sess, feed_dict, natoms):
         placeholder = self.l2_l
@@ -420,7 +497,7 @@ class EnerStdLoss(Loss):
         """
         return {
             "@class": "EnergyLoss",
-            "@version": 1,
+            "@version": 2,
             "starter_learning_rate": self.starter_learning_rate,
             "start_pref_e": self.start_pref_e,
             "limit_pref_e": self.limit_pref_e,
@@ -437,6 +514,8 @@ class EnerStdLoss(Loss):
             "start_pref_gf": self.start_pref_gf,
             "limit_pref_gf": self.limit_pref_gf,
             "numb_generalized_coord": self.numb_generalized_coord,
+            "use_huber": self.use_huber,
+            "huber_delta": self.huber_delta,
         }
 
     @classmethod
@@ -456,7 +535,7 @@ class EnerStdLoss(Loss):
             The deserialized loss module
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         return cls(**data)
 

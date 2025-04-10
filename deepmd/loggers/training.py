@@ -9,7 +9,7 @@ def format_training_message(
     wall_time: float,
 ) -> str:
     """Format a training message."""
-    return f"batch {batch:7d}: " f"total wall time = {wall_time:.2f} s"
+    return f"batch {batch:7d}: total wall time = {wall_time:.2f} s"
 
 
 def format_training_message_per_task(

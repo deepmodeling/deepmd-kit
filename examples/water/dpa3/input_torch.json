@@ -11,12 +11,12 @@
         "n_dim": 256,
         "e_dim": 128,
         "a_dim": 32,
-        "nlayers": 3,
+        "nlayers": 6,
         "e_rcut": 6.0,
-        "e_rcut_smth": 5.0,
+        "e_rcut_smth": 3.0,
         "e_sel": 120,
         "a_rcut": 4.0,
-        "a_rcut_smth": 3.5,
+        "a_rcut_smth": 2.0,
         "a_sel": 30,
         "axis_neuron": 4,
         "skip_stat": true,
@@ -28,7 +28,7 @@
         "update_residual": 0.1,
         "update_residual_init": "const"
       },
-      "activation_function": "custom_silu:10.0",
+      "activation_function": "silut:10.0",
       "use_tebd_bias": false,
       "precision": "float32",
       "concat_output_tebd": false
@@ -41,7 +41,7 @@
       ],
       "resnet_dt": true,
       "precision": "float32",
-      "activation_function": "custom_silu:10.0",
+      "activation_function": "silut:10.0",
       "seed": 1,
       "_comment": " that's all"
     },

@@ -139,7 +139,7 @@ class DeepEval(DeepEvalBackend):
 
         # looks ugly...
         if self.modifier_type == "dipole_charge":
-            from deepmd.tf.infer.data_modifier import (
+            from deepmd.tf.modifier import (
                 DipoleChargeModifier,
             )
 
@@ -803,9 +803,9 @@ class DeepEval(DeepEvalBackend):
             assert aparam is not None
             aparam = np.array(aparam)
         if self.has_efield:
-            assert (
-                efield is not None
-            ), "you are using a model with external field, parameter efield should be provided"
+            assert efield is not None, (
+                "you are using a model with external field, parameter efield should be provided"
+            )
             efield = np.array(efield)
 
         # reshape the inputs

@@ -211,7 +211,7 @@ def write_model_devi_out(
             f"min_devi_{item}",
             f"avg_devi_{item}",
         )
-    header += f'{"devi_e":19s}'
+    header += f"{'devi_e':19s}"
     if atomic:
         header += f"{'atm_devi_f(N)':19s}"
     with open(fname, "ab") as fp:

@@ -7,7 +7,7 @@ from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     tf,
 )
-from deepmd.tf.infer.data_modifier import (
+from deepmd.tf.modifier import (
     DipoleChargeModifier,
 )
 from deepmd.tf.train.run_options import (
@@ -97,11 +97,11 @@ class TestDataModifier(tf.test.TestCase):
 
     def _test_fv(self) -> None:
         dcm = DipoleChargeModifier(
-            str(tests_path / os.path.join(modifier_datapath, "dipole.pb")),
-            [-8],
-            [6, 1],
-            1,
-            0.25,
+            model_name=str(tests_path / os.path.join(modifier_datapath, "dipole.pb")),
+            model_charge_map=[-8],
+            sys_charge_map=[6, 1],
+            ewald_h=1,
+            ewald_beta=0.25,
         )
         data = Data()
         coord, box, atype = data.get_data()

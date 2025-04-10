@@ -47,8 +47,7 @@ def to_bool(flag: int | bool | str) -> bool:
         flag = flag.lower()
         if flag not in ["1", "0", "true", "false"]:
             raise ValueError(
-                "flag must be either '0', '1', 'true', 'false', "
-                f"but received '{flag}'"
+                f"flag must be either '0', '1', 'true', 'false', but received '{flag}'"
             )
         return flag in ["1", "true"]
 
@@ -114,8 +113,8 @@ inter_nthreads, intra_nthreads = get_default_nthreads()
 
 
 def enable_prim(enable: bool = True):
-    # NOTE: operator in list below will not use composite
-    # operator but kernel instead
+    # NOTE: operators in list below will not use composite
+    # operator but kernel instead for better performance
     EAGER_COMP_OP_BLACK_LIST = [
         "abs_grad",
         "cast_grad",
@@ -198,6 +197,7 @@ def enable_prim(enable: bool = True):
 
 __all__ = [
     "CACHE_PER_SYS",
+    "CINN",
     "DEFAULT_PRECISION",
     "DEVICE",
     "ENERGY_BIAS_TRAINABLE",

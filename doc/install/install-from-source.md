@@ -93,6 +93,21 @@ One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to instal
 
 :::
 
+:::{tab-item} Paddle {{ paddle_icon }}
+
+To install Paddle, run
+
+```sh
+# cu126
+pip install paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+# cu118
+pip install paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/
+# cpu
+pip install paddlepaddle==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+```
+
+:::
+
 ::::
 
 It is important that every time a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by
@@ -119,7 +134,7 @@ One should remember to activate the virtual environment every time he/she uses D
 
 Check the compiler version on your machine
 
-```
+```bash
 gcc --version
 ```
 
@@ -229,7 +244,7 @@ Other [CMake environment variables](https://cmake.org/cmake/help/latest/manual/c
 
 To test the installation, one should first jump out of the source directory
 
-```
+```bash
 cd /some/other/workspace
 ```
 
@@ -325,6 +340,20 @@ download the TensorFlow C library from [this page](https://www.tensorflow.org/in
 
 :::
 
+:::{tab-item} Paddle {{ paddle_icon }}
+
+If you want to use C++ interface of Paddle, you need to compile the Paddle inference library(C++ interface) manually from the [linux-compile-by-make](https://www.paddlepaddle.org.cn/documentation/docs/zh/develop/install/compile/linux-compile-by-make.html), then use the `.so` and `.a` files in `Paddle/build/paddle_inference_install_dir/`.
+
+We also provide a weekly-build Paddle C++ inference library for Linux x86_64 with CUDA 11.8/12.3/CPU below:
+
+CUDA 11.8: [Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz](https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz)
+
+CUDA 12.3: [Cuda123_cudnn900_Trt8616_D1/latest/paddle_inference.tgz](https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda123_cudnn900_Trt8616_D1/latest/paddle_inference.tgz)
+
+CPU: [GITHUB_Docker_Compile_Test_Cpu_Mkl_Avx_D1/latest/paddle_inference.tgz](https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cpu_Mkl_Avx_D1/latest/paddle_inference.tgz)
+
+:::
+
 ::::
 
 ### Install DeePMD-kit's C++ interface
@@ -389,6 +418,16 @@ cmake -DENABLE_JAX=ON -D CMAKE_PREFIX_PATH=${tensorflow_c_root} ..
 
 :::
 
+:::{tab-item} Paddle {{ paddle_icon }}
+
+I assume you have get the Paddle inference library(C++ interface) to `$PADDLE_INFERENCE_DIR`, then execute CMake
+
+```bash
+cmake -DENABLE_PADDLE=ON -DPADDLE_INFERENCE_DIR=$PADDLE_INFERENCE_DIR -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
+```
+
+:::
+
 ::::
 
 One may add the following CMake variables to `cmake` using the [`-D <var>=<value>` option](https://cmake.org/cmake/help/latest/manual/cmake.1.html#cmdoption-cmake-D):
@@ -420,11 +459,27 @@ If {cmake:variable}`ENABLE_TENSORFLOW` is `OFF`, the TensorFlow C library is use
 
 :::
 
+:::{cmake:variable} ENABLE_PADDLE
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+{{ paddle_icon }} Whether building the Paddle backend.
+
+:::
+
 :::{cmake:variable} TENSORFLOW_ROOT
 
 **Type**: `PATH`
 
 {{ tensorflow_icon }} {{ jax_icon }} The Path to TensorFlow's C++ interface.
+
+:::
+
+:::{cmake:variable} PADDLE_INFERENCE_DIR
+
+**Type**: `PATH`
+
+{{ paddle_icon }} The Path to Paddle's C++ inference directory, such as `/path/to/paddle_inference_install_dir` or `/path/to/paddle_inference`.
 
 :::
 

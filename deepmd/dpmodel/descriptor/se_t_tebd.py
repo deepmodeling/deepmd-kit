@@ -270,9 +270,9 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         obj = self.se_ttebd
         obj.ntypes = len(type_map)
@@ -682,6 +682,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         exclude_mask = xp.reshape(exclude_mask, (nf * nloc, nnei))
         # nfnl x nnei
         nlist = xp.reshape(nlist, (nf * nloc, nnei))
+        exclude_mask = xp.astype(exclude_mask, xp.bool)
         nlist = xp.where(exclude_mask, nlist, xp.full_like(nlist, -1))
         # nfnl x nnei
         nlist_mask = nlist != -1

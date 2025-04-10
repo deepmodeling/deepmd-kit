@@ -70,7 +70,7 @@ class Spin:
             else:
                 raise ValueError(
                     f"Invalid length of virtual_scale for spin atoms"
-                    f": Expected {self.ntypes_real} or { self.ntypes_spin} but got {len(virtual_scale)}!"
+                    f": Expected {self.ntypes_real} or {self.ntypes_spin} but got {len(virtual_scale)}!"
                 )
         elif isinstance(virtual_scale, float):
             self.virtual_scale = [virtual_scale for _ in range(self.ntypes_real)]

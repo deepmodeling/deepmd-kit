@@ -41,9 +41,9 @@ class ModelWrapper(torch.nn.Module):
         elif isinstance(model, dict):
             self.multi_task = True
             for task_key in model:
-                assert isinstance(
-                    model[task_key], torch.nn.Module
-                ), f"{task_key} in model_dict is not a torch.nn.Module!"
+                assert isinstance(model[task_key], torch.nn.Module), (
+                    f"{task_key} in model_dict is not a torch.nn.Module!"
+                )
                 self.model[task_key] = model[task_key]
         # Loss
         self.loss = None
@@ -53,9 +53,9 @@ class ModelWrapper(torch.nn.Module):
                 self.loss["Default"] = loss
             elif isinstance(loss, dict):
                 for task_key in loss:
-                    assert isinstance(
-                        loss[task_key], torch.nn.Module
-                    ), f"{task_key} in loss_dict is not a torch.nn.Module!"
+                    assert isinstance(loss[task_key], torch.nn.Module), (
+                        f"{task_key} in loss_dict is not a torch.nn.Module!"
+                    )
                     self.loss[task_key] = loss[task_key]
         self.inference_only = self.loss is None
 
@@ -88,12 +88,12 @@ class ModelWrapper(torch.nn.Module):
                     class_type_link = link_item["shared_type"]
                     model_key_link = link_item["model_key"]
                     shared_level_link = int(link_item["shared_level"])
-                    assert (
-                        shared_level_link >= shared_level_base
-                    ), "The shared_links must be sorted by shared_level!"
-                    assert (
-                        "descriptor" in class_type_link
-                    ), f"Class type mismatched: {class_type_base} vs {class_type_link}!"
+                    assert shared_level_link >= shared_level_base, (
+                        "The shared_links must be sorted by shared_level!"
+                    )
+                    assert "descriptor" in class_type_link, (
+                        f"Class type mismatched: {class_type_base} vs {class_type_link}!"
+                    )
                     if class_type_link == "descriptor":
                         link_class = self.model[model_key_link].get_descriptor()
                     elif "hybrid" in class_type_link:
@@ -120,12 +120,12 @@ class ModelWrapper(torch.nn.Module):
                         class_type_link = link_item["shared_type"]
                         model_key_link = link_item["model_key"]
                         shared_level_link = int(link_item["shared_level"])
-                        assert (
-                            shared_level_link >= shared_level_base
-                        ), "The shared_links must be sorted by shared_level!"
-                        assert (
-                            class_type_base == class_type_link
-                        ), f"Class type mismatched: {class_type_base} vs {class_type_link}!"
+                        assert shared_level_link >= shared_level_base, (
+                            "The shared_links must be sorted by shared_level!"
+                        )
+                        assert class_type_base == class_type_link, (
+                            f"Class type mismatched: {class_type_base} vs {class_type_link}!"
+                        )
                         link_class = self.model[
                             model_key_link
                         ].atomic_model.__getattr__(class_type_link)
@@ -153,9 +153,9 @@ class ModelWrapper(torch.nn.Module):
         if not self.multi_task:
             task_key = "Default"
         else:
-            assert (
-                task_key is not None
-            ), f"Multitask model must specify the inference task! Supported tasks are {list(self.model.keys())}."
+            assert task_key is not None, (
+                f"Multitask model must specify the inference task! Supported tasks are {list(self.model.keys())}."
+            )
         input_dict = {
             "coord": coord,
             "atype": atype,

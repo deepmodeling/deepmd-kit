@@ -32,34 +32,6 @@ def custom_huber_loss(predictions, targets, delta=1.0):
     return paddle.mean(loss)
 
 
-def custom_step_huber_loss(predictions, targets, delta=1.0):
-    error = targets - predictions
-    abs_error = paddle.abs(error)
-    abs_targets = paddle.abs(targets)
-
-    # Define the different delta values based on the absolute value of targets
-    delta1 = delta
-    delta2 = 0.7 * delta
-    delta3 = 0.4 * delta
-    delta4 = 0.1 * delta
-
-    # Determine which delta to use based on the absolute value of targets
-    delta_values = paddle.where(
-        abs_targets < 100,
-        delta1,
-        paddle.where(
-            abs_targets < 200, delta2, paddle.where(abs_targets < 300, delta3, delta4)
-        ),
-    )
-
-    # Compute the quadratic and linear loss based on the dynamically selected delta values
-    quadratic_loss = 0.5 * paddle.pow(error, 2)
-    linear_loss = delta_values * (abs_error - 0.5 * delta_values)
-    # Select the appropriate loss based on whether abs_error is less than or greater than delta_values
-    loss = paddle.where(abs_error <= delta_values, quadratic_loss, linear_loss)
-    return paddle.mean(loss)
-
-
 class EnergyStdLoss(TaskLoss):
     def __init__(
         self,
@@ -83,7 +55,6 @@ class EnergyStdLoss(TaskLoss):
         inference=False,
         use_huber=False,
         huber_delta=0.01,
-        torch_huber=False,
         **kwargs,
     ) -> None:
         r"""Construct a layer to compute loss on energy, force and virial.
@@ -128,6 +99,14 @@ class EnergyStdLoss(TaskLoss):
             Whether to use L1 loss, if False (default), it will use L2 loss.
         inference : bool
             If true, it will output all losses found in output, ignoring the pre-factors.
+        use_huber : bool
+            Enables Huber loss calculation for energy/force/virial terms with user-defined threshold delta (D).
+            The loss function smoothly transitions between L2 and L1 loss:
+            - For absolute prediction errors within D: quadratic loss (0.5 * (error**2))
+            - For absolute errors exceeding D: linear loss (D * |error| - 0.5 * D)
+            Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D).
+        huber_delta : float
+            The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
         **kwargs
             Other keyword arguments.
         """
@@ -161,10 +140,14 @@ class EnergyStdLoss(TaskLoss):
             )
         self.use_l1_all = use_l1_all
         self.inference = inference
-        self.huber = use_huber
+        self.use_huber = use_huber
         self.huber_delta = huber_delta
-        self.torch_huber = torch_huber
-        self.huber_loss = paddle.nn.SmoothL1Loss(reduction="mean", delta=huber_delta)
+        if self.use_huber and (
+            self.has_pf or self.has_gf or self.relative_f is not None
+        ):
+            raise RuntimeError(
+                "Huber loss is not implemented for force with atom_pref, generalized force and relative force. "
+            )
 
     def forward(self, input_dict, model, label, natoms, learning_rate, mae=False):
         """Return loss on energy and force.
@@ -227,20 +210,14 @@ class EnergyStdLoss(TaskLoss):
                     more_loss["l2_ener_loss"] = self.display_if_exist(
                         l2_ener_loss.detach(), find_energy
                     )
-                if not self.huber:
+                if not self.use_huber:
                     loss += atom_norm * (pref_e * l2_ener_loss)
                 else:
-                    if self.torch_huber:
-                        l_huber_loss = self.huber_loss(
-                            atom_norm * model_pred["energy"],
-                            atom_norm * label["energy"],
-                        )
-                    else:
-                        l_huber_loss = custom_huber_loss(
-                            atom_norm * model_pred["energy"],
-                            atom_norm * label["energy"],
-                            delta=self.huber_delta,
-                        )
+                    l_huber_loss = custom_huber_loss(
+                        atom_norm * model_pred["energy"],
+                        atom_norm * label["energy"],
+                        delta=self.huber_delta,
+                    )
                     loss += pref_e * l_huber_loss
                 rmse_e = l2_ener_loss.sqrt() * atom_norm
                 more_loss["rmse_e"] = self.display_if_exist(
@@ -294,19 +271,14 @@ class EnergyStdLoss(TaskLoss):
                         more_loss["l2_force_loss"] = self.display_if_exist(
                             l2_force_loss.detach(), find_force
                         )
-                    if not self.huber:
+                    if not self.use_huber:
                         loss += (pref_f * l2_force_loss).to(GLOBAL_PD_FLOAT_PRECISION)
                     else:
-                        if self.torch_huber:
-                            l_huber_loss = self.huber_loss(
-                                model_pred["force"], label["force"]
-                            )
-                        else:
-                            l_huber_loss = custom_huber_loss(
-                                force_pred.reshape([-1]),
-                                force_label.reshape([-1]),
-                                delta=self.huber_delta,
-                            )
+                        l_huber_loss = custom_huber_loss(
+                            force_pred.reshape([-1]),
+                            force_label.reshape([-1]),
+                            delta=self.huber_delta,
+                        )
                         loss += pref_f * l_huber_loss
                     rmse_f = l2_force_loss.sqrt()
                     more_loss["rmse_f"] = self.display_if_exist(
@@ -407,15 +379,20 @@ class EnergyStdLoss(TaskLoss):
                 more_loss["rmse_v"] = self.display_if_exist(
                     rmse_v.detach(), find_virial
                 )
+            if not self.use_huber:
+                loss += atom_norm * (pref_v * l2_virial_loss)
             else:
-                l1_virial_loss = F.l1_loss(virial_label, virial_pred, reduction="mean")
-                more_loss["mae_v"] = self.display_if_exist(
-                    l1_virial_loss.detach(), find_virial
+                l_huber_loss = custom_huber_loss(
+                    atom_norm * model_pred["virial"].reshape([-1]),
+                    atom_norm * label["virial"].reshape([-1]),
+                    delta=self.huber_delta,
                 )
-                loss += (pref_v * l1_virial_loss).to(GLOBAL_PD_FLOAT_PRECISION)
-            # if mae:
-            #     mae_v = torch.mean(torch.abs(diff_v)) * atom_norm
-            #     more_loss["mae_v"] = self.display_if_exist(mae_v.detach(), find_virial)
+                loss += pref_v * l_huber_loss
+            rmse_v = l2_virial_loss.sqrt() * atom_norm
+            more_loss["rmse_v"] = self.display_if_exist(rmse_v.detach(), find_virial)
+            if mae:
+                mae_v = paddle.mean(paddle.abs(diff_v)) * atom_norm
+                more_loss["mae_v"] = self.display_if_exist(mae_v.detach(), find_virial)
 
         if self.has_ae and "atom_energy" in model_pred and "atom_ener" in label:
             atom_ener = model_pred["atom_energy"]
@@ -431,7 +408,15 @@ class EnergyStdLoss(TaskLoss):
                 more_loss["l2_atom_ener_loss"] = self.display_if_exist(
                     l2_atom_ener_loss.detach(), find_atom_ener
                 )
-            loss += (pref_ae * l2_atom_ener_loss).to(GLOBAL_PD_FLOAT_PRECISION)
+            if not self.use_huber:
+                loss += (pref_ae * l2_atom_ener_loss).to(GLOBAL_PD_FLOAT_PRECISION)
+            else:
+                l_huber_loss = custom_huber_loss(
+                    atom_ener_reshape,
+                    atom_ener_label_reshape,
+                    delta=self.huber_delta,
+                )
+                loss += pref_ae * l_huber_loss
             rmse_ae = l2_atom_ener_loss.sqrt()
             more_loss["rmse_ae"] = self.display_if_exist(
                 rmse_ae.detach(), find_atom_ener
@@ -529,7 +514,7 @@ class EnergyStdLoss(TaskLoss):
         """
         return {
             "@class": "EnergyLoss",
-            "@version": 1,
+            "@version": 2,
             "starter_learning_rate": self.starter_learning_rate,
             "start_pref_e": self.start_pref_e,
             "limit_pref_e": self.limit_pref_e,
@@ -546,6 +531,8 @@ class EnergyStdLoss(TaskLoss):
             "start_pref_gf": self.start_pref_gf,
             "limit_pref_gf": self.limit_pref_gf,
             "numb_generalized_coord": self.numb_generalized_coord,
+            "use_huber": self.use_huber,
+            "huber_delta": self.huber_delta,
         }
 
     @classmethod
@@ -563,7 +550,7 @@ class EnergyStdLoss(TaskLoss):
             The deserialized loss module
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         return cls(**data)
 

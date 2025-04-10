@@ -246,9 +246,9 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
         If not start from checkpoint (resume is False),
         some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
-        assert (
-            self.__class__ == base_class.__class__
-        ), "Only descriptors of the same type can share params!"
+        assert self.__class__ == base_class.__class__, (
+            "Only descriptors of the same type can share params!"
+        )
         # For DPA1 descriptors, the user-defined share-level
         # shared_level: 0
         # share all parameters in both type_embedding and se_ttebd
@@ -317,9 +317,9 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         obj = self.se_ttebd
         obj.ntypes = len(type_map)
@@ -717,8 +717,14 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            paddle.assign(paddle.to_tensor(mean).to(device=env.DEVICE), self.mean)  # pylint: disable=no-explicit-dtype
-        paddle.assign(paddle.to_tensor(stddev).to(device=env.DEVICE), self.stddev)  # pylint: disable=no-explicit-dtype
+            paddle.assign(
+                paddle.to_tensor(mean, dtype=self.mean.dtype).to(device=env.DEVICE),
+                self.mean,
+            )  # pylint: disable=no-explicit-dtype
+        paddle.assign(
+            paddle.to_tensor(stddev, dtype=self.stddev.dtype).to(device=env.DEVICE),
+            self.stddev,
+        )  # pylint: disable=no-explicit-dtype
 
     def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""

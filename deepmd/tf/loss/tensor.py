@@ -42,12 +42,12 @@ class TensorLoss(Loss):
         self.global_weight = jdata.get("pref", None)
         self.enable_atomic_weight = jdata.get("enable_atomic_weight", False)
 
-        assert (
-            self.local_weight is not None and self.global_weight is not None
-        ), "Both `pref` and `pref_atomic` should be provided."
-        assert (
-            self.local_weight >= 0.0 and self.global_weight >= 0.0
-        ), "Can not assign negative weight to `pref` and `pref_atomic`"
+        assert self.local_weight is not None and self.global_weight is not None, (
+            "Both `pref` and `pref_atomic` should be provided."
+        )
+        assert self.local_weight >= 0.0 and self.global_weight >= 0.0, (
+            "Can not assign negative weight to `pref` and `pref_atomic`"
+        )
         assert (self.local_weight > 0.0) or (self.global_weight > 0.0), AssertionError(
             "Can not assian zero weight both to `pref` and `pref_atomic`"
         )

@@ -72,6 +72,88 @@ if not hasattr(torch.ops.deepmd, "border_op"):
 
 @DescriptorBlock.register("se_repflow")
 class DescrptBlockRepflows(DescriptorBlock):
+    r"""
+    The repflow descriptor block.
+
+    Parameters
+    ----------
+    n_dim : int, optional
+        The dimension of node representation.
+    e_dim : int, optional
+        The dimension of edge representation.
+    a_dim : int, optional
+        The dimension of angle representation.
+    nlayers : int, optional
+        Number of repflow layers.
+    e_rcut : float, optional
+        The edge cut-off radius.
+    e_rcut_smth : float, optional
+        Where to start smoothing for edge. For example the 1/r term is smoothed from rcut to rcut_smth.
+    e_sel : int, optional
+        Maximally possible number of selected edge neighbors.
+    a_rcut : float, optional
+        The angle cut-off radius.
+    a_rcut_smth : float, optional
+        Where to start smoothing for angle. For example the 1/r term is smoothed from rcut to rcut_smth.
+    a_sel : int, optional
+        Maximally possible number of selected angle neighbors.
+    a_compress_rate : int, optional
+        The compression rate for angular messages. The default value is 0, indicating no compression.
+        If a non-zero integer c is provided, the node and edge dimensions will be compressed
+        to a_dim/c and a_dim/2c, respectively, within the angular message.
+    a_compress_e_rate : int, optional
+        The extra compression rate for edge in angular message compression. The default value is 1.
+        When using angular message compression with a_compress_rate c and a_compress_e_rate c_e,
+        the edge dimension will be compressed to (c_e * a_dim / 2c) within the angular message.
+    a_compress_use_split : bool, optional
+        Whether to split first sub-vectors instead of linear mapping during angular message compression.
+        The default value is False.
+    n_multi_edge_message : int, optional
+        The head number of multiple edge messages to update node feature.
+        Default is 1, indicating one head edge message.
+    axis_neuron : int, optional
+        The number of dimension of submatrix in the symmetrization ops.
+    update_angle : bool, optional
+        Where to update the angle rep. If not, only node and edge rep will be used.
+    update_style : str, optional
+        Style to update a representation.
+        Supported options are:
+        -'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n)
+        -'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)
+        -'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n)
+        where `r1`, `r2` ... `r3` are residual weights defined by `update_residual`
+        and `update_residual_init`.
+    update_residual : float, optional
+        When update using residual mode, the initial std of residual vector weights.
+    update_residual_init : str, optional
+        When update using residual mode, the initialization mode of residual vector weights.
+    fix_stat_std : float, optional
+        If non-zero (default is 0.3), use this constant as the normalization standard deviation
+        instead of computing it from data statistics.
+    smooth_edge_update : bool, optional
+        Whether to make edge update smooth.
+        If True, the edge update from angle message will not use self as padding.
+    optim_update : bool, optional
+        Whether to enable the optimized update method.
+        Uses a more efficient process when enabled. Defaults to True
+    ntypes : int
+        Number of element types
+    activation_function : str, optional
+        The activation function in the embedding net.
+    set_davg_zero : bool, optional
+        Set the normalization average to zero.
+    precision : str, optional
+        The precision of the embedding net parameters.
+    exclude_types : list[list[int]], optional
+        The excluded pairs of types which have no interaction with each other.
+        For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    env_protection : float, optional
+        Protection parameter to prevent division by zero errors during environment matrix calculations.
+        For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
+    seed : int, optional
+        Random seed for parameter initialization.
+    """
+
     def __init__(
         self,
         e_rcut,
@@ -99,82 +181,11 @@ class DescrptBlockRepflows(DescriptorBlock):
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         precision: str = "float64",
-        skip_stat: bool = True,
+        fix_stat_std: float = 0.3,
+        smooth_edge_update: bool = False,
         optim_update: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
-        r"""
-        The repflow descriptor block.
-
-        Parameters
-        ----------
-        n_dim : int, optional
-            The dimension of node representation.
-        e_dim : int, optional
-            The dimension of edge representation.
-        a_dim : int, optional
-            The dimension of angle representation.
-        nlayers : int, optional
-            Number of repflow layers.
-        e_rcut : float, optional
-            The edge cut-off radius.
-        e_rcut_smth : float, optional
-            Where to start smoothing for edge. For example the 1/r term is smoothed from rcut to rcut_smth.
-        e_sel : int, optional
-            Maximally possible number of selected edge neighbors.
-        a_rcut : float, optional
-            The angle cut-off radius.
-        a_rcut_smth : float, optional
-            Where to start smoothing for angle. For example the 1/r term is smoothed from rcut to rcut_smth.
-        a_sel : int, optional
-            Maximally possible number of selected angle neighbors.
-        a_compress_rate : int, optional
-            The compression rate for angular messages. The default value is 0, indicating no compression.
-            If a non-zero integer c is provided, the node and edge dimensions will be compressed
-            to a_dim/c and a_dim/2c, respectively, within the angular message.
-        a_compress_e_rate : int, optional
-            The extra compression rate for edge in angular message compression. The default value is 1.
-            When using angular message compression with a_compress_rate c and a_compress_e_rate c_e,
-            the edge dimension will be compressed to (c_e * a_dim / 2c) within the angular message.
-        a_compress_use_split : bool, optional
-            Whether to split first sub-vectors instead of linear mapping during angular message compression.
-            The default value is False.
-        n_multi_edge_message : int, optional
-            The head number of multiple edge messages to update node feature.
-            Default is 1, indicating one head edge message.
-        axis_neuron : int, optional
-            The number of dimension of submatrix in the symmetrization ops.
-        update_angle : bool, optional
-            Where to update the angle rep. If not, only node and edge rep will be used.
-        update_style : str, optional
-            Style to update a representation.
-            Supported options are:
-            -'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n)
-            -'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)
-            -'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n)
-            where `r1`, `r2` ... `r3` are residual weights defined by `update_residual`
-            and `update_residual_init`.
-        update_residual : float, optional
-            When update using residual mode, the initial std of residual vector weights.
-        update_residual_init : str, optional
-            When update using residual mode, the initialization mode of residual vector weights.
-        ntypes : int
-            Number of element types
-        activation_function : str, optional
-            The activation function in the embedding net.
-        set_davg_zero : bool, optional
-            Set the normalization average to zero.
-        precision : str, optional
-            The precision of the embedding net parameters.
-        exclude_types : list[list[int]], optional
-            The excluded pairs of types which have no interaction with each other.
-            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
-        env_protection : float, optional
-            Protection parameter to prevent division by zero errors during environment matrix calculations.
-            For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
-        seed : int, optional
-            Random seed for parameter initialization.
-        """
         super().__init__()
         self.e_rcut = float(e_rcut)
         self.e_rcut_smth = float(e_rcut_smth)
@@ -199,9 +210,11 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.n_multi_edge_message = n_multi_edge_message
         self.axis_neuron = axis_neuron
         self.set_davg_zero = set_davg_zero
-        self.skip_stat = skip_stat
+        self.fix_stat_std = fix_stat_std
+        self.set_stddev_constant = fix_stat_std != 0.0
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
+        self.smooth_edge_update = smooth_edge_update
 
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -254,6 +267,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                     update_residual_init=self.update_residual_init,
                     precision=precision,
                     optim_update=self.optim_update,
+                    smooth_edge_update=self.smooth_edge_update,
                     seed=child_seed(child_seed(seed, 1), ii),
                 )
             )
@@ -262,8 +276,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         wanted_shape = (self.ntypes, self.nnei, 4)
         mean = torch.zeros(wanted_shape, dtype=self.prec, device=env.DEVICE)
         stddev = torch.ones(wanted_shape, dtype=self.prec, device=env.DEVICE)
-        if self.skip_stat:
-            stddev = stddev * 0.3
+        if self.set_stddev_constant:
+            stddev = stddev * self.fix_stat_std
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
         self.stats = None
@@ -497,13 +511,13 @@ class DescrptBlockRepflows(DescriptorBlock):
                     torch.tensor(
                         real_nloc,
                         dtype=torch.int32,
-                        device=env.DEVICE,
-                    ),  # should be int of c++
+                        device=torch.device("cpu"),
+                    ),  # should be int of c++, placed on cpu
                     torch.tensor(
                         real_nall - real_nloc,
                         dtype=torch.int32,
-                        device=env.DEVICE,
-                    ),  # should be int of c++
+                        device=torch.device("cpu"),
+                    ),  # should be int of c++, placed on cpu
                 )
                 node_ebd_ext = ret[0].unsqueeze(0)
                 if has_spin:
@@ -554,7 +568,7 @@ class DescrptBlockRepflows(DescriptorBlock):
             The path to the stat file.
 
         """
-        if self.skip_stat and self.set_davg_zero:
+        if self.set_stddev_constant and self.set_davg_zero:
             return
         env_mat_stat = EnvMatStatSe(self)
         if path is not None:
@@ -574,9 +588,10 @@ class DescrptBlockRepflows(DescriptorBlock):
             self.mean.copy_(
                 torch.tensor(mean, device=env.DEVICE, dtype=self.mean.dtype)
             )
-        self.stddev.copy_(
-            torch.tensor(stddev, device=env.DEVICE, dtype=self.stddev.dtype)
-        )
+        if not self.set_stddev_constant:
+            self.stddev.copy_(
+                torch.tensor(stddev, device=env.DEVICE, dtype=self.stddev.dtype)
+            )
 
     def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""

@@ -457,9 +457,9 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         list[np.ndarray]
             the atomic ZBL weight for interpolation. (nframes, nloc, 1)
         """
-        assert (
-            self.sw_rmax > self.sw_rmin
-        ), "The upper boundary `sw_rmax` must be greater than the lower boundary `sw_rmin`."
+        assert self.sw_rmax > self.sw_rmin, (
+            "The upper boundary `sw_rmax` must be greater than the lower boundary `sw_rmin`."
+        )
 
         xp = array_api_compat.array_namespace(extended_coord, extended_atype)
         dp_nlist = nlists_[0]

@@ -167,6 +167,7 @@ myst_substitutions = {
     "tensorflow_icon": """![TensorFlow](/_static/tensorflow.svg){class=platform-icon}""",
     "pytorch_icon": """![PyTorch](/_static/pytorch.svg){class=platform-icon}""",
     "jax_icon": """![JAX](/_static/jax.svg){class=platform-icon}""",
+    "paddle_icon": """![Paddle](/_static/paddle.svg){class=platform-icon}""",
     "dpmodel_icon": """![DP](/_static/logo_icon.svg){class=platform-icon}""",
 }
 

@@ -1399,6 +1399,9 @@ void deepmd::print_summary(const std::string& pre) {
 #ifdef BUILD_PYTORCH
   std::cout << pre << "build with pt lib:  " + global_pt_lib << "\n";
 #endif
+#ifdef BUILD_PADDLE
+  std::cout << pre << "build with pd lib:  " + global_pd_lib << "\n";
+#endif
   std::cout << pre
             << "set tf intra_op_parallelism_threads: " << num_intra_nthreads
             << "\n";
@@ -1415,6 +1418,9 @@ deepmd::DPBackend deepmd::get_backend(const std::string& model) {
   } else if (model.length() >= 11 &&
              model.substr(model.length() - 11) == ".savedmodel") {
     return deepmd::DPBackend::JAX;
+  } else if ((model.length() >= 5 &&
+              model.substr(model.length() - 5) == ".json")) {
+    return deepmd::DPBackend::Paddle;
   }
   throw deepmd::deepmd_exception("Unsupported model file format");
 }

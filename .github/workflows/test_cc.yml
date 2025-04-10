@@ -29,7 +29,7 @@ jobs:
     - run: python -m pip install uv
     - name: Install Python dependencies
       run: |
-        source/install/uv_with_retry.sh pip install --system tensorflow-cpu
+        source/install/uv_with_retry.sh pip install --system tensorflow-cpu~=2.18.0 jax==0.5.0
         export TENSORFLOW_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
         source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp,jax] mpi4py
     - name: Convert models
@@ -52,8 +52,13 @@ jobs:
         LMP_CXX11_ABI_0: 1
         CMAKE_GENERATOR: Ninja
         CXXFLAGS: ${{ matrix.check_memleak && '-fsanitize=leak' || '' }}
+        LSAN_OPTIONS: suppressions=${{ github.workspace }}/.github/workflows/suppr.txt
     # test lammps
-    - run: pytest --cov=deepmd source/lmp/tests
+    - run: |
+        cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/paddle/lib/*.so ${{ github.workspace }}/dp_test/lib/
+        cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/third_party/install/onednn/lib/* ${{ github.workspace }}/dp_test/lib/
+        cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/third_party/install/mklml/lib/* ${{ github.workspace }}/dp_test/lib/
+        pytest --cov=deepmd source/lmp/tests
       env:
         OMP_NUM_THREADS: 1
         TF_INTRA_OP_PARALLELISM_THREADS: 1
@@ -62,12 +67,16 @@ jobs:
         LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib:${{ github.workspace }}/libtorch/lib
       if: ${{ !matrix.check_memleak }}
     # test ipi
-    - run: pytest --cov=deepmd source/ipi/tests
+    - run: |
+        export PATH=${{ github.workspace }}/dp_test/bin:$PATH
+        cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/paddle/lib/*.so ${{ github.workspace }}/dp_test/lib/
+        cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/third_party/install/onednn/lib/* ${{ github.workspace }}/dp_test/lib/
+        cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/third_party/install/mklml/lib/* ${{ github.workspace }}/dp_test/lib/
+        pytest --cov=deepmd source/ipi/tests
       env:
         OMP_NUM_THREADS: 1
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
-        PATH: ${{ github.workspace }}/dp_test/bin:$PATH
         LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib:${{ github.workspace }}/libtorch/lib
       if: ${{ !matrix.check_memleak }}
     - uses: codecov/codecov-action@v5

@@ -384,9 +384,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         If not start from checkpoint (resume is False),
         some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
-        assert (
-            self.__class__ == base_class.__class__
-        ), "Only descriptors of the same type can share params!"
+        assert self.__class__ == base_class.__class__, (
+            "Only descriptors of the same type can share params!"
+        )
         # For DPA1 descriptors, the user-defined share-level
         # shared_level: 0
         # share all parameters in both type_embedding and se_atten
@@ -451,9 +451,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         obj = self.se_atten
         obj.ntypes = len(type_map)
@@ -588,9 +588,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         # do some checks before the mocel compression process
         if self.compress:
             raise ValueError("Compression is already enabled.")
-        assert (
-            not self.se_atten.resnet_dt
-        ), "Model compression error: descriptor resnet_dt must be false!"
+        assert not self.se_atten.resnet_dt, (
+            "Model compression error: descriptor resnet_dt must be false!"
+        )
         for tt in self.se_atten.exclude_types:
             if (tt[0] not in range(self.se_atten.ntypes)) or (
                 tt[1] not in range(self.se_atten.ntypes)
