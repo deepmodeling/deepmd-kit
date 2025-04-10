@@ -31,7 +31,7 @@ from deepmd.pd.utils.env_mat_stat import (
 from deepmd.pd.utils.exclude_mask import (
     PairExcludeMask,
 )
-from deepmd.pd.utils.utils import (
+from deepmd.pt.utils.utils import (
     ActivationFn,
 )
 from deepmd.utils.env_mat_stat import (
@@ -414,7 +414,6 @@ class DescrptBlockRepformers(DescriptorBlock):
         if not self.direct_dist:
             g2, h2 = paddle.split(dmatrix, [1, 3], axis=-1)
         else:
-            # g2, h2 = paddle.linalg.norm(diff, axis=-1, keepdim=True), diff
             g2, h2 = paddle.linalg.norm(diff, axis=-1, keepdim=True), diff
             g2 = g2 / self.rcut
             h2 = h2 / self.rcut

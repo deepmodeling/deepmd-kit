@@ -50,8 +50,9 @@ class RepFlowLayer(paddle.nn.Layer):
         a_compress_e_rate: int = 1,
         n_multi_edge_message: int = 1,
         axis_neuron: int = 4,
-        update_angle: bool = True,  # angle
+        update_angle: bool = True,
         optim_update: bool = True,
+        smooth_edge_update: bool = False,
         activation_function: str = "silu",
         update_style: str = "res_residual",
         update_residual: float = 0.1,
@@ -77,9 +78,9 @@ class RepFlowLayer(paddle.nn.Layer):
         self.a_dim = a_dim
         self.a_compress_rate = a_compress_rate
         if a_compress_rate != 0:
-            assert a_dim % (2 * a_compress_rate) == 0, (
-                f"For a_compress_rate of {a_compress_rate}, a_dim must be divisible by {2 * a_compress_rate}. "
-                f"Currently, a_dim={a_dim} is not valid."
+            assert (a_dim * a_compress_e_rate) % (2 * a_compress_rate) == 0, (
+                f"For a_compress_rate of {a_compress_rate}, a_dim*a_compress_e_rate must be divisible by {2 * a_compress_rate}. "
+                f"Currently, a_dim={a_dim} and a_compress_e_rate={a_compress_e_rate} is not valid."
             )
         self.n_multi_edge_message = n_multi_edge_message
         assert self.n_multi_edge_message >= 1, "n_multi_edge_message must >= 1!"
@@ -96,6 +97,7 @@ class RepFlowLayer(paddle.nn.Layer):
         self.seed = seed
         self.prec = PRECISION_DICT[precision]
         self.optim_update = optim_update
+        self.smooth_edge_update = smooth_edge_update
 
         assert update_residual_init in [
             "norm",
@@ -396,52 +398,39 @@ class RepFlowLayer(paddle.nn.Layer):
         edge_ebd: paddle.Tensor,
         feat: str = "edge",
     ) -> paddle.Tensor:
-        angle_dim = angle_ebd.shape[-1]
-        node_dim = node_ebd.shape[-1]
-        edge_dim = edge_ebd.shape[-1]
-        sub_angle_idx = (0, angle_dim)
-        sub_node_idx = (angle_dim, angle_dim + node_dim)
-        sub_edge_idx_ij = (angle_dim + node_dim, angle_dim + node_dim + edge_dim)
-        sub_edge_idx_ik = (
-            angle_dim + node_dim + edge_dim,
-            angle_dim + node_dim + 2 * edge_dim,
-        )
-
         if feat == "edge":
+            assert self.edge_angle_linear1 is not None
             matrix, bias = self.edge_angle_linear1.matrix, self.edge_angle_linear1.bias
         elif feat == "angle":
+            assert self.angle_self_linear is not None
             matrix, bias = self.angle_self_linear.matrix, self.angle_self_linear.bias
         else:
             raise NotImplementedError
-        assert angle_dim + node_dim + 2 * edge_dim == matrix.shape[0]
+        assert bias is not None
+
+        angle_dim = angle_ebd.shape[-1]
+        node_dim = node_ebd.shape[-1]
+        edge_dim = edge_ebd.shape[-1]
+        # angle_dim, node_dim, edge_dim, edge_dim
+        sub_angle, sub_node, sub_edge_ij, sub_edge_ik = paddle.split(
+            matrix, [angle_dim, node_dim, edge_dim, edge_dim]
+        )
 
         # nf * nloc * a_sel * a_sel * angle_dim
-        sub_angle_update = paddle.matmul(
-            angle_ebd, matrix[sub_angle_idx[0] : sub_angle_idx[1]]
-        )
-
+        sub_angle_update = paddle.matmul(angle_ebd, sub_angle)
         # nf * nloc * angle_dim
-        sub_node_update = paddle.matmul(
-            node_ebd, matrix[sub_node_idx[0] : sub_node_idx[1]]
-        )
-
+        sub_node_update = paddle.matmul(node_ebd, sub_node)
         # nf * nloc * a_nnei * angle_dim
-        sub_edge_update_ij = paddle.matmul(
-            edge_ebd, matrix[sub_edge_idx_ij[0] : sub_edge_idx_ij[1]]
-        )
-        sub_edge_update_ik = paddle.matmul(
-            edge_ebd, matrix[sub_edge_idx_ik[0] : sub_edge_idx_ik[1]]
-        )
+        sub_edge_update_ij = paddle.matmul(edge_ebd, sub_edge_ij)
+        sub_edge_update_ik = paddle.matmul(edge_ebd, sub_edge_ik)
 
         result_update = (
-            sub_angle_update
-            + sub_node_update[:, :, None, None, :]
-            + sub_edge_update_ij[:, :, None, :, :]
-            + sub_edge_update_ik[:, :, :, None, :]
-            # + sub_node_update.unsqueeze([-2, -2])
-            # + sub_edge_update_ij.unsqueeze([2])
-            # + sub_edge_update_ik.unsqueeze([3])
-        ) + bias
+            bias
+            + sub_node_update.unsqueeze(2).unsqueeze(3)
+            + sub_edge_update_ij.unsqueeze(2)
+            + sub_edge_update_ik.unsqueeze(3)
+            + sub_angle_update
+        )
         return result_update
 
     def optim_edge_update(
@@ -452,40 +441,31 @@ class RepFlowLayer(paddle.nn.Layer):
         nlist: paddle.Tensor,
         feat: str = "node",
     ) -> paddle.Tensor:
-        node_dim = node_ebd.shape[-1]
-        edge_dim = edge_ebd.shape[-1]
-        sub_node_idx = (0, node_dim)
-        sub_node_ext_idx = (node_dim, 2 * node_dim)
-        sub_edge_idx = (2 * node_dim, 2 * node_dim + edge_dim)
-
         if feat == "node":
             matrix, bias = self.node_edge_linear.matrix, self.node_edge_linear.bias
         elif feat == "edge":
             matrix, bias = self.edge_self_linear.matrix, self.edge_self_linear.bias
         else:
             raise NotImplementedError
-        assert 2 * node_dim + edge_dim == matrix.shape[0]
+        assert bias is not None
+
+        node_dim = node_ebd.shape[-1]
+        edge_dim = edge_ebd.shape[-1]
+        # node_dim, node_dim, edge_dim
+        node, node_ext, edge = paddle.split(matrix, [node_dim, node_dim, edge_dim])
 
         # nf * nloc * node/edge_dim
-        sub_node_update = paddle.matmul(
-            node_ebd, matrix[sub_node_idx[0] : sub_node_idx[1]]
-        )
-
+        sub_node_update = paddle.matmul(node_ebd, node)
         # nf * nall * node/edge_dim
-        sub_node_ext_update = paddle.matmul(
-            node_ebd_ext, matrix[sub_node_ext_idx[0] : sub_node_ext_idx[1]]
-        )
+        sub_node_ext_update = paddle.matmul(node_ebd_ext, node_ext)
         # nf * nloc * nnei * node/edge_dim
         sub_node_ext_update = _make_nei_g1(sub_node_ext_update, nlist)
-
         # nf * nloc * nnei * node/edge_dim
-        sub_edge_update = paddle.matmul(
-            edge_ebd, matrix[sub_edge_idx[0] : sub_edge_idx[1]]
-        )
+        sub_edge_update = paddle.matmul(edge_ebd, edge)
 
         result_update = (
-            sub_edge_update + sub_node_ext_update + sub_node_update[:, :, None, :]
-        ) + bias
+            bias + sub_node_update.unsqueeze(2) + sub_edge_update + sub_node_ext_update
+        )
         return result_update
 
     def forward(
@@ -536,7 +516,7 @@ class RepFlowLayer(paddle.nn.Layer):
         """
         nb, nloc, nnei, _ = edge_ebd.shape
         nall = node_ebd_ext.shape[1]
-        node_ebd, _ = paddle.split(node_ebd_ext, [nloc, nall - nloc], axis=1)
+        node_ebd = node_ebd_ext[:, :nloc, :]
         if paddle.in_dynamic_mode():
             assert [nb, nloc] == node_ebd.shape[:2]
         if paddle.in_dynamic_mode():
@@ -711,9 +691,7 @@ class RepFlowLayer(paddle.nn.Layer):
 
             # nb x nloc x a_nnei x a_nnei x e_dim
             weighted_edge_angle_update = (
-                edge_angle_update  # * a_sw.unsqueeze([-1, -1]) * a_sw.unsqueeze([2, -1])
-                * a_sw[:, :, :, None, None]
-                * a_sw[:, :, None, :, None]
+                a_sw[..., None, None] * a_sw[..., None, :, None] * edge_angle_update
             )
             # nb x nloc x a_nnei x e_dim
             reduced_edge_angle_update = paddle.sum(
@@ -730,19 +708,21 @@ class RepFlowLayer(paddle.nn.Layer):
                 ],
                 axis=2,
             )
-            full_mask = paddle.concat(
-                [
-                    a_nlist_mask,
-                    paddle.zeros(
-                        [nb, nloc, self.nnei - self.a_sel],
-                        dtype=a_nlist_mask.dtype,
-                    ).to(device=a_nlist_mask.place),
-                ],
-                axis=-1,
-            )
-            padding_edge_angle_update = paddle.where(
-                full_mask.unsqueeze(-1), padding_edge_angle_update, edge_ebd
-            )
+            if not self.smooth_edge_update:
+                # will be deprecated in the future
+                full_mask = paddle.concat(
+                    [
+                        a_nlist_mask,
+                        paddle.zeros(
+                            [nb, nloc, self.nnei - self.a_sel],
+                            dtype=a_nlist_mask.dtype,
+                        ).to(a_nlist_mask.device),
+                    ],
+                    dim=-1,
+                )
+                padding_edge_angle_update = paddle.where(
+                    full_mask.unsqueeze(-1), padding_edge_angle_update, edge_ebd
+                )
             e_update_list.append(
                 self.act(self.edge_angle_linear2(padding_edge_angle_update))
             )
@@ -830,7 +810,7 @@ class RepFlowLayer(paddle.nn.Layer):
             The serialized networks.
         """
         data = {
-            "@class": "RepformerLayer",
+            "@class": "RepFlowLayer",
             "@version": 1,
             "e_rcut": self.e_rcut,
             "e_rcut_smth": self.e_rcut_smth,
@@ -853,6 +833,8 @@ class RepFlowLayer(paddle.nn.Layer):
             "update_residual": self.update_residual,
             "update_residual_init": self.update_residual_init,
             "precision": self.precision,
+            "optim_update": self.optim_update,
+            "smooth_edge_update": self.smooth_edge_update,
             "node_self_mlp": self.node_self_mlp.serialize(),
             "node_sym_linear": self.node_sym_linear.serialize(),
             "node_edge_linear": self.node_edge_linear.serialize(),

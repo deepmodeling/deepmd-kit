@@ -225,26 +225,28 @@ class EnergyStdLoss(TaskLoss):
                 )
                 # more_loss['log_keys'].append('rmse_e')
             else:  # use l1 and for all atoms
-                energy_pred = energy_pred * atom_norm
-                energy_label = energy_label * atom_norm
                 l1_ener_loss = F.l1_loss(
                     energy_pred.reshape([-1]),
                     energy_label.reshape([-1]),
-                    reduction="mean",
+                    reduction="sum",
                 )
                 loss += pref_e * l1_ener_loss
                 more_loss["mae_e"] = self.display_if_exist(
-                    l1_ener_loss.detach(),
+                    F.l1_loss(
+                        energy_pred.reshape([-1]),
+                        energy_label.reshape([-1]),
+                        reduction="mean",
+                    ).detach(),
                     find_energy,
                 )
                 # more_loss['log_keys'].append('rmse_e')
-            # if mae:
-            #     mae_e = torch.mean(torch.abs(energy_pred - energy_label)) * atom_norm
-            #     more_loss["mae_e"] = self.display_if_exist(mae_e.detach(), find_energy)
-            #     mae_e_all = torch.mean(torch.abs(energy_pred - energy_label))
-            #     more_loss["mae_e_all"] = self.display_if_exist(
-            #         mae_e_all.detach(), find_energy
-            #     )
+            if mae:
+                mae_e = paddle.mean(paddle.abs(energy_pred - energy_label)) * atom_norm
+                more_loss["mae_e"] = self.display_if_exist(mae_e.detach(), find_energy)
+                mae_e_all = paddle.mean(paddle.abs(energy_pred - energy_label))
+                more_loss["mae_e_all"] = self.display_if_exist(
+                    mae_e_all.detach(), find_energy
+                )
 
         if (
             (self.has_f or self.has_pf or self.relative_f or self.has_gf)
@@ -289,13 +291,13 @@ class EnergyStdLoss(TaskLoss):
                     more_loss["mae_f"] = self.display_if_exist(
                         l1_force_loss.detach(), find_force
                     )
-                    # l1_force_loss = l1_force_loss.sum(-1).mean(-1).sum()
+                    l1_force_loss = l1_force_loss.sum(-1).mean(-1).sum()
                     loss += (pref_f * l1_force_loss).to(GLOBAL_PD_FLOAT_PRECISION)
-                # if mae:
-                #     mae_f = torch.mean(torch.abs(diff_f))
-                #     more_loss["mae_f"] = self.display_if_exist(
-                #         mae_f.detach(), find_force
-                #     )
+                if mae:
+                    mae_f = paddle.mean(paddle.abs(diff_f))
+                    more_loss["mae_f"] = self.display_if_exist(
+                        mae_f.detach(), find_force
+                    )
 
             if self.has_pf and "atom_pref" in label:
                 atom_pref = label["atom_pref"]
@@ -351,33 +353,11 @@ class EnergyStdLoss(TaskLoss):
         if self.has_v and "virial" in model_pred and "virial" in label:
             find_virial = label.get("find_virial", 0.0)
             pref_v = pref_v * find_virial
-            virial_label = label["virial"]
-            virial_pred = model_pred["virial"].reshape([-1, 9])
             diff_v = label["virial"] - model_pred["virial"].reshape([-1, 9])
-            if not self.use_l1_all:
-                l2_virial_loss = paddle.mean(paddle.square(diff_v))
-                if not self.inference:
-                    more_loss["l2_virial_loss"] = self.display_if_exist(
-                        l2_virial_loss.detach(), find_virial
-                    )
-                if not self.huber:
-                    loss += atom_norm * (pref_v * l2_virial_loss)
-                else:
-                    if self.torch_huber:
-                        l_huber_loss = self.huber_loss(
-                            atom_norm * model_pred["virial"],
-                            atom_norm * label["virial"],
-                        )
-                    else:
-                        l_huber_loss = custom_huber_loss(
-                            atom_norm * model_pred["virial"].reshape([-1]),
-                            atom_norm * label["virial"].reshape([-1]),
-                            delta=self.huber_delta,
-                        )
-                    loss += pref_v * l_huber_loss
-                rmse_v = l2_virial_loss.sqrt() * atom_norm
-                more_loss["rmse_v"] = self.display_if_exist(
-                    rmse_v.detach(), find_virial
+            l2_virial_loss = paddle.mean(paddle.square(diff_v))
+            if not self.inference:
+                more_loss["l2_virial_loss"] = self.display_if_exist(
+                    l2_virial_loss.detach(), find_virial
                 )
             if not self.use_huber:
                 loss += atom_norm * (pref_v * l2_virial_loss)

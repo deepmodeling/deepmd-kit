@@ -63,6 +63,36 @@ from .repflows import (
 
 @BaseDescriptor.register("dpa3")
 class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
+    r"""The DPA-3 descriptor.
+
+    Parameters
+    ----------
+    repflow : Union[RepFlowArgs, dict]
+        The arguments used to initialize the repflow block, see docstr in `RepFlowArgs` for details information.
+    concat_output_tebd : bool, optional
+        Whether to concat type embedding at the output of the descriptor.
+    activation_function : str, optional
+        The activation function in the embedding net.
+    precision : str, optional
+        The precision of the embedding net parameters.
+    exclude_types : list[list[int]], optional
+        The excluded pairs of types which have no interaction with each other.
+        For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    env_protection : float, optional
+        Protection parameter to prevent division by zero errors during environment matrix calculations.
+        For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
+    trainable : bool, optional
+        If the parameters are trainable.
+    seed : int, optional
+        Random seed for parameter initialization.
+    use_econf_tebd : bool, Optional
+        Whether to use electronic configuration type embedding.
+    use_tebd_bias : bool, Optional
+        Whether to use bias in the type embedding layer.
+    type_map : list[str], Optional
+        A list of strings. Give the name to each type of atoms.
+    """
+
     def __init__(
         self,
         ntypes: int,
@@ -80,50 +110,6 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
     ) -> None:
-        r"""The DPA-3 descriptor.
-
-        Parameters
-        ----------
-        repflow : Union[RepFlowArgs, dict]
-            The arguments used to initialize the repflow block, see docstr in `RepFlowArgs` for details information.
-        concat_output_tebd : bool, optional
-            Whether to concat type embedding at the output of the descriptor.
-        activation_function : str, optional
-            The activation function in the embedding net.
-        precision : str, optional
-            The precision of the embedding net parameters.
-        exclude_types : list[list[int]], optional
-            The excluded pairs of types which have no interaction with each other.
-            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
-        env_protection : float, optional
-            Protection parameter to prevent division by zero errors during environment matrix calculations.
-            For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
-        trainable : bool, optional
-            If the parameters are trainable.
-        seed : int, optional
-            Random seed for parameter initialization.
-        use_econf_tebd : bool, Optional
-            Whether to use electronic configuration type embedding.
-        use_tebd_bias : bool, Optional
-            Whether to use bias in the type embedding layer.
-        type_map : list[str], Optional
-            A list of strings. Give the name to each type of atoms.
-
-        Returns
-        -------
-        descriptor:         paddle.Tensor
-            the descriptor of shape nb x nloc x n_dim.
-            invariant single-atom representation.
-        g2:                 paddle.Tensor
-            invariant pair-atom representation.
-        h2:                 paddle.Tensor
-            equivariant pair-atom representation.
-        rot_mat:            paddle.Tensor
-            rotation matrix for equivariant fittings
-        sw:                 paddle.Tensor
-            The switch function for decaying inverse distance.
-
-        """
         super().__init__()
 
         def init_subclass_params(sub_data, sub_class):
@@ -161,8 +147,9 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             update_style=self.repflow_args.update_style,
             update_residual=self.repflow_args.update_residual,
             update_residual_init=self.repflow_args.update_residual_init,
+            fix_stat_std=self.repflow_args.fix_stat_std,
             optim_update=self.repflow_args.optim_update,
-            skip_stat=self.repflow_args.skip_stat,
+            smooth_edge_update=self.repflow_args.smooth_edge_update,
             exclude_types=exclude_types,
             env_protection=env_protection,
             precision=precision,
@@ -189,8 +176,14 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         self.env_protection = env_protection
         self.trainable = trainable
 
-        assert self.repflows.e_rcut > self.repflows.a_rcut
-        assert self.repflows.e_sel > self.repflows.a_sel
+        assert self.repflows.e_rcut >= self.repflows.a_rcut, (
+            f"Edge radial cutoff (e_rcut: {self.repflows.e_rcut}) "
+            f"must be greater than or equal to angular cutoff (a_rcut: {self.repflows.a_rcut})!"
+        )
+        assert self.repflows.e_sel >= self.repflows.a_sel, (
+            f"Edge sel number (e_sel: {self.repflows.e_sel}) "
+            f"must be greater than or equal to angular sel (a_sel: {self.repflows.a_sel})!"
+        )
 
         self.rcut = self.repflows.get_rcut()
         self.rcut_smth = self.repflows.get_rcut_smth()
@@ -267,9 +260,9 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         If not start from checkpoint (resume is False),
         some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
-        assert (
-            self.__class__ == base_class.__class__
-        ), "Only descriptors of the same type can share params!"
+        assert self.__class__ == base_class.__class__, (
+            "Only descriptors of the same type can share params!"
+        )
         # For DPA3 descriptors, the user-defined share-level
         # shared_level: 0
         # share all parameters in type_embedding, repflow
@@ -290,9 +283,9 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map
         self.type_embedding.change_type_map(type_map=type_map)

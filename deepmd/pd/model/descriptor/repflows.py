@@ -45,30 +45,91 @@ from .repflow_layer import (
     RepFlowLayer,
 )
 
-# if not hasattr(paddle.ops.deepmd, "border_op"):
-
-#     def border_op(
-#         argument0,
-#         argument1,
-#         argument2,
-#         argument3,
-#         argument4,
-#         argument5,
-#         argument6,
-#         argument7,
-#         argument8,
-#     ) -> paddle.Tensor:
-#         raise NotImplementedError(
-#             "border_op is not available since customized PyTorch OP library is not built when freezing the model. "
-#             "See documentation for DPA-3 for details."
-#         )
-
-#     # Note: this hack cannot actually save a model that can be run using LAMMPS.
-#     paddle.ops.deepmd.border_op = border_op
-
 
 @DescriptorBlock.register("se_repflow")
 class DescrptBlockRepflows(DescriptorBlock):
+    r"""
+    The repflow descriptor block.
+
+    Parameters
+    ----------
+    n_dim : int, optional
+        The dimension of node representation.
+    e_dim : int, optional
+        The dimension of edge representation.
+    a_dim : int, optional
+        The dimension of angle representation.
+    nlayers : int, optional
+        Number of repflow layers.
+    e_rcut : float, optional
+        The edge cut-off radius.
+    e_rcut_smth : float, optional
+        Where to start smoothing for edge. For example the 1/r term is smoothed from rcut to rcut_smth.
+    e_sel : int, optional
+        Maximally possible number of selected edge neighbors.
+    a_rcut : float, optional
+        The angle cut-off radius.
+    a_rcut_smth : float, optional
+        Where to start smoothing for angle. For example the 1/r term is smoothed from rcut to rcut_smth.
+    a_sel : int, optional
+        Maximally possible number of selected angle neighbors.
+    a_compress_rate : int, optional
+        The compression rate for angular messages. The default value is 0, indicating no compression.
+        If a non-zero integer c is provided, the node and edge dimensions will be compressed
+        to a_dim/c and a_dim/2c, respectively, within the angular message.
+    a_compress_e_rate : int, optional
+        The extra compression rate for edge in angular message compression. The default value is 1.
+        When using angular message compression with a_compress_rate c and a_compress_e_rate c_e,
+        the edge dimension will be compressed to (c_e * a_dim / 2c) within the angular message.
+    a_compress_use_split : bool, optional
+        Whether to split first sub-vectors instead of linear mapping during angular message compression.
+        The default value is False.
+    n_multi_edge_message : int, optional
+        The head number of multiple edge messages to update node feature.
+        Default is 1, indicating one head edge message.
+    axis_neuron : int, optional
+        The number of dimension of submatrix in the symmetrization ops.
+    update_angle : bool, optional
+        Where to update the angle rep. If not, only node and edge rep will be used.
+    update_style : str, optional
+        Style to update a representation.
+        Supported options are:
+        -'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n)
+        -'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)
+        -'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n)
+        where `r1`, `r2` ... `r3` are residual weights defined by `update_residual`
+        and `update_residual_init`.
+    update_residual : float, optional
+        When update using residual mode, the initial std of residual vector weights.
+    update_residual_init : str, optional
+        When update using residual mode, the initialization mode of residual vector weights.
+    fix_stat_std : float, optional
+        If non-zero (default is 0.3), use this constant as the normalization standard deviation
+        instead of computing it from data statistics.
+    smooth_edge_update : bool, optional
+        Whether to make edge update smooth.
+        If True, the edge update from angle message will not use self as padding.
+    optim_update : bool, optional
+        Whether to enable the optimized update method.
+        Uses a more efficient process when enabled. Defaults to True
+    ntypes : int
+        Number of element types
+    activation_function : str, optional
+        The activation function in the embedding net.
+    set_davg_zero : bool, optional
+        Set the normalization average to zero.
+    precision : str, optional
+        The precision of the embedding net parameters.
+    exclude_types : list[list[int]], optional
+        The excluded pairs of types which have no interaction with each other.
+        For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    env_protection : float, optional
+        Protection parameter to prevent division by zero errors during environment matrix calculations.
+        For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
+    seed : int, optional
+        Random seed for parameter initialization.
+    """
+
     def __init__(
         self,
         e_rcut,
@@ -96,82 +157,11 @@ class DescrptBlockRepflows(DescriptorBlock):
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         precision: str = "float64",
-        skip_stat: bool = True,
+        fix_stat_std: float = 0.3,
+        smooth_edge_update: bool = False,
         optim_update: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
-        r"""
-        The repflow descriptor block.
-
-        Parameters
-        ----------
-        n_dim : int, optional
-            The dimension of node representation.
-        e_dim : int, optional
-            The dimension of edge representation.
-        a_dim : int, optional
-            The dimension of angle representation.
-        nlayers : int, optional
-            Number of repflow layers.
-        e_rcut : float, optional
-            The edge cut-off radius.
-        e_rcut_smth : float, optional
-            Where to start smoothing for edge. For example the 1/r term is smoothed from rcut to rcut_smth.
-        e_sel : int, optional
-            Maximally possible number of selected edge neighbors.
-        a_rcut : float, optional
-            The angle cut-off radius.
-        a_rcut_smth : float, optional
-            Where to start smoothing for angle. For example the 1/r term is smoothed from rcut to rcut_smth.
-        a_sel : int, optional
-            Maximally possible number of selected angle neighbors.
-        a_compress_rate : int, optional
-            The compression rate for angular messages. The default value is 0, indicating no compression.
-            If a non-zero integer c is provided, the node and edge dimensions will be compressed
-            to a_dim/c and a_dim/2c, respectively, within the angular message.
-        a_compress_e_rate : int, optional
-            The extra compression rate for edge in angular message compression. The default value is 1.
-            When using angular message compression with a_compress_rate c and a_compress_e_rate c_e,
-            the edge dimension will be compressed to (c_e * a_dim / 2c) within the angular message.
-        a_compress_use_split : bool, optional
-            Whether to split first sub-vectors instead of linear mapping during angular message compression.
-            The default value is False.
-        n_multi_edge_message : int, optional
-            The head number of multiple edge messages to update node feature.
-            Default is 1, indicating one head edge message.
-        axis_neuron : int, optional
-            The number of dimension of submatrix in the symmetrization ops.
-        update_angle : bool, optional
-            Where to update the angle rep. If not, only node and edge rep will be used.
-        update_style : str, optional
-            Style to update a representation.
-            Supported options are:
-            -'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n)
-            -'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)
-            -'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n)
-            where `r1`, `r2` ... `r3` are residual weights defined by `update_residual`
-            and `update_residual_init`.
-        update_residual : float, optional
-            When update using residual mode, the initial std of residual vector weights.
-        update_residual_init : str, optional
-            When update using residual mode, the initialization mode of residual vector weights.
-        ntypes : int
-            Number of element types
-        activation_function : str, optional
-            The activation function in the embedding net.
-        set_davg_zero : bool, optional
-            Set the normalization average to zero.
-        precision : str, optional
-            The precision of the embedding net parameters.
-        exclude_types : list[list[int]], optional
-            The excluded pairs of types which have no interaction with each other.
-            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
-        env_protection : float, optional
-            Protection parameter to prevent division by zero errors during environment matrix calculations.
-            For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
-        seed : int, optional
-            Random seed for parameter initialization.
-        """
         super().__init__()
         self.e_rcut = float(e_rcut)
         self.e_rcut_smth = float(e_rcut_smth)
@@ -196,9 +186,11 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.n_multi_edge_message = n_multi_edge_message
         self.axis_neuron = axis_neuron
         self.set_davg_zero = set_davg_zero
-        self.skip_stat = skip_stat
+        self.fix_stat_std = fix_stat_std
+        self.set_stddev_constant = fix_stat_std != 0.0
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
+        self.smooth_edge_update = smooth_edge_update
 
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -251,6 +243,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                     update_residual_init=self.update_residual_init,
                     precision=precision,
                     optim_update=self.optim_update,
+                    smooth_edge_update=self.smooth_edge_update,
                     seed=child_seed(child_seed(seed, 1), ii),
                 )
             )
@@ -259,8 +252,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         wanted_shape = (self.ntypes, self.nnei, 4)
         mean = paddle.zeros(wanted_shape, dtype=self.prec).to(device=env.DEVICE)
         stddev = paddle.ones(wanted_shape, dtype=self.prec).to(device=env.DEVICE)
-        if self.skip_stat:
-            stddev = stddev * 0.3
+        if self.set_stddev_constant:
+            stddev = stddev * self.fix_stat_std
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
         self.stats = None
@@ -380,10 +373,6 @@ class DescrptBlockRepflows(DescriptorBlock):
             self.e_rcut_smth,
             protection=self.env_protection,
         )
-        # print(dmatrix.min().item(), dmatrix.mean().item(), dmatrix.max().item())
-        # print(diff.min().item(), diff.mean().item(), diff.max().item())
-        # print(sw.min().item(), sw.mean().item(), sw.max().item())
-        # exit()
         nlist_mask = nlist != -1
         sw = paddle.squeeze(sw, -1)
         # beyond the cutoff sw should be 0.0
@@ -392,14 +381,14 @@ class DescrptBlockRepflows(DescriptorBlock):
         # [nframes, nloc, tebd_dim]
         if comm_dict is None:
             if paddle.in_dynamic_mode():
-                assert isinstance(extended_atype_embd, paddle.Tensor)  # for jit
+                assert isinstance(extended_atype_embd, paddle.Tensor)
             atype_embd = extended_atype_embd[:, :nloc, :]
             if paddle.in_dynamic_mode():
                 assert atype_embd.shape == [nframes, nloc, self.n_dim]
         else:
             atype_embd = extended_atype_embd
             if paddle.in_dynamic_mode():
-                assert isinstance(atype_embd, paddle.Tensor)  # for jit
+                assert isinstance(atype_embd, paddle.Tensor)
         node_ebd = self.act(atype_embd)
         n_dim = node_ebd.shape[-1]
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
@@ -461,74 +450,11 @@ class DescrptBlockRepflows(DescriptorBlock):
             # node_ebd_ext: nb x nall x n_dim
             if comm_dict is None:
                 assert mapping is not None
-                # print('%', node_ebd.shape, mapping.shape, mapping.dtype, mapping.min().item(), mapping.max().item())
                 node_ebd_ext = paddle.take_along_axis(
                     node_ebd, mapping, 1, broadcast=False
                 )
             else:
-                raise NotImplementedError("border_op is not supported in paddle yet")
-                # has_spin = "has_spin" in comm_dict
-                # if not has_spin:
-                #     n_padding = nall - nloc
-                #     node_ebd = paddle.nn.functional.pad(
-                #         node_ebd.squeeze(0), (0, 0, 0, n_padding), value=0.0
-                #     )
-                #     real_nloc = nloc
-                #     real_nall = nall
-                # else:
-                #     # for spin
-                #     real_nloc = nloc // 2
-                #     real_nall = nall // 2
-                #     real_n_padding = real_nall - real_nloc
-                #     node_ebd_real, node_ebd_virtual = paddle.split(
-                #         node_ebd, [real_nloc, real_nloc], axis=1
-                #     )
-                #     # mix_node_ebd: nb x real_nloc x (n_dim * 2)
-                #     mix_node_ebd = paddle.concat([node_ebd_real, node_ebd_virtual], axis=2)
-                #     # nb x real_nall x (n_dim * 2)
-                #     node_ebd = paddle.nn.functional.pad(
-                #         mix_node_ebd.squeeze(0), (0, 0, 0, real_n_padding), value=0.0
-                #     )
-
-                # assert "send_list" in comm_dict
-                # assert "send_proc" in comm_dict
-                # assert "recv_proc" in comm_dict
-                # assert "send_num" in comm_dict
-                # assert "recv_num" in comm_dict
-                # assert "communicator" in comm_dict
-                # ret = paddle.ops.deepmd.border_op(
-                #     comm_dict["send_list"],
-                #     comm_dict["send_proc"],
-                #     comm_dict["recv_proc"],
-                #     comm_dict["send_num"],
-                #     comm_dict["recv_num"],
-                #     node_ebd,
-                #     comm_dict["communicator"],
-                #     paddle.to_tensor(
-                #         real_nloc,
-                #         dtype=paddle.int32,
-                #         place=env.DEVICE,
-                #     ),  # should be int of c++
-                #     paddle.to_tensor(
-                #         real_nall - real_nloc,
-                #         dtype=paddle.int32,
-                #         place=env.DEVICE,
-                #     ),  # should be int of c++
-                # )
-                # node_ebd_ext = ret[0].unsqueeze(0)
-                # if has_spin:
-                #     node_ebd_real_ext, node_ebd_virtual_ext = paddle.split(
-                #         node_ebd_ext, [n_dim, n_dim], axis=2
-                #     )
-                #     node_ebd_ext = concat_switch_virtual(
-                #         node_ebd_real_ext, node_ebd_virtual_ext, real_nloc
-                #     )
-            # print(node_ebd_ext.min().item(), node_ebd_ext.mean().item(), node_ebd_ext.max().item())
-            # print(edge_ebd.min().item(), edge_ebd.mean().item(), edge_ebd.max().item())
-            # print(h2.min().item(), h2.mean().item(), h2.max().item())
-            # print(angle_ebd.min().item(), angle_ebd.mean().item(), angle_ebd.max().item())
-            # print(sw.min().item(), sw.mean().item(), sw.max().item())
-            # print(a_sw.min().item(), a_sw.mean().item(), a_sw.max().item())
+                raise NotImplementedError("Not implemented")
             node_ebd, edge_ebd, angle_ebd = ll.forward(
                 node_ebd_ext,
                 edge_ebd,
@@ -541,12 +467,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                 a_nlist_mask,
                 a_sw,
             )
-            # print(node_ebd.min().item(), node_ebd.mean().item(), node_ebd.max().item())
-            # print(edge_ebd.min().item(), edge_ebd.mean().item(), edge_ebd.max().item())
-            # print(angle_ebd.min().item(), angle_ebd.mean().item(), angle_ebd.max().item())
-            # print('\n')
 
-        # exit()
         # nb x nloc x 3 x e_dim
         h2g2 = RepFlowLayer._cal_hg(edge_ebd, h2, nlist_mask, sw)
         # (nb x nloc) x e_dim x 3
@@ -581,7 +502,7 @@ class DescrptBlockRepflows(DescriptorBlock):
             The path to the stat file.
 
         """
-        if self.skip_stat and self.set_davg_zero:
+        if self.set_stddev_constant and self.set_davg_zero:
             return
         env_mat_stat = EnvMatStatSe(self)
         if path is not None:
@@ -602,10 +523,11 @@ class DescrptBlockRepflows(DescriptorBlock):
                 paddle.to_tensor(mean, dtype=self.mean.dtype, place=env.DEVICE),
                 self.mean,
             )
-        paddle.assign(
-            paddle.to_tensor(stddev, dtype=self.stddev.dtype, place=env.DEVICE),
-            self.stddev,
-        )
+        if not self.set_stddev_constant:
+            paddle.assign(
+                paddle.to_tensor(stddev, dtype=self.stddev.dtype, place=env.DEVICE),
+                self.stddev,
+            )
 
     def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""

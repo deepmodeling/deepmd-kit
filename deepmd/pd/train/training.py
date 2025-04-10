@@ -29,9 +29,6 @@ from paddle.io import (
 from deepmd.common import (
     symlink_prefix_files,
 )
-from deepmd.dpmodel.utils.learning_rate import (
-    LearningRateExp,
-)
 from deepmd.loggers.training import (
     format_training_message_per_task,
 )
@@ -61,12 +58,15 @@ from deepmd.pd.utils.env import (
     SAMPLER_RECORD,
     enable_prim,
 )
-from deepmd.pd.utils.stat import (
-    make_stat_input,
+from deepmd.pd.utils.learning_rate import (
+    LearningRateExp,
 )
 from deepmd.pd.utils.utils import (
     nvprof_context,
     to_numpy_array,
+)
+from deepmd.pt.utils.stat import (
+    make_stat_input,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -185,7 +185,6 @@ class Trainer:
                     if dist.is_available()
                     else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
                     collate_fn=lambda batch: batch[0],  # prevent extra conversion
-                    # pin_memory=True,
                 )
                 _data_buffered = BufferedIterator(iter(_dataloader))
                 return _dataloader, _data_buffered
@@ -274,8 +273,22 @@ class Trainer:
         else:
             self.opt_type, self.opt_param = get_opt_param(training_params)
 
+        # loss_param_tmp for Hessian activation
+        loss_param_tmp = None
+        if not self.multi_task:
+            loss_param_tmp = config["loss"]
+        else:
+            loss_param_tmp = {
+                model_key: config["loss_dict"][model_key]
+                for model_key in self.model_keys
+            }
+
         # Model
-        self.model = get_model_for_wrapper(model_params, resuming=resuming)
+        self.model = get_model_for_wrapper(
+            model_params,
+            resuming=resuming,
+            _loss_params=loss_param_tmp,
+        )
 
         # Loss
         if not self.multi_task:
@@ -632,7 +645,7 @@ class Trainer:
         self.profiling = training_params.get("profiling", False)
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
 
-    def run(self):
+    def run(self) -> None:
         if CINN:
             from paddle import (
                 jit,
@@ -674,11 +687,15 @@ class Trainer:
             core.nvprof_enable_record_event()
 
         def step(_step_id, task_key="Default") -> None:
+            if self.multi_task:
+                model_index = dp_random.choice(
+                    np.arange(self.num_model, dtype=np.int_),
+                    p=self.model_prob,
+                )
+                task_key = self.model_keys[model_index]
             # Paddle Profiler
             if enable_profiling:
                 core.nvprof_nvtx_push(f"Training step {_step_id}")
-
-            self.wrapper.train()
             if isinstance(self.lr_exp, dict):
                 _lr = self.lr_exp[task_key]
             else:
@@ -722,7 +739,6 @@ class Trainer:
 
                 with nvprof_context(enable_profiling, "Adam update"):
                     self.optimizer.step()
-
                 self.scheduler.step()
 
             else:
@@ -905,24 +921,8 @@ class Trainer:
         self.wrapper.train()
         self.t0 = time.time()
         self.total_train_time = 0.0
-        for step_id in range(self.num_steps):
-            if step_id < self.start_step:
-                continue
-            if self.multi_task:
-                chosen_index_list = dp_random.choice(
-                    np.arange(
-                        self.num_model, dtype=np.int32
-                    ),  # int32 should be enough for # models...
-                    p=np.array(self.model_prob),
-                    size=self.world_size,
-                    replace=True,
-                )
-                assert chosen_index_list.size == self.world_size
-                model_index = chosen_index_list[self.rank]
-                model_key = self.model_keys[model_index]
-            else:
-                model_key = "Default"
-            step(step_id, model_key)
+        for step_id in range(self.start_step, self.num_steps):
+            step(step_id)
             if JIT:
                 break
 
@@ -1067,9 +1067,11 @@ class Trainer:
                 continue
             elif not isinstance(batch_data[key], list):
                 if batch_data[key] is not None:
-                    batch_data[key] = batch_data[key].to(DEVICE)
+                    batch_data[key] = batch_data[key].to(DEVICE, non_blocking=True)
             else:
-                batch_data[key] = [item.to(DEVICE) for item in batch_data[key]]
+                batch_data[key] = [
+                    item.to(DEVICE, non_blocking=True) for item in batch_data[key]
+                ]
         # we may need a better way to classify which are inputs and which are labels
         # now wrapper only supports the following inputs:
         input_keys = [
