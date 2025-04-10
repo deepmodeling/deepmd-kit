@@ -134,7 +134,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             n_multi_edge_message,
             precision,
         ) = self.param
-        return True
+        return CommonTest.skip_pt
 
     @property
     def skip_pd(self) -> bool:
@@ -151,7 +151,6 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
         ) = self.param
         return not INSTALLED_PD or precision == "bfloat16"
-        # return True
 
     @property
     def skip_dp(self) -> bool:
