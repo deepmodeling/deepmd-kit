@@ -7,6 +7,7 @@ from collections import (
 from deepmd.dpmodel.descriptor import (
     DescrptDPA1,
     DescrptDPA2,
+    DescrptDPA3,
     DescrptHybrid,
     DescrptSeA,
     DescrptSeR,
@@ -16,6 +17,9 @@ from deepmd.dpmodel.descriptor import (
 from deepmd.dpmodel.descriptor.dpa2 import (
     RepformerArgs,
     RepinitArgs,
+)
+from deepmd.dpmodel.descriptor.dpa3 import (
+    RepFlowArgs,
 )
 
 from ....consistent.common import (
@@ -460,6 +464,93 @@ DescriptorParamDPA2List = parameterize_func(
 DescriptorParamDPA2 = DescriptorParamDPA2List[0]
 
 
+def DescriptorParamDPA3(
+    ntypes,
+    rcut,
+    rcut_smth,
+    sel,
+    type_map,
+    env_protection=0.0,
+    exclude_types=[],
+    update_style="res_residual",
+    update_residual=0.1,
+    update_residual_init="const",
+    update_angle=True,
+    n_multi_edge_message=1,
+    a_compress_rate=0,
+    a_compress_e_rate=1,
+    a_compress_use_split=False,
+    optim_update=True,
+    smooth_edge_update=False,
+    fix_stat_std=0.3,
+    precision="float64",
+):
+    input_dict = {
+        # kwargs for repformer
+        "repflow": RepFlowArgs(
+            **{
+                "n_dim": 20,
+                "e_dim": 10,
+                "a_dim": 8,
+                "nlayers": 2,
+                "e_rcut": rcut,
+                "e_rcut_smth": rcut_smth,
+                "e_sel": sum(sel),
+                "a_rcut": rcut / 2,
+                "a_rcut_smth": rcut_smth / 2,
+                "a_sel": sum(sel) // 4,
+                "a_compress_rate": a_compress_rate,
+                "a_compress_e_rate": a_compress_e_rate,
+                "a_compress_use_split": a_compress_use_split,
+                "optim_update": optim_update,
+                "smooth_edge_update": smooth_edge_update,
+                "fix_stat_std": fix_stat_std,
+                "n_multi_edge_message": n_multi_edge_message,
+                "axis_neuron": 2,
+                "update_angle": update_angle,
+                "update_style": update_style,
+                "update_residual": update_residual,
+                "update_residual_init": update_residual_init,
+            }
+        ),
+        "ntypes": ntypes,
+        "concat_output_tebd": False,
+        "precision": precision,
+        "activation_function": "silu",
+        "exclude_types": exclude_types,
+        "env_protection": env_protection,
+        "trainable": True,
+        "use_econf_tebd": False,
+        "use_tebd_bias": False,
+        "type_map": type_map,
+        "seed": GLOBAL_SEED,
+    }
+    return input_dict
+
+
+DescriptorParamDPA3List = parameterize_func(
+    DescriptorParamDPA3,
+    OrderedDict(
+        {
+            "update_residual_init": ("const",),
+            "exclude_types": ([], [[0, 1]]),
+            "update_angle": (True, False),
+            "a_compress_rate": (1,),
+            "a_compress_e_rate": (2,),
+            "a_compress_use_split": (True, False),
+            "optim_update": (True, False),
+            "smooth_edge_update": (True,),
+            "fix_stat_std": (0.3,),
+            "n_multi_edge_message": (1, 2),
+            "env_protection": (0.0, 1e-8),
+            "precision": ("float64",),
+        }
+    ),
+)
+# to get name for the default function
+DescriptorParamDPA3 = DescriptorParamDPA3List[0]
+
+
 def DescriptorParamHybrid(ntypes, rcut, rcut_smth, sel, type_map, **kwargs):
     ddsub0 = {
         "type": "se_e2_a",
@@ -515,6 +606,7 @@ def DescriptorParamHybridMixedTTebd(ntypes, rcut, rcut_smth, sel, type_map, **kw
         (DescriptorParamSeTTebd, DescrptSeTTebd),
         (DescriptorParamDPA1, DescrptDPA1),
         (DescriptorParamDPA2, DescrptDPA2),
+        (DescriptorParamDPA3, DescrptDPA3),
         (DescriptorParamHybrid, DescrptHybrid),
         (DescriptorParamHybridMixed, DescrptHybrid),
         (DescriptorParamHybridMixedTTebd, DescrptHybrid),

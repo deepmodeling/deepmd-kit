@@ -155,9 +155,9 @@ class DOSFitting(Fitting):
             self.trainable = [True for ii in range(len(self.n_neuron) + 1)]
         if isinstance(self.trainable, bool):
             self.trainable = [self.trainable] * (len(self.n_neuron) + 1)
-        assert (
-            len(self.trainable) == len(self.n_neuron) + 1
-        ), "length of trainable should be that of n_neuron + 1"
+        assert len(self.trainable) == len(self.n_neuron) + 1, (
+            "length of trainable should be that of n_neuron + 1"
+        )
 
         self.useBN = False
         self.bias_dos = np.zeros((self.ntypes, self.numb_dos), dtype=np.float64)
@@ -173,9 +173,9 @@ class DOSFitting(Fitting):
         self.layer_name = layer_name
         if self.layer_name is not None:
             assert isinstance(self.layer_name, list), "layer_name should be a list"
-            assert (
-                len(self.layer_name) == len(self.n_neuron) + 1
-            ), "length of layer_name should be that of n_neuron + 1"
+            assert len(self.layer_name) == len(self.n_neuron) + 1, (
+                "length of layer_name should be that of n_neuron + 1"
+            )
         self.mixed_types = mixed_types
         self.type_map = type_map
 

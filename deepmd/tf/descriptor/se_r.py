@@ -346,9 +346,9 @@ class DescrptSeR(DescrptSe):
         suffix : str, optional
             The suffix of the scope
         """
-        assert (
-            not self.filter_resnet_dt
-        ), "Model compression error: descriptor resnet_dt must be false!"
+        assert not self.filter_resnet_dt, (
+            "Model compression error: descriptor resnet_dt must be false!"
+        )
 
         self.compress = True
         self.table = DPTabulate(

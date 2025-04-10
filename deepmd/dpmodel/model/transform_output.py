@@ -3,6 +3,9 @@
 import array_api_compat
 import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    xp_scatter_sum,
+)
 from deepmd.dpmodel.common import (
     GLOBAL_ENER_FLOAT_PRECISION,
 )
@@ -11,6 +14,7 @@ from deepmd.dpmodel.output_def import (
     ModelOutputDef,
     OutputVariableDef,
     get_deriv_name,
+    get_hessian_name,
     get_reduce_name,
 )
 
@@ -81,6 +85,7 @@ def communicate_extended_output(
 
     """
     xp = array_api_compat.get_namespace(mapping)
+    mapping_ = mapping
     new_ret = {}
     for kk in model_output_def.keys_outp():
         vv = model_ret[kk]
@@ -98,24 +103,96 @@ def communicate_extended_output(
                     mapping = xp.reshape(mapping, (mldims + [1] * len(derv_r_ext_dims)))
                     mapping = xp.tile(mapping, [1] * len(mldims) + derv_r_ext_dims)
                     force = xp.zeros(vldims + derv_r_ext_dims, dtype=vv.dtype)
-                    # jax only
-                    if array_api_compat.is_jax_array(force):
-                        from deepmd.jax.common import (
-                            scatter_sum,
-                        )
-
-                        force = scatter_sum(
-                            force,
-                            1,
-                            mapping,
-                            model_ret[kk_derv_r],
-                        )
-                    else:
-                        raise NotImplementedError("Only JAX arrays are supported.")
+                    force = xp_scatter_sum(
+                        force,
+                        1,
+                        mapping,
+                        model_ret[kk_derv_r],
+                    )
                     new_ret[kk_derv_r] = force
                 else:
                     # name holders
                     new_ret[kk_derv_r] = None
+                if vdef.r_hessian:
+                    kk_hess = get_hessian_name(kk)
+                    if model_ret[kk_hess] is not None:
+                        # [nf, *def, nall, 3, nall, 3]
+                        hess_ = model_ret[kk_hess]
+                        def_ndim = len(vdef.shape)
+                        # [nf, nall1, nall2, *def, 3(1), 3(2)]
+                        hess_1 = xp.permute_dims(
+                            hess_,
+                            (
+                                0,
+                                def_ndim + 1,
+                                def_ndim + 3,
+                                *range(1, def_ndim + 1),
+                                def_ndim + 2,
+                                def_ndim + 4,
+                            ),
+                        )
+                        nall = hess_1.shape[1]
+                        # (1) -> [nf, nloc1, nall2, *def, 3(1), 3(2)]
+                        hessian1 = xp.zeros(
+                            [*vldims, nall, *vdef.shape, 3, 3], dtype=vv.dtype
+                        )
+                        mapping_hess = xp.reshape(
+                            mapping_, (mldims + [1] * (len(vdef.shape) + 3))
+                        )
+                        mapping_hess = xp.tile(
+                            mapping_hess,
+                            [1] * len(mldims) + [nall, *vdef.shape, 3, 3],
+                        )
+                        hessian1 = xp_scatter_sum(
+                            hessian1,
+                            1,
+                            mapping_hess,
+                            hess_1,
+                        )
+                        # [nf, nall2, nloc1, *def, 3(1), 3(2)]
+                        hessian1 = xp.permute_dims(
+                            hessian1,
+                            (0, 2, 1, *range(3, def_ndim + 5)),
+                        )
+                        nloc = hessian1.shape[2]
+                        # (2) -> [nf, nloc2, nloc1, *def, 3(1), 3(2)]
+                        hessian = xp.zeros(
+                            [*vldims, nloc, *vdef.shape, 3, 3], dtype=vv.dtype
+                        )
+                        mapping_hess = xp.reshape(
+                            mapping_, (mldims + [1] * (len(vdef.shape) + 3))
+                        )
+                        mapping_hess = xp.tile(
+                            mapping_hess,
+                            [1] * len(mldims) + [nloc, *vdef.shape, 3, 3],
+                        )
+                        hessian = xp_scatter_sum(
+                            hessian,
+                            1,
+                            mapping_hess,
+                            hessian1,
+                        )
+                        # -> [nf, *def, nloc1, 3(1), nloc2, 3(2)]
+                        hessian = xp.permute_dims(
+                            hessian,
+                            (
+                                0,
+                                *range(3, def_ndim + 3),
+                                2,
+                                def_ndim + 3,
+                                1,
+                                def_ndim + 4,
+                            ),
+                        )
+                        # -> [nf, *def nloc1 * 3, nloc2 * 3]
+                        hessian = xp.reshape(
+                            hessian,
+                            (hessian.shape[0], *vdef.shape, nloc * 3, nloc * 3),
+                        )
+
+                        new_ret[kk_hess] = hessian
+                    else:
+                        new_ret[kk_hess] = None
             if vdef.c_differentiable:
                 assert vdef.r_differentiable
                 if model_ret[kk_derv_c] is not None:

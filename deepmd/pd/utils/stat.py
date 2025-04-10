@@ -461,7 +461,7 @@ def compute_output_stats_global(
             for kk in keys
         }
     else:
-        assigned_atom_ener = {kk: None for kk in keys}
+        assigned_atom_ener = dict.fromkeys(keys)
 
     if model_pred is None:
         stats_input = merged_output
@@ -588,9 +588,9 @@ def compute_output_stats_atomic(
             # correction for missing types
             missing_types = ntypes - merged_natoms[kk].max() - 1
             if missing_types > 0:
-                assert (
-                    bias_atom_e[kk].dtype is std_atom_e[kk].dtype
-                ), "bias and std should be of the same dtypes"
+                assert bias_atom_e[kk].dtype is std_atom_e[kk].dtype, (
+                    "bias and std should be of the same dtypes"
+                )
                 nan_padding = np.empty(
                     (missing_types, bias_atom_e[kk].shape[1]),
                     dtype=bias_atom_e[kk].dtype,

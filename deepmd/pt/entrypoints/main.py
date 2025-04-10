@@ -61,6 +61,7 @@ from deepmd.pt.utils.dataloader import (
 )
 from deepmd.pt.utils.env import (
     DEVICE,
+    LOCAL_RANK,
 )
 from deepmd.pt.utils.finetune import (
     get_finetune_rules,
@@ -103,12 +104,6 @@ def get_trainer(
     finetune_links=None,
 ):
     multi_task = "model_dict" in config.get("model", {})
-
-    # Initialize DDP
-    local_rank = os.environ.get("LOCAL_RANK")
-    if local_rank is not None:
-        local_rank = int(local_rank)
-        dist.init_process_group(backend="cuda:nccl,cpu:gloo")
 
     def prepare_trainer_input_single(
         model_params_single, data_dict_single, rank=0, seed=None
@@ -254,7 +249,9 @@ def train(
     output: str = "out.json",
 ) -> None:
     log.info("Configuration path: %s", input_file)
-    SummaryPrinter()()
+    env.CUSTOM_OP_USE_JIT = True
+    if LOCAL_RANK == 0:
+        SummaryPrinter()()
     with open(input_file) as fin:
         config = json.load(fin)
     # ensure suffix, as in the command line help, we say "path prefix of checkpoint files"
@@ -269,9 +266,9 @@ def train(
     if multi_task:
         config["model"], shared_links = preprocess_shared_params(config["model"])
         # handle the special key
-        assert (
-            "RANDOM" not in config["model"]["model_dict"]
-        ), "Model name can not be 'RANDOM' in multi-task mode!"
+        assert "RANDOM" not in config["model"]["model_dict"], (
+            "Model name can not be 'RANDOM' in multi-task mode!"
+        )
 
     # update fine-tuning config
     finetune_links = None
@@ -336,6 +333,10 @@ def train(
     with open(output, "w") as fp:
         json.dump(config, fp, indent=4)
 
+    # Initialize DDP
+    if os.environ.get("LOCAL_RANK") is not None:
+        dist.init_process_group(backend="cuda:nccl,cpu:gloo")
+
     trainer = get_trainer(
         config,
         init_model,
@@ -358,6 +359,8 @@ def train(
                     min_nbor_dist[model_item], dtype=torch.float64, device=DEVICE
                 )
     trainer.run()
+    if dist.is_available() and dist.is_initialized():
+        dist.destroy_process_group()
 
 
 def freeze(
@@ -407,9 +410,9 @@ def change_bias(
     multi_task = "model_dict" in model_params
     bias_adjust_mode = "change-by-statistic" if mode == "change" else "set-by-statistic"
     if multi_task:
-        assert (
-            model_branch is not None
-        ), "For multitask model, the model branch must be set!"
+        assert model_branch is not None, (
+            "For multitask model, the model branch must be set!"
+        )
         assert model_branch in model_params["model_dict"], (
             f"For multitask model, the model branch must be in the 'model_dict'! "
             f"Available options are : {list(model_params['model_dict'].keys())}."
@@ -431,12 +434,12 @@ def change_bias(
 
     if bias_value is not None:
         # use user-defined bias
-        assert model_to_change.model_type in [
-            "ener"
-        ], "User-defined bias is only available for energy model!"
-        assert (
-            len(bias_value) == len(type_map)
-        ), f"The number of elements in the bias should be the same as that in the type_map: {type_map}."
+        assert model_to_change.model_type in ["ener"], (
+            "User-defined bias is only available for energy model!"
+        )
+        assert len(bias_value) == len(type_map), (
+            f"The number of elements in the bias should be the same as that in the type_map: {type_map}."
+        )
         old_bias = model_to_change.get_out_bias()
         bias_to_set = torch.tensor(
             bias_value, dtype=old_bias.dtype, device=old_bias.device

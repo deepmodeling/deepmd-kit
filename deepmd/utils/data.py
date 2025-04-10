@@ -79,9 +79,9 @@ class DeepmdData:
         self.natoms = len(self.atom_type)
         # load atom type map
         self.type_map = self._load_type_map(root)
-        assert (
-            optional_type_map or self.type_map is not None
-        ), f"System {sys_path} must have type_map.raw in this mode! "
+        assert optional_type_map or self.type_map is not None, (
+            f"System {sys_path} must have type_map.raw in this mode! "
+        )
         if self.type_map is not None:
             assert len(self.type_map) >= max(self.atom_type) + 1
         # check pbc
@@ -89,6 +89,11 @@ class DeepmdData:
         # enforce type_map if necessary
         self.enforce_type_map = False
         if type_map is not None and self.type_map is not None and len(type_map):
+            missing_elements = [elem for elem in self.type_map if elem not in type_map]
+            if missing_elements:
+                raise ValueError(
+                    f"Elements {missing_elements} are not present in the provided `type_map`."
+                )
             if not self.mixed_type:
                 atom_type_ = [
                     type_map.index(self.type_map[ii]) for ii in self.atom_type
@@ -196,9 +201,9 @@ class DeepmdData:
         assert key_in in self.data_dict, "cannot find input key"
         assert self.data_dict[key_in]["atomic"], "reduced property should be atomic"
         assert key_out not in self.data_dict, "output key should not have been added"
-        assert (
-            self.data_dict[key_in]["repeat"] == 1
-        ), "reduced properties should not have been repeated"
+        assert self.data_dict[key_in]["repeat"] == 1, (
+            "reduced properties should not have been repeated"
+        )
 
         self.data_dict[key_out] = {
             "ndof": self.data_dict[key_in]["ndof"],
@@ -569,7 +574,9 @@ class DeepmdData:
             ).T
             assert (
                 atom_type_nums.sum(axis=-1) + ghost_nums.sum(axis=-1) == natoms
-            ).all(), f"some types in 'real_atom_types.npy' of set {set_name} are not contained in {self.get_ntypes()} types!"
+            ).all(), (
+                f"some types in 'real_atom_types.npy' of set {set_name} are not contained in {self.get_ntypes()} types!"
+            )
             data["real_natoms_vec"] = np.concatenate(
                 (
                     np.tile(np.array([natoms, natoms], dtype=np.int32), (nframes, 1)),

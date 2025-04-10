@@ -603,9 +603,9 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         list[torch.Tensor]
             the atomic ZBL weight for interpolation. (nframes, nloc, 1)
         """
-        assert (
-            self.sw_rmax > self.sw_rmin
-        ), "The upper boundary `sw_rmax` must be greater than the lower boundary `sw_rmin`."
+        assert self.sw_rmax > self.sw_rmin, (
+            "The upper boundary `sw_rmax` must be greater than the lower boundary `sw_rmin`."
+        )
 
         dp_nlist = nlists_[0]
         zbl_nlist = nlists_[1]

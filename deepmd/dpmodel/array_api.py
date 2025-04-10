@@ -2,6 +2,7 @@
 """Utilities for the array API."""
 
 import array_api_compat
+import numpy as np
 from packaging.version import (
     Version,
 )
@@ -73,3 +74,21 @@ def xp_take_along_axis(arr, indices, axis):
     out = xp.take(arr, indices)
     out = xp.reshape(out, shape)
     return xp_swapaxes(out, axis, -1)
+
+
+def xp_scatter_sum(input, dim, index: np.ndarray, src: np.ndarray) -> np.ndarray:
+    """Reduces all values from the src tensor to the indices specified in the index tensor."""
+    # jax only
+    if array_api_compat.is_jax_array(input):
+        from deepmd.jax.common import (
+            scatter_sum,
+        )
+
+        return scatter_sum(
+            input,
+            dim,
+            index,
+            src,
+        )
+    else:
+        raise NotImplementedError("Only JAX arrays are supported.")

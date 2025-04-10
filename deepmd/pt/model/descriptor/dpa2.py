@@ -258,9 +258,9 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             )
         self.rcsl_list.sort()
         for ii in range(1, len(self.rcsl_list)):
-            assert (
-                self.rcsl_list[ii - 1][1] <= self.rcsl_list[ii][1]
-            ), "rcut and sel are not in the same order"
+            assert self.rcsl_list[ii - 1][1] <= self.rcsl_list[ii][1], (
+                "rcut and sel are not in the same order"
+            )
         self.rcut_list = [ii[0] for ii in self.rcsl_list]
         self.nsel_list = [ii[1] for ii in self.rcsl_list]
         self.use_econf_tebd = use_econf_tebd
@@ -390,9 +390,9 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         If not start from checkpoint (resume is False),
         some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
-        assert (
-            self.__class__ == base_class.__class__
-        ), "Only descriptors of the same type can share params!"
+        assert self.__class__ == base_class.__class__, (
+            "Only descriptors of the same type can share params!"
+        )
         # For DPA2 descriptors, the user-defined share-level
         # shared_level: 0
         # share all parameters in type_embedding, repinit and repformers
@@ -421,9 +421,9 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map
         self.type_embedding.change_type_map(type_map=type_map)
@@ -899,9 +899,9 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         # do some checks before the mocel compression process
         if self.compress:
             raise ValueError("Compression is already enabled.")
-        assert (
-            not self.repinit.resnet_dt
-        ), "Model compression error: repinit resnet_dt must be false!"
+        assert not self.repinit.resnet_dt, (
+            "Model compression error: repinit resnet_dt must be false!"
+        )
         for tt in self.repinit.exclude_types:
             if (tt[0] not in range(self.repinit.ntypes)) or (
                 tt[1] not in range(self.repinit.ntypes)

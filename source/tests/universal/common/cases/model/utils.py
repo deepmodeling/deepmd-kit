@@ -723,8 +723,14 @@ class ModelTestCase:
                 0.0,
                 self.expected_rcut - 0.5 * epsilon,
                 0.0,
+                self.expected_rcut / 2 - 0.5 * epsilon,
+                0.0,
+                0.0,
+                0.0,
+                self.expected_rcut / 2 - 0.5 * epsilon,
+                0.0,
             ]
-        ).reshape(-1, 3)
+        ).reshape(-1, 3)  # to test descriptors with two rcuts, e.g. DPA2/3
         coord1 = rng.random([natoms - coord0.shape[0], 3])
         coord1 = np.matmul(coord1, cell)
         coord = np.concatenate([coord0, coord1], axis=0)
@@ -732,11 +738,15 @@ class ModelTestCase:
         coord0 = deepcopy(coord)
         coord1 = deepcopy(coord)
         coord1[1][0] += epsilon
+        coord1[3][0] += epsilon
         coord2 = deepcopy(coord)
         coord2[2][1] += epsilon
+        coord2[4][1] += epsilon
         coord3 = deepcopy(coord)
         coord3[1][0] += epsilon
+        coord1[3][0] += epsilon
         coord3[2][1] += epsilon
+        coord2[4][1] += epsilon
 
         # reshape for input
         coord0 = coord0.reshape([nf, -1])

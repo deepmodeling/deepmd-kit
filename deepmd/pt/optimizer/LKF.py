@@ -40,7 +40,7 @@ class LKFOptimizer(Optimizer):
 
         if len(self.param_groups) != 1 or len(self._params) == 0:
             raise ValueError(
-                "LKF doesn't support per-parameter options " "(parameter groups)"
+                "LKF doesn't support per-parameter options (parameter groups)"
             )
 
         # NOTE: LKF has only global state, but we register it as state for

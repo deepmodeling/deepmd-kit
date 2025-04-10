@@ -175,9 +175,9 @@ class DPTrainer:
         self.stop_batch = stop_batch
 
         if not self.is_compress and data.mixed_type:
-            assert isinstance(
-                self.fitting, EnerFitting
-            ), "Data in mixed_type format must use ener fitting!"
+            assert isinstance(self.fitting, EnerFitting), (
+                "Data in mixed_type format must use ener fitting!"
+            )
 
         if self.numb_fparam > 0:
             log.info(f"training with {self.numb_fparam} frame parameter(s)")
@@ -872,9 +872,9 @@ class DPTrainer:
             ) from e
         else:
             self.model_type = bytes.decode(t_model_type)
-        assert (
-            self.model_type != "compressed_model"
-        ), "Compressed models are not supported for finetuning!"
+        assert self.model_type != "compressed_model", (
+            "Compressed models are not supported for finetuning!"
+        )
         self.model.init_variables(graph, graph_def, model_type=self.model_type)
         log.info(
             f"Changing energy bias in pretrained model for types {origin_type_map!s}... "
@@ -892,6 +892,10 @@ class DPTrainer:
         bias_adjust_mode="change-by-statistic",
     ) -> None:
         full_type_map = data.get_type_map()
+        if len(full_type_map) == 0:
+            raise ValueError(
+                "The type_map.raw file must be provided in the input data."
+            )
         self.model.change_energy_bias(
             data,
             frozen_model,

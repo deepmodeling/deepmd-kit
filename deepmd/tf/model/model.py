@@ -668,6 +668,11 @@ class StandardModel(Model):
         else:
             if fitting_net["type"] in ["dipole", "polar"]:
                 fitting_net["embedding_width"] = self.descrpt.get_dim_rot_mat_1()
+                if fitting_net["embedding_width"] == 0:
+                    raise ValueError(
+                        "This descriptor cannot provide a rotation matrix "
+                        "for a tensorial fitting."
+                    )
             self.fitting = Fitting(
                 **fitting_net,
                 descrpt=self.descrpt,

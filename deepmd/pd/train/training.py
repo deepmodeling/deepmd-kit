@@ -53,6 +53,8 @@ from deepmd.pd.utils.dataloader import (
     get_sampler_from_params,
 )
 from deepmd.pd.utils.env import (
+    CINN,
+    DEFAULT_PRECISION,
     DEVICE,
     JIT,
     NUM_WORKERS,
@@ -86,7 +88,7 @@ def format_training_message(
     eta: Optional[int] = None,
 ):
     """Format a training message."""
-    msg = f"batch {batch:7d}: " f"total wall time = {wall_time:.2f} s"
+    msg = f"batch {batch:7d}: total wall time = {wall_time:.2f} s"
     if isinstance(eta, int):
         msg += f", eta = {datetime.timedelta(seconds=int(eta))!s}"
     return msg
@@ -247,9 +249,9 @@ class Trainer:
             return get_sample
 
         def get_lr(lr_params):
-            assert (
-                lr_params.get("type", "exp") == "exp"
-            ), "Only learning rate `exp` is supported!"
+            assert lr_params.get("type", "exp") == "exp", (
+                "Only learning rate `exp` is supported!"
+            )
             lr_params["stop_steps"] = self.num_steps - self.warmup_steps
             lr_exp = LearningRateExp(**lr_params)
             return lr_exp
@@ -260,9 +262,9 @@ class Trainer:
             missing_keys = [
                 key for key in self.model_keys if key not in self.optim_dict
             ]
-            assert (
-                not missing_keys
-            ), f"These keys are not in optim_dict: {missing_keys}!"
+            assert not missing_keys, (
+                f"These keys are not in optim_dict: {missing_keys}!"
+            )
             self.opt_type = {}
             self.opt_param = {}
             for model_key in self.model_keys:
@@ -386,9 +388,9 @@ class Trainer:
         # Learning rate
         self.warmup_steps = training_params.get("warmup_steps", 0)
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
-        assert (
-            self.num_steps - self.warmup_steps > 0 or self.warmup_steps == 0
-        ), "Warm up steps must be less than total training steps!"
+        assert self.num_steps - self.warmup_steps > 0 or self.warmup_steps == 0, (
+            "Warm up steps must be less than total training steps!"
+        )
         if self.multi_task and config.get("learning_rate_dict", None) is not None:
             self.lr_exp = {}
             for model_key in self.model_keys:
@@ -631,6 +633,20 @@ class Trainer:
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
 
     def run(self):
+        if CINN:
+            from paddle import (
+                jit,
+            )
+
+            backend = "CINN" if CINN else None
+            self.wrapper.forward = jit.to_static(full_graph=True, backend=backend)(
+                self.wrapper.forward
+            )
+            log.info(
+                "Enable CINN during training, there may be some additional "
+                "compilation time in the first traning step."
+            )
+
         fout = (
             open(
                 self.disp_file,
@@ -670,9 +686,11 @@ class Trainer:
             cur_lr = _lr.value(_step_id)
             pref_lr = cur_lr
             self.optimizer.clear_grad(set_to_zero=False)
-            input_dict, label_dict, log_dict = self.get_data(
-                is_train=True, task_key=task_key
-            )
+
+            with nvprof_context(enable_profiling, "Fetching data"):
+                input_dict, label_dict, log_dict = self.get_data(
+                    is_train=True, task_key=task_key
+                )
             if SAMPLER_RECORD:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
@@ -686,7 +704,7 @@ class Trainer:
                 with nvprof_context(enable_profiling, "Forward pass"):
                     model_pred, loss, more_loss = self.wrapper(
                         **input_dict,
-                        cur_lr=pref_lr,
+                        cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
                         label=label_dict,
                         task_key=task_key,
                     )
@@ -745,7 +763,7 @@ class Trainer:
                             return {}
                         _, loss, more_loss = self.wrapper(
                             **input_dict,
-                            cur_lr=pref_lr,
+                            cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
                             label=label_dict,
                             task_key=_task_key,
                         )
@@ -795,7 +813,7 @@ class Trainer:
                             )
                             _, loss, more_loss = self.wrapper(
                                 **input_dict,
-                                cur_lr=pref_lr,
+                                cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
                                 label=label_dict,
                                 task_key=_key,
                             )
@@ -1062,7 +1080,7 @@ class Trainer:
             "fparam",
             "aparam",
         ]
-        input_dict = {item_key: None for item_key in input_keys}
+        input_dict = dict.fromkeys(input_keys)
         label_dict = {}
         for item_key in batch_data:
             if item_key in input_keys:
@@ -1204,9 +1222,9 @@ def get_model_for_wrapper(_model_params, resuming=False):
 
 
 def get_case_embd_config(_model_params):
-    assert (
-        "model_dict" in _model_params
-    ), "Only support setting case embedding for multi-task model!"
+    assert "model_dict" in _model_params, (
+        "Only support setting case embedding for multi-task model!"
+    )
     model_keys = list(_model_params["model_dict"])
     sorted_model_keys = sorted(model_keys)
     numb_case_embd_list = [

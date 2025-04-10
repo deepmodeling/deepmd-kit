@@ -253,9 +253,9 @@ class DescrptSeAtten(DescrptSeA):
         Constructor
         """
         if not (nvnmd_cfg.enable and (nvnmd_cfg.version == 1)):
-            assert Version(TF_VERSION) > Version(
-                "2"
-            ), "se_atten only support tensorflow version 2.0 or higher."
+            assert Version(TF_VERSION) > Version("2"), (
+                "se_atten only support tensorflow version 2.0 or higher."
+            )
         if ntypes == 0:
             raise ValueError("`model/type_map` is not set or empty!")
         self.stripped_type_embedding = stripped_type_embedding
@@ -449,9 +449,9 @@ class DescrptSeAtten(DescrptSeA):
             The suffix of the type embedding scope, only for DescrptDPA1Compat
         """
         # do some checks before the mocel compression process
-        assert (
-            not self.filter_resnet_dt
-        ), "Model compression error: descriptor resnet_dt must be false!"
+        assert not self.filter_resnet_dt, (
+            "Model compression error: descriptor resnet_dt must be false!"
+        )
         for tt in self.exclude_types:
             if (tt[0] not in range(self.ntypes)) or (tt[1] not in range(self.ntypes)):
                 raise RuntimeError(
@@ -2363,9 +2363,9 @@ class DescrptDPA1Compat(DescrptSeAtten):
         tebd_suffix : str, optional
             Same as suffix.
         """
-        assert (
-            tebd_suffix == ""
-        ), "DescrptDPA1Compat must use the same tebd_suffix as suffix!"
+        assert tebd_suffix == "", (
+            "DescrptDPA1Compat must use the same tebd_suffix as suffix!"
+        )
         super().enable_compression(
             min_nbor_dist,
             graph,
