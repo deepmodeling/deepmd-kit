@@ -5,7 +5,7 @@ from typing import (
 )
 
 import numpy as np
-import torch
+import paddle
 
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -28,9 +28,9 @@ def eval_pd_descriptor(
     pd_obj: Any, natoms, coords, atype, box, mixed_types: bool = False
 ) -> Any:
     ext_coords, ext_atype, mapping = extend_coord_with_ghosts_pd(
-        torch.from_numpy(coords).to(PD_DEVICE).reshape(1, -1, 3),
-        torch.from_numpy(atype).to(PD_DEVICE).reshape(1, -1),
-        torch.from_numpy(box).to(PD_DEVICE).reshape(1, 3, 3),
+        paddle.to_tensor(coords).to(PD_DEVICE).reshape([1, -1, 3]),
+        paddle.to_tensor(atype).to(PD_DEVICE).reshape([1, -1]),
+        paddle.to_tensor(box).to(PD_DEVICE).reshape([1, 3, 3]),
         pd_obj.get_rcut(),
     )
     nlist = build_neighbor_list_pd(
@@ -125,7 +125,7 @@ class TestDescriptorSeAtten(unittest.TestCase):
         )
 
         self.assertEqual(result_pd.shape, result_pd_compressed.shape)
-        torch.testing.assert_close(
+        paddle.testing.assert_close(
             result_pd,
             result_pd_compressed,
             atol=self.atol,
