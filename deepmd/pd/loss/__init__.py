@@ -10,6 +10,5 @@ from .loss import (
 __all__ = [
     "EnergyHessianStdLoss",
     "EnergyStdLoss",
-    "EnergyStdLoss",
     "TaskLoss",
 ]
