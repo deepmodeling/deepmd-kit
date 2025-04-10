@@ -33,6 +33,7 @@ from deepmd.loggers.training import (
     format_training_message_per_task,
 )
 from deepmd.pd.loss import (
+    EnergyHessianStdLoss,
     EnergyStdLoss,
     TaskLoss,
 )
@@ -1194,6 +1195,9 @@ def whether_hessian(loss_params):
 
 def get_loss(loss_params, start_lr, _ntypes, _model):
     loss_type = loss_params.get("type", "ener")
+    if whether_hessian(loss_params):
+        loss_params["starter_learning_rate"] = start_lr
+        return EnergyHessianStdLoss(**loss_params)
     if loss_type == "ener":
         loss_params["starter_learning_rate"] = start_lr
         return EnergyStdLoss(**loss_params)
