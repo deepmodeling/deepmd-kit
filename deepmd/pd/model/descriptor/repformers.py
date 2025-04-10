@@ -31,7 +31,7 @@ from deepmd.pd.utils.env_mat_stat import (
 from deepmd.pd.utils.exclude_mask import (
     PairExcludeMask,
 )
-from deepmd.pt.utils.utils import (
+from deepmd.pd.utils.utils import (
     ActivationFn,
 )
 from deepmd.utils.env_mat_stat import (

@@ -62,12 +62,12 @@ from deepmd.pd.utils.env import (
 from deepmd.pd.utils.learning_rate import (
     LearningRateExp,
 )
+from deepmd.pd.utils.stat import (
+    make_stat_input,
+)
 from deepmd.pd.utils.utils import (
     nvprof_context,
     to_numpy_array,
-)
-from deepmd.pt.utils.stat import (
-    make_stat_input,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
