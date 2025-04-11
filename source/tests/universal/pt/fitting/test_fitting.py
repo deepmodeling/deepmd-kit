@@ -2,6 +2,7 @@
 import unittest
 
 from deepmd.pt.model.task import (
+    DenoiseFittingNet,
     DipoleFittingNet,
     DOSFittingNet,
     EnergyFittingNet,
@@ -16,6 +17,7 @@ from ...common.cases.fitting.fitting import (
     FittingTest,
 )
 from ...dpmodel.fitting.test_fitting import (
+    FittingParamDenoise,
     FittingParamDipole,
     FittingParamDos,
     FittingParamEnergy,
@@ -34,6 +36,7 @@ from ..backend import (
         (FittingParamDipole, DipoleFittingNet),
         (FittingParamPolar, PolarFittingNet),
         (FittingParamProperty, PropertyFittingNet),
+        (FittingParamDenoise, DenoiseFittingNet),
     ),  # class_param & class
     (True, False),  # mixed_types
 )

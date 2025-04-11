@@ -17,6 +17,9 @@ from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
     OutputVariableDef,
 )
+from deepmd.infer.deep_denoise import (
+    DeepDenoise,
+)
 from deepmd.infer.deep_dipole import (
     DeepDipole,
 )
@@ -211,6 +214,8 @@ class DeepEval(DeepEvalBackend):
             return DeepGlobalPolar
         elif "wfc" in model_output_type:
             return DeepWFC
+        elif "updated_coord" in model_output_type:
+            return DeepDenoise
         elif self.get_var_name() in model_output_type:
             return DeepProperty
         else:

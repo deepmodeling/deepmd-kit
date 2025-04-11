@@ -25,6 +25,7 @@ from .tensor import (
 __all__ = [
     "DOSLoss",
     "DenoiseLoss",
+    "DenoiseLoss",
     "EnergyHessianStdLoss",
     "EnergySpinLoss",
     "EnergyStdLoss",

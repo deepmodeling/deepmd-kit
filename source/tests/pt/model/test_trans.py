@@ -18,6 +18,7 @@ from ..common import (
     eval_model,
 )
 from .test_permutation import (  # model_dpau,
+    model_denoise,
     model_dos,
     model_dpa1,
     model_dpa2,
@@ -54,7 +55,10 @@ class TransTest:
             cell,
         )
         test_spin = getattr(self, "test_spin", False)
-        if not test_spin:
+        test_denoise = getattr(self, "test_denoise", False)
+        if test_denoise:
+            test_keys = ["strain_components", "updated_coord", "logits"]
+        elif not test_spin:
             test_keys = ["energy", "force", "virial"]
         else:
             test_keys = ["energy", "force", "force_mag", "virial"]
@@ -64,6 +68,7 @@ class TransTest:
             cell.unsqueeze(0),
             atype,
             spins=spin.unsqueeze(0),
+            denoise=test_denoise,
         )
         ret0 = {key: result_0[key].squeeze(0) for key in test_keys}
         result_1 = eval_model(
@@ -72,11 +77,19 @@ class TransTest:
             cell.unsqueeze(0),
             atype,
             spins=spin.unsqueeze(0),
+            denoise=test_denoise,
         )
         ret1 = {key: result_1[key].squeeze(0) for key in test_keys}
         prec = 1e-7
         for key in test_keys:
-            if key in ["energy", "force", "force_mag"]:
+            if key in [
+                "energy",
+                "force",
+                "force_mag",
+                "strain_components",
+                "updated_coord",
+                "logits",
+            ]:
                 torch.testing.assert_close(ret0[key], ret1[key], rtol=prec, atol=prec)
             elif key == "virial":
                 if not hasattr(self, "test_virial") or self.test_virial:
@@ -152,6 +165,14 @@ class TestEnergyModelSpinSeA(unittest.TestCase, TransTest):
         model_params = copy.deepcopy(model_spin)
         self.type_split = False
         self.test_spin = True
+        self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestDenoiseModelDPA1(unittest.TestCase, TransTest):
+    def setUp(self) -> None:
+        model_params = copy.deepcopy(model_denoise)
+        self.type_split = False
+        self.test_denoise = True
         self.model = get_model(model_params).to(env.DEVICE)
 
 

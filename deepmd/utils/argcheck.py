@@ -1875,6 +1875,47 @@ def fitting_property():
     ]
 
 
+@fitting_args_plugin.register("denoise", doc=doc_only_pt_supported)
+def fitting_denoise():
+    doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
+    doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
+    doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
+    doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built"
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_seed = "Random seed for parameter initialization of the fitting net"
+    return [
+        Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
+        Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
+        Argument(
+            "dim_case_embd",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_only_pt_supported + doc_dim_case_embd,
+        ),
+        Argument(
+            "neuron",
+            list[int],
+            optional=True,
+            default=[120, 120, 120],
+            alias=["n_neuron"],
+            doc=doc_neuron,
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+    ]
+
+
 @fitting_args_plugin.register("polar", doc=doc_polar)
 def fitting_polar():
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
@@ -2797,6 +2838,126 @@ def loss_property():
             optional=True,
             default=1.00,
             doc=doc_beta,
+        ),
+    ]
+
+
+@loss_args_plugin.register("denoise")
+def loss_denoise():
+    doc_mask_token = "Whether to mask the token"
+    doc_mask_coord = "Whether to mask the coordinate."
+    doc_mask_cell = "Whether to mask the cell."
+    doc_token_loss = "The preference factor for token denoise."
+    doc_coord_loss = "The preference factor for coordinate denoise."
+    doc_cell_loss = "The preference factor for cell denoise."
+    doc_noise_type = (
+        "The type of noise to add to the coordinate. It can be 'uniform' or 'gaussian'."
+    )
+    doc_coord_noise = "The magnitude of noise to add to the coordinate."
+    doc_cell_pert_fraction = "A value determines how much will cell deform."
+    doc_noise_mode = "'prob' means the noise is added with a probability.'fix_num' means the noise is added with a fixed number."
+    doc_mask_num = "The number of atoms to mask coordinates. It is only used when noise_mode is 'fix_num'."
+    doc_mask_prob = "The probability of masking coordinates. It is only used when noise_mode is 'prob'."
+    doc_same_mask = "Whether mask same atoms when masking coordinates and token."
+    doc_loss_func = "The loss function to minimize, it can be 'mae' or 'rmse'."
+    return [
+        Argument(
+            "mask_token",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_mask_token,
+        ),
+        Argument(
+            "mask_coord",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_mask_coord,
+        ),
+        Argument(
+            "mask_cell",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_mask_cell,
+        ),
+        Argument(
+            "token_loss",
+            float,
+            optional=True,
+            default=1.0,
+            doc=doc_token_loss,
+        ),
+        Argument(
+            "coord_loss",
+            float,
+            optional=True,
+            default=1.0,
+            doc=doc_coord_loss,
+        ),
+        Argument(
+            "cell_loss",
+            float,
+            optional=True,
+            default=1.0,
+            doc=doc_cell_loss,
+        ),
+        Argument(
+            "noise_type",
+            str,
+            optional=True,
+            default="gaussian",
+            doc=doc_noise_type,
+        ),
+        Argument(
+            "coord_noise",
+            float,
+            optional=True,
+            default=0.2,
+            doc=doc_coord_noise,
+        ),
+        Argument(
+            "cell_pert_fraction",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_cell_pert_fraction,
+        ),
+        Argument(
+            "noise_mode",
+            str,
+            optional=True,
+            default="prob",
+            doc=doc_noise_mode,
+        ),
+        Argument(
+            "mask_num",
+            int,
+            optional=True,
+            default=1,
+            doc=doc_mask_num,
+        ),
+        Argument(
+            "mask_prob",
+            float,
+            optional=True,
+            default=0.2,
+            doc=doc_mask_prob,
+        ),
+        Argument(
+            "same_mask",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_same_mask,
+        ),
+        Argument(
+            "loss_func",
+            str,
+            optional=True,
+            default="rmse",
+            doc=doc_loss_func,
         ),
     ]
 

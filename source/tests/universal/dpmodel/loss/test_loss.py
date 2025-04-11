@@ -207,3 +207,35 @@ def LossParamProperty():
 LossParamPropertyList = [LossParamProperty]
 # to get name for the default function
 LossParamProperty = LossParamPropertyList[0]
+
+
+def LossParamDenoise():
+    key_to_pref_map = {
+        "strain_components": 1.0,
+        "updated_coord": 1.0,
+        "logits": 1.0,
+    }
+    input_dict = {
+        "key_to_pref_map": key_to_pref_map,
+        "ntypes": 1,
+        "mask_token": False,
+        "mask_coord": True,
+        "mask_cell": False,
+        "token_loss": 1.0,
+        "coord_loss": 1.0,
+        "cell_loss": 1.0,
+        "noise_type": "gaussian",
+        "coord_noise": 0.2,
+        "cell_pert_fraction": 0.0,
+        "noise_mode": "prob",
+        "mask_num": 1,
+        "mask_prob": 0.2,
+        "same_mask": False,
+        "loss_func": "rmse",
+    }
+    return input_dict
+
+
+LossParamDenoiseList = [LossParamDenoise]
+# to get name for the default function
+LossParamDenoise = LossParamDenoiseList[0]

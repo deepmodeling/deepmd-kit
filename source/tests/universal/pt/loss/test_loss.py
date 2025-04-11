@@ -2,6 +2,7 @@
 import unittest
 
 from deepmd.pt.loss import (
+    DenoiseLoss,
     DOSLoss,
     EnergySpinLoss,
     EnergyStdLoss,
@@ -16,6 +17,7 @@ from ...common.cases.loss.loss import (
     LossTest,
 )
 from ...dpmodel.loss.test_loss import (
+    LossParamDenoiseList,
     LossParamDosList,
     LossParamEnergyList,
     LossParamEnergySpinList,
@@ -34,6 +36,7 @@ from ..backend import (
         *[(param_func, DOSLoss) for param_func in LossParamDosList],
         *[(param_func, TensorLoss) for param_func in LossParamTensorList],
         *[(param_func, PropertyLoss) for param_func in LossParamPropertyList],
+        *[(param_func, DenoiseLoss) for param_func in LossParamDenoiseList],
     )  # class_param & class
 )
 class TestLossPT(unittest.TestCase, LossTest, PTTestCase):

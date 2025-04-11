@@ -19,6 +19,9 @@ from deepmd.dpmodel.fitting.ener_fitting import (
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
+from deepmd.dpmodel.model.denoise_model import (
+    DenoiseModel,
+)
 from deepmd.dpmodel.model.dipole_model import (
     DipoleModel,
 )
@@ -60,6 +63,14 @@ def _get_standard_model_components(data, ntypes):
         fitting_net["embedding_width"] = descriptor.get_dim_emb()
     fitting_net["dim_descrpt"] = descriptor.get_dim_out()
     grad_force = "direct" not in fitting_net["type"]
+    if fitting_net["type"] in ["denoise"]:
+        assert data["type_map"][-1] == "MASKED_TOKEN", (
+            f"When using denoise fitting, the last element in `type_map` must be 'MASKED_TOKEN', but got '{data['type_map'][-1]}'"
+        )
+        fitting_net["embedding_width"] = descriptor.get_dim_emb()
+        fitting_net["coord_noise"] = data.get("coord_noise", 0.2)
+        fitting_net["cell_pert_fraction"] = data.get("cell_pert_fraction", 0.0)
+        fitting_net["noise_type"] = data.get("noise_type", "gaussian")
     if not grad_force:
         fitting_net["out_dim"] = descriptor.get_dim_emb()
         if "ener" in fitting_net["type"]:
@@ -96,6 +107,8 @@ def get_standard_model(data: dict) -> EnergyModel:
         modelcls = EnergyModel
     elif fitting_net_type == "property":
         modelcls = PropertyModel
+    elif fitting_net_type == "denoise":
+        modelcls = DenoiseModel
     else:
         raise RuntimeError(f"Unknown fitting type: {fitting_net_type}")
 

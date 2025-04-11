@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from .denoise_fitting import (
+    DenoiseFitting,
+)
 from .dipole_fitting import (
     DipoleFitting,
 )
@@ -23,6 +26,8 @@ from .property_fitting import (
 
 __all__ = [
     "DOSFittingNet",
+    "DenoiseFitting",
+    "DenoiseFitting",
     "DipoleFitting",
     "EnergyFittingNet",
     "InvarFitting",

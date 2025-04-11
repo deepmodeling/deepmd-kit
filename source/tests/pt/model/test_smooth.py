@@ -18,6 +18,7 @@ from ..common import (
     eval_model,
 )
 from .test_permutation import (  # model_dpau,
+    model_denoise,
     model_dos,
     model_dpa1,
     model_dpa2,
@@ -94,7 +95,10 @@ class SmoothTest:
         coord3[2][1] += epsilon
         coord2[4][1] += epsilon
         test_spin = getattr(self, "test_spin", False)
-        if not test_spin:
+        test_denoise = getattr(self, "test_denoise", False)
+        if test_denoise:
+            test_keys = ["strain_components", "updated_coord", "logits"]
+        elif not test_spin:
             test_keys = ["energy", "force", "virial"]
         else:
             test_keys = ["energy", "force", "force_mag", "virial"]
@@ -105,6 +109,7 @@ class SmoothTest:
             cell.unsqueeze(0),
             atype,
             spins=spin.unsqueeze(0),
+            denoise=test_denoise,
         )
         ret0 = {key: result_0[key].squeeze(0) for key in test_keys}
         result_1 = eval_model(
@@ -113,6 +118,7 @@ class SmoothTest:
             cell.unsqueeze(0),
             atype,
             spins=spin.unsqueeze(0),
+            denoise=test_denoise,
         )
         ret1 = {key: result_1[key].squeeze(0) for key in test_keys}
         result_2 = eval_model(
@@ -121,6 +127,7 @@ class SmoothTest:
             cell.unsqueeze(0),
             atype,
             spins=spin.unsqueeze(0),
+            denoise=test_denoise,
         )
         ret2 = {key: result_2[key].squeeze(0) for key in test_keys}
         result_3 = eval_model(
@@ -129,12 +136,13 @@ class SmoothTest:
             cell.unsqueeze(0),
             atype,
             spins=spin.unsqueeze(0),
+            denoise=test_denoise,
         )
         ret3 = {key: result_3[key].squeeze(0) for key in test_keys}
 
         def compare(ret0, ret1) -> None:
             for key in test_keys:
-                if key in ["energy"]:
+                if key in ["energy", "strain_components", "updated_coord", "logits"]:
                     torch.testing.assert_close(
                         ret0[key], ret1[key], rtol=rprec, atol=aprec
                     )
@@ -269,6 +277,15 @@ class TestEnergyModelSpinSeA(unittest.TestCase, SmoothTest):
         model_params = copy.deepcopy(model_spin)
         self.type_split = False
         self.test_spin = True
+        self.model = get_model(model_params).to(env.DEVICE)
+        self.epsilon, self.aprec = None, None
+
+
+class TestDenoiseModelDPA1(unittest.TestCase, SmoothTest):
+    def setUp(self) -> None:
+        model_params = copy.deepcopy(model_denoise)
+        self.type_split = False
+        self.test_denoise = True
         self.model = get_model(model_params).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
 

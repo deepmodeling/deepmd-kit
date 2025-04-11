@@ -66,6 +66,8 @@ def eval_model(
     force_mag_out = []
     virial_out = []
     atomic_virial_out = []
+    strain_components_out = []
+    atom_strain_components_out = []
     updated_coord_out = []
     logits_out = []
     err_msg = (
@@ -162,6 +164,14 @@ def eval_model(
                 atomic_virial_out.append(
                     batch_output["atom_virial"].detach().cpu().numpy()
                 )
+            if "strain_components" in batch_output:
+                strain_components_out.append(
+                    batch_output["strain_components"].detach().cpu().numpy()
+                )
+            if "atom_strain_components" in batch_output:
+                atom_strain_components_out.append(
+                    batch_output["atom_strain_components"].detach().cpu().numpy()
+                )
             if "updated_coord" in batch_output:
                 updated_coord_out.append(
                     batch_output["updated_coord"].detach().cpu().numpy()
@@ -181,6 +191,12 @@ def eval_model(
                 virial_out.append(batch_output["virial"])
             if "atom_virial" in batch_output:
                 atomic_virial_out.append(batch_output["atom_virial"])
+            if "strain_components" in batch_output:
+                strain_components_out.append(batch_output["strain_components"])
+            if "atom_strain_components" in batch_output:
+                atom_strain_components_out.append(
+                    batch_output["atom_strain_components"]
+                )
             if "updated_coord" in batch_output:
                 updated_coord_out.append(batch_output["updated_coord"])
             if "logits" in batch_output:
@@ -210,8 +226,20 @@ def eval_model(
             if atomic_virial_out
             else np.zeros([nframes, natoms, 3, 3])  # pylint: disable=no-explicit-dtype
         )
+        strain_components_out = (
+            np.concatenate(strain_components_out)
+            if strain_components_out
+            else np.zeros([nframes, 6])  # pylint: disable=no-explicit-dtype
+        )
+        atom_strain_components_out = (
+            np.concatenate(atom_strain_components_out)
+            if atom_strain_components_out
+            else np.zeros([nframes, natoms, 6])  # pylint: disable=no-explicit-dtype
+        )
         updated_coord_out = (
-            np.concatenate(updated_coord_out) if updated_coord_out else None
+            np.concatenate(updated_coord_out)
+            if updated_coord_out
+            else np.zeros([nframes, natoms, 3])
         )
         logits_out = np.concatenate(logits_out) if logits_out else None
     else:
@@ -257,10 +285,37 @@ def eval_model(
                 [nframes, natoms, 3, 3], dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
             )
         )
-        updated_coord_out = torch.cat(updated_coord_out) if updated_coord_out else None
+        strain_components_out = (
+            torch.cat(strain_components_out)
+            if strain_components_out
+            else torch.zeros(
+                [nframes, 6], dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
+            )
+        )
+        atom_strain_components_out = (
+            torch.cat(atom_strain_components_out)
+            if atom_strain_components_out
+            else torch.zeros(
+                [nframes, natoms, 6], dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
+            )
+        )
+        updated_coord_out = (
+            torch.cat(updated_coord_out)
+            if updated_coord_out
+            else torch.zeros(
+                [nframes, natoms, 3], dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
+            )
+        )
         logits_out = torch.cat(logits_out) if logits_out else None
     if denoise:
-        return updated_coord_out, logits_out
+        results_dict = {
+            "strain_components": strain_components_out,
+            "updated_coord": updated_coord_out,
+            "logits": logits_out,
+        }
+        if atomic:
+            results_dict["atom_strain_components"] = atom_strain_components_out
+        return results_dict
     else:
         results_dict = {
             "energy": energy_out,

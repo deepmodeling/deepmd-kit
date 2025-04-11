@@ -15,6 +15,9 @@ import numpy as np
 from deepmd.common import (
     expand_sys_str,
 )
+from deepmd.infer.deep_denoise import (
+    DeepDenoise,
+)
 from deepmd.infer.deep_dipole import (
     DeepDipole,
 )
@@ -174,6 +177,8 @@ def test(
             err = test_polar(
                 dp, data, numb_test, detail_file, atomic=False
             )  # YWolfeee: downward compatibility
+        elif isinstance(dp, DeepDenoise):
+            raise NotImplementedError("DeepDenoise is not supported in test mode.")
         log.info("# ----------------------------------------------- ")
         err_coll.append(err)
 

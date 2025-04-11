@@ -3,7 +3,7 @@ from .base_fitting import (
     BaseFitting,
 )
 from .denoise import (
-    DenoiseNet,
+    DenoiseFittingNet,
 )
 from .dipole import (
     DipoleFittingNet,
@@ -31,7 +31,7 @@ from .type_predict import (
 __all__ = [
     "BaseFitting",
     "DOSFittingNet",
-    "DenoiseNet",
+    "DenoiseFittingNet",
     "DipoleFittingNet",
     "EnergyFittingNet",
     "EnergyFittingNetDirect",

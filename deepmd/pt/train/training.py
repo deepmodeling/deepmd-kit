@@ -1292,6 +1292,10 @@ def get_model_for_wrapper(
     if "model_dict" not in _model_params:
         if _loss_params is not None and whether_hessian(_loss_params):
             _model_params["hessian_mode"] = True
+        if _loss_params is not None and _loss_params.get("type", "ener") == "denoise":
+            _model_params["coord_noise"] = _loss_params.get("coord_noise")
+            _model_params["cell_pert_fraction"] = _loss_params.get("cell_pert_fraction")
+            _model_params["noise_type"] = _loss_params.get("noise_type")
         _model = get_single_model(
             _model_params,
         )
