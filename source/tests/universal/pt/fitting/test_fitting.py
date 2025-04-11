@@ -50,3 +50,7 @@ class TestFittingPT(unittest.TestCase, FittingTest, PTTestCase):
             embedding_width=self.dim_embed,
         )
         self.module = Fitting(**self.input_dict)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        super().tearDownClass()

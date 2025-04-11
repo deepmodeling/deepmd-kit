@@ -56,3 +56,7 @@ class TestDescriptorPT(unittest.TestCase, DescriptorTest, PTTestCase):
             self.nt, self.rcut, self.rcut_smth, self.sel, ["O", "H"]
         )
         self.module = Descrpt(**self.input_dict)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        super().tearDownClass()
