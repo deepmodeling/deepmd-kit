@@ -56,7 +56,6 @@ class PTTestCase(BackendTestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        super().tearDownClass()
         if hasattr(cls, "module"):
             del cls.module
         cls._get_deserialized_module.cache_clear()
