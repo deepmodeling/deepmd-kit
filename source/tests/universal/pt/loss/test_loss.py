@@ -48,4 +48,4 @@ class TestLossPT(unittest.TestCase, LossTest, PTTestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        super().tearDownClass()
+        PTTestCase.tearDownClass()

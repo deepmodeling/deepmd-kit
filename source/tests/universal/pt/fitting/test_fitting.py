@@ -53,4 +53,4 @@ class TestFittingPT(unittest.TestCase, FittingTest, PTTestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        super().tearDownClass()
+        PTTestCase.tearDownClass()

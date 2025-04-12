@@ -59,4 +59,4 @@ class TestDescriptorPT(unittest.TestCase, DescriptorTest, PTTestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        super().tearDownClass()
+        PTTestCase.tearDownClass()

@@ -213,7 +213,7 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        super().tearDownClass()
+        PTTestCase.tearDownClass()
 
 
 @parameterized(
@@ -321,7 +321,7 @@ class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        super().tearDownClass()
+        PTTestCase.tearDownClass()
 
 
 @parameterized(
@@ -420,7 +420,7 @@ class TestDipoleModelPT(unittest.TestCase, DipoleModelTest, PTTestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        super().tearDownClass()
+        PTTestCase.tearDownClass()
 
 
 @parameterized(
@@ -515,7 +515,7 @@ class TestPolarModelPT(unittest.TestCase, PolarModelTest, PTTestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        super().tearDownClass()
+        PTTestCase.tearDownClass()
 
 
 @parameterized(
@@ -618,7 +618,7 @@ class TestZBLModelPT(unittest.TestCase, ZBLModelTest, PTTestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        super().tearDownClass()
+        PTTestCase.tearDownClass()
 
 
 @parameterized(
@@ -747,7 +747,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        super().tearDownClass()
+        PTTestCase.tearDownClass()
 
 
 @parameterized(
@@ -845,7 +845,7 @@ class TestPropertyModelPT(unittest.TestCase, PropertyModelTest, PTTestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        super().tearDownClass()
+        PTTestCase.tearDownClass()
 
 
 @parameterized(
@@ -948,4 +948,4 @@ class TestLinearEnergyModelPT(unittest.TestCase, LinearEnerModelTest, PTTestCase
 
     @classmethod
     def tearDownClass(cls) -> None:
-        super().tearDownClass()
+        PTTestCase.tearDownClass()
