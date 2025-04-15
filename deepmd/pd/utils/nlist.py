@@ -26,7 +26,7 @@ def extend_input_and_build_neighbor_list(
 ):
     nframes, nloc = atype.shape[:2]
     if box is not None:
-        box_gpu = box.to(coord.place)
+        box_gpu = box
         coord_normalized = normalize_coord(
             coord.reshape([nframes, nloc, 3]),
             box_gpu.reshape([nframes, 3, 3]),

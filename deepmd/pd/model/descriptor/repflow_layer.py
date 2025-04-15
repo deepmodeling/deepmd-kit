@@ -311,7 +311,8 @@ class RepFlowLayer(paddle.nn.Layer):
         edge_ebd = _apply_nlist_mask(edge_ebd, nlist_mask)
         edge_ebd = _apply_switch(edge_ebd, sw)
         invnnei = paddle.rsqrt(
-            paddle.full([nb, nloc, 1, 1], nnei, dtype=edge_ebd.dtype).to(
+            float(nnei)
+            * paddle.ones((nb, nloc, 1, 1), dtype=edge_ebd.dtype).to(
                 device=edge_ebd.place
             )
         )
