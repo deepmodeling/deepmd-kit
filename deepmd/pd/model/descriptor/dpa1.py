@@ -25,14 +25,8 @@ from deepmd.pd.utils.env import (
     PRECISION_DICT,
     RESERVED_PRECISION_DICT,
 )
-from deepmd.pd.utils.tabulate import (
-    DPTabulate,
-)
 from deepmd.pd.utils.update_sel import (
     UpdateSel,
-)
-from deepmd.pd.utils.utils import (
-    ActivationFn,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -590,59 +584,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
             The overflow check frequency
         """
         # do some checks before the mocel compression process
-        if self.compress:
-            raise ValueError("Compression is already enabled.")
-        assert not self.se_atten.resnet_dt, (
-            "Model compression error: descriptor resnet_dt must be false!"
-        )
-        for tt in self.se_atten.exclude_types:
-            if (tt[0] not in range(self.se_atten.ntypes)) or (
-                tt[1] not in range(self.se_atten.ntypes)
-            ):
-                raise RuntimeError(
-                    "exclude types"
-                    + str(tt)
-                    + " must within the number of atomic types "
-                    + str(self.se_atten.ntypes)
-                    + "!"
-                )
-        if (
-            self.se_atten.ntypes * self.se_atten.ntypes
-            - len(self.se_atten.exclude_types)
-            == 0
-        ):
-            raise RuntimeError(
-                "Empty embedding-nets are not supported in model compression!"
-            )
-
-        if self.se_atten.attn_layer != 0:
-            raise RuntimeError("Cannot compress model when attention layer is not 0.")
-
-        if self.tebd_input_mode != "strip":
-            raise RuntimeError("Cannot compress model when tebd_input_mode == 'concat'")
-
-        data = self.serialize()
-        self.table = DPTabulate(
-            self,
-            data["neuron"],
-            data["type_one_side"],
-            data["exclude_types"],
-            ActivationFn(data["activation_function"]),
-        )
-        self.table_config = [
-            table_extrapolate,
-            table_stride_1,
-            table_stride_2,
-            check_frequency,
-        ]
-        self.lower, self.upper = self.table.build(
-            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
-        )
-
-        self.se_atten.enable_compression(
-            self.table.data, self.table_config, self.lower, self.upper
-        )
-        self.compress = True
+        raise ValueError("Compression is already enabled.")
 
     def forward(
         self,
