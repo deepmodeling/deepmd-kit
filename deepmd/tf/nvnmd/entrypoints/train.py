@@ -120,6 +120,7 @@ def train_nvnmd(
     INPUT: str,
     init_model: Optional[str],
     restart: Optional[str],
+    init_frz_model: Optional[str],
     step: str,
     skip_neighbor_stat: bool = False,
     **kwargs,
@@ -146,6 +147,7 @@ def train_nvnmd(
         jdata["log_path"] = LOG_CNN
         jdata["init_model"] = init_model
         jdata["restart"] = restart
+        jdata["init_frz_model"] = init_frz_model
         jdata["skip_neighbor_stat"] = skip_neighbor_stat
         train(**jdata)
         tf.reset_default_graph()

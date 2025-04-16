@@ -777,6 +777,13 @@ def main_parser() -> argparse.ArgumentParser:
         help="Restart the training from the provided prefix of checkpoint files.",
     )
     parser_train_nvnmd.add_argument(
+        "-f",
+        "--init-frz-model",
+        type=str,
+        default=None,
+        help="Initialize the training from the frozen model.",
+    )
+    parser_train_nvnmd.add_argument(
         "-s",
         "--step",
         default="s1",
