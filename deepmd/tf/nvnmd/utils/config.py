@@ -311,6 +311,7 @@ class NvnmdConfig:
         r"""Generate `model/descriptor` in input script."""
         dscp = self.dscp
         jdata = self.jdata_deepmd_input["model"]["descriptor"]
+        jdata["seed"] = dscp["seed"]
         jdata["sel"] = dscp["sel"]
         jdata["rcut"] = dscp["rcut"]
         jdata["rcut_smth"] = dscp["rcut_smth"]
@@ -323,6 +324,7 @@ class NvnmdConfig:
         r"""Generate `model/fitting_net` in input script."""
         fitn = self.fitn
         jdata = self.jdata_deepmd_input["model"]["fitting_net"]
+        jdata["seed"] = fitn["seed"]
         jdata["neuron"] = fitn["neuron"]
         return jdata
 

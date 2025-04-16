@@ -4,6 +4,7 @@ jdata_sys = {"debug": False}
 jdata_config_v0 = {
     "dscp": {
         # basic config from deepmd model
+        "seed": 1,
         "sel": [60, 60],
         "rcut": 6.0,
         "rcut_smth": 0.5,
@@ -37,6 +38,7 @@ jdata_config_v0 = {
     },
     "fitn": {
         # basic config from deepmd model
+        "seed": 1,
         "neuron": [128, 128, 128],
         "resnet_dt": False,
         "NNODE_FITS": "(M1*M2, neuron, 1)",
@@ -137,6 +139,7 @@ jdata_config_v0_ni256["nbit"]["NBIT_NEIB"] = 9
 jdata_config_v1 = {
     "dscp": {
         # basic config from deepmd model
+        "seed": 1,
         "sel": 128,
         "rcut": 6.0,
         "rcut_smth": 0.5,
@@ -168,6 +171,7 @@ jdata_config_v1 = {
     },
     "fitn": {
         # basic config from deepmd model
+        "seed": 1,
         "neuron": [128, 128, 128],
         "resnet_dt": False,
         "NNODE_FITS": "(M1*M2, neuron, 1)",

@@ -65,12 +65,12 @@ def normalized_input(fn, PATH_CNN, CONFIG_CNN):
     # model
     jdata_model = {
         "descriptor": {
-            "seed": 1,
+            "seed": jdata_nvnmd_.get("seed", 1),
             "sel": jdata_nvnmd_["sel"],
             "rcut": jdata_nvnmd_["rcut"],
             "rcut_smth": jdata_nvnmd_["rcut_smth"],
         },
-        "fitting_net": {"seed": 1},
+        "fitting_net": {"seed": jdata_nvnmd_.get("seed", 1)},
         "type_map": [],
     }
     jdata_model["type_map"] = f.get(jdata_nvnmd_, "type_map", [])
