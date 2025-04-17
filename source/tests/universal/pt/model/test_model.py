@@ -211,6 +211,10 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
 
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
+
 
 @parameterized(
     des_parameterized=(
@@ -315,6 +319,10 @@ class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
 
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
+
 
 @parameterized(
     des_parameterized=(
@@ -410,6 +418,10 @@ class TestDipoleModelPT(unittest.TestCase, DipoleModelTest, PTTestCase):
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
 
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
+
 
 @parameterized(
     des_parameterized=(
@@ -500,6 +512,10 @@ class TestPolarModelPT(unittest.TestCase, PolarModelTest, PTTestCase):
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
 
 
 @parameterized(
@@ -599,6 +615,10 @@ class TestZBLModelPT(unittest.TestCase, ZBLModelTest, PTTestCase):
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
 
 
 @parameterized(
@@ -725,6 +745,10 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
 
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
+
 
 @parameterized(
     des_parameterized=(
@@ -818,6 +842,10 @@ class TestPropertyModelPT(unittest.TestCase, PropertyModelTest, PTTestCase):
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
 
 
 @parameterized(
@@ -917,3 +945,7 @@ class TestLinearEnergyModelPT(unittest.TestCase, LinearEnerModelTest, PTTestCase
         cls.expected_dim_fparam = ft1.get_dim_fparam()
         cls.expected_dim_aparam = ft1.get_dim_aparam()
         cls.expected_sel_type = ft1.get_sel_type()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
