@@ -133,6 +133,10 @@ class TestEnergyAtomicModelPT(unittest.TestCase, EnerAtomicModelTest, PTTestCase
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
 
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
+
 
 @parameterized(
     des_parameterized=(
@@ -199,6 +203,10 @@ class TestDosAtomicModelPT(unittest.TestCase, DosAtomicModelTest, PTTestCase):
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
 
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
+
 
 @parameterized(
     des_parameterized=(
@@ -261,6 +269,10 @@ class TestDipoleAtomicModelPT(unittest.TestCase, DipoleAtomicModelTest, PTTestCa
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
 
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
+
 
 @parameterized(
     des_parameterized=(
@@ -322,6 +334,10 @@ class TestPolarAtomicModelPT(unittest.TestCase, PolarAtomicModelTest, PTTestCase
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
 
 
 @parameterized(
@@ -395,6 +411,10 @@ class TestZBLAtomicModelPT(unittest.TestCase, ZBLAtomicModelTest, PTTestCase):
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
 
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
+
 
 @parameterized(
     des_parameterized=(
@@ -459,3 +479,7 @@ class TestPropertyAtomicModelPT(unittest.TestCase, PropertyAtomicModelTest, PTTe
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
