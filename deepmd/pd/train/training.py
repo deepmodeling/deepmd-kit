@@ -893,12 +893,6 @@ class Trainer:
             ) and (self.rank == 0 or dist.get_rank() == 0):
                 # Handle the case if rank 0 aborted and re-assigned
                 self.latest_model = Path(self.save_ckpt + f"-{_step_id + 1}.pd")
-
-                module = (
-                    self.wrapper.module
-                    if dist.is_available() and dist.is_initialized()
-                    else self.wrapper
-                )
                 self.save_model(self.latest_model, lr=cur_lr, step=_step_id)
                 log.info(f"Saved model to {self.latest_model}")
                 symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
@@ -1001,7 +995,7 @@ class Trainer:
 
     def save_model(self, save_path, lr=0.0, step=0) -> None:
         module = (
-            self.wrapper.module
+            self.wrapper._layers
             if dist.is_available() and dist.is_initialized()
             else self.wrapper
         )
