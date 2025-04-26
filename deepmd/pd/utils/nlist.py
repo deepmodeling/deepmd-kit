@@ -26,7 +26,7 @@ def extend_input_and_build_neighbor_list(
 ):
     nframes, nloc = atype.shape[:2]
     if box is not None:
-        box_gpu = box.to(coord.place)
+        box_gpu = box
         coord_normalized = normalize_coord(
             coord.reshape([nframes, nloc, 3]),
             box_gpu.reshape([nframes, 3, 3]),
@@ -475,7 +475,7 @@ def extend_coord_with_ghosts(
             nbuff.astype(paddle.int64),
         )
         # 3
-        nbuff = paddle.amax(nbuff, axis=0)  # faster than paddle.max
+        nbuff = paddle.amax(nbuff, axis=0)
         nbuff_cpu = nbuff.cpu()
         xi = (
             paddle.arange(-nbuff_cpu[0], nbuff_cpu[0] + 1, 1).to(

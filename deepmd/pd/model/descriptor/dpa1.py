@@ -584,7 +584,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
             The overflow check frequency
         """
         # do some checks before the mocel compression process
-        raise NotImplementedError("Model compression is not supported in paddle yet.")
+        raise ValueError("Compression is already enabled.")
 
     def forward(
         self,

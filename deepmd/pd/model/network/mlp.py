@@ -101,7 +101,7 @@ class MLPLayer(nn.Layer):
             (num_in, num_out),
             dtype=self.prec,
             default_initializer=nn.initializer.Assign(
-                empty_t((num_in, num_out), self.prec)
+                empty_t([num_in, num_out], self.prec)
             ),
         )
         random_generator = get_generator(seed)

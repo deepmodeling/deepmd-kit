@@ -56,7 +56,7 @@ class EnergyStdLoss(TaskLoss):
         use_huber=False,
         huber_delta=0.01,
         **kwargs,
-    ):
+    ) -> None:
         r"""Construct a layer to compute loss on energy, force and virial.
 
         Parameters
@@ -287,9 +287,9 @@ class EnergyStdLoss(TaskLoss):
                         rmse_f.detach(), find_force
                     )
                 else:
-                    l1_force_loss = F.l1_loss(force_label, force_pred, reduction="none")
+                    l1_force_loss = F.l1_loss(force_label, force_pred, reduction="mean")
                     more_loss["mae_f"] = self.display_if_exist(
-                        l1_force_loss.mean().detach(), find_force
+                        l1_force_loss.detach(), find_force
                     )
                     l1_force_loss = l1_force_loss.sum(-1).mean(-1).sum()
                     loss += (pref_f * l1_force_loss).to(GLOBAL_PD_FLOAT_PRECISION)
@@ -324,20 +324,19 @@ class EnergyStdLoss(TaskLoss):
                 drdq_reshape = drdq.reshape(
                     [-1, natoms * 3, self.numb_generalized_coord]
                 )
-
-                # gen_force_label = paddle.einsum(
-                #     "bij,bi->bj", drdq_reshape, force_label_reshape_nframes
-                # )
-                gen_force_label = (
-                    drdq_reshape * force_label_reshape_nframes.unsqueeze(-1)
-                ).sum([-2])
-
-                # gen_force = paddle.einsum(
-                #     "bij,bi->bj", drdq_reshape, force_reshape_nframes
-                # )
-                gen_force = (drdq_reshape * force_reshape_nframes.unsqueeze(-1)).sum(
-                    [-2]
+                gen_force_label = paddle.einsum(
+                    "bij,bi->bj", drdq_reshape, force_label_reshape_nframes
                 )
+                # gen_force_label = (
+                #     drdq_reshape * force_label_reshape_nframes.unsqueeze(-1)
+                # ).sum([-2])
+
+                gen_force = paddle.einsum(
+                    "bij,bi->bj", drdq_reshape, force_reshape_nframes
+                )
+                # gen_force = (drdq_reshape * force_reshape_nframes.unsqueeze(-1)).sum(
+                #     [-2]
+                # )
 
                 diff_gen_force = gen_force_label - gen_force
                 l2_gen_force_loss = paddle.square(diff_gen_force).mean()
@@ -534,3 +533,75 @@ class EnergyStdLoss(TaskLoss):
         check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         return cls(**data)
+
+
+class EnergyHessianStdLoss(EnergyStdLoss):
+    def __init__(
+        self,
+        start_pref_h=0.0,
+        limit_pref_h=0.0,
+        **kwargs,
+    ):
+        r"""Enable the layer to compute loss on hessian.
+
+        Parameters
+        ----------
+        start_pref_h : float
+            The prefactor of hessian loss at the start of the training.
+        limit_pref_h : float
+            The prefactor of hessian loss at the end of the training.
+        **kwargs
+            Other keyword arguments.
+        """
+        super().__init__(**kwargs)
+        self.has_h = (start_pref_h != 0.0 and limit_pref_h != 0.0) or self.inference
+
+        self.start_pref_h = start_pref_h
+        self.limit_pref_h = limit_pref_h
+
+    def forward(self, input_dict, model, label, natoms, learning_rate, mae=False):
+        model_pred, loss, more_loss = super().forward(
+            input_dict, model, label, natoms, learning_rate, mae=mae
+        )
+        coef = learning_rate / self.starter_learning_rate
+        pref_h = self.limit_pref_h + (self.start_pref_h - self.limit_pref_h) * coef
+
+        if self.has_h and "hessian" in model_pred and "hessian" in label:
+            find_hessian = label.get("find_hessian", 0.0)
+            pref_h = pref_h * find_hessian
+            diff_h = label["hessian"].reshape(
+                [-1],
+            ) - model_pred["hessian"].reshape(
+                [-1],
+            )
+            l2_hessian_loss = paddle.mean(paddle.square(diff_h))
+            if not self.inference:
+                more_loss["l2_hessian_loss"] = self.display_if_exist(
+                    l2_hessian_loss.detach(), find_hessian
+                )
+            loss += pref_h * l2_hessian_loss
+            rmse_h = l2_hessian_loss.sqrt()
+            more_loss["rmse_h"] = self.display_if_exist(rmse_h.detach(), find_hessian)
+            if mae:
+                mae_h = paddle.mean(paddle.abs(diff_h))
+                more_loss["mae_h"] = self.display_if_exist(mae_h.detach(), find_hessian)
+
+        if not self.inference:
+            more_loss["rmse"] = paddle.sqrt(loss.detach())
+        return model_pred, loss, more_loss
+
+    @property
+    def label_requirement(self) -> list[DataRequirementItem]:
+        """Add hessian label requirement needed for this loss calculation."""
+        label_requirement = super().label_requirement
+        if self.has_h:
+            label_requirement.append(
+                DataRequirementItem(
+                    "hessian",
+                    ndof=1,  # 9=3*3 --> 3N*3N=ndof*natoms*natoms
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                )
+            )
+        return label_requirement

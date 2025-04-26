@@ -110,7 +110,7 @@ def _make_nei_g1(
     # index: nb x (nloc x nnei) x ng1
     index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand([-1, -1, ng1])
     # gg1  : nb x (nloc x nnei) x ng1
-    gg1 = paddle.take_along_axis(g1_ext, axis=1, indices=index)
+    gg1 = paddle.take_along_axis(g1_ext, indices=index, axis=1, broadcast=False)
     # gg1  : nb x nloc x nnei x ng1
     gg1 = gg1.reshape([nb, nloc, nnei, ng1])
     return gg1
@@ -163,7 +163,7 @@ class Atten2Map(paddle.nn.Layer):
         attnw_shift: float = 20.0,
         precision: str = "float64",
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         """Return neighbor-wise multi-head self-attention maps, with gate mechanism."""
         super().__init__()
         self.input_dim = input_dim
@@ -990,7 +990,7 @@ class RepformerLayer(paddle.nn.Layer):
             else:
                 invnnei = paddle.rsqrt(
                     float(nnei)
-                    * paddle.ones((nb, nloc, 1, 1), dtype=g2.dtype).to(device=g2.place)
+                    * paddle.ones([nb, nloc, 1, 1], dtype=g2.dtype).to(device=g2.place)
                 )
         # nb x nloc x 3 x ng2
         h2g2 = paddle.matmul(paddle.transpose(h2, [0, 1, 3, 2]), g2) * invnnei
@@ -1016,7 +1016,6 @@ class RepformerLayer(paddle.nn.Layer):
         # nb x nloc x 3 x ng2
         nb, nloc, _, ng2 = h2g2.shape
         # nb x nloc x 3 x axis
-        # h2g2m = paddle.split(h2g2, decomp.sec(h2g2.shape[-1], axis_neuron), axis=-1)[0]
         h2g2m = h2g2[..., :axis_neuron]  # use slice instead of split
         # nb x nloc x axis x ng2
         g1_13 = paddle.matmul(paddle.transpose(h2g2m, [0, 1, 3, 2]), h2g2) / (3.0**1)

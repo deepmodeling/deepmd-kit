@@ -21,6 +21,7 @@ from ..common import (
 from .test_permutation import (  # model_dpau,
     model_dpa1,
     model_dpa2,
+    model_dpa3,
     model_se_e2_a,
 )
 
@@ -218,6 +219,17 @@ class TestEnergyModelDPA2_2(unittest.TestCase, SmoothTest):
         self.test_virial = False
         self.model = get_model(model_params).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
+
+
+class TestEnergyModelDPA3(unittest.TestCase, SmoothTest):
+    def setUp(self) -> None:
+        model_params = copy.deepcopy(model_dpa3)
+        self.type_split = True
+        self.model = get_model(model_params).to(env.DEVICE)
+        # less degree of smoothness,
+        # error can be systematically removed by reducing epsilon
+        self.epsilon = 1e-5
+        self.aprec = 1e-5
 
 
 # class TestEnergyFoo(unittest.TestCase):
