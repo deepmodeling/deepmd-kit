@@ -69,7 +69,7 @@ jobs:
       run: source/tests/infer/convert-models.sh
     - name: Download libtorch
       run: |
-         wget https://download.pytorch.org/libtorch/cu128/libtorch-cxx11-abi-shared-with-deps-2.7.0%2Bcu128.zip -O libtorch.zip
+         wget https://download.pytorch.org/libtorch/cu126/libtorch-cxx11-abi-shared-with-deps-2.7.0%2Bcu126.zip -O libtorch.zip
          unzip libtorch.zip
     - run: |
         export CMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/libtorch
