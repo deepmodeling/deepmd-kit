@@ -41,8 +41,7 @@ jobs:
          && sudo apt-get update \
          && sudo apt-get -y install cuda-cudart-dev-12-2 cuda-nvcc-12-2
         python -m pip install tensorflow
-        wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.1.2%2Bcpu.zip -O libtorch.zip
-        unzip libtorch.zip
+        python -m pip install 'torch>=2.7' --index-url https://download.pytorch.org/whl/cpu
       env:
         DEBIAN_FRONTEND: noninteractive
     # Initializes the CodeQL tools for scanning.
@@ -53,7 +52,6 @@ jobs:
         queries: security-extended,security-and-quality
     - name: "Run, Build Application using script"
       run: |
-        export CMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/libtorch
         source/install/build_cc.sh
       env:
         DP_VARIANT: cuda
