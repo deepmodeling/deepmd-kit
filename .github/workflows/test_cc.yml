@@ -32,18 +32,14 @@ jobs:
         source/install/uv_with_retry.sh pip install --system tensorflow-cpu~=2.18.0 jax==0.5.0
         export TENSORFLOW_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
         source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp,jax] mpi4py
+        source/install/uv_with_retry.sh pip install --system 'torch==2.7' --index-url https://download.pytorch.org/whl/cpu
     - name: Convert models
       run: source/tests/infer/convert-models.sh
-    - name: Download libtorch
-      run: |
-         wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.7.0%2Bcpu.zip -O libtorch.zip
-         unzip libtorch.zip
     # https://github.com/actions/runner-images/issues/9491
     - name: Fix kernel mmap rnd bits
       run: sudo sysctl vm.mmap_rnd_bits=28
       if: ${{ matrix.check_memleak }}
     - run: |
-         export CMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/libtorch
          source/install/test_cc_local.sh
       env:
         OMP_NUM_THREADS: 1
@@ -64,7 +60,7 @@ jobs:
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
         LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
-        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib:${{ github.workspace }}/libtorch/lib
+        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib
       if: ${{ !matrix.check_memleak }}
     # test ipi
     - run: |
@@ -77,7 +73,7 @@ jobs:
         OMP_NUM_THREADS: 1
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
-        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib:${{ github.workspace }}/libtorch/lib
+        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib
       if: ${{ !matrix.check_memleak }}
     - uses: codecov/codecov-action@v5
       env:

@@ -67,12 +67,7 @@ jobs:
         XLA_PYTHON_CLIENT_ALLOCATOR: platform
     - name: Convert models
       run: source/tests/infer/convert-models.sh
-    - name: Download libtorch
-      run: |
-         wget https://download.pytorch.org/libtorch/cu126/libtorch-cxx11-abi-shared-with-deps-2.7.0%2Bcu126.zip -O libtorch.zip
-         unzip libtorch.zip
     - run: |
-        export CMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/libtorch
         export LD_LIBRARY_PATH=$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$LD_LIBRARY_PATH
         source/install/test_cc_local.sh
       env:
@@ -84,7 +79,7 @@ jobs:
         DP_VARIANT: cuda
         DP_USE_MPICH2: 1
     - run: |
-        export LD_LIBRARY_PATH=$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$GITHUB_WORKSPACE/dp_test/lib:$GITHUB_WORKSPACE/libtorch/lib:$LD_LIBRARY_PATH
+        export LD_LIBRARY_PATH=$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$GITHUB_WORKSPACE/dp_test/lib:$LD_LIBRARY_PATH
         export PATH=$GITHUB_WORKSPACE/dp_test/bin:$PATH
         cp $GITHUB_WORKSPACE/source/build_tests/paddle_inference_install_dir/paddle/lib/* $GITHUB_WORKSPACE/dp_test/lib/
         cp $GITHUB_WORKSPACE/source/build_tests/paddle_inference_install_dir/third_party/install/onednn/lib/* $GITHUB_WORKSPACE/dp_test/lib/
