@@ -8,7 +8,7 @@ from typing import (
     NoReturn,
 )
 
-from deepmd.tf.lmp import (
+from deepmd.lmp import (
     get_op_dir,
 )
 

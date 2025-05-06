@@ -3,7 +3,7 @@ import os
 import subprocess
 import unittest
 
-from deepmd.tf.utils.convert import (
+from deepmd.tf.utils.convert import (  # noqa: TID253
     convert_pbtxt_to_pb,
 )
 
