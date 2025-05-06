@@ -227,7 +227,7 @@ test-command = [
     """python -c "import deepmd.tf;import deepmd.pt;import deepmd.pd" """,
     "dp -h",
     "dp_ipi",
-    "pytest {project}/source/tests/tf/test_lammps.py"
+    "pytest {project}/source/tests/common/test_lammps.py"
 ]
 test-extras = ["cpu", "test", "lmp", "ipi", "torch", "paddle"]
 build = ["cp311-*"]
