@@ -384,7 +384,7 @@ if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
   list(APPEND BACKEND_INCLUDE_DIRS ${TORCH_INCLUDE_DIRS})
   if(USE_PT_PYTHON_LIBS OR BUILD_PY_IF)
     # when libtorch.so is in a wheel
-    list(APPEND BACKEND_LIBRARY_PATH ${PyTorch_LIBRARY_PATH}/../../torch.libs)
+    link_directories(${PyTorch_LIBRARY_PATH}/../../torch.libs)
   endif()
 endif()
 if(ENABLE_JAX
