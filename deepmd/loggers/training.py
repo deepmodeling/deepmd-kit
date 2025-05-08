@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import datetime
 from typing import (
     Optional,
 )
@@ -7,9 +8,13 @@ from typing import (
 def format_training_message(
     batch: int,
     wall_time: float,
+    eta: Optional[int] = None,
 ) -> str:
     """Format a training message."""
-    return f"batch {batch:7d}: total wall time = {wall_time:.2f} s"
+    msg = f"batch {batch:7d}: total wall time = {wall_time:.2f} s"
+    if isinstance(eta, int):
+        msg += f", eta = {datetime.timedelta(seconds=int(eta))!s}"
+    return msg
 
 
 def format_training_message_per_task(

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import datetime
 import functools
 import logging
 import time
@@ -30,6 +29,7 @@ from deepmd.common import (
     symlink_prefix_files,
 )
 from deepmd.loggers.training import (
+    format_training_message,
     format_training_message_per_task,
 )
 from deepmd.pd.loss import (
@@ -77,22 +77,6 @@ from deepmd.utils.path import (
 )
 
 log = logging.getLogger(__name__)
-
-from typing import (
-    Optional,
-)
-
-
-def format_training_message(
-    batch: int,
-    wall_time: float,
-    eta: Optional[int] = None,
-):
-    """Format a training message."""
-    msg = f"batch {batch:7d}: total wall time = {wall_time:.2f} s"
-    if isinstance(eta, int):
-        msg += f", eta = {datetime.timedelta(seconds=int(eta))!s}"
-    return msg
 
 
 class Trainer:
@@ -863,7 +847,7 @@ class Trainer:
                 self.t0 = current_time
                 if self.rank == 0 and self.timing_in_training:
                     eta = int(
-                        (self.num_steps - _step_id - 1) / self.disp_freq * train_time
+                        (self.num_steps - display_step_id) / self.disp_freq * train_time
                     )
                     log.info(
                         format_training_message(
