@@ -181,7 +181,7 @@ class EnvMatStatSe(EnvMatStat):
                 exclude_mask = xp.reshape(
                     PairExcludeMask(
                         self.descriptor.get_ntypes(), system["pair_exclude_types"]
-                    )(nlist, extended_atype),
+                    ).build_type_exclude_mask(nlist, extended_atype),
                     (1, coord.shape[0] * coord.shape[1], -1),
                 )
                 # shape: (ntypes, nloc, nnei)
