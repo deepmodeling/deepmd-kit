@@ -185,7 +185,7 @@ class EnvMatStatSe(EnvMatStat):
                     (1, coord.shape[0] * coord.shape[1], -1),
                 )
                 # shape: (ntypes, nloc, nnei)
-                type_idx = xp.logical_and(type_idx.unsqueeze(-1), exclude_mask)
+                type_idx = xp.logical_and(type_idx[..., None], exclude_mask)
             for type_i in range(self.descriptor.get_ntypes()):
                 dd = env_mat[type_idx[type_i, ...]]
                 dd = xp.reshape(

@@ -530,9 +530,9 @@ class TestSeAStat(CommonTest, DescriptorTest, unittest.TestCase):
             [
                 {
                     "r0": None,
-                    "coord": paddle.to_tensor(self.coords)
-                    .reshape(-1, self.natoms[0], 3)
-                    .to(PD_DEVICE),
+                    "coord": paddle.to_tensor(
+                        self.coords.reshape(-1, self.natoms[0], 3)
+                    ).to(PD_DEVICE),
                     "atype": paddle.to_tensor(self.atype.reshape(1, -1)).to(PD_DEVICE),
                     "box": paddle.to_tensor(self.box.reshape(1, 3, 3)).to(PD_DEVICE),
                     "natoms": self.natoms[0],
