@@ -13,12 +13,15 @@ from typing import (
     Optional,
 )
 
+import torch  # noqa: TID253
 from packaging.version import (
     Version,
 )
 
-from deepmd.tf.env import (
+from deepmd.env import (
     SHARED_LIB_DIR,
+)
+from deepmd.tf.env import (  # noqa: TID253
     TF_VERSION,
     tf,
 )
@@ -75,6 +78,7 @@ else:
     raise RuntimeError("Unsupported platform")
 
 tf_dir = tf.sysconfig.get_lib()
+pt_dir = os.path.join(torch.__path__[0], "lib")
 op_dir = str(SHARED_LIB_DIR)
 
 
@@ -106,6 +110,7 @@ os.environ[lib_env] = get_env(
         os.environ.get(lib_env),
         tf_dir,
         os.path.join(tf_dir, "python"),
+        pt_dir,
         op_dir,
     ]
 )
