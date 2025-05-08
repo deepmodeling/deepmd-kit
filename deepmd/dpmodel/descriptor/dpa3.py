@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    NoReturn,
     Optional,
     Union,
 )
@@ -444,11 +443,11 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
-    def compute_input_stats(
-        self, merged: list[dict], path: Optional[DPPath] = None
-    ) -> NoReturn:
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        raise NotImplementedError
+        descrpt_list = [self.repflows]
+        for ii, descrpt in enumerate(descrpt_list):
+            descrpt.compute_input_stats(merged, path)
 
     def set_stat_mean_and_stddev(
         self,
