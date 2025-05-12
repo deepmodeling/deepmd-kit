@@ -173,7 +173,9 @@ class DpLoaderSet(Dataset):
                 num_workers=0,  # Should be 0 to avoid too many threads forked
                 sampler=system_sampler,
                 collate_fn=collate_batch,
-                shuffle=(not (dist.is_available() and dist.is_initialized()))
+                shuffle=(
+                    not (dist.is_available() and dist.is_initialized())
+                )  # distributed sampler will do the shuffling by default
                 and shuffle,
             )
             self.dataloaders.append(system_dataloader)
@@ -233,54 +235,6 @@ class DpLoaderSet(Dataset):
                 prob,
                 [ss._data_system.pbc for ss in self.systems],
             )
-
-
-class BackgroundConsumer(Thread):
-    def __init__(self, queue, source) -> None:
-        super().__init__()
-        self.daemon = True
-        self._queue = queue
-        self._source = source  # Main DL iterator
-
-    def run(self) -> None:
-        for item in self._source:
-            self._queue.put(item)  # Blocking if the queue is full
-
-        # Signal the consumer we are done; this should not happen for DataLoader
-        self._queue.put(StopIteration())
-
-
-QUEUESIZE = 32
-
-
-class BufferedIterator:
-    def __init__(self, iterable) -> None:
-        self._queue = Queue(QUEUESIZE)
-        self._iterable = iterable
-        self._consumer = BackgroundConsumer(self._queue, self._iterable)
-        self._consumer.start()
-        self.last_warning_time = time.time()
-
-    def __iter__(self):
-        return self
-
-    def __len__(self) -> int:
-        return len(self._iterable)
-
-    def __next__(self):
-        start_wait = time.time()
-        item = self._queue.get()
-        wait_time = time.time() - start_wait
-        if (
-            wait_time > 1.0 and start_wait - self.last_warning_time > 15 * 60
-        ):  # Even for Multi-Task training, each step usually takes < 1s
-            log.warning(
-                f"Data loading is slow, waited {wait_time:.2f} seconds. Ignoring this warning for 15 minutes."
-            )
-            self.last_warning_time = start_wait
-        if isinstance(item, Exception):
-            raise item
-        return item
 
 
 def collate_batch(batch):
