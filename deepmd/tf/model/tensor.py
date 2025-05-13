@@ -6,6 +6,7 @@ from typing import (
 
 from deepmd.tf.env import (
     MODEL_VERSION,
+    global_cvt_2_ener_float,
     tf,
 )
 from deepmd.tf.utils.type_embed import (
@@ -173,7 +174,7 @@ class TensorModel(StandardModel):
         if "global" not in self.model_type:
             gname = "global_" + self.model_type
             atom_out = tf.reshape(output, [-1, natomsel, nout])
-            global_out = tf.reduce_sum(atom_out, axis=1)
+            global_out = tf.reduce_sum(global_cvt_2_ener_float(atom_out), axis=1)
             global_out = tf.reshape(global_out, [-1, nout], name="o_" + gname + suffix)
 
             out_cpnts = tf.split(atom_out, nout, axis=-1)
