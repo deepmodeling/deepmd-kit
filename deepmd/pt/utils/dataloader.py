@@ -1,15 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 import os
-import time
 from multiprocessing.dummy import (
     Pool,
-)
-from queue import (
-    Queue,
-)
-from threading import (
-    Thread,
 )
 
 import h5py
