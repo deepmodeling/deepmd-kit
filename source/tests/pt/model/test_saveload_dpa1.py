@@ -71,9 +71,11 @@ class TestSaveLoadDPA1(unittest.TestCase):
             drop_last=False,
             pin_memory=True,
         )
+
         def cycle_iterator(iterable):
             while True:
                 yield from iterable
+
         with torch.device("cpu"):
             self.training_data = cycle_iterator(self.training_dataloader)
         self.loss = EnergyStdLoss(**self.config["loss"])
