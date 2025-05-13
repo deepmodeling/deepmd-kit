@@ -2,6 +2,9 @@
 import functools
 import logging
 import time
+from collections.abc import (
+    Iterable,
+)
 from copy import (
     deepcopy,
 )
@@ -11,7 +14,6 @@ from pathlib import (
 from typing import (
     Any,
 )
-from collections.abc import Iterable
 
 import numpy as np
 import torch
@@ -166,8 +168,9 @@ class Trainer:
             Args:
                 iterable (Iterable): The iterable to cycle through.
 
-            Yields:
-                Any: The next item from the iterable, cycling back to the beginning when the end is reached.
+            Yields
+            ------
+            Any: The next item from the iterable, cycling back to the beginning when the end is reached.
             """
             while True:
                 yield from iterable
