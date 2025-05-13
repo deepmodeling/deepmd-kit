@@ -157,6 +157,15 @@ class Trainer:
             return opt_type, opt_param
 
         def cycle_iterator(iterable: Iterable):
+            """
+            Produces an infinite iterator by repeatedly cycling through the given iterable.
+            
+            Args:
+                iterable (Iterable): The iterable to cycle through.
+            
+            Yields:
+                Any: The next item from the iterable, cycling back to the beginning when the end is reached.
+            """
             while True:
                 yield from iterable
 
