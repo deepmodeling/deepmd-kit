@@ -25,7 +25,6 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.dataloader import (
-    BufferedIterator,
     DpLoaderSet,
 )
 from deepmd.pt.utils.stat import (
@@ -72,8 +71,11 @@ class TestSaveLoadDPA1(unittest.TestCase):
             drop_last=False,
             pin_memory=True,
         )
+        def cycle_iterator(iterable):
+            while True:
+                yield from iterable
         with torch.device("cpu"):
-            self.training_data = BufferedIterator(iter(self.training_dataloader))
+            self.training_data = cycle_iterator(self.training_dataloader)
         self.loss = EnergyStdLoss(**self.config["loss"])
         self.cur_lr = 1
         self.task_key = "Default"
@@ -111,12 +113,7 @@ class TestSaveLoadDPA1(unittest.TestCase):
         return ModelWrapper(model, self.loss)
 
     def get_data(self):
-        try:
-            batch_data = next(iter(self.training_data))
-        except StopIteration:
-            # Refresh the status of the dataloader to start from a new epoch
-            self.training_data = BufferedIterator(iter(self.training_dataloader))
-            batch_data = next(iter(self.training_data))
+        batch_data = next(self.training_data)
         input_dict = {}
         for item in ["coord", "atype", "box"]:
             if item in batch_data:
