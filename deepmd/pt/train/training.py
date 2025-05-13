@@ -162,10 +162,10 @@ class Trainer:
         def cycle_iterator(iterable: Iterable):
             """
             Produces an infinite iterator by repeatedly cycling through the given iterable.
-            
+
             Args:
                 iterable (Iterable): The iterable to cycle through.
-            
+
             Yields:
                 Any: The next item from the iterable, cycling back to the beginning when the end is reached.
             """
@@ -1083,7 +1083,8 @@ class Trainer:
             iterator = self.validation_data
         if self.multi_task:
             iterator = iterator[task_key]
-
+        if iterator is None:
+            return {}, {}, {}
         batch_data = next(iterator)
         for key in batch_data.keys():
             if key == "sid" or key == "fid" or key == "box" or "find_" in key:
