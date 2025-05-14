@@ -173,9 +173,7 @@ class Trainer:
             Any: The next item from the iterable, cycling back to the beginning when the end is reached.
             """
             while True:
-                with torch.device("cpu"):
-                    it = iter(iterable)
-                yield from it
+                yield from iterable
 
         def get_data_loader(_training_data, _validation_data, _training_params):
             def get_dataloader_and_iter(_data, _params):
@@ -194,7 +192,6 @@ class Trainer:
                     drop_last=False,
                     collate_fn=lambda batch: batch,  # prevent extra conversion
                     pin_memory=True,
-                    pin_memory_device=str(object=DEVICE),
                 )
                 _data_iter = cycle_iterator(_dataloader)
                 return _dataloader, _data_iter
