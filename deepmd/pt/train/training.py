@@ -172,9 +172,10 @@ class Trainer:
             ------
             Any: The next item from the iterable, cycling back to the beginning when the end is reached.
             """
-            with torch.device("cpu"):
-                while True:
-                    yield from iterable
+            while True:
+                with torch.device("cpu"):
+                    it = iter(iterable)
+                yield from it
 
         def get_data_loader(_training_data, _validation_data, _training_params):
             def get_dataloader_and_iter(_data, _params):
