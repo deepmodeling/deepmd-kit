@@ -195,11 +195,12 @@ class DpLoaderSet(Dataset):
 
     def __getitem__(self, idx):
         # log.warning(str(torch.distributed.get_rank())+" idx: "+str(idx)+" index: "+str(self.index[idx]))
-        try:
-            batch = next(self.iters[idx])
-        except StopIteration:
-            self.iters[idx] = iter(self.dataloaders[idx])
-            batch = next(self.iters[idx])
+        with torch.device("cpu"):
+            try:
+                batch = next(self.iters[idx])
+            except StopIteration:
+                self.iters[idx] = iter(self.dataloaders[idx])
+                batch = next(self.iters[idx])
         batch["sid"] = idx
         return batch
 
