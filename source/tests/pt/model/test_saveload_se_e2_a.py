@@ -109,7 +109,8 @@ class TestSaveLoadSeA(unittest.TestCase):
         return ModelWrapper(model, self.loss)
 
     def get_data(self):
-        batch_data = next(self.training_data)
+        with torch.device("cpu"):
+            batch_data = next(self.training_data)
         input_dict = {}
         for item in ["coord", "atype", "box"]:
             if item in batch_data:
