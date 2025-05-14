@@ -272,11 +272,6 @@ def get_weighted_sampler(training_data, prob_style, sys_prob=False):
             probs,
             len_sampler,
             replacement=True,
-            generator=torch.Generator(),
-            # If we are not setting the generator here, the random state will be initialized in the beginning of each new epoch.
-            # This operation involves creating a new tensor for seeding on the default device,
-            # while unit tests requires specifying the device explicitly.
-            # https://github.com/pytorch/pytorch/blob/134179474539648ba7dee1317959529fbd0e7f89/torch/utils/data/sampler.py#L170
         )
     return sampler
 
