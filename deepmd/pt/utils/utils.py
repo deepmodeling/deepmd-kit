@@ -93,7 +93,7 @@ class SiLUTScript(torch.nn.Module):
                 ctx.threshold = threshold
                 ctx.slope = slope
                 ctx.const_val = const_val
-                return silut_forward_script(x, threshold, slope, const_val)
+                return silut_forward_script(x, threshold, slope, const_val).to(x.dtype)
 
             @staticmethod
             def backward(ctx, grad_output):

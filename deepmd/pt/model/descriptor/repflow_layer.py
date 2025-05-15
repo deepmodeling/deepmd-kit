@@ -424,7 +424,7 @@ class RepFlowLayer(torch.nn.Module):
         sub_edge_update_ik = torch.matmul(edge_ebd, sub_edge_ik)
 
         result_update = (
-            bias
+            bias.to(sub_angle_update.dtype)
             + sub_node_update.unsqueeze(2).unsqueeze(3)
             + sub_edge_update_ij.unsqueeze(2)
             + sub_edge_update_ik.unsqueeze(3)
@@ -463,7 +463,10 @@ class RepFlowLayer(torch.nn.Module):
         sub_edge_update = torch.matmul(edge_ebd, edge)
 
         result_update = (
-            bias + sub_node_update.unsqueeze(2) + sub_edge_update + sub_node_ext_update
+            bias.to(sub_node_update.dtype)
+            + sub_node_update.unsqueeze(2)
+            + sub_edge_update
+            + sub_node_ext_update
         )
         return result_update
 
@@ -679,6 +682,7 @@ class RepFlowLayer(torch.nn.Module):
                     )
                 )
 
+            a_sw.to(edge_angle_update.dtype)
             # nb x nloc x a_nnei x a_nnei x e_dim
             weighted_edge_angle_update = (
                 a_sw[..., None, None] * a_sw[..., None, :, None] * edge_angle_update

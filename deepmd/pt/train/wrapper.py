@@ -136,6 +136,7 @@ class ModelWrapper(torch.nn.Module):
                             f"Shared params of {model_key_base}.{class_type_base} and {model_key_link}.{class_type_link}!"
                         )
 
+    @torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True)
     def forward(
         self,
         coord,
