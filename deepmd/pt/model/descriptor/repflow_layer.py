@@ -682,7 +682,6 @@ class RepFlowLayer(torch.nn.Module):
                     )
                 )
 
-            a_sw.to(edge_angle_update.dtype)
             # nb x nloc x a_nnei x a_nnei x e_dim
             weighted_edge_angle_update = (
                 a_sw[..., None, None] * a_sw[..., None, :, None] * edge_angle_update
