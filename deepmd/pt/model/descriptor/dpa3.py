@@ -162,6 +162,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         )
 
         self.use_econf_tebd = use_econf_tebd
+        self.use_loc_mapping = use_loc_mapping
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
         self.tebd_dim = self.repflow_args.n_dim
@@ -472,6 +473,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             The smooth switch function. shape: nf x nloc x nnei
 
         """
+        parrallel_mode = comm_dict is not None
         # cast the input to internal precsion
         extended_coord = extended_coord.to(dtype=self.prec)
         nframes, nloc, nnei = nlist.shape

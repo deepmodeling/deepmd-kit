@@ -1421,7 +1421,18 @@ def descrpt_dpa3_args():
             default=False,
             doc=doc_use_tebd_bias,
         ),
-        Argument("use_ext_ebd", bool, optional=True, default=False),
+        Argument(
+            "use_torch_embed",
+            bool,
+            optional=True,
+            default=False,
+        ),
+        Argument(
+            "use_loc_mapping",
+            bool,
+            optional=True,
+            default=True,
+        ),
     ]
 
 

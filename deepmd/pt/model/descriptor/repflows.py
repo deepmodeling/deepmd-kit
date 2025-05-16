@@ -476,6 +476,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                 else:
                     node_ebd_ext = None
             else:
+                assert comm_dict is not None
                 has_spin = "has_spin" in comm_dict
                 if not has_spin:
                     n_padding = nall - nloc
