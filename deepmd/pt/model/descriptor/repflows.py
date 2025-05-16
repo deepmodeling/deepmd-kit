@@ -461,16 +461,16 @@ class DescrptBlockRepflows(DescriptorBlock):
         # nb x nall x n_dim
         if comm_dict is None:
             assert mapping is not None
-            mapping = (
-                mapping.view(nframes, nall).unsqueeze(-1).expand(-1, -1, self.n_dim)
-            )
+            node_ebd_ext = None
+            nlist = torch.gather(
+                mapping,
+                1,
+                nlist.reshape(nframes, -1),
+            ).reshape(nlist.shape)
         for idx, ll in enumerate(self.layers):
             # node_ebd:     nb x nloc x n_dim
             # node_ebd_ext: nb x nall x n_dim
-            if comm_dict is None:
-                assert mapping is not None
-                node_ebd_ext = torch.gather(node_ebd, 1, mapping)
-            else:
+            if comm_dict is not None:
                 has_spin = "has_spin" in comm_dict
                 if not has_spin:
                     n_padding = nall - nloc
@@ -528,6 +528,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                         node_ebd_real_ext, node_ebd_virtual_ext, real_nloc
                     )
             node_ebd, edge_ebd, angle_ebd = ll.forward(
+                node_ebd,
                 node_ebd_ext,
                 edge_ebd,
                 h2,

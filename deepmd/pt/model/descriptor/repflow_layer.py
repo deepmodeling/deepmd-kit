@@ -466,7 +466,8 @@ class RepFlowLayer(torch.nn.Module):
 
     def forward(
         self,
-        node_ebd_ext: torch.Tensor,  # nf x nall x n_dim
+        node_ebd: torch.Tensor,  # nf x nloc x n_dim
+        node_ebd_ext: Optional[torch.Tensor],  # nf x nall x n_dim
         edge_ebd: torch.Tensor,  # nf x nloc x nnei x e_dim
         h2: torch.Tensor,  # nf x nloc x nnei x 3
         angle_ebd: torch.Tensor,  # nf x nloc x a_nnei x a_nnei x a_dim
@@ -511,8 +512,6 @@ class RepFlowLayer(torch.nn.Module):
             Updated angle embedding.
         """
         nb, nloc, nnei, _ = edge_ebd.shape
-        nall = node_ebd_ext.shape[1]
-        node_ebd = node_ebd_ext[:, :nloc, :]
         assert (nb, nloc) == node_ebd.shape[:2]
         assert (nb, nloc, nnei) == h2.shape[:3]
         del a_nlist  # may be used in the future
@@ -524,8 +523,10 @@ class RepFlowLayer(torch.nn.Module):
         # node self mlp
         node_self_mlp = self.act(self.node_self_mlp(node_ebd))
         n_update_list.append(node_self_mlp)
-
-        nei_node_ebd = _make_nei_g1(node_ebd_ext, nlist)
+        if node_ebd_ext is not None:
+            nei_node_ebd = _make_nei_g1(node_ebd_ext, nlist)
+        else:
+            nei_node_ebd = _make_nei_g1(node_ebd, nlist)
 
         # node sym (grrg + drrd)
         node_sym_list: list[torch.Tensor] = []
