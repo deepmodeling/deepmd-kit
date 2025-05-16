@@ -462,7 +462,7 @@ class DescrptBlockRepflows(DescriptorBlock):
             assert mapping is not None
             node_ebd_ext = None
             nlist = torch.gather(
-                mapping,
+                mapping.reshape(nframes, -1),
                 1,
                 nlist.reshape(nframes, -1),
             ).reshape(nlist.shape)

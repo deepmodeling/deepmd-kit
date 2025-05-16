@@ -141,6 +141,99 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 rtol=rtol,
                 atol=atol,
             )
+    def test_use_ext_ebd(
+        self,
+    ) -> None:
+        rtol, atol = get_tols("float32")
+
+        nf, nloc, nnei = self.nlist.shape
+        repflow0 = RepFlowArgs(
+            n_dim=20,
+            e_dim=10,
+            a_dim=8,
+            nlayers=3,
+            e_rcut=self.rcut,
+            e_rcut_smth=self.rcut_smth,
+            e_sel=nnei,
+            a_rcut=self.rcut - 0.1,
+            a_rcut_smth=self.rcut_smth,
+            a_sel=nnei - 1,
+            a_compress_rate=0,
+            a_compress_e_rate=2,
+            a_compress_use_split=False,
+            n_multi_edge_message=1,
+            axis_neuron=4,
+            update_angle=True,
+            update_style="res_residual",
+            update_residual_init="const",
+            smooth_edge_update=True,
+            use_ext_ebd=True,
+        )
+        # dpa3 with use_ext_ebd=True
+        dd0 = DescrptDPA3(
+            self.nt,
+            repflow=repflow0,
+            # kwargs for descriptor
+            exclude_types=[],
+            precision="float32",
+            use_econf_tebd=True,
+            type_map=["O", "H"],
+            seed=GLOBAL_SEED,
+            use_ext_ebd=True,
+        ).to(env.DEVICE)
+        rd0, _, _, _, _ = dd0(
+                torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
+                torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
+                torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
+                torch.tensor(self.mapping, dtype=int, device=env.DEVICE),
+            )
+
+        # dpa3 with use_ext_ebd=False
+        repflow1 = RepFlowArgs(
+            n_dim=20,
+            e_dim=10,
+            a_dim=8,
+            nlayers=3,
+            e_rcut=self.rcut,
+            e_rcut_smth=self.rcut_smth,
+            e_sel=nnei,
+            a_rcut=self.rcut - 0.1,
+            a_rcut_smth=self.rcut_smth,
+            a_sel=nnei - 1,
+            a_compress_rate=0,
+            a_compress_e_rate=2,
+            a_compress_use_split=False,
+            n_multi_edge_message=1,
+            axis_neuron=4,
+            update_angle=True,
+            update_style="res_residual",
+            update_residual_init="const",
+            smooth_edge_update=True,
+            use_ext_ebd=False,
+        )
+        dd1 = DescrptDPA3(
+            self.nt,
+            repflow=repflow1,
+            # kwargs for descriptor
+            exclude_types=[],
+            precision="float32",
+            use_econf_tebd=True,
+            type_map=["O", "H"],
+            seed=GLOBAL_SEED,
+            use_ext_ebd=False,
+        ).to(env.DEVICE)
+        rd1, _, _, _, _ = dd1(
+                torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
+                torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
+                torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
+                torch.tensor(self.mapping, dtype=int, device=env.DEVICE),
+            )
+        np.testing.assert_allclose(
+            rd0.detach().cpu().numpy(),
+            rd1.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+        )
 
     def test_jit(
         self,

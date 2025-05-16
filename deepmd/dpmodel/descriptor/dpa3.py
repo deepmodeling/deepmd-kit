@@ -150,6 +150,7 @@ class RepFlowArgs:
         skip_stat: bool = False,
         optim_update: bool = True,
         smooth_edge_update: bool = False,
+        use_ext_ebd: bool = False,
     ) -> None:
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -176,6 +177,7 @@ class RepFlowArgs:
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
+        self.use_ext_ebd = use_ext_ebd
 
     def __getitem__(self, key):
         if hasattr(self, key):
@@ -207,6 +209,7 @@ class RepFlowArgs:
             "fix_stat_std": self.fix_stat_std,
             "optim_update": self.optim_update,
             "smooth_edge_update": self.smooth_edge_update,
+            "use_ext_ebd": self.use_ext_ebd,
         }
 
     @classmethod
