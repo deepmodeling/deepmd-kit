@@ -262,6 +262,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
+        use_ext_ebd: bool = False,
     ) -> None:
         super().__init__()
 
@@ -275,6 +276,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
                     f"Input args must be a {sub_class.__name__} class or a dict!"
                 )
 
+        self.use_ext_ebd = use_ext_ebd
         self.repflow_args = init_subclass_params(repflow, RepFlowArgs)
         self.activation_function = activation_function
 
@@ -307,6 +309,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             env_protection=env_protection,
             precision=precision,
             seed=child_seed(seed, 1),
+            use_ext_ebd=use_ext_ebd,
         )
 
         self.use_econf_tebd = use_econf_tebd
@@ -544,6 +547,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             "use_tebd_bias": self.use_tebd_bias,
             "type_map": self.type_map,
             "type_embedding": self.type_embedding.serialize(),
+            "use_ext_ebd": self.use_ext_ebd,
         }
         repflow_variable = {
             "edge_embd": repflows.edge_embd.serialize(),
