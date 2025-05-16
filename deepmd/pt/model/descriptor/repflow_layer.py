@@ -435,9 +435,8 @@ class RepFlowLayer(torch.nn.Module):
     def optim_edge_update(
         self,
         node_ebd: torch.Tensor,
-        node_ebd_ext: torch.Tensor,
+        nei_node_ebd: torch.Tensor,
         edge_ebd: torch.Tensor,
-        nlist: torch.Tensor,
         feat: str = "node",
     ) -> torch.Tensor:
         if feat == "node":
@@ -455,10 +454,8 @@ class RepFlowLayer(torch.nn.Module):
 
         # nf * nloc * node/edge_dim
         sub_node_update = torch.matmul(node_ebd, node)
-        # nf * nloc * nnei * node/edge_dim
-        gathered_node_ebd_ext = _make_nei_g1(node_ebd_ext, nlist)
-        # nf * nloc * nnei * node/edge_dim
-        sub_node_ext_update = torch.matmul(gathered_node_ebd_ext, node_ext)
+        # nf * nloc * node/edge_dim
+        sub_node_ext_update = torch.matmul(nei_node_ebd, node_ext)
         # nf * nloc * nnei * node/edge_dim
         sub_edge_update = torch.matmul(edge_ebd, edge)
 
@@ -577,9 +574,8 @@ class RepFlowLayer(torch.nn.Module):
             node_edge_update = self.act(
                 self.optim_edge_update(
                     node_ebd,
-                    node_ebd_ext,
+                    nei_node_ebd,
                     edge_ebd,
-                    nlist,
                     "node",
                 )
             ) * sw.unsqueeze(-1)
@@ -605,9 +601,8 @@ class RepFlowLayer(torch.nn.Module):
             edge_self_update = self.act(
                 self.optim_edge_update(
                     node_ebd,
-                    node_ebd_ext,
+                    nei_node_ebd,
                     edge_ebd,
-                    nlist,
                     "edge",
                 )
             )
