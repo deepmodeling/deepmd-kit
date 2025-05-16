@@ -141,6 +141,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 rtol=rtol,
                 atol=atol,
             )
+
     def test_use_ext_ebd(
         self,
     ) -> None:
@@ -182,11 +183,11 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             use_ext_ebd=True,
         ).to(env.DEVICE)
         rd0, _, _, _, _ = dd0(
-                torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
-                torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
-                torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
-                torch.tensor(self.mapping, dtype=int, device=env.DEVICE),
-            )
+            torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
+            torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
+            torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
+            torch.tensor(self.mapping, dtype=int, device=env.DEVICE),
+        )
 
         # dpa3 with use_ext_ebd=False
         repflow1 = RepFlowArgs(
@@ -223,11 +224,11 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             use_ext_ebd=False,
         ).to(env.DEVICE)
         rd1, _, _, _, _ = dd1(
-                torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
-                torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
-                torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
-                torch.tensor(self.mapping, dtype=int, device=env.DEVICE),
-            )
+            torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
+            torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
+            torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
+            torch.tensor(self.mapping, dtype=int, device=env.DEVICE),
+        )
         np.testing.assert_allclose(
             rd0.detach().cpu().numpy(),
             rd1.detach().cpu().numpy(),
