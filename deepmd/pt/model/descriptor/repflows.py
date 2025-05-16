@@ -209,6 +209,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         use_exp_switch: bool = False,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
+        use_loc_mapping: bool = True,
         optim_update: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
@@ -416,9 +417,9 @@ class DescrptBlockRepflows(DescriptorBlock):
         mapping: Optional[torch.Tensor] = None,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
-        if comm_dict is None:
+        parrallel_mode = comm_dict is not None
+        if not parrallel_mode:
             assert mapping is not None
-            assert extended_atype_embd is not None
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         atype = extended_atype[:, :nloc]
@@ -470,12 +471,9 @@ class DescrptBlockRepflows(DescriptorBlock):
 
         # get node embedding
         # [nframes, nloc, tebd_dim]
-        if comm_dict is None:
-            assert isinstance(extended_atype_embd, torch.Tensor)  # for jit
-            atype_embd = extended_atype_embd[:, :nloc, :]
-            assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
-        else:
-            atype_embd = extended_atype_embd
+        assert extended_atype_embd is not None
+        atype_embd = extended_atype_embd[:, :nloc, :]
+        assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
         assert isinstance(atype_embd, torch.Tensor)  # for jit
         node_ebd = self.act(atype_embd)
         n_dim = node_ebd.shape[-1]
@@ -494,10 +492,19 @@ class DescrptBlockRepflows(DescriptorBlock):
         cosine_ij = torch.matmul(normalized_diff_i, normalized_diff_j) * (1 - 1e-6)
         angle_input = cosine_ij.unsqueeze(-1) / (torch.pi**0.5)
 
+        if not parrallel_mode and self.use_loc_mapping:
+            assert mapping is not None
+            # convert nlist from nall to nloc index
+            nlist = torch.gather(
+                mapping,
+                1,
+                index=nlist.reshape(nframes, -1),
+            ).reshape(nlist.shape)
         if self.use_dynamic_sel:
             # get graph index
             edge_index, angle_index = get_graph_index(
-                nlist, nlist_mask, a_nlist_mask, nall
+                nlist, nlist_mask, a_nlist_mask, nall,
+                use_loc_mapping=self.use_loc_mapping,
             )
             # flat all the tensors
             # n_edge x 1
@@ -524,18 +531,23 @@ class DescrptBlockRepflows(DescriptorBlock):
         angle_ebd = self.angle_embd(angle_input)
 
         # nb x nall x n_dim
-        if comm_dict is None:
+        if not parrallel_mode:
             assert mapping is not None
             mapping = (
                 mapping.view(nframes, nall).unsqueeze(-1).expand(-1, -1, self.n_dim)
             )
         for idx, ll in enumerate(self.layers):
             # node_ebd:     nb x nloc x n_dim
-            # node_ebd_ext: nb x nall x n_dim
-            if comm_dict is None:
+            # node_ebd_ext: nb x nall x n_dim [OR] nb x nloc x n_dim when not parrallel_mode
+            if not parrallel_mode:
                 assert mapping is not None
-                node_ebd_ext = torch.gather(node_ebd, 1, mapping)
+                node_ebd_ext = (
+                    torch.gather(node_ebd, 1, mapping)
+                    if not self.use_loc_mapping
+                    else node_ebd
+                )
             else:
+                assert comm_dict is not None
                 has_spin = "has_spin" in comm_dict
                 if not has_spin:
                     n_padding = nall - nloc

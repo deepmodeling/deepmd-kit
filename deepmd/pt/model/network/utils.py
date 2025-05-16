@@ -51,6 +51,7 @@ def get_graph_index(
     nlist_mask: torch.Tensor,
     a_nlist_mask: torch.Tensor,
     nall: int,
+    use_loc_mapping: bool = True,
 ):
     """
     Get the index mapping for edge graph and angle graph, ready in `aggregate` or `index_select`.
@@ -100,7 +101,9 @@ def get_graph_index(
     n2e_index = n2e_index[nlist_mask]  # graph node index, atom_graph[:, 0]
 
     # node_ext(j) to edge(ij) index_select
-    frame_shift = torch.arange(0, nf, dtype=nlist.dtype, device=nlist.device) * nall
+    frame_shift = torch.arange(0, nf, dtype=nlist.dtype, device=nlist.device) * (
+        nall if not use_loc_mapping else nloc
+    )
     shifted_nlist = nlist + frame_shift[:, None, None]
     # n_edge
     n_ext2e_index = shifted_nlist[nlist_mask]  # graph neighbor index, atom_graph[:, 1]
