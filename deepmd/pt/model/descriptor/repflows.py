@@ -377,8 +377,6 @@ class DescrptBlockRepflows(DescriptorBlock):
         mapping: Optional[torch.Tensor] = None,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
-        if comm_dict is None:
-            assert mapping is not None
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         atype = extended_atype[:, :nloc]
