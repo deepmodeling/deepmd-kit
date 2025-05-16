@@ -124,6 +124,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
                 raise ValueError(
                     f"Input args must be a {sub_class.__name__} class or a dict!"
                 )
+
         self.use_ext_ebd = use_ext_ebd
         self.repflow_args = init_subclass_params(repflow, RepFlowArgs)
         self.activation_function = activation_function
