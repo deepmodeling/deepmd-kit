@@ -585,6 +585,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
             "repflow_layers": [layer.serialize() for layer in self.layers],
             "env_mat_edge": self.env_mat_edge.serialize(),
             "env_mat_angle": self.env_mat_angle.serialize(),
+            "use_ext_ebd": self.use_ext_ebd,
             "@variables": {
                 "davg": to_numpy_array(self["davg"]),
                 "dstd": to_numpy_array(self["dstd"]),
