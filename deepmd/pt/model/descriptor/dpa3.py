@@ -469,16 +469,18 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         # cast the input to internal precsion
         extended_coord = extended_coord.to(dtype=self.prec)
         nframes, nloc, nnei = nlist.shape
-        nall = extended_coord.view(nframes, -1).shape[1] // 3
-
-        node_ebd_ext = self.type_embedding(extended_atype)
-        node_ebd_inp = node_ebd_ext[:, :nloc, :]
+        # nall = extended_coord.view(nframes, -1).shape[1] // 3
+        if comm_dict is None:
+            atype = extended_atype[:, :nloc]
+        else:
+            atype = extended_atype
+        node_ebd_inp = self.type_embedding(atype)
         # repflows
-        node_ebd, edge_ebd, h2, rot_mat, sw = self.repflows(
+        node_ebd, edge_ebd, h2, rot_mat, sw = self.repflows.forward(
             nlist,
             extended_coord,
             extended_atype,
-            node_ebd_ext,
+            node_ebd_inp,
             mapping,
             comm_dict=comm_dict,
         )

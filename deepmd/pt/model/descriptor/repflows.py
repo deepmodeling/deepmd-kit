@@ -373,13 +373,12 @@ class DescrptBlockRepflows(DescriptorBlock):
         nlist: torch.Tensor,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
+        extended_atype_embd: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
         if comm_dict is None:
             assert mapping is not None
-            assert extended_atype_embd is not None
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         atype = extended_atype[:, :nloc]
@@ -402,14 +401,9 @@ class DescrptBlockRepflows(DescriptorBlock):
         # beyond the cutoff sw should be 0.0
         sw = sw.masked_fill(~nlist_mask, 0.0)
 
+        atype_embd = extended_atype_embd
         # [nframes, nloc, tebd_dim]
-        if comm_dict is None:
-            assert isinstance(extended_atype_embd, torch.Tensor)  # for jit
-            atype_embd = extended_atype_embd[:, :nloc, :]
-            assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
-        else:
-            atype_embd = extended_atype_embd
-        assert isinstance(atype_embd, torch.Tensor)  # for jit
+        assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
         node_ebd = self.act(atype_embd)
         n_dim = node_ebd.shape[-1]
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
