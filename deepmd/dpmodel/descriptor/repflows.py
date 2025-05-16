@@ -171,6 +171,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         optim_update: bool = True,
         smooth_edge_update: bool = False,
         seed: Optional[Union[int, list[int]]] = None,
+        use_ext_ebd: bool = False,
     ) -> None:
         super().__init__()
         self.e_rcut = float(e_rcut)
@@ -201,6 +202,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
+        self.use_ext_ebd = use_ext_ebd
 
         self.n_dim = n_dim
         self.e_dim = e_dim

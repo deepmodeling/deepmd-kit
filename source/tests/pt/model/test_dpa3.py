@@ -55,6 +55,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             nme,
             prec,
             ect,
+            use_ext_ebd,
         ) in itertools.product(
             [True, False],  # update_angle
             ["res_residual"],  # update_style
@@ -65,6 +66,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [1, 2],  # n_multi_edge_message
             ["float64"],  # precision
             [False],  # use_econf_tebd
+            [False, True],  # use_ext_ebd
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
@@ -103,6 +105,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 use_econf_tebd=ect,
                 type_map=["O", "H"] if ect else None,
                 seed=GLOBAL_SEED,
+                use_ext_ebd=use_ext_ebd,
             ).to(env.DEVICE)
 
             dd0.repflows.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)

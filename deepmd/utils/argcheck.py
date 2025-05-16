@@ -1421,6 +1421,7 @@ def descrpt_dpa3_args():
             default=False,
             doc=doc_use_tebd_bias,
         ),
+        Argument("use_ext_ebd", bool, optional=True, default=False),
     ]
 
 

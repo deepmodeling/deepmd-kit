@@ -91,6 +91,8 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         Whether to use bias in the type embedding layer.
     type_map : list[str], Optional
         A list of strings. Give the name to each type of atoms.
+    use_ext_ebd : bool
+        Whether to use extended embedding.
     """
 
     def __init__(
@@ -109,6 +111,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
+        use_ext_ebd: bool = False,
     ) -> None:
         super().__init__()
 
@@ -121,7 +124,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
                 raise ValueError(
                     f"Input args must be a {sub_class.__name__} class or a dict!"
                 )
-
+        self.use_ext_ebd = use_ext_ebd
         self.repflow_args = init_subclass_params(repflow, RepFlowArgs)
         self.activation_function = activation_function
 
@@ -154,6 +157,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             env_protection=env_protection,
             precision=precision,
             seed=child_seed(seed, 1),
+            use_ext_ebd=use_ext_ebd,
         )
 
         self.use_econf_tebd = use_econf_tebd
@@ -375,6 +379,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             "use_tebd_bias": self.use_tebd_bias,
             "type_map": self.type_map,
             "type_embedding": self.type_embedding.embedding.serialize(),
+            "use_ext_ebd": self.use_ext_ebd,
         }
         repflow_variable = {
             "edge_embd": repflows.edge_embd.serialize(),
@@ -470,7 +475,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         extended_coord = extended_coord.to(dtype=self.prec)
         nframes, nloc, nnei = nlist.shape
         # nall = extended_coord.view(nframes, -1).shape[1] // 3
-        if comm_dict is None:
+        if comm_dict is None or self.use_ext_ebd:
             atype = extended_atype[:, :nloc]
         else:
             atype = extended_atype

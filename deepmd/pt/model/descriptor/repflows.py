@@ -185,6 +185,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         smooth_edge_update: bool = False,
         optim_update: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
+        use_ext_ebd: bool = False,
     ) -> None:
         super().__init__()
         self.e_rcut = float(e_rcut)
@@ -215,6 +216,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
+        self.use_ext_ebd = use_ext_ebd
 
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -451,7 +453,12 @@ class DescrptBlockRepflows(DescriptorBlock):
         # if the a neighbor is real or not is indicated by nlist_mask
         nlist[nlist == -1] = 0
         # nb x nall x n_dim
-        if comm_dict is None:
+        if self.use_ext_ebd:
+            assert mapping is not None
+            mapping = (
+                mapping.view(nframes, nall).unsqueeze(-1).expand(-1, -1, self.n_dim)
+            )
+        if comm_dict is None or self.use_ext_ebd:
             assert mapping is not None
             node_ebd_ext = None
             nlist = torch.gather(
@@ -462,6 +469,11 @@ class DescrptBlockRepflows(DescriptorBlock):
         for idx, ll in enumerate(self.layers):
             # node_ebd:     nb x nloc x n_dim
             # node_ebd_ext: nb x nall x n_dim
+            if self.use_ext_ebd or comm_dict is not None:
+                assert mapping is not None
+                node_ebd_ext = torch.gather(node_ebd, 1, mapping)
+            else:
+                node_ebd_ext = None
             if comm_dict is not None:
                 has_spin = "has_spin" in comm_dict
                 if not has_spin:
