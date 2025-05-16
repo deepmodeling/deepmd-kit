@@ -455,10 +455,10 @@ class RepFlowLayer(torch.nn.Module):
 
         # nf * nloc * node/edge_dim
         sub_node_update = torch.matmul(node_ebd, node)
-        # nf * nall * node/edge_dim
-        sub_node_ext_update = torch.matmul(node_ebd_ext, node_ext)
         # nf * nloc * nnei * node/edge_dim
-        sub_node_ext_update = _make_nei_g1(sub_node_ext_update, nlist)
+        gathered_node_ebd_ext = _make_nei_g1(node_ebd_ext, nlist)
+        # nf * nloc * nnei * node/edge_dim
+        sub_node_ext_update = torch.matmul(gathered_node_ebd_ext, node_ext)
         # nf * nloc * nnei * node/edge_dim
         sub_edge_update = torch.matmul(edge_ebd, edge)
 
