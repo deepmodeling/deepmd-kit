@@ -956,10 +956,15 @@ class Trainer:
         self.wrapper.train()
         self.t0 = time.time()
         self.total_train_time = 0.0
-        for step_id in range(self.start_step, self.num_steps):
-            step(step_id)
-            if JIT:
-                break
+        try:
+            torch.cuda.memory._record_memory_history()
+            for step_id in range(self.start_step, self.num_steps):
+                step(step_id)
+                if JIT:
+                    break
+        finally:
+            torch.cuda.memory._dump_snapshot("mem.pickle")
+            logging.warning("Memory snapshot dumped to mem.pickle")
 
         if self.change_bias_after_training and (self.rank == 0 or dist.get_rank() == 0):
             if not self.multi_task:
