@@ -1,15 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 import os
-import time
 from multiprocessing.dummy import (
     Pool,
-)
-from queue import (
-    Queue,
-)
-from threading import (
-    Thread,
 )
 
 import h5py
@@ -173,7 +166,9 @@ class DpLoaderSet(Dataset):
                 num_workers=0,  # Should be 0 to avoid too many threads forked
                 sampler=system_sampler,
                 collate_fn=collate_batch,
-                shuffle=(not (dist.is_available() and dist.is_initialized()))
+                shuffle=(
+                    not (dist.is_available() and dist.is_initialized())
+                )  # distributed sampler will do the shuffling by default
                 and shuffle,
             )
             self.dataloaders.append(system_dataloader)
@@ -200,11 +195,12 @@ class DpLoaderSet(Dataset):
 
     def __getitem__(self, idx):
         # log.warning(str(torch.distributed.get_rank())+" idx: "+str(idx)+" index: "+str(self.index[idx]))
-        try:
-            batch = next(self.iters[idx])
-        except StopIteration:
-            self.iters[idx] = iter(self.dataloaders[idx])
-            batch = next(self.iters[idx])
+        with torch.device("cpu"):
+            try:
+                batch = next(self.iters[idx])
+            except StopIteration:
+                self.iters[idx] = iter(self.dataloaders[idx])
+                batch = next(self.iters[idx])
         batch["sid"] = idx
         return batch
 
@@ -233,54 +229,6 @@ class DpLoaderSet(Dataset):
                 prob,
                 [ss._data_system.pbc for ss in self.systems],
             )
-
-
-class BackgroundConsumer(Thread):
-    def __init__(self, queue, source) -> None:
-        super().__init__()
-        self.daemon = True
-        self._queue = queue
-        self._source = source  # Main DL iterator
-
-    def run(self) -> None:
-        for item in self._source:
-            self._queue.put(item)  # Blocking if the queue is full
-
-        # Signal the consumer we are done; this should not happen for DataLoader
-        self._queue.put(StopIteration())
-
-
-QUEUESIZE = 32
-
-
-class BufferedIterator:
-    def __init__(self, iterable) -> None:
-        self._queue = Queue(QUEUESIZE)
-        self._iterable = iterable
-        self._consumer = BackgroundConsumer(self._queue, self._iterable)
-        self._consumer.start()
-        self.last_warning_time = time.time()
-
-    def __iter__(self):
-        return self
-
-    def __len__(self) -> int:
-        return len(self._iterable)
-
-    def __next__(self):
-        start_wait = time.time()
-        item = self._queue.get()
-        wait_time = time.time() - start_wait
-        if (
-            wait_time > 1.0 and start_wait - self.last_warning_time > 15 * 60
-        ):  # Even for Multi-Task training, each step usually takes < 1s
-            log.warning(
-                f"Data loading is slow, waited {wait_time:.2f} seconds. Ignoring this warning for 15 minutes."
-            )
-            self.last_warning_time = start_wait
-        if isinstance(item, Exception):
-            raise item
-        return item
 
 
 def collate_batch(batch):
@@ -320,7 +268,11 @@ def get_weighted_sampler(training_data, prob_style, sys_prob=False):
     # training_data.total_batch is the size of one epoch, you can increase it to avoid too many  rebuilding of iterators
     len_sampler = training_data.total_batch * max(env.NUM_WORKERS, 1)
     with torch.device("cpu"):
-        sampler = WeightedRandomSampler(probs, len_sampler, replacement=True)
+        sampler = WeightedRandomSampler(
+            probs,
+            len_sampler,
+            replacement=True,
+        )
     return sampler
 
 
