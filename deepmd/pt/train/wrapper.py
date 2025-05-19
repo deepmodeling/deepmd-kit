@@ -5,8 +5,11 @@ from typing import (
     Union,
 )
 
-from deepmd.pt.utils.env import BF16_AUTOCAST
 import torch
+
+from deepmd.pt.utils.env import (
+    BF16_AUTOCAST,
+)
 
 if torch.__version__.startswith("2"):
     import torch._dynamo
