@@ -5,6 +5,7 @@ from typing import (
     Union,
 )
 
+from deepmd.pt.utils.env import BF16_AUTOCAST
 import torch
 
 if torch.__version__.startswith("2"):
@@ -136,7 +137,7 @@ class ModelWrapper(torch.nn.Module):
                             f"Shared params of {model_key_base}.{class_type_base} and {model_key_link}.{class_type_link}!"
                         )
 
-    @torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True)
+    @torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=BF16_AUTOCAST)
     def forward(
         self,
         coord,

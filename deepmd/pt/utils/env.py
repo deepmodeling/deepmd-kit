@@ -35,6 +35,7 @@ JIT = False
 CACHE_PER_SYS = 5  # keep at most so many sets per sys in memory
 ENERGY_BIAS_TRAINABLE = True
 CUSTOM_OP_USE_JIT = False
+BF16_AUTOCAST = False
 
 PRECISION_DICT = {
     "float16": torch.float16,
@@ -76,6 +77,7 @@ if intra_nthreads > 0:
     torch.set_num_threads(intra_nthreads)
 
 __all__ = [
+    "BF16_AUTOCAST",
     "CACHE_PER_SYS",
     "CUSTOM_OP_USE_JIT",
     "DEFAULT_PRECISION",
