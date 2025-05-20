@@ -15,6 +15,8 @@ from .network import (
     make_embedding_network,
     make_fitting_network,
     make_multilayer_network,
+    aggregate,
+    get_graph_index,
 )
 from .nlist import (
     build_multiple_neighbor_list,
@@ -53,6 +55,8 @@ __all__ = [
     "make_embedding_network",
     "make_fitting_network",
     "make_multilayer_network",
+    "aggregate",
+    "get_graph_index",
     "nlist_distinguish_types",
     "normalize_coord",
     "phys2inter",

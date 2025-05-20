@@ -1497,6 +1497,19 @@ def dpa3_repflow_args():
         "Whether to make edge update smooth. "
         "If True, the edge update from angle message will not use self as padding."
     )
+    doc_use_dynamic_sel = (
+        "Whether to dynamically select neighbors within the cutoff radius. "
+        "If True, the exact number of neighbors within the cutoff radius is used "
+        "without padding to a fixed selection numbers. "
+        "When enabled, users can safely set larger values for `e_sel` or `a_sel` (e.g., 1200 or 300, respectively) "
+        "to guarantee capturing all neighbors within the cutoff radius."
+    )
+    doc_sel_reduce_factor = (
+        "Reduction factor applied to neighbor-scale normalization when `use_dynamic_sel` is True. "
+        "In the dynamic selection case, neighbor-scale normalization will use `e_sel / sel_reduce_factor` "
+        "or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values, "
+        "accommodating larger selection numbers."
+    )
 
     return [
         # repflow args
@@ -1596,6 +1609,20 @@ def dpa3_repflow_args():
             optional=True,
             default=False,  # For compatability. This will be True in the future
             doc=doc_smooth_edge_update,
+        ),
+        Argument(
+            "use_dynamic_sel",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_dynamic_sel,
+        ),
+        Argument(
+            "sel_reduce_factor",
+            float,
+            optional=True,
+            default=10.0,
+            doc=doc_sel_reduce_factor,
         ),
     ]
 

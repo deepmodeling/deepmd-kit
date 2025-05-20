@@ -957,3 +957,135 @@ class NetworkCollection:
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
         return cls(**data)
+
+
+def aggregate(
+        data: np.ndarray,
+        owners: np.ndarray,
+        average=True,
+        num_owner=None,
+):
+    """
+    Aggregate rows in data by specifying the owners.
+
+    Parameters
+    ----------
+    data : data tensor to aggregate [n_row, feature_dim]
+    owners : specify the owner of each row [n_row, 1]
+    average : if True, average the rows, if False, sum the rows.
+        Default = True
+    num_owner : the number of owners, this is needed if the
+        max idx of owner is not presented in owners tensor
+        Default = None
+
+    Returns
+    -------
+    output: [num_owner, feature_dim]
+    """
+    xp = array_api_compat.array_namespace(data, owners)
+
+    bin_count = xp.bincount(owners)
+    bin_count = xp.where(bin_count == 0, xp.ones_like(bin_count), bin_count)
+
+    if num_owner is not None and bin_count.shape[0] != num_owner:
+        difference = num_owner - bin_count.shape[0]
+        bin_count = xp.concat([bin_count, xp.ones(difference, dtype=bin_count.dtype)])
+
+    output = xp.zeros((bin_count.shape[0], data.shape[1]), dtype=data.dtype)
+    xp.add.at(output, owners, data)
+
+    if average:
+        output = (output.T / bin_count).T
+
+    return output
+
+
+def get_graph_index(
+        nlist: np.ndarray,
+        nlist_mask: np.ndarray,
+        a_nlist_mask: np.ndarray,
+        nall: int,
+):
+    """
+    Get the index mapping for edge graph and angle graph, ready in `aggregate` or `index_select`.
+
+    Parameters
+    ----------
+    nlist : nf x nloc x nnei
+        Neighbor list. (padded neis are set to 0)
+    nlist_mask : nf x nloc x nnei
+        Masks of the neighbor list. real nei 1 otherwise 0
+    a_nlist_mask : nf x nloc x a_nnei
+        Masks of the neighbor list for angle. real nei 1 otherwise 0
+    nall
+        The number of extended atoms.
+
+    Returns
+    -------
+    edge_index : n_edge x 2
+        n2e_index : n_edge
+            Broadcast indices from node(i) to edge(ij), or reduction indices from edge(ij) to node(i).
+        n_ext2e_index : n_edge
+            Broadcast indices from extended node(j) to edge(ij).
+    angle_index : n_angle x 3
+        n2a_index : n_angle
+            Broadcast indices from extended node(j) to angle(ijk).
+        eij2a_index : n_angle
+            Broadcast indices from extended edge(ij) to angle(ijk), or reduction indices from angle(ijk) to edge(ij).
+        eik2a_index : n_angle
+            Broadcast indices from extended edge(ik) to angle(ijk).
+    """
+    xp = array_api_compat.array_namespace(nlist, nlist_mask, a_nlist_mask)
+
+    nf, nloc, nnei = nlist.shape
+    _, _, a_nnei = a_nlist_mask.shape
+
+    a_nlist_mask_3d = xp.logical_and(
+        a_nlist_mask[:, :, :, None], a_nlist_mask[:, :, None, :]
+    )
+
+    n_edge = xp.sum(nlist_mask)
+
+    # following: get n2e_index, n_ext2e_index, n2a_index, eij2a_index, eik2a_index
+
+    # 1. atom graph
+    # node(i) to edge(ij) index_select; edge(ij) to node aggregate
+    nlist_loc_index = xp.arange(nf * nloc, dtype=nlist.dtype)
+    # nf x nloc x nnei
+    n2e_index = xp.broadcast_to(xp.reshape(nlist_loc_index, (nf, nloc, 1)), (nf, nloc, nnei))
+    # n_edge
+    n2e_index = n2e_index[nlist_mask.astype(bool)]
+
+    # node_ext(j) to edge(ij) index_select
+    frame_shift = xp.arange(nf, dtype=nlist.dtype) * nall
+    shifted_nlist = nlist + frame_shift[:, xp.newaxis, xp.newaxis]
+    # n_edge
+    n_ext2e_index = shifted_nlist[nlist_mask.astype(bool)]
+
+    # 2. edge graph
+    # node(i) to angle(ijk) index_select
+    n2a_index = xp.broadcast_to(
+        xp.reshape(nlist_loc_index, (nf, nloc, 1, 1)), (nf, nloc, a_nnei, a_nnei)
+    )
+    # n_angle
+    n2a_index = n2a_index[a_nlist_mask_3d]
+
+    # edge(ij) to angle(ijk) index_select; angle(ijk) to edge(ij) aggregate
+    edge_id = xp.arange(n_edge, dtype=nlist.dtype)
+    edge_index = xp.zeros((nf, nloc, nnei), dtype=nlist.dtype)
+    edge_index[nlist_mask.astype(bool)] = edge_id
+    # only cut a_nnei neighbors, to avoid nnei x nnei
+    edge_index = edge_index[:, :, :a_nnei]
+    edge_index_ij = xp.broadcast_to(edge_index[:, :, :, xp.newaxis], (nf, nloc, a_nnei, a_nnei))
+    # n_angle
+    eij2a_index = edge_index_ij[a_nlist_mask_3d]
+
+    # edge(ik) to angle(ijk) index_select
+    edge_index_ik = xp.broadcast_to(edge_index[:, :, xp.newaxis, :], (nf, nloc, a_nnei, a_nnei))
+    # n_angle
+    eik2a_index = edge_index_ik[a_nlist_mask_3d]
+
+    edge_index_result = xp.stack([n2e_index, n_ext2e_index], axis=-1)
+    angle_index_result = xp.stack([n2a_index, eij2a_index, eik2a_index], axis=-1)
+
+    return edge_index_result, angle_index_result
