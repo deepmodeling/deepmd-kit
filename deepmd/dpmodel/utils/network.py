@@ -960,10 +960,10 @@ class NetworkCollection:
 
 
 def aggregate(
-        data: np.ndarray,
-        owners: np.ndarray,
-        average=True,
-        num_owner=None,
+    data: np.ndarray,
+    owners: np.ndarray,
+    average=True,
+    num_owner=None,
 ):
     """
     Aggregate rows in data by specifying the owners.
@@ -1001,10 +1001,10 @@ def aggregate(
 
 
 def get_graph_index(
-        nlist: np.ndarray,
-        nlist_mask: np.ndarray,
-        a_nlist_mask: np.ndarray,
-        nall: int,
+    nlist: np.ndarray,
+    nlist_mask: np.ndarray,
+    a_nlist_mask: np.ndarray,
+    nall: int,
 ):
     """
     Get the index mapping for edge graph and angle graph, ready in `aggregate` or `index_select`.
@@ -1052,7 +1052,9 @@ def get_graph_index(
     # node(i) to edge(ij) index_select; edge(ij) to node aggregate
     nlist_loc_index = xp.arange(nf * nloc, dtype=nlist.dtype)
     # nf x nloc x nnei
-    n2e_index = xp.broadcast_to(xp.reshape(nlist_loc_index, (nf, nloc, 1)), (nf, nloc, nnei))
+    n2e_index = xp.broadcast_to(
+        xp.reshape(nlist_loc_index, (nf, nloc, 1)), (nf, nloc, nnei)
+    )
     # n_edge
     n2e_index = n2e_index[nlist_mask.astype(bool)]
 
@@ -1076,12 +1078,16 @@ def get_graph_index(
     edge_index[nlist_mask.astype(bool)] = edge_id
     # only cut a_nnei neighbors, to avoid nnei x nnei
     edge_index = edge_index[:, :, :a_nnei]
-    edge_index_ij = xp.broadcast_to(edge_index[:, :, :, xp.newaxis], (nf, nloc, a_nnei, a_nnei))
+    edge_index_ij = xp.broadcast_to(
+        edge_index[:, :, :, xp.newaxis], (nf, nloc, a_nnei, a_nnei)
+    )
     # n_angle
     eij2a_index = edge_index_ij[a_nlist_mask_3d]
 
     # edge(ik) to angle(ijk) index_select
-    edge_index_ik = xp.broadcast_to(edge_index[:, :, xp.newaxis, :], (nf, nloc, a_nnei, a_nnei))
+    edge_index_ik = xp.broadcast_to(
+        edge_index[:, :, xp.newaxis, :], (nf, nloc, a_nnei, a_nnei)
+    )
     # n_angle
     eik2a_index = edge_index_ik[a_nlist_mask_3d]
 

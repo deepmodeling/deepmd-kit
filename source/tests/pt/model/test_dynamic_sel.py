@@ -139,4 +139,3 @@ class TestDescrptDPA3DynamicSel(unittest.TestCase, TestCaseSingleFrameWithNlist)
                 rtol=rtol,
                 atol=atol,
             )
-

@@ -63,7 +63,7 @@ from deepmd.utils.argcheck import (
     (True, False),  # update_angle
     (0, 1),  # a_compress_rate
     (1, 2),  # a_compress_e_rate
-    (True, ),  # a_compress_use_split
+    (True,),  # a_compress_use_split
     (True, False),  # optim_update
     (True, False),  # use_dynamic_sel
     (0.3, 0.0),  # fix_stat_std
@@ -156,7 +156,9 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             n_multi_edge_message,
             precision,
         ) = self.param
-        return not INSTALLED_PD or precision == "bfloat16" or use_dynamic_sel  # not supported yet
+        return (
+            not INSTALLED_PD or precision == "bfloat16" or use_dynamic_sel
+        )  # not supported yet
 
     @property
     def skip_dp(self) -> bool:

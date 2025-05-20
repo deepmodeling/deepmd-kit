@@ -21,6 +21,8 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.utils import (
     EnvMat,
     PairExcludeMask,
+    aggregate,
+    get_graph_index,
 )
 from deepmd.dpmodel.utils.env_mat_stat import (
     EnvMatStatSe,
@@ -28,10 +30,6 @@ from deepmd.dpmodel.utils.env_mat_stat import (
 from deepmd.dpmodel.utils.network import (
     NativeLayer,
     get_activation_fn,
-)
-from deepmd.dpmodel.utils import (
-    get_graph_index,
-    aggregate,
 )
 from deepmd.dpmodel.utils.safe_gradient import (
     safe_for_vector_norm,
@@ -53,8 +51,8 @@ from .descriptor import (
     DescriptorBlock,
 )
 from .repformers import (
-    _cal_hg,
     _cal_grrg,
+    _cal_hg,
     _make_nei_g1,
     get_residual,
     symmetrization_op,
@@ -506,7 +504,9 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
         if self.use_dynamic_sel:
             # get graph index
-            edge_index, angle_index = get_graph_index(nlist, nlist_mask, a_nlist_mask, nall)
+            edge_index, angle_index = get_graph_index(
+                nlist, nlist_mask, a_nlist_mask, nall
+            )
             # flat all the tensors
             # n_edge x 1
             edge_input = edge_input[nlist_mask]
@@ -655,14 +655,14 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
 
 def _cal_hg_dynamic(
-        flat_edge_ebd: np.ndarray,
-        flat_h2: np.ndarray,
-        flat_sw: np.ndarray,
-        owner: np.ndarray,
-        num_owner: int,
-        nb: int,
-        nloc: int,
-        scale_factor: float,
+    flat_edge_ebd: np.ndarray,
+    flat_h2: np.ndarray,
+    flat_sw: np.ndarray,
+    owner: np.ndarray,
+    num_owner: int,
+    nb: int,
+    nloc: int,
+    scale_factor: float,
 ) -> np.ndarray:
     """
     Calculate the transposed rotation matrix.
@@ -697,7 +697,10 @@ def _cal_hg_dynamic(
     # n_edge x e_dim
     flat_edge_ebd = flat_edge_ebd * xp.expand_dims(flat_sw, axis=-1)
     # n_edge x 3 x e_dim
-    flat_h2g2 = xp.reshape((xp.expand_dims(flat_h2, axis=-1) * xp.expand_dims(flat_edge_ebd, axis=1)), (-1, 3 * e_dim))
+    flat_h2g2 = xp.reshape(
+        (xp.expand_dims(flat_h2, axis=-1) * xp.expand_dims(flat_edge_ebd, axis=1)),
+        (-1, 3 * e_dim),
+    )
 
     # nf x nloc x 3 x e_dim
     h2g2 = aggregate(flat_h2g2, owner, average=False, num_owner=num_owner)
@@ -707,15 +710,15 @@ def _cal_hg_dynamic(
 
 
 def symmetrization_op_dynamic(
-        flat_edge_ebd: np.ndarray,
-        flat_h2: np.ndarray,
-        flat_sw: np.ndarray,
-        owner: np.ndarray,
-        num_owner: int,
-        nb: int,
-        nloc: int,
-        scale_factor: float,
-        axis_neuron: int
+    flat_edge_ebd: np.ndarray,
+    flat_h2: np.ndarray,
+    flat_sw: np.ndarray,
+    owner: np.ndarray,
+    num_owner: int,
+    nb: int,
+    nloc: int,
+    scale_factor: float,
+    axis_neuron: int,
 ) -> np.ndarray:
     """
     Symmetrization operator to obtain atomic invariant rep.
@@ -1057,16 +1060,18 @@ class RepFlowLayer(NativeOP):
         return result_update
 
     def optim_angle_update_dynamic(
-            self,
-            flat_angle_ebd: np.ndarray,
-            node_ebd: np.ndarray,
-            flat_edge_ebd: np.ndarray,
-            n2a_index: np.ndarray,
-            eij2a_index: np.ndarray,
-            eik2a_index: np.ndarray,
-            feat="edge",
+        self,
+        flat_angle_ebd: np.ndarray,
+        node_ebd: np.ndarray,
+        flat_edge_ebd: np.ndarray,
+        n2a_index: np.ndarray,
+        eij2a_index: np.ndarray,
+        eik2a_index: np.ndarray,
+        feat="edge",
     ):
-        xp = array_api_compat.array_namespace(flat_angle_ebd, node_ebd, flat_edge_ebd, n2a_index, eij2a_index, eik2a_index)
+        xp = array_api_compat.array_namespace(
+            flat_angle_ebd, node_ebd, flat_edge_ebd, n2a_index, eij2a_index, eik2a_index
+        )
 
         if feat == "edge":
             matrix, bias = self.edge_angle_linear1.w, self.edge_angle_linear1.b
@@ -1083,16 +1088,20 @@ class RepFlowLayer(NativeOP):
 
         # Array API does not provide a way to split the array
         sub_angle = matrix[:angle_dim, ...]  # angle_dim
-        sub_node = matrix[angle_dim: angle_dim + node_dim, ...]  # node_dim
+        sub_node = matrix[angle_dim : angle_dim + node_dim, ...]  # node_dim
         sub_edge_ik = matrix[
-                      angle_dim + node_dim: angle_dim + node_dim + edge_dim, ...
-                      ]  # edge_dim
-        sub_edge_ij = matrix[angle_dim + node_dim + edge_dim:, ...]  # edge_dim
+            angle_dim + node_dim : angle_dim + node_dim + edge_dim, ...
+        ]  # edge_dim
+        sub_edge_ij = matrix[angle_dim + node_dim + edge_dim :, ...]  # edge_dim
 
         sub_angle_update = xp.matmul(flat_angle_ebd, sub_angle)
 
         sub_node_update = xp.matmul(node_ebd, sub_node)
-        sub_node_update = xp.take(xp.reshape(sub_node_update, (nf * nloc, sub_node_update.shape[-1])), n2a_index, axis=0)
+        sub_node_update = xp.take(
+            xp.reshape(sub_node_update, (nf * nloc, sub_node_update.shape[-1])),
+            n2a_index,
+            axis=0,
+        )
 
         sub_edge_update_ik = xp.matmul(flat_edge_ebd, sub_edge_ik)
         sub_edge_update_ij = xp.matmul(flat_edge_ebd, sub_edge_ij)
@@ -1101,10 +1110,13 @@ class RepFlowLayer(NativeOP):
         sub_edge_update_ij = xp.take(sub_edge_update_ij, eij2a_index, axis=0)
 
         result_update = (
-                bias + sub_node_update + sub_edge_update_ik + sub_edge_update_ij + sub_angle_update
+            bias
+            + sub_node_update
+            + sub_edge_update_ik
+            + sub_edge_update_ij
+            + sub_angle_update
         )
         return result_update
-
 
     def optim_edge_update(
         self,
@@ -1150,15 +1162,17 @@ class RepFlowLayer(NativeOP):
         return result_update
 
     def optim_edge_update_dynamic(
-            self,
-            node_ebd: np.ndarray,
-            node_ebd_ext: np.ndarray,
-            flat_edge_ebd: np.ndarray,
-            n2e_index: np.ndarray,
-            n_ext2e_index: np.ndarray,
-            feat: str = "node",
+        self,
+        node_ebd: np.ndarray,
+        node_ebd_ext: np.ndarray,
+        flat_edge_ebd: np.ndarray,
+        n2e_index: np.ndarray,
+        n_ext2e_index: np.ndarray,
+        feat: str = "node",
     ):
-        xp = array_api_compat.array_namespace(node_ebd, node_ebd_ext, flat_edge_ebd, n2e_index, n_ext2e_index)
+        xp = array_api_compat.array_namespace(
+            node_ebd, node_ebd_ext, flat_edge_ebd, n2e_index, n_ext2e_index
+        )
 
         if feat == "node":
             matrix, bias = self.node_edge_linear.w, self.node_edge_linear.b
@@ -1172,17 +1186,23 @@ class RepFlowLayer(NativeOP):
         assert node_dim * 2 + edge_dim == matrix.shape[0]
         # Array API does not provide a way to split the array
         node = matrix[:node_dim, ...]  # node_dim
-        node_ext = matrix[node_dim: 2 * node_dim, ...]  # node_dim
-        edge = matrix[2 * node_dim: 2 * node_dim + edge_dim, ...]  # edge_dim
+        node_ext = matrix[node_dim : 2 * node_dim, ...]  # node_dim
+        edge = matrix[2 * node_dim : 2 * node_dim + edge_dim, ...]  # edge_dim
 
         # nf * nloc * node/edge_dim
-        sub_node_update = xp.matmul(
-            node_ebd, node
+        sub_node_update = xp.matmul(node_ebd, node)
+        sub_node_update = xp.take(
+            xp.reshape(sub_node_update, (nf * nloc, sub_node_update.shape[-1])),
+            n2e_index,
+            axis=0,
         )
-        sub_node_update = xp.take(xp.reshape(sub_node_update, (nf * nloc, sub_node_update.shape[-1])), n2e_index, axis=0)
 
         sub_node_ext_update = xp.matmul(node_ebd_ext, node_ext)
-        sub_node_ext_update = xp.take(xp.reshape(sub_node_ext_update, (nf * nall, sub_node_ext_update.shape[-1])), n_ext2e_index, axis=0)
+        sub_node_ext_update = xp.take(
+            xp.reshape(sub_node_ext_update, (nf * nall, sub_node_ext_update.shape[-1])),
+            n_ext2e_index,
+            axis=0,
+        )
 
         sub_edge_update = xp.matmul(flat_edge_ebd, edge)
 
@@ -1240,7 +1260,6 @@ class RepFlowLayer(NativeOP):
             eik2a_index : n_angle
                 Broadcast indices from extended edge(ik) to angle(ijk).
 
-
         Returns
         -------
         n_updated:     nf x nloc x n_dim
@@ -1286,7 +1305,9 @@ class RepFlowLayer(NativeOP):
         nei_node_ebd = (
             _make_nei_g1(node_ebd_ext, nlist)
             if not self.use_dynamic_sel
-            else xp.take(xp.reshape(node_ebd_ext, (-1, self.n_dim)), n_ext2e_index, axis=0)
+            else xp.take(
+                xp.reshape(node_ebd_ext, (-1, self.n_dim)), n_ext2e_index, axis=0
+            )
         )
 
         n_update_list: list[np.ndarray] = [node_ebd]
@@ -1414,7 +1435,8 @@ class RepFlowLayer(NativeOP):
                         num_owner=nb * nloc,
                     ),
                     (nb, nloc, node_edge_update.shape[-1]),
-                ) / self.dynamic_e_sel
+                )
+                / self.dynamic_e_sel
             )
         )
         if self.n_multi_edge_message > 1:
@@ -1493,9 +1515,9 @@ class RepFlowLayer(NativeOP):
                     )
                     if not self.use_dynamic_sel
                     else xp.take(
-                            xp.reshape(node_ebd_for_angle, (-1, self.n_a_compress_dim)),
-                            n2a_index,
-                            axis=0,
+                        xp.reshape(node_ebd_for_angle, (-1, self.n_a_compress_dim)),
+                        n2a_index,
+                        axis=0,
                     )
                 )
 
@@ -1503,26 +1525,32 @@ class RepFlowLayer(NativeOP):
                 edge_for_angle_k = (
                     xp.tile(
                         xp.reshape(
-                            edge_ebd_for_angle, (nb, nloc, 1, self.a_sel, self.e_a_compress_dim)
+                            edge_ebd_for_angle,
+                            (nb, nloc, 1, self.a_sel, self.e_a_compress_dim),
                         ),
                         (1, 1, self.a_sel, 1, 1),
                     )
                     if not self.use_dynamic_sel
                     else xp.take(
-                        edge_ebd_for_angle, eik2a_index, axis=0,
+                        edge_ebd_for_angle,
+                        eik2a_index,
+                        axis=0,
                     )
                 )
                 # nb x nloc x a_nnei x (a_nnei) x e_dim
                 edge_for_angle_j = (
                     xp.tile(
                         xp.reshape(
-                            edge_ebd_for_angle, (nb, nloc, self.a_sel, 1, self.e_a_compress_dim)
+                            edge_ebd_for_angle,
+                            (nb, nloc, self.a_sel, 1, self.e_a_compress_dim),
                         ),
                         (1, 1, 1, self.a_sel, 1),
                     )
                     if not self.use_dynamic_sel
                     else xp.take(
-                        edge_ebd_for_angle, eij2a_index, axis=0,
+                        edge_ebd_for_angle,
+                        eij2a_index,
+                        axis=0,
                     )
                 )
                 # nb x nloc x a_nnei x a_nnei x (e_dim + e_dim)
@@ -1571,9 +1599,9 @@ class RepFlowLayer(NativeOP):
                     * edge_angle_update
                 )
                 # nb x nloc x a_nnei x e_dim
-                reduced_edge_angle_update = xp.sum(weighted_edge_angle_update, axis=-2) / (
-                    self.a_sel**0.5
-                )
+                reduced_edge_angle_update = xp.sum(
+                    weighted_edge_angle_update, axis=-2
+                ) / (self.a_sel**0.5)
                 # nb x nloc x nnei x e_dim
                 padding_edge_angle_update = xp.concat(
                     [
@@ -1587,7 +1615,9 @@ class RepFlowLayer(NativeOP):
                 )
             else:
                 # n_angle x e_dim
-                weighted_edge_angle_update = edge_angle_update * xp.expand_dims(a_sw, axis=-1)
+                weighted_edge_angle_update = edge_angle_update * xp.expand_dims(
+                    a_sw, axis=-1
+                )
                 # n_edge x e_dim
                 padding_edge_angle_update = aggregate(
                     weighted_edge_angle_update,

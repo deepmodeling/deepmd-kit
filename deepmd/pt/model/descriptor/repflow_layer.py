@@ -563,7 +563,6 @@ class RepFlowLayer(torch.nn.Module):
         eik2a_index: torch.Tensor,
         feat: str = "edge",
     ) -> torch.Tensor:
-
         if feat == "edge":
             matrix, bias = self.edge_angle_linear1.matrix, self.edge_angle_linear1.bias
         elif feat == "angle":
@@ -579,26 +578,18 @@ class RepFlowLayer(torch.nn.Module):
         )
 
         # n_angle * angle_dim
-        sub_angle_update = torch.matmul(
-            flat_angle_ebd, sub_angle
-        )
+        sub_angle_update = torch.matmul(flat_angle_ebd, sub_angle)
 
         # nf * nloc * angle_dim
-        sub_node_update = torch.matmul(
-            node_ebd, sub_node
-        )
+        sub_node_update = torch.matmul(node_ebd, sub_node)
         # n_angle * angle_dim
         sub_node_update = torch.index_select(
             sub_node_update.reshape(nf * nloc, sub_node_update.shape[-1]), 0, n2a_index
         )
 
         # n_edge * angle_dim
-        sub_edge_update_ik = torch.matmul(
-            flat_edge_ebd, sub_edge_ik
-        )
-        sub_edge_update_ij = torch.matmul(
-            flat_edge_ebd, sub_edge_ij
-        )
+        sub_edge_update_ik = torch.matmul(flat_edge_ebd, sub_edge_ik)
+        sub_edge_update_ij = torch.matmul(flat_edge_ebd, sub_edge_ij)
         # n_angle * angle_dim
         sub_edge_update_ik = torch.index_select(sub_edge_update_ik, 0, eik2a_index)
         sub_edge_update_ij = torch.index_select(sub_edge_update_ij, 0, eij2a_index)
@@ -670,29 +661,25 @@ class RepFlowLayer(torch.nn.Module):
         node, node_ext, edge = torch.split(matrix, [node_dim, node_dim, edge_dim])
 
         # nf * nloc * node/edge_dim
-        sub_node_update = torch.matmul(
-            node_ebd, node
-        )
+        sub_node_update = torch.matmul(node_ebd, node)
         # n_edge * node/edge_dim
         sub_node_update = torch.index_select(
             sub_node_update.reshape(nf * nloc, sub_node_update.shape[-1]), 0, n2e_index
         )
 
         # nf * nall * node/edge_dim
-        sub_node_ext_update = torch.matmul(
-            node_ebd_ext, node_ext
-        )
+        sub_node_ext_update = torch.matmul(node_ebd_ext, node_ext)
         # n_edge * node/edge_dim
         sub_node_ext_update = torch.index_select(
-            sub_node_ext_update.reshape(nf * nall, sub_node_update.shape[-1]), 0, n_ext2e_index
+            sub_node_ext_update.reshape(nf * nall, sub_node_update.shape[-1]),
+            0,
+            n_ext2e_index,
         )
 
         # n_edge * node/edge_dim
-        sub_edge_update = torch.matmul(
-            flat_edge_ebd, edge
-        )
+        sub_edge_update = torch.matmul(flat_edge_ebd, edge)
 
-        result_update = (bias + sub_node_update + sub_edge_update + sub_node_ext_update)
+        result_update = bias + sub_node_update + sub_edge_update + sub_node_ext_update
         return result_update
 
     def forward(
@@ -1039,9 +1026,7 @@ class RepFlowLayer(torch.nn.Module):
             if not self.use_dynamic_sel:
                 # nb x nloc x a_nnei x a_nnei x e_dim
                 weighted_edge_angle_update = (
-                    a_sw[..., None, None]
-                    * a_sw[..., None, :, None]
-                    * edge_angle_update
+                    a_sw[..., None, None] * a_sw[..., None, :, None] * edge_angle_update
                 )
                 # nb x nloc x a_nnei x e_dim
                 reduced_edge_angle_update = torch.sum(
