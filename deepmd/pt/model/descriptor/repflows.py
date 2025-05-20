@@ -233,6 +233,14 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.smooth_edge_update = smooth_edge_update
         self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
+        if self.use_dynamic_sel and not self.smooth_edge_update:
+            raise NotImplementedError(
+                "smooth_edge_update must be True when use_dynamic_sel is True!"
+            )
+        if self.sel_reduce_factor <= 0:
+            raise ValueError(
+                f"`sel_reduce_factor` must be > 0, got {self.sel_reduce_factor}"
+            )
 
         self.n_dim = n_dim
         self.e_dim = e_dim

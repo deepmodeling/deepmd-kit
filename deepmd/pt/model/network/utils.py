@@ -6,7 +6,7 @@ from typing import (
 import torch
 
 
-@torch.jit.export
+@torch.jit.script
 def aggregate(
     data: torch.Tensor,
     owners: torch.Tensor,
@@ -45,7 +45,7 @@ def aggregate(
     return output
 
 
-@torch.jit.export
+@torch.jit.script
 def get_graph_index(
     nlist: torch.Tensor,
     nlist_mask: torch.Tensor,
