@@ -1745,7 +1745,7 @@ class RepFlowLayer(NativeOP):
         """
         data = {
             "@class": "RepFlowLayer",
-            "@version": 1,
+            "@version": 2,
             "e_rcut": self.e_rcut,
             "e_rcut_smth": self.e_rcut_smth,
             "e_sel": self.e_sel,
@@ -1813,7 +1813,7 @@ class RepFlowLayer(NativeOP):
             The dict to deserialize from.
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         update_angle = data["update_angle"]
         a_compress_rate = data["a_compress_rate"]
