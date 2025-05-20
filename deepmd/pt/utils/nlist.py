@@ -119,7 +119,9 @@ def build_neighbor_list(
     rr = torch.linalg.norm(diff, dim=-1)
     # if central atom has two zero distances, sorting sometimes can not exclude itself
     rr -= torch.eye(nloc, nall, dtype=rr.dtype, device=rr.device).unsqueeze(0)
-    rr, nlist = torch.sort(rr, dim=-1)
+    nsel = sum(sel)
+    nnei = rr.shape[-1]
+    rr, nlist = torch.topk(rr, min(nsel, nnei), largest=False)
     # nloc x (nall-1)
     rr = rr[:, :, 1:]
     nlist = nlist[:, :, 1:]
