@@ -129,6 +129,7 @@ class RepFlowArgs:
         without padding to a fixed selection numbers.
         When enabled, users can safely set larger values for `e_sel` or `a_sel` (e.g., 1200 or 300, respectively)
         to guarantee capturing all neighbors within the cutoff radius.
+        Note that when using dynamic selection, the `smooth_edge_update` must be True.
     sel_reduce_factor : float, optional
         Reduction factor applied to neighbor-scale normalization when `use_dynamic_sel` is True.
         In the dynamic selection case, neighbor-scale normalization will use `e_sel / sel_reduce_factor`
