@@ -482,6 +482,7 @@ def DescriptorParamDPA3(
     a_compress_use_split=False,
     optim_update=True,
     smooth_edge_update=False,
+    edge_init_use_dist=False,
     fix_stat_std=0.3,
     precision="float64",
 ):
@@ -504,6 +505,7 @@ def DescriptorParamDPA3(
                 "a_compress_use_split": a_compress_use_split,
                 "optim_update": optim_update,
                 "smooth_edge_update": smooth_edge_update,
+                "edge_init_use_dist": edge_init_use_dist,
                 "fix_stat_std": fix_stat_std,
                 "n_multi_edge_message": n_multi_edge_message,
                 "axis_neuron": 2,
@@ -540,8 +542,9 @@ DescriptorParamDPA3List = parameterize_func(
             "a_compress_use_split": (True, False),
             "optim_update": (True, False),
             "smooth_edge_update": (True,),
+            "edge_init_use_dist": (True, False),
             "fix_stat_std": (0.3,),
-            "n_multi_edge_message": (1, 2),
+            "n_multi_edge_message": (1,),
             "env_protection": (0.0, 1e-8),
             "precision": ("float64",),
         }

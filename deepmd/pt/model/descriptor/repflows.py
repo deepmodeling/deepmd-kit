@@ -133,6 +133,9 @@ class DescrptBlockRepflows(DescriptorBlock):
     smooth_edge_update : bool, optional
         Whether to make edge update smooth.
         If True, the edge update from angle message will not use self as padding.
+    edge_init_use_dist : bool, optional
+        Whether to use direct distance r to initialize the edge features instead of 1/r.
+        Note that when using this option, the activation function will not be used when initializing edge features.
     optim_update : bool, optional
         Whether to enable the optimized update method.
         Uses a more efficient process when enabled. Defaults to True
@@ -183,6 +186,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         precision: str = "float64",
         fix_stat_std: float = 0.3,
         smooth_edge_update: bool = False,
+        edge_init_use_dist: bool = False,
         optim_update: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
@@ -215,6 +219,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
+        self.edge_init_use_dist = edge_init_use_dist
 
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -414,8 +419,14 @@ class DescrptBlockRepflows(DescriptorBlock):
         n_dim = node_ebd.shape[-1]
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
         edge_input, h2 = torch.split(dmatrix, [1, 3], dim=-1)
-        # nb x nloc x nnei x e_dim
-        edge_ebd = self.act(self.edge_embd(edge_input))
+        if self.edge_init_use_dist:
+            # nb x nloc x nnei x 1
+            edge_input = torch.linalg.norm(diff, dim=-1, keepdim=True)
+            # nb x nloc x nnei x e_dim
+            edge_ebd = self.edge_embd(edge_input)
+        else:
+            # nb x nloc x nnei x e_dim
+            edge_ebd = self.act(self.edge_embd(edge_input))
 
         # get angle nlist (maybe smaller)
         a_dist_mask = (torch.linalg.norm(diff, dim=-1) < self.a_rcut)[

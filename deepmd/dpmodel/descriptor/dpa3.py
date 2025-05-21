@@ -123,6 +123,9 @@ class RepFlowArgs:
     smooth_edge_update : bool, optional
         Whether to make edge update smooth.
         If True, the edge update from angle message will not use self as padding.
+    edge_init_use_dist : bool, optional
+        Whether to use direct distance r to initialize the edge features instead of 1/r.
+        Note that when using this option, the activation function will not be used when initializing edge features.
     """
 
     def __init__(
@@ -150,6 +153,7 @@ class RepFlowArgs:
         skip_stat: bool = False,
         optim_update: bool = True,
         smooth_edge_update: bool = False,
+        edge_init_use_dist: bool = False,
     ) -> None:
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -176,6 +180,7 @@ class RepFlowArgs:
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
+        self.edge_init_use_dist = edge_init_use_dist
 
     def __getitem__(self, key):
         if hasattr(self, key):
@@ -207,6 +212,7 @@ class RepFlowArgs:
             "fix_stat_std": self.fix_stat_std,
             "optim_update": self.optim_update,
             "smooth_edge_update": self.smooth_edge_update,
+            "edge_init_use_dist": self.edge_init_use_dist,
         }
 
     @classmethod
@@ -303,6 +309,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             fix_stat_std=self.repflow_args.fix_stat_std,
             optim_update=self.repflow_args.optim_update,
             smooth_edge_update=self.repflow_args.smooth_edge_update,
+            edge_init_use_dist=self.repflow_args.edge_init_use_dist,
             exclude_types=exclude_types,
             env_protection=env_protection,
             precision=precision,

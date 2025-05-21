@@ -122,6 +122,9 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
     smooth_edge_update : bool, optional
         Whether to make edge update smooth.
         If True, the edge update from angle message will not use self as padding.
+    edge_init_use_dist : bool, optional
+        Whether to use direct distance r to initialize the edge features instead of 1/r.
+        Note that when using this option, the activation function will not be used when initializing edge features.
     ntypes : int
         Number of element types
     activation_function : str, optional
@@ -170,6 +173,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         fix_stat_std: float = 0.3,
         optim_update: bool = True,
         smooth_edge_update: bool = False,
+        edge_init_use_dist: bool = False,
         seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
         super().__init__()
@@ -201,6 +205,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
+        self.edge_init_use_dist = edge_init_use_dist
 
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -438,8 +443,14 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         # edge_input, h2 = xp.split(dmatrix, [1], axis=-1)
         edge_input = dmatrix[:, :, :, :1]
         h2 = dmatrix[:, :, :, 1:]
-        # nb x nloc x nnei x e_dim
-        edge_ebd = self.act(self.edge_embd(edge_input))
+        if self.edge_init_use_dist:
+            # nb x nloc x nnei x 1
+            edge_input = xp.linalg.vector_norm(diff, axis=-1, keepdims=True)
+            # nb x nloc x nnei x e_dim
+            edge_ebd = self.edge_embd(edge_input)
+        else:
+            # nb x nloc x nnei x e_dim
+            edge_ebd = self.act(self.edge_embd(edge_input))
 
         # get angle nlist (maybe smaller)
         a_dist_mask = (xp.linalg.vector_norm(diff, axis=-1) < self.a_rcut)[
@@ -577,6 +588,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
             "precision": self.precision,
             "fix_stat_std": self.fix_stat_std,
             "optim_update": self.optim_update,
+            "edge_init_use_dist": self.edge_init_use_dist,
             # variables
             "edge_embd": self.edge_embd.serialize(),
             "angle_embd": self.angle_embd.serialize(),
