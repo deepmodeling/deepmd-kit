@@ -177,8 +177,6 @@ class EnvMat(NativeOP):
         return {
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
-            "protection": self.protection,
-            "use_exp_switch": self.use_exp_switch,
         }
 
     @classmethod
