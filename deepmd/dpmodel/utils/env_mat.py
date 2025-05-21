@@ -35,6 +35,24 @@ def compute_smooth_weight(
     return vv
 
 
+@support_array_api(version="2023.12")
+def compute_exp_sw(
+    distance: np.ndarray,
+    rmin: float,
+    rmax: float,
+):
+    """Compute the exponential switch function for neighbor update."""
+    if rmin >= rmax:
+        raise ValueError("rmin should be less than rmax.")
+    xp = array_api_compat.array_namespace(distance)
+    distance = xp.clip(distance, min=rmin, max=rmax)
+    C = 20
+    a = C / rmin
+    b = rmin
+    exp_sw = xp.exp(-xp.exp(a * (distance - b)))
+    return exp_sw
+
+
 def _make_env_mat(
     nlist,
     coord,
@@ -42,6 +60,7 @@ def _make_env_mat(
     ruct_smth: float,
     radial_only: bool = False,
     protection: float = 0.0,
+    use_exp_switch: bool = False,
 ):
     """Make smooth environment matrix."""
     xp = array_api_compat.array_namespace(nlist)
@@ -66,7 +85,11 @@ def _make_env_mat(
     length = length + xp.astype(~xp.expand_dims(mask, axis=-1), length.dtype)
     t0 = 1 / (length + protection)
     t1 = diff / (length + protection) ** 2
-    weight = compute_smooth_weight(length, ruct_smth, rcut)
+    weight = (
+        compute_smooth_weight(length, ruct_smth, rcut)
+        if not use_exp_switch
+        else compute_exp_sw(length, ruct_smth, rcut)
+    )
     weight = weight * xp.astype(xp.expand_dims(mask, axis=-1), weight.dtype)
     if radial_only:
         env_mat = t0 * weight
@@ -81,10 +104,12 @@ class EnvMat(NativeOP):
         rcut,
         rcut_smth,
         protection: float = 0.0,
+        use_exp_switch: bool = False,
     ) -> None:
         self.rcut = rcut
         self.rcut_smth = rcut_smth
         self.protection = protection
+        self.use_exp_switch = use_exp_switch
 
     def call(
         self,
@@ -142,6 +167,7 @@ class EnvMat(NativeOP):
             self.rcut_smth,
             radial_only=radial_only,
             protection=self.protection,
+            use_exp_switch=self.use_exp_switch,
         )
         return em, diff, ww
 
@@ -151,6 +177,8 @@ class EnvMat(NativeOP):
         return {
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
+            "protection": self.protection,
+            "use_exp_switch": self.use_exp_switch,
         }
 
     @classmethod

@@ -150,6 +150,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             fix_stat_std=self.repflow_args.fix_stat_std,
             optim_update=self.repflow_args.optim_update,
             smooth_edge_update=self.repflow_args.smooth_edge_update,
+            use_exp_switch=self.repflow_args.use_exp_switch,
             exclude_types=exclude_types,
             env_protection=env_protection,
             precision=precision,

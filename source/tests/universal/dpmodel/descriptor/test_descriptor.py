@@ -482,6 +482,7 @@ def DescriptorParamDPA3(
     a_compress_use_split=False,
     optim_update=True,
     smooth_edge_update=False,
+    use_exp_switch=False,
     fix_stat_std=0.3,
     precision="float64",
 ):
@@ -503,6 +504,7 @@ def DescriptorParamDPA3(
                 "a_compress_e_rate": a_compress_e_rate,
                 "a_compress_use_split": a_compress_use_split,
                 "optim_update": optim_update,
+                "use_exp_switch": use_exp_switch,
                 "smooth_edge_update": smooth_edge_update,
                 "fix_stat_std": fix_stat_std,
                 "n_multi_edge_message": n_multi_edge_message,
@@ -540,6 +542,7 @@ DescriptorParamDPA3List = parameterize_func(
             "a_compress_use_split": (True, False),
             "optim_update": (True, False),
             "smooth_edge_update": (True,),
+            "use_exp_switch": (True, False),
             "fix_stat_std": (0.3,),
             "n_multi_edge_message": (1, 2),
             "env_protection": (0.0, 1e-8),

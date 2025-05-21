@@ -65,6 +65,7 @@ from deepmd.utils.argcheck import (
     (1, 2),  # a_compress_e_rate
     (True, False),  # a_compress_use_split
     (True, False),  # optim_update
+    (True, False),  # use_exp_switch
     (0.3, 0.0),  # fix_stat_std
     (1, 2),  # n_multi_edge_message
     ("float64",),  # precision
@@ -80,6 +81,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_e_rate,
             a_compress_use_split,
             optim_update,
+            use_exp_switch,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -103,6 +105,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
                     "a_compress_e_rate": a_compress_e_rate,
                     "a_compress_use_split": a_compress_use_split,
                     "optim_update": optim_update,
+                    "use_exp_switch": use_exp_switch,
                     "fix_stat_std": fix_stat_std,
                     "n_multi_edge_message": n_multi_edge_message,
                     "axis_neuron": 4,
@@ -130,6 +133,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_e_rate,
             a_compress_use_split,
             optim_update,
+            use_exp_switch,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -146,11 +150,14 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_e_rate,
             a_compress_use_split,
             optim_update,
+            use_exp_switch,
             fix_stat_std,
             n_multi_edge_message,
             precision,
         ) = self.param
-        return not INSTALLED_PD or precision == "bfloat16"
+        return (
+            not INSTALLED_PD or precision == "bfloat16" or use_exp_switch
+        )  # not supported yet
 
     @property
     def skip_dp(self) -> bool:
@@ -162,6 +169,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_e_rate,
             a_compress_use_split,
             optim_update,
+            use_exp_switch,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -178,6 +186,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_e_rate,
             a_compress_use_split,
             optim_update,
+            use_exp_switch,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -236,6 +245,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_e_rate,
             a_compress_use_split,
             optim_update,
+            use_exp_switch,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -315,6 +325,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_e_rate,
             a_compress_use_split,
             optim_update,
+            use_exp_switch,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -337,6 +348,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_e_rate,
             a_compress_use_split,
             optim_update,
+            use_exp_switch,
             fix_stat_std,
             n_multi_edge_message,
             precision,
