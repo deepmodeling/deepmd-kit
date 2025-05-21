@@ -259,7 +259,9 @@ class DeepEval(DeepEvalBackend):
             self.numb_dos = 0
         self.tmap = tmap.decode("utf-8").split()
         if self.tensors["modifier_type"] is not None:
-            self.modifier_type = run_sess(self.sess, [self.tensors["modifier_type"]])[0]
+            self.modifier_type = run_sess(self.sess, [self.tensors["modifier_type"]])[
+                0
+            ].decode()
         else:
             self.modifier_type = None
 
@@ -761,15 +763,17 @@ class DeepEval(DeepEvalBackend):
             odef.name: oo for oo, odef in zip(output, self.output_def.var_defs.values())
         }
         # ugly!!
-        if self.modifier_type is not None and isinstance(self.model_type, DeepPot):
+        if self.modifier_type is not None and issubclass(self.model_type, DeepPot):
             if atomic:
                 raise RuntimeError("modifier does not support atomic modification")
             me, mf, mv = self.dm.eval(coords, cells, atom_types)
-            output = list(output)  # tuple to list
-            e, f, v = output[:3]
-            output_dict["energy_redu"] += me.reshape(e.shape)
-            output_dict["energy_deri_r"] += mf.reshape(f.shape)
-            output_dict["energy_deri_c_redu"] += mv.reshape(v.shape)
+            output_dict["energy_redu"] += me.reshape(output_dict["energy_redu"].shape)
+            output_dict["energy_derv_r"] += mf.reshape(
+                output_dict["energy_derv_r"].shape
+            )
+            output_dict["energy_derv_c_redu"] += mv.reshape(
+                output_dict["energy_derv_c_redu"].shape
+            )
         return output_dict
 
     def _prepare_feed_dict(
@@ -1350,6 +1354,8 @@ class DeepEvalOld:
             natoms = atom_type[0].size
             idx_map = np.arange(natoms)  # pylint: disable=no-explicit-dtype
             return coord, atom_type, idx_map
+        if atom_type.ndim > 1:
+            atom_type = atom_type[0]
         if sel_atoms is not None:
             selection = [False] * np.size(atom_type)
             for ii in sel_atoms:
