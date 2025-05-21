@@ -137,11 +137,9 @@ class DescrptBlockRepflows(DescriptorBlock):
         Whether to use an exponential switch function instead of a polynomial one in the neighbor update.
         The exponential switch function ensures neighbor contributions smoothly diminish as the interatomic distance
         `r` approaches the cutoff radius `rcut`. Specifically, the function is defined as:
-        s(r) = \\exp(-\\exp(C (r - rcut_smth) / rcut_smth)) for 0 < r \\leq rcut, and s(r) = 0 for r > rcut.
-        Here, `rcut_smth` is an adjustable smoothing factor,
-        while `C` is a tunable parameter controlling the decay rate (default: 20).
-        `rcut_smth` should be chosen carefully according to `rcut`,
-        ensuring s(r) approaches zero smoothly at the cutoff.
+        s(r) = \\exp(-\\exp(20 * (r - rcut_smth) / rcut_smth)) for 0 < r \\leq rcut, and s(r) = 0 for r > rcut.
+        Here, `rcut_smth` is an adjustable smoothing factor and `rcut_smth` should be chosen carefully
+        according to `rcut`, ensuring s(r) approaches zero smoothly at the cutoff.
         Typical recommended values are `rcut_smth` = 5.3 for `rcut` = 6.0, and 3.5 for `rcut` = 4.0.
     optim_update : bool, optional
         Whether to enable the optimized update method.
