@@ -984,7 +984,14 @@ def aggregate(
     """
     xp = array_api_compat.array_namespace(data, owners)
 
-    bin_count = xp.bincount(owners)
+    def bincount(x, weights=None, minlength=0):
+        if weights is None:
+            weights = xp.ones_like(x)
+        result = xp.zeros((max(minlength, int(x.max()) + 1),), dtype=weights.dtype)
+        xp.add.at(result, x, weights)
+        return result
+
+    bin_count = bincount(owners)
     bin_count = xp.where(bin_count == 0, xp.ones_like(bin_count), bin_count)
 
     if num_owner is not None and bin_count.shape[0] != num_owner:
