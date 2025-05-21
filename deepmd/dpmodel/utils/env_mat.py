@@ -45,7 +45,7 @@ def compute_exp_sw(
     if rmin >= rmax:
         raise ValueError("rmin should be less than rmax.")
     xp = array_api_compat.array_namespace(distance)
-    distance = xp.clip(distance, min=rmin, max=rmax)
+    distance = xp.clip(distance, min=0.0, max=rmax)
     C = 20
     a = C / rmin
     b = rmin
