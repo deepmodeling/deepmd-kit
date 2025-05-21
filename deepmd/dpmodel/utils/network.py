@@ -992,7 +992,7 @@ def aggregate(
     def bincount(x, weights=None, minlength=0):
         if weights is None:
             weights = xp.ones_like(x)
-        result = xp.zeros((max(minlength, int(x.max()) + 1),), dtype=weights.dtype)
+        result = xp.zeros((max(minlength, int(xp.max(x)) + 1),), dtype=weights.dtype)
         result = add_at(result, x, weights)
         return result
 
