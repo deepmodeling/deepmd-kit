@@ -1056,13 +1056,13 @@ def get_graph_index(
         xp.reshape(nlist_loc_index, (nf, nloc, 1)), (nf, nloc, nnei)
     )
     # n_edge
-    n2e_index = n2e_index[nlist_mask.astype(bool)]
+    n2e_index = n2e_index[xp.astype(nlist_mask, xp.bool)]
 
     # node_ext(j) to edge(ij) index_select
     frame_shift = xp.arange(nf, dtype=nlist.dtype) * nall
     shifted_nlist = nlist + frame_shift[:, xp.newaxis, xp.newaxis]
     # n_edge
-    n_ext2e_index = shifted_nlist[nlist_mask.astype(bool)]
+    n_ext2e_index = shifted_nlist[xp.astype(nlist_mask, xp.bool)]
 
     # 2. edge graph
     # node(i) to angle(ijk) index_select
@@ -1075,7 +1075,7 @@ def get_graph_index(
     # edge(ij) to angle(ijk) index_select; angle(ijk) to edge(ij) aggregate
     edge_id = xp.arange(n_edge, dtype=nlist.dtype)
     edge_index = xp.zeros((nf, nloc, nnei), dtype=nlist.dtype)
-    edge_index[nlist_mask.astype(bool)] = edge_id
+    edge_index[xp.astype(nlist_mask, xp.bool)] = edge_id
     # only cut a_nnei neighbors, to avoid nnei x nnei
     edge_index = edge_index[:, :, :a_nnei]
     edge_index_ij = xp.broadcast_to(
