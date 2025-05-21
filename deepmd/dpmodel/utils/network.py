@@ -1017,6 +1017,7 @@ def aggregate(
     if hasattr(xp, "add") and hasattr(xp.add, "at"):
         xp.add.at(output, owners, data)
     else:
+        # for array_api_strict
         output = add_at(output, owners, data)
 
     if average:
