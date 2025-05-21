@@ -495,10 +495,14 @@ def DescriptorParamDPA3(
                 "a_dim": 8,
                 "nlayers": 2,
                 "e_rcut": rcut,
-                "e_rcut_smth": rcut_smth,
+                "e_rcut_smth": rcut_smth
+                if not use_exp_switch
+                else (rcut - 1.0),  # suitable for ut
                 "e_sel": sum(sel),
                 "a_rcut": rcut / 2,
-                "a_rcut_smth": rcut_smth / 2,
+                "a_rcut_smth": rcut_smth / 2
+                if not use_exp_switch
+                else (rcut - 1.0) / 2,  # suitable for ut
                 "a_sel": sum(sel) // 4,
                 "a_compress_rate": a_compress_rate,
                 "a_compress_e_rate": a_compress_e_rate,
