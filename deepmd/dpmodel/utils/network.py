@@ -985,8 +985,14 @@ def aggregate(
     xp = array_api_compat.array_namespace(data, owners)
 
     def add_at(x, indices, values):
-        for idx, val in zip(indices, values):
-            x[idx] = x[idx] + val
+        unique_ids = xp.unique(indices)
+        for i in unique_ids:
+            mask = xp.where(indices == i, 1, 0)
+            mask = xp.expand_dims(mask, axis=1) if len(values.shape) != 1 else mask
+            selected = values * mask
+            summed = xp.sum(selected, axis=0)
+            x[i] = x[i] + summed
+
         return x
 
     def bincount(x, weights=None, minlength=0):
@@ -1014,7 +1020,7 @@ def aggregate(
         output = add_at(output, owners, data)
 
     if average:
-        output = (output.T / bin_count).T
+        output = xp.transpose(xp.transpose(output) / bin_count)
 
     return output
 
