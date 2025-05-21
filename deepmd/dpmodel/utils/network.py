@@ -1044,7 +1044,7 @@ def get_graph_index(
         a_nlist_mask[:, :, :, None], a_nlist_mask[:, :, None, :]
     )
 
-    n_edge = int(xp.asarray(xp.sum(nlist_mask)))
+    n_edge = int(xp.sum(nlist_mask.astype(xp.int32)))
 
     # following: get n2e_index, n_ext2e_index, n2a_index, eij2a_index, eik2a_index
 

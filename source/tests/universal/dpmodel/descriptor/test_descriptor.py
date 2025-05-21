@@ -509,6 +509,7 @@ def DescriptorParamDPA3(
                 "n_multi_edge_message": n_multi_edge_message,
                 "axis_neuron": 2,
                 "use_dynamic_sel": use_dynamic_sel,
+                "sel_reduce_factor": 1.0,
                 "update_angle": update_angle,
                 "update_style": update_style,
                 "update_residual": update_residual,
