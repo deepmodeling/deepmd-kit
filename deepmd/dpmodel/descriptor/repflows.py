@@ -1294,7 +1294,7 @@ class RepFlowLayer(NativeOP):
         )
         nb, nloc, nnei = nlist.shape
         nall = node_ebd_ext.shape[1]
-        n_edge = int(xp.sum(nlist_mask.astype(xp.int32)))
+        n_edge = int(xp.sum(xp.astype(nlist_mask, xp.int32)))
         node_ebd = node_ebd_ext[:, :nloc, :]
         assert (nb, nloc) == node_ebd.shape[:2]
         if not self.use_dynamic_sel:
