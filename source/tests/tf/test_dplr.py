@@ -9,6 +9,9 @@ import numpy as np
 from deepmd.infer.deep_pot import (
     DeepPot,
 )
+from deepmd.tf.common import (
+    clear_session,
+)
 from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
 )
@@ -16,6 +19,7 @@ from deepmd.tf.utils.convert import (
 
 class TestDPLR(unittest.TestCase):
     def setUp(self) -> None:
+        clear_session()
         # a bit strange path, need to move to the correct directory
         pbtxt_file = (
             Path(__file__).parent.parent.parent / "lmp" / "tests" / "lrmodel.pbtxt"
