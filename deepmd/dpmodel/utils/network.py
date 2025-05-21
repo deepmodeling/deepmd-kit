@@ -984,14 +984,23 @@ def aggregate(
     """
     xp = array_api_compat.array_namespace(data, owners)
 
+    def add_at(x, indices, values):
+        for idx, val in zip(indices, values):
+            x[idx] = x[idx] + val
+        return x
+
     def bincount(x, weights=None, minlength=0):
         if weights is None:
             weights = xp.ones_like(x)
         result = xp.zeros((max(minlength, int(x.max()) + 1),), dtype=weights.dtype)
-        xp.add.at(result, x, weights)
+        result = add_at(result, x, weights)
         return result
 
-    bin_count = bincount(owners)
+    if hasattr(xp, "bincount"):
+        bin_count = xp.bincount(owners)
+    else:
+        # for array_api_strict
+        bin_count = bincount(owners)
     bin_count = xp.where(bin_count == 0, xp.ones_like(bin_count), bin_count)
 
     if num_owner is not None and bin_count.shape[0] != num_owner:
@@ -999,7 +1008,10 @@ def aggregate(
         bin_count = xp.concat([bin_count, xp.ones(difference, dtype=bin_count.dtype)])
 
     output = xp.zeros((bin_count.shape[0], data.shape[1]), dtype=data.dtype)
-    xp.add.at(output, owners, data)
+    if hasattr(xp, "add") and hasattr(xp.add, "at"):
+        xp.add.at(output, owners, data)
+    else:
+        output = add_at(output, owners, data)
 
     if average:
         output = (output.T / bin_count).T
