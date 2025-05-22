@@ -112,9 +112,7 @@ def build_neighbor_list(
 
     # Create a version of coordinates where virtual atoms are replaced by xmax
     # This tensor will have shape [batch_size, nall, 3]
-    vcoord_xyz = torch.where(
-        is_vir[:, :, None], xmax, coord_xyz
-    )
+    vcoord_xyz = torch.where(is_vir[:, :, None], xmax, coord_xyz)
     # Original coord1 was:
     # coord1 = torch.where(
     #     is_vir[:, :, None], xmax, coord.view(batch_size, nall, 3)
@@ -154,7 +152,7 @@ def build_neighbor_list(
     nnei = rr.shape[-1]
     # print(f"{nsel=}, {nnei=}")
     top_k = nsel if nsel <= nnei else nnei
-    rr, nlist = torch.topk(rr, top_k+1, largest=False)
+    rr, nlist = torch.topk(rr, top_k + 1, largest=False)
     # rr, nlist = torch.sort(rr, dim=-1) # FIXME
     # assert torch.allclose(rr, other=rr2[..., :top_k], atol=0)
 
