@@ -1033,12 +1033,12 @@ class Trainer:
         if self.enable_profiler or self.profiling:
             prof.stop()
             log.info(
-                f"The profiling trace have been saved under {self.tensorboard_log_dir}"
+                f"The profiling trace has been saved under {self.tensorboard_log_dir}"
             )
             if self.profiling:
                 prof.export_chrome_trace(self.profiling_file)
                 log.info(
-                    f"The profiling trace have been saved to: {self.profiling_file}"
+                    f"The profiling trace has been saved to: {self.profiling_file}"
                 )
 
     def save_model(self, save_path, lr=0.0, step=0) -> None:
