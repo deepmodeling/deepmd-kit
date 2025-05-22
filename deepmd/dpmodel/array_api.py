@@ -110,8 +110,8 @@ def xp_add_at(x, indices, values):
         # may need a more efficient way to do this
         n = indices.shape[0]
         for i in range(n):
-            idx = indices[i]
-            x[idx] = x[idx] + values[i]
+            idx = int(indices[i])
+            x[idx, ...] = x[idx, ...] + values[i, ...]
         return x
 
 
