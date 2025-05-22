@@ -337,7 +337,9 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
             # make deterministic
             "precision": RESERVED_PRECISION_DICT[obj.prec],
             "embeddings": obj.filter_layers.serialize(),
-            "env_mat": DPEnvMat(obj.rcut, obj.rcut_smth).serialize(),
+            "env_mat": DPEnvMat(
+                obj.rcut, obj.rcut_smth, obj.env_protection
+            ).serialize(),
             "exclude_types": obj.exclude_types,
             "env_protection": obj.env_protection,
             "@variables": {
