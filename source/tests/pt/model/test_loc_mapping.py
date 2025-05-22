@@ -197,8 +197,6 @@ class TestDescrptDPA3LocMapping(unittest.TestCase, TestCaseSingleFrameWithNlist)
                 update_residual_init=ruri,
                 optim_update=optim,
                 smooth_edge_update=True,
-                use_dynamic_sel=True,
-                sel_reduce_factor=10.0,
             )
 
             # dpa3 new impl
