@@ -478,10 +478,10 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         extended_coord = extended_coord.to(dtype=self.prec)
         nframes, nloc, nnei = nlist.shape
         # nall = extended_coord.view(nframes, -1).shape[1] // 3
-        if parallel_mode or not self.use_loc_mapping:
-            atype = extended_atype[:, :nloc]
-        else:
+        if parallel_mode:
             atype = extended_atype
+        else:
+            atype = extended_atype[:, :nloc]
         node_ebd_inp = self.type_embedding(atype)
         # repflows
         node_ebd, edge_ebd, h2, rot_mat, sw = self.repflows.forward(

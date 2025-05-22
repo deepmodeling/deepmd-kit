@@ -453,13 +453,11 @@ class DescrptBlockRepflows(DescriptorBlock):
         # if the a neighbor is real or not is indicated by nlist_mask
         nlist[nlist == -1] = 0
         # nb x nall x n_dim
-        if not self.use_loc_mapping:
+        if comm_dict is None or self.use_loc_mapping:
             assert mapping is not None
             mapping = (
                 mapping.view(nframes, nall).unsqueeze(-1).expand(-1, -1, self.n_dim)
             )
-        if comm_dict is None or not self.use_loc_mapping:
-            assert mapping is not None
             node_ebd_ext = None
             nlist = torch.gather(
                 mapping.reshape(nframes, -1),
@@ -470,13 +468,12 @@ class DescrptBlockRepflows(DescriptorBlock):
             # node_ebd:     nb x nloc x n_dim
             # node_ebd_ext: nb x nall x n_dim
             if comm_dict is None:
-                if not self.use_loc_mapping:
+                if self.use_loc_mapping:
+                    node_ebd_ext = None
+                else:
                     assert mapping is not None
                     node_ebd_ext = torch.gather(node_ebd, 1, mapping)
-                else:
-                    node_ebd_ext = None
             else:
-                assert comm_dict is not None
                 has_spin = "has_spin" in comm_dict
                 if not has_spin:
                     n_padding = nall - nloc
