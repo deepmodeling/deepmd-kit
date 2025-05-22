@@ -21,9 +21,9 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
-    add_at,
-    bincount,
     support_array_api,
+    xp_add_at,
+    xp_bincount,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -985,7 +985,7 @@ def aggregate(
     output: [num_owner, feature_dim]
     """
     xp = array_api_compat.array_namespace(data, owners)
-    bin_count = bincount(owners)
+    bin_count = xp_bincount(owners)
     bin_count = xp.where(bin_count == 0, xp.ones_like(bin_count), bin_count)
 
     if num_owner is not None and bin_count.shape[0] != num_owner:
@@ -993,7 +993,7 @@ def aggregate(
         bin_count = xp.concat([bin_count, xp.ones(difference, dtype=bin_count.dtype)])
 
     output = xp.zeros((bin_count.shape[0], data.shape[1]), dtype=data.dtype)
-    output = add_at(output, owners, data)
+    output = xp_add_at(output, owners, data)
 
     if average:
         output = xp.transpose(xp.transpose(output) / bin_count)

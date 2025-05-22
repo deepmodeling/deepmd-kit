@@ -94,7 +94,7 @@ def xp_scatter_sum(input, dim, index: np.ndarray, src: np.ndarray) -> np.ndarray
         raise NotImplementedError("Only JAX arrays are supported.")
 
 
-def add_at(x, indices, values):
+def xp_add_at(x, indices, values):
     """Adds values to the specified indices of x in place or returns new x (for JAX)."""
     xp = array_api_compat.array_namespace(x, indices, values)
     if array_api_compat.is_numpy_array(x):
@@ -115,7 +115,7 @@ def add_at(x, indices, values):
         return x
 
 
-def bincount(x, weights=None, minlength=0):
+def xp_bincount(x, weights=None, minlength=0):
     """Counts the number of occurrences of each value in x."""
     xp = array_api_compat.array_namespace(x)
     if array_api_compat.is_numpy_array(x) or array_api_compat.is_jax_array(x):
@@ -124,5 +124,5 @@ def bincount(x, weights=None, minlength=0):
         if weights is None:
             weights = xp.ones_like(x)
         result = xp.zeros((max(minlength, int(xp.max(x)) + 1),), dtype=weights.dtype)
-        result = add_at(result, x, weights)
+        result = xp_add_at(result, x, weights)
     return result
