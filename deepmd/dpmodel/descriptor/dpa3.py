@@ -150,7 +150,7 @@ class RepFlowArgs:
         skip_stat: bool = False,
         optim_update: bool = True,
         smooth_edge_update: bool = False,
-        use_ext_ebd: bool = False,
+        use_loc_mapping: bool = True,
     ) -> None:
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -177,7 +177,7 @@ class RepFlowArgs:
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
-        self.use_ext_ebd = use_ext_ebd
+        self.use_loc_mapping = use_loc_mapping
 
     def __getitem__(self, key):
         if hasattr(self, key):
@@ -209,7 +209,7 @@ class RepFlowArgs:
             "fix_stat_std": self.fix_stat_std,
             "optim_update": self.optim_update,
             "smooth_edge_update": self.smooth_edge_update,
-            "use_ext_ebd": self.use_ext_ebd,
+            "use_loc_mapping": self.use_loc_mapping,
         }
 
     @classmethod
@@ -265,7 +265,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
-        use_ext_ebd: bool = False,
+        use_loc_mapping: bool = True,
     ) -> None:
         super().__init__()
 
@@ -279,7 +279,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
                     f"Input args must be a {sub_class.__name__} class or a dict!"
                 )
 
-        self.use_ext_ebd = use_ext_ebd
+        self.use_loc_mapping = use_loc_mapping
         self.repflow_args = init_subclass_params(repflow, RepFlowArgs)
         self.activation_function = activation_function
 
@@ -312,7 +312,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             env_protection=env_protection,
             precision=precision,
             seed=child_seed(seed, 1),
-            use_ext_ebd=use_ext_ebd,
+            use_loc_mapping=use_loc_mapping,
         )
 
         self.use_econf_tebd = use_econf_tebd
@@ -550,7 +550,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             "use_tebd_bias": self.use_tebd_bias,
             "type_map": self.type_map,
             "type_embedding": self.type_embedding.serialize(),
-            "use_ext_ebd": self.use_ext_ebd,
+            "use_loc_mapping": self.use_loc_mapping,
         }
         repflow_variable = {
             "edge_embd": repflows.edge_embd.serialize(),
