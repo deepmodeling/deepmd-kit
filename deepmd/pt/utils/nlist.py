@@ -93,35 +93,71 @@ def build_neighbor_list(
 
     """
     batch_size = coord.shape[0]
-    coord = coord.view(batch_size, -1)
+    # coord is expected to be [batch_size, nall * 3]
+    # The original line `coord = coord.view(batch_size, -1)` is a no-op if input is already 2D,
+    # and input from `extend_input_and_build_neighbor_list` is `[nf, nall * 3]`.
+    # So, it can be removed.
     nall = coord.shape[1] // 3
     # fill virtual atoms with large coords so they are not neighbors of any
     # real atom.
     if coord.numel() > 0:
-        xmax = torch.max(coord) + 2.0 * rcut
+        xmax = torch.max(coord) + 2.0 * rcut  # coord is [batch_size, nall*3]
     else:
         xmax = torch.zeros(1, dtype=coord.dtype, device=coord.device) + 2.0 * rcut
-    # nf x nall
+    # nf x nall (comment refers to batch_size x nall)
     is_vir = atype < 0
-    coord1 = torch.where(
-        is_vir[:, :, None], xmax, coord.view(batch_size, nall, 3)
-    ).view(batch_size, nall * 3)
+
+    # Reshape coord to [batch_size, nall, 3] for easier manipulation
+    coord_xyz = coord.view(batch_size, nall, 3)
+
+    # Create a version of coordinates where virtual atoms are replaced by xmax
+    # This tensor will have shape [batch_size, nall, 3]
+    vcoord_xyz = torch.where(
+        is_vir[:, :, None], xmax, coord_xyz
+    )
+    # Original coord1 was:
+    # coord1 = torch.where(
+    #     is_vir[:, :, None], xmax, coord.view(batch_size, nall, 3)
+    # ).view(batch_size, nall * 3)
+
     if isinstance(sel, int):
         sel = [sel]
-    # nloc x 3
-    coord0 = coord1[:, : nloc * 3]
-    # nloc x nall x 3
-    diff = coord1.view([batch_size, -1, 3]).unsqueeze(1) - coord0.view(
-        [batch_size, -1, 3]
-    ).unsqueeze(2)
+
+    # Get the coordinates for the local atoms (first nloc atoms)
+    # Shape: [batch_size, nloc, 3]
+    vcoord_local_xyz = vcoord_xyz[:, :nloc, :]
+    # Original coord0 was:
+    # coord0 = coord1[:, : nloc * 3] # where coord1 was [batch_size, nall*3]
+
+    # Calculate displacement vectors.
+    # vcoord_xyz.unsqueeze(1) gives [batch_size, 1, nall, 3]
+    # vcoord_local_xyz.unsqueeze(2) gives [batch_size, nloc, 1, 3]
+    # Broadcasting results in diff tensor of shape [batch_size, nloc, nall, 3]
+    diff = vcoord_xyz.unsqueeze(1) - vcoord_local_xyz.unsqueeze(2)
+    # Original diff calculation that used views:
+    # diff = coord1.view([batch_size, -1, 3]).unsqueeze(1) - coord0.view(
+    #     [batch_size, -1, 3]
+    # ).unsqueeze(2)
     assert list(diff.shape) == [batch_size, nloc, nall, 3]
     # nloc x nall
     rr = torch.linalg.norm(diff, dim=-1)
     # if central atom has two zero distances, sorting sometimes can not exclude itself
-    rr -= torch.eye(nloc, nall, dtype=rr.dtype, device=rr.device).unsqueeze(0)
+    # The following operation makes rr[b, i, i] = -1.0 (assuming original self-distance is 0)
+    # so that self-atom is sorted first.
+    # Original line: rr -= torch.eye(nloc, nall, dtype=rr.dtype, device=rr.device).unsqueeze(0)
+    # Efficiently subtract 1 from diagonal elements rr[b, i, i] for i < min(nloc, nall).
+    # nall is rr.shape[2] here.
+    diag_len = min(nloc, nall)
+    idx = torch.arange(diag_len, device=rr.device)
+    rr[:, idx, idx] -= 1.0
     nsel = sum(sel)
     nnei = rr.shape[-1]
-    rr, nlist = torch.topk(rr, min(nsel, nnei), largest=False)
+    # print(f"{nsel=}, {nnei=}")
+    top_k = nsel if nsel <= nnei else nnei
+    rr, nlist = torch.topk(rr, top_k+1, largest=False)
+    # rr, nlist = torch.sort(rr, dim=-1) # FIXME
+    # assert torch.allclose(rr, other=rr2[..., :top_k], atol=0)
+
     # nloc x (nall-1)
     rr = rr[:, :, 1:]
     nlist = nlist[:, :, 1:]
