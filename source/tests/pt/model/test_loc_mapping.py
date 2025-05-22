@@ -90,7 +90,7 @@ class TestDescrptDPA3LocMapping(unittest.TestCase, TestCaseSingleFrameWithNlist)
             )
 
             # dpa3 new impl
-            dd0 = DescrptDPA3(
+            dd0 = DescrptDPA3(  # type: ignore[call-arg]
                 self.nt,
                 repflow=repflow,
                 # kwargs for descriptor
@@ -103,7 +103,7 @@ class TestDescrptDPA3LocMapping(unittest.TestCase, TestCaseSingleFrameWithNlist)
             ).to(env.DEVICE)
 
             # dpa3 using local mapping
-            dd1 = DescrptDPA3(
+            dd1 = DescrptDPA3(  # type: ignore[call-arg]
                 self.nt,
                 repflow=repflow,
                 # kwargs for descriptor
@@ -119,10 +119,9 @@ class TestDescrptDPA3LocMapping(unittest.TestCase, TestCaseSingleFrameWithNlist)
             atype_ext = np.concatenate([self.atype_ext[:1], self.atype_ext[:1]], axis=0)
             nlist = np.concatenate([self.nlist[:1], self.nlist[:1]], axis=0)
             mapping = np.concatenate([self.mapping[:1], self.mapping[:1]], axis=0)
-
             dd0.repflows.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.repflows.stddev = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
-            rd0, _, _, _, _ = dd0(
+            rd0, _, _, _, _ = dd0.forward(
                 torch.tensor(coord_ext, dtype=dtype, device=env.DEVICE),
                 torch.tensor(atype_ext, dtype=int, device=env.DEVICE),
                 torch.tensor(nlist, dtype=int, device=env.DEVICE),
@@ -131,7 +130,7 @@ class TestDescrptDPA3LocMapping(unittest.TestCase, TestCaseSingleFrameWithNlist)
 
             dd1.repflows.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd1.repflows.stddev = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
-            rd1, _, _, _, _ = dd1(
+            rd1, _, _, _, _ = dd1.forward(
                 torch.tensor(coord_ext, dtype=dtype, device=env.DEVICE),
                 torch.tensor(atype_ext, dtype=int, device=env.DEVICE),
                 torch.tensor(nlist, dtype=int, device=env.DEVICE),
@@ -200,7 +199,7 @@ class TestDescrptDPA3LocMapping(unittest.TestCase, TestCaseSingleFrameWithNlist)
             )
 
             # dpa3 new impl
-            dd0 = DescrptDPA3(
+            dd0 = DescrptDPA3(  # type: ignore[call-arg]
                 self.nt,
                 repflow=repflow,
                 # kwargs for descriptor
@@ -213,7 +212,7 @@ class TestDescrptDPA3LocMapping(unittest.TestCase, TestCaseSingleFrameWithNlist)
             ).to(env.DEVICE)
 
             # dpa3 using local mapping
-            dd1 = DescrptDPA3(
+            dd1 = DescrptDPA3(  # type: ignore[call-arg]
                 self.nt,
                 repflow=repflow,
                 # kwargs for descriptor
@@ -232,7 +231,7 @@ class TestDescrptDPA3LocMapping(unittest.TestCase, TestCaseSingleFrameWithNlist)
 
             dd0.repflows.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.repflows.stddev = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
-            rd0, _, _, _, _ = dd0(
+            rd0, _, _, _, _ = dd0.forward(
                 torch.tensor(coord_ext, dtype=dtype, device=env.DEVICE),
                 torch.tensor(atype_ext, dtype=int, device=env.DEVICE),
                 torch.tensor(nlist, dtype=int, device=env.DEVICE),
@@ -241,7 +240,7 @@ class TestDescrptDPA3LocMapping(unittest.TestCase, TestCaseSingleFrameWithNlist)
 
             dd1.repflows.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd1.repflows.stddev = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
-            rd1, _, _, _, _ = dd1(
+            rd1, _, _, _, _ = dd1.forward(
                 torch.tensor(coord_ext, dtype=dtype, device=env.DEVICE),
                 torch.tensor(atype_ext, dtype=int, device=env.DEVICE),
                 torch.tensor(nlist, dtype=int, device=env.DEVICE),
