@@ -1422,12 +1422,6 @@ def descrpt_dpa3_args():
             doc=doc_use_tebd_bias,
         ),
         Argument(
-            "use_torch_embed",
-            bool,
-            optional=True,
-            default=False,
-        ),
-        Argument(
             "use_loc_mapping",
             bool,
             optional=True,
