@@ -1032,9 +1032,10 @@ class Trainer:
             writer.close()
         if self.enable_profiler or self.profiling:
             prof.stop()
-            log.info(
-                f"The profiling trace has been saved under {self.tensorboard_log_dir}"
-            )
+            if self.enable_profiler:
+                log.info(
+                    f"The profiling trace has been saved under {self.tensorboard_log_dir}"
+                )
             if self.profiling:
                 prof.export_chrome_trace(self.profiling_file)
                 log.info(
