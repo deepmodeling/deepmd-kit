@@ -658,7 +658,7 @@ class Trainer:
             writer = SummaryWriter(log_dir=self.tensorboard_log_dir)
         if self.enable_profiler or self.profiling:
             prof = torch.profiler.profile(
-                schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
+                schedule=torch.profiler.schedule(wait=1, warmup=15, active=3, repeat=1),
                 on_trace_ready=torch.profiler.tensorboard_trace_handler(
                     self.tensorboard_log_dir
                 )
@@ -1032,6 +1032,9 @@ class Trainer:
             writer.close()
         if self.enable_profiler or self.profiling:
             prof.stop()
+            log.info(
+                f"The profiling trace have been saved under {self.tensorboard_log_dir}"
+            )
             if self.profiling:
                 prof.export_chrome_trace(self.profiling_file)
                 log.info(
