@@ -21,6 +21,8 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
+    add_at,
+    bincount,
     support_array_api,
 )
 from deepmd.dpmodel.common import (
@@ -983,30 +985,7 @@ def aggregate(
     output: [num_owner, feature_dim]
     """
     xp = array_api_compat.array_namespace(data, owners)
-
-    def add_at(x, indices, values):
-        unique_ids = xp.unique(indices)
-        for i in unique_ids:
-            mask = xp.where(indices == i, 1, 0)
-            mask = xp.expand_dims(mask, axis=1) if len(values.shape) != 1 else mask
-            selected = values * mask
-            summed = xp.sum(selected, axis=0)
-            x[i] = x[i] + summed
-
-        return x
-
-    def bincount(x, weights=None, minlength=0):
-        if weights is None:
-            weights = xp.ones_like(x)
-        result = xp.zeros((max(minlength, int(xp.max(x)) + 1),), dtype=weights.dtype)
-        result = add_at(result, x, weights)
-        return result
-
-    if hasattr(xp, "bincount"):
-        bin_count = xp.bincount(owners)
-    else:
-        # for array_api_strict
-        bin_count = bincount(owners)
+    bin_count = bincount(owners)
     bin_count = xp.where(bin_count == 0, xp.ones_like(bin_count), bin_count)
 
     if num_owner is not None and bin_count.shape[0] != num_owner:
@@ -1014,11 +993,7 @@ def aggregate(
         bin_count = xp.concat([bin_count, xp.ones(difference, dtype=bin_count.dtype)])
 
     output = xp.zeros((bin_count.shape[0], data.shape[1]), dtype=data.dtype)
-    if hasattr(xp, "add") and hasattr(xp.add, "at"):
-        xp.add.at(output, owners, data)
-    else:
-        # for array_api_strict
-        output = add_at(output, owners, data)
+    output = add_at(output, owners, data)
 
     if average:
         output = xp.transpose(xp.transpose(output) / bin_count)
