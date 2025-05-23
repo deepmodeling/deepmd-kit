@@ -30,6 +30,7 @@ jobs:
         export TENSORFLOW_ROOT=$(python -c 'import tensorflow;print(tensorflow.__path__[0])')
         export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
         source/install/uv_with_retry.sh pip install --system -e .[test,jax] mpi4py "jax==0.5.0;python_version>='3.10'"
+        source/install/uv_with_retry.sh pip install --system -U setuptools
         source/install/uv_with_retry.sh pip install --system horovod --no-build-isolation
       env:
         # Please note that uv has some issues with finding
@@ -42,6 +43,8 @@ jobs:
         HOROVOD_WITH_TENSORFLOW: 1
         HOROVOD_WITHOUT_PYTORCH: 1
         HOROVOD_WITH_MPI: 1
+        # https://cmake.org/cmake/help/latest/variable/CMAKE_POLICY_VERSION_MINIMUM.html
+        CMAKE_POLICY_VERSION_MINIMUM: 3.5
     - run: dp --version
     - name: Get durations from cache
       uses: actions/cache@v4

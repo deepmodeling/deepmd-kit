@@ -36,7 +36,7 @@ jobs:
       run: source/tests/infer/convert-models.sh
     - name: Download libtorch
       run: |
-         wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.1.2%2Bcpu.zip -O libtorch.zip
+         wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.7.0%2Bcpu.zip -O libtorch.zip
          unzip libtorch.zip
     # https://github.com/actions/runner-images/issues/9491
     - name: Fix kernel mmap rnd bits
