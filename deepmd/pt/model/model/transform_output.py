@@ -158,6 +158,7 @@ def fit_output_to_model_output(
     coord_ext: torch.Tensor,
     do_atomic_virial: bool = False,
     create_graph: bool = True,
+    extended_coord_corr: Optional[torch.Tensor] = None,
 ) -> dict[str, torch.Tensor]:
     """Transform the output of the fitting network to
     the model output.
@@ -189,6 +190,12 @@ def fit_output_to_model_output(
                 model_ret[kk_derv_r] = dr
                 if vdef.c_differentiable:
                     assert dc is not None
+                    if extended_coord_corr is not None:
+                        dc_corr = (
+                            dr.squeeze(-2).unsqueeze(-1)
+                            @ extended_coord_corr.unsqueeze(-2)
+                        ).view(list(dc.shape[:-2]) + [1, 9])  # noqa: RUF005
+                        dc = dc + dc_corr
                     model_ret[kk_derv_c] = dc
                     model_ret[kk_derv_c + "_redu"] = torch.sum(
                         model_ret[kk_derv_c].to(redu_prec), dim=1

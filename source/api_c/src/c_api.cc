@@ -862,11 +862,11 @@ void DP_DeepSpinModelDeviCompute_variant(DP_DeepSpinModelDevi* dp,
     flatten_vector(fm_flat, fm);
     std::copy(fm_flat.begin(), fm_flat.end(), force_mag);
   }
-  // if (virial) {
-  //   std::vector<VALUETYPE> v_flat;
-  //   flatten_vector(v_flat, v);
-  //   std::copy(v_flat.begin(), v_flat.end(), virial);
-  // }
+  if (virial) {
+    std::vector<VALUETYPE> v_flat;
+    flatten_vector(v_flat, v);
+    std::copy(v_flat.begin(), v_flat.end(), virial);
+  }
   if (atomic_energy) {
     std::vector<VALUETYPE> ae_flat;
     flatten_vector(ae_flat, ae);

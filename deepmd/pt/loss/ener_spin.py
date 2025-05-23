@@ -268,6 +268,22 @@ class EnergySpinLoss(TaskLoss):
                 rmse_ae.detach(), find_atom_ener
             )
 
+        if self.has_v and "virial" in model_pred and "virial" in label:
+            find_virial = label.get("find_virial", 0.0)
+            pref_v = pref_v * find_virial
+            diff_v = label["virial"] - model_pred["virial"].reshape(-1, 9)
+            l2_virial_loss = torch.mean(torch.square(diff_v))
+            if not self.inference:
+                more_loss["l2_virial_loss"] = self.display_if_exist(
+                    l2_virial_loss.detach(), find_virial
+                )
+            loss += atom_norm * (pref_v * l2_virial_loss)
+            rmse_v = l2_virial_loss.sqrt() * atom_norm
+            more_loss["rmse_v"] = self.display_if_exist(rmse_v.detach(), find_virial)
+            if mae:
+                mae_v = torch.mean(torch.abs(diff_v)) * atom_norm
+                more_loss["mae_v"] = self.display_if_exist(mae_v.detach(), find_virial)
+
         if not self.inference:
             more_loss["rmse"] = torch.sqrt(loss.detach())
         return model_pred, loss, more_loss
