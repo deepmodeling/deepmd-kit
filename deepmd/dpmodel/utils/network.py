@@ -1076,7 +1076,11 @@ def get_graph_index(
     # edge(ij) to angle(ijk) index_select; angle(ijk) to edge(ij) aggregate
     edge_id = xp.arange(n_edge, dtype=nlist.dtype)
     edge_index = xp.zeros((nf, nloc, nnei), dtype=nlist.dtype)
-    edge_index[xp.astype(nlist_mask, xp.bool)] = edge_id
+    if array_api_compat.is_jax_array(nlist):
+        # JAX doesn't support in-place item assignment
+        edge_index = edge_index.at[xp.astype(nlist_mask, xp.bool)].set(edge_id)
+    else:
+        edge_index[xp.astype(nlist_mask, xp.bool)] = edge_id
     # only cut a_nnei neighbors, to avoid nnei x nnei
     edge_index = edge_index[:, :, :a_nnei]
     edge_index_ij = xp.broadcast_to(
