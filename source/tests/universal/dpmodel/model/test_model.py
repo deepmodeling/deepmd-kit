@@ -4,6 +4,7 @@ import unittest
 from deepmd.dpmodel.descriptor import (
     DescrptDPA1,
     DescrptDPA2,
+    DescrptDPA3,
     DescrptHybrid,
     DescrptSeA,
     DescrptSeR,
@@ -40,6 +41,8 @@ from ..descriptor.test_descriptor import (
     DescriptorParamDPA1List,
     DescriptorParamDPA2,
     DescriptorParamDPA2List,
+    DescriptorParamDPA3,
+    DescriptorParamDPA3List,
     DescriptorParamHybrid,
     DescriptorParamHybridMixed,
     DescriptorParamHybridMixedTTebd,
@@ -93,6 +96,7 @@ def skip_model_tests(test_obj):
             ],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
+            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
             (DescriptorParamHybrid, DescrptHybrid),
             (DescriptorParamHybridMixed, DescrptHybrid),
             (DescriptorParamHybridMixedTTebd, DescrptHybrid),
@@ -107,6 +111,7 @@ def skip_model_tests(test_obj):
             (DescriptorParamSeTTebd, DescrptSeTTebd),
             (DescriptorParamDPA1, DescrptDPA1),
             (DescriptorParamDPA2, DescrptDPA2),
+            (DescriptorParamDPA3, DescrptDPA3),
         ),  # descrpt_class_param & class
         (
             *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
@@ -179,6 +184,7 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
             ],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
+            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
             # (DescriptorParamHybrid, DescrptHybrid),
             # unsupported for SpinModel to hybrid both mixed_types and no-mixed_types descriptor
             (DescriptorParamHybridMixed, DescrptHybrid),
@@ -194,6 +200,7 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
             (DescriptorParamSeTTebd, DescrptSeTTebd),
             (DescriptorParamDPA1, DescrptDPA1),
             (DescriptorParamDPA2, DescrptDPA2),
+            (DescriptorParamDPA3, DescrptDPA3),
         ),  # descrpt_class_param & class
         (
             *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
