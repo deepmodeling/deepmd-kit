@@ -16,8 +16,8 @@ import numpy as np
 import deepmd.utils.random as dp_random
 from deepmd.common import (
     expand_sys_str,
-    rglob_sys_str,
     make_default_mesh,
+    rglob_sys_str,
 )
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -731,7 +731,9 @@ def prob_sys_size_ext(keywords, nsystems, nbatch):
     return sys_probs
 
 
-def process_systems(systems: Union[str, list[str]], patterns: Optional[list[str]]=None) -> list[str]:
+def process_systems(
+    systems: Union[str, list[str]], patterns: Optional[list[str]] = None
+) -> list[str]:
     """Process the user-input systems.
 
     If it is a single directory, search for all the systems in the directory.
