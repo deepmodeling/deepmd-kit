@@ -464,24 +464,6 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         # beyond the cutoff sw should be 0.0
         sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
 
-        # nb x nloc x tebd_dim
-        atype_embd = atype_embd_ext[:, :nloc, :]
-        assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
-
-        node_ebd = self.act(atype_embd)
-        # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
-        # edge_input, h2 = xp.split(dmatrix, [1], axis=-1)
-        edge_input = dmatrix[:, :, :, :1]
-        h2 = dmatrix[:, :, :, 1:]
-        if self.edge_init_use_dist:
-            # nb x nloc x nnei x 1
-            edge_input = xp.linalg.vector_norm(diff, axis=-1, keepdims=True)
-            # nb x nloc x nnei x e_dim
-            edge_ebd = self.edge_embd(edge_input)
-        else:
-            # nb x nloc x nnei x e_dim
-            edge_ebd = self.act(self.edge_embd(edge_input))
-
         # get angle nlist (maybe smaller)
         a_dist_mask = (xp.linalg.vector_norm(diff, axis=-1) < self.a_rcut)[
             :, :, : self.a_sel
@@ -517,7 +499,11 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         # get edge and angle embedding input
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
         # edge_input, h2 = xp.split(dmatrix, [1], axis=-1)
-        edge_input = dmatrix[:, :, :, :1]
+        if self.edge_init_use_dist:
+            # nb x nloc x nnei x 1
+            edge_input = xp.linalg.vector_norm(diff, axis=-1, keepdims=True)
+        else:
+            edge_input = dmatrix[:, :, :, :1]
         h2 = dmatrix[:, :, :, 1:]
 
         # nf x nloc x a_nnei x 3
@@ -559,7 +545,10 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
         # get edge and angle embedding
         # nb x nloc x nnei x e_dim [OR] n_edge x e_dim
-        edge_ebd = self.act(self.edge_embd(edge_input))
+        if not self.edge_init_use_dist:
+            edge_ebd = self.act(self.edge_embd(edge_input))
+        else:
+            edge_ebd = self.edge_embd(edge_input)
         # nf x nloc x a_nnei x a_nnei x a_dim [OR] n_angle x a_dim
         angle_ebd = self.angle_embd(angle_input)
 

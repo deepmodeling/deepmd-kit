@@ -436,27 +436,6 @@ class DescrptBlockRepflows(DescriptorBlock):
         # beyond the cutoff sw should be 0.0
         sw = sw.masked_fill(~nlist_mask, 0.0)
 
-        # [nframes, nloc, tebd_dim]
-        if comm_dict is None:
-            assert isinstance(extended_atype_embd, torch.Tensor)  # for jit
-            atype_embd = extended_atype_embd[:, :nloc, :]
-            assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
-        else:
-            atype_embd = extended_atype_embd
-        assert isinstance(atype_embd, torch.Tensor)  # for jit
-        node_ebd = self.act(atype_embd)
-        n_dim = node_ebd.shape[-1]
-        # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
-        edge_input, h2 = torch.split(dmatrix, [1, 3], dim=-1)
-        if self.edge_init_use_dist:
-            # nb x nloc x nnei x 1
-            edge_input = torch.linalg.norm(diff, dim=-1, keepdim=True)
-            # nb x nloc x nnei x e_dim
-            edge_ebd = self.edge_embd(edge_input)
-        else:
-            # nb x nloc x nnei x e_dim
-            edge_ebd = self.act(self.edge_embd(edge_input))
-
         # get angle nlist (maybe smaller)
         a_dist_mask = (torch.linalg.norm(diff, dim=-1) < self.a_rcut)[
             :, :, : self.a_sel
@@ -497,6 +476,10 @@ class DescrptBlockRepflows(DescriptorBlock):
         # get edge and angle embedding input
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
         edge_input, h2 = torch.split(dmatrix, [1, 3], dim=-1)
+        if self.edge_init_use_dist:
+            # nb x nloc x nnei x 1
+            edge_input = torch.linalg.norm(diff, dim=-1, keepdim=True)
+
         # nf x nloc x a_nnei x 3
         normalized_diff_i = a_diff / (
             torch.linalg.norm(a_diff, dim=-1, keepdim=True) + 1e-6
@@ -533,7 +516,10 @@ class DescrptBlockRepflows(DescriptorBlock):
             )
         # get edge and angle embedding
         # nb x nloc x nnei x e_dim [OR] n_edge x e_dim
-        edge_ebd = self.act(self.edge_embd(edge_input))
+        if not self.edge_init_use_dist:
+            edge_ebd = self.act(self.edge_embd(edge_input))
+        else:
+            edge_ebd = self.edge_embd(edge_input)
         # nf x nloc x a_nnei x a_nnei x a_dim [OR] n_angle x a_dim
         angle_ebd = self.angle_embd(angle_input)
 
