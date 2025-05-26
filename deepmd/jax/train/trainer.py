@@ -7,6 +7,7 @@ from typing import (
 
 import numpy as np
 import optax
+from tqdm import trange
 
 from deepmd.dpmodel.loss.ener import (
     EnergyLoss,
@@ -102,6 +103,40 @@ class DPTrainer:
     def train(self, train_data, valid_data=None) -> None:
         optimizer = nnx.Optimizer(self.model, optax.adam(1e-3))  # reference sharing
 
+        def loss_fn(
+            model,
+            lr,
+            label_dict,
+            extended_coord,
+            extended_atype,
+            nlist,
+            mapping,
+            fp,
+            ap,
+        ):
+            model_dict_lower = self.model.call_lower(
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping,
+                fp,
+                ap,
+            )
+            model_dict = communicate_extended_output(
+                model_dict_lower,
+                model.model_output_def(),
+                mapping,
+                do_atomic_virial=False,
+            )
+            loss, more_loss = self.loss(
+                learning_rate=lr,
+                natoms=label_dict["coord"].shape[1],
+                model_dict=model_dict,
+                label_dict=label_dict,
+            )
+            return loss
+
+        @nnx.jit
         def train_step(
             optimizer,
             lr,
@@ -113,34 +148,20 @@ class DPTrainer:
             fp,
             ap,
         ):
-            def loss_fn(model):
-                model_dict_lower = jax.jit(model.call_lower)(
-                    extended_coord,
-                    extended_atype,
-                    nlist,
-                    mapping,
-                    fp,
-                    ap,
-                )
-                model_dict = communicate_extended_output(
-                    model_dict_lower,
-                    model.model_output_def(),
-                    mapping,
-                    do_atomic_virial=False,
-                )
-                loss, more_loss = self.loss(
-                    learning_rate=lr,
-                    natoms=label_dict["coord"].shape[1],
-                    model_dict=model_dict,
-                    label_dict=label_dict,
-                )
-                return loss
-
-            loss, grads = nnx.value_and_grad(loss_fn)(optimizer.model)
+            grads = nnx.grad(loss_fn)(
+                optimizer.model,
+                lr,
+                label_dict,
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping,
+                fp,
+                ap,
+            )
             optimizer.update(grads)
-            return loss
 
-        for step in range(self.num_steps):
+        for step in trange(self.num_steps):
             batch_data = train_data.get_batch()
             # numpy to jax
             jax_data = {
