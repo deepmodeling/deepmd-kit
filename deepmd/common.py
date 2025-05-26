@@ -206,6 +206,27 @@ def expand_sys_str(root_dir: Union[str, Path]) -> list[str]:
         matches.append(str(root_dir))
     return matches
 
+def rglob_sys_str(root_dir: str, patterns: list[str]) -> list[str]:
+    """Recursively iterate over directories taking those that contain `type.raw` file.
+
+    Parameters
+    ----------
+    root_dir : str, Path
+        starting directory
+    patterns : list[str]
+        list of glob patterns to match directories
+
+    Returns
+    -------
+    list[str]
+        list of string pointing to system directories
+    """
+    root_dir = Path(root_dir)
+    matches = []
+    for pattern in patterns:
+        matches.extend([str(d) for d in root_dir.rglob(pattern) if (d / "type.raw").is_file()])
+    return matches
+
 
 def get_np_precision(precision: "_PRECISION") -> np.dtype:
     """Get numpy precision constant from string.

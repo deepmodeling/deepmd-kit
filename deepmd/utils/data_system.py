@@ -16,6 +16,7 @@ import numpy as np
 import deepmd.utils.random as dp_random
 from deepmd.common import (
     expand_sys_str,
+    rglob_sys_str,
     make_default_mesh,
 )
 from deepmd.env import (
@@ -730,7 +731,7 @@ def prob_sys_size_ext(keywords, nsystems, nbatch):
     return sys_probs
 
 
-def process_systems(systems: Union[str, list[str]]) -> list[str]:
+def process_systems(systems: Union[str, list[str]], patterns: Optional[list[str]]=None) -> list[str]:
     """Process the user-input systems.
 
     If it is a single directory, search for all the systems in the directory.
@@ -740,6 +741,8 @@ def process_systems(systems: Union[str, list[str]]) -> list[str]:
     ----------
     systems : str or list of str
         The user-input systems
+    patterns : list of str, optional
+        The patterns to match the systems, by default None
 
     Returns
     -------
@@ -747,7 +750,10 @@ def process_systems(systems: Union[str, list[str]]) -> list[str]:
         The valid systems
     """
     if isinstance(systems, str):
-        systems = expand_sys_str(systems)
+        if patterns is None:
+            systems = expand_sys_str(systems)
+        else:
+            systems = rglob_sys_str(systems, patterns)
     elif isinstance(systems, list):
         systems = systems.copy()
     return systems
