@@ -162,7 +162,10 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
         ) = self.param
         return (
-            not INSTALLED_PD or precision == "bfloat16" or use_exp_switch or use_dynamic_sel
+            not INSTALLED_PD
+            or precision == "bfloat16"
+            or use_exp_switch
+            or use_dynamic_sel
         )  # not supported yet
 
     @property
