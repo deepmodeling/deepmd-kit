@@ -499,8 +499,8 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         # get edge and angle embedding input
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
         # edge_input, h2 = xp.split(dmatrix, [1], axis=-1)
+        # nb x nloc x nnei x 1
         if self.edge_init_use_dist:
-            # nb x nloc x nnei x 1
             edge_input = xp.linalg.vector_norm(diff, axis=-1, keepdims=True)
         else:
             edge_input = dmatrix[:, :, :, :1]
