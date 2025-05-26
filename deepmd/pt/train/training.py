@@ -2,6 +2,9 @@
 import functools
 import logging
 import time
+from collections.abc import (
+    Iterable,
+)
 from copy import (
     deepcopy,
 )
@@ -47,7 +50,6 @@ from deepmd.pt.utils import (
     dp_random,
 )
 from deepmd.pt.utils.dataloader import (
-    BufferedIterator,
     get_sampler_from_params,
 )
 from deepmd.pt.utils.env import (
@@ -156,11 +158,28 @@ class Trainer:
                 "kf_limit_pref_e": params.get("kf_limit_pref_e", 1),
                 "kf_start_pref_f": params.get("kf_start_pref_f", 1),
                 "kf_limit_pref_f": params.get("kf_limit_pref_f", 1),
+                "weight_decay": params.get("weight_decay", 0.001),
             }
             return opt_type, opt_param
 
+        def cycle_iterator(iterable: Iterable):
+            """
+            Produces an infinite iterator by repeatedly cycling through the given iterable.
+
+            Args:
+                iterable (Iterable): The iterable to cycle through.
+
+            Yields
+            ------
+            Any: The next item from the iterable, cycling back to the beginning when the end is reached.
+            """
+            while True:
+                with torch.device("cpu"):
+                    it = iter(iterable)
+                yield from it
+
         def get_data_loader(_training_data, _validation_data, _training_params):
-            def get_dataloader_and_buffer(_data, _params):
+            def get_dataloader_and_iter(_data, _params):
                 _sampler = get_sampler_from_params(_data, _params)
                 if _sampler is None:
                     log.warning(
@@ -177,19 +196,18 @@ class Trainer:
                     collate_fn=lambda batch: batch,  # prevent extra conversion
                     pin_memory=True,
                 )
-                with torch.device("cpu"):
-                    _data_buffered = BufferedIterator(iter(_dataloader))
-                return _dataloader, _data_buffered
+                _data_iter = cycle_iterator(_dataloader)
+                return _dataloader, _data_iter
 
-            training_dataloader, training_data_buffered = get_dataloader_and_buffer(
+            training_dataloader, training_data_iter = get_dataloader_and_iter(
                 _training_data, _training_params["training_data"]
             )
 
             if _validation_data is not None:
                 (
                     validation_dataloader,
-                    validation_data_buffered,
-                ) = get_dataloader_and_buffer(
+                    validation_data_iter,
+                ) = get_dataloader_and_iter(
                     _validation_data, _training_params["validation_data"]
                 )
                 valid_numb_batch = _training_params["validation_data"].get(
@@ -197,13 +215,13 @@ class Trainer:
                 )
             else:
                 validation_dataloader = None
-                validation_data_buffered = None
+                validation_data_iter = None
                 valid_numb_batch = 1
             return (
                 training_dataloader,
-                training_data_buffered,
+                training_data_iter,
                 validation_dataloader,
-                validation_data_buffered,
+                validation_data_iter,
                 valid_numb_batch,
             )
 
@@ -592,12 +610,20 @@ class Trainer:
 
         # TODO add optimizers for multitask
         # author: iProzd
-        if self.opt_type == "Adam":
-            self.optimizer = torch.optim.Adam(
-                self.wrapper.parameters(),
-                lr=self.lr_exp.start_lr,
-                fused=False if DEVICE.type == "cpu" else True,
-            )
+        if self.opt_type in ["Adam", "AdamW"]:
+            if self.opt_type == "Adam":
+                self.optimizer = torch.optim.Adam(
+                    self.wrapper.parameters(),
+                    lr=self.lr_exp.start_lr,
+                    fused=False if DEVICE.type == "cpu" else True,
+                )
+            else:
+                self.optimizer = torch.optim.AdamW(
+                    self.wrapper.parameters(),
+                    lr=self.lr_exp.start_lr,
+                    weight_decay=float(self.opt_param["weight_decay"]),
+                    fused=False if DEVICE.type == "cpu" else True,
+                )
             if optimizer_state_dict is not None and self.restart_training:
                 self.optimizer.load_state_dict(optimizer_state_dict)
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
@@ -658,7 +684,7 @@ class Trainer:
             writer = SummaryWriter(log_dir=self.tensorboard_log_dir)
         if self.enable_profiler or self.profiling:
             prof = torch.profiler.profile(
-                schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
+                schedule=torch.profiler.schedule(wait=1, warmup=15, active=3, repeat=1),
                 on_trace_ready=torch.profiler.tensorboard_trace_handler(
                     self.tensorboard_log_dir
                 )
@@ -693,7 +719,7 @@ class Trainer:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
                 fout1.flush()
-            if self.opt_type == "Adam":
+            if self.opt_type in ["Adam", "AdamW"]:
                 cur_lr = self.scheduler.get_last_lr()[0]
                 if _step_id < self.warmup_steps:
                     pref_lr = _lr.start_lr
@@ -1032,10 +1058,14 @@ class Trainer:
             writer.close()
         if self.enable_profiler or self.profiling:
             prof.stop()
+            if self.enable_profiler:
+                log.info(
+                    f"The profiling trace has been saved under {self.tensorboard_log_dir}"
+                )
             if self.profiling:
                 prof.export_chrome_trace(self.profiling_file)
                 log.info(
-                    f"The profiling trace have been saved to: {self.profiling_file}"
+                    f"The profiling trace has been saved to: {self.profiling_file}"
                 )
 
     def save_model(self, save_path, lr=0.0, step=0) -> None:
@@ -1064,48 +1094,15 @@ class Trainer:
             checkpoint_files[0].unlink()
 
     def get_data(self, is_train=True, task_key="Default"):
-        if not self.multi_task:
-            if is_train:
-                try:
-                    batch_data = next(iter(self.training_data))
-                except StopIteration:
-                    # Refresh the status of the dataloader to start from a new epoch
-                    with torch.device("cpu"):
-                        self.training_data = BufferedIterator(
-                            iter(self.training_dataloader)
-                        )
-                    batch_data = next(iter(self.training_data))
-            else:
-                if self.validation_data is None:
-                    return {}, {}, {}
-                try:
-                    batch_data = next(iter(self.validation_data))
-                except StopIteration:
-                    self.validation_data = BufferedIterator(
-                        iter(self.validation_dataloader)
-                    )
-                    batch_data = next(iter(self.validation_data))
+        if is_train:
+            iterator = self.training_data
         else:
-            if is_train:
-                try:
-                    batch_data = next(iter(self.training_data[task_key]))
-                except StopIteration:
-                    # Refresh the status of the dataloader to start from a new epoch
-                    self.training_data[task_key] = BufferedIterator(
-                        iter(self.training_dataloader[task_key])
-                    )
-                    batch_data = next(iter(self.training_data[task_key]))
-            else:
-                if self.validation_data[task_key] is None:
-                    return {}, {}, {}
-                try:
-                    batch_data = next(iter(self.validation_data[task_key]))
-                except StopIteration:
-                    self.validation_data[task_key] = BufferedIterator(
-                        iter(self.validation_dataloader[task_key])
-                    )
-                    batch_data = next(iter(self.validation_data[task_key]))
-
+            iterator = self.validation_data
+        if self.multi_task:
+            iterator = iterator[task_key]
+        if iterator is None:
+            return {}, {}, {}
+        batch_data = next(iterator)
         for key in batch_data.keys():
             if key == "sid" or key == "fid" or key == "box" or "find_" in key:
                 continue

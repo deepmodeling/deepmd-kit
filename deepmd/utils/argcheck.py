@@ -1497,6 +1497,29 @@ def dpa3_repflow_args():
         "Whether to make edge update smooth. "
         "If True, the edge update from angle message will not use self as padding."
     )
+    doc_use_exp_switch = (
+        "Whether to use an exponential switch function instead of a polynomial one in the neighbor update. "
+        "The exponential switch function ensures neighbor contributions smoothly diminish as the interatomic distance "
+        "`r` approaches the cutoff radius `rcut`. Specifically, the function is defined as: "
+        "s(r) = \\exp(-\\exp(20 * (r - rcut_smth) / rcut_smth)) for 0 < r \\leq rcut, and s(r) = 0 for r > rcut. "
+        "Here, `rcut_smth` is an adjustable smoothing factor and should be chosen carefully according to `rcut`, "
+        "ensuring s(r) approaches zero smoothly at the cutoff. "
+        "Typical recommended values are `rcut_smth` = 5.3 for `rcut` = 6.0, and 3.5 for `rcut` = 4.0."
+    )
+    doc_use_dynamic_sel = (
+        "Whether to dynamically select neighbors within the cutoff radius. "
+        "If True, the exact number of neighbors within the cutoff radius is used "
+        "without padding to a fixed selection numbers. "
+        "When enabled, users can safely set larger values for `e_sel` or `a_sel` (e.g., 1200 or 300, respectively) "
+        "to guarantee capturing all neighbors within the cutoff radius. "
+        "Note that when using dynamic selection, the `smooth_edge_update` must be True. "
+    )
+    doc_sel_reduce_factor = (
+        "Reduction factor applied to neighbor-scale normalization when `use_dynamic_sel` is True. "
+        "In the dynamic selection case, neighbor-scale normalization will use `e_sel / sel_reduce_factor` "
+        "or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values, "
+        "accommodating larger selection numbers."
+    )
 
     return [
         # repflow args
@@ -1596,6 +1619,28 @@ def dpa3_repflow_args():
             optional=True,
             default=False,  # For compatability. This will be True in the future
             doc=doc_smooth_edge_update,
+        ),
+        Argument(
+            "use_exp_switch",
+            bool,
+            optional=True,
+            default=False,
+            alias=["use_env_envelope"],
+            doc=doc_use_exp_switch,
+        ),
+        Argument(
+            "use_dynamic_sel",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_dynamic_sel,
+        ),
+        Argument(
+            "sel_reduce_factor",
+            float,
+            optional=True,
+            default=10.0,
+            doc=doc_sel_reduce_factor,
         ),
     ]
 
@@ -3177,6 +3222,7 @@ def training_args(
             "opt_type",
             choices=[
                 Argument("Adam", dict, [], [], optional=True),
+                Argument("AdamW", dict, [], [], optional=True),
                 Argument(
                     "LKF",
                     dict,
