@@ -1501,6 +1501,15 @@ def dpa3_repflow_args():
         "Whether to use direct distance r to initialize the edge features instead of 1/r. "
         "Note that when using this option, the activation function will not be used when initializing edge features."
     )
+    doc_use_exp_switch = (
+        "Whether to use an exponential switch function instead of a polynomial one in the neighbor update. "
+        "The exponential switch function ensures neighbor contributions smoothly diminish as the interatomic distance "
+        "`r` approaches the cutoff radius `rcut`. Specifically, the function is defined as: "
+        "s(r) = \\exp(-\\exp(20 * (r - rcut_smth) / rcut_smth)) for 0 < r \\leq rcut, and s(r) = 0 for r > rcut. "
+        "Here, `rcut_smth` is an adjustable smoothing factor and should be chosen carefully according to `rcut`, "
+        "ensuring s(r) approaches zero smoothly at the cutoff. "
+        "Typical recommended values are `rcut_smth` = 5.3 for `rcut` = 6.0, and 3.5 for `rcut` = 4.0."
+    )
     doc_use_dynamic_sel = (
         "Whether to dynamically select neighbors within the cutoff radius. "
         "If True, the exact number of neighbors within the cutoff radius is used "
@@ -1622,6 +1631,14 @@ def dpa3_repflow_args():
             default=False,
             alias=["edge_use_dist"],
             doc=doc_edge_init_use_dist,
+        ),
+        Argument(
+            "use_exp_switch",
+            bool,
+            optional=True,
+            default=False,
+            alias=["use_env_envelope"],
+            doc=doc_use_exp_switch,
         ),
         Argument(
             "use_dynamic_sel",

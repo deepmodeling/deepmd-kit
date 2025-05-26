@@ -66,6 +66,7 @@ from deepmd.utils.argcheck import (
     (True,),  # a_compress_use_split
     (True, False),  # optim_update
     (True, False),  # edge_init_use_dist
+    (True, False),  # use_exp_switch
     (True, False),  # use_dynamic_sel
     (0.3, 0.0),  # fix_stat_std
     (1, 2),  # n_multi_edge_message
@@ -83,6 +84,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_use_split,
             optim_update,
             edge_init_use_dist,
+            use_exp_switch,
             use_dynamic_sel,
             fix_stat_std,
             n_multi_edge_message,
@@ -108,6 +110,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
                     "a_compress_use_split": a_compress_use_split,
                     "optim_update": optim_update,
                     "edge_init_use_dist": edge_init_use_dist,
+                    "use_exp_switch": use_exp_switch,
                     "use_dynamic_sel": use_dynamic_sel,
                     "smooth_edge_update": True,
                     "fix_stat_std": fix_stat_std,
@@ -138,6 +141,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_use_split,
             optim_update,
             edge_init_use_dist,
+            use_exp_switch,
             use_dynamic_sel,
             fix_stat_std,
             n_multi_edge_message,
@@ -156,6 +160,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_use_split,
             optim_update,
             edge_init_use_dist,
+            use_exp_switch,
             use_dynamic_sel,
             fix_stat_std,
             n_multi_edge_message,
@@ -165,6 +170,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             not INSTALLED_PD
             or precision == "bfloat16"
             or edge_init_use_dist
+            or use_exp_switch
             or use_dynamic_sel
         )  # not supported yet
 
@@ -179,6 +185,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_use_split,
             optim_update,
             edge_init_use_dist,
+            use_exp_switch,
             use_dynamic_sel,
             fix_stat_std,
             n_multi_edge_message,
@@ -197,6 +204,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_use_split,
             optim_update,
             edge_init_use_dist,
+            use_exp_switch,
             use_dynamic_sel,
             fix_stat_std,
             n_multi_edge_message,
@@ -257,6 +265,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_use_split,
             optim_update,
             edge_init_use_dist,
+            use_exp_switch,
             use_dynamic_sel,
             fix_stat_std,
             n_multi_edge_message,
@@ -338,6 +347,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_use_split,
             optim_update,
             edge_init_use_dist,
+            use_exp_switch,
             use_dynamic_sel,
             fix_stat_std,
             n_multi_edge_message,
@@ -362,6 +372,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_use_split,
             optim_update,
             edge_init_use_dist,
+            use_exp_switch,
             use_dynamic_sel,
             fix_stat_std,
             n_multi_edge_message,

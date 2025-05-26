@@ -483,6 +483,7 @@ def DescriptorParamDPA3(
     optim_update=True,
     smooth_edge_update=False,
     edge_init_use_dist=False,
+    use_exp_switch=False,
     fix_stat_std=0.3,
     use_dynamic_sel=False,
     precision="float64",
@@ -496,15 +497,20 @@ def DescriptorParamDPA3(
                 "a_dim": 8,
                 "nlayers": 2,
                 "e_rcut": rcut,
-                "e_rcut_smth": rcut_smth,
+                "e_rcut_smth": rcut_smth
+                if not use_exp_switch
+                else (rcut - 1.0),  # suitable for ut
                 "e_sel": sum(sel),
                 "a_rcut": rcut / 2,
-                "a_rcut_smth": rcut_smth / 2,
+                "a_rcut_smth": rcut_smth / 2
+                if not use_exp_switch
+                else (rcut - 1.0) / 2,  # suitable for ut
                 "a_sel": sum(sel) // 4,
                 "a_compress_rate": a_compress_rate,
                 "a_compress_e_rate": a_compress_e_rate,
                 "a_compress_use_split": a_compress_use_split,
                 "optim_update": optim_update,
+                "use_exp_switch": use_exp_switch,
                 "smooth_edge_update": smooth_edge_update,
                 "edge_init_use_dist": edge_init_use_dist,
                 "fix_stat_std": fix_stat_std,
@@ -546,6 +552,7 @@ DescriptorParamDPA3List = parameterize_func(
             "optim_update": (True, False),
             "smooth_edge_update": (True,),
             "edge_init_use_dist": (True, False),
+            "use_exp_switch": (True, False),
             "fix_stat_std": (0.3,),
             "n_multi_edge_message": (1,),
             "use_dynamic_sel": (True, False),
