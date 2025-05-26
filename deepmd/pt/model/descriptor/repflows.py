@@ -186,6 +186,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         precision: str = "float64",
         fix_stat_std: float = 0.3,
         smooth_edge_update: bool = False,
+        use_exp_switch: bool = False,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
         optim_update: bool = True,
@@ -220,6 +221,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
+        self.use_exp_switch = use_exp_switch
         self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
 
@@ -404,6 +406,7 @@ class DescrptBlockRepflows(DescriptorBlock):
             self.e_rcut,
             self.e_rcut_smth,
             protection=self.env_protection,
+            use_exp_switch=self.use_exp_switch,
         )
         nlist_mask = nlist != -1
         sw = torch.squeeze(sw, -1)
@@ -425,6 +428,7 @@ class DescrptBlockRepflows(DescriptorBlock):
             self.a_rcut,
             self.a_rcut_smth,
             protection=self.env_protection,
+            use_exp_switch=self.use_exp_switch,
         )
         a_nlist_mask = a_nlist != -1
         a_sw = torch.squeeze(a_sw, -1)

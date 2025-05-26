@@ -1598,6 +1598,13 @@ def dpa3_repflow_args():
             doc=doc_smooth_edge_update,
         ),
         Argument(
+            "use_exp_switch",
+            bool,
+            optional=True,
+            default=False,
+            alias=["use_env_envelope"],
+        ),
+        Argument(
             "use_dynamic_sel",
             bool,
             optional=True,
