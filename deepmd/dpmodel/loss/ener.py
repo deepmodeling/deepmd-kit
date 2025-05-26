@@ -93,10 +93,10 @@ class EnergyLoss(Loss):
         label_dict: dict[str, np.ndarray],
     ) -> dict[str, np.ndarray]:
         """Calculate loss from model results and labeled results."""
-        energy = model_dict["energy"]
-        force = model_dict["force"]
-        virial = model_dict["virial"]
-        atom_ener = model_dict["atom_ener"]
+        energy = model_dict["energy_redu"]
+        force = model_dict["energy_derv_r"]
+        virial = model_dict["energy_derv_c_redu"]
+        atom_ener = model_dict["energy"]
         energy_hat = label_dict["energy"]
         force_hat = label_dict["force"]
         virial_hat = label_dict["virial"]
@@ -268,57 +268,52 @@ class EnergyLoss(Loss):
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         label_requirement = []
-        if self.has_e:
-            label_requirement.append(
-                DataRequirementItem(
-                    "energy",
-                    ndof=1,
-                    atomic=False,
-                    must=False,
-                    high_prec=True,
-                )
+        label_requirement.append(
+            DataRequirementItem(
+                "energy",
+                ndof=1,
+                atomic=False,
+                must=False,
+                high_prec=True,
             )
-        if self.has_f:
-            label_requirement.append(
-                DataRequirementItem(
-                    "force",
-                    ndof=3,
-                    atomic=True,
-                    must=False,
-                    high_prec=False,
-                )
+        )
+        label_requirement.append(
+            DataRequirementItem(
+                "force",
+                ndof=3,
+                atomic=True,
+                must=False,
+                high_prec=False,
             )
-        if self.has_v:
-            label_requirement.append(
-                DataRequirementItem(
-                    "virial",
-                    ndof=9,
-                    atomic=False,
-                    must=False,
-                    high_prec=False,
-                )
+        )
+        label_requirement.append(
+            DataRequirementItem(
+                "virial",
+                ndof=9,
+                atomic=False,
+                must=False,
+                high_prec=False,
             )
-        if self.has_ae:
-            label_requirement.append(
-                DataRequirementItem(
-                    "atom_ener",
-                    ndof=1,
-                    atomic=True,
-                    must=False,
-                    high_prec=False,
-                )
+        )
+        label_requirement.append(
+            DataRequirementItem(
+                "atom_ener",
+                ndof=1,
+                atomic=True,
+                must=False,
+                high_prec=False,
             )
-        if self.has_pf:
-            label_requirement.append(
-                DataRequirementItem(
-                    "atom_pref",
-                    ndof=1,
-                    atomic=True,
-                    must=False,
-                    high_prec=False,
-                    repeat=3,
-                )
+        )
+        label_requirement.append(
+            DataRequirementItem(
+                "atom_pref",
+                ndof=1,
+                atomic=True,
+                must=False,
+                high_prec=False,
+                repeat=3,
             )
+        )
         if self.has_gf > 0:
             label_requirement.append(
                 DataRequirementItem(
