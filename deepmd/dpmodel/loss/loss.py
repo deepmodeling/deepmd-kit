@@ -51,7 +51,7 @@ class Loss(NativeOP, ABC, make_plugin_registry("loss")):
             the loss scalar or NaN
         """
         xp = array_api_compat.array_namespace(loss)
-        return loss #if bool(find_property) else xp.nan
+        return xp.where(find_property, loss, xp.nan)
 
     @classmethod
     def get_loss(cls, loss_params: dict) -> "Loss":
