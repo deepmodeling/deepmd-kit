@@ -1500,6 +1500,7 @@ def dpa3_repflow_args():
     doc_edge_init_use_dist = (
         "Whether to use direct distance r to initialize the edge features instead of 1/r. "
         "Note that when using this option, the activation function will not be used when initializing edge features."
+    )
     doc_use_dynamic_sel = (
         "Whether to dynamically select neighbors within the cutoff radius. "
         "If True, the exact number of neighbors within the cutoff radius is used "
