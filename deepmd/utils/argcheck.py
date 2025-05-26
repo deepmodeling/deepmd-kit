@@ -1505,6 +1505,7 @@ def dpa3_repflow_args():
         "Here, `rcut_smth` is an adjustable smoothing factor and should be chosen carefully according to `rcut`, "
         "ensuring s(r) approaches zero smoothly at the cutoff. "
         "Typical recommended values are `rcut_smth` = 5.3 for `rcut` = 6.0, and 3.5 for `rcut` = 4.0."
+    )
     doc_use_dynamic_sel = (
         "Whether to dynamically select neighbors within the cutoff radius. "
         "If True, the exact number of neighbors within the cutoff radius is used "
