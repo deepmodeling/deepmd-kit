@@ -484,6 +484,7 @@ def DescriptorParamDPA3(
     smooth_edge_update=False,
     edge_init_use_dist=False,
     fix_stat_std=0.3,
+    use_dynamic_sel=False,
     precision="float64",
 ):
     input_dict = {
@@ -509,6 +510,8 @@ def DescriptorParamDPA3(
                 "fix_stat_std": fix_stat_std,
                 "n_multi_edge_message": n_multi_edge_message,
                 "axis_neuron": 2,
+                "use_dynamic_sel": use_dynamic_sel,
+                "sel_reduce_factor": 1.0,
                 "update_angle": update_angle,
                 "update_style": update_style,
                 "update_residual": update_residual,
@@ -539,12 +542,13 @@ DescriptorParamDPA3List = parameterize_func(
             "update_angle": (True, False),
             "a_compress_rate": (1,),
             "a_compress_e_rate": (2,),
-            "a_compress_use_split": (True, False),
+            "a_compress_use_split": (True,),
             "optim_update": (True, False),
             "smooth_edge_update": (True,),
             "edge_init_use_dist": (True, False),
             "fix_stat_std": (0.3,),
             "n_multi_edge_message": (1,),
+            "use_dynamic_sel": (True, False),
             "env_protection": (0.0, 1e-8),
             "precision": ("float64",),
         }

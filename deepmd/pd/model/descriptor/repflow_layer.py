@@ -52,6 +52,8 @@ class RepFlowLayer(paddle.nn.Layer):
         axis_neuron: int = 4,
         update_angle: bool = True,
         optim_update: bool = True,
+        use_dynamic_sel: bool = False,
+        sel_reduce_factor: float = 10.0,
         smooth_edge_update: bool = False,
         activation_function: str = "silu",
         update_style: str = "res_residual",
@@ -98,6 +100,10 @@ class RepFlowLayer(paddle.nn.Layer):
         self.prec = PRECISION_DICT[precision]
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
+        self.use_dynamic_sel = use_dynamic_sel
+        self.sel_reduce_factor = sel_reduce_factor
+        self.dynamic_e_sel = self.nnei / self.sel_reduce_factor
+        self.dynamic_a_sel = self.a_sel / self.sel_reduce_factor
 
         assert update_residual_init in [
             "norm",
@@ -812,7 +818,7 @@ class RepFlowLayer(paddle.nn.Layer):
         """
         data = {
             "@class": "RepFlowLayer",
-            "@version": 1,
+            "@version": 2,
             "e_rcut": self.e_rcut,
             "e_rcut_smth": self.e_rcut_smth,
             "e_sel": self.e_sel,
@@ -836,6 +842,8 @@ class RepFlowLayer(paddle.nn.Layer):
             "precision": self.precision,
             "optim_update": self.optim_update,
             "smooth_edge_update": self.smooth_edge_update,
+            "use_dynamic_sel": self.use_dynamic_sel,
+            "sel_reduce_factor": self.sel_reduce_factor,
             "node_self_mlp": self.node_self_mlp.serialize(),
             "node_sym_linear": self.node_sym_linear.serialize(),
             "node_edge_linear": self.node_edge_linear.serialize(),
@@ -878,7 +886,7 @@ class RepFlowLayer(paddle.nn.Layer):
             The dict to deserialize from.
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         update_angle = data["update_angle"]
         a_compress_rate = data["a_compress_rate"]
