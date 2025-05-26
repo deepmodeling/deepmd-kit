@@ -228,7 +228,8 @@ def rglob_sys_str(root_dir: str, patterns: list[str]) -> list[str]:
         matches.extend(
             [str(d) for d in root_dir.rglob(pattern) if (d / "type.raw").is_file()]
         )
-    return matches
+    return list(set(matches))  # remove duplicates
+
 
 
 def get_np_precision(precision: "_PRECISION") -> np.dtype:
