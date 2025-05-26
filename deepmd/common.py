@@ -231,7 +231,6 @@ def rglob_sys_str(root_dir: str, patterns: list[str]) -> list[str]:
     return list(set(matches))  # remove duplicates
 
 
-
 def get_np_precision(precision: "_PRECISION") -> np.dtype:
     """Get numpy precision constant from string.
 

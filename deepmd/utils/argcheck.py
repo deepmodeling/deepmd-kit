@@ -2913,7 +2913,11 @@ If MPI is used, the value should be considered as the batch size per task.'
             "systems", [list[str], str], optional=False, default=".", doc=doc_systems
         ),
         Argument(
-            "rglob_patterns", [list[str]], optional=True, default=None, doc=doc_patterns + doc_only_pt_supported
+            "rglob_patterns",
+            [list[str]],
+            optional=True,
+            default=None,
+            doc=doc_patterns + doc_only_pt_supported,
         ),
         Argument(
             "batch_size",
@@ -2984,8 +2988,12 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
         Argument(
             "systems", [list[str], str], optional=False, default=".", doc=doc_systems
         ),
-         Argument(
-            "rglob_patterns", [list[str]], optional=True, default=None, doc=doc_patterns + doc_only_pt_supported
+        Argument(
+            "rglob_patterns",
+            [list[str]],
+            optional=True,
+            default=None,
+            doc=doc_patterns + doc_only_pt_supported,
         ),
         Argument(
             "batch_size",
