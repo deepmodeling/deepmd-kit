@@ -19,6 +19,9 @@ from deepmd.pt.model.descriptor.env_mat import (
 from deepmd.pt.model.network.mlp import (
     MLPLayer,
 )
+from deepmd.pt.model.network.utils import (
+    get_graph_index,
+)
 from deepmd.pt.utils import (
     env,
 )
@@ -141,6 +144,18 @@ class DescrptBlockRepflows(DescriptorBlock):
         Here, `rcut_smth` is an adjustable smoothing factor and `rcut_smth` should be chosen carefully
         according to `rcut`, ensuring s(r) approaches zero smoothly at the cutoff.
         Typical recommended values are `rcut_smth` = 5.3 for `rcut` = 6.0, and 3.5 for `rcut` = 4.0.
+    use_dynamic_sel : bool, optional
+        Whether to dynamically select neighbors within the cutoff radius.
+        If True, the exact number of neighbors within the cutoff radius is used
+        without padding to a fixed selection numbers.
+        When enabled, users can safely set larger values for `e_sel` or `a_sel` (e.g., 1200 or 300, respectively)
+        to guarantee capturing all neighbors within the cutoff radius.
+        Note that when using dynamic selection, the `smooth_edge_update` must be True.
+    sel_reduce_factor : float, optional
+        Reduction factor applied to neighbor-scale normalization when `use_dynamic_sel` is True.
+        In the dynamic selection case, neighbor-scale normalization will use `e_sel / sel_reduce_factor`
+        or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values,
+        accommodating larger selection numbers.
     optim_update : bool, optional
         Whether to enable the optimized update method.
         Uses a more efficient process when enabled. Defaults to True
@@ -192,6 +207,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         fix_stat_std: float = 0.3,
         smooth_edge_update: bool = False,
         use_exp_switch: bool = False,
+        use_dynamic_sel: bool = False,
+        sel_reduce_factor: float = 10.0,
         optim_update: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
@@ -225,6 +242,16 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
         self.use_exp_switch = use_exp_switch
+        self.use_dynamic_sel = use_dynamic_sel
+        self.sel_reduce_factor = sel_reduce_factor
+        if self.use_dynamic_sel and not self.smooth_edge_update:
+            raise NotImplementedError(
+                "smooth_edge_update must be True when use_dynamic_sel is True!"
+            )
+        if self.sel_reduce_factor <= 0:
+            raise ValueError(
+                f"`sel_reduce_factor` must be > 0, got {self.sel_reduce_factor}"
+            )
 
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -277,6 +304,8 @@ class DescrptBlockRepflows(DescriptorBlock):
                     update_residual_init=self.update_residual_init,
                     precision=precision,
                     optim_update=self.optim_update,
+                    use_dynamic_sel=self.use_dynamic_sel,
+                    sel_reduce_factor=self.sel_reduce_factor,
                     smooth_edge_update=self.smooth_edge_update,
                     seed=child_seed(child_seed(seed, 1), ii),
                 )
@@ -413,21 +442,6 @@ class DescrptBlockRepflows(DescriptorBlock):
         # beyond the cutoff sw should be 0.0
         sw = sw.masked_fill(~nlist_mask, 0.0)
 
-        # [nframes, nloc, tebd_dim]
-        if comm_dict is None:
-            assert isinstance(extended_atype_embd, torch.Tensor)  # for jit
-            atype_embd = extended_atype_embd[:, :nloc, :]
-            assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
-        else:
-            atype_embd = extended_atype_embd
-        assert isinstance(atype_embd, torch.Tensor)  # for jit
-        node_ebd = self.act(atype_embd)
-        n_dim = node_ebd.shape[-1]
-        # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
-        edge_input, h2 = torch.split(dmatrix, [1, 3], dim=-1)
-        # nb x nloc x nnei x e_dim
-        edge_ebd = self.act(self.edge_embd(edge_input))
-
         # get angle nlist (maybe smaller)
         a_dist_mask = (torch.linalg.norm(diff, dim=-1) < self.a_rcut)[
             :, :, : self.a_sel
@@ -449,8 +463,26 @@ class DescrptBlockRepflows(DescriptorBlock):
         a_sw = torch.squeeze(a_sw, -1)
         # beyond the cutoff sw should be 0.0
         a_sw = a_sw.masked_fill(~a_nlist_mask, 0.0)
+        # set all padding positions to index of 0
+        # if the a neighbor is real or not is indicated by nlist_mask
+        nlist[nlist == -1] = 0
         a_nlist[a_nlist == -1] = 0
 
+        # get node embedding
+        # [nframes, nloc, tebd_dim]
+        if comm_dict is None:
+            assert isinstance(extended_atype_embd, torch.Tensor)  # for jit
+            atype_embd = extended_atype_embd[:, :nloc, :]
+            assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
+        else:
+            atype_embd = extended_atype_embd
+        assert isinstance(atype_embd, torch.Tensor)  # for jit
+        node_ebd = self.act(atype_embd)
+        n_dim = node_ebd.shape[-1]
+
+        # get edge and angle embedding input
+        # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
+        edge_input, h2 = torch.split(dmatrix, [1, 3], dim=-1)
         # nf x nloc x a_nnei x 3
         normalized_diff_i = a_diff / (
             torch.linalg.norm(a_diff, dim=-1, keepdim=True) + 1e-6
@@ -460,16 +492,37 @@ class DescrptBlockRepflows(DescriptorBlock):
         # nf x nloc x a_nnei x a_nnei
         # 1 - 1e-6 for torch.acos stability
         cosine_ij = torch.matmul(normalized_diff_i, normalized_diff_j) * (1 - 1e-6)
-        # nf x nloc x a_nnei x a_nnei x 1
-        cosine_ij = cosine_ij.unsqueeze(-1) / (torch.pi**0.5)
-        # nf x nloc x a_nnei x a_nnei x a_dim
-        angle_ebd = self.angle_embd(cosine_ij).reshape(
-            nframes, nloc, self.a_sel, self.a_sel, self.a_dim
-        )
+        angle_input = cosine_ij.unsqueeze(-1) / (torch.pi**0.5)
 
-        # set all padding positions to index of 0
-        # if the a neighbor is real or not is indicated by nlist_mask
-        nlist[nlist == -1] = 0
+        if self.use_dynamic_sel:
+            # get graph index
+            edge_index, angle_index = get_graph_index(
+                nlist, nlist_mask, a_nlist_mask, nall
+            )
+            # flat all the tensors
+            # n_edge x 1
+            edge_input = edge_input[nlist_mask]
+            # n_edge x 3
+            h2 = h2[nlist_mask]
+            # n_edge x 1
+            sw = sw[nlist_mask]
+            # nb x nloc x a_nnei x a_nnei
+            a_nlist_mask = a_nlist_mask[:, :, :, None] & a_nlist_mask[:, :, None, :]
+            # n_angle x 1
+            angle_input = angle_input[a_nlist_mask]
+            # n_angle x 1
+            a_sw = (a_sw[:, :, :, None] * a_sw[:, :, None, :])[a_nlist_mask]
+        else:
+            # avoid jit assertion
+            edge_index = angle_index = torch.zeros(
+                [1, 3], device=nlist.device, dtype=nlist.dtype
+            )
+        # get edge and angle embedding
+        # nb x nloc x nnei x e_dim [OR] n_edge x e_dim
+        edge_ebd = self.act(self.edge_embd(edge_input))
+        # nf x nloc x a_nnei x a_nnei x a_dim [OR] n_angle x a_dim
+        angle_ebd = self.angle_embd(angle_input)
+
         # nb x nall x n_dim
         if comm_dict is None:
             assert mapping is not None
@@ -550,10 +603,25 @@ class DescrptBlockRepflows(DescriptorBlock):
                 a_nlist,
                 a_nlist_mask,
                 a_sw,
+                edge_index=edge_index,
+                angle_index=angle_index,
             )
 
         # nb x nloc x 3 x e_dim
-        h2g2 = RepFlowLayer._cal_hg(edge_ebd, h2, nlist_mask, sw)
+        h2g2 = (
+            RepFlowLayer._cal_hg(edge_ebd, h2, nlist_mask, sw)
+            if not self.use_dynamic_sel
+            else RepFlowLayer._cal_hg_dynamic(
+                edge_ebd,
+                h2,
+                sw,
+                owner=edge_index[:, 0],
+                num_owner=nframes * nloc,
+                nb=nframes,
+                nloc=nloc,
+                scale_factor=(self.nnei / self.sel_reduce_factor) ** (-0.5),
+            )
+        )
         # (nb x nloc) x e_dim x 3
         rot_mat = torch.permute(h2g2, (0, 1, 3, 2))
 

@@ -131,6 +131,18 @@ class RepFlowArgs:
         Here, `rcut_smth` is an adjustable smoothing factor and `rcut_smth` should be chosen carefully
         according to `rcut`, ensuring s(r) approaches zero smoothly at the cutoff.
         Typical recommended values are `rcut_smth` = 5.3 for `rcut` = 6.0, and 3.5 for `rcut` = 4.0.
+    use_dynamic_sel : bool, optional
+        Whether to dynamically select neighbors within the cutoff radius.
+        If True, the exact number of neighbors within the cutoff radius is used
+        without padding to a fixed selection numbers.
+        When enabled, users can safely set larger values for `e_sel` or `a_sel` (e.g., 1200 or 300, respectively)
+        to guarantee capturing all neighbors within the cutoff radius.
+        Note that when using dynamic selection, the `smooth_edge_update` must be True.
+    sel_reduce_factor : float, optional
+        Reduction factor applied to neighbor-scale normalization when `use_dynamic_sel` is True.
+        In the dynamic selection case, neighbor-scale normalization will use `e_sel / sel_reduce_factor`
+        or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values,
+        accommodating larger selection numbers.
     """
 
     def __init__(
@@ -159,6 +171,8 @@ class RepFlowArgs:
         optim_update: bool = True,
         smooth_edge_update: bool = False,
         use_exp_switch: bool = False,
+        use_dynamic_sel: bool = False,
+        sel_reduce_factor: float = 10.0,
     ) -> None:
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -186,6 +200,8 @@ class RepFlowArgs:
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
         self.use_exp_switch = use_exp_switch
+        self.use_dynamic_sel = use_dynamic_sel
+        self.sel_reduce_factor = sel_reduce_factor
 
     def __getitem__(self, key):
         if hasattr(self, key):
@@ -218,6 +234,8 @@ class RepFlowArgs:
             "optim_update": self.optim_update,
             "smooth_edge_update": self.smooth_edge_update,
             "use_exp_switch": self.use_exp_switch,
+            "use_dynamic_sel": self.use_dynamic_sel,
+            "sel_reduce_factor": self.sel_reduce_factor,
         }
 
     @classmethod
@@ -315,6 +333,8 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             optim_update=self.repflow_args.optim_update,
             smooth_edge_update=self.repflow_args.smooth_edge_update,
             use_exp_switch=self.repflow_args.use_exp_switch,
+            use_dynamic_sel=self.repflow_args.use_dynamic_sel,
+            sel_reduce_factor=self.repflow_args.sel_reduce_factor,
             exclude_types=exclude_types,
             env_protection=env_protection,
             precision=precision,

@@ -159,6 +159,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         precision: str = "float64",
         fix_stat_std: float = 0.3,
         smooth_edge_update: bool = False,
+        use_dynamic_sel: bool = False,
+        sel_reduce_factor: float = 10.0,
         optim_update: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
@@ -191,6 +193,9 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
+        self.use_dynamic_sel = use_dynamic_sel  # not supported yet
+        self.sel_reduce_factor = sel_reduce_factor
+        assert not self.use_dynamic_sel, "Dynamic selection is not supported yet."
 
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -243,6 +248,8 @@ class DescrptBlockRepflows(DescriptorBlock):
                     update_residual_init=self.update_residual_init,
                     precision=precision,
                     optim_update=self.optim_update,
+                    use_dynamic_sel=self.use_dynamic_sel,
+                    sel_reduce_factor=self.sel_reduce_factor,
                     smooth_edge_update=self.smooth_edge_update,
                     seed=child_seed(child_seed(seed, 1), ii),
                 )
