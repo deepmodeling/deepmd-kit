@@ -136,6 +136,14 @@ class DescrptBlockRepflows(DescriptorBlock):
     smooth_edge_update : bool, optional
         Whether to make edge update smooth.
         If True, the edge update from angle message will not use self as padding.
+    use_exp_switch : bool, optional
+        Whether to use an exponential switch function instead of a polynomial one in the neighbor update.
+        The exponential switch function ensures neighbor contributions smoothly diminish as the interatomic distance
+        `r` approaches the cutoff radius `rcut`. Specifically, the function is defined as:
+        s(r) = \\exp(-\\exp(20 * (r - rcut_smth) / rcut_smth)) for 0 < r \\leq rcut, and s(r) = 0 for r > rcut.
+        Here, `rcut_smth` is an adjustable smoothing factor and `rcut_smth` should be chosen carefully
+        according to `rcut`, ensuring s(r) approaches zero smoothly at the cutoff.
+        Typical recommended values are `rcut_smth` = 5.3 for `rcut` = 6.0, and 3.5 for `rcut` = 4.0.
     use_dynamic_sel : bool, optional
         Whether to dynamically select neighbors within the cutoff radius.
         If True, the exact number of neighbors within the cutoff radius is used
@@ -198,6 +206,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         precision: str = "float64",
         fix_stat_std: float = 0.3,
         smooth_edge_update: bool = False,
+        use_exp_switch: bool = False,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
         optim_update: bool = True,
@@ -232,6 +241,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
+        self.use_exp_switch = use_exp_switch
         self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
         if self.use_dynamic_sel and not self.smooth_edge_update:
@@ -425,6 +435,7 @@ class DescrptBlockRepflows(DescriptorBlock):
             self.e_rcut,
             self.e_rcut_smth,
             protection=self.env_protection,
+            use_exp_switch=self.use_exp_switch,
         )
         nlist_mask = nlist != -1
         sw = torch.squeeze(sw, -1)
@@ -446,6 +457,7 @@ class DescrptBlockRepflows(DescriptorBlock):
             self.a_rcut,
             self.a_rcut_smth,
             protection=self.env_protection,
+            use_exp_switch=self.use_exp_switch,
         )
         a_nlist_mask = a_nlist != -1
         a_sw = torch.squeeze(a_sw, -1)

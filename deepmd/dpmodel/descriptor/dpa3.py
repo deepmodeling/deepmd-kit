@@ -123,6 +123,14 @@ class RepFlowArgs:
     smooth_edge_update : bool, optional
         Whether to make edge update smooth.
         If True, the edge update from angle message will not use self as padding.
+    use_exp_switch : bool, optional
+        Whether to use an exponential switch function instead of a polynomial one in the neighbor update.
+        The exponential switch function ensures neighbor contributions smoothly diminish as the interatomic distance
+        `r` approaches the cutoff radius `rcut`. Specifically, the function is defined as:
+        s(r) = \\exp(-\\exp(20 * (r - rcut_smth) / rcut_smth)) for 0 < r \\leq rcut, and s(r) = 0 for r > rcut.
+        Here, `rcut_smth` is an adjustable smoothing factor and `rcut_smth` should be chosen carefully
+        according to `rcut`, ensuring s(r) approaches zero smoothly at the cutoff.
+        Typical recommended values are `rcut_smth` = 5.3 for `rcut` = 6.0, and 3.5 for `rcut` = 4.0.
     use_dynamic_sel : bool, optional
         Whether to dynamically select neighbors within the cutoff radius.
         If True, the exact number of neighbors within the cutoff radius is used
@@ -162,6 +170,7 @@ class RepFlowArgs:
         skip_stat: bool = False,
         optim_update: bool = True,
         smooth_edge_update: bool = False,
+        use_exp_switch: bool = False,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
     ) -> None:
@@ -190,6 +199,7 @@ class RepFlowArgs:
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
+        self.use_exp_switch = use_exp_switch
         self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
 
@@ -223,6 +233,7 @@ class RepFlowArgs:
             "fix_stat_std": self.fix_stat_std,
             "optim_update": self.optim_update,
             "smooth_edge_update": self.smooth_edge_update,
+            "use_exp_switch": self.use_exp_switch,
             "use_dynamic_sel": self.use_dynamic_sel,
             "sel_reduce_factor": self.sel_reduce_factor,
         }
@@ -321,6 +332,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             fix_stat_std=self.repflow_args.fix_stat_std,
             optim_update=self.repflow_args.optim_update,
             smooth_edge_update=self.repflow_args.smooth_edge_update,
+            use_exp_switch=self.repflow_args.use_exp_switch,
             use_dynamic_sel=self.repflow_args.use_dynamic_sel,
             sel_reduce_factor=self.repflow_args.sel_reduce_factor,
             exclude_types=exclude_types,
