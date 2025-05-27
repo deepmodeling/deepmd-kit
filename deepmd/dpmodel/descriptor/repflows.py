@@ -125,6 +125,9 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
     smooth_edge_update : bool, optional
         Whether to make edge update smooth.
         If True, the edge update from angle message will not use self as padding.
+    edge_init_use_dist : bool, optional
+        Whether to use direct distance r to initialize the edge features instead of 1/r.
+        Note that when using this option, the activation function will not be used when initializing edge features.
     use_exp_switch : bool, optional
         Whether to use an exponential switch function instead of a polynomial one in the neighbor update.
         The exponential switch function ensures neighbor contributions smoothly diminish as the interatomic distance
@@ -193,6 +196,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         fix_stat_std: float = 0.3,
         optim_update: bool = True,
         smooth_edge_update: bool = False,
+        edge_init_use_dist: bool = False,
         use_exp_switch: bool = False,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
@@ -227,6 +231,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
+        self.edge_init_use_dist = edge_init_use_dist
         self.use_exp_switch = use_exp_switch
         self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
@@ -510,7 +515,11 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         # get edge and angle embedding input
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
         # edge_input, h2 = xp.split(dmatrix, [1], axis=-1)
-        edge_input = dmatrix[:, :, :, :1]
+        # nb x nloc x nnei x 1
+        if self.edge_init_use_dist:
+            edge_input = xp.linalg.vector_norm(diff, axis=-1, keepdims=True)
+        else:
+            edge_input = dmatrix[:, :, :, :1]
         h2 = dmatrix[:, :, :, 1:]
 
         # nf x nloc x a_nnei x 3
@@ -552,7 +561,10 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
         # get edge and angle embedding
         # nb x nloc x nnei x e_dim [OR] n_edge x e_dim
-        edge_ebd = self.act(self.edge_embd(edge_input))
+        if not self.edge_init_use_dist:
+            edge_ebd = self.act(self.edge_embd(edge_input))
+        else:
+            edge_ebd = self.edge_embd(edge_input)
         # nf x nloc x a_nnei x a_nnei x a_dim [OR] n_angle x a_dim
         angle_ebd = self.angle_embd(angle_input)
 
@@ -663,6 +675,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
             "precision": self.precision,
             "fix_stat_std": self.fix_stat_std,
             "optim_update": self.optim_update,
+            "edge_init_use_dist": self.edge_init_use_dist,
             "use_exp_switch": self.use_exp_switch,
             "smooth_edge_update": self.smooth_edge_update,
             "use_dynamic_sel": self.use_dynamic_sel,

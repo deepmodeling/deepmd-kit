@@ -1497,6 +1497,10 @@ def dpa3_repflow_args():
         "Whether to make edge update smooth. "
         "If True, the edge update from angle message will not use self as padding."
     )
+    doc_edge_init_use_dist = (
+        "Whether to use direct distance r to initialize the edge features instead of 1/r. "
+        "Note that when using this option, the activation function will not be used when initializing edge features."
+    )
     doc_use_exp_switch = (
         "Whether to use an exponential switch function instead of a polynomial one in the neighbor update. "
         "The exponential switch function ensures neighbor contributions smoothly diminish as the interatomic distance "
@@ -1619,6 +1623,14 @@ def dpa3_repflow_args():
             optional=True,
             default=False,  # For compatability. This will be True in the future
             doc=doc_smooth_edge_update,
+        ),
+        Argument(
+            "edge_init_use_dist",
+            bool,
+            optional=True,
+            default=False,
+            alias=["edge_use_dist"],
+            doc=doc_edge_init_use_dist,
         ),
         Argument(
             "use_exp_switch",
