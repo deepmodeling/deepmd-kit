@@ -105,9 +105,23 @@ class NativeLayer(NativeOP):
         # only use_timestep when skip connection is established.
         use_timestep = use_timestep and (num_out == num_in or num_out == num_in * 2)
         rng = np.random.default_rng(seed)
-        self.w = rng.normal(size=(num_in, num_out)).astype(prec)
-        self.b = rng.normal(size=(num_out,)).astype(prec) if bias else None
-        self.idt = rng.normal(size=(num_out,)).astype(prec) if use_timestep else None
+        self.w = rng.normal(
+            size=(num_in, num_out), scale=1.0 / np.sqrt(num_out + num_in)
+        ).astype(prec)
+        self.b = (
+            rng.normal(size=(num_out,), scale=1.0 / np.sqrt(num_out + num_in)).astype(
+                prec
+            )
+            if bias
+            else None
+        )
+        self.idt = (
+            rng.normal(size=(num_out,), scale=1.0 / np.sqrt(num_out + num_in)).astype(
+                prec
+            )
+            if use_timestep
+            else None
+        )
         self.activation_function = (
             activation_function if activation_function is not None else "none"
         )
