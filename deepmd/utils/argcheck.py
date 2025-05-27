@@ -1598,6 +1598,13 @@ def dpa3_repflow_args():
             doc=doc_smooth_edge_update,
         ),
         Argument(
+            "edge_init_use_dist",
+            bool,
+            optional=True,
+            default=False,
+            alias=["edge_use_dist"],
+        ),
+        Argument(
             "use_exp_switch",
             bool,
             optional=True,
