@@ -112,7 +112,7 @@ class DPTrainer:
     def train(self, train_data, valid_data=None) -> None:
         model = self.model
         tx = optax.adam(
-            learning_rate=1e-3  # TODO
+            learning_rate=lambda step: self.lr.value(step, xp=jnp),
         )
         optimizer = nnx.Optimizer(model, tx)
 
