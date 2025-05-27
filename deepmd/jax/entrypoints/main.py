@@ -13,6 +13,9 @@ from typing import (
 from deepmd.backend.suffix import (
     format_model_suffix,
 )
+from deepmd.jax.entrypoints.freeze import (
+    freeze,
+)
 from deepmd.jax.entrypoints.train import (
     train,
 )
@@ -54,11 +57,10 @@ def main(args: Optional[Union[list[str], argparse.Namespace]] = None) -> None:
     if args.command == "train":
         train(**dict_args)
     elif args.command == "freeze":
-        raise
         dict_args["output"] = format_model_suffix(
             dict_args["output"], preferred_backend=args.backend, strict_prefer=True
         )
-        # freeze(**dict_args)
+        freeze(**dict_args)
     elif args.command is None:
         pass
     else:

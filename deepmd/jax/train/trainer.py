@@ -2,12 +2,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 import time
+from pathlib import (
+    Path,
+)
 from typing import (
     Optional,
 )
 
 import numpy as np
 import optax
+import orbax.checkpoint as ocp
 
 from deepmd.dpmodel.loss.ener import (
     EnergyLoss,
@@ -48,6 +52,7 @@ log = logging.getLogger(__name__)
 
 class DPTrainer:
     def __init__(self, jdata) -> None:
+        self.model_def_script = jdata["model"]
         self.model = get_model(jdata["model"])
         self.training_param = jdata["training"]
         self.num_steps = self.training_param["numb_steps"]
@@ -311,6 +316,22 @@ class DPTrainer:
                     cur_lr=self.lr.value(step),
                 )
                 start_time = time.time()
+            if step % self.save_freq == 0:
+                # save model
+                _, state = nnx.split(model)
+                with ocp.Checkpointer(
+                    ocp.CompositeCheckpointHandler("state", "model_def_script")
+                ) as checkpointer:
+                    checkpointer.save(
+                        Path(f"{self.save_ckpt}.jax").absolute(),
+                        ocp.args.Composite(
+                            state=ocp.args.StandardSave(state.to_pure_dict()),
+                            model_def_script=ocp.args.JsonSave(self.model_def_script),
+                        ),
+                    )
+                log.info(f"Trained model has been saved to: {self.save_ckpt}.jax")
+                with open("checkpoint", "w") as fp:
+                    fp.write(f"{self.save_ckpt}.jax")
 
         disp_file_fp.close()
 
