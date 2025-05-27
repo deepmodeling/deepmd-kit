@@ -467,7 +467,11 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         nlist = xp.where(exclude_mask, nlist, xp.full_like(nlist, -1))
         # nb x nloc x nnei x 4, nb x nloc x nnei x 3, nb x nloc x nnei x 1
         dmatrix, diff, sw = self.env_mat_edge.call(
-            coord_ext, atype_ext, nlist, self.mean, self.stddev
+            coord_ext,
+            atype_ext,
+            nlist,
+            self.mean[...],
+            self.stddev[...],
         )
         # nb x nloc x nnei
         nlist_mask = nlist != -1
