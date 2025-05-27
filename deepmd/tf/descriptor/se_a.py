@@ -606,6 +606,7 @@ class DescrptSeA(DescrptSe):
             if nvnmd_cfg.restore_descriptor:
                 davg, dstd = build_davg_dstd()
             check_switch_range(davg, dstd)
+			self.use_tebd = True
         with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
             if davg is None:
                 davg = np.zeros([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype

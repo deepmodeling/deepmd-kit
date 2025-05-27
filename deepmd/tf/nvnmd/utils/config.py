@@ -4,7 +4,7 @@ import logging
 import copy
 import numpy as np
 
-from deepmd.nvnmd.data.data import (
+from deepmd.tf.nvnmd.data.data import (
     NVNMD_CITATION,
     NVNMD_WELCOME,
     jdata_config_v0,
@@ -18,10 +18,10 @@ from deepmd.nvnmd.data.data import (
     jdata_deepmd_input_v1_ni128,
     jdata_deepmd_input_v1_ni256,
 )
-from deepmd.nvnmd.utils.fio import (
+from deepmd.tf.nvnmd.utils.fio import (
     FioDic,
 )
-from deepmd.nvnmd.utils.op import (
+from deepmd.tf.nvnmd.utils.op import (
     r2s,
 )
 
@@ -118,7 +118,7 @@ class NvnmdConfig:
                 if "MAX_NNEI" not in jdata["ctrl"].keys():
                     jdata["ctrl"]["MAX_NNEI"] = 128
                 self.init_config_by_version(
-                    jdata["ctrl"]["VERSION"], self.max_nnei #这里载入输入脚本定义的NI
+                    jdata["ctrl"]["VERSION"], jdata["ctrl"]["MAX_NNEI"]
                 )
         #
         self.config = FioDic().update(jdata, self.config)
@@ -151,11 +151,8 @@ class NvnmdConfig:
             elif self.max_nnei == 256:
                 self.jdata_deepmd_input = copy.deepcopy(jdata_deepmd_input_v1_ni256)
                 self.config = copy.deepcopy(jdata_config_v1_ni256)
-            elif self.max_nnei < 256:
-                self.jdata_deepmd_input = copy.deepcopy(jdata_deepmd_input_v1_ni256) # 去除了NI限制
-                self.config = copy.deepcopy(jdata_config_v1_ni256)
-            else: 
-                log.error("The max_nnei only can be set less then 256")
+            else:
+                log.error("The max_nnei only can be set as 128|256 for version 1")
 
     def init_net_size(self):
         r"""Initialize net_size."""
@@ -204,9 +201,8 @@ class NvnmdConfig:
             jdata["M1"] = jdata["neuron"][-1]
             jdata["M2"] = jdata["axis_neuron"]
             # embedding
-            jdata["SEL"] = self.max_nnei
-            if jdata["SEL"] > self.max_nnei:
-                # self.max_nnei = jdata["sel"]
+            jdata["SEL"] = jdata["sel"]
+            if jdata["sel"] > self.max_nnei:
                 log.error(f"The sel ({jdata['sel']}) cannot be greater than the max_nnei ({self.max_nnei})")
                 exit(1)
             jdata["NNODE_FEAS"] = [1] + jdata["neuron"]
@@ -216,34 +212,34 @@ class NvnmdConfig:
             jdata["NI"] = self.max_nnei
             jdata["NIDP"] = int(jdata["sel"])
             jdata["NIX"] = 2 ** int(np.ceil(np.log2(jdata["NIDP"] / 1.5)))
-            if jdata["NI"] <= 128:
+            if jdata["sel"] <= 128:
                 if self.device == "vu13p": 
                     jdata["NSTEP"] = 0
                 else:
                     jdata["NSTEP"] = 0
-            elif 128 < jdata["NI"] <= 160:
+            elif 128 < jdata["sel"] <= 160:
                 if self.device == "vu13p":  
                     jdata["NSTEP"] = 8
                 else:
                     jdata["NSTEP"] = 16
                 # jdata["NSTEP"] = jdata["NI"]/2 - self.config["ctrl"]["NSTDM"]
-            elif 160 < jdata["NI"] <= 192:
+            elif 160 < jdata["sel"] <= 192:
                 if self.device == "vu13p":
                     jdata["NSTEP"] = 16
                 else:
                     jdata["NSTEP"] = 32
-            elif 192 < jdata["NI"] <= 224:
+            elif 192 < jdata["sel"] <= 224:
                 if self.device == "vu13p":
                     jdata["NSTEP"] = 24
                 else:
                     jdata["NSTEP"] = 48
-            elif 224 < jdata["NI"] <= 256:
+            elif 224 < jdata["sel"] <= 256:
                 if self.device == "vu13p":
                     jdata["NSTEP"] = 32
                 else:
                     jdata["NSTEP"] = 64                               
-            if jdata["NI"] > 256:
-                log.error(f"The sel ({jdata['sel']})  and max_nnei ({jdata['max_nnei']}) should be the same and in the range of 0 to 256")
+            if jdata["sel"] > 256:
+                log.error(f"The sel ({jdata['sel']}) should be less than 256")
                 exit(1)
             # type
             jdata["ntype"] = jdata["ntype"]
@@ -362,7 +358,19 @@ class NvnmdConfig:
         r"""Generate `model/descriptor` in input script."""
         dscp = self.dscp
         jdata = self.jdata_deepmd_input["model"]["descriptor"]
-        jdata["sel"] = dscp["sel"]
+        if dscp["sel"] <= 128:
+            jdata["sel"] = 128
+        elif 128 < dscp["sel"] <= 160:
+            jdata["sel"] = 160
+        elif 160 < dscp["sel"] <= 192:
+            jdata["sel"] = 192
+        elif 192 < dscp["sel"] <= 224:
+            jdata["sel"] = 224
+        elif 224 < dscp["sel"] <= 256:
+            jdata["sel"] = 256                              
+        else:
+            log.error(f"The input sel ({str(dscp['sel'])}) should be less than 256")
+            exit(1)
         jdata["rcut"] = dscp["rcut"]
         jdata["rcut_smth"] = dscp["rcut_smth"]
         jdata["neuron"] = dscp["neuron"]

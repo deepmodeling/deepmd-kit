@@ -525,7 +525,7 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
         map_file = str(tests_path / "nvnmd" / "out" / "map_v1_cnn.npy")
         # mapt
         mapObj = MapTable(config_file, weight_file, map_file)
-        mapObj.Gs_Gt_mode = 0
+        mapObj.Gs_Gt_mode = 2
         mapt = mapObj.build_map()
         #
         N = 32
