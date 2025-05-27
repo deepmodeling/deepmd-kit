@@ -8,9 +8,6 @@ from typing import (
 
 import numpy as np
 import optax
-from tqdm import (
-    trange,
-)
 
 from deepmd.dpmodel.loss.ener import (
     EnergyLoss,
@@ -228,7 +225,7 @@ class DPTrainer:
 
         start_time = time.time()
         disp_file_fp = open(self.disp_file, "w")
-        for step in trange(self.num_steps):
+        for step in range(self.num_steps):
             batch_data = train_data.get_batch()
             # numpy to jax
             jax_data = {
