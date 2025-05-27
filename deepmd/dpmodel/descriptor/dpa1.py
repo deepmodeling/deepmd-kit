@@ -781,6 +781,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         self.mean = np.zeros(wanted_shape, dtype=PRECISION_DICT[self.precision])
         self.stddev = np.ones(wanted_shape, dtype=PRECISION_DICT[self.precision])
         self.orig_sel = self.sel
+        self.ndescrpt = self.nnei * 4
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""

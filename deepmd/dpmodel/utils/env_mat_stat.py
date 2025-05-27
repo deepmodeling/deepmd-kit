@@ -119,12 +119,15 @@ class EnvMatStatSe(EnvMatStat):
                 "last_dim should be 1 for raial-only or 4 for full descriptor."
             )
         for system in data:
-            coord, atype, box, natoms = (
+            coord, atype, box = (
                 system["coord"],
                 system["atype"],
                 system["box"],
-                system["natoms"],
             )
+            coord = xp.reshape(coord, (coord.shape[0], -1, 3))  # (nframes, nloc, 3)
+            atype = xp.reshape(atype, (coord.shape[0], -1))  # (nframes, nloc)
+            if box is not None:
+                box = xp.reshape(box, (coord.shape[0], 3, 3))
             (
                 extended_coord,
                 extended_atype,

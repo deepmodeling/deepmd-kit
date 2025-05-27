@@ -2,6 +2,9 @@
 """DeePMD-Kit entry point module."""
 
 import argparse
+from pathlib import (
+    Path,
+)
 from typing import (
     Optional,
     Union,
@@ -12,6 +15,9 @@ from deepmd.backend.suffix import (
 )
 from deepmd.jax.entrypoints.train import (
     train,
+)
+from deepmd.loggers.loggers import (
+    set_log_handles,
 )
 from deepmd.main import (
     parse_args,
@@ -39,6 +45,11 @@ def main(args: Optional[Union[list[str], argparse.Namespace]] = None) -> None:
         args = parse_args(args=args)
 
     dict_args = vars(args)
+    set_log_handles(
+        args.log_level,
+        Path(args.log_path) if args.log_path else None,
+        mpi_log=None,
+    )
 
     if args.command == "train":
         train(**dict_args)

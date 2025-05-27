@@ -177,7 +177,9 @@ class EnergyLoss(Loss):
                     delta=self.huber_delta,
                 )
                 loss += pref_e * l_huber_loss
-            more_loss["l2_ener_loss"] = self.display_if_exist(l2_ener_loss, find_energy)
+            more_loss["rmse_e"] = self.display_if_exist(
+                xp.sqrt(l2_ener_loss) * atom_norm_ener, find_energy
+            )
         if self.has_f:
             l2_force_loss = xp.mean(xp.square(diff_f))
             if not self.use_huber:
@@ -189,8 +191,8 @@ class EnergyLoss(Loss):
                     delta=self.huber_delta,
                 )
                 loss += pref_f * l_huber_loss
-            more_loss["l2_force_loss"] = self.display_if_exist(
-                l2_force_loss, find_force
+            more_loss["rmse_f"] = self.display_if_exist(
+                xp.sqrt(l2_force_loss), find_force
             )
         if self.has_v:
             virial_reshape = xp.reshape(virial, [-1])
@@ -207,9 +209,7 @@ class EnergyLoss(Loss):
                     delta=self.huber_delta,
                 )
                 loss += pref_v * l_huber_loss
-            more_loss["l2_virial_loss"] = self.display_if_exist(
-                l2_virial_loss, find_virial
-            )
+            more_loss["rmse_v"] = self.display_if_exist(l2_virial_loss, find_virial)
         if self.has_ae:
             atom_ener_reshape = xp.reshape(atom_ener, [-1])
             atom_ener_hat_reshape = xp.reshape(atom_ener_hat, [-1])
@@ -261,6 +261,7 @@ class EnergyLoss(Loss):
             )
 
         self.l2_l = loss
+        more_loss["rmse"] = xp.sqrt(loss)
         self.l2_more = more_loss
         return loss, more_loss
 

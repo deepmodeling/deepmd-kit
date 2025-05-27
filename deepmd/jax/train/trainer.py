@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+import time
 from typing import (
     Optional,
 )
 
 import numpy as np
 import optax
-from tqdm import trange
+from tqdm import (
+    trange,
+)
 
 from deepmd.dpmodel.loss.ener import (
     EnergyLoss,
@@ -26,15 +29,21 @@ from deepmd.dpmodel.utils.region import (
     normalize_coord,
 )
 from deepmd.jax.env import (
-    jax,
     jnp,
     nnx,
 )
 from deepmd.jax.model.model import (
     get_model,
 )
+from deepmd.loggers.training import (
+    format_training_message,
+    format_training_message_per_task,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
+)
+from deepmd.utils.model_stat import (
+    make_stat_input,
 )
 
 log = logging.getLogger(__name__)
@@ -101,7 +110,28 @@ class DPTrainer:
         return self.loss.label_requirement
 
     def train(self, train_data, valid_data=None) -> None:
-        optimizer = nnx.Optimizer(self.model, optax.adam(1e-3))  # reference sharing
+        model = self.model
+        tx = optax.adam(
+            learning_rate=1e-3  # TODO
+        )
+        optimizer = nnx.Optimizer(model, tx)
+
+        # data stat
+        data_stat_nbatch = 10  # TODO
+        all_stat = make_stat_input(train_data, data_stat_nbatch, merge_sys=False)
+        all_stat["atype"] = all_stat.pop("type")
+
+        # swap dict key and list idx
+        all_stat_sys = [
+            {
+                kk: jnp.asarray(np.concatenate(vv[ii], axis=0))
+                for kk, vv in all_stat.items()
+                if not kk.startswith("find_")
+            }
+            for ii in range(train_data.get_nsystems())
+        ]
+        model.atomic_model.descriptor.compute_input_stats(all_stat_sys)
+        model.atomic_model.fitting.compute_output_stats(all_stat)
 
         def loss_fn(
             model,
@@ -114,7 +144,7 @@ class DPTrainer:
             fp,
             ap,
         ):
-            model_dict_lower = self.model.call_lower(
+            model_dict_lower = model.call_lower(
                 extended_coord,
                 extended_atype,
                 nlist,
@@ -137,7 +167,42 @@ class DPTrainer:
             return loss
 
         @nnx.jit
+        def loss_fn_more_loss(
+            model,
+            lr,
+            label_dict,
+            extended_coord,
+            extended_atype,
+            nlist,
+            mapping,
+            fp,
+            ap,
+        ):
+            model_dict_lower = model.call_lower(
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping,
+                fp,
+                ap,
+            )
+            model_dict = communicate_extended_output(
+                model_dict_lower,
+                model.model_output_def(),
+                mapping,
+                do_atomic_virial=False,
+            )
+            loss, more_loss = self.loss(
+                learning_rate=lr,
+                natoms=label_dict["coord"].shape[1],
+                model_dict=model_dict,
+                label_dict=label_dict,
+            )
+            return more_loss
+
+        @nnx.jit
         def train_step(
+            model,
             optimizer,
             lr,
             label_dict,
@@ -149,7 +214,7 @@ class DPTrainer:
             ap,
         ):
             grads = nnx.grad(loss_fn)(
-                optimizer.model,
+                model,
                 lr,
                 label_dict,
                 extended_coord,
@@ -161,6 +226,8 @@ class DPTrainer:
             )
             optimizer.update(grads)
 
+        start_time = time.time()
+        disp_file_fp = open(self.disp_file, "w")
         for step in trange(self.num_steps):
             batch_data = train_data.get_batch()
             # numpy to jax
@@ -169,15 +236,16 @@ class DPTrainer:
                 for kk, vv in batch_data.items()
             }
             extended_coord, extended_atype, nlist, mapping, fp, ap = prepare_input(
-                rcut=self.model.get_rcut(),
-                sel=self.model.get_sel(),
+                rcut=model.get_rcut(),
+                sel=model.get_sel(),
                 coord=jax_data["coord"],
                 atype=jax_data["type"],
                 box=jax_data["box"] if jax_data["find_box"] else None,
                 fparam=jax_data.get("fparam", None),
                 aparam=jax_data.get("aparam", None),
             )
-            loss = train_step(
+            train_step(
+                model,
                 optimizer,
                 self.lr.value(step),
                 jax_data,
@@ -188,7 +256,106 @@ class DPTrainer:
                 fp,
                 ap,
             )
-            # print(step, jnp.sqrt(loss))
+            if self.display_in_training and (
+                step == 0 or (step + 1) % self.disp_freq == 0
+            ):
+                wall_time = time.time() - start_time
+                log.info(
+                    format_training_message(
+                        batch=step + 1,
+                        wall_time=wall_time,
+                    )
+                )
+                more_loss = loss_fn_more_loss(
+                    optimizer.model,
+                    self.lr.value(step),
+                    jax_data,
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                    mapping,
+                    fp,
+                    ap,
+                )
+                if valid_data is not None:
+                    valid_batch_data = valid_data.get_batch()
+                    jax_valid_data = {
+                        kk: jnp.asarray(vv) for kk, vv in valid_batch_data.items()
+                    }
+                    extended_coord, extended_atype, nlist, mapping, fp, ap = (
+                        prepare_input(
+                            rcut=model.get_rcut(),
+                            sel=model.get_sel(),
+                            coord=jax_valid_data["coord"],
+                            atype=jax_valid_data["type"],
+                            box=jax_valid_data["box"]
+                            if jax_valid_data["find_box"]
+                            else None,
+                            fparam=jax_valid_data.get("fparam", None),
+                            aparam=jax_valid_data.get("aparam", None),
+                        )
+                    )
+                    valid_more_loss = loss_fn_more_loss(
+                        optimizer.model,
+                        self.lr.value(step),
+                        jax_valid_data,
+                        extended_coord,
+                        extended_atype,
+                        nlist,
+                        mapping,
+                        fp,
+                        ap,
+                    )
+                self.print_on_training(
+                    disp_file_fp,
+                    train_results=more_loss,
+                    valid_results=valid_more_loss,
+                    cur_batch=step + 1,
+                    cur_lr=self.lr.value(step),
+                )
+                start_time = time.time()
+
+        disp_file_fp.close()
+
+    @staticmethod
+    def print_on_training(
+        fp,
+        train_results,
+        valid_results,
+        cur_batch,
+        cur_lr,
+    ) -> None:
+        print_str = ""
+        print_str += f"{cur_batch:7d}"
+        if valid_results is not None:
+            prop_fmt = "   %11.2e %11.2e"
+            for k in valid_results.keys():
+                # assert k in train_results.keys()
+                print_str += prop_fmt % (valid_results[k], train_results[k])
+        else:
+            prop_fmt = "   %11.2e"
+            for k in train_results.keys():
+                print_str += prop_fmt % (train_results[k])
+        print_str += f"   {cur_lr:8.1e}\n"
+        log.info(
+            format_training_message_per_task(
+                batch=cur_batch,
+                task_name="trn",
+                rmse=train_results,
+                learning_rate=cur_lr,
+            )
+        )
+        if valid_results is not None:
+            log.info(
+                format_training_message_per_task(
+                    batch=cur_batch,
+                    task_name="val",
+                    rmse=valid_results,
+                    learning_rate=None,
+                )
+            )
+        fp.write(print_str)
+        fp.flush()
 
 
 def prepare_input(
