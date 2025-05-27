@@ -259,9 +259,9 @@ class NativeLayer(NativeOP):
         xp = array_api_compat.array_namespace(x)
         fn = get_activation_fn(self.activation_function)
         y = (
-            xp.matmul(x, self.w) + self.b
+            xp.matmul(x, self.w[...]) + self.b[...]
             if self.b is not None
-            else xp.matmul(x, self.w)
+            else xp.matmul(x, self.w[...])
         )
         if y.dtype != x.dtype:
             # workaround for bfloat16

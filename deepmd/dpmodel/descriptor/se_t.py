@@ -349,7 +349,11 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
         # nf x nloc x nnei x 4
         rr, diff, ww = self.env_mat.call(
-            coord_ext, atype_ext, nlist, self.davg, self.dstd
+            coord_ext,
+            atype_ext,
+            nlist,
+            self.davg[...],
+            self.dstd[...],
         )
         nf, nloc, nnei, _ = rr.shape
         sec = self.sel_cumsum

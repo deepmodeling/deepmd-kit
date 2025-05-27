@@ -951,7 +951,11 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         # nf x nloc x nnei x 4
         dmatrix, diff, sw = self.env_mat.call(
-            coord_ext, atype_ext, nlist, self.mean, self.stddev
+            coord_ext,
+            atype_ext,
+            nlist,
+            self.mean[...],
+            self.stddev[...],
         )
         nf, nloc, nnei, _ = dmatrix.shape
         atype = atype_ext[:, :nloc]
