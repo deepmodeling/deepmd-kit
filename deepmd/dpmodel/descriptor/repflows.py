@@ -538,11 +538,15 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
                 xp_take_along_axis(flat_map, xp.reshape(nlist, (nframes, -1)), axis=1),
                 nlist.shape,
             )
-        
+
         if self.use_dynamic_sel:
             # get graph index
             edge_index, angle_index = get_graph_index(
-                nlist, nlist_mask, a_nlist_mask, nall, use_loc_mapping=self.use_loc_mapping
+                nlist,
+                nlist_mask,
+                a_nlist_mask,
+                nall,
+                use_loc_mapping=self.use_loc_mapping,
             )
             # flat all the tensors
             # n_edge x 1

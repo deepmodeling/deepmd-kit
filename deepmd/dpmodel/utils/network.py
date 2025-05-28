@@ -1063,7 +1063,9 @@ def get_graph_index(
     n2e_index = n2e_index[xp.astype(nlist_mask, xp.bool)]
 
     # node_ext(j) to edge(ij) index_select
-    frame_shift = xp.arange(nf, dtype=nlist.dtype) * (nall if not use_loc_mapping else nloc)
+    frame_shift = xp.arange(nf, dtype=nlist.dtype) * (
+        nall if not use_loc_mapping else nloc
+    )
     shifted_nlist = nlist + frame_shift[:, xp.newaxis, xp.newaxis]
     # n_edge
     n_ext2e_index = shifted_nlist[xp.astype(nlist_mask, xp.bool)]
