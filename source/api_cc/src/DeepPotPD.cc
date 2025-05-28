@@ -122,9 +122,21 @@ void DeepPotPD::init(const std::string& model,
   }
   if (config->cinn_enabled()) {
     std::cout << "model.forward will be compiled with cinn." << std::endl;
+  } else {
+    std::cout << "NOTE: You can try: \n'export FLAGS_prim_all=true"
+                 " FLAGS_enable_pir_in_executor=1"
+                 " FLAGS_prim_enable_dynamic=true FLAGS_use_cinn=true'\n"
+                 "to speed up C++ inference with paddle backend"
+              << std::endl;
   }
   if (config_fl->cinn_enabled()) {
     std::cout << "model.forward_lower will be compiled with cinn." << std::endl;
+  } else {
+    std::cout << "NOTE: You can try: \n'export FLAGS_prim_all=true"
+                 " FLAGS_enable_pir_in_executor=1"
+                 " FLAGS_prim_enable_dynamic=true FLAGS_use_cinn=true'\n"
+                 "to speed up C++ inference with paddle backend"
+              << std::endl;
   }
 
   // NOTE: Both set to 1 now.
