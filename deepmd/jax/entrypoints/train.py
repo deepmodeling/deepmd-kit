@@ -125,6 +125,8 @@ def train(
         )
         valid_data.add_data_requirements(model.data_requirements)
         valid_data.print_summary("validation")
+    else:
+        valid_data = None
 
     # get training info
     stop_batch = jdata["training"]["numb_steps"]
