@@ -13,6 +13,9 @@ import numpy as np
 import optax
 import orbax.checkpoint as ocp
 
+from deepmd.common import (
+    symlink_prefix_files,
+)
 from deepmd.dpmodel.loss.ener import (
     EnergyLoss,
 )
@@ -316,20 +319,25 @@ class DPTrainer:
                     cur_lr=self.lr.value(step),
                 )
                 start_time = time.time()
-            if step % self.save_freq == 0:
+            if (step + 1) % self.save_freq == 0:
                 # save model
                 _, state = nnx.split(model)
+                ckpt_path = Path(f"{self.save_ckpt}-{step + 1}.jax")
+                if ckpt_path.exists():
+                    # remove old checkpoint if it exists
+                    ckpt_path.unlink()
                 with ocp.Checkpointer(
                     ocp.CompositeCheckpointHandler("state", "model_def_script")
                 ) as checkpointer:
                     checkpointer.save(
-                        Path(f"{self.save_ckpt}.jax").absolute(),
+                        ckpt_path.absolute(),
                         ocp.args.Composite(
                             state=ocp.args.StandardSave(state.to_pure_dict()),
                             model_def_script=ocp.args.JsonSave(self.model_def_script),
                         ),
                     )
-                log.info(f"Trained model has been saved to: {self.save_ckpt}.jax")
+                log.info(f"Trained model has been saved to: {ckpt_path!s}")
+                symlink_prefix_files(f"{self.save_ckpt}-{step + 1}", self.save_ckpt)
                 with open("checkpoint", "w") as fp:
                     fp.write(f"{self.save_ckpt}.jax")
 
