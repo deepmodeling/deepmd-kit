@@ -240,6 +240,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.fix_stat_std = fix_stat_std
         self.set_stddev_constant = fix_stat_std != 0.0
         self.a_compress_use_split = a_compress_use_split
+        self.use_loc_mapping = use_loc_mapping
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
         self.use_exp_switch = use_exp_switch
