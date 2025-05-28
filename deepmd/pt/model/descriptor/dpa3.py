@@ -89,6 +89,8 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         Whether to use electronic configuration type embedding.
     use_tebd_bias : bool, Optional
         Whether to use bias in the type embedding layer.
+    use_loc_mapping : bool, Optional
+        Whether to use local atom index mapping in non-parallel inference.
     type_map : list[str], Optional
         A list of strings. Give the name to each type of atoms.
     """
