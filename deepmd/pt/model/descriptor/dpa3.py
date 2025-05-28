@@ -108,6 +108,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         seed: Optional[Union[int, list[int]]] = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
+        use_loc_mapping: bool = True,
         type_map: Optional[list[str]] = None,
     ) -> None:
         super().__init__()
