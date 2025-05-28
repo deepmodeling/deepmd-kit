@@ -503,7 +503,10 @@ class DescrptBlockRepflows(DescriptorBlock):
         if self.use_dynamic_sel:
             # get graph index
             edge_index, angle_index = get_graph_index(
-                nlist, nlist_mask, a_nlist_mask, nall,
+                nlist,
+                nlist_mask,
+                a_nlist_mask,
+                nall,
                 use_loc_mapping=self.use_loc_mapping,
             )
             # flat all the tensors
