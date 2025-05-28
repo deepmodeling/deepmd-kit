@@ -120,6 +120,12 @@ void DeepPotPD::init(const std::string& model,
     std::cout << "load model from: " << model << " to gpu:" << gpu_id
               << std::endl;
   }
+  if (config->cinn_enabled()) {
+    std::cout << "model.forward will be compiled with cinn." << std::endl;
+  }
+  if (config_fl->cinn_enabled()) {
+    std::cout << "model.forward_lower will be compiled with cinn." << std::endl;
+  }
 
   // NOTE: Both set to 1 now.
   // get_env_nthreads(num_intra_nthreads,
