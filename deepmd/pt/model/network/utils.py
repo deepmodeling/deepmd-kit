@@ -39,10 +39,13 @@ def aggregate(
             bin_count = torch.cat([bin_count, bin_count.new_ones(difference)])
         else:
             num_owner = bin_count.shape[0]
+    else:
+        bin_count = None
 
     output = data.new_zeros([num_owner, data.shape[1]])
     output = output.index_add_(0, owners, data)
     if average:
+        assert bin_count is not None
         output = (output.T / bin_count).T
     return output
 
