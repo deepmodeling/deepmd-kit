@@ -17,6 +17,7 @@ from deepmd.common import (
     symlink_prefix_files,
 )
 from deepmd.dpmodel.loss.ener import (
+    EnergyHessianLoss,
     EnergyLoss,
 )
 from deepmd.dpmodel.model.transform_output import (
@@ -77,7 +78,15 @@ class DPTrainer:
         self.lr = get_lr_and_coef(learning_rate_param)
         loss_param = jdata.get("loss", {})
         loss_param["starter_learning_rate"] = learning_rate_param["start_lr"]
-        self.loss = EnergyLoss.get_loss(loss_param)
+
+        loss_type = loss_param.get("type", "ener")
+        if loss_type == "ener" and loss_param.get("start_pref_h", 0.0) > 0.0:
+            self.loss = EnergyHessianLoss.get_loss(loss_param)
+            self.model.enable_hessian()
+        elif loss_type == "ener":
+            self.loss = EnergyLoss.get_loss(loss_param)
+        else:
+            raise RuntimeError("unknown loss type " + loss_type)
 
         # training
         tr_data = jdata["training"]
