@@ -132,9 +132,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             )
             # dp impl
             dd2 = DPDescrptDPA3.deserialize(dd0.serialize())
-            rd2, _, _, _, _ = dd2.call(
-                coord_ext, atype_ext, nlist, mapping
-            )
+            rd2, _, _, _, _ = dd2.call(coord_ext, atype_ext, nlist, mapping)
             np.testing.assert_allclose(
                 rd0.numpy(),
                 rd2,
