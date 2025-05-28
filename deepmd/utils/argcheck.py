@@ -1427,7 +1427,7 @@ def descrpt_dpa3_args():
             optional=True,
             default=True,
             doc="Whether to use local atom index mapping in non-parallel inference. "
-                "When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.",
+            "When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.",
         ),
     ]
 
