@@ -320,6 +320,8 @@ class DPTrainer:
                         fp,
                         ap,
                     )
+                else:
+                    valid_more_loss = None
                 self.print_on_training(
                     disp_file_fp,
                     train_results=more_loss,
