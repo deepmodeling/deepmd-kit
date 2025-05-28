@@ -417,8 +417,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         mapping: Optional[torch.Tensor] = None,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
-        parrallel_mode = comm_dict is not None
-        if not parrallel_mode:
+        parallel_mode = comm_dict is not None
+        if not parallel_mode:
             assert mapping is not None
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
@@ -492,7 +492,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         cosine_ij = torch.matmul(normalized_diff_i, normalized_diff_j) * (1 - 1e-6)
         angle_input = cosine_ij.unsqueeze(-1) / (torch.pi**0.5)
 
-        if not parrallel_mode and self.use_loc_mapping:
+        if not parallel_mode and self.use_loc_mapping:
             assert mapping is not None
             # convert nlist from nall to nloc index
             nlist = torch.gather(
@@ -534,15 +534,15 @@ class DescrptBlockRepflows(DescriptorBlock):
         angle_ebd = self.angle_embd(angle_input)
 
         # nb x nall x n_dim
-        if not parrallel_mode:
+        if not parallel_mode:
             assert mapping is not None
             mapping = (
                 mapping.view(nframes, nall).unsqueeze(-1).expand(-1, -1, self.n_dim)
             )
         for idx, ll in enumerate(self.layers):
             # node_ebd:     nb x nloc x n_dim
-            # node_ebd_ext: nb x nall x n_dim [OR] nb x nloc x n_dim when not parrallel_mode
-            if not parrallel_mode:
+            # node_ebd_ext: nb x nall x n_dim [OR] nb x nloc x n_dim when not parallel_mode
+            if not parallel_mode:
                 assert mapping is not None
                 node_ebd_ext = (
                     torch.gather(node_ebd, 1, mapping)

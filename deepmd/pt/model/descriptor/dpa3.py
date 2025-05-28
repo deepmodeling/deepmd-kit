@@ -474,13 +474,13 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             The smooth switch function. shape: nf x nloc x nnei
 
         """
-        parrallel_mode = comm_dict is not None
+        parallel_mode = comm_dict is not None
         # cast the input to internal precsion
         extended_coord = extended_coord.to(dtype=self.prec)
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
 
-        if not parrallel_mode and self.use_loc_mapping:
+        if not parallel_mode and self.use_loc_mapping:
             node_ebd_ext = self.type_embedding(extended_atype[:, :nloc])
         else:
             node_ebd_ext = self.type_embedding(extended_atype)
