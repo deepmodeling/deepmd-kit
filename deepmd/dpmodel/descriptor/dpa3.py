@@ -575,7 +575,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "dpa3",
-            "@version": 1,
+            "@version": 2,
             "ntypes": self.ntypes,
             "repflow_args": self.repflow_args.serialize(),
             "concat_output_tebd": self.concat_output_tebd,
@@ -586,6 +586,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             "trainable": self.trainable,
             "use_econf_tebd": self.use_econf_tebd,
             "use_tebd_bias": self.use_tebd_bias,
+            "use_loc_mapping": self.use_loc_mapping,
             "type_map": self.type_map,
             "type_embedding": self.type_embedding.serialize(),
         }
@@ -610,7 +611,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
     def deserialize(cls, data: dict) -> "DescrptDPA3":
         data = data.copy()
         version = data.pop("@version")
-        check_version_compatibility(version, 1, 1)
+        check_version_compatibility(version, 2, 1)
         data.pop("@class")
         data.pop("type")
         repflow_variable = data.pop("repflow_variable").copy()

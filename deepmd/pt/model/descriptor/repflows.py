@@ -156,6 +156,9 @@ class DescrptBlockRepflows(DescriptorBlock):
         In the dynamic selection case, neighbor-scale normalization will use `e_sel / sel_reduce_factor`
         or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values,
         accommodating larger selection numbers.
+    use_loc_mapping : bool, Optional
+        Whether to use local atom index mapping in training or non-parallel inference.
+        When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.
     optim_update : bool, optional
         Whether to enable the optimized update method.
         Uses a more efficient process when enabled. Defaults to True

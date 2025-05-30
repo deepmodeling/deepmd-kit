@@ -1372,6 +1372,10 @@ def descrpt_dpa3_args():
     doc_seed = "Random seed for parameter initialization."
     doc_use_econf_tebd = "Whether to use electronic configuration type embedding."
     doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
+    doc_use_loc_mapping = (
+        "Whether to use local atom index mapping in training or non-parallel inference. "
+        "When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation."
+    )
     return [
         # doc_repflow args
         Argument("repflow", dict, dpa3_repflow_args(), doc=doc_repflow),
@@ -1426,8 +1430,7 @@ def descrpt_dpa3_args():
             bool,
             optional=True,
             default=True,
-            doc="Whether to use local atom index mapping in training or non-parallel inference. "
-            "When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.",
+            doc=doc_use_loc_mapping,
         ),
     ]
 

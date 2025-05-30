@@ -67,6 +67,7 @@ from deepmd.utils.argcheck import (
     (True, False),  # optim_update
     (True, False),  # use_exp_switch
     (True, False),  # use_dynamic_sel
+    (True, False),  # use_loc_mapping
     (0.3, 0.0),  # fix_stat_std
     (1, 2),  # n_multi_edge_message
     ("float64",),  # precision
@@ -84,6 +85,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             optim_update,
             use_exp_switch,
             use_dynamic_sel,
+            use_loc_mapping,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -124,6 +126,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             "precision": precision,
             "exclude_types": exclude_types,
             "env_protection": 0.0,
+            "use_loc_mapping": use_loc_mapping,
             "trainable": True,
         }
 
@@ -139,6 +142,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             optim_update,
             use_exp_switch,
             use_dynamic_sel,
+            use_loc_mapping,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -157,6 +161,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             optim_update,
             use_exp_switch,
             use_dynamic_sel,
+            use_loc_mapping,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -166,6 +171,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             or precision == "bfloat16"
             or use_exp_switch
             or use_dynamic_sel
+            or use_loc_mapping
         )  # not supported yet
 
     @property
@@ -180,6 +186,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             optim_update,
             use_exp_switch,
             use_dynamic_sel,
+            use_loc_mapping,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -198,6 +205,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             optim_update,
             use_exp_switch,
             use_dynamic_sel,
+            use_loc_mapping,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -258,6 +266,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             optim_update,
             use_exp_switch,
             use_dynamic_sel,
+            use_loc_mapping,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -339,6 +348,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             optim_update,
             use_exp_switch,
             use_dynamic_sel,
+            use_loc_mapping,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -363,6 +373,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             optim_update,
             use_exp_switch,
             use_dynamic_sel,
+            use_loc_mapping,
             fix_stat_std,
             n_multi_edge_message,
             precision,

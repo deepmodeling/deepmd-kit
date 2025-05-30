@@ -688,6 +688,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
             "smooth_edge_update": self.smooth_edge_update,
             "use_dynamic_sel": self.use_dynamic_sel,
             "sel_reduce_factor": self.sel_reduce_factor,
+            "use_loc_mapping": self.use_loc_mapping,
             # variables
             "edge_embd": self.edge_embd.serialize(),
             "angle_embd": self.angle_embd.serialize(),
