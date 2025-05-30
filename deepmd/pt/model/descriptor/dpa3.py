@@ -90,7 +90,8 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
     use_tebd_bias : bool, Optional
         Whether to use bias in the type embedding layer.
     use_loc_mapping : bool, Optional
-        Whether to use local atom index mapping in non-parallel inference.
+        Whether to use local atom index mapping in training or non-parallel inference.
+        When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.
     type_map : list[str], Optional
         A list of strings. Give the name to each type of atoms.
     """

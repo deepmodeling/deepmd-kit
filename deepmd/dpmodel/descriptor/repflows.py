@@ -146,7 +146,8 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values,
         accommodating larger selection numbers.
     use_loc_mapping : bool, optional
-        Whether to use local atom index mapping in non-parallel inference.
+        Whether to use local atom index mapping in training or non-parallel inference.
+        When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.
     ntypes : int
         Number of element types
     activation_function : str, optional
