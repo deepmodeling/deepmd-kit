@@ -541,8 +541,30 @@ class Trainer:
                     state_dict["_extra_state"] = self.wrapper.state_dict()[
                         "_extra_state"
                     ]
-
-                self.wrapper.load_state_dict(state_dict)
+                try:
+                    self.wrapper.load_state_dict(state_dict)
+                except RuntimeError as e:
+                    # init from direct fitting
+                    rm_list = []
+                    for kk in state_dict:
+                        # delete direct heads
+                        if (
+                            "fitting_net.force_embed." in kk
+                            or "fitting_net.noise_embed" in kk
+                        ):
+                            rm_list.append(kk)
+                    for kk in rm_list:
+                        state_dict.pop(kk)
+                    state_dict["_extra_state"] = self.wrapper.state_dict()[
+                        "_extra_state"
+                    ]
+                    out_shape_list = [
+                        "model.Default.atomic_model.out_bias",
+                        "model.Default.atomic_model.out_std",
+                    ]
+                    for kk in out_shape_list:
+                        state_dict[kk] = state_dict[kk][:1, :, :1]
+                    self.wrapper.load_state_dict(state_dict)
 
                 # change bias for fine-tuning
                 if finetune_model is not None:
