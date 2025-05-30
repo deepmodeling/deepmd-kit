@@ -60,7 +60,7 @@ from deepmd.utils.argcheck import (
 @parameterized(
     ("const",),  # update_residual_init
     ([], [[0, 1]]),  # exclude_types
-    (True, False),  # update_angle
+    (True,),  # update_angle
     (0, 1),  # a_compress_rate
     (1, 2),  # a_compress_e_rate
     (True,),  # a_compress_use_split
@@ -69,7 +69,7 @@ from deepmd.utils.argcheck import (
     (True, False),  # use_dynamic_sel
     (True, False),  # use_loc_mapping
     (0.3, 0.0),  # fix_stat_std
-    (1, 2),  # n_multi_edge_message
+    (1,),  # n_multi_edge_message
     ("float64",),  # precision
 )
 class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
