@@ -53,7 +53,8 @@ class AtomExcludeMask:
         xp = array_api_compat.array_namespace(atype)
         nf, natom = atype.shape
         return xp.reshape(
-            xp.take(self.type_mask, xp.reshape(atype, [-1]), axis=0), (nf, natom)
+            xp.take(self.type_mask[...], xp.reshape(atype, [-1]), axis=0),
+            (nf, natom),
         )
 
 
@@ -131,7 +132,8 @@ class PairExcludeMask:
         # nf x (nloc x nnei)
         type_ij = xp.reshape(type_ij, (nf, nloc * nnei))
         mask = xp.reshape(
-            xp.take(self.type_mask, xp.reshape(type_ij, (-1,))), (nf, nloc, nnei)
+            xp.take(self.type_mask[...], xp.reshape(type_ij, (-1,))),
+            (nf, nloc, nnei),
         )
         return mask
 

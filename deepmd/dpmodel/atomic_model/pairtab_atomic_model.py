@@ -293,7 +293,7 @@ class PairTabAtomicModel(BaseAtomicModel):
 
         uu -= idx
         table_coef = self._extract_spline_coefficient(
-            i_type, j_type, idx, self.tab_data, nspline
+            i_type, j_type, idx, self.tab_data[...], nspline
         )
         table_coef = xp.reshape(table_coef, (nframes, nloc, nnei, 4))
         ener = self._calculate_ener(table_coef, uu)
