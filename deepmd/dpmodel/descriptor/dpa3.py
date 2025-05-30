@@ -277,6 +277,9 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         Whether to use electronic configuration type embedding.
     use_tebd_bias : bool, Optional
         Whether to use bias in the type embedding layer.
+    use_loc_mapping : bool, Optional
+        Whether to use local atom index mapping in training or non-parallel inference.
+        When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.
     type_map : list[str], Optional
         A list of strings. Give the name to each type of atoms.
     """
@@ -296,6 +299,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         seed: Optional[Union[int, list[int]]] = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
+        use_loc_mapping: bool = True,
         type_map: Optional[list[str]] = None,
     ) -> None:
         super().__init__()
@@ -342,6 +346,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             use_exp_switch=self.repflow_args.use_exp_switch,
             use_dynamic_sel=self.repflow_args.use_dynamic_sel,
             sel_reduce_factor=self.repflow_args.sel_reduce_factor,
+            use_loc_mapping=use_loc_mapping,
             exclude_types=exclude_types,
             env_protection=env_protection,
             precision=precision,
@@ -350,6 +355,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
 
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias
+        self.use_loc_mapping = use_loc_mapping
         self.type_map = type_map
         self.tebd_dim = self.repflow_args.n_dim
         self.type_embedding = TypeEmbedNet(
@@ -548,10 +554,16 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         nall = xp.reshape(coord_ext, (nframes, -1)).shape[1] // 3
 
         type_embedding = self.type_embedding.call()
-        node_ebd_ext = xp.reshape(
-            xp.take(type_embedding, xp.reshape(atype_ext, [-1]), axis=0),
-            (nframes, nall, self.tebd_dim),
-        )
+        if self.use_loc_mapping:
+            node_ebd_ext = xp.reshape(
+                xp.take(type_embedding, xp.reshape(atype_ext[:, :nloc], [-1]), axis=0),
+                (nframes, nloc, self.tebd_dim),
+            )
+        else:
+            node_ebd_ext = xp.reshape(
+                xp.take(type_embedding, xp.reshape(atype_ext, [-1]), axis=0),
+                (nframes, nall, self.tebd_dim),
+            )
         node_ebd_inp = node_ebd_ext[:, :nloc, :]
         # repflows
         node_ebd, edge_ebd, h2, rot_mat, sw = self.repflows(
@@ -570,7 +582,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "dpa3",
-            "@version": 1,
+            "@version": 2,
             "ntypes": self.ntypes,
             "repflow_args": self.repflow_args.serialize(),
             "concat_output_tebd": self.concat_output_tebd,
@@ -581,6 +593,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             "trainable": self.trainable,
             "use_econf_tebd": self.use_econf_tebd,
             "use_tebd_bias": self.use_tebd_bias,
+            "use_loc_mapping": self.use_loc_mapping,
             "type_map": self.type_map,
             "type_embedding": self.type_embedding.serialize(),
         }
@@ -605,7 +618,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
     def deserialize(cls, data: dict) -> "DescrptDPA3":
         data = data.copy()
         version = data.pop("@version")
-        check_version_compatibility(version, 1, 1)
+        check_version_compatibility(version, 2, 1)
         data.pop("@class")
         data.pop("type")
         repflow_variable = data.pop("repflow_variable").copy()

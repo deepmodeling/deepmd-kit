@@ -1015,6 +1015,7 @@ def get_graph_index(
     nlist_mask: np.ndarray,
     a_nlist_mask: np.ndarray,
     nall: int,
+    use_loc_mapping: bool = True,
 ):
     """
     Get the index mapping for edge graph and angle graph, ready in `aggregate` or `index_select`.
@@ -1029,6 +1030,9 @@ def get_graph_index(
         Masks of the neighbor list for angle. real nei 1 otherwise 0
     nall
         The number of extended atoms.
+    use_loc_mapping
+        Whether to use local atom index mapping in training or non-parallel inference.
+        When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.
 
     Returns
     -------
@@ -1069,7 +1073,9 @@ def get_graph_index(
     n2e_index = n2e_index[xp.astype(nlist_mask, xp.bool)]
 
     # node_ext(j) to edge(ij) index_select
-    frame_shift = xp.arange(nf, dtype=nlist.dtype) * nall
+    frame_shift = xp.arange(nf, dtype=nlist.dtype) * (
+        nall if not use_loc_mapping else nloc
+    )
     shifted_nlist = nlist + frame_shift[:, xp.newaxis, xp.newaxis]
     # n_edge
     n_ext2e_index = shifted_nlist[xp.astype(nlist_mask, xp.bool)]

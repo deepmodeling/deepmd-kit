@@ -70,7 +70,10 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             rtol, atol = get_tols(prec)
             if prec == "float64":
                 atol = 1e-8  # marginal GPU test cases...
-
+            coord_ext = np.concatenate([self.coord_ext[:1], self.coord_ext[:1]], axis=0)
+            atype_ext = np.concatenate([self.atype_ext[:1], self.atype_ext[:1]], axis=0)
+            nlist = np.concatenate([self.nlist[:1], self.nlist[:1]], axis=0)
+            mapping = np.concatenate([self.mapping[:1], self.mapping[:1]], axis=0)
             repflow = RepFlowArgs(
                 n_dim=20,
                 e_dim=10,
@@ -108,18 +111,18 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             dd0.repflows.mean = paddle.to_tensor(davg, dtype=dtype, place=env.DEVICE)
             dd0.repflows.stddev = paddle.to_tensor(dstd, dtype=dtype, place=env.DEVICE)
             rd0, _, _, _, _ = dd0(
-                paddle.to_tensor(self.coord_ext, dtype=dtype, place=env.DEVICE),
-                paddle.to_tensor(self.atype_ext, dtype=paddle.int64, place=env.DEVICE),
-                paddle.to_tensor(self.nlist, dtype=paddle.int64, place=env.DEVICE),
-                paddle.to_tensor(self.mapping, dtype=paddle.int64, place=env.DEVICE),
+                paddle.to_tensor(coord_ext, dtype=dtype, place=env.DEVICE),
+                paddle.to_tensor(atype_ext, dtype=paddle.int64, place=env.DEVICE),
+                paddle.to_tensor(nlist, dtype=paddle.int64, place=env.DEVICE),
+                paddle.to_tensor(mapping, dtype=paddle.int64, place=env.DEVICE),
             )
             # serialization
             dd1 = DescrptDPA3.deserialize(dd0.serialize())
             rd1, _, _, _, _ = dd1(
-                paddle.to_tensor(self.coord_ext, dtype=dtype, place=env.DEVICE),
-                paddle.to_tensor(self.atype_ext, dtype=paddle.int64, place=env.DEVICE),
-                paddle.to_tensor(self.nlist, dtype=paddle.int64, place=env.DEVICE),
-                paddle.to_tensor(self.mapping, dtype=paddle.int64, place=env.DEVICE),
+                paddle.to_tensor(coord_ext, dtype=dtype, place=env.DEVICE),
+                paddle.to_tensor(atype_ext, dtype=paddle.int64, place=env.DEVICE),
+                paddle.to_tensor(nlist, dtype=paddle.int64, place=env.DEVICE),
+                paddle.to_tensor(mapping, dtype=paddle.int64, place=env.DEVICE),
             )
             np.testing.assert_allclose(
                 rd0.numpy(),
@@ -129,9 +132,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             )
             # dp impl
             dd2 = DPDescrptDPA3.deserialize(dd0.serialize())
-            rd2, _, _, _, _ = dd2.call(
-                self.coord_ext, self.atype_ext, self.nlist, self.mapping
-            )
+            rd2, _, _, _, _ = dd2.call(coord_ext, atype_ext, nlist, mapping)
             np.testing.assert_allclose(
                 rd0.numpy(),
                 rd2,

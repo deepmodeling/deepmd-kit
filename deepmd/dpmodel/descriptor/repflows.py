@@ -148,6 +148,9 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         In the dynamic selection case, neighbor-scale normalization will use `e_sel / sel_reduce_factor`
         or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values,
         accommodating larger selection numbers.
+    use_loc_mapping : bool, optional
+        Whether to use local atom index mapping in training or non-parallel inference.
+        When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.
     ntypes : int
         Number of element types
     activation_function : str, optional
@@ -200,6 +203,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         use_exp_switch: bool = False,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
+        use_loc_mapping: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
         super().__init__()
@@ -234,6 +238,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         self.edge_init_use_dist = edge_init_use_dist
         self.use_exp_switch = use_exp_switch
         self.use_dynamic_sel = use_dynamic_sel
+        self.use_loc_mapping = use_loc_mapping
         self.sel_reduce_factor = sel_reduce_factor
         if self.use_dynamic_sel and not self.smooth_edge_update:
             raise NotImplementedError(
@@ -540,10 +545,22 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
             cosine_ij, (nframes, nloc, self.a_sel, self.a_sel, 1)
         ) / (xp.pi**0.5)
 
+        if self.use_loc_mapping:
+            assert mapping is not None
+            flat_map = xp.reshape(mapping, (nframes, -1))
+            nlist = xp.reshape(
+                xp_take_along_axis(flat_map, xp.reshape(nlist, (nframes, -1)), axis=1),
+                nlist.shape,
+            )
+
         if self.use_dynamic_sel:
             # get graph index
             edge_index, angle_index = get_graph_index(
-                nlist, nlist_mask, a_nlist_mask, nall
+                nlist,
+                nlist_mask,
+                a_nlist_mask,
+                nall,
+                use_loc_mapping=self.use_loc_mapping,
             )
             # flat all the tensors
             # n_edge x 1
@@ -577,7 +594,11 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         for idx, ll in enumerate(self.layers):
             # node_ebd:     nb x nloc x n_dim
             # node_ebd_ext: nb x nall x n_dim
-            node_ebd_ext = xp_take_along_axis(node_ebd, mapping, axis=1)
+            node_ebd_ext = (
+                node_ebd
+                if self.use_loc_mapping
+                else xp_take_along_axis(node_ebd, mapping, axis=1)
+            )
             node_ebd, edge_ebd, angle_ebd = ll.call(
                 node_ebd_ext,
                 edge_ebd,
@@ -684,6 +705,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
             "smooth_edge_update": self.smooth_edge_update,
             "use_dynamic_sel": self.use_dynamic_sel,
             "sel_reduce_factor": self.sel_reduce_factor,
+            "use_loc_mapping": self.use_loc_mapping,
             # variables
             "edge_embd": self.edge_embd.serialize(),
             "angle_embd": self.angle_embd.serialize(),

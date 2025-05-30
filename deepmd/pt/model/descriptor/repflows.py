@@ -159,6 +159,9 @@ class DescrptBlockRepflows(DescriptorBlock):
         In the dynamic selection case, neighbor-scale normalization will use `e_sel / sel_reduce_factor`
         or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values,
         accommodating larger selection numbers.
+    use_loc_mapping : bool, Optional
+        Whether to use local atom index mapping in training or non-parallel inference.
+        When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.
     optim_update : bool, optional
         Whether to enable the optimized update method.
         Uses a more efficient process when enabled. Defaults to True
@@ -213,6 +216,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         use_exp_switch: bool = False,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
+        use_loc_mapping: bool = True,
         optim_update: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
@@ -243,6 +247,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.fix_stat_std = fix_stat_std
         self.set_stddev_constant = fix_stat_std != 0.0
         self.a_compress_use_split = a_compress_use_split
+        self.use_loc_mapping = use_loc_mapping
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
         self.edge_init_use_dist = edge_init_use_dist
@@ -421,9 +426,9 @@ class DescrptBlockRepflows(DescriptorBlock):
         mapping: Optional[torch.Tensor] = None,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
-        if comm_dict is None:
+        parallel_mode = comm_dict is not None
+        if not parallel_mode:
             assert mapping is not None
-            assert extended_atype_embd is not None
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         atype = extended_atype[:, :nloc]
@@ -475,12 +480,9 @@ class DescrptBlockRepflows(DescriptorBlock):
 
         # get node embedding
         # [nframes, nloc, tebd_dim]
-        if comm_dict is None:
-            assert isinstance(extended_atype_embd, torch.Tensor)  # for jit
-            atype_embd = extended_atype_embd[:, :nloc, :]
-            assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
-        else:
-            atype_embd = extended_atype_embd
+        assert extended_atype_embd is not None
+        atype_embd = extended_atype_embd[:, :nloc, :]
+        assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
         assert isinstance(atype_embd, torch.Tensor)  # for jit
         node_ebd = self.act(atype_embd)
         n_dim = node_ebd.shape[-1]
@@ -503,10 +505,22 @@ class DescrptBlockRepflows(DescriptorBlock):
         cosine_ij = torch.matmul(normalized_diff_i, normalized_diff_j) * (1 - 1e-6)
         angle_input = cosine_ij.unsqueeze(-1) / (torch.pi**0.5)
 
+        if not parallel_mode and self.use_loc_mapping:
+            assert mapping is not None
+            # convert nlist from nall to nloc index
+            nlist = torch.gather(
+                mapping,
+                1,
+                index=nlist.reshape(nframes, -1),
+            ).reshape(nlist.shape)
         if self.use_dynamic_sel:
             # get graph index
             edge_index, angle_index = get_graph_index(
-                nlist, nlist_mask, a_nlist_mask, nall
+                nlist,
+                nlist_mask,
+                a_nlist_mask,
+                nall,
+                use_loc_mapping=self.use_loc_mapping,
             )
             # flat all the tensors
             # n_edge x 1
@@ -536,18 +550,23 @@ class DescrptBlockRepflows(DescriptorBlock):
         angle_ebd = self.angle_embd(angle_input)
 
         # nb x nall x n_dim
-        if comm_dict is None:
+        if not parallel_mode:
             assert mapping is not None
             mapping = (
                 mapping.view(nframes, nall).unsqueeze(-1).expand(-1, -1, self.n_dim)
             )
         for idx, ll in enumerate(self.layers):
             # node_ebd:     nb x nloc x n_dim
-            # node_ebd_ext: nb x nall x n_dim
-            if comm_dict is None:
+            # node_ebd_ext: nb x nall x n_dim [OR] nb x nloc x n_dim when not parallel_mode
+            if not parallel_mode:
                 assert mapping is not None
-                node_ebd_ext = torch.gather(node_ebd, 1, mapping)
+                node_ebd_ext = (
+                    torch.gather(node_ebd, 1, mapping)
+                    if not self.use_loc_mapping
+                    else node_ebd
+                )
             else:
+                assert comm_dict is not None
                 has_spin = "has_spin" in comm_dict
                 if not has_spin:
                     n_padding = nall - nloc

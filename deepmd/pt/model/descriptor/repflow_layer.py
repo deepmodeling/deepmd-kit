@@ -684,7 +684,7 @@ class RepFlowLayer(torch.nn.Module):
 
     def forward(
         self,
-        node_ebd_ext: torch.Tensor,  # nf x nall x n_dim
+        node_ebd_ext: torch.Tensor,  # nf x nall x n_dim [OR] nf x nloc x n_dim when not parallel_mode
         edge_ebd: torch.Tensor,  # nf x nloc x nnei x e_dim
         h2: torch.Tensor,  # nf x nloc x nnei x 3
         angle_ebd: torch.Tensor,  # nf x nloc x a_nnei x a_nnei x a_dim

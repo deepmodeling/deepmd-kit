@@ -487,6 +487,7 @@ def DescriptorParamDPA3(
     fix_stat_std=0.3,
     use_dynamic_sel=False,
     precision="float64",
+    use_loc_mapping=True,
 ):
     input_dict = {
         # kwargs for repformer
@@ -533,6 +534,7 @@ def DescriptorParamDPA3(
         "trainable": True,
         "use_econf_tebd": False,
         "use_tebd_bias": False,
+        "use_loc_mapping": use_loc_mapping,
         "type_map": type_map,
         "seed": GLOBAL_SEED,
     }
@@ -558,6 +560,7 @@ DescriptorParamDPA3List = parameterize_func(
             "use_dynamic_sel": (True, False),
             "env_protection": (0.0, 1e-8),
             "precision": ("float64",),
+            "use_loc_mapping": (True, False),
         }
     ),
 )
