@@ -108,6 +108,12 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
                 )
             ),
         }
+        self.predict_dpmodel_style = {
+            "energy_derv_c_redu": self.predict["virial"],
+            "energy_derv_r": self.predict["force"],
+            "energy_redu": self.predict["energy"],
+            "energy": self.predict["atom_ener"],
+        }
         self.label = {
             "energy": rng.random((self.nframes,)),
             "force": rng.random((self.nframes, self.natoms, 3)),
@@ -187,12 +193,12 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
         return dp_obj(
             self.learning_rate,
             self.natoms,
-            self.predict,
+            self.predict_dpmodel_style,
             self.label,
         )
 
     def eval_jax(self, jax_obj: Any) -> Any:
-        predict = {kk: jnp.asarray(vv) for kk, vv in self.predict.items()}
+        predict = {kk: jnp.asarray(vv) for kk, vv in self.predict_dpmodel_style.items()}
         label = {kk: jnp.asarray(vv) for kk, vv in self.label.items()}
 
         loss, more_loss = jax_obj(
@@ -206,7 +212,10 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
         return loss, more_loss
 
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
-        predict = {kk: array_api_strict.asarray(vv) for kk, vv in self.predict.items()}
+        predict = {
+            kk: array_api_strict.asarray(vv)
+            for kk, vv in self.predict_dpmodel_style.items()
+        }
         label = {kk: array_api_strict.asarray(vv) for kk, vv in self.label.items()}
 
         loss, more_loss = array_api_strict_obj(
