@@ -541,6 +541,9 @@ class Trainer:
                     state_dict["_extra_state"] = self.wrapper.state_dict()[
                         "_extra_state"
                     ]
+                old_model_params = self.wrapper.state_dict()["_extra_state"][
+                    "model_params"
+                ]
                 try:
                     self.wrapper.load_state_dict(state_dict)
                 except RuntimeError as e:
@@ -555,9 +558,7 @@ class Trainer:
                             rm_list.append(kk)
                     for kk in rm_list:
                         state_dict.pop(kk)
-                    state_dict["_extra_state"] = self.wrapper.state_dict()[
-                        "_extra_state"
-                    ]
+                    state_dict["_extra_state"]["model_params"] = old_model_params
                     out_shape_list = [
                         "model.Default.atomic_model.out_bias",
                         "model.Default.atomic_model.out_std",
