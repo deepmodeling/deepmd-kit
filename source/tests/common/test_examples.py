@@ -59,6 +59,7 @@ input_files = (
     p_examples / "water" / "dpa2" / "input_torch_large.json",
     p_examples / "water" / "dpa2" / "input_torch_compressible.json",
     p_examples / "water" / "dpa3" / "input_torch.json",
+    p_examples / "water" / "dpa3" / "input_torch_dynamic.json",
     p_examples / "property" / "train" / "input_torch.json",
     p_examples / "water" / "se_e3_tebd" / "input_torch.json",
     p_examples / "hessian" / "single_task" / "input.json",
