@@ -13,7 +13,11 @@ import numpy as np
 import optax
 import orbax.checkpoint as ocp
 
+from deepmd.common import (
+    symlink_prefix_files,
+)
 from deepmd.dpmodel.loss.ener import (
+    EnergyHessianLoss,
     EnergyLoss,
 )
 from deepmd.dpmodel.model.transform_output import (
@@ -74,7 +78,15 @@ class DPTrainer:
         self.lr = get_lr_and_coef(learning_rate_param)
         loss_param = jdata.get("loss", {})
         loss_param["starter_learning_rate"] = learning_rate_param["start_lr"]
-        self.loss = EnergyLoss.get_loss(loss_param)
+
+        loss_type = loss_param.get("type", "ener")
+        if loss_type == "ener" and loss_param.get("start_pref_h", 0.0) > 0.0:
+            self.loss = EnergyHessianLoss.get_loss(loss_param)
+            self.model.enable_hessian()
+        elif loss_type == "ener":
+            self.loss = EnergyLoss.get_loss(loss_param)
+        else:
+            raise RuntimeError("unknown loss type " + loss_type)
 
         # training
         tr_data = jdata["training"]
@@ -308,6 +320,8 @@ class DPTrainer:
                         fp,
                         ap,
                     )
+                else:
+                    valid_more_loss = None
                 self.print_on_training(
                     disp_file_fp,
                     train_results=more_loss,
@@ -316,20 +330,25 @@ class DPTrainer:
                     cur_lr=self.lr.value(step),
                 )
                 start_time = time.time()
-            if step % self.save_freq == 0:
+            if (step + 1) % self.save_freq == 0:
                 # save model
                 _, state = nnx.split(model)
+                ckpt_path = Path(f"{self.save_ckpt}-{step + 1}.jax")
+                if ckpt_path.exists():
+                    # remove old checkpoint if it exists
+                    ckpt_path.unlink()
                 with ocp.Checkpointer(
                     ocp.CompositeCheckpointHandler("state", "model_def_script")
                 ) as checkpointer:
                     checkpointer.save(
-                        Path(f"{self.save_ckpt}.jax").absolute(),
+                        ckpt_path.absolute(),
                         ocp.args.Composite(
                             state=ocp.args.StandardSave(state.to_pure_dict()),
                             model_def_script=ocp.args.JsonSave(self.model_def_script),
                         ),
                     )
-                log.info(f"Trained model has been saved to: {self.save_ckpt}.jax")
+                log.info(f"Trained model has been saved to: {ckpt_path!s}")
+                symlink_prefix_files(f"{self.save_ckpt}-{step + 1}", self.save_ckpt)
                 with open("checkpoint", "w") as fp:
                     fp.write(f"{self.save_ckpt}.jax")
 
