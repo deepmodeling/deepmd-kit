@@ -30,17 +30,22 @@ def aggregate(
     -------
     output: [num_owner, feature_dim]
     """
-    bin_count = torch.bincount(owners)
-    bin_count = bin_count.where(bin_count != 0, bin_count.new_ones(1))
+    if num_owner is None or average:
+        # requires bincount
+        bin_count = torch.bincount(owners)
+        bin_count = bin_count.where(bin_count != 0, bin_count.new_ones(1))
+        if (num_owner is not None) and (bin_count.shape[0] != num_owner):
+            difference = num_owner - bin_count.shape[0]
+            bin_count = torch.cat([bin_count, bin_count.new_ones(difference)])
+        else:
+            num_owner = bin_count.shape[0]
+    else:
+        bin_count = None
 
-    if (num_owner is not None) and (bin_count.shape[0] != num_owner):
-        difference = num_owner - bin_count.shape[0]
-        bin_count = torch.cat([bin_count, bin_count.new_ones(difference)])
-
-    # make sure this operation is done on the same device of data and owners
-    output = data.new_zeros([bin_count.shape[0], data.shape[1]])
+    output = data.new_zeros([num_owner, data.shape[1]])
     output = output.index_add_(0, owners, data)
     if average:
+        assert bin_count is not None
         output = (output.T / bin_count).T
     return output
 
@@ -51,6 +56,7 @@ def get_graph_index(
     nlist_mask: torch.Tensor,
     a_nlist_mask: torch.Tensor,
     nall: int,
+    use_loc_mapping: bool = True,
 ):
     """
     Get the index mapping for edge graph and angle graph, ready in `aggregate` or `index_select`.
@@ -100,7 +106,9 @@ def get_graph_index(
     n2e_index = n2e_index[nlist_mask]  # graph node index, atom_graph[:, 0]
 
     # node_ext(j) to edge(ij) index_select
-    frame_shift = torch.arange(0, nf, dtype=nlist.dtype, device=nlist.device) * nall
+    frame_shift = torch.arange(0, nf, dtype=nlist.dtype, device=nlist.device) * (
+        nall if not use_loc_mapping else nloc
+    )
     shifted_nlist = nlist + frame_shift[:, None, None]
     # n_edge
     n_ext2e_index = shifted_nlist[nlist_mask]  # graph neighbor index, atom_graph[:, 1]

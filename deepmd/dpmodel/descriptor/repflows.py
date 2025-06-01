@@ -125,6 +125,9 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
     smooth_edge_update : bool, optional
         Whether to make edge update smooth.
         If True, the edge update from angle message will not use self as padding.
+    edge_init_use_dist : bool, optional
+        Whether to use direct distance r to initialize the edge features instead of 1/r.
+        Note that when using this option, the activation function will not be used when initializing edge features.
     use_exp_switch : bool, optional
         Whether to use an exponential switch function instead of a polynomial one in the neighbor update.
         The exponential switch function ensures neighbor contributions smoothly diminish as the interatomic distance
@@ -145,6 +148,9 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         In the dynamic selection case, neighbor-scale normalization will use `e_sel / sel_reduce_factor`
         or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values,
         accommodating larger selection numbers.
+    use_loc_mapping : bool, optional
+        Whether to use local atom index mapping in training or non-parallel inference.
+        When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.
     ntypes : int
         Number of element types
     activation_function : str, optional
@@ -193,9 +199,11 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         fix_stat_std: float = 0.3,
         optim_update: bool = True,
         smooth_edge_update: bool = False,
+        edge_init_use_dist: bool = False,
         use_exp_switch: bool = False,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
+        use_loc_mapping: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
         super().__init__()
@@ -227,8 +235,10 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
+        self.edge_init_use_dist = edge_init_use_dist
         self.use_exp_switch = use_exp_switch
         self.use_dynamic_sel = use_dynamic_sel
+        self.use_loc_mapping = use_loc_mapping
         self.sel_reduce_factor = sel_reduce_factor
         if self.use_dynamic_sel and not self.smooth_edge_update:
             raise NotImplementedError(
@@ -514,7 +524,11 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         # get edge and angle embedding input
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
         # edge_input, h2 = xp.split(dmatrix, [1], axis=-1)
-        edge_input = dmatrix[:, :, :, :1]
+        # nb x nloc x nnei x 1
+        if self.edge_init_use_dist:
+            edge_input = xp.linalg.vector_norm(diff, axis=-1, keepdims=True)
+        else:
+            edge_input = dmatrix[:, :, :, :1]
         h2 = dmatrix[:, :, :, 1:]
 
         # nf x nloc x a_nnei x 3
@@ -531,10 +545,22 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
             cosine_ij, (nframes, nloc, self.a_sel, self.a_sel, 1)
         ) / (xp.pi**0.5)
 
+        if self.use_loc_mapping:
+            assert mapping is not None
+            flat_map = xp.reshape(mapping, (nframes, -1))
+            nlist = xp.reshape(
+                xp_take_along_axis(flat_map, xp.reshape(nlist, (nframes, -1)), axis=1),
+                nlist.shape,
+            )
+
         if self.use_dynamic_sel:
             # get graph index
             edge_index, angle_index = get_graph_index(
-                nlist, nlist_mask, a_nlist_mask, nall
+                nlist,
+                nlist_mask,
+                a_nlist_mask,
+                nall,
+                use_loc_mapping=self.use_loc_mapping,
             )
             # flat all the tensors
             # n_edge x 1
@@ -556,7 +582,10 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
         # get edge and angle embedding
         # nb x nloc x nnei x e_dim [OR] n_edge x e_dim
-        edge_ebd = self.act(self.edge_embd(edge_input))
+        if not self.edge_init_use_dist:
+            edge_ebd = self.act(self.edge_embd(edge_input))
+        else:
+            edge_ebd = self.edge_embd(edge_input)
         # nf x nloc x a_nnei x a_nnei x a_dim [OR] n_angle x a_dim
         angle_ebd = self.angle_embd(angle_input)
 
@@ -565,7 +594,11 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         for idx, ll in enumerate(self.layers):
             # node_ebd:     nb x nloc x n_dim
             # node_ebd_ext: nb x nall x n_dim
-            node_ebd_ext = xp_take_along_axis(node_ebd, mapping, axis=1)
+            node_ebd_ext = (
+                node_ebd
+                if self.use_loc_mapping
+                else xp_take_along_axis(node_ebd, mapping, axis=1)
+            )
             node_ebd, edge_ebd, angle_ebd = ll.call(
                 node_ebd_ext,
                 edge_ebd,
@@ -667,10 +700,12 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
             "precision": self.precision,
             "fix_stat_std": self.fix_stat_std,
             "optim_update": self.optim_update,
+            "edge_init_use_dist": self.edge_init_use_dist,
             "use_exp_switch": self.use_exp_switch,
             "smooth_edge_update": self.smooth_edge_update,
             "use_dynamic_sel": self.use_dynamic_sel,
             "sel_reduce_factor": self.sel_reduce_factor,
+            "use_loc_mapping": self.use_loc_mapping,
             # variables
             "edge_embd": self.edge_embd.serialize(),
             "angle_embd": self.angle_embd.serialize(),
@@ -1315,6 +1350,7 @@ class RepFlowLayer(NativeOP):
         )
         nb, nloc, nnei = nlist.shape
         nall = node_ebd_ext.shape[1]
+        # int cannot jit; do not run it when self.use_dynamic_sel == False
         n_edge = (
             int(xp.sum(xp.astype(nlist_mask, xp.int32))) if self.use_dynamic_sel else 0
         )

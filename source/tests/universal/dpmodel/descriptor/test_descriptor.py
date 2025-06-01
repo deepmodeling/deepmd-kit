@@ -482,10 +482,12 @@ def DescriptorParamDPA3(
     a_compress_use_split=False,
     optim_update=True,
     smooth_edge_update=False,
+    edge_init_use_dist=False,
     use_exp_switch=False,
     fix_stat_std=0.3,
     use_dynamic_sel=False,
     precision="float64",
+    use_loc_mapping=True,
 ):
     input_dict = {
         # kwargs for repformer
@@ -511,6 +513,7 @@ def DescriptorParamDPA3(
                 "optim_update": optim_update,
                 "use_exp_switch": use_exp_switch,
                 "smooth_edge_update": smooth_edge_update,
+                "edge_init_use_dist": edge_init_use_dist,
                 "fix_stat_std": fix_stat_std,
                 "n_multi_edge_message": n_multi_edge_message,
                 "axis_neuron": 2,
@@ -531,6 +534,7 @@ def DescriptorParamDPA3(
         "trainable": True,
         "use_econf_tebd": False,
         "use_tebd_bias": False,
+        "use_loc_mapping": use_loc_mapping,
         "type_map": type_map,
         "seed": GLOBAL_SEED,
     }
@@ -549,12 +553,14 @@ DescriptorParamDPA3List = parameterize_func(
             "a_compress_use_split": (True,),
             "optim_update": (True, False),
             "smooth_edge_update": (True,),
+            "edge_init_use_dist": (True, False),
             "use_exp_switch": (True, False),
             "fix_stat_std": (0.3,),
-            "n_multi_edge_message": (1, 2),
+            "n_multi_edge_message": (1,),
             "use_dynamic_sel": (True, False),
             "env_protection": (0.0, 1e-8),
             "precision": ("float64",),
+            "use_loc_mapping": (True, False),
         }
     ),
 )

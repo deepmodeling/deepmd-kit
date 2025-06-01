@@ -1372,6 +1372,10 @@ def descrpt_dpa3_args():
     doc_seed = "Random seed for parameter initialization."
     doc_use_econf_tebd = "Whether to use electronic configuration type embedding."
     doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
+    doc_use_loc_mapping = (
+        "Whether to use local atom index mapping in training or non-parallel inference. "
+        "When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation."
+    )
     return [
         # doc_repflow args
         Argument("repflow", dict, dpa3_repflow_args(), doc=doc_repflow),
@@ -1420,6 +1424,13 @@ def descrpt_dpa3_args():
             optional=True,
             default=False,
             doc=doc_use_tebd_bias,
+        ),
+        Argument(
+            "use_loc_mapping",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_use_loc_mapping,
         ),
     ]
 
@@ -1496,6 +1507,10 @@ def dpa3_repflow_args():
     doc_smooth_edge_update = (
         "Whether to make edge update smooth. "
         "If True, the edge update from angle message will not use self as padding."
+    )
+    doc_edge_init_use_dist = (
+        "Whether to use direct distance r to initialize the edge features instead of 1/r. "
+        "Note that when using this option, the activation function will not be used when initializing edge features."
     )
     doc_use_exp_switch = (
         "Whether to use an exponential switch function instead of a polynomial one in the neighbor update. "
@@ -1619,6 +1634,14 @@ def dpa3_repflow_args():
             optional=True,
             default=False,  # For compatability. This will be True in the future
             doc=doc_smooth_edge_update,
+        ),
+        Argument(
+            "edge_init_use_dist",
+            bool,
+            optional=True,
+            default=False,
+            alias=["edge_use_dist"],
+            doc=doc_edge_init_use_dist,
         ),
         Argument(
             "use_exp_switch",
