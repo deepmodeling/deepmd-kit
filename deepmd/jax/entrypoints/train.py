@@ -14,6 +14,10 @@ from typing import (
 from deepmd.common import (
     j_loader,
 )
+from deepmd.jax.env import (
+    jax,
+    jax_export,
+)
 from deepmd.jax.train.trainer import (
     DPTrainer,
 )
@@ -26,10 +30,38 @@ from deepmd.utils.compat import (
 from deepmd.utils.data_system import (
     get_data,
 )
+from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
 __all__ = ["train"]
 
 log = logging.getLogger(__name__)
+
+
+class SummaryPrinter(BaseSummaryPrinter):
+    """Summary printer for JAX."""
+
+    def is_built_with_cuda(self) -> bool:
+        """Check if the backend is built with CUDA."""
+        return jax_export.default_export_platform() == "cuda"
+
+    def is_built_with_rocm(self) -> bool:
+        """Check if the backend is built with ROCm."""
+        return jax_export.default_export_platform() == "rocm"
+
+    def get_compute_device(self) -> str:
+        """Get Compute device."""
+        return jax.default_backend()
+
+    def get_ngpus(self) -> int:
+        """Get the number of GPUs."""
+        return jax.device_count()
+
+    def get_backend_info(self) -> dict:
+        """Get backend information."""
+        return {
+            "Backend": "JAX",
+            "JAX ver": jax.__version__,
+        }
 
 
 def train(
@@ -94,7 +126,7 @@ def train(
 
     with open(output, "w") as fp:
         json.dump(jdata, fp, indent=4)
-    # print_resource_summary()
+    SummaryPrinter()()
 
     # make necessary checks
     assert "training" in jdata
