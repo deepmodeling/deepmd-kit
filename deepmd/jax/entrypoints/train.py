@@ -21,6 +21,7 @@ from deepmd.jax.env import (
 from deepmd.jax.train.trainer import (
     DPTrainer,
 )
+from deepmd.utils import random as dp_random
 from deepmd.utils.argcheck import (
     normalize,
 )
@@ -143,6 +144,9 @@ def train(
 
     # init random seed of data systems
     seed = jdata["training"].get("seed", None)
+    if seed is not None:
+        seed = seed % (2**32)
+    dp_random.seed(seed)
 
     # init data
     train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, None)
