@@ -521,9 +521,9 @@ class TestCustomizedRGLOB(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
-        self.config["training"]["training_data"]["rglob_patterns"] = "water/data/data_*"
+        self.config["training"]["training_data"]["rglob_patterns"] = ["water/data/data_*"]
         self.config["training"]["training_data"]["systems"] = str(Path(__file__).parent)
-        self.config["training"]["validation_data"]["rglob_patterns"] = "water/*/data_0"
+        self.config["training"]["validation_data"]["rglob_patterns"] = ["water/*/data_0"]
         self.config["training"]["validation_data"]["systems"] = str(
             Path(__file__).parent
         )
