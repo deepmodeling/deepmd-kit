@@ -150,10 +150,9 @@ class DPTrainer:
     def train(self, train_data, valid_data=None) -> None:
         model = self.model
         tx = optax.adam(
-            learning_rate=lambda step: self.lr.value(step, xp=jnp),
+            learning_rate=lambda step: self.lr.value(self.start_step + step, xp=jnp),
         )
         optimizer = nnx.Optimizer(model, tx)
-        optimizer.step += self.start_step
 
         # data stat
         if self.init_model is None and self.restart is None:
