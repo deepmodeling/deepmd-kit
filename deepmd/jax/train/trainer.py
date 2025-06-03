@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+import shutil
 import time
 from pathlib import (
     Path,
@@ -37,8 +38,14 @@ from deepmd.jax.env import (
     jnp,
     nnx,
 )
+from deepmd.jax.model.base_model import (
+    BaseModel,
+)
 from deepmd.jax.model.model import (
     get_model,
+)
+from deepmd.jax.utils.serialization import (
+    serialize_from_file,
 )
 from deepmd.loggers.training import (
     format_training_message,
@@ -55,9 +62,26 @@ log = logging.getLogger(__name__)
 
 
 class DPTrainer:
-    def __init__(self, jdata) -> None:
+    def __init__(
+        self,
+        jdata,
+        init_model: Optional[str] = None,
+        restart: Optional[str] = None,
+    ) -> None:
+        self.init_model = init_model
+        self.restart = restart
         self.model_def_script = jdata["model"]
-        self.model = get_model(jdata["model"])
+        self.start_step = 0
+        if self.init_model is not None:
+            model_dict = serialize_from_file(self.init_model)
+            self.model = BaseModel.deserialize(model_dict["model"])
+        elif self.restart is not None:
+            model_dict = serialize_from_file(self.restart)
+            self.model = BaseModel.deserialize(model_dict["model"])
+            self.start_step = model_dict["@variables"].get("current_step", 0)
+        else:
+            # from scratch
+            self.model = get_model(jdata["model"])
         self.training_param = jdata["training"]
         self.num_steps = self.training_param["numb_steps"]
 
@@ -129,23 +153,25 @@ class DPTrainer:
             learning_rate=lambda step: self.lr.value(step, xp=jnp),
         )
         optimizer = nnx.Optimizer(model, tx)
+        optimizer.step += self.start_step
 
         # data stat
-        data_stat_nbatch = 10  # TODO
-        all_stat = make_stat_input(train_data, data_stat_nbatch, merge_sys=False)
-        all_stat["atype"] = all_stat.pop("type")
+        if self.init_model is None and self.restart is None:
+            data_stat_nbatch = 10  # TODO
+            all_stat = make_stat_input(train_data, data_stat_nbatch, merge_sys=False)
+            all_stat["atype"] = all_stat.pop("type")
 
-        # swap dict key and list idx
-        all_stat_sys = [
-            {
-                kk: jnp.asarray(np.concatenate(vv[ii], axis=0))
-                for kk, vv in all_stat.items()
-                if not kk.startswith("find_")
-            }
-            for ii in range(train_data.get_nsystems())
-        ]
-        model.atomic_model.descriptor.compute_input_stats(all_stat_sys)
-        model.atomic_model.fitting.compute_output_stats(all_stat)
+            # swap dict key and list idx
+            all_stat_sys = [
+                {
+                    kk: jnp.asarray(np.concatenate(vv[ii], axis=0))
+                    for kk, vv in all_stat.items()
+                    if not kk.startswith("find_")
+                }
+                for ii in range(train_data.get_nsystems())
+            ]
+            model.atomic_model.descriptor.compute_input_stats(all_stat_sys)
+            model.atomic_model.fitting.compute_output_stats(all_stat)
 
         def loss_fn(
             model,
@@ -242,7 +268,7 @@ class DPTrainer:
 
         start_time = time.time()
         disp_file_fp = open(self.disp_file, "w")
-        for step in range(self.num_steps):
+        for step in range(self.start_step, self.num_steps):
             batch_data = train_data.get_batch()
             # numpy to jax
             jax_data = {
@@ -334,9 +360,11 @@ class DPTrainer:
                 # save model
                 _, state = nnx.split(model)
                 ckpt_path = Path(f"{self.save_ckpt}-{step + 1}.jax")
-                if ckpt_path.exists():
+                if ckpt_path.is_dir():
                     # remove old checkpoint if it exists
-                    ckpt_path.unlink()
+                    shutil.rmtree(ckpt_path)
+                model_def_script_cpy = self.model_def_script.copy()
+                model_def_script_cpy["current_step"] = step + 1
                 with ocp.Checkpointer(
                     ocp.CompositeCheckpointHandler("state", "model_def_script")
                 ) as checkpointer:
@@ -344,7 +372,7 @@ class DPTrainer:
                         ckpt_path.absolute(),
                         ocp.args.Composite(
                             state=ocp.args.StandardSave(state.to_pure_dict()),
-                            model_def_script=ocp.args.JsonSave(self.model_def_script),
+                            model_def_script=ocp.args.JsonSave(model_def_script_cpy),
                         ),
                     )
                 log.info(f"Trained model has been saved to: {ckpt_path!s}")

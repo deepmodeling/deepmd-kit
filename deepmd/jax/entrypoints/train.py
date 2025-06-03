@@ -134,7 +134,11 @@ def train(
 
     # init the model
 
-    model = DPTrainer(jdata)
+    model = DPTrainer(
+        jdata,
+        init_model=init_model,
+        restart=restart,
+    )
     rcut = model.model.get_rcut()
     type_map = model.model.get_type_map()
     if len(type_map) == 0:
