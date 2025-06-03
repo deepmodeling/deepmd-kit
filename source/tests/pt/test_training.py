@@ -524,14 +524,19 @@ class TestCustomizedRGLOB(unittest.TestCase, DPTrainTest):
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["rglob_patterns"] = "water/data/data_*"
         self.config["training"]["training_data"]["systems"] = str(Path(__file__).parent)
-        self.config["training"]["validation_data"]["rglob_patterns"] = "water/data/data_1"
-        self.config["training"]["validation_data"]["systems"] = str(Path(__file__).parent)
+        self.config["training"]["validation_data"]["rglob_patterns"] = (
+            "water/data/data_1"
+        )
+        self.config["training"]["validation_data"]["systems"] = str(
+            Path(__file__).parent
+        )
         self.config["model"] = deepcopy(model_dpa1)
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
 
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
+
 
 if __name__ == "__main__":
     unittest.main()
