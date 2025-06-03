@@ -123,6 +123,17 @@ class RepFlowArgs:
     smooth_edge_update : bool, optional
         Whether to make edge update smooth.
         If True, the edge update from angle message will not use self as padding.
+    edge_init_use_dist : bool, optional
+        Whether to use direct distance r to initialize the edge features instead of 1/r.
+        Note that when using this option, the activation function will not be used when initializing edge features.
+    use_exp_switch : bool, optional
+        Whether to use an exponential switch function instead of a polynomial one in the neighbor update.
+        The exponential switch function ensures neighbor contributions smoothly diminish as the interatomic distance
+        `r` approaches the cutoff radius `rcut`. Specifically, the function is defined as:
+        s(r) = \\exp(-\\exp(20 * (r - rcut_smth) / rcut_smth)) for 0 < r \\leq rcut, and s(r) = 0 for r > rcut.
+        Here, `rcut_smth` is an adjustable smoothing factor and `rcut_smth` should be chosen carefully
+        according to `rcut`, ensuring s(r) approaches zero smoothly at the cutoff.
+        Typical recommended values are `rcut_smth` = 5.3 for `rcut` = 6.0, and 3.5 for `rcut` = 4.0.
     use_dynamic_sel : bool, optional
         Whether to dynamically select neighbors within the cutoff radius.
         If True, the exact number of neighbors within the cutoff radius is used
@@ -162,6 +173,8 @@ class RepFlowArgs:
         skip_stat: bool = False,
         optim_update: bool = True,
         smooth_edge_update: bool = False,
+        edge_init_use_dist: bool = False,
+        use_exp_switch: bool = False,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
     ) -> None:
@@ -190,6 +203,8 @@ class RepFlowArgs:
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
+        self.edge_init_use_dist = edge_init_use_dist
+        self.use_exp_switch = use_exp_switch
         self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
 
@@ -223,6 +238,8 @@ class RepFlowArgs:
             "fix_stat_std": self.fix_stat_std,
             "optim_update": self.optim_update,
             "smooth_edge_update": self.smooth_edge_update,
+            "edge_init_use_dist": self.edge_init_use_dist,
+            "use_exp_switch": self.use_exp_switch,
             "use_dynamic_sel": self.use_dynamic_sel,
             "sel_reduce_factor": self.sel_reduce_factor,
         }
@@ -260,6 +277,9 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         Whether to use electronic configuration type embedding.
     use_tebd_bias : bool, Optional
         Whether to use bias in the type embedding layer.
+    use_loc_mapping : bool, Optional
+        Whether to use local atom index mapping in training or non-parallel inference.
+        When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.
     type_map : list[str], Optional
         A list of strings. Give the name to each type of atoms.
     """
@@ -279,6 +299,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         seed: Optional[Union[int, list[int]]] = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
+        use_loc_mapping: bool = True,
         type_map: Optional[list[str]] = None,
     ) -> None:
         super().__init__()
@@ -321,8 +342,11 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             fix_stat_std=self.repflow_args.fix_stat_std,
             optim_update=self.repflow_args.optim_update,
             smooth_edge_update=self.repflow_args.smooth_edge_update,
+            edge_init_use_dist=self.repflow_args.edge_init_use_dist,
+            use_exp_switch=self.repflow_args.use_exp_switch,
             use_dynamic_sel=self.repflow_args.use_dynamic_sel,
             sel_reduce_factor=self.repflow_args.sel_reduce_factor,
+            use_loc_mapping=use_loc_mapping,
             exclude_types=exclude_types,
             env_protection=env_protection,
             precision=precision,
@@ -331,6 +355,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
 
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias
+        self.use_loc_mapping = use_loc_mapping
         self.type_map = type_map
         self.tebd_dim = self.repflow_args.n_dim
         self.type_embedding = TypeEmbedNet(
@@ -529,10 +554,16 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         nall = xp.reshape(coord_ext, (nframes, -1)).shape[1] // 3
 
         type_embedding = self.type_embedding.call()
-        node_ebd_ext = xp.reshape(
-            xp.take(type_embedding, xp.reshape(atype_ext, [-1]), axis=0),
-            (nframes, nall, self.tebd_dim),
-        )
+        if self.use_loc_mapping:
+            node_ebd_ext = xp.reshape(
+                xp.take(type_embedding, xp.reshape(atype_ext[:, :nloc], [-1]), axis=0),
+                (nframes, nloc, self.tebd_dim),
+            )
+        else:
+            node_ebd_ext = xp.reshape(
+                xp.take(type_embedding, xp.reshape(atype_ext, [-1]), axis=0),
+                (nframes, nall, self.tebd_dim),
+            )
         node_ebd_inp = node_ebd_ext[:, :nloc, :]
         # repflows
         node_ebd, edge_ebd, h2, rot_mat, sw = self.repflows(
@@ -551,7 +582,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "dpa3",
-            "@version": 1,
+            "@version": 2,
             "ntypes": self.ntypes,
             "repflow_args": self.repflow_args.serialize(),
             "concat_output_tebd": self.concat_output_tebd,
@@ -562,6 +593,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             "trainable": self.trainable,
             "use_econf_tebd": self.use_econf_tebd,
             "use_tebd_bias": self.use_tebd_bias,
+            "use_loc_mapping": self.use_loc_mapping,
             "type_map": self.type_map,
             "type_embedding": self.type_embedding.serialize(),
         }
@@ -586,7 +618,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
     def deserialize(cls, data: dict) -> "DescrptDPA3":
         data = data.copy()
         version = data.pop("@version")
-        check_version_compatibility(version, 1, 1)
+        check_version_compatibility(version, 2, 1)
         data.pop("@class")
         data.pop("type")
         repflow_variable = data.pop("repflow_variable").copy()

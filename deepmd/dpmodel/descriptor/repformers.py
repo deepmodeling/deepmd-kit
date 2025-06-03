@@ -441,7 +441,11 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         nlist = xp.where(exclude_mask, nlist, xp.full_like(nlist, -1))
         # nf x nloc x nnei x 4
         dmatrix, diff, sw = self.env_mat.call(
-            coord_ext, atype_ext, nlist, self.mean, self.stddev
+            coord_ext,
+            atype_ext,
+            nlist,
+            self.mean[...],
+            self.stddev[...],
         )
         nf, nloc, nnei, _ = dmatrix.shape
         # nf x nloc x nnei

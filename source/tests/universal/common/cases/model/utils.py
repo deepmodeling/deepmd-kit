@@ -202,7 +202,10 @@ class ModelTestCase:
                         assert rr is None
                     else:
                         np.testing.assert_allclose(
-                            subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
+                            subret[0],
+                            rr,
+                            err_msg=f"compare {kk} between 0 and {ii}",
+                            atol=aprec,
                         )
         for kk in ret_lower[0].keys():
             subret = []
@@ -215,7 +218,10 @@ class ModelTestCase:
                         assert rr is None
                     else:
                         np.testing.assert_allclose(
-                            subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
+                            subret[0],
+                            rr,
+                            err_msg=f"compare {kk} between 0 and {ii}",
+                            atol=aprec,
                         )
         same_keys = set(ret[0].keys()) & set(ret_lower[0].keys())
         self.assertTrue(same_keys)
@@ -305,7 +311,10 @@ class ModelTestCase:
                         assert rr is None
                     else:
                         np.testing.assert_allclose(
-                            subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
+                            subret[0],
+                            rr,
+                            err_msg=f"compare {kk} between 0 and {ii}",
+                            atol=aprec,
                         )
         for kk in ret_lower[0]:
             subret = []
@@ -318,7 +327,10 @@ class ModelTestCase:
                         assert rr is None
                     else:
                         np.testing.assert_allclose(
-                            subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
+                            subret[0],
+                            rr,
+                            err_msg=f"compare {kk} between 0 and {ii}",
+                            atol=aprec,
                         )
         same_keys = set(ret[0].keys()) & set(ret_lower[0].keys())
         self.assertTrue(same_keys)

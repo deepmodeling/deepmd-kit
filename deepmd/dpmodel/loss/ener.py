@@ -93,10 +93,10 @@ class EnergyLoss(Loss):
         label_dict: dict[str, np.ndarray],
     ) -> dict[str, np.ndarray]:
         """Calculate loss from model results and labeled results."""
-        energy = model_dict["energy"]
-        force = model_dict["force"]
-        virial = model_dict["virial"]
-        atom_ener = model_dict["atom_ener"]
+        energy = model_dict["energy_redu"]
+        force = model_dict["energy_derv_r"]
+        virial = model_dict["energy_derv_c_redu"]
+        atom_ener = model_dict["energy"]
         energy_hat = label_dict["energy"]
         force_hat = label_dict["force"]
         virial_hat = label_dict["virial"]
@@ -177,7 +177,7 @@ class EnergyLoss(Loss):
                     delta=self.huber_delta,
                 )
                 loss += pref_e * l_huber_loss
-            more_loss["l2_ener_loss"] = self.display_if_exist(l2_ener_loss, find_energy)
+            more_loss["rmse_e"] = self.display_if_exist(l2_ener_loss, find_energy)
         if self.has_f:
             l2_force_loss = xp.mean(xp.square(diff_f))
             if not self.use_huber:
@@ -189,9 +189,7 @@ class EnergyLoss(Loss):
                     delta=self.huber_delta,
                 )
                 loss += pref_f * l_huber_loss
-            more_loss["l2_force_loss"] = self.display_if_exist(
-                l2_force_loss, find_force
-            )
+            more_loss["rmse_f"] = self.display_if_exist(l2_force_loss, find_force)
         if self.has_v:
             virial_reshape = xp.reshape(virial, [-1])
             virial_hat_reshape = xp.reshape(virial_hat, [-1])
@@ -207,9 +205,7 @@ class EnergyLoss(Loss):
                     delta=self.huber_delta,
                 )
                 loss += pref_v * l_huber_loss
-            more_loss["l2_virial_loss"] = self.display_if_exist(
-                l2_virial_loss, find_virial
-            )
+            more_loss["rmse_v"] = self.display_if_exist(l2_virial_loss, find_virial)
         if self.has_ae:
             atom_ener_reshape = xp.reshape(atom_ener, [-1])
             atom_ener_hat_reshape = xp.reshape(atom_ener_hat, [-1])
@@ -225,7 +221,7 @@ class EnergyLoss(Loss):
                     delta=self.huber_delta,
                 )
                 loss += pref_ae * l_huber_loss
-            more_loss["l2_atom_ener_loss"] = self.display_if_exist(
+            more_loss["rmse_ae"] = self.display_if_exist(
                 l2_atom_ener_loss, find_atom_ener
             )
         if self.has_pf:
@@ -234,7 +230,7 @@ class EnergyLoss(Loss):
                 xp.multiply(xp.square(diff_f), atom_pref_reshape),
             )
             loss += pref_pf * l2_pref_force_loss
-            more_loss["l2_pref_force_loss"] = self.display_if_exist(
+            more_loss["rmse_pf"] = self.display_if_exist(
                 l2_pref_force_loss, find_atom_pref
             )
         if self.has_gf:
@@ -256,11 +252,10 @@ class EnergyLoss(Loss):
                 + (self.start_pref_gf - self.limit_pref_gf) * lr_ratio
             )
             loss += pref_gf * l2_gen_force_loss
-            more_loss["l2_gen_force_loss"] = self.display_if_exist(
-                l2_gen_force_loss, find_drdq
-            )
+            more_loss["rmse_gf"] = self.display_if_exist(l2_gen_force_loss, find_drdq)
 
         self.l2_l = loss
+        more_loss["rmse"] = xp.sqrt(loss)
         self.l2_more = more_loss
         return loss, more_loss
 
@@ -268,57 +263,52 @@ class EnergyLoss(Loss):
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         label_requirement = []
-        if self.has_e:
-            label_requirement.append(
-                DataRequirementItem(
-                    "energy",
-                    ndof=1,
-                    atomic=False,
-                    must=False,
-                    high_prec=True,
-                )
+        label_requirement.append(
+            DataRequirementItem(
+                "energy",
+                ndof=1,
+                atomic=False,
+                must=False,
+                high_prec=True,
             )
-        if self.has_f:
-            label_requirement.append(
-                DataRequirementItem(
-                    "force",
-                    ndof=3,
-                    atomic=True,
-                    must=False,
-                    high_prec=False,
-                )
+        )
+        label_requirement.append(
+            DataRequirementItem(
+                "force",
+                ndof=3,
+                atomic=True,
+                must=False,
+                high_prec=False,
             )
-        if self.has_v:
-            label_requirement.append(
-                DataRequirementItem(
-                    "virial",
-                    ndof=9,
-                    atomic=False,
-                    must=False,
-                    high_prec=False,
-                )
+        )
+        label_requirement.append(
+            DataRequirementItem(
+                "virial",
+                ndof=9,
+                atomic=False,
+                must=False,
+                high_prec=False,
             )
-        if self.has_ae:
-            label_requirement.append(
-                DataRequirementItem(
-                    "atom_ener",
-                    ndof=1,
-                    atomic=True,
-                    must=False,
-                    high_prec=False,
-                )
+        )
+        label_requirement.append(
+            DataRequirementItem(
+                "atom_ener",
+                ndof=1,
+                atomic=True,
+                must=False,
+                high_prec=False,
             )
-        if self.has_pf:
-            label_requirement.append(
-                DataRequirementItem(
-                    "atom_pref",
-                    ndof=1,
-                    atomic=True,
-                    must=False,
-                    high_prec=False,
-                    repeat=3,
-                )
+        )
+        label_requirement.append(
+            DataRequirementItem(
+                "atom_pref",
+                ndof=1,
+                atomic=True,
+                must=False,
+                high_prec=False,
+                repeat=3,
             )
+        )
         if self.has_gf > 0:
             label_requirement.append(
                 DataRequirementItem(

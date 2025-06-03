@@ -136,6 +136,17 @@ class DescrptBlockRepflows(DescriptorBlock):
     smooth_edge_update : bool, optional
         Whether to make edge update smooth.
         If True, the edge update from angle message will not use self as padding.
+    edge_init_use_dist : bool, optional
+        Whether to use direct distance r to initialize the edge features instead of 1/r.
+        Note that when using this option, the activation function will not be used when initializing edge features.
+    use_exp_switch : bool, optional
+        Whether to use an exponential switch function instead of a polynomial one in the neighbor update.
+        The exponential switch function ensures neighbor contributions smoothly diminish as the interatomic distance
+        `r` approaches the cutoff radius `rcut`. Specifically, the function is defined as:
+        s(r) = \\exp(-\\exp(20 * (r - rcut_smth) / rcut_smth)) for 0 < r \\leq rcut, and s(r) = 0 for r > rcut.
+        Here, `rcut_smth` is an adjustable smoothing factor and `rcut_smth` should be chosen carefully
+        according to `rcut`, ensuring s(r) approaches zero smoothly at the cutoff.
+        Typical recommended values are `rcut_smth` = 5.3 for `rcut` = 6.0, and 3.5 for `rcut` = 4.0.
     use_dynamic_sel : bool, optional
         Whether to dynamically select neighbors within the cutoff radius.
         If True, the exact number of neighbors within the cutoff radius is used
@@ -148,6 +159,9 @@ class DescrptBlockRepflows(DescriptorBlock):
         In the dynamic selection case, neighbor-scale normalization will use `e_sel / sel_reduce_factor`
         or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values,
         accommodating larger selection numbers.
+    use_loc_mapping : bool, Optional
+        Whether to use local atom index mapping in training or non-parallel inference.
+        When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.
     optim_update : bool, optional
         Whether to enable the optimized update method.
         Uses a more efficient process when enabled. Defaults to True
@@ -198,8 +212,11 @@ class DescrptBlockRepflows(DescriptorBlock):
         precision: str = "float64",
         fix_stat_std: float = 0.3,
         smooth_edge_update: bool = False,
+        edge_init_use_dist: bool = False,
+        use_exp_switch: bool = False,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
+        use_loc_mapping: bool = True,
         optim_update: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
@@ -230,8 +247,11 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.fix_stat_std = fix_stat_std
         self.set_stddev_constant = fix_stat_std != 0.0
         self.a_compress_use_split = a_compress_use_split
+        self.use_loc_mapping = use_loc_mapping
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
+        self.edge_init_use_dist = edge_init_use_dist
+        self.use_exp_switch = use_exp_switch
         self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
         if self.use_dynamic_sel and not self.smooth_edge_update:
@@ -406,9 +426,9 @@ class DescrptBlockRepflows(DescriptorBlock):
         mapping: Optional[torch.Tensor] = None,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
-        if comm_dict is None:
+        parallel_mode = comm_dict is not None
+        if not parallel_mode:
             assert mapping is not None
-            assert extended_atype_embd is not None
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         atype = extended_atype[:, :nloc]
@@ -425,6 +445,7 @@ class DescrptBlockRepflows(DescriptorBlock):
             self.e_rcut,
             self.e_rcut_smth,
             protection=self.env_protection,
+            use_exp_switch=self.use_exp_switch,
         )
         nlist_mask = nlist != -1
         sw = torch.squeeze(sw, -1)
@@ -446,6 +467,7 @@ class DescrptBlockRepflows(DescriptorBlock):
             self.a_rcut,
             self.a_rcut_smth,
             protection=self.env_protection,
+            use_exp_switch=self.use_exp_switch,
         )
         a_nlist_mask = a_nlist != -1
         a_sw = torch.squeeze(a_sw, -1)
@@ -458,12 +480,9 @@ class DescrptBlockRepflows(DescriptorBlock):
 
         # get node embedding
         # [nframes, nloc, tebd_dim]
-        if comm_dict is None:
-            assert isinstance(extended_atype_embd, torch.Tensor)  # for jit
-            atype_embd = extended_atype_embd[:, :nloc, :]
-            assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
-        else:
-            atype_embd = extended_atype_embd
+        assert extended_atype_embd is not None
+        atype_embd = extended_atype_embd[:, :nloc, :]
+        assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
         assert isinstance(atype_embd, torch.Tensor)  # for jit
         node_ebd = self.act(atype_embd)
         n_dim = node_ebd.shape[-1]
@@ -471,6 +490,10 @@ class DescrptBlockRepflows(DescriptorBlock):
         # get edge and angle embedding input
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
         edge_input, h2 = torch.split(dmatrix, [1, 3], dim=-1)
+        if self.edge_init_use_dist:
+            # nb x nloc x nnei x 1
+            edge_input = torch.linalg.norm(diff, dim=-1, keepdim=True)
+
         # nf x nloc x a_nnei x 3
         normalized_diff_i = a_diff / (
             torch.linalg.norm(a_diff, dim=-1, keepdim=True) + 1e-6
@@ -482,10 +505,22 @@ class DescrptBlockRepflows(DescriptorBlock):
         cosine_ij = torch.matmul(normalized_diff_i, normalized_diff_j) * (1 - 1e-6)
         angle_input = cosine_ij.unsqueeze(-1) / (torch.pi**0.5)
 
+        if not parallel_mode and self.use_loc_mapping:
+            assert mapping is not None
+            # convert nlist from nall to nloc index
+            nlist = torch.gather(
+                mapping,
+                1,
+                index=nlist.reshape(nframes, -1),
+            ).reshape(nlist.shape)
         if self.use_dynamic_sel:
             # get graph index
             edge_index, angle_index = get_graph_index(
-                nlist, nlist_mask, a_nlist_mask, nall
+                nlist,
+                nlist_mask,
+                a_nlist_mask,
+                nall,
+                use_loc_mapping=self.use_loc_mapping,
             )
             # flat all the tensors
             # n_edge x 1
@@ -507,23 +542,31 @@ class DescrptBlockRepflows(DescriptorBlock):
             )
         # get edge and angle embedding
         # nb x nloc x nnei x e_dim [OR] n_edge x e_dim
-        edge_ebd = self.act(self.edge_embd(edge_input))
+        if not self.edge_init_use_dist:
+            edge_ebd = self.act(self.edge_embd(edge_input))
+        else:
+            edge_ebd = self.edge_embd(edge_input)
         # nf x nloc x a_nnei x a_nnei x a_dim [OR] n_angle x a_dim
         angle_ebd = self.angle_embd(angle_input)
 
         # nb x nall x n_dim
-        if comm_dict is None:
+        if not parallel_mode:
             assert mapping is not None
             mapping = (
                 mapping.view(nframes, nall).unsqueeze(-1).expand(-1, -1, self.n_dim)
             )
         for idx, ll in enumerate(self.layers):
             # node_ebd:     nb x nloc x n_dim
-            # node_ebd_ext: nb x nall x n_dim
-            if comm_dict is None:
+            # node_ebd_ext: nb x nall x n_dim [OR] nb x nloc x n_dim when not parallel_mode
+            if not parallel_mode:
                 assert mapping is not None
-                node_ebd_ext = torch.gather(node_ebd, 1, mapping)
+                node_ebd_ext = (
+                    torch.gather(node_ebd, 1, mapping)
+                    if not self.use_loc_mapping
+                    else node_ebd
+                )
             else:
+                assert comm_dict is not None
                 has_spin = "has_spin" in comm_dict
                 if not has_spin:
                     n_padding = nall - nloc
