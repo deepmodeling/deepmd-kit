@@ -516,5 +516,28 @@ class TestPropFintuFromEnerModel(unittest.TestCase):
                 shutil.rmtree(f)
 
 
+class TestCustomizedRGLOB(unittest.TestCase, DPTrainTest):
+    def setUp(self) -> None:
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config["training"]["training_data"]["rglob_patterns"] = [
+            "water/data/data_*"
+        ]
+        self.config["training"]["training_data"]["systems"] = str(Path(__file__).parent)
+        self.config["training"]["validation_data"]["rglob_patterns"] = [
+            "water/*/data_0"
+        ]
+        self.config["training"]["validation_data"]["systems"] = str(
+            Path(__file__).parent
+        )
+        self.config["model"] = deepcopy(model_dpa1)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
+
+
 if __name__ == "__main__":
     unittest.main()

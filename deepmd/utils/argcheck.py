@@ -2926,6 +2926,9 @@ def training_data_args():  # ! added by Ziyao: new specification style for data 
         "This key can be provided with a list that specifies the systems, or be provided with a string "
         "by which the prefix of all systems are given and the list of the systems is automatically generated."
     )
+    doc_patterns = (
+        "The customized patterns used in `rglob` to collect all training systems. "
+    )
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
@@ -2948,6 +2951,13 @@ If MPI is used, the value should be considered as the batch size per task.'
     args = [
         Argument(
             "systems", [list[str], str], optional=False, default=".", doc=doc_systems
+        ),
+        Argument(
+            "rglob_patterns",
+            [list[str]],
+            optional=True,
+            default=None,
+            doc=doc_patterns + doc_only_pt_supported,
         ),
         Argument(
             "batch_size",
@@ -2995,6 +3005,9 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
         "This key can be provided with a list that specifies the systems, or be provided with a string "
         "by which the prefix of all systems are given and the list of the systems is automatically generated."
     )
+    doc_patterns = (
+        "The customized patterns used in `rglob` to collect all validation systems. "
+    )
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
@@ -3014,6 +3027,13 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
     args = [
         Argument(
             "systems", [list[str], str], optional=False, default=".", doc=doc_systems
+        ),
+        Argument(
+            "rglob_patterns",
+            [list[str]],
+            optional=True,
+            default=None,
+            doc=doc_patterns + doc_only_pt_supported,
         ),
         Argument(
             "batch_size",
