@@ -146,7 +146,7 @@ def build_neighbor_list(
     # Efficiently subtract 1 from diagonal elements rr[b, i, i] for i < min(nloc, nall).
     # nall is rr.shape[2] here.
     diag_len = min(nloc, nall)
-    idx = torch.arange(diag_len, device=rr.device)
+    idx = torch.arange(diag_len, device=rr.device, dtype=torch.int)
     rr[:, idx, idx] -= 1.0
 
     nsel = sum(sel)
