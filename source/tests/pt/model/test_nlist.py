@@ -152,13 +152,17 @@ class TestNeighList(unittest.TestCase):
                 nlists[get_multiple_nlist_key(rcuts[dd], nsels[dd])].shape[-1],
                 nsels[dd],
             )
+
+        # since the nlist is created using unstable sort,
+        # we check if the set of indices in the nlist matches,
+        # regardless of the order
         torch.testing.assert_close(
-            nlists[get_multiple_nlist_key(rcuts[0], nsels[0])],
-            nlist0,
+            nlists[get_multiple_nlist_key(rcuts[0], nsels[0])].sort(dim=-1).values,
+            nlist0.sort(dim=-1).values,
         )
         torch.testing.assert_close(
-            nlists[get_multiple_nlist_key(rcuts[1], nsels[1])],
-            nlist2,
+            nlists[get_multiple_nlist_key(rcuts[1], nsels[1])].sort(dim=-1).values,
+            nlist2.sort(dim=-1).values,
         )
 
     def test_extend_coord(self) -> None:
