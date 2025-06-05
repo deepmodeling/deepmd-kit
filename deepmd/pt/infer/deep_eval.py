@@ -624,6 +624,32 @@ class DeepEval(DeepEvalBackend):
         """Get model definition script."""
         return self.model_def_script
 
+    def get_model_size(self) -> dict:
+        """Get model parameter count.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the number of parameters in the model.
+            The keys are 'descriptor', 'fitting_net', and 'total'.
+        """
+        params = self.dp.state_dict()
+        sum_param_des = sum(
+            params[k].numel()
+            for k in params.keys()
+            if "descriptor" in k and "mean" not in k and "stddev" not in k
+        )
+        sum_param_fit = sum(
+            params[k].numel()
+            for k in params.keys()
+            if "fitting" in k and "_networks" not in k
+        )
+        return {
+            "descriptor": sum_param_des,
+            "fitting-net": sum_param_fit,
+            "total": sum_param_des + sum_param_fit,
+        }
+
     def eval_descriptor(
         self,
         coords: np.ndarray,

@@ -63,3 +63,9 @@ def show(
         else:
             fitting_net = model_params["fitting_net"]
             log.info(f"The fitting_net parameter is {fitting_net}")
+    if "size" in ATTRIBUTES:
+        size_dict = model.get_model_size()
+        log_prefix = " for a single branch model" if model_is_multi_task else ""
+        log.info(f"Parameter counts{log_prefix}:")
+        for k in sorted(size_dict):
+            log.info(f"Parameters in {k}: {size_dict[k]:,}")
