@@ -151,7 +151,7 @@ def build_neighbor_list(
 
     nsel = sum(sel)
     nnei = rr.shape[-1]
-    top_k = min(nsel+1, nnei)
+    top_k = min(nsel + 1, nnei)
     rr, nlist = torch.topk(rr, top_k, largest=False)
 
     # nloc x (nall-1)
