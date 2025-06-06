@@ -1,0 +1,83 @@
+{
+    "model": {
+        "descriptor": {
+            "seed": 1,
+            "type": "se_atten",
+            "stripped_type_embedding": true,
+            "smooth_type_embdding": true,
+            "set_davg_zero": false,
+            "sel": 128,
+            "rcut": 7.0,
+            "rcut_smth": 0.5,
+            "neuron": [
+                8,
+                16,
+                32
+            ],
+            "type_one_side": true,
+            "axis_neuron": 4,
+            "resnet_dt": false,
+            "attn": 128,
+            "attn_layer": 0,
+            "attn_dotr": true,
+            "attn_mask": false
+        },
+        "fitting_net": {
+            "seed": 1,
+            "neuron": [
+                128,
+                128,
+                128
+            ],
+            "resnet_dt": false
+        },
+        "type_map": [
+            "Ge",
+            "Te"
+        ]
+    },
+    "nvnmd": {
+        "version": 1,
+        "device": "vu9p",
+        "max_nnei": 256,
+        "net_size": 128,
+        "config_file": "/home/yg/Dev/combine/deepmd-kit/source/tests/tf/nvnmd/ref/config_v1_cnn.npy",
+        "weight_file": "/home/yg/Dev/combine/deepmd-kit/source/tests/tf/nvnmd/ref/weight_v1_cnn.npy",
+        "map_file": "/home/yg/Dev/combine/deepmd-kit/source/tests/tf/nvnmd/out/map_v1_cnn.npy",
+        "enable": true,
+        "restore_descriptor": true,
+        "restore_fitting_net": true,
+        "quantize_descriptor": true,
+        "quantize_fitting_net": true
+    },
+    "learning_rate": {
+        "type": "exp",
+        "decay_steps": 1,
+        "start_lr": 1e-10,
+        "stop_lr": 1e-10
+    },
+    "loss": {
+        "start_pref_e": 1,
+        "limit_pref_e": 1,
+        "start_pref_f": 1,
+        "limit_pref_f": 1,
+        "start_pref_v": 0,
+        "limit_pref_v": 0
+    },
+    "training": {
+        "seed": 1,
+        "stop_batch": 1,
+        "disp_file": "lcurve.out",
+        "disp_freq": 1,
+        "save_freq": 1,
+        "save_ckpt": "model.ckpt",
+        "disp_training": true,
+        "time_training": true,
+        "profiling": false,
+        "training_data": {
+            "systems": "dataset",
+            "set_prefix": "set",
+            "batch_size": 1
+        }
+    }
+}
