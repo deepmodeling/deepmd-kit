@@ -358,19 +358,22 @@ class NvnmdConfig:
         r"""Generate `model/descriptor` in input script."""
         dscp = self.dscp
         jdata = self.jdata_deepmd_input["model"]["descriptor"]
-        if dscp["sel"] <= 128:
-            jdata["sel"] = 128
-        elif 128 < dscp["sel"] <= 160:
-            jdata["sel"] = 160
-        elif 160 < dscp["sel"] <= 192:
-            jdata["sel"] = 192
-        elif 192 < dscp["sel"] <= 224:
-            jdata["sel"] = 224
-        elif 224 < dscp["sel"] <= 256:
-            jdata["sel"] = 256                              
-        else:
-            log.error(f"The input sel ({str(dscp['sel'])}) should be less than 256")
-            exit(1)
+        if self.version == 0:
+            jdata["sel"] = dscp["sel"]
+        if self.version == 1:
+            if dscp["sel"] <= 128:
+                jdata["sel"] = 128
+            elif 128 < dscp["sel"] <= 160:
+                jdata["sel"] = 160
+            elif 160 < dscp["sel"] <= 192:
+                jdata["sel"] = 192
+            elif 192 < dscp["sel"] <= 224:
+                jdata["sel"] = 224
+            elif 224 < dscp["sel"] <= 256:
+                jdata["sel"] = 256                              
+            else:
+                log.error(f"The input sel ({str(dscp['sel'])}) should be less than 256")
+                exit(1)
         jdata["rcut"] = dscp["rcut"]
         jdata["rcut_smth"] = dscp["rcut_smth"]
         jdata["neuron"] = dscp["neuron"]
