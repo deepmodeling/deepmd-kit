@@ -153,7 +153,7 @@ class TestNeighList(unittest.TestCase):
                 nsels[dd],
             )
 
-        # since the nlist is created using unstable sort,
+        # Since the nlist is created using unstable sort,
         # we check if the set of indices in the nlist matches,
         # regardless of the order
         torch.testing.assert_close(
