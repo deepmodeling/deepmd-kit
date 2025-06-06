@@ -41,11 +41,9 @@ from deepmd.tf.utils.compat import (
     update_deepmd_input,
 )
 
-# from .common import (
-#     tests_path,
-# )
-import pathlib
-tests_path = pathlib.Path(__file__).parent.absolute()
+from .common import (
+    tests_path,
+)
 
 class TestNvnmdEntrypointsV0(tf.test.TestCase):
     @pytest.mark.run(order=0)
