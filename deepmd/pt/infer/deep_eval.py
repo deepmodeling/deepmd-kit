@@ -130,8 +130,9 @@ class DeepEval(DeepEvalBackend):
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
             model = get_model(self.input_param).to(DEVICE)
-            if not self.input_param.get("hessian_mode"):
-                model = torch.jit.script(model)
+            # TODO fix jit
+            # if not self.input_param.get("hessian_mode"):
+            #     model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
             self.dp.load_state_dict(state_dict)
         elif str(self.model_path).endswith(".pth"):
@@ -678,3 +679,58 @@ class DeepEval(DeepEvalBackend):
         descriptor = model.eval_descriptor()
         model.set_eval_descriptor_hook(False)
         return to_numpy_array(descriptor)
+
+    def eval_fitting_last_layer(
+        self,
+        coords: np.ndarray,
+        cells: Optional[np.ndarray],
+        atom_types: np.ndarray,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+        **kwargs: Any,
+    ) -> np.ndarray:
+        """Evaluate fitting before last layer by using this DP.
+
+        Parameters
+        ----------
+        coords
+            The coordinates of atoms.
+            The array should be of size nframes x natoms x 3
+        cells
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
+            The array should be of size nframes x 9
+        atom_types
+            The atom types
+            The list should contain natoms ints
+        fparam
+            The frame parameter.
+            The array can be of size :
+            - nframes x dim_fparam.
+            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+        aparam
+            The atomic parameter
+            The array can be of size :
+            - nframes x natoms x dim_aparam.
+            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+            - dim_aparam. Then all frames and atoms are provided with the same aparam.
+
+        Returns
+        -------
+        fitting
+            Fitting output before last layer.
+        """
+        model = self.dp.model["Default"]
+        model.set_eval_fitting_last_layer_hook(True)
+        self.eval(
+            coords,
+            cells,
+            atom_types,
+            atomic=False,
+            fparam=fparam,
+            aparam=aparam,
+            **kwargs,
+        )
+        fitting_net = model.eval_fitting_last_layer()
+        model.set_eval_fitting_last_layer_hook(False)
+        return to_numpy_array(fitting_net)
