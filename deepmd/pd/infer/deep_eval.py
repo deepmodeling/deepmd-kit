@@ -491,15 +491,13 @@ class DeepEval(DeepEvalBackend):
             A dictionary containing the number of parameters in the model.
             The keys are 'descriptor', 'fitting_net', and 'total'.
         """
-        params = self.dp.state_dict()
+        params_dict = dict(self.dp.named_parameters())
         sum_param_des = sum(
-            params[k].numel()
-            for k in params.keys()
-            if "descriptor" in k and "mean" not in k and "stddev" not in k
+            params_dict[k].numel() for k in params_dict.keys() if "descriptor" in k
         )
         sum_param_fit = sum(
-            params[k].numel()
-            for k in params.keys()
+            params_dict[k].numel()
+            for k in params_dict.keys()
             if "fitting" in k and "_networks" not in k
         )
         return {
