@@ -607,6 +607,35 @@ class Trainer:
             )
 
             backend = "CINN" if CINN else None
+
+            # NOTE: This is a trick to decide the right input_spec for wrapper.forward
+            _, label_dict, _ = self.get_data(is_train=True, task_key="Default")
+            label_dict_spec = {
+                "find_box": np.float32(1.0),
+                "find_coord": np.float32(1.0),
+                "find_numb_copy": np.float32(0.0),
+                "numb_copy": static.InputSpec([1, 1], "int64", name="numb_copy"),
+                "find_energy": np.float32(1.0),
+                "energy": static.InputSpec([1, 1], "float64", name="energy"),
+                "find_force": np.float32(1.0),
+                "force": static.InputSpec([1, -1, 3], "float64", name="force"),
+                "find_virial": np.float32(0.0),
+                "virial": static.InputSpec([1, 9], "float64", name="virial"),
+                "natoms": static.InputSpec([1, -1], "int32", name="natoms"),
+            }
+            if "virial" not in label_dict:
+                label_dict_spec.pop("virial")
+            if "find_virial" not in label_dict:
+                label_dict_spec.pop("find_virial")
+            if "energy" not in label_dict:
+                label_dict_spec.pop("energy")
+            if "find_energy" not in label_dict:
+                label_dict_spec.pop("find_energy")
+            if "force" not in label_dict:
+                label_dict_spec.pop("force")
+            if "find_force" not in label_dict:
+                label_dict_spec.pop("find_force")
+
             self.wrapper.forward = jit.to_static(
                 backend=backend,
                 input_spec=[
@@ -615,19 +644,7 @@ class Trainer:
                     None,  # spin
                     static.InputSpec([1, 9], "float64", name="box"),  # box
                     static.InputSpec([], "float64", name="cur_lr"),  # cur_lr
-                    {
-                        "find_box": np.float32(1.0),
-                        "find_coord": np.float32(1.0),
-                        "find_numb_copy": np.float32(0.0),
-                        "numb_copy": static.InputSpec(
-                            [1, 1], "int64", name="numb_copy"
-                        ),
-                        "find_energy": np.float32(1.0),
-                        "energy": static.InputSpec([1, 1], "float64", name="energy"),
-                        "find_force": np.float32(1.0),
-                        "force": static.InputSpec([1, -1, 3], "float64", name="force"),
-                        "natoms": static.InputSpec([1, -1], "int32", name="natoms"),
-                    },  # label,
+                    label_dict_spec,  # label,
                     # None, # task_key
                     # False, # inference_only
                     # False, # do_atomic_virial
