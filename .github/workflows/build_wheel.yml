@@ -44,7 +44,7 @@ jobs:
             platform_id: macosx_arm64
             dp_variant: cpu
           # win-64
-          - os: windows-2019
+          - os: windows-2022
             python: 311
             platform_id: win_amd64
             dp_variant: cpu
