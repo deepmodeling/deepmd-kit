@@ -291,6 +291,10 @@ class DeepEvalBackend(ABC):
         """Get model definition script."""
         raise NotImplementedError("Not implemented in this backend.")
 
+    def get_model_size(self) -> dict:
+        """Get model parameter count."""
+        raise NotImplementedError("Not implemented in this backend.")
+
 
 class DeepEval(ABC):
     """High-level Deep Evaluator interface.
@@ -560,3 +564,7 @@ class DeepEval(ABC):
     def get_model_def_script(self) -> dict:
         """Get model definition script."""
         return self.deep_eval.get_model_def_script()
+
+    def get_model_size(self) -> dict:
+        """Get model parameter count."""
+        return self.deep_eval.get_model_size()
