@@ -58,9 +58,7 @@ class TestNvnmdEntrypointsV0(tf.test.TestCase):
         N = 32
         x = np.reshape(np.arange(N) / N * (8.0**2), [-1, 1])
         pred = mapObj.mapping2(x, {"s": mapt["s"]}, mapt["cfg_u2s"])
-        print ("pred-s-s1:",pred)
         pred = np.reshape(pred["s"], [-1])
-        print ("pred-s-s2:",pred)
         ref_dout = [
             0,
             11.73139954,
@@ -133,7 +131,6 @@ class TestNvnmdEntrypointsV0(tf.test.TestCase):
         x = np.reshape(np.arange(N) / N * 16, [-1, 1])
         pred = mapObj.mapping2(x, {"g": mapt["g"]}, mapt["cfg_s2g"])
         pred = np.reshape(pred["g"], [-1])
-        print ("pred-g:",pred)
         ref_dout = [
             -2.07704735,
             -0.97188997,
@@ -473,7 +470,6 @@ class TestNvnmdEntrypointsV0(tf.test.TestCase):
         # o_descriptor
         idx = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192])
         pred = np.reshape(valuedic["o_descriptor"], [-1])
-        print ("pred-o_descriptor:",pred)
         ref_dout = [ 
             0.06064451,
             -0.03320849,  
@@ -493,7 +489,6 @@ class TestNvnmdEntrypointsV0(tf.test.TestCase):
         np.testing.assert_almost_equal(pred[idx], ref_dout, 8)
         # o_rmat
         pred = np.reshape(valuedic["o_rmat"], [-1])
-        print ("pred-o_rmat:",pred)
         ref_dout = [
             -0.05091095,
             -0.93385935,
@@ -513,7 +508,6 @@ class TestNvnmdEntrypointsV0(tf.test.TestCase):
         np.testing.assert_almost_equal(pred[idx], ref_dout, 8)
         # o_energy
         pred = valuedic["o_energy"]
-        print ("pred-o_energy:",pred)
         ref_dout = -56.20791733
         np.testing.assert_almost_equal(pred, ref_dout, 8)
 
@@ -537,7 +531,6 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
         x = np.reshape(np.arange(N) / N * (8.0**2), [-1, 1])
         pred = mapObj.mapping2(x, {"s": mapt["s"]}, mapt["cfg_u2s"])
         pred = np.reshape(pred["s"], [-1])
-        print ("pred-s-v1:",pred)
         ref_dout = [
             0.00000000e00,
             6.91349983e-01,
@@ -578,7 +571,6 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
         x = np.reshape(np.arange(N) / N * 16, [-1, 1])
         pred = mapObj.mapping2(x, {"g": mapt["g"]}, mapt["cfg_s2g"])
         pred = np.reshape(pred["g"], [-1])
-        print ("pred-g-v1:",pred)
         ref_dout = [
         -2.07704735,
         -0.97189045,
@@ -794,7 +786,6 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
         # o_descriptor
         idx = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192])
         pred = np.reshape(valuedic["o_descriptor"], [-1])
-        print ("pred-o_descriptor-v1:",pred[idx])
         ref_dout = [ 
             0.06811976, 
             -0.05252528,  
@@ -814,7 +805,6 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
         np.testing.assert_almost_equal(pred[idx], ref_dout, 8)
         # o_rmat
         pred = np.reshape(valuedic["o_rmat"], [-1])
-        print ("pred-o_rmat-v1:",pred[idx])
         ref_dout = [
             2.08768272,
             -1.0802269,
@@ -834,7 +824,6 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
         np.testing.assert_almost_equal(pred[idx], ref_dout, 8)
         # o_energy
         pred = valuedic["o_energy"]
-        print ("pred-o_energy-v1:",pred)
         ref_dout = [-13.23571336]
         np.testing.assert_almost_equal(pred, ref_dout, 8)
         # test freeze
@@ -883,7 +872,6 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
         idx = [i + 128 * 4 for i in idx]
         pred = [data[i] for i in idx]
         red_dout = [1, 242, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 254, 95, 24, 176]
-        print ("pred-test_wrap_qnn_v1:",pred)
         np.testing.assert_equal(pred, red_dout)
 
     def tearDown(self) -> None:
