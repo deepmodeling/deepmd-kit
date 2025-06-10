@@ -135,6 +135,7 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
         resnet_dt: bool,
         variables: dict,
         out_dim: Optional[int] = 1,
+        trainable: bool = True,
         suffix: str = "",
     ) -> dict:
         """Serialize network.
@@ -199,6 +200,7 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
                     resnet_dt=resnet_dt,
                     precision=self.precision.name,
                     bias_out=True,
+                    trainable=trainable,
                 )
             assert fittings[network_idx] is not None
             if weight_name == "idt":

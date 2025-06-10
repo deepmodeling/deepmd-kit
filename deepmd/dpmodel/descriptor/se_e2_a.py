@@ -207,6 +207,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
                 self.resnet_dt,
                 self.precision,
                 seed=child_seed(seed, ii),
+                trainable=trainable,
             )
         self.embeddings = embeddings
         self.env_mat = EnvMat(self.rcut, self.rcut_smth, protection=self.env_protection)

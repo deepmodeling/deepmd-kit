@@ -85,6 +85,7 @@ class MLPLayer(nn.Layer):
         precision: str = DEFAULT_PRECISION,
         init: str = "default",
         seed: int | list[int] | None = None,
+        trainable: bool = True,
     ):
         super().__init__()
         # only use_timestep when skip connection is established.
@@ -277,6 +278,7 @@ class MLPLayer(nn.Layer):
             activation_function=nl["activation_function"],
             resnet=nl["resnet"],
             precision=nl["precision"],
+            trainable=nl["trainable"],
         )
         prec = PRECISION_DICT[obj.precision]
 

@@ -81,6 +81,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         ln_eps: Optional[float] = 1e-5,
         seed: Optional[Union[int, list[int]]] = None,
         type: Optional[str] = None,
+        trainable: bool = True,
     ) -> None:
         r"""Construct an embedding net of type `se_atten`.
 
@@ -205,6 +206,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             smooth=self.smooth,
             precision=self.precision,
             seed=child_seed(self.seed, 0),
+            trainable=trainable,
         )
 
         wanted_shape = (self.ntypes, self.nnei, 4)
@@ -229,6 +231,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             precision=self.precision,
             resnet_dt=self.resnet_dt,
             seed=child_seed(self.seed, 1),
+            trainable=trainable,
         )
         self.filter_layers = filter_layers
         if self.tebd_input_mode in ["strip"]:
@@ -242,6 +245,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 precision=self.precision,
                 resnet_dt=self.resnet_dt,
                 seed=child_seed(self.seed, 2),
+                trainable=trainable,
             )
             self.filter_layers_strip = filter_layers_strip
         self.stats = None
@@ -655,6 +659,7 @@ class NeighborGatedAttention(nn.Layer):
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         """Construct a neighbor-wise attention net."""
         super().__init__()
@@ -690,6 +695,7 @@ class NeighborGatedAttention(nn.Layer):
                     smooth=smooth,
                     precision=precision,
                     seed=child_seed(seed, i),
+                    trainable=trainable,
                 )
             )
         self.attention_layers = nn.LayerList(attention_layers)
@@ -797,6 +803,7 @@ class NeighborGatedAttentionLayer(nn.Layer):
         ln_eps: float = 1e-5,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         """Construct a neighbor-wise attention layer."""
         super().__init__()
@@ -824,6 +831,7 @@ class NeighborGatedAttentionLayer(nn.Layer):
             smooth=smooth,
             precision=precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.attn_layer_norm = LayerNorm(
             self.embed_dim,
@@ -904,6 +912,7 @@ class GatedAttentionLayer(nn.Layer):
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         """Construct a multi-head neighbor-wise attention net."""
         super().__init__()
@@ -936,6 +945,7 @@ class GatedAttentionLayer(nn.Layer):
             stddev=1.0,
             precision=precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.out_proj = MLPLayer(
             hidden_dim,
@@ -946,6 +956,7 @@ class GatedAttentionLayer(nn.Layer):
             stddev=1.0,
             precision=precision,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
 
     def forward(

@@ -1593,6 +1593,7 @@ class DescrptSeAtten(DescrptSeA):
                 bias=bias,
                 use_timestep=False,
                 precision=self.precision.name,
+                trainable=self.trainable,
             )
             matrix_list = [
                 attention_layer_params[layer_idx][key]["matrix"]
@@ -1611,6 +1612,7 @@ class DescrptSeAtten(DescrptSeA):
                 bias=bias,
                 use_timestep=False,
                 precision=self.precision.name,
+                trainable=self.trainable,
             )
             out_proj["matrix"] = attention_layer_params[layer_idx]["c_out"]["matrix"]
             if bias:
@@ -1654,6 +1656,7 @@ class DescrptSeAtten(DescrptSeA):
         variables: dict,
         suffix: str = "",
         type_one_side: bool = False,
+        trainable: bool = True,
     ) -> dict:
         """Serialize network.
 
@@ -1679,6 +1682,8 @@ class DescrptSeAtten(DescrptSeA):
             If 'False', type embeddings of both neighbor and central atoms are considered.
             If 'True', only type embeddings of neighbor atoms are considered.
             Default is 'False'.
+        trainable : bool
+            Whether the network is trainable
 
         Returns
         -------
@@ -1719,6 +1724,7 @@ class DescrptSeAtten(DescrptSeA):
                     activation_function=activation_function,
                     resnet_dt=resnet_dt,
                     precision=self.precision.name,
+                    trainable=trainable,
                 )
             assert embeddings[network_idx] is not None
             if weight_name == "idt":

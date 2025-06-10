@@ -127,6 +127,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             "use_tebd_bias": use_tebd_bias,
             "type_map": ["O", "H"] if use_econf_tebd else None,
             "seed": 1145141919810,
+            "trainable": False,
         }
 
     def is_meaningless_zero_attention_layer_tests(

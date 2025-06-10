@@ -726,6 +726,7 @@ class DescrptSeT(DescrptSe):
         resnet_dt: bool,
         variables: dict,
         excluded_types: set[tuple[int, int]] = set(),
+        trainable: bool = True,
         suffix: str = "",
     ) -> dict:
         """Serialize network.
@@ -748,6 +749,8 @@ class DescrptSeT(DescrptSe):
             The input variables
         excluded_types : set[tuple[int, int]], optional
             The excluded types
+        trainable : bool, optional
+            Whether the network is trainable
         suffix : str, optional
             The suffix of the scope
 
@@ -771,6 +774,7 @@ class DescrptSeT(DescrptSe):
                 activation_function=activation_function,
                 resnet_dt=resnet_dt,
                 precision=self.precision.name,
+                trainable=trainable,
             )
             embeddings[(type_i, type_j)].clear()
 
@@ -805,6 +809,7 @@ class DescrptSeT(DescrptSe):
                     activation_function=activation_function,
                     resnet_dt=resnet_dt,
                     precision=self.precision.name,
+                    trainable=trainable,
                 )
             assert embeddings[network_idx] is not None
             if weight_name == "idt":
