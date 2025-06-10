@@ -28,3 +28,4 @@ Model
    pairtab
    change-bias
    precision
+   show-model-info
