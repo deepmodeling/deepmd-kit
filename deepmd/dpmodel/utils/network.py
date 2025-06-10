@@ -144,7 +144,7 @@ class NativeLayer(NativeOP):
         }
         return {
             "@class": "Layer",
-            "@version": 1,
+            "@version": 2,
             "bias": self.b is not None,
             "use_timestep": self.idt is not None,
             "activation_function": self.activation_function,
@@ -165,7 +165,7 @@ class NativeLayer(NativeOP):
             The dict to deserialize from.
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
         variables = data.pop("@variables")
         assert variables["w"] is not None and len(variables["w"].shape) == 2
