@@ -20,6 +20,9 @@ from paddle.framework import (
 )
 
 from deepmd.dpmodel.common import PRECISION_DICT as NP_PRECISION_DICT
+from deepmd.pd.utils import (
+    env,
+)
 
 from .env import (
     DEVICE,
@@ -32,15 +35,129 @@ if TYPE_CHECKING:
     )
 
 
+def silut_forward(
+    x: paddle.Tensor, threshold: float, slope: float, const_val: float
+) -> paddle.Tensor:
+    sig = F.sigmoid(x)
+    silu = x * sig
+    tanh = paddle.tanh(slope * (x - threshold)) + const_val
+    return paddle.where(x >= threshold, tanh, silu)
+
+
+def silut_backward(
+    x: paddle.Tensor, grad_output: paddle.Tensor, threshold: float, slope: float
+) -> paddle.Tensor:
+    sig = F.sigmoid(x)
+    grad_silu = sig * (1 + x * (1 - sig))
+
+    tanh = paddle.tanh(slope * (x - threshold))
+    grad_tanh = slope * (1 - tanh * tanh)
+
+    grad = paddle.where(x >= threshold, grad_tanh, grad_silu)
+    return grad * grad_output
+
+
+def silut_double_backward(
+    x: paddle.Tensor,
+    grad_grad_output: paddle.Tensor,
+    grad_output: paddle.Tensor,
+    threshold: float,
+    slope: float,
+) -> tuple[paddle.Tensor, paddle.Tensor]:
+    # SiLU branch
+    sig = F.sigmoid(x)
+
+    sig_prime = sig * (1 - sig)
+    grad_silu = sig + x * sig_prime
+    grad_grad_silu = sig_prime * (2 + x * (1 - 2 * sig))
+
+    # Tanh branch
+    tanh = paddle.tanh(slope * (x - threshold))
+    tanh_square = tanh * tanh  #  .square is slow for jit.script!
+    grad_tanh = slope * (1 - tanh_square)
+    grad_grad_tanh = -2 * slope * tanh * grad_tanh
+
+    grad = paddle.where(x >= threshold, grad_tanh, grad_silu)
+    grad_grad = paddle.where(x >= threshold, grad_grad_tanh, grad_grad_silu)
+    return grad_output * grad_grad * grad_grad_output, grad * grad_grad_output
+
+
+class SiLUTScript(paddle.nn.Layer):
+    def __init__(self, threshold: float = 3.0):
+        super().__init__()
+        self.threshold = threshold
+
+        # Precompute parameters for the tanh replacement
+        sigmoid_threshold = 1 / (1 + np.exp(-threshold))
+        self.slope = float(
+            sigmoid_threshold + threshold * sigmoid_threshold * (1 - sigmoid_threshold)
+        )
+        self.const_val = float(threshold * sigmoid_threshold)
+        self.get_script_code()
+
+    def get_script_code(self):
+        silut_forward_script = paddle.jit.to_static(silut_forward, full_graph=True)
+        # silut_forward_script = (silut_forward)
+        silut_backward_script = paddle.jit.to_static(silut_backward, full_graph=True)
+        # silut_backward_script = (silut_backward)
+        silut_double_backward_script = paddle.jit.to_static(
+            silut_double_backward, full_graph=True
+        )
+        # silut_double_backward_script = (silut_double_backward)
+
+        class SiLUTFunction(paddle.autograd.PyLayer):
+            @staticmethod
+            def forward(ctx, x, threshold, slope, const_val):
+                ctx.save_for_backward(x)
+                ctx.threshold = threshold
+                ctx.slope = slope
+                ctx.const_val = const_val
+                return silut_forward_script(x, threshold, slope, const_val)
+
+            @staticmethod
+            def backward(ctx, grad_output):
+                (x,) = ctx.saved_tensor()
+                threshold = ctx.threshold
+                slope = ctx.slope
+
+                grad_input = SiLUTGradFunction.apply(x, grad_output, threshold, slope)
+                return grad_input
+
+        class SiLUTGradFunction(paddle.autograd.PyLayer):
+            @staticmethod
+            def forward(ctx, x, grad_output, threshold, slope):
+                ctx.threshold = threshold
+                ctx.slope = slope
+                grad_input = silut_backward_script(x, grad_output, threshold, slope)
+                ctx.save_for_backward(x, grad_output)
+                return grad_input
+
+            @staticmethod
+            def backward(ctx, grad_grad_output):
+                (x, grad_output) = ctx.saved_tensor()
+                threshold = ctx.threshold
+                slope = ctx.slope
+
+                grad_input, grad_mul_grad_grad_output = silut_double_backward_script(
+                    x, grad_grad_output, grad_output, threshold, slope
+                )
+                return grad_input, grad_mul_grad_grad_output
+
+        self.SiLUTFunction = SiLUTFunction
+
+    def forward(self, x):
+        return self.SiLUTFunction.apply(x, self.threshold, self.slope, self.const_val)
+
+
 class SiLUT(paddle.nn.Layer):
     def __init__(self, threshold=3.0):
         super().__init__()
 
         def sigmoid(x):
-            return paddle.nn.functional.sigmoid(x)
+            return F.sigmoid(x)
 
         def silu(x):
-            return paddle.nn.functional.silu(x)
+            return F.silu(x)
 
         def silu_grad(x):
             sig = sigmoid(x)
@@ -76,7 +193,12 @@ class ActivationFn(paddle.nn.Layer):
             threshold = (
                 float(self.activation.split(":")[-1]) if ":" in self.activation else 3.0
             )
-            self.silut = SiLUT(threshold=threshold)
+            if env.CUSTOM_OP_USE_JIT:
+                # for efficient training but can not be jit
+                self.silut = SiLUTScript(threshold=threshold)
+                # self.silut = paddle.nn.Identity()
+            else:
+                self.silut = SiLUT(threshold=threshold)
         else:
             self.silut = None
 

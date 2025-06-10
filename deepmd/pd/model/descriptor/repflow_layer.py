@@ -19,6 +19,9 @@ from deepmd.pd.model.descriptor.repformer_layer import (
 from deepmd.pd.model.network.mlp import (
     MLPLayer,
 )
+from deepmd.pd.model.network.utils import (
+    aggregate,
+)
 from deepmd.pd.utils.env import (
     PRECISION_DICT,
 )
@@ -327,6 +330,61 @@ class RepFlowLayer(paddle.nn.Layer):
         return h2g2
 
     @staticmethod
+    def _cal_hg_dynamic(
+        flat_edge_ebd: paddle.Tensor,
+        flat_h2: paddle.Tensor,
+        flat_sw: paddle.Tensor,
+        owner: paddle.Tensor,
+        num_owner: int,
+        nb: int,
+        nloc: int,
+        scale_factor: float,
+    ) -> paddle.Tensor:
+        """
+        Calculate the transposed rotation matrix.
+
+        Parameters
+        ----------
+        flat_edge_ebd
+            Flatted neighbor-wise/pair-wise invariant rep tensors, with shape n_edge x e_dim.
+        flat_h2
+            Flatted neighbor-wise/pair-wise equivariant rep tensors, with shape n_edge x 3.
+        flat_sw
+            Flatted switch function, which equals 1 within the rcut_smth range, smoothly decays from 1 to 0 between rcut_smth and rcut,
+            and remains 0 beyond rcut, with shape n_edge.
+        owner
+            The owner index of the neighbor to reduce on.
+        num_owner : int
+            The total number of the owner.
+        nb : int
+            The number of batches.
+        nloc : int
+            The number of local atoms.
+        scale_factor : float
+            The scale factor to apply after reduce.
+
+        Returns
+        -------
+        hg
+            The transposed rotation matrix, with shape nf x nloc x 3 x e_dim.
+        """
+        n_edge, e_dim = flat_edge_ebd.shape
+        # n_edge x e_dim
+        flat_edge_ebd = flat_edge_ebd * flat_sw.unsqueeze(-1)
+        # n_edge x 3 x e_dim
+        flat_h2g2 = (flat_h2[..., None] * flat_edge_ebd[:, None, :]).reshape(
+            [-1, 3 * e_dim]
+        )
+        # nf x nloc x 3 x e_dim
+        h2g2 = (
+            aggregate(flat_h2g2, owner, average=False, num_owner=num_owner).reshape(
+                [nb, nloc, 3, e_dim]
+            )
+            * scale_factor
+        )
+        return h2g2
+
+    @staticmethod
     def _cal_grrg(h2g2: paddle.Tensor, axis_neuron: int) -> paddle.Tensor:
         """
         Calculate the atomic invariant rep.
@@ -398,6 +456,63 @@ class RepFlowLayer(paddle.nn.Layer):
         g1_13 = self._cal_grrg(h2g2, axis_neuron)
         return g1_13
 
+    def symmetrization_op_dynamic(
+        self,
+        flat_edge_ebd: paddle.Tensor,
+        flat_h2: paddle.Tensor,
+        flat_sw: paddle.Tensor,
+        owner: paddle.Tensor,
+        num_owner: int,
+        nb: int,
+        nloc: int,
+        scale_factor: float,
+        axis_neuron: int,
+    ) -> paddle.Tensor:
+        """
+        Symmetrization operator to obtain atomic invariant rep.
+
+        Parameters
+        ----------
+        flat_edge_ebd
+            Flatted neighbor-wise/pair-wise invariant rep tensors, with shape n_edge x e_dim.
+        flat_h2
+            Flatted neighbor-wise/pair-wise equivariant rep tensors, with shape n_edge x 3.
+        flat_sw
+            Flatted switch function, which equals 1 within the rcut_smth range, smoothly decays from 1 to 0 between rcut_smth and rcut,
+            and remains 0 beyond rcut, with shape n_edge.
+        owner
+            The owner index of the neighbor to reduce on.
+        num_owner : int
+            The total number of the owner.
+        nb : int
+            The number of batches.
+        nloc : int
+            The number of local atoms.
+        scale_factor : float
+            The scale factor to apply after reduce.
+        axis_neuron
+            Size of the submatrix.
+
+        Returns
+        -------
+        grrg
+            Atomic invariant rep, with shape nb x nloc x (axis_neuron x e_dim)
+        """
+        # nb x nloc x 3 x e_dim
+        h2g2 = self._cal_hg_dynamic(
+            flat_edge_ebd,
+            flat_h2,
+            flat_sw,
+            owner,
+            num_owner,
+            nb,
+            nloc,
+            scale_factor,
+        )
+        # nb x nloc x (axis x e_dim)
+        grrg = self._cal_grrg(h2g2, axis_neuron)
+        return grrg
+
     def optim_angle_update(
         self,
         angle_ebd: paddle.Tensor,
@@ -419,7 +534,7 @@ class RepFlowLayer(paddle.nn.Layer):
         node_dim = node_ebd.shape[-1]
         edge_dim = edge_ebd.shape[-1]
         # angle_dim, node_dim, edge_dim, edge_dim
-        sub_angle, sub_node, sub_edge_ij, sub_edge_ik = paddle.split(
+        sub_angle, sub_node, sub_edge_ik, sub_edge_ij = paddle.split(
             matrix, [angle_dim, node_dim, edge_dim, edge_dim]
         )
 
@@ -428,14 +543,64 @@ class RepFlowLayer(paddle.nn.Layer):
         # nf * nloc * angle_dim
         sub_node_update = paddle.matmul(node_ebd, sub_node)
         # nf * nloc * a_nnei * angle_dim
-        sub_edge_update_ij = paddle.matmul(edge_ebd, sub_edge_ij)
         sub_edge_update_ik = paddle.matmul(edge_ebd, sub_edge_ik)
+        sub_edge_update_ij = paddle.matmul(edge_ebd, sub_edge_ij)
 
         result_update = (
             bias
             + sub_node_update.unsqueeze(2).unsqueeze(3)
-            + sub_edge_update_ij.unsqueeze(2)
-            + sub_edge_update_ik.unsqueeze(3)
+            + sub_edge_update_ik.unsqueeze(2)
+            + sub_edge_update_ij.unsqueeze(3)
+            + sub_angle_update
+        )
+        return result_update
+
+    def optim_angle_update_dynamic(
+        self,
+        flat_angle_ebd: paddle.Tensor,
+        node_ebd: paddle.Tensor,
+        flat_edge_ebd: paddle.Tensor,
+        n2a_index: paddle.Tensor,
+        eij2a_index: paddle.Tensor,
+        eik2a_index: paddle.Tensor,
+        feat: str = "edge",
+    ) -> paddle.Tensor:
+        if feat == "edge":
+            matrix, bias = self.edge_angle_linear1.matrix, self.edge_angle_linear1.bias
+        elif feat == "angle":
+            matrix, bias = self.angle_self_linear.matrix, self.angle_self_linear.bias
+        else:
+            raise NotImplementedError
+        nf, nloc, node_dim = node_ebd.shape
+        edge_dim = flat_edge_ebd.shape[-1]
+        angle_dim = flat_angle_ebd.shape[-1]
+        # angle_dim, node_dim, edge_dim, edge_dim
+        sub_angle, sub_node, sub_edge_ik, sub_edge_ij = paddle.split(
+            matrix, [angle_dim, node_dim, edge_dim, edge_dim]
+        )
+
+        # n_angle * angle_dim
+        sub_angle_update = paddle.matmul(flat_angle_ebd, sub_angle)
+
+        # nf * nloc * angle_dim
+        sub_node_update = paddle.matmul(node_ebd, sub_node)
+        # n_angle * angle_dim
+        sub_node_update = paddle.index_select(
+            sub_node_update.reshape(nf * nloc, sub_node_update.shape[-1]), n2a_index, 0
+        )
+
+        # n_edge * angle_dim
+        sub_edge_update_ik = paddle.matmul(flat_edge_ebd, sub_edge_ik)
+        sub_edge_update_ij = paddle.matmul(flat_edge_ebd, sub_edge_ij)
+        # n_angle * angle_dim
+        sub_edge_update_ik = paddle.index_select(sub_edge_update_ik, eik2a_index, 0)
+        sub_edge_update_ij = paddle.index_select(sub_edge_update_ij, eij2a_index, 0)
+
+        result_update = (
+            bias
+            + sub_node_update
+            + sub_edge_update_ik
+            + sub_edge_update_ij
             + sub_angle_update
         )
         return result_update
@@ -475,9 +640,55 @@ class RepFlowLayer(paddle.nn.Layer):
         )
         return result_update
 
+    def optim_edge_update_dynamic(
+        self,
+        node_ebd: paddle.Tensor,
+        node_ebd_ext: paddle.Tensor,
+        flat_edge_ebd: paddle.Tensor,
+        n2e_index: paddle.Tensor,
+        n_ext2e_index: paddle.Tensor,
+        feat: str = "node",
+    ) -> paddle.Tensor:
+        if feat == "node":
+            matrix, bias = self.node_edge_linear.matrix, self.node_edge_linear.bias
+        elif feat == "edge":
+            matrix, bias = self.edge_self_linear.matrix, self.edge_self_linear.bias
+        else:
+            raise NotImplementedError
+        assert bias is not None
+        nf, nall, node_dim = node_ebd_ext.shape
+        _, nloc, _ = node_ebd.shape
+        edge_dim = flat_edge_ebd.shape[-1]
+        # node_dim, node_dim, edge_dim
+        node, node_ext, edge = paddle.split(matrix, [node_dim, node_dim, edge_dim])
+
+        # nf * nloc * node/edge_dim
+        sub_node_update = paddle.matmul(node_ebd, node)
+        # n_edge * node/edge_dim
+        sub_node_update = paddle.index_select(
+            sub_node_update.reshape(nf * nloc, sub_node_update.shape[-1]),
+            n2e_index,
+            0,
+        )
+
+        # nf * nall * node/edge_dim
+        sub_node_ext_update = paddle.matmul(node_ebd_ext, node_ext)
+        # n_edge * node/edge_dim
+        sub_node_ext_update = paddle.index_select(
+            sub_node_ext_update.reshape(nf * nall, sub_node_update.shape[-1]),
+            n_ext2e_index,
+            0,
+        )
+
+        # n_edge * node/edge_dim
+        sub_edge_update = paddle.matmul(flat_edge_ebd, edge)
+
+        result_update = bias + sub_node_update + sub_edge_update + sub_node_ext_update
+        return result_update
+
     def forward(
         self,
-        node_ebd_ext: paddle.Tensor,  # nf x nall x n_dim
+        node_ebd_ext: paddle.Tensor,  # nf x nall x n_dim [OR] nf x nloc x n_dim when not parallel_mode
         edge_ebd: paddle.Tensor,  # nf x nloc x nnei x e_dim
         h2: paddle.Tensor,  # nf x nloc x nnei x 3
         angle_ebd: paddle.Tensor,  # nf x nloc x a_nnei x a_nnei x a_dim
@@ -487,6 +698,8 @@ class RepFlowLayer(paddle.nn.Layer):
         a_nlist: paddle.Tensor,  # nf x nloc x a_nnei
         a_nlist_mask: paddle.Tensor,  # nf x nloc x a_nnei
         a_sw: paddle.Tensor,  # switch func, nf x nloc x a_nnei
+        edge_index: paddle.Tensor,  # n_edge x 2
+        angle_index: paddle.Tensor,  # n_angle x 3
     ):
         """
         Parameters
@@ -511,6 +724,18 @@ class RepFlowLayer(paddle.nn.Layer):
             Masks of the neighbor list for angle. real nei 1 otherwise 0
         a_sw : nf x nloc x a_nnei
             Switch function for angle.
+        edge_index : Optional for dynamic sel, n_edge x 2
+            n2e_index : n_edge
+                Broadcast indices from node(i) to edge(ij), or reduction indices from edge(ij) to node(i).
+            n_ext2e_index : n_edge
+                Broadcast indices from extended node(j) to edge(ij).
+        angle_index : Optional for dynamic sel, n_angle x 3
+            n2a_index : n_angle
+                Broadcast indices from extended node(j) to angle(ijk).
+            eij2a_index : n_angle
+                Broadcast indices from extended edge(ij) to angle(ijk), or reduction indices from angle(ijk) to edge(ij).
+            eik2a_index : n_angle
+                Broadcast indices from extended edge(ik) to angle(ijk).
 
         Returns
         -------
@@ -524,11 +749,34 @@ class RepFlowLayer(paddle.nn.Layer):
         nb, nloc, nnei, _ = edge_ebd.shape
         nall = node_ebd_ext.shape[1]
         node_ebd = node_ebd_ext[:, :nloc, :]
+        n_edge = int(nlist_mask.sum().item())
         if paddle.in_dynamic_mode():
             assert [nb, nloc] == node_ebd.shape[:2]
-        if paddle.in_dynamic_mode():
-            assert [nb, nloc, nnei] == h2.shape[:3]
+        if not self.use_dynamic_sel:
+            if paddle.in_dynamic_mode():
+                assert [nb, nloc, nnei, 3] == h2.shape
+        else:
+            if paddle.in_dynamic_mode():
+                assert [n_edge, 3] == h2.shape
         del a_nlist  # may be used in the future
+
+        n2e_index, n_ext2e_index = edge_index[:, 0], edge_index[:, 1]
+        n2a_index, eij2a_index, eik2a_index = (
+            angle_index[:, 0],
+            angle_index[:, 1],
+            angle_index[:, 2],
+        )
+
+        # nb x nloc x nnei x n_dim [OR] n_edge x n_dim
+        nei_node_ebd = (
+            _make_nei_g1(node_ebd_ext, nlist)
+            if not self.use_dynamic_sel
+            else paddle.index_select(
+                node_ebd_ext.reshape([-1, self.n_dim]),
+                n_ext2e_index,
+                0,
+            )
+        )
 
         n_update_list: list[paddle.Tensor] = [node_ebd]
         e_update_list: list[paddle.Tensor] = [edge_ebd]
@@ -537,8 +785,6 @@ class RepFlowLayer(paddle.nn.Layer):
         # node self mlp
         node_self_mlp = self.act(self.node_self_mlp(node_ebd))
         n_update_list.append(node_self_mlp)
-
-        nei_node_ebd = _make_nei_g1(node_ebd_ext, nlist)
 
         # node sym (grrg + drrd)
         node_sym_list: list[paddle.Tensor] = []
@@ -550,6 +796,18 @@ class RepFlowLayer(paddle.nn.Layer):
                 sw,
                 self.axis_neuron,
             )
+            if not self.use_dynamic_sel
+            else self.symmetrization_op_dynamic(
+                edge_ebd,
+                h2,
+                sw,
+                owner=n2e_index,
+                num_owner=nb * nloc,
+                nb=nb,
+                nloc=nloc,
+                scale_factor=self.dynamic_e_sel ** (-0.5),
+                axis_neuron=self.axis_neuron,
+            )
         )
         node_sym_list.append(
             self.symmetrization_op(
@@ -559,20 +817,47 @@ class RepFlowLayer(paddle.nn.Layer):
                 sw,
                 self.axis_neuron,
             )
+            if not self.use_dynamic_sel
+            else self.symmetrization_op_dynamic(
+                nei_node_ebd,
+                h2,
+                sw,
+                owner=n2e_index,
+                num_owner=nb * nloc,
+                nb=nb,
+                nloc=nloc,
+                scale_factor=self.dynamic_e_sel ** (-0.5),
+                axis_neuron=self.axis_neuron,
+            )
         )
         node_sym = self.act(self.node_sym_linear(paddle.concat(node_sym_list, axis=-1)))
         n_update_list.append(node_sym)
 
         if not self.optim_update:
-            # nb x nloc x nnei x (n_dim * 2 + e_dim)
-            edge_info = paddle.concat(
-                [
-                    paddle.tile(node_ebd.unsqueeze(-2), [1, 1, self.nnei, 1]),
-                    nei_node_ebd,
-                    edge_ebd,
-                ],
-                axis=-1,
-            )
+            if not self.use_dynamic_sel:
+                # nb x nloc x nnei x (n_dim * 2 + e_dim)
+                edge_info = paddle.concat(
+                    [
+                        paddle.tile(node_ebd.unsqueeze(-2), [1, 1, self.nnei, 1]),
+                        nei_node_ebd,
+                        edge_ebd,
+                    ],
+                    axis=-1,
+                )
+            else:
+                # n_edge x (n_dim * 2 + e_dim)
+                edge_info = paddle.concat(
+                    [
+                        paddle.index_select(
+                            node_ebd.reshape(-1, self.n_dim),
+                            n2e_index,
+                            0,
+                        ),
+                        nei_node_ebd,
+                        edge_ebd,
+                    ],
+                    axis=-1,
+                )
         else:
             edge_info = None
 
@@ -592,16 +877,37 @@ class RepFlowLayer(paddle.nn.Layer):
                     nlist,
                     "node",
                 )
+                if not self.use_dynamic_sel
+                else self.optim_edge_update_dynamic(
+                    node_ebd,
+                    node_ebd_ext,
+                    edge_ebd,
+                    n2e_index,
+                    n_ext2e_index,
+                    "node",
+                )
             ) * sw.unsqueeze(-1)
+        node_edge_update = (
+            (paddle.sum(node_edge_update, axis=-2) / self.nnei)
+            if not self.use_dynamic_sel
+            else (
+                aggregate(
+                    node_edge_update,
+                    n2e_index,
+                    average=False,
+                    num_owner=nb * nloc,
+                ).reshape(nb, nloc, node_edge_update.shape[-1])
+                / self.dynamic_e_sel
+            )
+        )
 
-        node_edge_update = paddle.sum(node_edge_update, axis=-2) / self.nnei
         if self.n_multi_edge_message > 1:
-            # nb x nloc x nnei x h x n_dim
+            # nb x nloc x h x n_dim
             node_edge_update_mul_head = node_edge_update.reshape(
                 [nb, nloc, self.n_multi_edge_message, self.n_dim]
             )
             for head_index in range(self.n_multi_edge_message):
-                n_update_list.append(node_edge_update_mul_head[:, :, head_index, :])
+                n_update_list.append(node_edge_update_mul_head[..., head_index, :])
         else:
             n_update_list.append(node_edge_update)
         # update node_ebd
@@ -618,6 +924,15 @@ class RepFlowLayer(paddle.nn.Layer):
                     node_ebd_ext,
                     edge_ebd,
                     nlist,
+                    "edge",
+                )
+                if not self.use_dynamic_sel
+                else self.optim_edge_update_dynamic(
+                    node_ebd,
+                    node_ebd_ext,
+                    edge_ebd,
+                    n2e_index,
+                    n_ext2e_index,
                     "edge",
                 )
             )
@@ -641,48 +956,66 @@ class RepFlowLayer(paddle.nn.Layer):
                     edge_ebd_for_angle = self.a_compress_e_linear(edge_ebd)
                 else:
                     # use the first a_compress_dim dim for node and edge
-                    node_ebd_for_angle = node_ebd[:, :, : self.n_a_compress_dim]
-                    edge_ebd_for_angle = edge_ebd[:, :, :, : self.e_a_compress_dim]
+                    node_ebd_for_angle = node_ebd[..., : self.n_a_compress_dim]
+                    edge_ebd_for_angle = edge_ebd[..., : self.e_a_compress_dim]
             else:
                 node_ebd_for_angle = node_ebd
                 edge_ebd_for_angle = edge_ebd
 
-            # nb x nloc x a_nnei x e_dim
-            edge_for_angle = edge_ebd_for_angle[:, :, : self.a_sel, :]
-            # nb x nloc x a_nnei x e_dim
-            edge_for_angle = paddle.where(
-                a_nlist_mask.unsqueeze(-1),
-                edge_for_angle,
-                paddle.zeros_like(edge_for_angle),
-            ).astype(edge_for_angle.dtype)
+            if not self.use_dynamic_sel:
+                # nb x nloc x a_nnei x e_dim
+                edge_ebd_for_angle = edge_ebd_for_angle[..., : self.a_sel, :]
+                # nb x nloc x a_nnei x e_dim
+                edge_ebd_for_angle = edge_ebd_for_angle.masked_fill(
+                    ~a_nlist_mask.unsqueeze(-1), 0.0
+                )
             if not self.optim_update:
-                # nb x nloc x a_nnei x a_nnei x n_dim
-                node_for_angle_info = paddle.tile(
-                    node_ebd_for_angle.unsqueeze(2).unsqueeze(2),
-                    [1, 1, self.a_sel, self.a_sel, 1],
+                # nb x nloc x a_nnei x a_nnei x n_dim [OR] n_angle x n_dim
+                node_for_angle_info = (
+                    paddle.tile(
+                        node_ebd_for_angle.unsqueeze(2).unsqueeze(2),
+                        (1, 1, self.a_sel, self.a_sel, 1),
+                    )
+                    if not self.use_dynamic_sel
+                    else paddle.index_select(
+                        node_ebd_for_angle.reshape([-1, self.n_a_compress_dim]),
+                        n2a_index,
+                        0,
+                    )
                 )
-                # nb x nloc x (a_nnei) x a_nnei x edge_ebd
-                edge_for_angle_i = paddle.tile(
-                    edge_for_angle.unsqueeze(2), (1, 1, self.a_sel, 1, 1)
+
+                # nb x nloc x (a_nnei) x a_nnei x e_dim [OR] n_angle x e_dim
+                edge_for_angle_k = (
+                    paddle.tile(
+                        edge_ebd_for_angle.unsqueeze(2), (1, 1, self.a_sel, 1, 1)
+                    )
+                    if not self.use_dynamic_sel
+                    else paddle.index_select(edge_ebd_for_angle, eik2a_index, 0)
                 )
-                # nb x nloc x a_nnei x (a_nnei) x e_dim
-                edge_for_angle_j = paddle.tile(
-                    edge_for_angle.unsqueeze(3), (1, 1, 1, self.a_sel, 1)
+                # nb x nloc x a_nnei x (a_nnei) x e_dim [OR] n_angle x e_dim
+                edge_for_angle_j = (
+                    paddle.tile(
+                        edge_ebd_for_angle.unsqueeze(3), (1, 1, 1, self.a_sel, 1)
+                    )
+                    if not self.use_dynamic_sel
+                    else paddle.index_select(edge_ebd_for_angle, eij2a_index, 0)
                 )
-                # nb x nloc x a_nnei x a_nnei x (e_dim + e_dim)
+                # nb x nloc x a_nnei x a_nnei x (e_dim + e_dim) [OR] n_angle x (e_dim + e_dim)
                 edge_for_angle_info = paddle.concat(
-                    [edge_for_angle_i, edge_for_angle_j], axis=-1
+                    [edge_for_angle_k, edge_for_angle_j], axis=1
                 )
                 angle_info_list = [angle_ebd]
                 angle_info_list.append(node_for_angle_info)
                 angle_info_list.append(edge_for_angle_info)
                 # nb x nloc x a_nnei x a_nnei x (a + n_dim + e_dim*2) or (a + a/c + a/c)
-                angle_info = paddle.concat(angle_info_list, axis=-1)
+                # [OR]
+                # n_angle x (a + n_dim + e_dim*2) or (a + a/c + a/c)
+                angle_info = paddle.cat(angle_info_list, axis=1)
             else:
                 angle_info = None
 
             # edge angle message
-            # nb x nloc x a_nnei x a_nnei x e_dim
+            # nb x nloc x a_nnei x a_nnei x e_dim [OR] n_angle x e_dim
             if not self.optim_update:
                 assert angle_info is not None
                 edge_angle_update = self.act(self.edge_angle_linear1(angle_info))
@@ -691,32 +1024,59 @@ class RepFlowLayer(paddle.nn.Layer):
                     self.optim_angle_update(
                         angle_ebd,
                         node_ebd_for_angle,
-                        edge_for_angle,
+                        edge_ebd_for_angle,
+                        "edge",
+                    )
+                    if not self.use_dynamic_sel
+                    else self.optim_angle_update_dynamic(
+                        angle_ebd,
+                        node_ebd_for_angle,
+                        edge_ebd_for_angle,
+                        n2a_index,
+                        eij2a_index,
+                        eik2a_index,
                         "edge",
                     )
                 )
 
-            # nb x nloc x a_nnei x a_nnei x e_dim
-            weighted_edge_angle_update = (
-                a_sw[..., None, None] * a_sw[..., None, :, None] * edge_angle_update
-            )
-            # nb x nloc x a_nnei x e_dim
-            reduced_edge_angle_update = paddle.sum(
-                weighted_edge_angle_update, axis=-2
-            ) / (self.a_sel**0.5)
-            # nb x nloc x nnei x e_dim
-            padding_edge_angle_update = paddle.concat(
-                [
-                    reduced_edge_angle_update,
-                    paddle.zeros(
-                        [nb, nloc, self.nnei - self.a_sel, self.e_dim],
-                        dtype=edge_ebd.dtype,
-                    ).to(device=edge_ebd.place),
-                ],
-                axis=2,
-            )
+            if not self.use_dynamic_sel:
+                # nb x nloc x a_nnei x a_nnei x e_dim
+                weighted_edge_angle_update = (
+                    a_sw[..., None, None] * a_sw[..., None, :, None] * edge_angle_update
+                )
+                # nb x nloc x a_nnei x e_dim
+                reduced_edge_angle_update = paddle.sum(
+                    weighted_edge_angle_update, axis=-2
+                ) / (self.a_sel**0.5)
+                # nb x nloc x nnei x e_dim
+                padding_edge_angle_update = paddle.concat(
+                    [
+                        reduced_edge_angle_update,
+                        paddle.zeros(
+                            [nb, nloc, self.nnei - self.a_sel, self.e_dim],
+                            dtype=edge_ebd.dtype,
+                        ),
+                    ],
+                    axis=2,
+                )
+            else:
+                # n_angle x e_dim
+                weighted_edge_angle_update = edge_angle_update * a_sw.unsqueeze(-1)
+                # n_edge x e_dim
+                padding_edge_angle_update = aggregate(
+                    weighted_edge_angle_update,
+                    eij2a_index,
+                    average=False,
+                    num_owner=n_edge,
+                ) / (self.dynamic_a_sel**0.5)
+
             if not self.smooth_edge_update:
                 # will be deprecated in the future
+                # not support dynamic index, will pass anyway
+                if self.use_dynamic_sel:
+                    raise NotImplementedError(
+                        "smooth_edge_update must be True when use_dynamic_sel is True!"
+                    )
                 full_mask = paddle.concat(
                     [
                         a_nlist_mask,
@@ -727,8 +1087,8 @@ class RepFlowLayer(paddle.nn.Layer):
                     ],
                     axis=-1,
                 )
-                padding_edge_angle_update = paddle.where(
-                    full_mask.unsqueeze(-1), padding_edge_angle_update, edge_ebd
+                padding_edge_angle_update = padding_edge_angle_update.masked_fill(
+                    ~full_mask.unsqueeze(-1), edge_ebd
                 )
             e_update_list.append(
                 self.act(self.edge_angle_linear2(padding_edge_angle_update))
@@ -746,7 +1106,17 @@ class RepFlowLayer(paddle.nn.Layer):
                     self.optim_angle_update(
                         angle_ebd,
                         node_ebd_for_angle,
-                        edge_for_angle,
+                        edge_ebd_for_angle,
+                        "angle",
+                    )
+                    if not self.use_dynamic_sel
+                    else self.optim_angle_update_dynamic(
+                        angle_ebd,
+                        node_ebd_for_angle,
+                        edge_ebd_for_angle,
+                        n2a_index,
+                        eij2a_index,
+                        eik2a_index,
                         "angle",
                     )
                 )
