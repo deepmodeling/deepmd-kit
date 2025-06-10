@@ -526,7 +526,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         # edge_input, h2 = xp.split(dmatrix, [1], axis=-1)
         # nb x nloc x nnei x 1
         if self.edge_init_use_dist:
-            edge_input = xp.linalg.vector_norm(diff, axis=-1, keepdims=True)
+            edge_input = safe_for_vector_norm(diff, axis=-1, keepdims=True)
         else:
             edge_input = dmatrix[:, :, :, :1]
         h2 = dmatrix[:, :, :, 1:]
