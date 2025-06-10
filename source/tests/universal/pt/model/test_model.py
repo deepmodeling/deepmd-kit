@@ -167,8 +167,7 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
             cls.epsilon_dict["test_smooth"] = 1e-8
         if Descrpt in [DescrptSeT, DescrptSeTTebd]:
             # computational expensive
-            cls.expected_sel = [i // 4 for i in cls.expected_sel]
-            cls.expected_rcut = cls.expected_rcut / 2
+            cls.expected_sel = [i // 2 for i in cls.expected_sel]
         cls.input_dict_ds = DescriptorParam(
             len(cls.expected_type_map),
             cls.expected_rcut,
@@ -211,6 +210,10 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
 
 
 @parameterized(
@@ -272,8 +275,7 @@ class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
             cls.epsilon_dict["test_smooth"] = 1e-8
         if Descrpt in [DescrptSeT, DescrptSeTTebd]:
             # computational expensive
-            cls.expected_sel = [i // 4 for i in cls.expected_sel]
-            cls.expected_rcut = cls.expected_rcut / 2
+            cls.expected_sel = [i // 2 for i in cls.expected_sel]
         cls.input_dict_ds = DescriptorParam(
             len(cls.expected_type_map),
             cls.expected_rcut,
@@ -316,6 +318,10 @@ class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
 
 
 @parameterized(
@@ -412,6 +418,10 @@ class TestDipoleModelPT(unittest.TestCase, DipoleModelTest, PTTestCase):
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
 
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
+
 
 @parameterized(
     des_parameterized=(
@@ -502,6 +512,10 @@ class TestPolarModelPT(unittest.TestCase, PolarModelTest, PTTestCase):
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
 
 
 @parameterized(
@@ -602,6 +616,10 @@ class TestZBLModelPT(unittest.TestCase, ZBLModelTest, PTTestCase):
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
 
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
+
 
 @parameterized(
     des_parameterized=(
@@ -663,8 +681,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
             cls.epsilon_dict["test_smooth"] = 1e-8
         if Descrpt in [DescrptSeT, DescrptSeTTebd]:
             # computational expensive
-            cls.expected_sel = [i // 4 for i in cls.expected_sel]
-            cls.expected_rcut = cls.expected_rcut / 2
+            cls.expected_sel = [i // 2 for i in cls.expected_sel]
 
         spin = Spin(
             use_spin=cls.spin_dict["use_spin"],
@@ -676,6 +693,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
         if Descrpt in [DescrptSeA, DescrptSeR, DescrptSeT]:
             spin_sel = cls.expected_sel + cls.expected_sel
         else:
+            cls.expected_sel = [i * 2 for i in cls.expected_sel]
             spin_sel = cls.expected_sel
         pair_exclude_types = spin.get_pair_exclude_types()
         atom_exclude_types = spin.get_atom_exclude_types()
@@ -726,6 +744,10 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
 
 
 @parameterized(
@@ -820,6 +842,10 @@ class TestPropertyModelPT(unittest.TestCase, PropertyModelTest, PTTestCase):
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()
 
 
 @parameterized(
@@ -919,3 +945,7 @@ class TestLinearEnergyModelPT(unittest.TestCase, LinearEnerModelTest, PTTestCase
         cls.expected_dim_fparam = ft1.get_dim_fparam()
         cls.expected_dim_aparam = ft1.get_dim_aparam()
         cls.expected_sel_type = ft1.get_sel_type()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()

@@ -508,7 +508,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             "precision": RESERVED_PRECISION_DICT[obj.prec],
             "embeddings": obj.filter_layers.serialize(),
             "attention_layers": obj.dpa1_attention.serialize(),
-            "env_mat": DPEnvMat(obj.rcut, obj.rcut_smth).serialize(),
+            "env_mat": DPEnvMat(
+                obj.rcut, obj.rcut_smth, obj.env_protection
+            ).serialize(),
             "type_embedding": self.type_embedding.embedding.serialize(),
             "exclude_types": obj.exclude_types,
             "env_protection": obj.env_protection,

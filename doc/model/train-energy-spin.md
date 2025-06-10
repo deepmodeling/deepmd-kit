@@ -51,6 +51,7 @@ In PyTorch/DP, the spin implementation is more flexible and so far supports the 
 - `se_e2_a`
 - `dpa1`(`se_atten`)
 - `dpa2`
+- `dpa3`
 
 See `se_e2_a` examples in `$deepmd_source_dir/examples/spin/se_e2_a/input_torch.json`, the {ref}`spin <model/spin>` section is defined as the following with a much more clear interface:
 

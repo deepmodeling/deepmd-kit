@@ -1,0 +1,99 @@
+{
+  "_comment": "that's all",
+  "model": {
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "type": "dpa3",
+      "repflow": {
+        "n_dim": 128,
+        "e_dim": 64,
+        "a_dim": 32,
+        "nlayers": 6,
+        "e_rcut": 6.0,
+        "e_rcut_smth": 5.3,
+        "e_sel": 1200,
+        "a_rcut": 4.0,
+        "a_rcut_smth": 3.5,
+        "a_sel": 300,
+        "axis_neuron": 4,
+        "fix_stat_std": 0.3,
+        "a_compress_rate": 1,
+        "a_compress_e_rate": 2,
+        "a_compress_use_split": true,
+        "update_angle": true,
+        "smooth_edge_update": true,
+        "edge_init_use_dist": true,
+        "use_dynamic_sel": true,
+        "sel_reduce_factor": 10.0,
+        "use_exp_switch": true,
+        "update_style": "res_residual",
+        "update_residual": 0.1,
+        "update_residual_init": "const"
+      },
+      "activation_function": "silut:10.0",
+      "use_tebd_bias": false,
+      "precision": "float32",
+      "concat_output_tebd": false
+    },
+    "fitting_net": {
+      "neuron": [
+        240,
+        240,
+        240
+      ],
+      "resnet_dt": true,
+      "precision": "float32",
+      "activation_function": "silut:10.0",
+      "seed": 1,
+      "_comment": " that's all"
+    },
+    "_comment": " that's all"
+  },
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 5000,
+    "start_lr": 0.001,
+    "stop_lr": 3e-5,
+    "_comment": "that's all"
+  },
+  "loss": {
+    "type": "ener",
+    "start_pref_e": 0.2,
+    "limit_pref_e": 20,
+    "start_pref_f": 100,
+    "limit_pref_f": 60,
+    "start_pref_v": 0.02,
+    "limit_pref_v": 1,
+    "_comment": " that's all"
+  },
+  "training": {
+    "stat_file": "./dpa3.hdf5",
+    "training_data": {
+      "systems": [
+        "../data/data_0",
+        "../data/data_1",
+        "../data/data_2"
+      ],
+      "batch_size": 1,
+      "_comment": "that's all"
+    },
+    "validation_data": {
+      "systems": [
+        "../data/data_3"
+      ],
+      "batch_size": 1,
+      "_comment": "that's all"
+    },
+    "numb_steps": 1000000,
+    "warmup_steps": 0,
+    "gradient_max_norm": 5.0,
+    "seed": 10,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 2000,
+    "_comment": "that's all"
+  }
+}

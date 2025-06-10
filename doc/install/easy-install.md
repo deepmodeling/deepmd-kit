@@ -114,14 +114,6 @@ pip install deepmd-kit[cpu]
 
 :::::
 
-[The LAMMPS module](../third-party/lammps-command.md) and [the i-PI driver](../third-party/ipi.md) are only provided on Linux and macOS for the TensorFlow backend. To install LAMMPS and/or i-PI, add `lmp` and/or `ipi` to extras:
-
-```bash
-pip install deepmd-kit[gpu,cu12,lmp,ipi]
-```
-
-MPICH is required for parallel running.
-
 ::::::
 
 ::::::{tab-item} PyTorch {{ pytorch_icon }}
@@ -190,10 +182,10 @@ Switch to the TensorFlow {{ tensorflow_icon }} tab for more information.
 
 :::::{tab-set}
 
-::::{tab-item} CUDA 12.3
+::::{tab-item} CUDA 12.6
 
 ```bash
-pip install paddlepaddle-gpu==3.0.0rc0 -i https://www.paddlepaddle.org.cn/packages/stable/cu123/
+pip install paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
 pip install deepmd-kit
 ```
 
@@ -202,7 +194,7 @@ pip install deepmd-kit
 ::::{tab-item} CUDA 11.8
 
 ```bash
-pip install paddlepaddle-gpu==3.0.0rc0 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/
+pip install paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/
 pip install deepmd-kit
 ```
 
@@ -211,7 +203,7 @@ pip install deepmd-kit
 ::::{tab-item} CPU
 
 ```bash
-pip install paddlepaddle==3.0.0rc0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+pip install paddlepaddle==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
 pip install deepmd-kit
 ```
 
@@ -228,3 +220,11 @@ The supported platform includes Linux x86-64 and aarch64 with GNU C Library 2.28
 :::{Warning}
 If your platform is not supported, or you want to build against the installed backends, or you want to enable ROCM support, please [build from source](install-from-source.md).
 :::
+
+[The LAMMPS module](../third-party/lammps-command.md) and [the i-PI driver](../third-party/ipi.md) are provided on Linux and macOS for the TensorFlow, PyTorch, and JAX backend. It requires both TensorFlow and PyTorch. To install LAMMPS and/or i-PI, add `lmp` and/or `ipi` to extras:
+
+```bash
+pip install deepmd-kit[gpu,cu12,lmp,ipi]
+```
+
+MPICH is required for parallel running.

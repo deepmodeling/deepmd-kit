@@ -45,3 +45,7 @@ class TestLossPT(unittest.TestCase, LossTest, PTTestCase):
         self.key_to_pref_map = self.input_dict.pop("key_to_pref_map")
         self.module = Loss(**self.input_dict)
         self.skip_test_jit = True
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()

@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
+import multiprocessing
 import os
 
 import numpy as np
@@ -22,6 +24,15 @@ try:
 except AttributeError:
     ncpus = os.cpu_count()
 NUM_WORKERS = int(os.environ.get("NUM_WORKERS", min(4, ncpus)))
+if multiprocessing.get_start_method() != "fork":
+    # spawn or forkserver does not support NUM_WORKERS > 0 for DataLoader
+    log = logging.getLogger(__name__)
+    log.warning(
+        "NUM_WORKERS > 0 is not supported with spawn or forkserver start method. "
+        "Setting NUM_WORKERS to 0."
+    )
+    NUM_WORKERS = 0
+
 # Make sure DDP uses correct device if applicable
 LOCAL_RANK = os.environ.get("LOCAL_RANK")
 LOCAL_RANK = int(0 if LOCAL_RANK is None else LOCAL_RANK)

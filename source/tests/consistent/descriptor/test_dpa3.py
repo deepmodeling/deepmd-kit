@@ -37,8 +37,7 @@ else:
     DescrptDPA3JAX = None
 
 if INSTALLED_PD:
-    # not supported yet
-    DescrptDPA3PD = None
+    from deepmd.pd.model.descriptor.dpa3 import DescrptDPA3 as DescrptDPA3PD
 else:
     DescrptDPA3PD = None
 
@@ -61,13 +60,17 @@ from deepmd.utils.argcheck import (
 @parameterized(
     ("const",),  # update_residual_init
     ([], [[0, 1]]),  # exclude_types
-    (True, False),  # update_angle
+    (True,),  # update_angle
     (0, 1),  # a_compress_rate
     (1, 2),  # a_compress_e_rate
-    (True, False),  # a_compress_use_split
+    (True,),  # a_compress_use_split
     (True, False),  # optim_update
+    (True, False),  # edge_init_use_dist
+    (True, False),  # use_exp_switch
+    (True, False),  # use_dynamic_sel
+    (True, False),  # use_loc_mapping
     (0.3, 0.0),  # fix_stat_std
-    (1, 2),  # n_multi_edge_message
+    (1,),  # n_multi_edge_message
     ("float64",),  # precision
 )
 class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
@@ -81,6 +84,10 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_e_rate,
             a_compress_use_split,
             optim_update,
+            edge_init_use_dist,
+            use_exp_switch,
+            use_dynamic_sel,
+            use_loc_mapping,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -104,6 +111,10 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
                     "a_compress_e_rate": a_compress_e_rate,
                     "a_compress_use_split": a_compress_use_split,
                     "optim_update": optim_update,
+                    "edge_init_use_dist": edge_init_use_dist,
+                    "use_exp_switch": use_exp_switch,
+                    "use_dynamic_sel": use_dynamic_sel,
+                    "smooth_edge_update": True,
                     "fix_stat_std": fix_stat_std,
                     "n_multi_edge_message": n_multi_edge_message,
                     "axis_neuron": 4,
@@ -118,6 +129,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             "precision": precision,
             "exclude_types": exclude_types,
             "env_protection": 0.0,
+            "use_loc_mapping": use_loc_mapping,
             "trainable": True,
         }
 
@@ -131,6 +143,10 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_e_rate,
             a_compress_use_split,
             optim_update,
+            edge_init_use_dist,
+            use_exp_switch,
+            use_dynamic_sel,
+            use_loc_mapping,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -147,12 +163,22 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_e_rate,
             a_compress_use_split,
             optim_update,
+            edge_init_use_dist,
+            use_exp_switch,
+            use_dynamic_sel,
+            use_loc_mapping,
             fix_stat_std,
             n_multi_edge_message,
             precision,
         ) = self.param
-        # return not INSTALLED_PD or precision == "bfloat16"
-        return True
+        return (
+            not INSTALLED_PD
+            or precision == "bfloat16"
+            or edge_init_use_dist
+            or use_exp_switch
+            or use_dynamic_sel
+            or use_loc_mapping
+        )  # not supported yet
 
     @property
     def skip_dp(self) -> bool:
@@ -164,6 +190,10 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_e_rate,
             a_compress_use_split,
             optim_update,
+            edge_init_use_dist,
+            use_exp_switch,
+            use_dynamic_sel,
+            use_loc_mapping,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -180,6 +210,10 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_e_rate,
             a_compress_use_split,
             optim_update,
+            edge_init_use_dist,
+            use_exp_switch,
+            use_dynamic_sel,
+            use_loc_mapping,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -238,6 +272,10 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_e_rate,
             a_compress_use_split,
             optim_update,
+            edge_init_use_dist,
+            use_exp_switch,
+            use_dynamic_sel,
+            use_loc_mapping,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -317,6 +355,10 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_e_rate,
             a_compress_use_split,
             optim_update,
+            edge_init_use_dist,
+            use_exp_switch,
+            use_dynamic_sel,
+            use_loc_mapping,
             fix_stat_std,
             n_multi_edge_message,
             precision,
@@ -339,6 +381,10 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             a_compress_e_rate,
             a_compress_use_split,
             optim_update,
+            edge_init_use_dist,
+            use_exp_switch,
+            use_dynamic_sel,
+            use_loc_mapping,
             fix_stat_std,
             n_multi_edge_message,
             precision,

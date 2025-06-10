@@ -428,7 +428,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
             dtype=self.prec,
             place="cpu",
         )
-        self.compress_data[0] = table_data[net].to(device=env.DEVICE, dtype=self.prec)
+        paddle.assign(
+            table_data[net].to(device=env.DEVICE, dtype=self.prec),
+            self.compress_data[0],
+        )
         self.compress = True
 
     def forward(

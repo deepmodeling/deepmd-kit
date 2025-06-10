@@ -22,3 +22,7 @@ class TestTypeEmbd(unittest.TestCase, TypeEmbdTest, PTTestCase):
         self.module_class = TypeEmbedNetConsistent
         self.module = TypeEmbedNetConsistent(**self.input_dict)
         self.module_input = {"device": env.DEVICE}
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()

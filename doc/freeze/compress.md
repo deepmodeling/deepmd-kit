@@ -77,7 +77,7 @@ dp compress -i graph.pb -o graph-compress.pb
 :::{tab-item} PyTorch {{ pytorch_icon }}
 
 ```bash
-dp compress -i model.pth -o model-compress.pth
+dp --pt compress -i model.pth -o model-compress.pth
 ```
 
 :::

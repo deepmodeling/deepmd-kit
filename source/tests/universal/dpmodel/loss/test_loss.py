@@ -14,6 +14,7 @@ def LossParamEnergy(
     pref_f=1.0,
     pref_v=1.0,
     pref_ae=1.0,
+    use_huber=False,
 ):
     key_to_pref_map = {
         "energy": pref_e,
@@ -32,6 +33,7 @@ def LossParamEnergy(
         "limit_pref_v": pref_v / 2,
         "start_pref_ae": pref_ae,
         "limit_pref_ae": pref_ae / 2,
+        "use_huber": use_huber,
     }
     return input_dict
 
@@ -44,6 +46,7 @@ LossParamEnergyList = parameterize_func(
             "pref_f": (1.0, 0.0),
             "pref_v": (1.0, 0.0),
             "pref_ae": (1.0, 0.0),
+            "use_huber": (False, True),
         }
     ),
 )

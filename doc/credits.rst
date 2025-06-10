@@ -13,7 +13,7 @@ Cite DeePMD-kit and methods
 
    Wang_ComputPhysCommun_2018_v228_p178
    Zeng_JChemPhys_2023_v159_p054801
-   Zeng_arXiv_2025_p2502.19161
+   Zeng_JChemTheoryComput_2025_v21_p4375
 
 - If GPU version is used,
 

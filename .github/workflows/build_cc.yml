@@ -33,10 +33,7 @@ jobs:
     - uses: lukka/get-cmake@latest
     - run: python -m pip install uv
     - run: source/install/uv_with_retry.sh pip install --system tensorflow
-    - name: Download libtorch
-      run: |
-         wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.1.2%2Bcpu.zip -O libtorch.zip
-         unzip libtorch.zip
+    - run: source/install/uv_with_retry.sh pip install --system 'torch==2.7' --index-url https://download.pytorch.org/whl/cpu
     - run: |
          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
          && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
@@ -52,14 +49,13 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
     - run: |
-         echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/5.3/ jammy main' | sudo tee /etc/apt/sources.list.d/rocm.list \
+         echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/6.3/ jammy main' | sudo tee /etc/apt/sources.list.d/rocm.list \
          && printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' | sudo tee /etc/apt/preferences.d/rocm-pin-600 \
          && curl -s https://repo.radeon.com/rocm/rocm.gpg.key | sudo apt-key add - \
          && sudo apt-get update \
          && sudo apt-get install -y rocm-dev hipcub-dev
       if: matrix.variant == 'rocm'
     - run: |
-        export CMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/libtorch
         source/install/build_cc.sh
       env:
         DP_VARIANT: ${{ matrix.dp_variant }}
@@ -67,7 +63,6 @@ jobs:
         CMAKE_GENERATOR: Ninja
       if: matrix.variant != 'clang'
     - run: |
-        export CMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/libtorch
         source/install/build_cc.sh
       env:
         DP_VARIANT: cpu

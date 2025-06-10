@@ -114,9 +114,11 @@ def get_trainer(
             validation_dataset_params["systems"] if validation_dataset_params else None
         )
         training_systems = training_dataset_params["systems"]
-        training_systems = process_systems(training_systems)
+        trn_patterns = training_dataset_params.get("rglob_patterns", None)
+        training_systems = process_systems(training_systems, patterns=trn_patterns)
         if validation_systems is not None:
-            validation_systems = process_systems(validation_systems)
+            val_patterns = validation_dataset_params.get("rglob_patterns", None)
+            validation_systems = process_systems(validation_systems, val_patterns)
 
         # stat files
         stat_file_path_single = data_dict_single.get("stat_file", None)

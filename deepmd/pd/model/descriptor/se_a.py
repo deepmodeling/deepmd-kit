@@ -337,7 +337,9 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
             # make deterministic
             "precision": RESERVED_PRECISION_DICT[obj.prec],
             "embeddings": obj.filter_layers.serialize(),
-            "env_mat": DPEnvMat(obj.rcut, obj.rcut_smth).serialize(),
+            "env_mat": DPEnvMat(
+                obj.rcut, obj.rcut_smth, obj.env_protection
+            ).serialize(),
             "exclude_types": obj.exclude_types,
             "env_protection": obj.env_protection,
             "@variables": {
@@ -672,8 +674,8 @@ class DescrptBlockSeA(DescriptorBlock):
                 place="cpu",
             )
             tensor_data_ii = table_data[net].to(device=env.DEVICE, dtype=self.prec)
-            self.compress_data[embedding_idx] = tensor_data_ii
-            self.compress_info[embedding_idx] = info_ii
+            paddle.assign(tensor_data_ii, self.compress_data[embedding_idx])
+            paddle.assign(info_ii, self.compress_info[embedding_idx])
         self.compress = True
 
     def forward(

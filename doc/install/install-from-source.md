@@ -98,12 +98,12 @@ One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to instal
 To install Paddle, run
 
 ```sh
-# cu123
-pip install paddlepaddle-gpu==3.0.0rc0 -i https://www.paddlepaddle.org.cn/packages/stable/cu123/
+# cu126
+pip install paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
 # cu118
-pip install paddlepaddle-gpu==3.0.0rc0 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/
+pip install paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/
 # cpu
-pip install paddlepaddle==3.0.0rc0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+pip install paddlepaddle==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
 ```
 
 :::
@@ -398,8 +398,7 @@ I assume you have installed the PyTorch (either Python or C++ interface) to `$to
 cmake -DENABLE_PYTORCH=TRUE -DCMAKE_PREFIX_PATH=$torch_root -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
 
-You can specify `-DUSE_PT_PYTHON_LIBS=TRUE` to use libtorch from the Python installation,
-but you need to be careful that [PyTorch PyPI packages are still built using `_GLIBCXX_USE_CXX11_ABI=0`](https://github.com/pytorch/pytorch/issues/51039), which may be not compatible with other libraries.
+You can specify `-DUSE_PT_PYTHON_LIBS=TRUE` to use libtorch from the Python installation.
 
 ```bash
 cmake -DENABLE_PYTORCH=TRUE -DUSE_PT_PYTHON_LIBS=TRUE -DCMAKE_INSTALL_PREFIX=$deepmd_root ..

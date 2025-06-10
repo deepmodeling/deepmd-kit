@@ -126,16 +126,41 @@ class DpLoaderSet(Dataset):
         if isinstance(batch_size, str):
             if batch_size == "auto":
                 rule = 32
+                ceiling = True
             elif batch_size.startswith("auto:"):
                 rule = int(batch_size.split(":")[1])
+                ceiling = True
+            elif batch_size.startswith("max:"):
+                rule = int(batch_size.split(":")[1])
+                ceiling = False
+            elif batch_size.startswith("filter:"):
+                # remove system with more than `filter` atoms
+                rule = int(batch_size.split(":")[1])
+                len_before = len(self.systems)
+                self.systems = [
+                    system for system in self.systems if system._natoms <= rule
+                ]
+                len_after = len(self.systems)
+                if len_before != len_after:
+                    log.warning(
+                        f"Remove {len_before - len_after} systems with more than {rule} atoms"
+                    )
+                if len(self.systems) == 0:
+                    raise ValueError(
+                        f"No system left after removing systems with more than {rule} atoms"
+                    )
+                ceiling = False
             else:
-                rule = None
-                log.error("Unsupported batch size type")
+                raise ValueError(f"Unsupported batch size rule: {batch_size}")
             for ii in self.systems:
                 ni = ii._natoms
                 bsi = rule // ni
-                if bsi * ni < rule:
-                    bsi += 1
+                if ceiling:
+                    if bsi * ni < rule:
+                        bsi += 1
+                else:
+                    if bsi == 0:
+                        bsi = 1
                 self.batch_sizes.append(bsi)
         elif isinstance(batch_size, list):
             self.batch_sizes = batch_size

@@ -148,7 +148,7 @@ class TestMultiTaskModel(unittest.TestCase):
         )
         trainer = get_trainer(deepcopy(self.config), shared_links=self.shared_links)
         trainer.run()
-        run_dp("dp --pd freeze --head model_1")
+        run_dp("dp --pd freeze --model-branch model_1")
 
     def test_checkpoint(self):
         INPUT = "model.ckpt.pd"

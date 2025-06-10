@@ -410,7 +410,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                     f"get an input fparam of dim {fparam.shape[-1]}, "
                     f"which is not consistent with {self.numb_fparam}."
                 )
-            fparam = (fparam - self.fparam_avg) * self.fparam_inv_std
+            fparam = (fparam - self.fparam_avg[...]) * self.fparam_inv_std[...]
             fparam = xp.tile(
                 xp.reshape(fparam, [nf, 1, self.numb_fparam]), (1, nloc, 1)
             )
@@ -432,7 +432,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                     f"which is not consistent with {self.numb_aparam}."
                 )
             aparam = xp.reshape(aparam, [nf, nloc, self.numb_aparam])
-            aparam = (aparam - self.aparam_avg) * self.aparam_inv_std
+            aparam = (aparam - self.aparam_avg[...]) * self.aparam_inv_std[...]
             xx = xp.concat(
                 [xx, aparam],
                 axis=-1,
@@ -445,7 +445,9 @@ class GeneralFitting(NativeOP, BaseFitting):
 
         if self.dim_case_embd > 0:
             assert self.case_embd is not None
-            case_embd = xp.tile(xp.reshape(self.case_embd, [1, 1, -1]), [nf, nloc, 1])
+            case_embd = xp.tile(
+                xp.reshape(self.case_embd[...], [1, 1, -1]), [nf, nloc, 1]
+            )
             xx = xp.concat(
                 [xx, case_embd],
                 axis=-1,
@@ -482,7 +484,9 @@ class GeneralFitting(NativeOP, BaseFitting):
                 outs -= self.nets[()](xx_zeros)
         outs += xp.reshape(
             xp.take(
-                xp.astype(self.bias_atom_e, outs.dtype), xp.reshape(atype, [-1]), axis=0
+                xp.astype(self.bias_atom_e[...], outs.dtype),
+                xp.reshape(atype, [-1]),
+                axis=0,
             ),
             [nf, nloc, net_dim_out],
         )

@@ -5,7 +5,7 @@
 units           metal
 boundary        p p p
 atom_style      atomic
-# Below line is required when using DPA-2 with the JAX backend
+# Below line is required when using DPA-2/3 with the JAX backend
 atom_modify     map yes
 
 neighbor        2.0 bin

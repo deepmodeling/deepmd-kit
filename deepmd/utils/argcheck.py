@@ -1372,6 +1372,10 @@ def descrpt_dpa3_args():
     doc_seed = "Random seed for parameter initialization."
     doc_use_econf_tebd = "Whether to use electronic configuration type embedding."
     doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
+    doc_use_loc_mapping = (
+        "Whether to use local atom index mapping in training or non-parallel inference. "
+        "When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation."
+    )
     return [
         # doc_repflow args
         Argument("repflow", dict, dpa3_repflow_args(), doc=doc_repflow),
@@ -1420,6 +1424,13 @@ def descrpt_dpa3_args():
             optional=True,
             default=False,
             doc=doc_use_tebd_bias,
+        ),
+        Argument(
+            "use_loc_mapping",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_use_loc_mapping,
         ),
     ]
 
@@ -1492,6 +1503,37 @@ def dpa3_repflow_args():
     doc_optim_update = (
         "Whether to enable the optimized update method. "
         "Uses a more efficient process when enabled. Defaults to True"
+    )
+    doc_smooth_edge_update = (
+        "Whether to make edge update smooth. "
+        "If True, the edge update from angle message will not use self as padding."
+    )
+    doc_edge_init_use_dist = (
+        "Whether to use direct distance r to initialize the edge features instead of 1/r. "
+        "Note that when using this option, the activation function will not be used when initializing edge features."
+    )
+    doc_use_exp_switch = (
+        "Whether to use an exponential switch function instead of a polynomial one in the neighbor update. "
+        "The exponential switch function ensures neighbor contributions smoothly diminish as the interatomic distance "
+        "`r` approaches the cutoff radius `rcut`. Specifically, the function is defined as: "
+        "s(r) = \\exp(-\\exp(20 * (r - rcut_smth) / rcut_smth)) for 0 < r \\leq rcut, and s(r) = 0 for r > rcut. "
+        "Here, `rcut_smth` is an adjustable smoothing factor and should be chosen carefully according to `rcut`, "
+        "ensuring s(r) approaches zero smoothly at the cutoff. "
+        "Typical recommended values are `rcut_smth` = 5.3 for `rcut` = 6.0, and 3.5 for `rcut` = 4.0."
+    )
+    doc_use_dynamic_sel = (
+        "Whether to dynamically select neighbors within the cutoff radius. "
+        "If True, the exact number of neighbors within the cutoff radius is used "
+        "without padding to a fixed selection numbers. "
+        "When enabled, users can safely set larger values for `e_sel` or `a_sel` (e.g., 1200 or 300, respectively) "
+        "to guarantee capturing all neighbors within the cutoff radius. "
+        "Note that when using dynamic selection, the `smooth_edge_update` must be True. "
+    )
+    doc_sel_reduce_factor = (
+        "Reduction factor applied to neighbor-scale normalization when `use_dynamic_sel` is True. "
+        "In the dynamic selection case, neighbor-scale normalization will use `e_sel / sel_reduce_factor` "
+        "or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values, "
+        "accommodating larger selection numbers."
     )
 
     return [
@@ -1585,6 +1627,43 @@ def dpa3_repflow_args():
             optional=True,
             default=True,
             doc=doc_optim_update,
+        ),
+        Argument(
+            "smooth_edge_update",
+            bool,
+            optional=True,
+            default=False,  # For compatability. This will be True in the future
+            doc=doc_smooth_edge_update,
+        ),
+        Argument(
+            "edge_init_use_dist",
+            bool,
+            optional=True,
+            default=False,
+            alias=["edge_use_dist"],
+            doc=doc_edge_init_use_dist,
+        ),
+        Argument(
+            "use_exp_switch",
+            bool,
+            optional=True,
+            default=False,
+            alias=["use_env_envelope"],
+            doc=doc_use_exp_switch,
+        ),
+        Argument(
+            "use_dynamic_sel",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_dynamic_sel,
+        ),
+        Argument(
+            "sel_reduce_factor",
+            float,
+            optional=True,
+            default=10.0,
+            doc=doc_sel_reduce_factor,
         ),
     ]
 
@@ -2435,6 +2514,14 @@ def loss_ener():
     doc_numb_generalized_coord = "The dimension of generalized coordinates. Required when generalized force loss is used."
     doc_relative_f = "If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label."
     doc_enable_atom_ener_coeff = "If true, the energy will be computed as \\sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
+    doc_use_huber = (
+        "Enables Huber loss calculation for energy/force/virial terms with user-defined threshold delta (D). "
+        "The loss function smoothly transitions between L2 and L1 loss: \n\n"
+        "- For absolute prediction errors within D: quadratic loss 0.5 * (error**2) \n\n"
+        "- For absolute errors exceeding D: linear loss D * (\\|error\\| - 0.5 * D) \n\n"
+        "Formula: loss = 0.5 * (error**2) if \\|error\\| <= D else D * (\\|error\\| - 0.5 * D). "
+    )
+    doc_huber_delta = "The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss. "
     return [
         Argument(
             "start_pref_e",
@@ -2548,6 +2635,20 @@ def loss_ener():
             optional=True,
             default=0,
             doc=doc_numb_generalized_coord,
+        ),
+        Argument(
+            "use_huber",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_huber,
+        ),
+        Argument(
+            "huber_delta",
+            float,
+            optional=True,
+            default=0.01,
+            doc=doc_huber_delta,
         ),
     ]
 
@@ -2825,12 +2926,17 @@ def training_data_args():  # ! added by Ziyao: new specification style for data 
         "This key can be provided with a list that specifies the systems, or be provided with a string "
         "by which the prefix of all systems are given and the list of the systems is automatically generated."
     )
+    doc_patterns = (
+        "The customized patterns used in `rglob` to collect all training systems. "
+    )
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
 - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
 - string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.\n\n\
 - string "mixed:N": the batch data will be sampled from all systems and merged into a mixed system with the batch size N. Only support the se_atten descriptor for TensorFlow backend.\n\n\
+- string "max:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no more than N.\n\n\
+- string "filter:N": the same as `"max:N"` but removes the systems with the number of atoms larger than `N` from the data set.\n\n\
 If MPI is used, the value should be considered as the batch size per task.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
 - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
@@ -2845,6 +2951,13 @@ If MPI is used, the value should be considered as the batch size per task.'
     args = [
         Argument(
             "systems", [list[str], str], optional=False, default=".", doc=doc_systems
+        ),
+        Argument(
+            "rglob_patterns",
+            [list[str]],
+            optional=True,
+            default=None,
+            doc=doc_patterns + doc_only_pt_supported,
         ),
         Argument(
             "batch_size",
@@ -2892,6 +3005,9 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
         "This key can be provided with a list that specifies the systems, or be provided with a string "
         "by which the prefix of all systems are given and the list of the systems is automatically generated."
     )
+    doc_patterns = (
+        "The customized patterns used in `rglob` to collect all validation systems. "
+    )
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
@@ -2911,6 +3027,13 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
     args = [
         Argument(
             "systems", [list[str], str], optional=False, default=".", doc=doc_systems
+        ),
+        Argument(
+            "rglob_patterns",
+            [list[str]],
+            optional=True,
+            default=None,
+            doc=doc_patterns + doc_only_pt_supported,
         ),
         Argument(
             "batch_size",
@@ -3142,6 +3265,7 @@ def training_args(
             "opt_type",
             choices=[
                 Argument("Adam", dict, [], [], optional=True),
+                Argument("AdamW", dict, [], [], optional=True),
                 Argument(
                     "LKF",
                     dict,

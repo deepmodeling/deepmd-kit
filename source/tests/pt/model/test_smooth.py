@@ -21,6 +21,7 @@ from .test_permutation import (  # model_dpau,
     model_dos,
     model_dpa1,
     model_dpa2,
+    model_dpa3,
     model_hybrid,
     model_se_e2_a,
     model_spin,
@@ -59,10 +60,16 @@ class SmoothTest:
                 0.0,
                 4.0 - 0.5 * epsilon,
                 0.0,
+                6.0 - 0.5 * epsilon,
+                0.0,
+                0.0,
+                0.0,
+                6.0 - 0.5 * epsilon,
+                0.0,
             ],
             dtype=dtype,
             device=env.DEVICE,
-        ).view([-1, 3])
+        ).view([-1, 3])  # to test descriptors with two rcuts, e.g. DPA2/3
         coord1 = torch.rand(
             [natoms - coord0.shape[0], 3],
             dtype=dtype,
@@ -77,11 +84,15 @@ class SmoothTest:
         coord0 = torch.clone(coord)
         coord1 = torch.clone(coord)
         coord1[1][0] += epsilon
+        coord1[3][0] += epsilon
         coord2 = torch.clone(coord)
         coord2[2][1] += epsilon
+        coord2[4][1] += epsilon
         coord3 = torch.clone(coord)
         coord3[1][0] += epsilon
+        coord1[3][0] += epsilon
         coord3[2][1] += epsilon
+        coord2[4][1] += epsilon
         test_spin = getattr(self, "test_spin", False)
         if not test_spin:
             test_keys = ["energy", "force", "virial"]
@@ -224,6 +235,17 @@ class TestEnergyModelDPA2_2(unittest.TestCase, SmoothTest):
         self.test_virial = False
         self.model = get_model(model_params).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
+
+
+class TestEnergyModelDPA3(unittest.TestCase, SmoothTest):
+    def setUp(self) -> None:
+        model_params = copy.deepcopy(model_dpa3)
+        self.type_split = True
+        self.model = get_model(model_params).to(env.DEVICE)
+        # less degree of smoothness,
+        # error can be systematically removed by reducing epsilon
+        self.epsilon = 1e-5
+        self.aprec = 1e-5
 
 
 class TestEnergyModelHybrid(unittest.TestCase, SmoothTest):

@@ -286,7 +286,7 @@ class TypeEmbedNet(nn.Module):
         type_embedding:
 
         """
-        return self.embedding(atype.device)[atype]
+        return torch.embedding(self.embedding(atype.device), atype)
 
     def get_full_embedding(self, device: torch.device):
         """

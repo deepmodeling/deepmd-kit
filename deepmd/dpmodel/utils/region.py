@@ -71,7 +71,7 @@ def normalize_coord(
     """
     xp = array_api_compat.array_namespace(coord, cell)
     icoord = phys2inter(coord, cell)
-    icoord = xp.remainder(icoord, 1.0)
+    icoord = xp.remainder(icoord, xp.asarray(1.0))
     return inter2phys(icoord, cell)
 
 

@@ -3,7 +3,7 @@ import os
 import subprocess
 import unittest
 
-from deepmd.tf.utils.convert import (
+from deepmd.tf.utils.convert import (  # noqa: TID253
     convert_pbtxt_to_pb,
 )
 
@@ -27,6 +27,10 @@ class TestLAMMPS(unittest.TestCase):
             str(cls.work_dir / "deeppot.pbtxt"), str(cls.work_dir / "deep_pot.pb")
         )
 
+    @unittest.skipIf(
+        os.environ.get("CUDA_VERSION", "").startswith("11"),
+        "CUDA 11.x wheel uses PyTorch 2.3 which is not ABI compatible with TensorFlow",
+    )
     def test_lmp(self) -> None:
         in_file = (self.work_dir / "in.test").absolute()
         subprocess.check_call(["lmp", "-in", str(in_file)], cwd=str(self.work_dir))

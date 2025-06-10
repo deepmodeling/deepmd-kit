@@ -25,11 +25,12 @@ def extend_input_and_build_neighbor_list(
     mixed_types: bool = False,
     box: Optional[np.ndarray] = None,
 ):
+    xp = array_api_compat.array_namespace(coord, atype)
     nframes, nloc = atype.shape[:2]
     if box is not None:
         coord_normalized = normalize_coord(
-            coord.reshape(nframes, nloc, 3),
-            box.reshape(nframes, 3, 3),
+            xp.reshape(coord, (nframes, nloc, 3)),
+            xp.reshape(box, (nframes, 3, 3)),
         )
     else:
         coord_normalized = coord
@@ -44,7 +45,7 @@ def extend_input_and_build_neighbor_list(
         sel,
         distinguish_types=(not mixed_types),
     )
-    extended_coord = extended_coord.reshape(nframes, -1, 3)
+    extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
     return extended_coord, extended_atype, mapping, nlist
 
 

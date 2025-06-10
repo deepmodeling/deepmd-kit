@@ -12,6 +12,9 @@ from .dpa1 import (
 from .dpa2 import (
     DescrptDPA2,
 )
+from .dpa3 import (
+    DescrptDPA3,
+)
 from .env_mat import (
     prod_env_mat,
 )
@@ -39,6 +42,7 @@ __all__ = [
     "DescrptBlockSeTTebd",
     "DescrptDPA1",
     "DescrptDPA2",
+    "DescrptDPA3",
     "DescrptSeA",
     "DescrptSeAttenV2",
     "DescrptSeTTebd",

@@ -11,7 +11,7 @@ read_data	../../../examples/water/lmp/water.lmp
 mass 		1 16
 mass		2 2
 
-pair_style	deepmd deep_pot.pb
+pair_style	deepmd deep_pot.pb deeppot_sea.pth
 pair_coeff  * *
 
 velocity        all create 330.0 23456789

@@ -408,7 +408,9 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         # shared_level: 1
         # share all parameters in type_embedding
         elif shared_level == 1:
-            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+            self._sub_layers["type_embedding"] = base_class._sub_layers[
+                "type_embedding"
+            ]
         # Other shared levels
         else:
             raise NotImplementedError
@@ -899,4 +901,4 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             The overflow check frequency
         """
         # do some checks before the mocel compression process
-        raise NotImplementedError("enable_compression is not implemented yet")
+        raise ValueError("Compression is already enabled.")

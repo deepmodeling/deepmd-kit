@@ -26,7 +26,7 @@ When using the JAX backend, 2 or more MPI ranks are not supported. One must set 
 atom_modify map yes
 ```
 
-See the example `examples/water/lmp/jax_dpa2.lammps`.
+See the example `examples/water/lmp/jax_dpa.lammps`.
 
 ## Data format
 

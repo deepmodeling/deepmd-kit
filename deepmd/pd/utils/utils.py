@@ -37,27 +37,33 @@ class SiLUT(paddle.nn.Layer):
         super().__init__()
 
         def sigmoid(x):
-            return 1 / (1 + np.exp(-x))
+            return paddle.nn.functional.sigmoid(x)
 
         def silu(x):
-            return x * sigmoid(x)
+            return paddle.nn.functional.silu(x)
 
         def silu_grad(x):
             sig = sigmoid(x)
             return sig + x * sig * (1 - sig)
 
-        self.threshold = threshold
-        self.slope = float(silu_grad(threshold))
-        self.const = float(silu(threshold))
+        self.threshold = paddle.to_tensor(threshold)
+        self.slope = float(silu_grad(self.threshold))
+        self.const = float(silu(self.threshold))
 
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
         silu_part = F.silu(x)
-        mask = x >= self.threshold
-        if paddle.any(mask):
-            tanh_part = paddle.tanh(self.slope * (x - self.threshold)) + self.const
-            return paddle.where(x < self.threshold, silu_part, tanh_part)
-        else:
-            return silu_part
+
+        # NOTE: control flow to be fixed in to_static
+        # mask = x >= self.threshold
+        # if paddle.any(mask).item():
+        #     tanh_part = paddle.tanh(self.slope * (x - self.threshold)) + self.const
+        #     return paddle.where(x < self.threshold, silu_part, tanh_part)
+        # else:
+        #     return silu_part
+
+        # NOTE: workaround
+        tanh_part = paddle.tanh(self.slope * (x - self.threshold)) + self.const
+        return paddle.where(x < self.threshold, silu_part, tanh_part)
 
 
 class ActivationFn(paddle.nn.Layer):

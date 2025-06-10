@@ -83,9 +83,8 @@ static const char cite_user_deepmd_package[] =
     "  pages  =   054801,\n"
     "  doi =      {10.1063/5.0155600},\n"
     "}\n"
-    "@Article{Zeng_arXiv_2025_p2502.19161,\n"
-    "  annote       = {general purpose},\n"
-    "    author =   {Jinzhe Zeng and Duo Zhang and Anyang Peng and Xiangyu "
+    "@Article{Zeng_JChemTheoryComput_2025_v21_p4375,\n"
+    "  author =   {Jinzhe Zeng and Duo Zhang and Anyang Peng and Xiangyu "
     "Zhang and Sensen\n"
     "             He and Yan Wang and Xinzijian Liu and Hangrui Bi and Yifan "
     "Li and Chun\n"
@@ -110,10 +109,12 @@ static const char cite_user_deepmd_package[] =
     "    title =    {{DeePMD-kit v3: A Multiple-Backend Framework for Machine "
     "Learning\n"
     "             Potentials}},\n"
-    "    journal =  {arXiv},\n"
-    "    year =     2025,\n"
-    "    pages =    {2502.19161},\n"
-    "    doi =      {10.48550/arXiv.2502.19161},\n"
+    "  journal =  {J. Chem. Theory Comput.},\n"
+    "  year =     2025,\n"
+    "  volume =   21,\n"
+    "  number =   9,\n"
+    "  pages =    {4375--4385},\n"
+    "  doi =      {10.1021/acs.jctc.5c00340},\n"
     "}\n\n";
 
 PairDeepSpin::PairDeepSpin(LAMMPS *lmp)
