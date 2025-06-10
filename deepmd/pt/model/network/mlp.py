@@ -83,8 +83,10 @@ class MLPLayer(nn.Module):
         precision: str = DEFAULT_PRECISION,
         init: str = "default",
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
+        self.trainable = trainable
         # only use_timestep when skip connection is established.
         self.use_timestep = use_timestep and (
             num_out == num_in or num_out == num_in * 2
@@ -233,6 +235,7 @@ class MLPLayer(nn.Module):
             activation_function=self.activate_name,
             resnet=self.resnet,
             precision=self.precision,
+            trainable=self.trainable,
         )
         nl.w, nl.b, nl.idt = (
             to_numpy_array(self.matrix),
@@ -259,6 +262,7 @@ class MLPLayer(nn.Module):
             activation_function=nl["activation_function"],
             resnet=nl["resnet"],
             precision=nl["precision"],
+            trainable=nl["trainable"],
         )
         prec = PRECISION_DICT[obj.precision]
 

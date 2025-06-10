@@ -164,6 +164,8 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         The epsilon value for layer normalization.
     seed : int, optional
         The random seed for initialization.
+    trainable : bool, default: True
+        Whether the block is trainable
     """
 
     def __init__(
@@ -204,6 +206,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         g1_out_mlp: bool = True,
         ln_eps: Optional[float] = 1e-5,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.rcut = rcut
@@ -252,7 +255,11 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         self.epsilon = 1e-4
 
         self.g2_embd = NativeLayer(
-            1, self.g2_dim, precision=precision, seed=child_seed(seed, 0)
+            1,
+            self.g2_dim,
+            precision=precision,
+            seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         layers = []
         for ii in range(nlayers):
@@ -290,6 +297,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
                     g1_out_conv=self.g1_out_conv,
                     g1_out_mlp=self.g1_out_mlp,
                     seed=child_seed(child_seed(seed, 1), ii),
+                    trainable=trainable,
                 )
             )
         self.layers = layers
@@ -847,6 +855,7 @@ class Atten2Map(NativeOP):
         attnw_shift: float = 20.0,
         precision: str = "float64",
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         """Return neighbor-wise multi-head self-attention maps, with gate mechanism."""
         super().__init__()
@@ -859,6 +868,7 @@ class Atten2Map(NativeOP):
             bias=False,
             precision=precision,
             seed=seed,
+            trainable=trainable,
         )
         self.has_gate = has_gate
         self.smooth = smooth
@@ -970,6 +980,7 @@ class Atten2MultiHeadApply(NativeOP):
         head_num: int,
         precision: str = "float64",
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.input_dim = input_dim
@@ -980,12 +991,14 @@ class Atten2MultiHeadApply(NativeOP):
             bias=False,
             precision=precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.head_map = NativeLayer(
             input_dim * head_num,
             input_dim,
             precision=precision,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         self.precision = precision
 
@@ -1058,12 +1071,18 @@ class Atten2EquiVarApply(NativeOP):
         head_num: int,
         precision: str = "float64",
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.input_dim = input_dim
         self.head_num = head_num
         self.head_map = NativeLayer(
-            head_num, 1, bias=False, precision=precision, seed=seed
+            head_num,
+            1,
+            bias=False,
+            precision=precision,
+            seed=seed,
+            trainable=trainable,
         )
         self.precision = precision
 
@@ -1133,6 +1152,7 @@ class LocalAtten(NativeOP):
         attnw_shift: float = 20.0,
         precision: str = "float64",
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.input_dim = input_dim
@@ -1144,6 +1164,7 @@ class LocalAtten(NativeOP):
             bias=False,
             precision=precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.mapkv = NativeLayer(
             input_dim,
@@ -1151,12 +1172,14 @@ class LocalAtten(NativeOP):
             bias=False,
             precision=precision,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         self.head_map = NativeLayer(
             input_dim * head_num,
             input_dim,
             precision=precision,
             seed=child_seed(seed, 2),
+            trainable=trainable,
         )
         self.smooth = smooth
         self.attnw_shift = attnw_shift
@@ -1295,6 +1318,7 @@ class RepformerLayer(NativeOP):
         g1_out_mlp: bool = True,
         ln_eps: Optional[float] = 1e-5,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
@@ -1354,6 +1378,7 @@ class RepformerLayer(NativeOP):
                     self.update_residual_init,
                     precision=precision,
                     seed=child_seed(seed, 0),
+                    trainable=trainable,
                 )
             )
 
@@ -1363,6 +1388,7 @@ class RepformerLayer(NativeOP):
             g1_dim,
             precision=precision,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         self.linear2 = None
         self.proj_g1g2 = None
@@ -1379,6 +1405,7 @@ class RepformerLayer(NativeOP):
                 g2_dim,
                 precision=precision,
                 seed=child_seed(seed, 2),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 g2_residual.append(
@@ -1388,6 +1415,7 @@ class RepformerLayer(NativeOP):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 3),
+                        trainable=trainable,
                     )
                 )
         if self.g1_out_mlp:
@@ -1396,6 +1424,7 @@ class RepformerLayer(NativeOP):
                 g1_dim,
                 precision=precision,
                 seed=child_seed(seed, 15),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 g1_residual.append(
@@ -1405,6 +1434,7 @@ class RepformerLayer(NativeOP):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 16),
+                        trainable=trainable,
                     )
                 )
         else:
@@ -1417,6 +1447,7 @@ class RepformerLayer(NativeOP):
                     bias=False,
                     precision=precision,
                     seed=child_seed(seed, 4),
+                    trainable=trainable,
                 )
             else:
                 self.proj_g1g2 = NativeLayer(
@@ -1425,6 +1456,7 @@ class RepformerLayer(NativeOP):
                     bias=False,
                     precision=precision,
                     seed=child_seed(seed, 4),
+                    trainable=trainable,
                 )
                 if self.update_style == "res_residual":
                     g1_residual.append(
@@ -1434,6 +1466,7 @@ class RepformerLayer(NativeOP):
                             self.update_residual_init,
                             precision=precision,
                             seed=child_seed(seed, 17),
+                            trainable=trainable,
                         )
                     )
         if self.update_g2_has_g1g1:
@@ -1443,6 +1476,7 @@ class RepformerLayer(NativeOP):
                 bias=False,
                 precision=precision,
                 seed=child_seed(seed, 5),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 g2_residual.append(
@@ -1452,6 +1486,7 @@ class RepformerLayer(NativeOP):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 6),
+                        trainable=trainable,
                     )
                 )
         if self.update_g2_has_attn or self.update_h2:
@@ -1463,10 +1498,15 @@ class RepformerLayer(NativeOP):
                 self.smooth,
                 precision=precision,
                 seed=child_seed(seed, 7),
+                trainable=trainable,
             )
             if self.update_g2_has_attn:
                 self.attn2_mh_apply = Atten2MultiHeadApply(
-                    g2_dim, attn2_nhead, precision=precision, seed=child_seed(seed, 8)
+                    g2_dim,
+                    attn2_nhead,
+                    precision=precision,
+                    seed=child_seed(seed, 8),
+                    trainable=trainable,
                 )
                 self.attn2_lm = LayerNorm(
                     g2_dim,
@@ -1483,12 +1523,17 @@ class RepformerLayer(NativeOP):
                             self.update_residual_init,
                             precision=precision,
                             seed=child_seed(seed, 10),
+                            trainable=trainable,
                         )
                     )
 
             if self.update_h2:
                 self.attn2_ev_apply = Atten2EquiVarApply(
-                    g2_dim, attn2_nhead, precision=precision, seed=child_seed(seed, 11)
+                    g2_dim,
+                    attn2_nhead,
+                    precision=precision,
+                    seed=child_seed(seed, 11),
+                    trainable=trainable,
                 )
                 if self.update_style == "res_residual":
                     h2_residual.append(
@@ -1498,6 +1543,7 @@ class RepformerLayer(NativeOP):
                             self.update_residual_init,
                             precision=precision,
                             seed=child_seed(seed, 12),
+                            trainable=trainable,
                         )
                     )
         if self.update_g1_has_attn:
@@ -1508,6 +1554,7 @@ class RepformerLayer(NativeOP):
                 self.smooth,
                 precision=precision,
                 seed=child_seed(seed, 13),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 g1_residual.append(
@@ -1517,6 +1564,7 @@ class RepformerLayer(NativeOP):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 14),
+                        trainable=trainable,
                     )
                 )
 

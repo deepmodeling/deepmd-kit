@@ -11,7 +11,7 @@ Its model design ensures exceptional fitting accuracy and robust generalization 
 Furthermore, DPA-3 maintains energy conservation and respects the physical symmetries of the potential energy surface,
 making it a dependable tool for a wide range of scientific applications.
 
-Reference: will be released soon.
+Reference: [DPA-3 paper](https://arxiv.org/abs/2506.01686).
 
 Training example: `examples/water/dpa3/input_torch.json`.
 

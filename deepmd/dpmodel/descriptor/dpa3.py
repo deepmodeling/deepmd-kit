@@ -251,7 +251,7 @@ class RepFlowArgs:
 
 @BaseDescriptor.register("dpa3")
 class DescrptDPA3(NativeOP, BaseDescriptor):
-    r"""The DPA-3 descriptor.
+    r"""The DPA-3 descriptor[1]_.
 
     Parameters
     ----------
@@ -282,6 +282,12 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.
     type_map : list[str], Optional
         A list of strings. Give the name to each type of atoms.
+
+    References
+    ----------
+    .. [1] Zhang, D., Peng, A., Cai, C. et al. Graph neural
+       network model for the era of large atomistic models.
+       arXiv preprint arXiv:2506.01686 (2025).
     """
 
     def __init__(
@@ -351,6 +357,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             env_protection=env_protection,
             precision=precision,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
 
         self.use_econf_tebd = use_econf_tebd
@@ -368,6 +375,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             use_tebd_bias=use_tebd_bias,
             type_map=type_map,
             seed=child_seed(seed, 2),
+            trainable=trainable,
         )
         self.concat_output_tebd = concat_output_tebd
         self.precision = precision

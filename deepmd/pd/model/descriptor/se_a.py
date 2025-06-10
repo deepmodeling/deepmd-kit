@@ -481,6 +481,7 @@ class DescrptBlockSeA(DescriptorBlock):
                 precision=self.precision,
                 resnet_dt=self.resnet_dt,
                 seed=child_seed(self.seed, ii),
+                trainable=trainable,
             )
         self.filter_layers = filter_layers
         self.stats = None
