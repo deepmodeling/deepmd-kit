@@ -174,6 +174,8 @@ class DescrptBlockRepformers(DescriptorBlock):
             The epsilon value for layer normalization.
         seed : int, optional
             Random seed for parameter initialization.
+        trainable : bool, default: True
+            Whether this block is trainable
         """
         super().__init__()
         self.rcut = float(rcut)

@@ -131,6 +131,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
     seed : int, optional
         Random seed for parameter initialization.
+    trainable : bool, default: True
+        Whether this block is trainable
     """
 
     def __init__(

@@ -88,6 +88,7 @@ class MLPLayer(nn.Layer):
         trainable: bool = True,
     ):
         super().__init__()
+        self.trainable = trainable
         # only use_timestep when skip connection is established.
         self.use_timestep = use_timestep and (
             num_out == num_in or num_out == num_in * 2
@@ -252,6 +253,7 @@ class MLPLayer(nn.Layer):
             activation_function=self.activate_name,
             resnet=self.resnet,
             precision=self.precision,
+            trainable=self.trainable,
         )
         nl.w, nl.b, nl.idt = (
             to_numpy_array(self.matrix),

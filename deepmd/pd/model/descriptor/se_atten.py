@@ -147,6 +147,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
             If not None, the scaling of attention weights is `temperature` itself.
         seed : int, Optional
             Random seed for parameter initialization.
+        trainable : bool, default: True
+            Whether this block is trainable
         """
         super().__init__()
         del type

@@ -197,6 +197,7 @@ class TypeEmbedNetConsistent(nn.Layer):
             self.precision,
             self.seed,
             bias=self.use_tebd_bias,
+            trainable=trainable,
         )
         for param in self.parameters():
             param.stop_gradient = not trainable
