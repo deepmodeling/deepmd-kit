@@ -177,6 +177,7 @@ def serialize_from_file(model_file: str) -> dict:
         convert_str_to_int_key(state)
 
         model_def_script = data.model_def_script
+        current_step = model_def_script.pop("current_step", 0)
         abstract_model = get_model(model_def_script)
         graphdef, abstract_state = nnx.split(abstract_model)
         abstract_state.replace_by_pure_dict(state)
@@ -187,7 +188,9 @@ def serialize_from_file(model_file: str) -> dict:
             "jax_version": jax.__version__,
             "model": model_dict,
             "model_def_script": model_def_script,
-            "@variables": {},
+            "@variables": {
+                "current_step": current_step,
+            },
         }
         return data
     elif model_file.endswith(".hlo"):
