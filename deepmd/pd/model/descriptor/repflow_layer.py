@@ -849,7 +849,7 @@ class RepFlowLayer(paddle.nn.Layer):
                 edge_info = paddle.concat(
                     [
                         paddle.index_select(
-                            node_ebd.reshape(-1, self.n_dim),
+                            node_ebd.reshape([-1, self.n_dim]),
                             n2e_index,
                             0,
                         ),

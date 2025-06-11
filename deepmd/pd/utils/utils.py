@@ -97,13 +97,10 @@ class SiLUTScript(paddle.nn.Layer):
 
     def get_script_code(self):
         silut_forward_script = paddle.jit.to_static(silut_forward, full_graph=True)
-        # silut_forward_script = (silut_forward)
         silut_backward_script = paddle.jit.to_static(silut_backward, full_graph=True)
-        # silut_backward_script = (silut_backward)
         silut_double_backward_script = paddle.jit.to_static(
             silut_double_backward, full_graph=True
         )
-        # silut_double_backward_script = (silut_double_backward)
 
         class SiLUTFunction(paddle.autograd.PyLayer):
             @staticmethod
@@ -196,7 +193,6 @@ class ActivationFn(paddle.nn.Layer):
             if env.CUSTOM_OP_USE_JIT:
                 # for efficient training but can not be jit
                 self.silut = SiLUTScript(threshold=threshold)
-                # self.silut = paddle.nn.Identity()
             else:
                 self.silut = SiLUT(threshold=threshold)
         else:
