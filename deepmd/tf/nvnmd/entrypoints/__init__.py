@@ -9,4 +9,4 @@ from .wrap import (
     Wrap,
 )
 
-__all__ = ["MapTable", "Wrap", "save_weight"]
+__all__ = ["save_weight", "MapTable", "Wrap"]

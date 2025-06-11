@@ -61,24 +61,68 @@ def check_switch_range(davg, dstd) -> None:
     #  'init_from_model', 'restart', 'init_from_frz_model', 'finetune'
     if (davg is not None) or (dstd is not None):
         if davg is None:
-            davg = np.zeros([ntype, ndescrpt])  # pylint: disable=no-explicit-dtype
+            davg = np.zeros([ntype, ndescrpt])
         if dstd is None:
-            dstd = np.ones([ntype, ndescrpt])  # pylint: disable=no-explicit-dtype
+            dstd = np.ones([ntype, ndescrpt])
         nvnmd_cfg.get_s_range(davg, dstd)
 
 
 def build_op_descriptor():
     r"""Replace se_a.py/DescrptSeA/build."""
     if nvnmd_cfg.quantize_descriptor:
+        # [rij^2, xij, yij, zij]
         return op_module.prod_env_mat_a_mix_nvnmd_quantize
     else:
         return op_module.prod_env_mat_a_mix
 
+def build_recovered(descrpt, t_avg, t_std, atype, Na, ntypes, rcut_r_smth, filter_precision):
+    NIDP = nvnmd_cfg.dscp["NIDP"]
+    # look up for avg and std
+    t_avg = tf.reshape(t_avg, [ntypes, -1, 4])
+    t_std = tf.reshape(t_std, [ntypes, -1, 4])
+    avg = tf.reshape(tf.slice(t_avg, [0, 0, 0], [-1, 1, 2]), [-1, 2])
+    std = tf.reshape(tf.slice(t_std, [0, 0, 0], [-1, 1, 2]), [-1, 2])
+    # look up
+    avg_lookup = tf.reshape(tf.nn.embedding_lookup(avg, atype), [-1, 1, 2])
+    std_lookup = tf.reshape(tf.nn.embedding_lookup(std, atype), [-1, 1, 2])
+    avg_s = tf.slice(avg_lookup, [0, 0, 0], [-1, -1, 1])
+    std_s = tf.slice(std_lookup, [0, 0, 0], [-1, -1, 1])
+    std_h = tf.slice(std_lookup, [0, 0, 1], [-1, -1, 1])
+    # [rij^2, xij, yij, zij] -> [sij, hij]
+    s, h, k, r = descrpt2shkr(descrpt)
+    s = tf.reshape(s, [-1, NIDP, 1])
+    h = tf.reshape(h, [-1, NIDP, 1])
+    s_norm = (s - avg_s) / std_s
+    h_norm = (h - 0    ) / std_h
+    s_norm = tf.reshape(s_norm, [-1, 1])
+    h_norm = tf.reshape(h_norm, [-1, 1])
+    with tf.variable_scope("s", reuse=True):
+        s_norm = op_module.flt_nvnmd(s_norm)
+        log.debug("#s: %s", s_norm)
+        s_norm = tf.ensure_shape(s_norm, [None, 1])
+    with tf.variable_scope("h", reuse=True):
+        h_norm = op_module.flt_nvnmd(h_norm)
+        log.debug("#h: %s", h_norm)
+        h_norm = tf.ensure_shape(h_norm, [None, 1])
+    # merge into [sji, hji*xji, hji*yji, hji*zji]
+    Rs = s_norm
+    Rxyz = op_module.mul_flt_nvnmd(h_norm, r)
+    Rxyz = tf.ensure_shape(Rxyz, [None, 3])
+    with tf.variable_scope("Rxyz", reuse=True):
+        Rxyz = op_module.flt_nvnmd(Rxyz)
+        log.debug("#Rxyz: %s", Rxyz)
+        Rxyz = tf.ensure_shape(Rxyz, [None, 3])
+    R4 = tf.concat([Rs, Rxyz], axis=1)
+    descrpt_norm = tf.reshape(R4, [-1, NIDP*4])
+    # smooth
+    recovered_switch = k
+    
+    return descrpt_norm, recovered_switch
 
-def descrpt2r4(inputs, atype):
-    r"""Replace :math:`r_{ji} \rightarrow r'_{ji}`
+def descrpt2shkr(inputs):
+    r"""Replace :math:`r_{ji} \rightarrow s_{ji} and h_{ji}`
     where :math:`r_{ji} = (x_{ji}, y_{ji}, z_{ji})` and
-    :math:`r'_{ji} = (s_{ji}, \frac{s_{ji} x_{ji}}{r_{ji}}, \frac{s_{ji} y_{ji}}{r_{ji}}, \frac{s_{ji} z_{ji}}{r_{ji}})`.
+    :math:`h_{ji} = \frac{s_{ji} r_{ji}}`.
     """
     NIDP = nvnmd_cfg.dscp["NIDP"]
     ndescrpt = NIDP * 4
@@ -96,17 +140,19 @@ def descrpt2r4(inputs, atype):
     rji = tf.reshape(tf.slice(inputs_reshape, [0, 1], [-1, 3]), [-1, 3])
     with tf.variable_scope("rji", reuse=True):
         rji = op_module.flt_nvnmd(rji)
-        rji = tf.ensure_shape(rji, [None, 3])
         log.debug("#rji: %s", rji)
-
-    # s & h
+        rji = tf.ensure_shape(rji, [None, 3])
+    # s & h & k
     u = tf.reshape(u, [-1, 1])
     table = GLOBAL_NP_FLOAT_PRECISION(
-        np.concatenate([nvnmd_cfg.map["s"][0], nvnmd_cfg.map["h"][0]], axis=1)
+        np.concatenate(
+            [nvnmd_cfg.map["s"][0], nvnmd_cfg.map["h"][0], nvnmd_cfg.map["k"][0]], 
+            axis=1
+        )
     )
     table_grad = GLOBAL_NP_FLOAT_PRECISION(
         np.concatenate(
-            [nvnmd_cfg.map["s_grad"][0], nvnmd_cfg.map["h_grad"][0]],
+            [nvnmd_cfg.map["s_grad"][0], nvnmd_cfg.map["h_grad"][0], nvnmd_cfg.map["k_grad"][0]],
             axis=1,
         )
     )
@@ -114,12 +160,14 @@ def descrpt2r4(inputs, atype):
     table_info = np.array([np.float64(v) for vs in table_info for v in vs])
     table_info = GLOBAL_NP_FLOAT_PRECISION(table_info)
 
-    s_h = op_module.map_flt_nvnmd(u, table, table_grad, table_info)
-    s_h = tf.ensure_shape(s_h, [None, 1, 2])
-    s = tf.slice(s_h, [0, 0, 0], [-1, -1, 1])
-    h = tf.slice(s_h, [0, 0, 1], [-1, -1, 1])
+    s_h_k = op_module.map_flt_nvnmd(u, table, table_grad, table_info)
+    s_h_k = tf.ensure_shape(s_h_k, [None, 1, 3])
+    s = tf.slice(s_h_k, [0, 0, 0], [-1, -1, 1])
+    h = tf.slice(s_h_k, [0, 0, 1], [-1, -1, 1])
+    k = tf.slice(s_h_k, [0, 0, 2], [-1, -1, 1])
     s = tf.reshape(s, [-1, 1])
     h = tf.reshape(h, [-1, 1])
+    k = tf.reshape(k, [-1, 1])
 
     with tf.variable_scope("s_s", reuse=True):
         s = op_module.flt_nvnmd(s)
@@ -130,55 +178,25 @@ def descrpt2r4(inputs, atype):
         h = op_module.flt_nvnmd(h)
         log.debug("#h_s: %s", h)
         h = tf.ensure_shape(h, [None, 1])
-    # davg and dstd
-    # davg = nvnmd_cfg.map["davg"]  # is_zero
-    dstd_inv = nvnmd_cfg.map["dstd_inv"]
-    atype_expand = tf.reshape(atype, [-1, 1])
-    std_inv_sel = tf.nn.embedding_lookup(dstd_inv, atype_expand)
-    std_inv_sel = tf.reshape(std_inv_sel, [-1, 4])
-    std_inv_s = tf.slice(std_inv_sel, [0, 0], [-1, 1])
-    std_inv_h = tf.slice(std_inv_sel, [0, 1], [-1, 1])
-    s = op_module.mul_flt_nvnmd(std_inv_s, tf.reshape(s, [-1, NIDP]))
-    h = op_module.mul_flt_nvnmd(std_inv_h, tf.reshape(h, [-1, NIDP]))
-    s = tf.ensure_shape(s, [None, NIDP])
-    h = tf.ensure_shape(h, [None, NIDP])
-    s = tf.reshape(s, [-1, 1])
-    h = tf.reshape(h, [-1, 1])
 
-    with tf.variable_scope("s", reuse=True):
-        s = op_module.flt_nvnmd(s)
-        log.debug("#s: %s", s)
-        s = tf.ensure_shape(s, [None, 1])
-
-    with tf.variable_scope("h", reuse=True):
-        h = op_module.flt_nvnmd(h)
-        log.debug("#h: %s", h)
-        h = tf.ensure_shape(h, [None, 1])
-    # R2R4
-    Rs = s
-    # Rxyz = h * rji
-    Rxyz = op_module.mul_flt_nvnmd(h, rji)
-    Rxyz = tf.ensure_shape(Rxyz, [None, 3])
-    with tf.variable_scope("Rxyz", reuse=True):
-        Rxyz = op_module.flt_nvnmd(Rxyz)
-        log.debug("#Rxyz: %s", Rxyz)
-        Rxyz = tf.ensure_shape(Rxyz, [None, 3])
-    R4 = tf.concat([Rs, Rxyz], axis=1)
-    inputs_reshape = R4
-    inputs_reshape = tf.reshape(inputs_reshape, [-1, ndescrpt])
-    return inputs_reshape
+    with tf.variable_scope("k", reuse=True):
+        k = op_module.flt_nvnmd(k)
+        log.debug("#k: %s", k)
+        k = tf.ensure_shape(k, [None, 1])
+    return s, h, k, rji
 
 
-def filter_lower_R42GR(inputs_i, atype, nei_type_vec):
+def filter_lower_R42GR(inputs_i, atype, nei_type_vec, recovered_switch):
     r"""Replace se_a.py/DescrptSeA/_filter_lower."""
     shape_i = inputs_i.get_shape().as_list()
     inputs_reshape = tf.reshape(inputs_i, [-1, 4])
     M1 = nvnmd_cfg.dscp["M1"]
+    M3 = nvnmd_cfg.dscp['M3']
     ntype = nvnmd_cfg.dscp["ntype"]
     NIDP = nvnmd_cfg.dscp["NIDP"]
     two_embd_value = nvnmd_cfg.map["gt"]
-    # print(two_embd_value)
     two_embd_value = GLOBAL_NP_FLOAT_PRECISION(two_embd_value)
+
     # copy
     inputs_reshape = op_module.flt_nvnmd(inputs_reshape)
     inputs_reshape = tf.ensure_shape(inputs_reshape, [None, 4])
@@ -193,12 +211,12 @@ def filter_lower_R42GR(inputs_i, atype, nei_type_vec):
     table_info = nvnmd_cfg.map["cfg_s2g"]
     table_info = np.array([np.float64(v) for vs in table_info for v in vs])
     table_info = GLOBAL_NP_FLOAT_PRECISION(table_info)
-    G = op_module.map_flt_nvnmd(s, table, table_grad, table_info)
-    G = tf.ensure_shape(G, [None, 1, M1])
+    Gs = op_module.map_flt_nvnmd(s, table, table_grad, table_info)
+    Gs = tf.ensure_shape(Gs, [None, 1, M1])
     with tf.variable_scope("g_s", reuse=True):
-        G = op_module.flt_nvnmd(G)
-        log.debug("#g_s: %s", G)
-        G = tf.ensure_shape(G, [None, 1, M1])
+        Gs = op_module.flt_nvnmd(Gs)
+        log.debug("#g_s: %s", Gs)
+        Gs = tf.ensure_shape(Gs, [None, 1, M1])
     # t2G
     atype_expand = tf.reshape(atype, [-1, 1])
     idx_i = tf.tile(atype_expand * (ntype + 1), [1, NIDP])
@@ -206,15 +224,23 @@ def filter_lower_R42GR(inputs_i, atype, nei_type_vec):
     idx = idx_i + idx_j
     index_of_two_side = tf.reshape(idx, [-1])
     two_embd = tf.nn.embedding_lookup(two_embd_value, index_of_two_side)
-    # two_embd = tf.reshape(two_embd, (-1, shape_i[1] // 4, M1))
     two_embd = tf.reshape(two_embd, (-1, M1))
     with tf.variable_scope("g_t", reuse=True):
         two_embd = op_module.flt_nvnmd(two_embd)
         log.debug("#g_t: %s", two_embd)
         two_embd = tf.ensure_shape(two_embd, [None, M1])
+    # t2G * k(s)
+    two_embd = two_embd * tf.reshape(recovered_switch, [-1, 1])
+    with tf.variable_scope("g_tk", reuse=True):
+        two_embd = op_module.flt_nvnmd(two_embd)
+        log.debug("#g_tk: %s", two_embd)
+        two_embd = tf.ensure_shape(two_embd, [None, M1])
     # G_s, G_t -> G
-    G = tf.reshape(G, [-1, M1])
-    G = op_module.mul_flt_nvnmd(G, two_embd)
+    # G = Gs * Gt + Gs
+    Gs = tf.reshape(Gs, [-1, M1])
+    G2 = op_module.mul_flt_nvnmd(Gs, two_embd)
+    G2 = tf.ensure_shape(G2, [None, M1])
+    G = op_module.add_flt_nvnmd(Gs, G2)
     G = tf.ensure_shape(G, [None, M1])
     with tf.variable_scope("g", reuse=True):
         G = op_module.flt_nvnmd(G)

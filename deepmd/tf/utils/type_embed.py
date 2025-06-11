@@ -187,6 +187,8 @@ class TypeEmbedNet:
             )
         ebd_type = tf.reshape(ebd_type, [ntypes, -1])
         name = "type_embed_net" + suffix
+        if nvnmd_cfg.enable:
+            self.use_tebd_bias = True
         if (
             nvnmd_cfg.enable
             and (nvnmd_cfg.version == 1)

@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 import os
+import copy
+import json
 from typing import (
     Optional,
 )
@@ -65,12 +67,12 @@ def normalized_input(fn, PATH_CNN, CONFIG_CNN):
     # model
     jdata_model = {
         "descriptor": {
-            "seed": 1,
+            "seed": jdata_nvnmd_.get("seed", 1),
             "sel": jdata_nvnmd_["sel"],
             "rcut": jdata_nvnmd_["rcut"],
             "rcut_smth": jdata_nvnmd_["rcut_smth"],
         },
-        "fitting_net": {"seed": 1},
+        "fitting_net": {"seed": jdata_nvnmd_.get("seed", 1)},
         "type_map": [],
     }
     jdata_model["type_map"] = f.get(jdata_nvnmd_, "type_map", [])
@@ -120,6 +122,7 @@ def train_nvnmd(
     INPUT: str,
     init_model: Optional[str],
     restart: Optional[str],
+    init_frz_model: Optional[str],
     step: str,
     skip_neighbor_stat: bool = False,
     **kwargs,
@@ -141,16 +144,17 @@ def train_nvnmd(
         FioDic().save(INPUT_CNN, jdata)
         nvnmd_cfg.save(CONFIG_CNN)
         # train cnn
-        jdata = jdata_cmd_train.copy()
+        jdata = copy.deepcopy(jdata_cmd_train)
         jdata["INPUT"] = INPUT_CNN
         jdata["log_path"] = LOG_CNN
         jdata["init_model"] = init_model
+        jdata["init_frz_model"] = init_frz_model
         jdata["restart"] = restart
         jdata["skip_neighbor_stat"] = skip_neighbor_stat
         train(**jdata)
         tf.reset_default_graph()
         # freeze
-        jdata = jdata_cmd_freeze.copy()
+        jdata = copy.deepcopy(jdata_cmd_freeze)
         jdata["checkpoint_folder"] = PATH_CNN
         jdata["output"] = FRZ_MODEL_CNN
         jdata["nvnmd_weight"] = WEIGHT_CNN
@@ -180,14 +184,14 @@ def train_nvnmd(
         FioDic().save(INPUT_QNN, jdata)
         nvnmd_cfg.save(CONFIG_QNN)
         # train qnn
-        jdata = jdata_cmd_train.copy()
+        jdata = copy.deepcopy(jdata_cmd_train)
         jdata["INPUT"] = INPUT_QNN
         jdata["log_path"] = LOG_QNN
         jdata["skip_neighbor_stat"] = skip_neighbor_stat
         train(**jdata)
         tf.reset_default_graph()
         # freeze
-        jdata = jdata_cmd_freeze.copy()
+        jdata = copy.deepcopy(jdata_cmd_freeze)
         jdata["checkpoint_folder"] = PATH_QNN
         jdata["output"] = FRZ_MODEL_QNN
         jdata["nvnmd_weight"] = WEIGHT_QNN
