@@ -75,7 +75,10 @@ def build_op_descriptor():
     else:
         return op_module.prod_env_mat_a_mix
 
-def build_recovered(descrpt, t_avg, t_std, atype, Na, ntypes, rcut_r_smth, filter_precision):
+
+def build_recovered(
+    descrpt, t_avg, t_std, atype, Na, ntypes, rcut_r_smth, filter_precision
+):
     NIDP = nvnmd_cfg.dscp["NIDP"]
     # look up for avg and std
     t_avg = tf.reshape(t_avg, [ntypes, -1, 4])
@@ -93,7 +96,7 @@ def build_recovered(descrpt, t_avg, t_std, atype, Na, ntypes, rcut_r_smth, filte
     s = tf.reshape(s, [-1, NIDP, 1])
     h = tf.reshape(h, [-1, NIDP, 1])
     s_norm = (s - avg_s) / std_s
-    h_norm = (h - 0    ) / std_h
+    h_norm = (h - 0) / std_h
     s_norm = tf.reshape(s_norm, [-1, 1])
     h_norm = tf.reshape(h_norm, [-1, 1])
     with tf.variable_scope("s", reuse=True):
@@ -113,11 +116,12 @@ def build_recovered(descrpt, t_avg, t_std, atype, Na, ntypes, rcut_r_smth, filte
         log.debug("#Rxyz: %s", Rxyz)
         Rxyz = tf.ensure_shape(Rxyz, [None, 3])
     R4 = tf.concat([Rs, Rxyz], axis=1)
-    descrpt_norm = tf.reshape(R4, [-1, NIDP*4])
+    descrpt_norm = tf.reshape(R4, [-1, NIDP * 4])
     # smooth
     recovered_switch = k
-    
+
     return descrpt_norm, recovered_switch
+
 
 def descrpt2shkr(inputs):
     r"""Replace :math:`r_{ji} \rightarrow s_{ji} and h_{ji}`
@@ -146,13 +150,17 @@ def descrpt2shkr(inputs):
     u = tf.reshape(u, [-1, 1])
     table = GLOBAL_NP_FLOAT_PRECISION(
         np.concatenate(
-            [nvnmd_cfg.map["s"][0], nvnmd_cfg.map["h"][0], nvnmd_cfg.map["k"][0]], 
-            axis=1
+            [nvnmd_cfg.map["s"][0], nvnmd_cfg.map["h"][0], nvnmd_cfg.map["k"][0]],
+            axis=1,
         )
     )
     table_grad = GLOBAL_NP_FLOAT_PRECISION(
         np.concatenate(
-            [nvnmd_cfg.map["s_grad"][0], nvnmd_cfg.map["h_grad"][0], nvnmd_cfg.map["k_grad"][0]],
+            [
+                nvnmd_cfg.map["s_grad"][0],
+                nvnmd_cfg.map["h_grad"][0],
+                nvnmd_cfg.map["k_grad"][0],
+            ],
             axis=1,
         )
     )
@@ -191,7 +199,7 @@ def filter_lower_R42GR(inputs_i, atype, nei_type_vec, recovered_switch):
     shape_i = inputs_i.get_shape().as_list()
     inputs_reshape = tf.reshape(inputs_i, [-1, 4])
     M1 = nvnmd_cfg.dscp["M1"]
-    M3 = nvnmd_cfg.dscp['M3']
+    M3 = nvnmd_cfg.dscp["M3"]
     ntype = nvnmd_cfg.dscp["ntype"]
     NIDP = nvnmd_cfg.dscp["NIDP"]
     two_embd_value = nvnmd_cfg.map["gt"]

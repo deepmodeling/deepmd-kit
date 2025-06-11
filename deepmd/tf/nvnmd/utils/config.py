@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 import logging
 
-import copy
 import numpy as np
 
 from deepmd.tf.nvnmd.data.data import (
@@ -185,7 +185,9 @@ class NvnmdConfig:
             jdata["SEL"] = (jdata["sel"] + [0, 0, 0, 0])[0:4]
             for s in jdata["sel"]:
                 if s > self.max_nnei:
-                    log.error(f"The sel ({jdata['sel']}) cannot be greater than the max_nnei ({self.max_nnei})")
+                    log.error(
+                        f"The sel ({jdata['sel']}) cannot be greater than the max_nnei ({self.max_nnei})"
+                    )
                     exit(1)
             jdata["NNODE_FEAS"] = [1] + jdata["neuron"]
             jdata["nlayer_fea"] = len(jdata["neuron"])
@@ -203,7 +205,9 @@ class NvnmdConfig:
             # embedding
             jdata["SEL"] = jdata["sel"]
             if jdata["sel"] > self.max_nnei:
-                log.error(f"The sel ({jdata['sel']}) cannot be greater than the max_nnei ({self.max_nnei})")
+                log.error(
+                    f"The sel ({jdata['sel']}) cannot be greater than the max_nnei ({self.max_nnei})"
+                )
                 exit(1)
             jdata["NNODE_FEAS"] = [1] + jdata["neuron"]
             jdata["nlayer_fea"] = len(jdata["neuron"])
@@ -213,12 +217,12 @@ class NvnmdConfig:
             jdata["NIDP"] = int(jdata["sel"])
             jdata["NIX"] = 2 ** int(np.ceil(np.log2(jdata["NIDP"] / 1.5)))
             if jdata["sel"] <= 128:
-                if self.device == "vu13p": 
+                if self.device == "vu13p":
                     jdata["NSTEP"] = 0
                 else:
                     jdata["NSTEP"] = 0
             elif 128 < jdata["sel"] <= 160:
-                if self.device == "vu13p":  
+                if self.device == "vu13p":
                     jdata["NSTEP"] = 8
                 else:
                     jdata["NSTEP"] = 16
@@ -237,7 +241,7 @@ class NvnmdConfig:
                 if self.device == "vu13p":
                     jdata["NSTEP"] = 32
                 else:
-                    jdata["NSTEP"] = 64                               
+                    jdata["NSTEP"] = 64
             if jdata["sel"] > 256:
                 log.error(f"The sel ({jdata['sel']}) should be less than 256")
                 exit(1)
@@ -281,12 +285,12 @@ class NvnmdConfig:
         if self.version == 1:
             if self.device == "vu13p":
                 jdata["NSTDM"] = 32
-                jdata["NSTDM_M1"] = jdata["NSTDM"]//2
+                jdata["NSTDM_M1"] = jdata["NSTDM"] // 2
                 jdata["NSTDM_M2"] = 2
                 jdata["MAX_NNEI"] = 256
-            elif self.device == "vu9p": 
+            elif self.device == "vu9p":
                 jdata["NSTDM"] = 64
-                jdata["NSTDM_M1"] = jdata["NSTDM"]//2
+                jdata["NSTDM_M1"] = jdata["NSTDM"] // 2
                 jdata["NSTDM_M2"] = 2
                 jdata["MAX_NNEI"] = 256
             jdata["NSADV"] = jdata["NSTDM"] + 1
@@ -321,8 +325,8 @@ class NvnmdConfig:
             self.save_path = file_name
         self.update_config()
         # fix debug config_file not correspond
-        #load_config = FioDic().load(self.config_file, self.config)
-        #self.init_from_config(load_config)
+        # load_config = FioDic().load(self.config_file, self.config)
+        # self.init_from_config(load_config)
         FioDic().save(file_name, self.config)
 
     def set_ntype(self, ntype):
@@ -370,9 +374,9 @@ class NvnmdConfig:
             elif 192 < dscp["sel"] <= 224:
                 jdata["sel"] = 224
             elif 224 < dscp["sel"] <= 256:
-                jdata["sel"] = 256                              
+                jdata["sel"] = 256
             else:
-                log.error(f"The input sel ({str(dscp['sel'])}) should be less than 256")
+                log.error(f"The input sel ({dscp['sel']!s}) should be less than 256")
                 exit(1)
         jdata["rcut"] = dscp["rcut"]
         jdata["rcut_smth"] = dscp["rcut_smth"]
