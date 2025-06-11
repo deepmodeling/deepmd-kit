@@ -1010,7 +1010,7 @@ class RepFlowLayer(paddle.nn.Layer):
                 # nb x nloc x a_nnei x a_nnei x (a + n_dim + e_dim*2) or (a + a/c + a/c)
                 # [OR]
                 # n_angle x (a + n_dim + e_dim*2) or (a + a/c + a/c)
-                angle_info = paddle.cat(angle_info_list, axis=1)
+                angle_info = paddle.concat(angle_info_list, axis=1)
             else:
                 angle_info = None
 
