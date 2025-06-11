@@ -2,6 +2,9 @@
 import functools
 import logging
 import time
+from collections.abc import (
+    Iterable,
+)
 from copy import (
     deepcopy,
 )
@@ -25,6 +28,7 @@ from deepmd.loggers.training import (
 from deepmd.pt.loss import (
     DenoiseLoss,
     DOSLoss,
+    EnergyHessianStdLoss,
     EnergySpinLoss,
     EnergyStdLoss,
     PropertyLoss,
@@ -46,7 +50,6 @@ from deepmd.pt.utils import (
     dp_random,
 )
 from deepmd.pt.utils.dataloader import (
-    BufferedIterator,
     get_sampler_from_params,
 )
 from deepmd.pt.utils.env import (
@@ -155,11 +158,28 @@ class Trainer:
                 "kf_limit_pref_e": params.get("kf_limit_pref_e", 1),
                 "kf_start_pref_f": params.get("kf_start_pref_f", 1),
                 "kf_limit_pref_f": params.get("kf_limit_pref_f", 1),
+                "weight_decay": params.get("weight_decay", 0.001),
             }
             return opt_type, opt_param
 
+        def cycle_iterator(iterable: Iterable):
+            """
+            Produces an infinite iterator by repeatedly cycling through the given iterable.
+
+            Args:
+                iterable (Iterable): The iterable to cycle through.
+
+            Yields
+            ------
+            Any: The next item from the iterable, cycling back to the beginning when the end is reached.
+            """
+            while True:
+                with torch.device("cpu"):
+                    it = iter(iterable)
+                yield from it
+
         def get_data_loader(_training_data, _validation_data, _training_params):
-            def get_dataloader_and_buffer(_data, _params):
+            def get_dataloader_and_iter(_data, _params):
                 _sampler = get_sampler_from_params(_data, _params)
                 if _sampler is None:
                     log.warning(
@@ -176,19 +196,18 @@ class Trainer:
                     collate_fn=lambda batch: batch,  # prevent extra conversion
                     pin_memory=True,
                 )
-                with torch.device("cpu"):
-                    _data_buffered = BufferedIterator(iter(_dataloader))
-                return _dataloader, _data_buffered
+                _data_iter = cycle_iterator(_dataloader)
+                return _dataloader, _data_iter
 
-            training_dataloader, training_data_buffered = get_dataloader_and_buffer(
+            training_dataloader, training_data_iter = get_dataloader_and_iter(
                 _training_data, _training_params["training_data"]
             )
 
             if _validation_data is not None:
                 (
                     validation_dataloader,
-                    validation_data_buffered,
-                ) = get_dataloader_and_buffer(
+                    validation_data_iter,
+                ) = get_dataloader_and_iter(
                     _validation_data, _training_params["validation_data"]
                 )
                 valid_numb_batch = _training_params["validation_data"].get(
@@ -196,13 +215,13 @@ class Trainer:
                 )
             else:
                 validation_dataloader = None
-                validation_data_buffered = None
+                validation_data_iter = None
                 valid_numb_batch = 1
             return (
                 training_dataloader,
-                training_data_buffered,
+                training_data_iter,
                 validation_dataloader,
-                validation_data_buffered,
+                validation_data_iter,
                 valid_numb_batch,
             )
 
@@ -239,9 +258,9 @@ class Trainer:
             return get_sample
 
         def get_lr(lr_params):
-            assert (
-                lr_params.get("type", "exp") == "exp"
-            ), "Only learning rate `exp` is supported!"
+            assert lr_params.get("type", "exp") == "exp", (
+                "Only learning rate `exp` is supported!"
+            )
             lr_params["stop_steps"] = self.num_steps - self.warmup_steps
             lr_exp = LearningRateExp(**lr_params)
             return lr_exp
@@ -252,9 +271,9 @@ class Trainer:
             missing_keys = [
                 key for key in self.model_keys if key not in self.optim_dict
             ]
-            assert (
-                not missing_keys
-            ), f"These keys are not in optim_dict: {missing_keys}!"
+            assert not missing_keys, (
+                f"These keys are not in optim_dict: {missing_keys}!"
+            )
             self.opt_type = {}
             self.opt_param = {}
             for model_key in self.model_keys:
@@ -264,8 +283,22 @@ class Trainer:
         else:
             self.opt_type, self.opt_param = get_opt_param(training_params)
 
+        # loss_param_tmp for Hessian activation
+        loss_param_tmp = None
+        if not self.multi_task:
+            loss_param_tmp = config["loss"]
+        else:
+            loss_param_tmp = {
+                model_key: config["loss_dict"][model_key]
+                for model_key in self.model_keys
+            }
+
         # Model
-        self.model = get_model_for_wrapper(model_params)
+        self.model = get_model_for_wrapper(
+            model_params,
+            resuming=resuming,
+            _loss_params=loss_param_tmp,
+        )
 
         # Loss
         if not self.multi_task:
@@ -369,9 +402,9 @@ class Trainer:
         # Learning rate
         self.warmup_steps = training_params.get("warmup_steps", 0)
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
-        assert (
-            self.num_steps - self.warmup_steps > 0 or self.warmup_steps == 0
-        ), "Warm up steps must be less than total training steps!"
+        assert self.num_steps - self.warmup_steps > 0 or self.warmup_steps == 0, (
+            "Warm up steps must be less than total training steps!"
+        )
         if self.multi_task and config.get("learning_rate_dict", None) is not None:
             self.lr_exp = {}
             for model_key in self.model_keys:
@@ -577,10 +610,20 @@ class Trainer:
 
         # TODO add optimizers for multitask
         # author: iProzd
-        if self.opt_type == "Adam":
-            self.optimizer = torch.optim.Adam(
-                self.wrapper.parameters(), lr=self.lr_exp.start_lr
-            )
+        if self.opt_type in ["Adam", "AdamW"]:
+            if self.opt_type == "Adam":
+                self.optimizer = torch.optim.Adam(
+                    self.wrapper.parameters(),
+                    lr=self.lr_exp.start_lr,
+                    fused=False if DEVICE.type == "cpu" else True,
+                )
+            else:
+                self.optimizer = torch.optim.AdamW(
+                    self.wrapper.parameters(),
+                    lr=self.lr_exp.start_lr,
+                    weight_decay=float(self.opt_param["weight_decay"]),
+                    fused=False if DEVICE.type == "cpu" else True,
+                )
             if optimizer_state_dict is not None and self.restart_training:
                 self.optimizer.load_state_dict(optimizer_state_dict)
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
@@ -641,7 +684,7 @@ class Trainer:
             writer = SummaryWriter(log_dir=self.tensorboard_log_dir)
         if self.enable_profiler or self.profiling:
             prof = torch.profiler.profile(
-                schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
+                schedule=torch.profiler.schedule(wait=1, warmup=15, active=3, repeat=1),
                 on_trace_ready=torch.profiler.tensorboard_trace_handler(
                     self.tensorboard_log_dir
                 )
@@ -653,10 +696,15 @@ class Trainer:
             prof.start()
 
         def step(_step_id, task_key="Default") -> None:
+            if self.multi_task:
+                model_index = dp_random.choice(
+                    np.arange(self.num_model, dtype=np.int_),
+                    p=self.model_prob,
+                )
+                task_key = self.model_keys[model_index]
             # PyTorch Profiler
             if self.enable_profiler or self.profiling:
                 prof.step()
-            self.wrapper.train()
             if isinstance(self.lr_exp, dict):
                 _lr = self.lr_exp[task_key]
             else:
@@ -671,7 +719,7 @@ class Trainer:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
                 fout1.flush()
-            if self.opt_type == "Adam":
+            if self.opt_type in ["Adam", "AdamW"]:
                 cur_lr = self.scheduler.get_last_lr()[0]
                 if _step_id < self.warmup_steps:
                     pref_lr = _lr.start_lr
@@ -682,12 +730,11 @@ class Trainer:
                 )
                 loss.backward()
                 if self.gradient_max_norm > 0.0:
-                    grad_norm = torch.nn.utils.clip_grad_norm_(
-                        self.wrapper.parameters(), self.gradient_max_norm
+                    torch.nn.utils.clip_grad_norm_(
+                        self.wrapper.parameters(),
+                        self.gradient_max_norm,
+                        error_if_nonfinite=True,
                     )
-                    if not torch.isfinite(grad_norm).all():
-                        # check local gradnorm single GPU case, trigger NanDetector
-                        raise FloatingPointError("gradients are Nan/Inf")
                 with torch.device("cpu"):
                     self.optimizer.step()
                 self.scheduler.step()
@@ -766,7 +813,7 @@ class Trainer:
             if self.display_in_training and (
                 display_step_id % self.disp_freq == 0 or display_step_id == 1
             ):
-                self.wrapper.eval()
+                self.wrapper.eval()  # Will set to train mode before fininshing validation
 
                 def log_loss_train(_loss, _more_loss, _task_key="Default"):
                     results = {}
@@ -872,15 +919,20 @@ class Trainer:
                                         learning_rate=None,
                                     )
                                 )
+                self.wrapper.train()
 
                 current_time = time.time()
                 train_time = current_time - self.t0
                 self.t0 = current_time
                 if self.rank == 0 and self.timing_in_training:
+                    eta = int(
+                        (self.num_steps - display_step_id) / self.disp_freq * train_time
+                    )
                     log.info(
                         format_training_message(
                             batch=display_step_id,
                             wall_time=train_time,
+                            eta=eta,
                         )
                     )
                 # the first training time is not accurate
@@ -927,26 +979,11 @@ class Trainer:
                         f"{task_key}/{item}", more_loss[item], display_step_id
                     )
 
+        self.wrapper.train()
         self.t0 = time.time()
         self.total_train_time = 0.0
-        for step_id in range(self.num_steps):
-            if step_id < self.start_step:
-                continue
-            if self.multi_task:
-                chosen_index_list = dp_random.choice(
-                    np.arange(
-                        self.num_model, dtype=np.int32
-                    ),  # int32 should be enough for # models...
-                    p=np.array(self.model_prob),
-                    size=self.world_size,
-                    replace=True,
-                )
-                assert chosen_index_list.size == self.world_size
-                model_index = chosen_index_list[self.rank]
-                model_key = self.model_keys[model_index]
-            else:
-                model_key = "Default"
-            step(step_id, model_key)
+        for step_id in range(self.start_step, self.num_steps):
+            step(step_id)
             if JIT:
                 break
 
@@ -1021,10 +1058,14 @@ class Trainer:
             writer.close()
         if self.enable_profiler or self.profiling:
             prof.stop()
+            if self.enable_profiler:
+                log.info(
+                    f"The profiling trace has been saved under {self.tensorboard_log_dir}"
+                )
             if self.profiling:
                 prof.export_chrome_trace(self.profiling_file)
                 log.info(
-                    f"The profiling trace have been saved to: {self.profiling_file}"
+                    f"The profiling trace has been saved to: {self.profiling_file}"
                 )
 
     def save_model(self, save_path, lr=0.0, step=0) -> None:
@@ -1053,48 +1094,15 @@ class Trainer:
             checkpoint_files[0].unlink()
 
     def get_data(self, is_train=True, task_key="Default"):
-        if not self.multi_task:
-            if is_train:
-                try:
-                    batch_data = next(iter(self.training_data))
-                except StopIteration:
-                    # Refresh the status of the dataloader to start from a new epoch
-                    with torch.device("cpu"):
-                        self.training_data = BufferedIterator(
-                            iter(self.training_dataloader)
-                        )
-                    batch_data = next(iter(self.training_data))
-            else:
-                if self.validation_data is None:
-                    return {}, {}, {}
-                try:
-                    batch_data = next(iter(self.validation_data))
-                except StopIteration:
-                    self.validation_data = BufferedIterator(
-                        iter(self.validation_dataloader)
-                    )
-                    batch_data = next(iter(self.validation_data))
+        if is_train:
+            iterator = self.training_data
         else:
-            if is_train:
-                try:
-                    batch_data = next(iter(self.training_data[task_key]))
-                except StopIteration:
-                    # Refresh the status of the dataloader to start from a new epoch
-                    self.training_data[task_key] = BufferedIterator(
-                        iter(self.training_dataloader[task_key])
-                    )
-                    batch_data = next(iter(self.training_data[task_key]))
-            else:
-                if self.validation_data[task_key] is None:
-                    return {}, {}, {}
-                try:
-                    batch_data = next(iter(self.validation_data[task_key]))
-                except StopIteration:
-                    self.validation_data[task_key] = BufferedIterator(
-                        iter(self.validation_dataloader[task_key])
-                    )
-                    batch_data = next(iter(self.validation_data[task_key]))
-
+            iterator = self.validation_data
+        if self.multi_task:
+            iterator = iterator[task_key]
+        if iterator is None:
+            return {}, {}, {}
+        batch_data = next(iterator)
         for key in batch_data.keys():
             if key == "sid" or key == "fid" or key == "box" or "find_" in key:
                 continue
@@ -1115,7 +1123,7 @@ class Trainer:
             "fparam",
             "aparam",
         ]
-        input_dict = {item_key: None for item_key in input_keys}
+        input_dict = dict.fromkeys(input_keys)
         label_dict = {}
         for item_key in batch_data:
             if item_key in input_keys:
@@ -1132,7 +1140,7 @@ class Trainer:
     def print_header(self, fout, train_results, valid_results) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""
-        print_str += "# %5s" % "step"
+        print_str += "# {:5s}".format("step")
         if not self.multi_task:
             if valid_results:
                 prop_fmt = "   %11s %11s"
@@ -1155,7 +1163,7 @@ class Trainer:
                     prop_fmt = "   %11s"
                     for k in sorted(train_results[model_key].keys()):
                         print_str += prop_fmt % (k + f"_trn_{model_key}")
-        print_str += "   %8s\n" % "lr"
+        print_str += "   {:8s}\n".format("lr")
         print_str += "# If there is no available reference data, rmse_*_{val,trn} will print nan\n"
         fout.write(print_str)
         fout.flush()
@@ -1165,7 +1173,7 @@ class Trainer:
     ) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""
-        print_str += "%7d" % step_id
+        print_str += f"{step_id:7d}"
         if not self.multi_task:
             if valid_results:
                 prop_fmt = "   %11.2e %11.2e"
@@ -1220,9 +1228,17 @@ def get_additional_data_requirement(_model):
     return additional_data_requirement
 
 
+def whether_hessian(loss_params):
+    loss_type = loss_params.get("type", "ener")
+    return loss_type == "ener" and loss_params.get("start_pref_h", 0.0) > 0.0
+
+
 def get_loss(loss_params, start_lr, _ntypes, _model):
     loss_type = loss_params.get("type", "ener")
-    if loss_type == "ener":
+    if whether_hessian(loss_params):
+        loss_params["starter_learning_rate"] = start_lr
+        return EnergyHessianStdLoss(**loss_params)
+    elif loss_type == "ener":
         loss_params["starter_learning_rate"] = start_lr
         return EnergyStdLoss(**loss_params)
     elif loss_type == "dos":
@@ -1240,17 +1256,19 @@ def get_loss(loss_params, start_lr, _ntypes, _model):
         if "mask" in model_output_type:
             model_output_type.pop(model_output_type.index("mask"))
         tensor_name = model_output_type[0]
-        loss_params["tensor_name"] = tensor_name
         loss_params["tensor_size"] = _model.model_output_def()[tensor_name].output_size
-        label_name = tensor_name
-        if label_name == "polarizability":
-            label_name = "polar"
-        loss_params["label_name"] = label_name
-        loss_params["tensor_name"] = label_name
+        loss_params["label_name"] = tensor_name
+        if tensor_name == "polarizability":
+            tensor_name = "polar"
+        loss_params["tensor_name"] = tensor_name
         return TensorLoss(**loss_params)
     elif loss_type == "property":
         task_dim = _model.get_task_dim()
+        var_name = _model.get_var_name()
+        intensive = _model.get_intensive()
         loss_params["task_dim"] = task_dim
+        loss_params["var_name"] = var_name
+        loss_params["intensive"] = intensive
         return PropertyLoss(**loss_params)
     else:
         loss_params["starter_learning_rate"] = start_lr
@@ -1267,19 +1285,55 @@ def get_single_model(
     return model
 
 
-def get_model_for_wrapper(_model_params):
+def get_model_for_wrapper(
+    _model_params,
+    resuming=False,
+    _loss_params=None,
+):
     if "model_dict" not in _model_params:
+        if _loss_params is not None and whether_hessian(_loss_params):
+            _model_params["hessian_mode"] = True
         _model = get_single_model(
             _model_params,
         )
     else:
         _model = {}
         model_keys = list(_model_params["model_dict"])
+        do_case_embd, case_embd_index = get_case_embd_config(_model_params)
         for _model_key in model_keys:
+            if _loss_params is not None and whether_hessian(_loss_params[_model_key]):
+                _model_params["model_dict"][_model_key]["hessian_mode"] = True
             _model[_model_key] = get_single_model(
                 _model_params["model_dict"][_model_key],
             )
+            if do_case_embd and not resuming:
+                # only set case_embd when from scratch multitask training
+                _model[_model_key].set_case_embd(case_embd_index[_model_key])
     return _model
+
+
+def get_case_embd_config(_model_params):
+    assert "model_dict" in _model_params, (
+        "Only support setting case embedding for multi-task model!"
+    )
+    model_keys = list(_model_params["model_dict"])
+    sorted_model_keys = sorted(model_keys)
+    numb_case_embd_list = [
+        _model_params["model_dict"][model_key]
+        .get("fitting_net", {})
+        .get("dim_case_embd", 0)
+        for model_key in sorted_model_keys
+    ]
+    if not all(item == numb_case_embd_list[0] for item in numb_case_embd_list):
+        raise ValueError(
+            f"All models must have the same dimension of case embedding, while the settings are: {numb_case_embd_list}"
+        )
+    if numb_case_embd_list[0] == 0:
+        return False, {}
+    case_embd_index = {
+        model_key: idx for idx, model_key in enumerate(sorted_model_keys)
+    }
+    return True, case_embd_index
 
 
 def model_change_out_bias(

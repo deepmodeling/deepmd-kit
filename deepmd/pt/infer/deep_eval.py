@@ -58,7 +58,7 @@ from deepmd.pt.utils.auto_batch_size import (
 from deepmd.pt.utils.env import (
     DEVICE,
     GLOBAL_PT_FLOAT_PRECISION,
-    RESERVED_PRECISON_DICT,
+    RESERVED_PRECISION_DICT,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
@@ -115,12 +115,12 @@ class DeepEval(DeepEvalBackend):
                 model_keys = list(self.input_param["model_dict"].keys())
                 if isinstance(head, int):
                     head = model_keys[0]
-                assert (
-                    head is not None
-                ), f"Head must be set for multitask model! Available heads are: {model_keys}"
-                assert (
-                    head in model_keys
-                ), f"No head named {head} in model! Available heads are: {model_keys}"
+                assert head is not None, (
+                    f"Head must be set for multitask model! Available heads are: {model_keys}"
+                )
+                assert head in model_keys, (
+                    f"No head named {head} in model! Available heads are: {model_keys}"
+                )
                 self.input_param = self.input_param["model_dict"][head]
                 state_dict_head = {"_extra_state": state_dict["_extra_state"]}
                 for item in state_dict:
@@ -130,7 +130,8 @@ class DeepEval(DeepEvalBackend):
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
             model = get_model(self.input_param).to(DEVICE)
-            model = torch.jit.script(model)
+            if not self.input_param.get("hessian_mode"):
+                model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
             self.dp.load_state_dict(state_dict)
         elif str(self.model_path).endswith(".pth"):
@@ -160,6 +161,7 @@ class DeepEval(DeepEvalBackend):
         self._has_spin = getattr(self.dp.model["Default"], "has_spin", False)
         if callable(self._has_spin):
             self._has_spin = self._has_spin()
+        self._has_hessian = self.model_def_script.get("hessian_mode", False)
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
@@ -184,6 +186,15 @@ class DeepEval(DeepEvalBackend):
     def get_intensive(self) -> bool:
         return self.dp.model["Default"].get_intensive()
 
+    def get_var_name(self) -> str:
+        """Get the name of the property."""
+        if hasattr(self.dp.model["Default"], "get_var_name") and callable(
+            getattr(self.dp.model["Default"], "get_var_name")
+        ):
+            return self.dp.model["Default"].get_var_name()
+        else:
+            raise NotImplementedError
+
     @property
     def model_type(self) -> type["DeepEvalWrapper"]:
         """The the evaluator of the model type."""
@@ -200,7 +211,7 @@ class DeepEval(DeepEvalBackend):
             return DeepGlobalPolar
         elif "wfc" in model_output_type:
             return DeepWFC
-        elif "property" in model_output_type:
+        elif self.get_var_name() in model_output_type:
             return DeepProperty
         else:
             raise RuntimeError("Unknown model type")
@@ -233,6 +244,10 @@ class DeepEval(DeepEvalBackend):
     def get_has_spin(self):
         """Check if the model has spin atom types."""
         return self._has_spin
+
+    def get_has_hessian(self):
+        """Check if the model has hessian."""
+        return self._has_hessian
 
     def eval(
         self,
@@ -339,6 +354,7 @@ class DeepEval(DeepEvalBackend):
                     OutputVariableCategory.REDU,
                     OutputVariableCategory.DERV_R,
                     OutputVariableCategory.DERV_C_REDU,
+                    OutputVariableCategory.DERV_R_DERV_R,
                 )
             ]
 
@@ -397,7 +413,7 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
     ):
         model = self.dp.to(DEVICE)
-        prec = NP_PRECISION_DICT[RESERVED_PRECISON_DICT[GLOBAL_PT_FLOAT_PRECISION]]
+        prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
 
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
@@ -412,7 +428,7 @@ class DeepEval(DeepEvalBackend):
             device=DEVICE,
         )
         type_input = torch.tensor(
-            atom_types.astype(NP_PRECISION_DICT[RESERVED_PRECISON_DICT[torch.long]]),
+            atom_types.astype(NP_PRECISION_DICT[RESERVED_PRECISION_DICT[torch.long]]),
             dtype=torch.long,
             device=DEVICE,
         )
@@ -544,7 +560,7 @@ class DeepEval(DeepEvalBackend):
                         np.abs(shape),
                         np.nan,
                         dtype=NP_PRECISION_DICT[
-                            RESERVED_PRECISON_DICT[GLOBAL_PT_FLOAT_PRECISION]
+                            RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]
                         ],
                     )
                 )  # this is kinda hacky
@@ -568,6 +584,9 @@ class DeepEval(DeepEvalBackend):
             # Something wrong here?
             # return [nframes, *shape, natoms, 1]
             return [nframes, natoms, *odef.shape, 1]
+        elif odef.category == OutputVariableCategory.DERV_R_DERV_R:
+            return [nframes, 3 * natoms, 3 * natoms]
+            # return [nframes, *odef.shape, 3 * natoms, 3 * natoms]
         else:
             raise RuntimeError("unknown category")
 
@@ -604,6 +623,30 @@ class DeepEval(DeepEvalBackend):
     def get_model_def_script(self) -> str:
         """Get model definition script."""
         return self.model_def_script
+
+    def get_model_size(self) -> dict:
+        """Get model parameter count.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the number of parameters in the model.
+            The keys are 'descriptor', 'fitting_net', and 'total'.
+        """
+        params_dict = dict(self.dp.named_parameters())
+        sum_param_des = sum(
+            params_dict[k].numel() for k in params_dict.keys() if "descriptor" in k
+        )
+        sum_param_fit = sum(
+            params_dict[k].numel()
+            for k in params_dict.keys()
+            if "fitting" in k and "_networks" not in k
+        )
+        return {
+            "descriptor": sum_param_des,
+            "fitting-net": sum_param_fit,
+            "total": sum_param_des + sum_param_fit,
+        }
 
     def eval_descriptor(
         self,

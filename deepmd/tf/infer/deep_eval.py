@@ -139,7 +139,7 @@ class DeepEval(DeepEvalBackend):
 
         # looks ugly...
         if self.modifier_type == "dipole_charge":
-            from deepmd.tf.infer.data_modifier import (
+            from deepmd.tf.modifier import (
                 DipoleChargeModifier,
             )
 
@@ -259,7 +259,9 @@ class DeepEval(DeepEvalBackend):
             self.numb_dos = 0
         self.tmap = tmap.decode("utf-8").split()
         if self.tensors["modifier_type"] is not None:
-            self.modifier_type = run_sess(self.sess, [self.tensors["modifier_type"]])[0]
+            self.modifier_type = run_sess(self.sess, [self.tensors["modifier_type"]])[
+                0
+            ].decode()
         else:
             self.modifier_type = None
 
@@ -761,15 +763,17 @@ class DeepEval(DeepEvalBackend):
             odef.name: oo for oo, odef in zip(output, self.output_def.var_defs.values())
         }
         # ugly!!
-        if self.modifier_type is not None and isinstance(self.model_type, DeepPot):
+        if self.modifier_type is not None and issubclass(self.model_type, DeepPot):
             if atomic:
                 raise RuntimeError("modifier does not support atomic modification")
             me, mf, mv = self.dm.eval(coords, cells, atom_types)
-            output = list(output)  # tuple to list
-            e, f, v = output[:3]
-            output_dict["energy_redu"] += me.reshape(e.shape)
-            output_dict["energy_deri_r"] += mf.reshape(f.shape)
-            output_dict["energy_deri_c_redu"] += mv.reshape(v.shape)
+            output_dict["energy_redu"] += me.reshape(output_dict["energy_redu"].shape)
+            output_dict["energy_derv_r"] += mf.reshape(
+                output_dict["energy_derv_r"].shape
+            )
+            output_dict["energy_derv_c_redu"] += mv.reshape(
+                output_dict["energy_derv_c_redu"].shape
+            )
         return output_dict
 
     def _prepare_feed_dict(
@@ -803,9 +807,9 @@ class DeepEval(DeepEvalBackend):
             assert aparam is not None
             aparam = np.array(aparam)
         if self.has_efield:
-            assert (
-                efield is not None
-            ), "you are using a model with external field, parameter efield should be provided"
+            assert efield is not None, (
+                "you are using a model with external field, parameter efield should be provided"
+            )
             efield = np.array(efield)
 
         # reshape the inputs
@@ -817,8 +821,7 @@ class DeepEval(DeepEvalBackend):
                 fparam = np.tile(fparam.reshape([-1]), [nframes, 1])
             else:
                 raise RuntimeError(
-                    "got wrong size of frame param, should be either %d x %d or %d"
-                    % (nframes, fdim, fdim)
+                    f"got wrong size of frame param, should be either {nframes} x {fdim} or {fdim}"
                 )
         if self.has_aparam:
             fdim = self.get_dim_aparam()
@@ -830,8 +833,7 @@ class DeepEval(DeepEvalBackend):
                 aparam = np.tile(aparam.reshape([-1]), [nframes, natoms])
             else:
                 raise RuntimeError(
-                    "got wrong size of frame param, should be either %d x %d x %d or %d x %d or %d"
-                    % (nframes, natoms, fdim, natoms, fdim, fdim)
+                    f"got wrong size of frame param, should be either {nframes} x {natoms} x {fdim} or {natoms} x {fdim} or {fdim}"
                 )
 
         # sort inputs
@@ -1350,6 +1352,8 @@ class DeepEvalOld:
             natoms = atom_type[0].size
             idx_map = np.arange(natoms)  # pylint: disable=no-explicit-dtype
             return coord, atom_type, idx_map
+        if atom_type.ndim > 1:
+            atom_type = atom_type[0]
         if sel_atoms is not None:
             selection = [False] * np.size(atom_type)
             for ii in sel_atoms:

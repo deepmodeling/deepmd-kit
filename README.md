@@ -19,7 +19,7 @@ For more information, check the [documentation](https://deepmd.readthedocs.io/).
 
 ### Highlighted features
 
-- **interfaced with multiple backends**, including TensorFlow, PyTorch, and JAX, the most popular deep learning frameworks, making the training process highly automatic and efficient.
+- **interfaced with multiple backends**, including TensorFlow, PyTorch, JAX, and Paddle, the most popular deep learning frameworks, making the training process highly automatic and efficient.
 - **interfaced with high-performance classical MD and quantum (path-integral) MD packages**, including LAMMPS, i-PI, AMBER, CP2K, GROMACS, OpenMM, and ABACUS.
 - **implements the Deep Potential series models**, which have been successfully applied to finite and extended systems, including organic molecules, metals, semiconductors, insulators, etc.
 - **implements MPI and GPU supports**, making it highly efficient for high-performance parallel and distributed computing.
@@ -36,6 +36,9 @@ If you use this code in any future publications, please cite the following publi
 - Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang. "DeePMD-kit v2: A software package for deep potential models." J. Chem. Phys. 159 (2023): 054801.
   [![doi:10.1063/5.0155600](https://img.shields.io/badge/DOI-10.1063%2F5.0155600-blue)](https://doi.org/10.1063/5.0155600)
   [![Citations](https://citations.njzjz.win/10.1063/5.0155600)](https://badge.dimensions.ai/details/doi/10.1063/5.0155600)
+- Jinzhe Zeng, Duo Zhang, Anyang Peng, Xiangyu Zhang, Sensen He, Yan Wang, Xinzijian Liu, Hangrui Bi, Yifan Li, Chun Cai, Chengqian Zhang, Yiming Du, Jia-Xin Zhu, Pinghui Mo, Zhengtao Huang, Qiyu Zeng, Shaochen Shi, Xuejian Qin, Zhaoxi Yu, Chenxing Luo, Ye Ding, Yun-Pei Liu, Ruosong Shi, Zhenyu Wang, Sigbjørn Løland Bore, Junhan Chang, Zhe Deng, Zhaohan Ding, Siyuan Han, Wanrun Jiang, Guolin Ke, Zhaoqing Liu, Denghui Lu, Koki Muraoka, Hananeh Oliaei, Anurag Kumar Singh, Haohui Que, Weihong Xu, Zhangmancang Xu, Yong-Bin Zhuang, Jiayu Dai, Timothy J. Giese, Weile Jia, Ben Xu, Darrin M. York, Linfeng Zhang, Han Wang. "DeePMD-kit v3: A Multiple-Backend Framework for Machine Learning Potentials." J. Chem. Theory Comput. 21 (2025): 4375-4385.
+  [![doi:10.1021/acs.jctc.5c00340](https://img.shields.io/badge/DOI-10.1021%2Facs.jctc.5c00340-blue)](https://doi.org/10.1021/acs.jctc.5c00340)
+  [![Citations](https://citations.njzjz.win/10.1021/acs.jctc.5c00340)](https://badge.dimensions.ai/details/doi/10.1021/acs.jctc.5c00340)
 
 In addition, please follow [the bib file](CITATIONS.bib) to cite the methods you used.
 
@@ -68,13 +71,15 @@ In addition to building up potential energy models, DeePMD-kit can also be used 
 - Non-von-Neumann.
 - C API to interface with the third-party packages.
 
-See [our latest paper](https://doi.org/10.1063/5.0155600) for details of all features until v2.2.3.
+See [our v2 paper](https://doi.org/10.1063/5.0155600) for details of all features until v2.2.3.
 
 #### v3
 
 - Multiple backends supported. Add PyTorch and JAX backends.
-- The DPA-2 model.
+- The DPA2 and DPA3 models.
 - Plugin mechanisms for external models.
+
+See [our v3 paper](https://doi.org/10.1021/acs.jctc.5c00340) for details of all features until v3.0.
 
 ## Install and use DeePMD-kit
 

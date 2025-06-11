@@ -18,6 +18,18 @@ from deepmd.pt.utils.env import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
+
+
+def custom_huber_loss(predictions, targets, delta=1.0):
+    error = targets - predictions
+    abs_error = torch.abs(error)
+    quadratic_loss = 0.5 * torch.pow(error, 2)
+    linear_loss = delta * (abs_error - 0.5 * delta)
+    loss = torch.where(abs_error <= delta, quadratic_loss, linear_loss)
+    return torch.mean(loss)
 
 
 class EnergyStdLoss(TaskLoss):
@@ -41,6 +53,8 @@ class EnergyStdLoss(TaskLoss):
         numb_generalized_coord: int = 0,
         use_l1_all: bool = False,
         inference=False,
+        use_huber=False,
+        huber_delta=0.01,
         **kwargs,
     ) -> None:
         r"""Construct a layer to compute loss on energy, force and virial.
@@ -85,6 +99,14 @@ class EnergyStdLoss(TaskLoss):
             Whether to use L1 loss, if False (default), it will use L2 loss.
         inference : bool
             If true, it will output all losses found in output, ignoring the pre-factors.
+        use_huber : bool
+            Enables Huber loss calculation for energy/force/virial terms with user-defined threshold delta (D).
+            The loss function smoothly transitions between L2 and L1 loss:
+            - For absolute prediction errors within D: quadratic loss (0.5 * (error**2))
+            - For absolute errors exceeding D: linear loss (D * |error| - 0.5 * D)
+            Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D).
+        huber_delta : float
+            The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
         **kwargs
             Other keyword arguments.
         """
@@ -118,6 +140,14 @@ class EnergyStdLoss(TaskLoss):
             )
         self.use_l1_all = use_l1_all
         self.inference = inference
+        self.use_huber = use_huber
+        self.huber_delta = huber_delta
+        if self.use_huber and (
+            self.has_pf or self.has_gf or self.relative_f is not None
+        ):
+            raise RuntimeError(
+                "Huber loss is not implemented for force with atom_pref, generalized force and relative force. "
+            )
 
     def forward(self, input_dict, model, label, natoms, learning_rate, mae=False):
         """Return loss on energy and force.
@@ -180,7 +210,15 @@ class EnergyStdLoss(TaskLoss):
                     more_loss["l2_ener_loss"] = self.display_if_exist(
                         l2_ener_loss.detach(), find_energy
                     )
-                loss += atom_norm * (pref_e * l2_ener_loss)
+                if not self.use_huber:
+                    loss += atom_norm * (pref_e * l2_ener_loss)
+                else:
+                    l_huber_loss = custom_huber_loss(
+                        atom_norm * model_pred["energy"],
+                        atom_norm * label["energy"],
+                        delta=self.huber_delta,
+                    )
+                    loss += pref_e * l_huber_loss
                 rmse_e = l2_ener_loss.sqrt() * atom_norm
                 more_loss["rmse_e"] = self.display_if_exist(
                     rmse_e.detach(), find_energy
@@ -235,7 +273,15 @@ class EnergyStdLoss(TaskLoss):
                         more_loss["l2_force_loss"] = self.display_if_exist(
                             l2_force_loss.detach(), find_force
                         )
-                    loss += (pref_f * l2_force_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                    if not self.use_huber:
+                        loss += (pref_f * l2_force_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                    else:
+                        l_huber_loss = custom_huber_loss(
+                            force_pred.reshape(-1),
+                            force_label.reshape(-1),
+                            delta=self.huber_delta,
+                        )
+                        loss += pref_f * l_huber_loss
                     rmse_f = l2_force_loss.sqrt()
                     more_loss["rmse_f"] = self.display_if_exist(
                         rmse_f.detach(), find_force
@@ -303,7 +349,15 @@ class EnergyStdLoss(TaskLoss):
                 more_loss["l2_virial_loss"] = self.display_if_exist(
                     l2_virial_loss.detach(), find_virial
                 )
-            loss += atom_norm * (pref_v * l2_virial_loss)
+            if not self.use_huber:
+                loss += atom_norm * (pref_v * l2_virial_loss)
+            else:
+                l_huber_loss = custom_huber_loss(
+                    atom_norm * model_pred["virial"].reshape(-1),
+                    atom_norm * label["virial"].reshape(-1),
+                    delta=self.huber_delta,
+                )
+                loss += pref_v * l_huber_loss
             rmse_v = l2_virial_loss.sqrt() * atom_norm
             more_loss["rmse_v"] = self.display_if_exist(rmse_v.detach(), find_virial)
             if mae:
@@ -324,7 +378,15 @@ class EnergyStdLoss(TaskLoss):
                 more_loss["l2_atom_ener_loss"] = self.display_if_exist(
                     l2_atom_ener_loss.detach(), find_atom_ener
                 )
-            loss += (pref_ae * l2_atom_ener_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+            if not self.use_huber:
+                loss += (pref_ae * l2_atom_ener_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+            else:
+                l_huber_loss = custom_huber_loss(
+                    atom_ener_reshape,
+                    atom_ener_label_reshape,
+                    delta=self.huber_delta,
+                )
+                loss += pref_ae * l_huber_loss
             rmse_ae = l2_atom_ener_loss.sqrt()
             more_loss["rmse_ae"] = self.display_if_exist(
                 rmse_ae.detach(), find_atom_ener
@@ -408,6 +470,128 @@ class EnergyStdLoss(TaskLoss):
                     must=False,
                     high_prec=False,
                     default=1.0,
+                )
+            )
+        return label_requirement
+
+    def serialize(self) -> dict:
+        """Serialize the loss module.
+
+        Returns
+        -------
+        dict
+            The serialized loss module
+        """
+        return {
+            "@class": "EnergyLoss",
+            "@version": 2,
+            "starter_learning_rate": self.starter_learning_rate,
+            "start_pref_e": self.start_pref_e,
+            "limit_pref_e": self.limit_pref_e,
+            "start_pref_f": self.start_pref_f,
+            "limit_pref_f": self.limit_pref_f,
+            "start_pref_v": self.start_pref_v,
+            "limit_pref_v": self.limit_pref_v,
+            "start_pref_ae": self.start_pref_ae,
+            "limit_pref_ae": self.limit_pref_ae,
+            "start_pref_pf": self.start_pref_pf,
+            "limit_pref_pf": self.limit_pref_pf,
+            "relative_f": self.relative_f,
+            "enable_atom_ener_coeff": self.enable_atom_ener_coeff,
+            "start_pref_gf": self.start_pref_gf,
+            "limit_pref_gf": self.limit_pref_gf,
+            "numb_generalized_coord": self.numb_generalized_coord,
+            "use_huber": self.use_huber,
+            "huber_delta": self.huber_delta,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "TaskLoss":
+        """Deserialize the loss module.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized loss module
+
+        Returns
+        -------
+        Loss
+            The deserialized loss module
+        """
+        data = data.copy()
+        check_version_compatibility(data.pop("@version"), 2, 1)
+        data.pop("@class")
+        return cls(**data)
+
+
+class EnergyHessianStdLoss(EnergyStdLoss):
+    def __init__(
+        self,
+        start_pref_h=0.0,
+        limit_pref_h=0.0,
+        **kwargs,
+    ):
+        r"""Enable the layer to compute loss on hessian.
+
+        Parameters
+        ----------
+        start_pref_h : float
+            The prefactor of hessian loss at the start of the training.
+        limit_pref_h : float
+            The prefactor of hessian loss at the end of the training.
+        **kwargs
+            Other keyword arguments.
+        """
+        super().__init__(**kwargs)
+        self.has_h = (start_pref_h != 0.0 and limit_pref_h != 0.0) or self.inference
+
+        self.start_pref_h = start_pref_h
+        self.limit_pref_h = limit_pref_h
+
+    def forward(self, input_dict, model, label, natoms, learning_rate, mae=False):
+        model_pred, loss, more_loss = super().forward(
+            input_dict, model, label, natoms, learning_rate, mae=mae
+        )
+        coef = learning_rate / self.starter_learning_rate
+        pref_h = self.limit_pref_h + (self.start_pref_h - self.limit_pref_h) * coef
+
+        if self.has_h and "hessian" in model_pred and "hessian" in label:
+            find_hessian = label.get("find_hessian", 0.0)
+            pref_h = pref_h * find_hessian
+            diff_h = label["hessian"].reshape(
+                -1,
+            ) - model_pred["hessian"].reshape(
+                -1,
+            )
+            l2_hessian_loss = torch.mean(torch.square(diff_h))
+            if not self.inference:
+                more_loss["l2_hessian_loss"] = self.display_if_exist(
+                    l2_hessian_loss.detach(), find_hessian
+                )
+            loss += pref_h * l2_hessian_loss
+            rmse_h = l2_hessian_loss.sqrt()
+            more_loss["rmse_h"] = self.display_if_exist(rmse_h.detach(), find_hessian)
+            if mae:
+                mae_h = torch.mean(torch.abs(diff_h))
+                more_loss["mae_h"] = self.display_if_exist(mae_h.detach(), find_hessian)
+
+        if not self.inference:
+            more_loss["rmse"] = torch.sqrt(loss.detach())
+        return model_pred, loss, more_loss
+
+    @property
+    def label_requirement(self) -> list[DataRequirementItem]:
+        """Add hessian label requirement needed for this loss calculation."""
+        label_requirement = super().label_requirement
+        if self.has_h:
+            label_requirement.append(
+                DataRequirementItem(
+                    "hessian",
+                    ndof=1,  # 9=3*3 --> 3N*3N=ndof*natoms*natoms
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
                 )
             )
         return label_requirement

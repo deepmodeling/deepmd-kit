@@ -79,9 +79,11 @@ class DOSLoss(TaskLoss):
         self.has_ados = (start_pref_ados != 0.0 and limit_pref_ados != 0.0) or inference
         self.has_acdf = (start_pref_acdf != 0.0 and limit_pref_acdf != 0.0) or inference
 
-        assert (
-            self.has_dos or self.has_cdf or self.has_ados or self.has_acdf
-        ), AssertionError("Can not assian zero weight both to `pref` and `pref_atomic`")
+        assert self.has_dos or self.has_cdf or self.has_ados or self.has_acdf, (
+            AssertionError(
+                "Can not assian zero weight both to `pref` and `pref_atomic`"
+            )
+        )
 
     def forward(self, input_dict, model, label, natoms, learning_rate=0.0, mae=False):
         """Return loss on local and global tensors.

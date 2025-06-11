@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
-    NoReturn,
     Optional,
     Union,
 )
@@ -23,13 +22,22 @@ from deepmd.dpmodel.utils import (
     EnvMat,
     PairExcludeMask,
 )
+from deepmd.dpmodel.utils.env_mat_stat import (
+    EnvMatStatSe,
+)
 from deepmd.dpmodel.utils.network import (
     LayerNorm,
     NativeLayer,
     get_activation_fn,
 )
+from deepmd.dpmodel.utils.safe_gradient import (
+    safe_for_vector_norm,
+)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
+)
+from deepmd.utils.env_mat_stat import (
+    StatItem,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -367,13 +375,49 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ) -> NoReturn:
-        """Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data."""
-        raise NotImplementedError
+    ) -> None:
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
-    def get_stats(self) -> NoReturn:
+        Parameters
+        ----------
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
+        env_mat_stat = EnvMatStatSe(self)
+        if path is not None:
+            path = path / env_mat_stat.get_hash()
+        if path is None or not path.is_dir():
+            if callable(merged):
+                # only get data for once
+                sampled = merged()
+            else:
+                sampled = merged
+        else:
+            sampled = []
+        env_mat_stat.load_or_compute_stats(sampled, path)
+        self.stats = env_mat_stat.stats
+        mean, stddev = env_mat_stat()
+        xp = array_api_compat.array_namespace(self.stddev)
+        if not self.set_davg_zero:
+            self.mean = xp.asarray(mean, dtype=self.mean.dtype, copy=True)
+        self.stddev = xp.asarray(stddev, dtype=self.stddev.dtype, copy=True)
+
+    def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
-        raise NotImplementedError
+        if self.stats is None:
+            raise RuntimeError(
+                "The statistics of the descriptor has not been computed."
+            )
+        return self.stats
 
     def reinit_exclude(
         self,
@@ -393,10 +437,15 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
     ):
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
+        exclude_mask = xp.astype(exclude_mask, xp.bool)
         nlist = xp.where(exclude_mask, nlist, xp.full_like(nlist, -1))
         # nf x nloc x nnei x 4
         dmatrix, diff, sw = self.env_mat.call(
-            coord_ext, atype_ext, nlist, self.mean, self.stddev
+            coord_ext,
+            atype_ext,
+            nlist,
+            self.mean[...],
+            self.stddev[...],
         )
         nf, nloc, nnei, _ = dmatrix.shape
         # nf x nloc x nnei
@@ -413,7 +462,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         if not self.direct_dist:
             g2, h2 = xp.split(dmatrix, [1], axis=-1)
         else:
-            g2, h2 = xp.linalg.vector_norm(diff, axis=-1, keepdims=True), diff
+            g2, h2 = safe_for_vector_norm(diff, axis=-1, keepdims=True), diff
             g2 = g2 / self.rcut
             h2 = h2 / self.rcut
         # nf x nloc x nnei x ng2

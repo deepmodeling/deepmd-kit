@@ -40,13 +40,14 @@ class TensorLoss(Loss):
         # YWolfeee: modify, use pref / pref_atomic, instead of pref_weight / pref_atomic_weight
         self.local_weight = jdata.get("pref_atomic", None)
         self.global_weight = jdata.get("pref", None)
+        self.enable_atomic_weight = jdata.get("enable_atomic_weight", False)
 
-        assert (
-            self.local_weight is not None and self.global_weight is not None
-        ), "Both `pref` and `pref_atomic` should be provided."
-        assert (
-            self.local_weight >= 0.0 and self.global_weight >= 0.0
-        ), "Can not assign negative weight to `pref` and `pref_atomic`"
+        assert self.local_weight is not None and self.global_weight is not None, (
+            "Both `pref` and `pref_atomic` should be provided."
+        )
+        assert self.local_weight >= 0.0 and self.global_weight >= 0.0, (
+            "Can not assign negative weight to `pref` and `pref_atomic`"
+        )
         assert (self.local_weight > 0.0) or (self.global_weight > 0.0), AssertionError(
             "Can not assian zero weight both to `pref` and `pref_atomic`"
         )
@@ -66,9 +67,18 @@ class TensorLoss(Loss):
             "global_loss": global_cvt_2_tf_float(0.0),
         }
 
+        if self.enable_atomic_weight:
+            atomic_weight = tf.reshape(label_dict["atom_weight"], [-1, 1])
+        else:
+            atomic_weight = global_cvt_2_tf_float(1.0)
+
         if self.local_weight > 0.0:
+            diff = tf.reshape(polar, [-1, self.tensor_size]) - tf.reshape(
+                atomic_polar_hat, [-1, self.tensor_size]
+            )
+            diff = diff * atomic_weight
             local_loss = global_cvt_2_tf_float(find_atomic) * tf.reduce_mean(
-                tf.square(self.scale * (polar - atomic_polar_hat)), name="l2_" + suffix
+                tf.square(self.scale * diff), name="l2_" + suffix
             )
             more_loss["local_loss"] = self.display_if_exist(local_loss, find_atomic)
             l2_loss += self.local_weight * local_loss
@@ -145,7 +155,7 @@ class TensorLoss(Loss):
         # data required
         data_requirements.append(
             DataRequirementItem(
-                "atom_" + self.label_name,
+                "atomic_" + self.label_name,
                 self.tensor_size,
                 atomic=True,
                 must=False,
@@ -163,4 +173,16 @@ class TensorLoss(Loss):
                 type_sel=self.type_sel,
             )
         )
+        if self.enable_atomic_weight:
+            data_requirements.append(
+                DataRequirementItem(
+                    "atomic_weight",
+                    1,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                    default=1.0,
+                    type_sel=self.type_sel,
+                )
+            )
         return data_requirements

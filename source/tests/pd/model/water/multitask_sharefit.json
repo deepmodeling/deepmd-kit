@@ -1,0 +1,134 @@
+{
+  "model": {
+    "shared_dict": {
+      "my_type_map": [
+        "O",
+        "H",
+        "B"
+      ],
+      "my_descriptor": {
+        "type": "se_e2_a",
+        "sel": [
+          46,
+          92,
+          4
+        ],
+        "rcut_smth": 0.50,
+        "rcut": 6.00,
+        "neuron": [
+          25,
+          50,
+          100
+        ],
+        "resnet_dt": false,
+        "axis_neuron": 16,
+        "seed": 1,
+        "_comment": " that's all"
+      },
+      "my_fitting": {
+        "dim_case_embd": 2,
+        "neuron": [
+          240,
+          240,
+          240
+        ],
+        "resnet_dt": true,
+        "seed": 1,
+        "_comment": " that's all"
+      },
+      "_comment": "that's all"
+    },
+    "model_dict": {
+      "model_1": {
+        "type_map": "my_type_map",
+        "descriptor": "my_descriptor",
+        "fitting_net": "my_fitting",
+        "data_stat_nbatch": 1
+      },
+      "model_2": {
+        "type_map": "my_type_map",
+        "descriptor": "my_descriptor",
+        "fitting_net": "my_fitting",
+        "data_stat_nbatch": 1
+      }
+    }
+  },
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 5000,
+    "start_lr": 0.0002,
+    "decay_rate": 0.98,
+    "stop_lr": 3.51e-08,
+    "_comment": "that's all"
+  },
+  "loss_dict": {
+    "model_1": {
+      "type": "ener",
+      "start_pref_e": 0.02,
+      "limit_pref_e": 1,
+      "start_pref_f": 1000,
+      "limit_pref_f": 1,
+      "start_pref_v": 0,
+      "limit_pref_v": 0
+    },
+    "model_2": {
+      "type": "ener",
+      "start_pref_e": 0.02,
+      "limit_pref_e": 1,
+      "start_pref_f": 1000,
+      "limit_pref_f": 1,
+      "start_pref_v": 0,
+      "limit_pref_v": 0
+    }
+  },
+  "training": {
+    "model_prob": {
+      "model_1": 0.5,
+      "model_2": 0.5
+    },
+    "data_dict": {
+      "model_1": {
+        "stat_file": "./stat_files/model_1.hdf5",
+        "training_data": {
+          "systems": [
+            "pd/water/data/data_0"
+          ],
+          "batch_size": 1,
+          "_comment": "that's all"
+        },
+        "validation_data": {
+          "systems": [
+            "pd/water/data/data_0"
+          ],
+          "batch_size": 1,
+          "_comment": "that's all"
+        }
+      },
+      "model_2": {
+        "stat_file": "./stat_files/model_2.hdf5",
+        "training_data": {
+          "systems": [
+            "pd/water/data/data_0"
+          ],
+          "batch_size": 1,
+          "_comment": "that's all"
+        },
+        "validation_data": {
+          "systems": [
+            "pd/water/data/data_0"
+          ],
+          "batch_size": 1,
+          "_comment": "that's all"
+        }
+      }
+    },
+    "numb_steps": 100000,
+    "warmup_steps": 0,
+    "gradient_max_norm": 5.0,
+    "seed": 10,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 100,
+    "_comment": "that's all"
+  }
+}

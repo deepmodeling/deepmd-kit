@@ -123,6 +123,7 @@ class InvarFitting(GeneralFitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        dim_case_embd: int = 0,
         bias_atom: Optional[np.ndarray] = None,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
@@ -155,6 +156,7 @@ class InvarFitting(GeneralFitting):
             resnet_dt=resnet_dt,
             numb_fparam=numb_fparam,
             numb_aparam=numb_aparam,
+            dim_case_embd=dim_case_embd,
             rcond=rcond,
             bias_atom_e=bias_atom,
             tot_ener_zero=tot_ener_zero,
@@ -183,7 +185,7 @@ class InvarFitting(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         return super().deserialize(data)
 
     def _net_out_dim(self):

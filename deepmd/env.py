@@ -13,12 +13,12 @@ import numpy as np
 import deepmd.lib
 
 __all__ = [
-    "GLOBAL_NP_FLOAT_PRECISION",
-    "GLOBAL_ENER_FLOAT_PRECISION",
-    "global_float_prec",
     "GLOBAL_CONFIG",
-    "SHARED_LIB_MODULE",
+    "GLOBAL_ENER_FLOAT_PRECISION",
+    "GLOBAL_NP_FLOAT_PRECISION",
     "SHARED_LIB_DIR",
+    "SHARED_LIB_MODULE",
+    "global_float_prec",
 ]
 
 log = logging.getLogger(__name__)

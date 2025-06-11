@@ -4,6 +4,7 @@
 Can handle local or distributed training.
 """
 
+import copy
 import json
 import logging
 import time
@@ -20,11 +21,11 @@ from deepmd.tf.env import (
     reset_default_tf_session_config,
     tf,
 )
-from deepmd.tf.infer.data_modifier import (
-    DipoleChargeModifier,
-)
 from deepmd.tf.model.model import (
     Model,
+)
+from deepmd.tf.modifier import (
+    BaseModifier,
 )
 from deepmd.tf.train.run_options import (
     RunOptions,
@@ -220,9 +221,10 @@ def _do_work(
     seed = jdata["training"].get("seed", None)
     if seed is not None:
         # avoid the same batch sequence among workers
-        seed += run_opt.my_rank
         seed = seed % (2**32)
-    dp_random.seed(seed)
+        dp_random.seed([run_opt.my_rank, seed])
+    else:
+        dp_random.seed(seed)
 
     # setup data modifier
     modifier = get_modifier(jdata["model"].get("modifier", None))
@@ -274,18 +276,13 @@ def _do_work(
 
 
 def get_modifier(modi_data=None):
-    modifier: Optional[DipoleChargeModifier]
+    modifier: Optional[BaseModifier]
     if modi_data is not None:
-        if modi_data["type"] == "dipole_charge":
-            modifier = DipoleChargeModifier(
-                modi_data["model_name"],
-                modi_data["model_charge_map"],
-                modi_data["sys_charge_map"],
-                modi_data["ewald_h"],
-                modi_data["ewald_beta"],
-            )
-        else:
-            raise RuntimeError("unknown modifier type " + str(modi_data["type"]))
+        modifier_params = copy.deepcopy(modi_data)
+        modifier_type = modifier_params.pop("type")
+        modifier = BaseModifier.get_class_by_type(modifier_type).get_modifier(
+            modifier_params
+        )
     else:
         modifier = None
     return modifier

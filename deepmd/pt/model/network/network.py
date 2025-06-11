@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Final,
     Optional,
     Union,
 )
@@ -8,28 +9,16 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.utils.checkpoint
 
+from deepmd.dpmodel.utils.type_embed import (
+    get_econf_tebd,
+)
 from deepmd.pt.model.network.mlp import (
     EmbeddingNet,
 )
 from deepmd.pt.utils import (
     env,
-)
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
-
-try:
-    from typing import (
-        Final,
-    )
-except ImportError:
-    from torch.jit import Final
-
-import torch.utils.checkpoint
-
-from deepmd.dpmodel.utils.type_embed import (
-    get_econf_tebd,
 )
 from deepmd.pt.utils.utils import (
     ActivationFn,
@@ -37,6 +26,9 @@ from deepmd.pt.utils.utils import (
 )
 from deepmd.utils.finetune import (
     get_index_between_two_maps,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 
@@ -294,7 +286,7 @@ class TypeEmbedNet(nn.Module):
         type_embedding:
 
         """
-        return self.embedding(atype.device)[atype]
+        return torch.embedding(self.embedding(atype.device), atype)
 
     def get_full_embedding(self, device: torch.device):
         """
@@ -319,9 +311,9 @@ class TypeEmbedNet(nn.Module):
         If not start from checkpoint (resume is False),
         some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
-        assert (
-            self.__class__ == base_class.__class__
-        ), "Only TypeEmbedNet of the same type can share params!"
+        assert self.__class__ == base_class.__class__, (
+            "Only TypeEmbedNet of the same type can share params!"
+        )
         if shared_level == 0:
             # the following will successfully link all the params except buffers, which need manually link.
             for item in self._modules:
@@ -442,9 +434,9 @@ class TypeEmbedNetConsistent(nn.Module):
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         if not self.use_econf_tebd:
             do_resnet = self.neuron[0] in [
@@ -453,9 +445,9 @@ class TypeEmbedNetConsistent(nn.Module):
                 len(type_map),
                 len(type_map) * 2,
             ]
-            assert (
-                not do_resnet or self.activation_function == "Linear"
-            ), "'activation_function' must be 'Linear' when performing type changing on resnet structure!"
+            assert not do_resnet or self.activation_function == "Linear", (
+                "'activation_function' must be 'Linear' when performing type changing on resnet structure!"
+            )
             first_layer_matrix = self.embedding_net.layers[0].matrix.data
             eye_vector = torch.eye(
                 self.ntypes, dtype=self.prec, device=first_layer_matrix.device

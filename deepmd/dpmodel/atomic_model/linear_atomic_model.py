@@ -134,6 +134,14 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     def get_sel(self) -> list[int]:
         return [max([model.get_nsel() for model in self.models])]
 
+    def set_case_embd(self, case_idx: int):
+        """
+        Set the case embedding of this atomic model by the given case_idx,
+        typically concatenated with the output of the descriptor and fed into the fitting net.
+        """
+        for model in self.models:
+            model.set_case_embd(case_idx)
+
     def get_model_nsels(self) -> list[int]:
         """Get the processed sels for each individual models. Not distinguishing types."""
         return [model.get_nsel() for model in self.models]
@@ -428,6 +436,14 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         data.pop("type", None)
         return super().deserialize(data)
 
+    def set_case_embd(self, case_idx: int):
+        """
+        Set the case embedding of this atomic model by the given case_idx,
+        typically concatenated with the output of the descriptor and fed into the fitting net.
+        """
+        # only set case_idx for dpmodel
+        self.models[0].set_case_embd(case_idx)
+
     def _compute_weight(
         self,
         extended_coord: np.ndarray,
@@ -441,9 +457,9 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         list[np.ndarray]
             the atomic ZBL weight for interpolation. (nframes, nloc, 1)
         """
-        assert (
-            self.sw_rmax > self.sw_rmin
-        ), "The upper boundary `sw_rmax` must be greater than the lower boundary `sw_rmin`."
+        assert self.sw_rmax > self.sw_rmin, (
+            "The upper boundary `sw_rmax` must be greater than the lower boundary `sw_rmin`."
+        )
 
         xp = array_api_compat.array_namespace(extended_coord, extended_atype)
         dp_nlist = nlists_[0]

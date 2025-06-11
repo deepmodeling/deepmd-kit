@@ -8,9 +8,6 @@ from deepmd.infer.deep_eval import (
     DeepEval,
 )
 
-from .data_modifier import (
-    DipoleChargeModifier,
-)
 from .deep_dipole import (
     DeepDipole,
 )
@@ -35,15 +32,14 @@ from .model_devi import (
 )
 
 __all__ = [
-    "DeepPotential",
+    "DeepDOS",
     "DeepDipole",
     "DeepEval",
     "DeepGlobalPolar",
     "DeepPolar",
     "DeepPot",
-    "DeepDOS",
+    "DeepPotential",
     "DeepWFC",
-    "DipoleChargeModifier",
     "EwaldRecp",
     "calc_model_devi",
 ]

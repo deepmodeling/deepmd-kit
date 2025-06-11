@@ -119,7 +119,7 @@ class ModelTestCase:
     def test_forward(self) -> None:
         """Test forward and forward_lower."""
         test_spin = getattr(self, "test_spin", False)
-        nf = 1
+        nf = 2
         natoms = 5
         aprec = (
             0
@@ -127,10 +127,10 @@ class ModelTestCase:
             else self.aprec_dict["test_forward"]
         )
         rng = np.random.default_rng(GLOBAL_SEED)
-        coord = 4.0 * rng.random([natoms, 3]).reshape([nf, -1])
-        atype = np.array([0, 0, 0, 1, 1], dtype=int).reshape([nf, -1])
-        spin = 0.5 * rng.random([natoms, 3]).reshape([nf, -1])
-        cell = 6.0 * np.eye(3).reshape([nf, 9])
+        coord = 4.0 * rng.random([1, natoms, 3]).repeat(nf, 0).reshape([nf, -1])
+        atype = np.array([[0, 0, 0, 1, 1] * nf], dtype=int).reshape([nf, -1])
+        spin = 0.5 * rng.random([1, natoms, 3]).repeat(nf, 0).reshape([nf, -1])
+        cell = 6.0 * np.repeat(np.eye(3)[None, ...], nf, axis=0).reshape([nf, 9])
         coord_ext, atype_ext, mapping, nlist = extend_input_and_build_neighbor_list(
             coord,
             atype,
@@ -147,9 +147,9 @@ class ModelTestCase:
         aparam = None
         fparam = None
         if self.module.get_dim_aparam() > 0:
-            aparam = rng.random([nf, natoms, self.module.get_dim_aparam()])
+            aparam = rng.random([1, natoms, self.module.get_dim_aparam()]).repeat(nf, 0)
         if self.module.get_dim_fparam() > 0:
-            fparam = rng.random([nf, self.module.get_dim_fparam()])
+            fparam = rng.random([1, self.module.get_dim_fparam()]).repeat(nf, 0)
         ret = []
         ret_lower = []
         for module in self.modules_to_test:
@@ -183,6 +183,15 @@ class ModelTestCase:
             ret_lower.append(module.forward_lower(**input_dict_lower))
 
         for kk in ret[0]:
+            # ensure the first frame and the second frame are the same
+            if ret[0][kk] is not None:
+                np.testing.assert_allclose(
+                    ret[0][kk][0],
+                    ret[0][kk][1],
+                    err_msg=f"compare {kk} between frame 0 and 1",
+                    atol=aprec,
+                )
+
             subret = []
             for rr in ret:
                 if rr is not None:
@@ -193,7 +202,10 @@ class ModelTestCase:
                         assert rr is None
                     else:
                         np.testing.assert_allclose(
-                            subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
+                            subret[0],
+                            rr,
+                            err_msg=f"compare {kk} between 0 and {ii}",
+                            atol=aprec,
                         )
         for kk in ret_lower[0].keys():
             subret = []
@@ -206,7 +218,10 @@ class ModelTestCase:
                         assert rr is None
                     else:
                         np.testing.assert_allclose(
-                            subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
+                            subret[0],
+                            rr,
+                            err_msg=f"compare {kk} between 0 and {ii}",
+                            atol=aprec,
                         )
         same_keys = set(ret[0].keys()) & set(ret_lower[0].keys())
         self.assertTrue(same_keys)
@@ -296,7 +311,10 @@ class ModelTestCase:
                         assert rr is None
                     else:
                         np.testing.assert_allclose(
-                            subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
+                            subret[0],
+                            rr,
+                            err_msg=f"compare {kk} between 0 and {ii}",
+                            atol=aprec,
                         )
         for kk in ret_lower[0]:
             subret = []
@@ -309,7 +327,10 @@ class ModelTestCase:
                         assert rr is None
                     else:
                         np.testing.assert_allclose(
-                            subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
+                            subret[0],
+                            rr,
+                            err_msg=f"compare {kk} between 0 and {ii}",
+                            atol=aprec,
                         )
         same_keys = set(ret[0].keys()) & set(ret_lower[0].keys())
         self.assertTrue(same_keys)
@@ -714,8 +735,14 @@ class ModelTestCase:
                 0.0,
                 self.expected_rcut - 0.5 * epsilon,
                 0.0,
+                self.expected_rcut / 2 - 0.5 * epsilon,
+                0.0,
+                0.0,
+                0.0,
+                self.expected_rcut / 2 - 0.5 * epsilon,
+                0.0,
             ]
-        ).reshape(-1, 3)
+        ).reshape(-1, 3)  # to test descriptors with two rcuts, e.g. DPA2/3
         coord1 = rng.random([natoms - coord0.shape[0], 3])
         coord1 = np.matmul(coord1, cell)
         coord = np.concatenate([coord0, coord1], axis=0)
@@ -723,11 +750,15 @@ class ModelTestCase:
         coord0 = deepcopy(coord)
         coord1 = deepcopy(coord)
         coord1[1][0] += epsilon
+        coord1[3][0] += epsilon
         coord2 = deepcopy(coord)
         coord2[2][1] += epsilon
+        coord2[4][1] += epsilon
         coord3 = deepcopy(coord)
         coord3[1][0] += epsilon
+        coord1[3][0] += epsilon
         coord3[2][1] += epsilon
+        coord2[4][1] += epsilon
 
         # reshape for input
         coord0 = coord0.reshape([nf, -1])

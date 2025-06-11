@@ -136,7 +136,7 @@ class Wrap:
             d = e.extend_hex(d, w_full)
             # DEVELOP_DEBUG
             if jdata_sys["debug"]:
-                log.info("%s: %d x % d bit" % (k, h, w * 4))
+                log.info(f"{k}: {h} x {w * 4} bit")
                 FioTxt().save(f"nvnmd/wrap/h{k}.txt", d)
             datas[ii] = d
         # update h & w of nvnmd_cfg

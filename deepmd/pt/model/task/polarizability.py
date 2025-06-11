@@ -53,6 +53,8 @@ class PolarFittingNet(GeneralFitting):
         Number of frame parameters.
     numb_aparam : int
         Number of atomic parameters.
+    dim_case_embd : int
+        Dimension of case specific embedding.
     activation_function : str
         Activation function.
     precision : str
@@ -85,6 +87,7 @@ class PolarFittingNet(GeneralFitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        dim_case_embd: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
@@ -104,9 +107,9 @@ class PolarFittingNet(GeneralFitting):
             self.scale = [1.0 for _ in range(ntypes)]
         else:
             if isinstance(self.scale, list):
-                assert (
-                    len(self.scale) == ntypes
-                ), "Scale should be a list of length ntypes."
+                assert len(self.scale) == ntypes, (
+                    "Scale should be a list of length ntypes."
+                )
             elif isinstance(self.scale, float):
                 self.scale = [self.scale for _ in range(ntypes)]
             else:
@@ -128,6 +131,7 @@ class PolarFittingNet(GeneralFitting):
             resnet_dt=resnet_dt,
             numb_fparam=numb_fparam,
             numb_aparam=numb_aparam,
+            dim_case_embd=dim_case_embd,
             activation_function=activation_function,
             precision=precision,
             mixed_types=mixed_types,
@@ -164,9 +168,9 @@ class PolarFittingNet(GeneralFitting):
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         assert self.mixed_types, "Only models in mixed types can perform type changing!"
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         super().change_type_map(type_map=type_map)
@@ -191,7 +195,7 @@ class PolarFittingNet(GeneralFitting):
     def serialize(self) -> dict:
         data = super().serialize()
         data["type"] = "polar"
-        data["@version"] = 3
+        data["@version"] = 4
         data["embedding_width"] = self.embedding_width
         data["fit_diag"] = self.fit_diag
         data["shift_diag"] = self.shift_diag
@@ -202,7 +206,7 @@ class PolarFittingNet(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         data.pop("var_name", None)
         return super().deserialize(data)
 
@@ -230,9 +234,9 @@ class PolarFittingNet(GeneralFitting):
         aparam: Optional[torch.Tensor] = None,
     ):
         nframes, nloc, _ = descriptor.shape
-        assert (
-            gr is not None
-        ), "Must provide the rotation matrix for polarizability fitting."
+        assert gr is not None, (
+            "Must provide the rotation matrix for polarizability fitting."
+        )
         # cast the input to internal precsion
         gr = gr.to(self.prec)
         # (nframes, nloc, _net_out_dim)

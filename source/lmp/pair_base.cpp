@@ -54,7 +54,7 @@ static int stringCmp(const void *a, const void *b) {
 int PairDeepBaseModel::get_node_rank() {
   char host_name[MPI_MAX_PROCESSOR_NAME];
   memset(host_name, '\0', sizeof(char) * MPI_MAX_PROCESSOR_NAME);
-  char(*host_names)[MPI_MAX_PROCESSOR_NAME];
+  char (*host_names)[MPI_MAX_PROCESSOR_NAME];
   int n, namelen, color, rank, nprocs, myrank;
   size_t bytes;
   MPI_Comm nodeComm;
@@ -64,7 +64,7 @@ int PairDeepBaseModel::get_node_rank() {
   MPI_Get_processor_name(host_name, &namelen);
 
   bytes = nprocs * sizeof(char[MPI_MAX_PROCESSOR_NAME]);
-  host_names = (char(*)[MPI_MAX_PROCESSOR_NAME])malloc(bytes);
+  host_names = (char (*)[MPI_MAX_PROCESSOR_NAME])malloc(bytes);
   for (int ii = 0; ii < nprocs; ii++) {
     memset(host_names[ii], '\0', sizeof(char) * MPI_MAX_PROCESSOR_NAME);
   }

@@ -65,8 +65,7 @@ class PairTab:
         n0 = (-1 + np.sqrt(1 + 8 * ncol)) * 0.5
         self.ntypes = int(n0 + 0.1)
         assert self.ntypes * (self.ntypes + 1) // 2 == ncol, (
-            "number of volumes provided in %s does not match guessed number of types %d"
-            % (filename, self.ntypes)
+            f"number of volumes provided in {filename} does not match guessed number of types {self.ntypes}"
         )
 
         # check table data against rcut and update tab_file if needed, table upper boundary is used as rcut if not provided.

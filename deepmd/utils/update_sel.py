@@ -49,9 +49,9 @@ class BaseUpdateSel(ABC):
                     # we may skip warning for sel=0, where the user is likely
                     # to exclude such type in the descriptor
                     log.warning(
-                        "sel of type %d is not enough! The expected value is "
-                        "not less than %d, but you set it to %d. The accuracy"
-                        " of your model may get worse." % (ii, tt, dd)
+                        f"sel of type {ii} is not enough! The expected value is "
+                        f"not less than {tt}, but you set it to {dd}. The accuracy"
+                        " of your model may get worse."
                     )
         return min_nbor_dist, sel
 

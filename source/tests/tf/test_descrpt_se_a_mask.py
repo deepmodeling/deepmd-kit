@@ -242,9 +242,9 @@ class TestModel(tf.test.TestCase):
         test_data = data.get_test()
         numb_test = 1
 
-        assert (
-            jdata["model"]["descriptor"]["type"] == "se_a_mask"
-        ), "Wrong descriptor type"
+        assert jdata["model"]["descriptor"]["type"] == "se_a_mask", (
+            "Wrong descriptor type"
+        )
         descrpt = DescrptSeAMask(**jdata["model"]["descriptor"], uniform_seed=True)
 
         t_coord = tf.placeholder(

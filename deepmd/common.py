@@ -35,13 +35,13 @@ from deepmd.utils.path import (
 )
 
 __all__ = [
-    "select_idx_map",
-    "make_default_mesh",
-    "j_loader",
+    "VALID_ACTIVATION",
+    "VALID_PRECISION",
     "expand_sys_str",
     "get_np_precision",
-    "VALID_PRECISION",
-    "VALID_ACTIVATION",
+    "j_loader",
+    "make_default_mesh",
+    "select_idx_map",
 ]
 
 _PRECISION = Literal["default", "float16", "float32", "float64"]
@@ -53,6 +53,8 @@ _ACTIVATION = Literal[
     "tanh",
     "gelu",
     "gelu_tf",
+    "silu",
+    "silut",
     "none",
     "linear",
 ]
@@ -63,9 +65,9 @@ VALID_ACTIVATION: set[_ACTIVATION] = set(get_args(_ACTIVATION))
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")
     __all__ += [
+        "_ACTIVATION",
         "_DICT_VAL",
         "_PRECISION",
-        "_ACTIVATION",
     ]
 
 
@@ -203,6 +205,30 @@ def expand_sys_str(root_dir: Union[str, Path]) -> list[str]:
     if (root_dir / "type.raw").is_file():
         matches.append(str(root_dir))
     return matches
+
+
+def rglob_sys_str(root_dir: str, patterns: list[str]) -> list[str]:
+    """Recursively iterate over directories taking those that contain `type.raw` file.
+
+    Parameters
+    ----------
+    root_dir : str, Path
+        starting directory
+    patterns : list[str]
+        list of glob patterns to match directories
+
+    Returns
+    -------
+    list[str]
+        list of string pointing to system directories
+    """
+    root_dir = Path(root_dir)
+    matches = []
+    for pattern in patterns:
+        matches.extend(
+            [str(d) for d in root_dir.rglob(pattern) if (d / "type.raw").is_file()]
+        )
+    return list(set(matches))  # remove duplicates
 
 
 def get_np_precision(precision: "_PRECISION") -> np.dtype:

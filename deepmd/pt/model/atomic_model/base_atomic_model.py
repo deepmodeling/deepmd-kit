@@ -79,6 +79,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         pair_exclude_types: list[tuple[int, int]] = [],
         rcond: Optional[float] = None,
         preset_out_bias: Optional[dict[str, np.ndarray]] = None,
+        data_stat_protect: float = 1e-2,
     ) -> None:
         torch.nn.Module.__init__(self)
         BaseAtomicModel_.__init__(self)
@@ -87,6 +88,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self.reinit_pair_exclude(pair_exclude_types)
         self.rcond = rcond
         self.preset_out_bias = preset_out_bias
+        self.data_stat_protect = data_stat_protect
 
     def init_out_stat(self) -> None:
         """Initialize the output bias."""
@@ -124,6 +126,14 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
     def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
+
+    def get_compute_stats_distinguish_types(self) -> bool:
+        """Get whether the fitting net computes stats which are not distinguished between different types of atoms."""
+        return True
+
+    def get_intensive(self) -> bool:
+        """Whether the fitting property is intensive."""
+        return False
 
     def reinit_atom_exclude(
         self,
@@ -456,7 +466,6 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 model_forward=self._get_forward_wrapper_func(),
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,
-                atomic_output=self.atomic_output_def(),
             )
             self._store_out_stat(delta_bias, out_std, add=True)
         elif bias_adjust_mode == "set-by-statistic":
@@ -467,7 +476,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 stat_file_path=stat_file_path,
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,
-                atomic_output=self.atomic_output_def(),
+                stats_distinguish_types=self.get_compute_stats_distinguish_types(),
+                intensive=self.get_intensive(),
             )
             self._store_out_stat(bias_out, std_out)
         else:

@@ -17,6 +17,7 @@ import deepmd.utils.random as dp_random
 from deepmd.common import (
     expand_sys_str,
     make_default_mesh,
+    rglob_sys_str,
 )
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -27,9 +28,6 @@ from deepmd.utils.data import (
 )
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
-)
-from deepmd.utils.path import (
-    DPPath,
 )
 
 log = logging.getLogger(__name__)
@@ -103,6 +101,8 @@ class DeepmdDataSystem:
         del rcut
         self.system_dirs = systems
         self.nsystems = len(self.system_dirs)
+        if self.nsystems <= 0:
+            raise ValueError("No systems provided")
         self.data_systems = []
         for ii in self.system_dirs:
             self.data_systems.append(
@@ -216,19 +216,12 @@ class DeepmdDataSystem:
             chk_ret = self.data_systems[ii].check_batch_size(self.batch_size[ii])
             if chk_ret is not None and not is_auto_bs and not self.mixed_systems:
                 warnings.warn(
-                    "system %s required batch size is larger than the size of the dataset %s (%d > %d)"
-                    % (
-                        self.system_dirs[ii],
-                        chk_ret[0],
-                        self.batch_size[ii],
-                        chk_ret[1],
-                    )
+                    f"system {self.system_dirs[ii]} required batch size is larger than the size of the dataset {chk_ret[0]} ({self.batch_size[ii]} > {chk_ret[1]})"
                 )
             chk_ret = self.data_systems[ii].check_test_size(self.test_size[ii])
             if chk_ret is not None and not is_auto_bs and not self.mixed_systems:
                 warnings.warn(
-                    "system %s required test size is larger than the size of the dataset %s (%d > %d)"
-                    % (self.system_dirs[ii], chk_ret[0], self.test_size[ii], chk_ret[1])
+                    f"system {self.system_dirs[ii]} required test size is larger than the size of the dataset {chk_ret[0]} ({self.test_size[ii]} > {chk_ret[1]})"
                 )
 
     def _load_test(self, ntests=-1) -> None:
@@ -671,22 +664,25 @@ def print_summary(
     log.info(
         f"---Summary of DataSystem: {name:13s}-----------------------------------------------"
     )
-    log.info("found %d system(s):" % nsystems)
+    log.info("found %d system(s):", nsystems)
     log.info(
-        ("{}  ".format(_format_name_length("system", sys_width)))
-        + ("%6s  %6s  %6s  %9s  %3s" % ("natoms", "bch_sz", "n_bch", "prob", "pbc"))
+        "%s  %6s  %6s  %6s  %9s  %3s",
+        _format_name_length("system", sys_width),
+        "natoms",
+        "bch_sz",
+        "n_bch",
+        "prob",
+        "pbc",
     )
     for ii in range(nsystems):
         log.info(
-            "%s  %6d  %6d  %6d  %9.3e  %3s"
-            % (
-                _format_name_length(system_dirs[ii], sys_width),
-                natoms[ii],
-                batch_size[ii],
-                nbatches[ii],
-                sys_probs[ii],
-                "T" if pbc[ii] else "F",
-            )
+            "%s  %6d  %6d  %6d  %9.3e  %3s",
+            _format_name_length(system_dirs[ii], sys_width),
+            natoms[ii],
+            batch_size[ii],
+            nbatches[ii],
+            sys_probs[ii],
+            "T" if pbc[ii] else "F",
         )
     log.info(
         "--------------------------------------------------------------------------------------"
@@ -698,9 +694,9 @@ def process_sys_probs(sys_probs, nbatch):
     type_filter = sys_probs >= 0
     assigned_sum_prob = np.sum(type_filter * sys_probs)
     # 1e-8 is to handle floating point error; See #1917
-    assert (
-        assigned_sum_prob <= 1.0 + 1e-8
-    ), "the sum of assigned probability should be less than 1"
+    assert assigned_sum_prob <= 1.0 + 1e-8, (
+        "the sum of assigned probability should be less than 1"
+    )
     rest_sum_prob = 1.0 - assigned_sum_prob
     if not np.isclose(rest_sum_prob, 0):
         rest_nbatch = (1 - type_filter) * nbatch
@@ -735,7 +731,9 @@ def prob_sys_size_ext(keywords, nsystems, nbatch):
     return sys_probs
 
 
-def process_systems(systems: Union[str, list[str]]) -> list[str]:
+def process_systems(
+    systems: Union[str, list[str]], patterns: Optional[list[str]] = None
+) -> list[str]:
     """Process the user-input systems.
 
     If it is a single directory, search for all the systems in the directory.
@@ -745,6 +743,8 @@ def process_systems(systems: Union[str, list[str]]) -> list[str]:
     ----------
     systems : str or list of str
         The user-input systems
+    patterns : list of str, optional
+        The patterns to match the systems, by default None
 
     Returns
     -------
@@ -752,26 +752,12 @@ def process_systems(systems: Union[str, list[str]]) -> list[str]:
         The valid systems
     """
     if isinstance(systems, str):
-        systems = expand_sys_str(systems)
+        if patterns is None:
+            systems = expand_sys_str(systems)
+        else:
+            systems = rglob_sys_str(systems, patterns)
     elif isinstance(systems, list):
         systems = systems.copy()
-    help_msg = "Please check your setting for data systems"
-    # check length of systems
-    if len(systems) == 0:
-        msg = "cannot find valid a data system"
-        log.fatal(msg)
-        raise OSError(msg, help_msg)
-    # roughly check all items in systems are valid
-    for ii in systems:
-        ii = DPPath(ii)
-        if not ii.is_dir():
-            msg = f"dir {ii} is not a valid dir"
-            log.fatal(msg)
-            raise OSError(msg, help_msg)
-        if not (ii / "type.raw").is_file():
-            msg = f"dir {ii} is not a valid data system dir"
-            log.fatal(msg)
-            raise OSError(msg, help_msg)
     return systems
 
 
@@ -799,7 +785,8 @@ def get_data(
         The data system
     """
     systems = jdata["systems"]
-    systems = process_systems(systems)
+    rglob_patterns = jdata.get("rglob_patterns", None)
+    systems = process_systems(systems, patterns=rglob_patterns)
 
     batch_size = jdata["batch_size"]
     sys_probs = jdata.get("sys_probs", None)

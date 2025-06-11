@@ -22,11 +22,11 @@ from .property_fitting import (
 )
 
 __all__ = [
-    "InvarFitting",
-    "make_base_fitting",
+    "DOSFittingNet",
     "DipoleFitting",
     "EnergyFittingNet",
+    "InvarFitting",
     "PolarFitting",
-    "DOSFittingNet",
     "PropertyFittingNet",
+    "make_base_fitting",
 ]

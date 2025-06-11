@@ -232,8 +232,9 @@ template void deepmd::select_real_atoms_coord<float>(
     const int& nall,
     const bool aparam_nall);
 
-void deepmd::NeighborListData::copy_from_nlist(const InputNlist& inlist) {
-  int inum = inlist.inum;
+void deepmd::NeighborListData::copy_from_nlist(const InputNlist& inlist,
+                                               const int natoms) {
+  int inum = natoms >= 0 ? natoms : inlist.inum;
   ilist.resize(inum);
   jlist.resize(inum);
   memcpy(&ilist[0], inlist.ilist, inum * sizeof(int));
@@ -389,7 +390,13 @@ static inline void _load_library_path(std::string dso_path) {
   if (!dso_handle) {
     throw deepmd::deepmd_exception(
         dso_path +
-        " is not found! You can add the library directory to LD_LIBRARY_PATH");
+        " is not found or fails to load! You can add the library directory to "
+        "LD_LIBRARY_PATH."
+#ifndef _WIN32
+        " Error message: " +
+        std::string(dlerror())
+#endif
+    );
   }
 }
 
@@ -1392,6 +1399,9 @@ void deepmd::print_summary(const std::string& pre) {
 #ifdef BUILD_PYTORCH
   std::cout << pre << "build with pt lib:  " + global_pt_lib << "\n";
 #endif
+#ifdef BUILD_PADDLE
+  std::cout << pre << "build with pd lib:  " + global_pd_lib << "\n";
+#endif
   std::cout << pre
             << "set tf intra_op_parallelism_threads: " << num_intra_nthreads
             << "\n";
@@ -1408,6 +1418,9 @@ deepmd::DPBackend deepmd::get_backend(const std::string& model) {
   } else if (model.length() >= 11 &&
              model.substr(model.length() - 11) == ".savedmodel") {
     return deepmd::DPBackend::JAX;
+  } else if ((model.length() >= 5 &&
+              model.substr(model.length() - 5) == ".json")) {
+    return deepmd::DPBackend::Paddle;
   }
   throw deepmd::deepmd_exception("Unsupported model file format");
 }

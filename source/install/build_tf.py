@@ -381,7 +381,7 @@ def call(commands: list[str], env={}, **kwargs) -> None:
 
         if exit_code:
             raise RuntimeError(
-                "Run %s failed, return code: %d" % (" ".join(commands), exit_code)
+                "Run {} failed, return code: {}".format(" ".join(commands), exit_code)
             )
 
 
@@ -791,7 +791,7 @@ class BuildTensorFlow(Build):
             "--config=opt",
             "--config=noaws",
             "--copt=-mtune=generic",
-            "--local_cpu_resources=%d" % CPU_COUNT,
+            f"--local_cpu_resources={CPU_COUNT}",
         ]
         if self.enable_mkl:
             # enable oneDNN

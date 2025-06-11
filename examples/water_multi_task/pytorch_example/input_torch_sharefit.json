@@ -1,0 +1,155 @@
+{
+  "_comment": "that's all",
+  "model": {
+    "shared_dict": {
+      "type_map_all": [
+        "O",
+        "H"
+      ],
+      "dpa2_descriptor": {
+        "type": "dpa2",
+        "repinit": {
+          "tebd_dim": 8,
+          "rcut": 6.0,
+          "rcut_smth": 0.5,
+          "nsel": 120,
+          "neuron": [
+            25,
+            50,
+            100
+          ],
+          "axis_neuron": 12,
+          "activation_function": "tanh",
+          "three_body_sel": 48,
+          "three_body_rcut": 4.0,
+          "three_body_rcut_smth": 3.5,
+          "use_three_body": true
+        },
+        "repformer": {
+          "rcut": 4.0,
+          "rcut_smth": 3.5,
+          "nsel": 48,
+          "nlayers": 6,
+          "g1_dim": 128,
+          "g2_dim": 32,
+          "attn2_hidden": 32,
+          "attn2_nhead": 4,
+          "attn1_hidden": 128,
+          "attn1_nhead": 4,
+          "axis_neuron": 4,
+          "update_h2": false,
+          "update_g1_has_conv": true,
+          "update_g1_has_grrg": true,
+          "update_g1_has_drrd": true,
+          "update_g1_has_attn": false,
+          "update_g2_has_g1g1": false,
+          "update_g2_has_attn": true,
+          "update_style": "res_residual",
+          "update_residual": 0.01,
+          "update_residual_init": "norm",
+          "attn2_has_gate": true,
+          "use_sqrt_nnei": true,
+          "g1_out_conv": true,
+          "g1_out_mlp": true
+        },
+        "precision": "float64",
+        "add_tebd_to_repinit_out": false,
+        "_comment": " that's all"
+      },
+      "shared_fit_with_id": {
+        "neuron": [
+          240,
+          240,
+          240
+        ],
+        "resnet_dt": true,
+        "seed": 1,
+        "dim_case_embd": 2,
+        "_comment": " that's all"
+      },
+      "_comment": "that's all"
+    },
+    "model_dict": {
+      "water_1": {
+        "type_map": "type_map_all",
+        "descriptor": "dpa2_descriptor",
+        "fitting_net": "shared_fit_with_id"
+      },
+      "water_2": {
+        "type_map": "type_map_all",
+        "descriptor": "dpa2_descriptor",
+        "fitting_net": "shared_fit_with_id"
+      }
+    }
+  },
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 5000,
+    "start_lr": 0.001,
+    "stop_lr": 3.51e-08,
+    "_comment": "that's all"
+  },
+  "loss_dict": {
+    "water_1": {
+      "type": "ener",
+      "start_pref_e": 0.02,
+      "limit_pref_e": 1,
+      "start_pref_f": 1000,
+      "limit_pref_f": 1,
+      "start_pref_v": 0,
+      "limit_pref_v": 0
+    },
+    "water_2": {
+      "type": "ener",
+      "start_pref_e": 0.02,
+      "limit_pref_e": 1,
+      "start_pref_f": 1000,
+      "limit_pref_f": 1,
+      "start_pref_v": 0,
+      "limit_pref_v": 0
+    }
+  },
+  "training": {
+    "model_prob": {
+      "water_1": 0.5,
+      "water_2": 0.5
+    },
+    "data_dict": {
+      "water_1": {
+        "training_data": {
+          "systems": [
+            "../../water/data/data_0/",
+            "../../water/data/data_1/",
+            "../../water/data/data_2/"
+          ],
+          "batch_size": 1,
+          "_comment": "that's all"
+        },
+        "validation_data": {
+          "systems": [
+            "../../water/data/data_3/"
+          ],
+          "batch_size": 1,
+          "_comment": "that's all"
+        }
+      },
+      "water_2": {
+        "training_data": {
+          "systems": [
+            "../../water/data/data_0/",
+            "../../water/data/data_1/",
+            "../../water/data/data_2/"
+          ],
+          "batch_size": 1,
+          "_comment": "that's all"
+        }
+      }
+    },
+    "numb_steps": 100000,
+    "seed": 10,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 100,
+    "_comment": "that's all"
+  }
+}

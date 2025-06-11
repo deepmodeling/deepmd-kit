@@ -353,9 +353,9 @@ class DescrptSeT(DescrptSe):
         suffix : str, optional
             The suffix of the scope
         """
-        assert (
-            not self.filter_resnet_dt
-        ), "Model compression error: descriptor resnet_dt must be false!"
+        assert not self.filter_resnet_dt, (
+            "Model compression error: descriptor resnet_dt must be false!"
+        )
 
         self.compress = True
         self.table = DPTabulate(
@@ -830,9 +830,9 @@ class DescrptSeT(DescrptSe):
         """
         embedding_net_variables = {}
         embeddings = NetworkCollection.deserialize(data)
-        assert (
-            embeddings.ndim == 2
-        ), "Embeddings in descriptor 'se_e3' must have two dimensions."
+        assert embeddings.ndim == 2, (
+            "Embeddings in descriptor 'se_e3' must have two dimensions."
+        )
         for ii in range(embeddings.ntypes**embeddings.ndim):
             net_idx = []
             rest_ii = ii

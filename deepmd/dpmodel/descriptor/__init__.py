@@ -5,6 +5,9 @@ from .dpa1 import (
 from .dpa2 import (
     DescrptDPA2,
 )
+from .dpa3 import (
+    DescrptDPA3,
+)
 from .hybrid import (
     DescrptHybrid,
 )
@@ -28,13 +31,14 @@ from .se_t_tebd import (
 )
 
 __all__ = [
+    "DescrptDPA1",
+    "DescrptDPA2",
+    "DescrptDPA3",
+    "DescrptHybrid",
     "DescrptSeA",
+    "DescrptSeAttenV2",
     "DescrptSeR",
     "DescrptSeT",
     "DescrptSeTTebd",
-    "DescrptDPA1",
-    "DescrptSeAttenV2",
-    "DescrptDPA2",
-    "DescrptHybrid",
     "make_base_descriptor",
 ]

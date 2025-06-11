@@ -28,9 +28,7 @@ import sphinx_contrib_exhale_multiproject  # noqa: F401
 # -- Project information -----------------------------------------------------
 
 project = "DeePMD-kit"
-copyright = (
-    "2017-%d, DeepModeling" % datetime.datetime.now(tz=datetime.timezone.utc).year
-)
+copyright = f"2017-{datetime.datetime.now(tz=datetime.timezone.utc).year}, DeepModeling"
 author = "DeepModeling"
 
 autoapi_dirs = ["../deepmd"]
@@ -169,6 +167,7 @@ myst_substitutions = {
     "tensorflow_icon": """![TensorFlow](/_static/tensorflow.svg){class=platform-icon}""",
     "pytorch_icon": """![PyTorch](/_static/pytorch.svg){class=platform-icon}""",
     "jax_icon": """![JAX](/_static/jax.svg){class=platform-icon}""",
+    "paddle_icon": """![Paddle](/_static/paddle.svg){class=platform-icon}""",
     "dpmodel_icon": """![DP](/_static/logo_icon.svg){class=platform-icon}""",
 }
 

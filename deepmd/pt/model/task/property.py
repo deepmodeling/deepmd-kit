@@ -2,6 +2,7 @@
 import logging
 from typing import (
     Optional,
+    Union,
 )
 
 import torch
@@ -43,23 +44,24 @@ class PropertyFittingNet(InvarFitting):
     dim_descrpt : int
         Embedding width per atom.
     task_dim : int
-            The dimension of outputs of fitting net.
+        The dimension of outputs of fitting net.
+    property_name:
+        The name of fitting property, which should be consistent with the property name in the dataset.
+        If the data file is named `humo.npy`, this parameter should be "humo".
     neuron : list[int]
         Number of neurons in each hidden layers of the fitting net.
     bias_atom_p : torch.Tensor, optional
         Average property per atom for each element.
     intensive : bool, optional
         Whether the fitting property is intensive.
-    bias_method : str, optional
-        The method of applying the bias to each atomic output, user can select 'normal' or 'no_bias'.
-        If 'normal' is used, the computed bias will be added to the atomic output.
-        If 'no_bias' is used, no bias will be added to the atomic output.
     resnet_dt : bool
         Using time-step in the ResNet construction.
     numb_fparam : int
         Number of frame parameters.
     numb_aparam : int
         Number of atomic parameters.
+    dim_case_embd : int
+        Dimension of case specific embedding.
     activation_function : str
         Activation function.
     precision : str
@@ -75,25 +77,26 @@ class PropertyFittingNet(InvarFitting):
         self,
         ntypes: int,
         dim_descrpt: int,
+        property_name: str,
         task_dim: int = 1,
         neuron: list[int] = [128, 128, 128],
         bias_atom_p: Optional[torch.Tensor] = None,
         intensive: bool = False,
-        bias_method: str = "normal",
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        dim_case_embd: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
+        trainable: Union[bool, list[bool]] = True,
         seed: Optional[int] = None,
         **kwargs,
     ) -> None:
         self.task_dim = task_dim
         self.intensive = intensive
-        self.bias_method = bias_method
         super().__init__(
-            var_name="property",
+            var_name=property_name,
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             dim_out=task_dim,
@@ -102,15 +105,14 @@ class PropertyFittingNet(InvarFitting):
             resnet_dt=resnet_dt,
             numb_fparam=numb_fparam,
             numb_aparam=numb_aparam,
+            dim_case_embd=dim_case_embd,
             activation_function=activation_function,
             precision=precision,
             mixed_types=mixed_types,
+            trainable=trainable,
             seed=seed,
             **kwargs,
         )
-
-    def get_bias_method(self) -> str:
-        return self.bias_method
 
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
@@ -126,12 +128,16 @@ class PropertyFittingNet(InvarFitting):
             ]
         )
 
+    def get_intensive(self) -> bool:
+        """Whether the fitting property is intensive."""
+        return self.intensive
+
     @classmethod
     def deserialize(cls, data: dict) -> "PropertyFittingNet":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         data.pop("dim_out")
-        data.pop("var_name")
+        data["property_name"] = data.pop("var_name")
         obj = super().deserialize(data)
 
         return obj
@@ -142,7 +148,9 @@ class PropertyFittingNet(InvarFitting):
             **InvarFitting.serialize(self),
             "type": "property",
             "task_dim": self.task_dim,
+            "intensive": self.intensive,
         }
+        dd["@version"] = 4
 
         return dd
 

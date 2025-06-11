@@ -4,6 +4,7 @@ import unittest
 from deepmd.pt.model.descriptor import (
     DescrptDPA1,
     DescrptDPA2,
+    DescrptDPA3,
     DescrptHybrid,
     DescrptSeA,
     DescrptSeR,
@@ -20,6 +21,7 @@ from ...common.cases.descriptor.descriptor import (
 from ...dpmodel.descriptor.test_descriptor import (
     DescriptorParamDPA1,
     DescriptorParamDPA2,
+    DescriptorParamDPA3,
     DescriptorParamHybrid,
     DescriptorParamHybridMixed,
     DescriptorParamSeA,
@@ -40,6 +42,7 @@ from ..backend import (
         (DescriptorParamSeTTebd, DescrptSeTTebd),
         (DescriptorParamDPA1, DescrptDPA1),
         (DescriptorParamDPA2, DescrptDPA2),
+        (DescriptorParamDPA3, DescrptDPA3),
         (DescriptorParamHybrid, DescrptHybrid),
         (DescriptorParamHybridMixed, DescrptHybrid),
     )  # class_param & class
@@ -53,3 +56,7 @@ class TestDescriptorPT(unittest.TestCase, DescriptorTest, PTTestCase):
             self.nt, self.rcut, self.rcut_smth, self.sel, ["O", "H"]
         )
         self.module = Descrpt(**self.input_dict)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        PTTestCase.tearDownClass()

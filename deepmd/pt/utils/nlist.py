@@ -93,7 +93,6 @@ def build_neighbor_list(
 
     """
     batch_size = coord.shape[0]
-    coord = coord.view(batch_size, -1)
     nall = coord.shape[1] // 3
     # fill virtual atoms with large coords so they are not neighbors of any
     # real atom.
@@ -101,25 +100,36 @@ def build_neighbor_list(
         xmax = torch.max(coord) + 2.0 * rcut
     else:
         xmax = torch.zeros(1, dtype=coord.dtype, device=coord.device) + 2.0 * rcut
+
+    coord_xyz = coord.view(batch_size, nall, 3)
     # nf x nall
     is_vir = atype < 0
-    coord1 = torch.where(
-        is_vir[:, :, None], xmax, coord.view(batch_size, nall, 3)
-    ).view(batch_size, nall * 3)
+    # batch_size x nall x 3
+    vcoord_xyz = torch.where(is_vir[:, :, None], xmax, coord_xyz)
     if isinstance(sel, int):
         sel = [sel]
-    # nloc x 3
-    coord0 = coord1[:, : nloc * 3]
-    # nloc x nall x 3
-    diff = coord1.view([batch_size, -1, 3]).unsqueeze(1) - coord0.view(
-        [batch_size, -1, 3]
-    ).unsqueeze(2)
-    assert list(diff.shape) == [batch_size, nloc, nall, 3]
+
+    # Get the coordinates for the local atoms (first nloc atoms)
+    # batch_size x nloc x 3
+    vcoord_local_xyz = vcoord_xyz[:, :nloc, :]
+
+    # Calculate displacement vectors.
+    diff = vcoord_xyz.unsqueeze(1) - vcoord_local_xyz.unsqueeze(2)
+    assert diff.shape == (batch_size, nloc, nall, 3)
     # nloc x nall
     rr = torch.linalg.norm(diff, dim=-1)
     # if central atom has two zero distances, sorting sometimes can not exclude itself
-    rr -= torch.eye(nloc, nall, dtype=rr.dtype, device=rr.device).unsqueeze(0)
-    rr, nlist = torch.sort(rr, dim=-1)
+    # The following operation makes rr[b, i, i] = -1.0 (assuming original self-distance is 0)
+    # so that self-atom is sorted first.
+    diag_len = min(nloc, nall)
+    idx = torch.arange(diag_len, device=rr.device, dtype=torch.int)
+    rr[:, idx, idx] -= 1.0
+
+    nsel = sum(sel)
+    nnei = rr.shape[-1]
+    top_k = min(nsel + 1, nnei)
+    rr, nlist = torch.topk(rr, top_k, largest=False)
+
     # nloc x (nall-1)
     rr = rr[:, :, 1:]
     nlist = nlist[:, :, 1:]
@@ -310,7 +320,7 @@ def nlist_distinguish_types(
         inlist = torch.gather(nlist, 2, imap)
         inlist = inlist.masked_fill(~(pick_mask.to(torch.bool)), -1)
         # nloc x nsel[ii]
-        ret_nlist.append(torch.split(inlist, [ss, snsel - ss], dim=-1)[0])
+        ret_nlist.append(inlist[..., :ss])
     return torch.concat(ret_nlist, dim=-1)
 
 

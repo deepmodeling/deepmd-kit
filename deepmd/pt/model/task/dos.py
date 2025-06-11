@@ -47,6 +47,7 @@ class DOSFittingNet(InvarFitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        dim_case_embd: int = 0,
         rcond: Optional[float] = None,
         bias_dos: Optional[torch.Tensor] = None,
         trainable: Union[bool, list[bool]] = True,
@@ -73,6 +74,7 @@ class DOSFittingNet(InvarFitting):
             resnet_dt=resnet_dt,
             numb_fparam=numb_fparam,
             numb_aparam=numb_aparam,
+            dim_case_embd=dim_case_embd,
             activation_function=activation_function,
             precision=precision,
             mixed_types=mixed_types,
@@ -99,7 +101,7 @@ class DOSFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "DOSFittingNet":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("@class", None)
         data.pop("var_name", None)
         data.pop("tot_ener_zero", None)

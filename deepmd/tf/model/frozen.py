@@ -72,7 +72,7 @@ class FrozenModel(Model):
             self.model_type = "ener"
         else:
             raise NotImplementedError(
-                "This model type has not been implemented. " "Contribution is welcome!"
+                "This model type has not been implemented. Contribution is welcome!"
             )
 
     def build(

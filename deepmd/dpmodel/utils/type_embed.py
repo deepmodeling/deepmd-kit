@@ -166,9 +166,9 @@ class TypeEmbedNet(NativeOP):
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         if not self.use_econf_tebd:
             do_resnet = self.neuron[0] in [
@@ -177,9 +177,9 @@ class TypeEmbedNet(NativeOP):
                 len(type_map),
                 len(type_map) * 2,
             ]
-            assert (
-                not do_resnet or self.activation_function == "Linear"
-            ), "'activation_function' must be 'Linear' when performing type changing on resnet structure!"
+            assert not do_resnet or self.activation_function == "Linear", (
+                "'activation_function' must be 'Linear' when performing type changing on resnet structure!"
+            )
             first_layer_matrix = self.embedding_net.layers[0].w
             eye_vector = np.eye(self.ntypes, dtype=PRECISION_DICT[self.precision])
             # preprocess for resnet connection
@@ -227,9 +227,9 @@ def get_econf_tebd(type_map, precision: str = "default"):
     )
     from deepmd.utils.econf_embd import type_map as periodic_table
 
-    assert (
-        type_map is not None
-    ), "When using electronic configuration type embedding, type_map must be provided!"
+    assert type_map is not None, (
+        "When using electronic configuration type embedding, type_map must be provided!"
+    )
 
     missing_types = [t for t in type_map if t not in periodic_table]
     assert not missing_types, (

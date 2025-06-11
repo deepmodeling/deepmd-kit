@@ -32,6 +32,7 @@ from .model.test_permutation import (
     model_dpa1,
     model_dpa2,
     model_dpa2tebd,
+    model_dpa3,
     model_se_e2_a,
 )
 
@@ -42,12 +43,20 @@ def setUpModule() -> None:
     with open(multitask_template_json) as f:
         multitask_template = json.load(f)
 
+    global multitask_sharefit_template
+    multitask_sharefit_template_json = str(
+        Path(__file__).parent / "water/multitask_sharefit.json"
+    )
+    with open(multitask_sharefit_template_json) as f:
+        multitask_sharefit_template = json.load(f)
+
 
 class MultiTaskTrainTest:
     def test_multitask_train(self) -> None:
         # test multitask training
         self.config = update_deepmd_input(self.config, warning=True)
         self.config = normalize(self.config, multi_task=True)
+        self.share_fitting = getattr(self, "share_fitting", False)
         trainer = get_trainer(deepcopy(self.config), shared_links=self.shared_links)
         trainer.run()
         # check model keys
@@ -62,7 +71,12 @@ class MultiTaskTrainTest:
                 self.assertIn(state_key.replace("model_1", "model_2"), multi_state_dict)
             if "model_2" in state_key:
                 self.assertIn(state_key.replace("model_2", "model_1"), multi_state_dict)
-            if "model_1.descriptor" in state_key:
+            if ("model_1.atomic_model.descriptor" in state_key) or (
+                self.share_fitting
+                and "model_1.atomic_model.fitting_net" in state_key
+                and "fitting_net.bias_atom_e" not in state_key
+                and "fitting_net.case_embd" not in state_key
+            ):
                 torch.testing.assert_close(
                     multi_state_dict[state_key],
                     multi_state_dict[state_key.replace("model_1", "model_2")],
@@ -83,9 +97,9 @@ class MultiTaskTrainTest:
             self.origin_config["training"]["data_dict"]["model_2"]
         )
         self.origin_config["training"]["data_dict"]["model_3"]["stat_file"] = (
-            self.origin_config[
-                "training"
-            ]["data_dict"]["model_3"]["stat_file"].replace("model_2", "model_3")
+            self.origin_config["training"]["data_dict"]["model_3"]["stat_file"].replace(
+                "model_2", "model_3"
+            )
         )
 
         # add model_4
@@ -102,9 +116,9 @@ class MultiTaskTrainTest:
             self.origin_config["training"]["data_dict"]["model_2"]
         )
         self.origin_config["training"]["data_dict"]["model_4"]["stat_file"] = (
-            self.origin_config[
-                "training"
-            ]["data_dict"]["model_4"]["stat_file"].replace("model_2", "model_4")
+            self.origin_config["training"]["data_dict"]["model_4"]["stat_file"].replace(
+                "model_2", "model_4"
+            )
         )
 
         # set finetune rules
@@ -223,6 +237,46 @@ class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
         MultiTaskTrainTest.tearDown(self)
 
 
+class TestMultiTaskSeASharefit(unittest.TestCase, MultiTaskTrainTest):
+    def setUp(self) -> None:
+        multitask_se_e2_a = deepcopy(multitask_sharefit_template)
+        multitask_se_e2_a["model"]["shared_dict"]["my_descriptor"] = model_se_e2_a[
+            "descriptor"
+        ]
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.stat_files = "se_e2_a_share_fit"
+        os.makedirs(self.stat_files, exist_ok=True)
+        self.config = multitask_se_e2_a
+        self.config["training"]["data_dict"]["model_1"]["training_data"]["systems"] = (
+            data_file
+        )
+        self.config["training"]["data_dict"]["model_1"]["validation_data"][
+            "systems"
+        ] = data_file
+        self.config["training"]["data_dict"]["model_1"]["stat_file"] = (
+            f"{self.stat_files}/model_1"
+        )
+        self.config["training"]["data_dict"]["model_2"]["training_data"]["systems"] = (
+            data_file
+        )
+        self.config["training"]["data_dict"]["model_2"]["validation_data"][
+            "systems"
+        ] = data_file
+        self.config["training"]["data_dict"]["model_2"]["stat_file"] = (
+            f"{self.stat_files}/model_2"
+        )
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        self.origin_config = deepcopy(self.config)
+        self.config["model"], self.shared_links = preprocess_shared_params(
+            self.config["model"]
+        )
+        self.share_fitting = True
+
+    def tearDown(self) -> None:
+        MultiTaskTrainTest.tearDown(self)
+
+
 class TestMultiTaskDPA1(unittest.TestCase, MultiTaskTrainTest):
     def setUp(self) -> None:
         multitask_DPA1 = deepcopy(multitask_template)
@@ -311,6 +365,45 @@ class TestMultiTaskDPA2Tebd(unittest.TestCase, MultiTaskTrainTest):
         self.stat_files = "DPA2Tebd"
         os.makedirs(self.stat_files, exist_ok=True)
         self.config = multitask_DPA2
+        self.config["training"]["data_dict"]["model_1"]["training_data"]["systems"] = (
+            data_file
+        )
+        self.config["training"]["data_dict"]["model_1"]["validation_data"][
+            "systems"
+        ] = data_file
+        self.config["training"]["data_dict"]["model_1"]["stat_file"] = (
+            f"{self.stat_files}/model_1"
+        )
+        self.config["training"]["data_dict"]["model_2"]["training_data"]["systems"] = (
+            data_file
+        )
+        self.config["training"]["data_dict"]["model_2"]["validation_data"][
+            "systems"
+        ] = data_file
+        self.config["training"]["data_dict"]["model_2"]["stat_file"] = (
+            f"{self.stat_files}/model_2"
+        )
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        self.origin_config = deepcopy(self.config)
+        self.config["model"], self.shared_links = preprocess_shared_params(
+            self.config["model"]
+        )
+
+    def tearDown(self) -> None:
+        MultiTaskTrainTest.tearDown(self)
+
+
+class TestMultiTaskDPA3(unittest.TestCase, MultiTaskTrainTest):
+    def setUp(self) -> None:
+        multitask_DPA3 = deepcopy(multitask_template)
+        multitask_DPA3["model"]["shared_dict"]["my_descriptor"] = model_dpa3[
+            "descriptor"
+        ]
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.stat_files = "DPA3"
+        os.makedirs(self.stat_files, exist_ok=True)
+        self.config = multitask_DPA3
         self.config["training"]["data_dict"]["model_1"]["training_data"]["systems"] = (
             data_file
         )

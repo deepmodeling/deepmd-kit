@@ -42,6 +42,7 @@ class SummaryPrinter(ABC):
         "Please read and cite:",
         "Wang, Zhang, Han and E, Comput.Phys.Comm. 228, 178-184 (2018)",
         "Zeng et al, J. Chem. Phys., 159, 054801 (2023)",
+        "Zeng et al, J. Chem. Theory Comput., 21, 4375-4385 (2025)",
         "See https://deepmd.rtfd.io/credits/ for details.",
     )
 

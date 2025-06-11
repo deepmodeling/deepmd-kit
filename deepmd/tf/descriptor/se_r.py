@@ -346,9 +346,9 @@ class DescrptSeR(DescrptSe):
         suffix : str, optional
             The suffix of the scope
         """
-        assert (
-            not self.filter_resnet_dt
-        ), "Model compression error: descriptor resnet_dt must be false!"
+        assert not self.filter_resnet_dt, (
+            "Model compression error: descriptor resnet_dt must be false!"
+        )
 
         self.compress = True
         self.table = DPTabulate(
@@ -356,6 +356,8 @@ class DescrptSeR(DescrptSe):
             self.filter_neuron,
             graph,
             graph_def,
+            type_one_side=self.type_one_side,
+            exclude_types=self.exclude_types,
             activation_fn=self.filter_activation_fn,
             suffix=suffix,
         )

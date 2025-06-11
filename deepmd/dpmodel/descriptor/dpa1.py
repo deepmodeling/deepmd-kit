@@ -29,6 +29,9 @@ from deepmd.dpmodel.utils import (
     NetworkCollection,
     PairExcludeMask,
 )
+from deepmd.dpmodel.utils.env_mat_stat import (
+    EnvMatStatSe,
+)
 from deepmd.dpmodel.utils.network import (
     LayerNorm,
     NativeLayer,
@@ -47,6 +50,9 @@ from deepmd.dpmodel.utils.update_sel import (
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
+)
+from deepmd.utils.env_mat_stat import (
+    StatItem,
 )
 from deepmd.utils.finetune import (
     get_index_between_two_maps,
@@ -408,10 +414,27 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         return self.get_dim_emb()
 
     def compute_input_stats(
-        self, merged: list[dict], path: Optional[DPPath] = None
-    ) -> NoReturn:
-        """Update mean and stddev for descriptor elements."""
-        raise NotImplementedError
+        self,
+        merged: Union[Callable[[], list[dict]], list[dict]],
+        path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
+        return self.se_atten.compute_input_stats(merged, path)
 
     def set_stat_mean_and_stddev(
         self,
@@ -432,9 +455,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         obj = self.se_atten
         obj.ntypes = len(type_map)
@@ -842,13 +865,49 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ) -> NoReturn:
-        """Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data."""
-        raise NotImplementedError
+    ) -> None:
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
-    def get_stats(self) -> NoReturn:
+        Parameters
+        ----------
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
+        env_mat_stat = EnvMatStatSe(self)
+        if path is not None:
+            path = path / env_mat_stat.get_hash()
+        if path is None or not path.is_dir():
+            if callable(merged):
+                # only get data for once
+                sampled = merged()
+            else:
+                sampled = merged
+        else:
+            sampled = []
+        env_mat_stat.load_or_compute_stats(sampled, path)
+        self.stats = env_mat_stat.stats
+        mean, stddev = env_mat_stat()
+        xp = array_api_compat.array_namespace(self.stddev)
+        if not self.set_davg_zero:
+            self.mean = xp.asarray(mean, dtype=self.mean.dtype, copy=True)
+        self.stddev = xp.asarray(stddev, dtype=self.stddev.dtype, copy=True)
+
+    def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
-        raise NotImplementedError
+        if self.stats is None:
+            raise RuntimeError(
+                "The statistics of the descriptor has not been computed."
+            )
+        return self.stats
 
     def reinit_exclude(
         self,
@@ -892,13 +951,18 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         # nf x nloc x nnei x 4
         dmatrix, diff, sw = self.env_mat.call(
-            coord_ext, atype_ext, nlist, self.mean, self.stddev
+            coord_ext,
+            atype_ext,
+            nlist,
+            self.mean[...],
+            self.stddev[...],
         )
         nf, nloc, nnei, _ = dmatrix.shape
         atype = atype_ext[:, :nloc]
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         # nfnl x nnei
         exclude_mask = xp.reshape(exclude_mask, (nf * nloc, nnei))
+        exclude_mask = xp.astype(exclude_mask, xp.bool)
         # nfnl x nnei
         nlist = xp.reshape(nlist, (nf * nloc, nnei))
         nlist = xp.where(exclude_mask, nlist, xp.full_like(nlist, -1))

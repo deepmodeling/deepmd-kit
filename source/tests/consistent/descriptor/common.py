@@ -19,6 +19,7 @@ from deepmd.dpmodel.utils.nlist import (
 from ..common import (
     INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
+    INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
 )
@@ -43,6 +44,15 @@ if INSTALLED_JAX:
 if INSTALLED_ARRAY_API_STRICT:
     import array_api_strict
 
+if INSTALLED_PD:
+    import paddle
+
+    from deepmd.pd.utils.env import DEVICE as PD_DEVICE
+    from deepmd.pd.utils.nlist import build_neighbor_list as build_neighbor_list_pd
+    from deepmd.pd.utils.nlist import (
+        extend_coord_with_ghosts as extend_coord_with_ghosts_pd,
+    )
+
 
 class DescriptorTest:
     """Useful utilities for descriptor tests."""
@@ -64,7 +74,7 @@ class DescriptorTest:
         )
         # ensure get_dim_out gives the correct shape
         t_des = tf.reshape(t_des, [1, natoms[0], obj.get_dim_out()])
-        return [t_des], {
+        return [t_des, obj.get_rot_mat()], {
             t_coord: coords,
             t_type: atype,
             t_natoms: natoms,
@@ -133,6 +143,28 @@ class DescriptorTest:
         return [
             np.asarray(x) if isinstance(x, jnp.ndarray) else x
             for x in jax_obj(ext_coords, ext_atype, nlist=nlist, mapping=mapping)
+        ]
+
+    def eval_pd_descriptor(
+        self, pd_obj: Any, natoms, coords, atype, box, mixed_types: bool = False
+    ) -> Any:
+        ext_coords, ext_atype, mapping = extend_coord_with_ghosts_pd(
+            paddle.to_tensor(coords).to(PD_DEVICE).reshape([1, -1, 3]),
+            paddle.to_tensor(atype).to(PD_DEVICE).reshape([1, -1]),
+            paddle.to_tensor(box).to(PD_DEVICE).reshape([1, 3, 3]),
+            pd_obj.get_rcut(),
+        )
+        nlist = build_neighbor_list_pd(
+            ext_coords,
+            ext_atype,
+            natoms[0],
+            pd_obj.get_rcut(),
+            pd_obj.get_sel(),
+            distinguish_types=(not mixed_types),
+        )
+        return [
+            x.detach().cpu().numpy() if paddle.is_tensor(x) else x
+            for x in pd_obj(ext_coords, ext_atype, nlist=nlist, mapping=mapping)
         ]
 
     def eval_array_api_strict_descriptor(

@@ -72,7 +72,7 @@ class DeprecateAction(argparse.Action):
     def __init__(self, *args, **kwargs) -> None:
         self.call_count = 0
         if "help" in kwargs:
-            kwargs["help"] = f'[DEPRECATED] {kwargs["help"]}'
+            kwargs["help"] = f"[DEPRECATED] {kwargs['help']}"
         super().__init__(*args, **kwargs)
 
     def __call__(self, parser, namespace, values, option_string=None):
@@ -99,9 +99,10 @@ def main_parser() -> argparse.ArgumentParser:
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
         epilog=textwrap.dedent(
             """\
-        Use --tf or --pt to choose the backend:
+        Use --tf, --pt or --pd to choose the backend:
             dp --tf train input.json
             dp --pt train input.json
+            dp --pd train input.json
         """
         ),
     )
@@ -329,9 +330,10 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_frz.add_argument(
         "--head",
+        "--model-branch",
         default=None,
         type=str,
-        help="(Supported backend: PyTorch) Task head to freeze if in multi-task mode.",
+        help="(Supported backend: PyTorch) Task head (alias: model branch) to freeze if in multi-task mode.",
     )
 
     # * test script ********************************************************************
@@ -408,9 +410,10 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_tst.add_argument(
         "--head",
+        "--model-branch",
         default=None,
         type=str,
-        help="(Supported backend: PyTorch) Task head to test if in multi-task mode.",
+        help="(Supported backend: PyTorch) Task head (alias: model branch) to test if in multi-task mode.",
     )
 
     # * compress model *****************************************************************
@@ -848,7 +851,7 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_show.add_argument(
         "ATTRIBUTES",
-        choices=["model-branch", "type-map", "descriptor", "fitting-net"],
+        choices=["model-branch", "type-map", "descriptor", "fitting-net", "size"],
         nargs="+",
     )
     return parser

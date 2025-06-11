@@ -23,7 +23,7 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.env import (
     PRECISION_DICT,
-    RESERVED_PRECISON_DICT,
+    RESERVED_PRECISION_DICT,
 )
 from deepmd.pt.utils.env_mat_stat import (
     EnvMatStatSe,
@@ -192,9 +192,9 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         If not start from checkpoint (resume is False),
         some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
-        assert (
-            self.__class__ == base_class.__class__
-        ), "Only descriptors of the same type can share params!"
+        assert self.__class__ == base_class.__class__, (
+            "Only descriptors of the same type can share params!"
+        )
         # For SeA descriptors, the user-defined share-level
         # shared_level: 0
         # share all parameters in sea
@@ -379,9 +379,11 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             "set_davg_zero": obj.set_davg_zero,
             "activation_function": obj.activation_function,
             # make deterministic
-            "precision": RESERVED_PRECISON_DICT[obj.prec],
+            "precision": RESERVED_PRECISION_DICT[obj.prec],
             "embeddings": obj.filter_layers.serialize(),
-            "env_mat": DPEnvMat(obj.rcut, obj.rcut_smth).serialize(),
+            "env_mat": DPEnvMat(
+                obj.rcut, obj.rcut_smth, obj.env_protection
+            ).serialize(),
             "exclude_types": obj.exclude_types,
             "env_protection": obj.env_protection,
             "@variables": {

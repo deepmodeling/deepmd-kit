@@ -105,6 +105,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        dim_case_embd: int = 0,
         bias_atom_e: Optional[np.ndarray] = None,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
@@ -127,6 +128,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.resnet_dt = resnet_dt
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
+        self.dim_case_embd = dim_case_embd
         self.rcond = rcond
         self.tot_ener_zero = tot_ener_zero
         self.trainable = trainable
@@ -171,11 +173,16 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.aparam_inv_std = np.ones(self.numb_aparam, dtype=self.prec)
         else:
             self.aparam_avg, self.aparam_inv_std = None, None
+        if self.dim_case_embd > 0:
+            self.case_embd = np.zeros(self.dim_case_embd, dtype=self.prec)
+        else:
+            self.case_embd = None
         # init networks
         in_dim = (
             self.dim_descrpt
             + self.numb_fparam
             + (0 if self.use_aparam_as_mask else self.numb_aparam)
+            + self.dim_case_embd
         )
         self.nets = NetworkCollection(
             1 if not self.mixed_types else 0,
@@ -222,15 +229,22 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Get the name to each type of atoms."""
         return self.type_map
 
+    def set_case_embd(self, case_idx: int):
+        """
+        Set the case embedding of this fitting net by the given case_idx,
+        typically concatenated with the output of the descriptor and fed into the fitting net.
+        """
+        self.case_embd = np.eye(self.dim_case_embd, dtype=self.prec)[case_idx]
+
     def change_type_map(
         self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         assert self.mixed_types, "Only models in mixed types can perform type changing!"
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map
@@ -255,6 +269,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.aparam_avg = value
         elif key in ["aparam_inv_std"]:
             self.aparam_inv_std = value
+        elif key in ["case_embd"]:
+            self.case_embd = value
         elif key in ["scale"]:
             self.scale = value
         else:
@@ -271,6 +287,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             return self.aparam_avg
         elif key in ["aparam_inv_std"]:
             return self.aparam_inv_std
+        elif key in ["case_embd"]:
+            return self.case_embd
         elif key in ["scale"]:
             return self.scale
         else:
@@ -287,7 +305,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
-            "@version": 2,
+            "@version": 3,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -295,6 +313,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
+            "dim_case_embd": self.dim_case_embd,
             "rcond": self.rcond,
             "activation_function": self.activation_function,
             "precision": self.precision,
@@ -303,6 +322,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             "nets": self.nets.serialize(),
             "@variables": {
                 "bias_atom_e": to_numpy_array(self.bias_atom_e),
+                "case_embd": to_numpy_array(self.case_embd),
                 "fparam_avg": to_numpy_array(self.fparam_avg),
                 "fparam_inv_std": to_numpy_array(self.fparam_inv_std),
                 "aparam_avg": to_numpy_array(self.aparam_avg),
@@ -390,7 +410,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                     f"get an input fparam of dim {fparam.shape[-1]}, "
                     f"which is not consistent with {self.numb_fparam}."
                 )
-            fparam = (fparam - self.fparam_avg) * self.fparam_inv_std
+            fparam = (fparam - self.fparam_avg[...]) * self.fparam_inv_std[...]
             fparam = xp.tile(
                 xp.reshape(fparam, [nf, 1, self.numb_fparam]), (1, nloc, 1)
             )
@@ -412,7 +432,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                     f"which is not consistent with {self.numb_aparam}."
                 )
             aparam = xp.reshape(aparam, [nf, nloc, self.numb_aparam])
-            aparam = (aparam - self.aparam_avg) * self.aparam_inv_std
+            aparam = (aparam - self.aparam_avg[...]) * self.aparam_inv_std[...]
             xx = xp.concat(
                 [xx, aparam],
                 axis=-1,
@@ -420,6 +440,21 @@ class GeneralFitting(NativeOP, BaseFitting):
             if xx_zeros is not None:
                 xx_zeros = xp.concat(
                     [xx_zeros, aparam],
+                    axis=-1,
+                )
+
+        if self.dim_case_embd > 0:
+            assert self.case_embd is not None
+            case_embd = xp.tile(
+                xp.reshape(self.case_embd[...], [1, 1, -1]), [nf, nloc, 1]
+            )
+            xx = xp.concat(
+                [xx, case_embd],
+                axis=-1,
+            )
+            if xx_zeros is not None:
+                xx_zeros = xp.concat(
+                    [xx_zeros, case_embd],
                     axis=-1,
                 )
 
@@ -449,12 +484,15 @@ class GeneralFitting(NativeOP, BaseFitting):
                 outs -= self.nets[()](xx_zeros)
         outs += xp.reshape(
             xp.take(
-                xp.astype(self.bias_atom_e, outs.dtype), xp.reshape(atype, [-1]), axis=0
+                xp.astype(self.bias_atom_e[...], outs.dtype),
+                xp.reshape(atype, [-1]),
+                axis=0,
             ),
             [nf, nloc, net_dim_out],
         )
         # nf x nloc
         exclude_mask = self.emask.build_type_exclude_mask(atype)
+        exclude_mask = xp.astype(exclude_mask, xp.bool)
         # nf x nloc x nod
         outs = xp.where(exclude_mask[:, :, None], outs, xp.zeros_like(outs))
         return {self.var_name: outs}

@@ -69,7 +69,8 @@ class DPAtomicModel(BaseAtomicModel):
     def set_eval_descriptor_hook(self, enable: bool) -> None:
         """Set the hook for evaluating descriptor and clear the cache for descriptor list."""
         self.enable_eval_descriptor_hook = enable
-        self.eval_descriptor_list = []
+        # = [] does not work; See #4533
+        self.eval_descriptor_list.clear()
 
     def eval_descriptor(self) -> torch.Tensor:
         """Evaluate the descriptor."""
@@ -92,6 +93,13 @@ class DPAtomicModel(BaseAtomicModel):
     def get_sel(self) -> list[int]:
         """Get the neighbor selection."""
         return self.sel
+
+    def set_case_embd(self, case_idx: int):
+        """
+        Set the case embedding of this atomic model by the given case_idx,
+        typically concatenated with the output of the descriptor and fed into the fitting net.
+        """
+        self.fitting_net.set_case_embd(case_idx)
 
     def mixed_types(self) -> bool:
         """If true, the model
@@ -236,7 +244,7 @@ class DPAtomicModel(BaseAtomicModel):
         )
         assert descriptor is not None
         if self.enable_eval_descriptor_hook:
-            self.eval_descriptor_list.append(descriptor)
+            self.eval_descriptor_list.append(descriptor.detach())
         # energy, force
         fit_ret = self.fitting_net(
             descriptor,
@@ -291,6 +299,9 @@ class DPAtomicModel(BaseAtomicModel):
             return sampled
 
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
+        self.fitting_net.compute_input_stats(
+            wrapped_sampler, protection=self.data_stat_protect
+        )
         self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
     def get_dim_fparam(self) -> int:

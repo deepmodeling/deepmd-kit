@@ -103,26 +103,26 @@ except ImportError:
     tfv2 = None
 
 __all__ = [
+    "ATTENTION_LAYER_PATTERN",
+    "EMBEDDING_NET_PATTERN",
+    "FITTING_NET_PATTERN",
     "GLOBAL_CONFIG",
-    "GLOBAL_TF_FLOAT_PRECISION",
-    "GLOBAL_NP_FLOAT_PRECISION",
     "GLOBAL_ENER_FLOAT_PRECISION",
-    "global_float_prec",
-    "global_cvt_2_tf_float",
-    "global_cvt_2_ener_float",
+    "GLOBAL_NP_FLOAT_PRECISION",
+    "GLOBAL_TF_FLOAT_PRECISION",
     "MODEL_VERSION",
     "SHARED_LIB_DIR",
     "SHARED_LIB_MODULE",
-    "default_tf_session_config",
-    "reset_default_tf_session_config",
-    "op_module",
-    "op_grads_module",
-    "TRANSFER_PATTERN",
-    "FITTING_NET_PATTERN",
-    "EMBEDDING_NET_PATTERN",
-    "TYPE_EMBEDDING_PATTERN",
-    "ATTENTION_LAYER_PATTERN",
     "TF_VERSION",
+    "TRANSFER_PATTERN",
+    "TYPE_EMBEDDING_PATTERN",
+    "default_tf_session_config",
+    "global_cvt_2_ener_float",
+    "global_cvt_2_tf_float",
+    "global_float_prec",
+    "op_grads_module",
+    "op_module",
+    "reset_default_tf_session_config",
     "tf_py_version",
 ]
 
@@ -349,16 +349,11 @@ def get_module(module_name: str) -> "ModuleType":
             if TF_CXX11_ABI_FLAG != tf_cxx11_abi_flag:
                 raise RuntimeError(
                     "This deepmd-kit package was compiled with "
-                    "CXX11_ABI_FLAG=%d, but TensorFlow runtime was compiled "
-                    "with CXX11_ABI_FLAG=%d. These two library ABIs are "
-                    "incompatible and thus an error is raised when loading %s. "
+                    f"CXX11_ABI_FLAG={TF_CXX11_ABI_FLAG}, but TensorFlow runtime was compiled "
+                    f"with CXX11_ABI_FLAG={tf_cxx11_abi_flag}. These two library ABIs are "
+                    f"incompatible and thus an error is raised when loading {module_name}. "
                     "You need to rebuild deepmd-kit against this TensorFlow "
                     "runtime."
-                    % (
-                        TF_CXX11_ABI_FLAG,
-                        tf_cxx11_abi_flag,
-                        module_name,
-                    )
                 ) from e
 
             # different versions may cause incompatibility

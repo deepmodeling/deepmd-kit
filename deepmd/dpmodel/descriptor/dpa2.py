@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Callable,
     NoReturn,
     Optional,
     Union,
@@ -387,7 +388,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
     ) -> None:
-        r"""The DPA-2 descriptor. see https://arxiv.org/abs/2312.15492.
+        r"""The DPA-2 descriptor[1]_.
 
         Parameters
         ----------
@@ -434,6 +435,11 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         sw:                 torch.Tensor
             The switch function for decaying inverse distance.
 
+        References
+        ----------
+        .. [1] Zhang, D., Liu, X., Zhang, X. et al. DPA-2: a
+           large atomic model as a multi-task learner. npj
+           Comput Mater 10, 293 (2024). https://doi.org/10.1038/s41524-024-01493-2
         """
 
         def init_subclass_params(sub_data, sub_class):
@@ -538,9 +544,9 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             )
         self.rcsl_list.sort()
         for ii in range(1, len(self.rcsl_list)):
-            assert (
-                self.rcsl_list[ii - 1][1] <= self.rcsl_list[ii][1]
-            ), "rcut and sel are not in the same order"
+            assert self.rcsl_list[ii - 1][1] <= self.rcsl_list[ii][1], (
+                "rcut and sel are not in the same order"
+            )
         self.rcut_list = [ii[0] for ii in self.rcsl_list]
         self.nsel_list = [ii[1] for ii in self.rcsl_list]
         self.use_econf_tebd = use_econf_tebd
@@ -673,9 +679,9 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map
         self.type_embedding.change_type_map(type_map=type_map)
@@ -732,10 +738,31 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         return self.get_dim_emb()
 
     def compute_input_stats(
-        self, merged: list[dict], path: Optional[DPPath] = None
-    ) -> NoReturn:
-        """Update mean and stddev for descriptor elements."""
-        raise NotImplementedError
+        self,
+        merged: Union[Callable[[], list[dict]], list[dict]],
+        path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
+        descrpt_list = [self.repinit, self.repformers]
+        if self.use_three_body:
+            descrpt_list.append(self.repinit_three_body)
+        for ii, descrpt in enumerate(descrpt_list):
+            descrpt.compute_input_stats(merged, path)
 
     def set_stat_mean_and_stddev(
         self,

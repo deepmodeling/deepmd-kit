@@ -4,6 +4,7 @@ import unittest
 from deepmd.dpmodel.descriptor import (
     DescrptDPA1,
     DescrptDPA2,
+    DescrptDPA3,
     DescrptHybrid,
     DescrptSeA,
     DescrptSeR,
@@ -40,6 +41,8 @@ from ..descriptor.test_descriptor import (
     DescriptorParamDPA1List,
     DescriptorParamDPA2,
     DescriptorParamDPA2List,
+    DescriptorParamDPA3,
+    DescriptorParamDPA3List,
     DescriptorParamHybrid,
     DescriptorParamHybridMixed,
     DescriptorParamHybridMixedTTebd,
@@ -93,6 +96,7 @@ def skip_model_tests(test_obj):
             ],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
+            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
             (DescriptorParamHybrid, DescrptHybrid),
             (DescriptorParamHybridMixed, DescrptHybrid),
             (DescriptorParamHybridMixedTTebd, DescrptHybrid),
@@ -107,6 +111,7 @@ def skip_model_tests(test_obj):
             (DescriptorParamSeTTebd, DescrptSeTTebd),
             (DescriptorParamDPA1, DescrptDPA1),
             (DescriptorParamDPA2, DescrptDPA2),
+            (DescriptorParamDPA3, DescrptDPA3),
         ),  # descrpt_class_param & class
         (
             *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
@@ -129,8 +134,7 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
             cls.epsilon_dict["test_smooth"] = 1e-6
         if Descrpt in [DescrptSeT, DescrptSeTTebd]:
             # computational expensive
-            cls.expected_sel = [i // 4 for i in cls.expected_sel]
-            cls.expected_rcut = cls.expected_rcut / 2
+            cls.expected_sel = [i // 2 for i in cls.expected_sel]
         cls.input_dict_ds = DescriptorParam(
             len(cls.expected_type_map),
             cls.expected_rcut,
@@ -180,6 +184,7 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
             ],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
+            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
             # (DescriptorParamHybrid, DescrptHybrid),
             # unsupported for SpinModel to hybrid both mixed_types and no-mixed_types descriptor
             (DescriptorParamHybridMixed, DescrptHybrid),
@@ -195,6 +200,7 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
             (DescriptorParamSeTTebd, DescrptSeTTebd),
             (DescriptorParamDPA1, DescrptDPA1),
             (DescriptorParamDPA2, DescrptDPA2),
+            (DescriptorParamDPA3, DescrptDPA3),
         ),  # descrpt_class_param & class
         (
             *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
@@ -216,8 +222,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, DPTestCase):
             cls.epsilon_dict["test_smooth"] = 1e-8
         if Descrpt in [DescrptSeT, DescrptSeTTebd]:
             # computational expensive
-            cls.expected_sel = [i // 4 for i in cls.expected_sel]
-            cls.expected_rcut = cls.expected_rcut / 2
+            cls.expected_sel = [i // 2 for i in cls.expected_sel]
 
         spin = Spin(
             use_spin=cls.spin_dict["use_spin"],
@@ -229,6 +234,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, DPTestCase):
         if Descrpt in [DescrptSeA, DescrptSeR, DescrptSeT]:
             spin_sel = cls.expected_sel + cls.expected_sel
         else:
+            cls.expected_sel = [i * 2 for i in cls.expected_sel]
             spin_sel = cls.expected_sel
         pair_exclude_types = spin.get_pair_exclude_types()
         atom_exclude_types = spin.get_atom_exclude_types()

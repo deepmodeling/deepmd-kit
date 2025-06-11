@@ -43,22 +43,22 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
-    # from deepmd.common
-    "select_idx_map",
-    "make_default_mesh",
-    "j_loader",
-    "expand_sys_str",
-    "get_np_precision",
+    "ACTIVATION_FN_DICT",
     # from self
     "PRECISION_DICT",
-    "gelu",
-    "gelu_tf",
-    "ACTIVATION_FN_DICT",
-    "get_activation_func",
-    "get_precision",
-    "safe_cast_tensor",
     "cast_precision",
     "clear_session",
+    "expand_sys_str",
+    "gelu",
+    "gelu_tf",
+    "get_activation_func",
+    "get_np_precision",
+    "get_precision",
+    "j_loader",
+    "make_default_mesh",
+    "safe_cast_tensor",
+    # from deepmd.common
+    "select_idx_map",
 ]
 
 # define constants
@@ -128,6 +128,63 @@ def gelu_tf(x: tf.Tensor) -> tf.Tensor:
     return (lambda x: gelu_wrapper(x))(x)
 
 
+def silu(x: tf.Tensor) -> tf.Tensor:
+    """The sigmoid-weighted linear unit.
+
+    Parameters
+    ----------
+    x : tf.Tensor
+        float Tensor to perform activation
+
+    Returns
+    -------
+    tf.Tensor
+        `x` with the SiLU activation applied
+    """
+    return x * tf.sigmoid(x)
+
+
+def get_silut(activation_function: str = "silut"):
+    import numpy as np
+
+    def sigmoid(x):
+        return 1 / (1 + np.exp(-x))
+
+    def silu(x):
+        return x * sigmoid(x)
+
+    def silu_grad(x):
+        sig = sigmoid(x)
+        return sig + x * sig * (1 - sig)
+
+    threshold = (
+        float(activation_function.split(":")[-1]) if ":" in activation_function else 3.0
+    )
+    slope = float(silu_grad(threshold))
+    const = float(silu(threshold))
+
+    def silut(x: tf.Tensor) -> tf.Tensor:
+        """The customized sigmoid-weighted linear unit with tanh.
+
+        Parameters
+        ----------
+        x : tf.Tensor
+            float Tensor to perform activation
+
+        Returns
+        -------
+        tf.Tensor
+            `x` with the SiLUT activation applied
+        """
+        return tf.where(
+            x < threshold,
+            x * tf.sigmoid(x),
+            tf.nn.tanh(slope * (x - threshold)) + const,
+        )
+
+    return silut
+
+
 ACTIVATION_FN_DICT = {
     "relu": tf.nn.relu,
     "relu6": tf.nn.relu6,
@@ -136,6 +193,8 @@ ACTIVATION_FN_DICT = {
     "tanh": tf.nn.tanh,
     "gelu": gelu,
     "gelu_tf": gelu_tf,
+    "silu": silu,
+    "silut": get_silut("silut"),
     "linear": lambda x: x,
     "none": lambda x: x,
 }
@@ -165,6 +224,8 @@ def get_activation_func(
     if activation_fn is None:
         activation_fn = "none"
     assert activation_fn is not None
+    if activation_fn.lower().startswith("silut"):
+        ACTIVATION_FN_DICT[activation_fn.lower()] = get_silut(activation_fn.lower())
     if activation_fn.lower() not in ACTIVATION_FN_DICT:
         raise RuntimeError(f"{activation_fn} is not a valid activation function")
     return ACTIVATION_FN_DICT[activation_fn.lower()]

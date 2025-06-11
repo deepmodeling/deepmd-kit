@@ -16,16 +16,21 @@ if(ENABLE_TENSORFLOW)
                                            TensorFlow::tensorflow_framework)
   target_compile_definitions(${libname} PRIVATE BUILD_TENSORFLOW)
 endif()
-if(ENABLE_PYTORCH
-   AND "${OP_CXX_ABI_PT}" EQUAL "${OP_CXX_ABI}"
-       # LAMMPS and i-PI in the Python package are not ready - needs more work
-   AND NOT BUILD_PY_IF)
+if(ENABLE_PYTORCH AND "${OP_CXX_ABI_PT}" EQUAL "${OP_CXX_ABI}")
   target_link_libraries(${libname} PRIVATE "${TORCH_LIBRARIES}")
   target_compile_definitions(${libname} PRIVATE BUILD_PYTORCH)
 endif()
 if(ENABLE_JAX)
   target_link_libraries(${libname} PRIVATE TensorFlow::tensorflow_c)
   target_compile_definitions(${libname} PRIVATE BUILD_JAX)
+endif()
+if(ENABLE_PADDLE AND NOT BUILD_PY_IF)
+  target_link_libraries(${libname} PUBLIC "${PADDLE_LIBRARIES}")
+  target_compile_definitions(${libname} PUBLIC BUILD_PADDLE)
+  if(DP_VARIANT STREQUAL "rocm")
+    target_link_libraries(${libname}
+                          PUBLIC "${hip_LIB_INSTALL_DIR}/libgalaxyhip.so")
+  endif()
 endif()
 
 target_include_directories(

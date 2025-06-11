@@ -34,15 +34,15 @@ from .transfer import (
 )
 
 __all__ = [
+    "compress",
+    "convert",
+    "doc_train_input",
     "doc_train_input",
     "freeze",
+    "make_model_devi",
+    "neighbor_stat",
+    "start_dpgui",
     "test",
     "train_dp",
     "transfer",
-    "compress",
-    "doc_train_input",
-    "make_model_devi",
-    "convert",
-    "neighbor_stat",
-    "start_dpgui",
 ]

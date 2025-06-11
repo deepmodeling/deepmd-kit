@@ -2,6 +2,7 @@
 """Utilities for the array API."""
 
 import array_api_compat
+import numpy as np
 from packaging.version import (
     Version,
 )
@@ -73,3 +74,55 @@ def xp_take_along_axis(arr, indices, axis):
     out = xp.take(arr, indices)
     out = xp.reshape(out, shape)
     return xp_swapaxes(out, axis, -1)
+
+
+def xp_scatter_sum(input, dim, index: np.ndarray, src: np.ndarray) -> np.ndarray:
+    """Reduces all values from the src tensor to the indices specified in the index tensor."""
+    # jax only
+    if array_api_compat.is_jax_array(input):
+        from deepmd.jax.common import (
+            scatter_sum,
+        )
+
+        return scatter_sum(
+            input,
+            dim,
+            index,
+            src,
+        )
+    else:
+        raise NotImplementedError("Only JAX arrays are supported.")
+
+
+def xp_add_at(x, indices, values):
+    """Adds values to the specified indices of x in place or returns new x (for JAX)."""
+    xp = array_api_compat.array_namespace(x, indices, values)
+    if array_api_compat.is_numpy_array(x):
+        # NumPy: supports np.add.at (in-place)
+        xp.add.at(x, indices, values)
+        return x
+
+    elif array_api_compat.is_jax_array(x):
+        # JAX: functional update, not in-place
+        return x.at[indices].add(values)
+    else:
+        # Fallback for array_api_strict: use basic indexing only
+        # may need a more efficient way to do this
+        n = indices.shape[0]
+        for i in range(n):
+            idx = int(indices[i])
+            x[idx, ...] = x[idx, ...] + values[i, ...]
+        return x
+
+
+def xp_bincount(x, weights=None, minlength=0):
+    """Counts the number of occurrences of each value in x."""
+    xp = array_api_compat.array_namespace(x)
+    if array_api_compat.is_numpy_array(x) or array_api_compat.is_jax_array(x):
+        result = xp.bincount(x, weights=weights, minlength=minlength)
+    else:
+        if weights is None:
+            weights = xp.ones_like(x)
+        result = xp.zeros((max(minlength, int(xp.max(x)) + 1),), dtype=weights.dtype)
+        result = xp_add_at(result, x, weights)
+    return result

@@ -13,6 +13,9 @@ from .dpa1 import (
 from .dpa2 import (
     DescrptDPA2,
 )
+from .dpa3 import (
+    DescrptDPA3,
+)
 from .env_mat import (
     prod_env_mat,
 )
@@ -43,18 +46,19 @@ from .se_t_tebd import (
 __all__ = [
     "BaseDescriptor",
     "DescriptorBlock",
-    "make_default_type_embedding",
+    "DescrptBlockRepformers",
     "DescrptBlockSeA",
     "DescrptBlockSeAtten",
-    "DescrptSeAttenV2",
-    "DescrptSeTTebd",
     "DescrptBlockSeTTebd",
-    "DescrptSeA",
-    "DescrptSeR",
-    "DescrptSeT",
     "DescrptDPA1",
     "DescrptDPA2",
+    "DescrptDPA3",
     "DescrptHybrid",
+    "DescrptSeA",
+    "DescrptSeAttenV2",
+    "DescrptSeR",
+    "DescrptSeT",
+    "DescrptSeTTebd",
+    "make_default_type_embedding",
     "prod_env_mat",
-    "DescrptBlockRepformers",
 ]

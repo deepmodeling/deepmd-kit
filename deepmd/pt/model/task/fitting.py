@@ -4,6 +4,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Callable,
     Optional,
     Union,
 )
@@ -60,23 +61,97 @@ class Fitting(torch.nn.Module, BaseFitting):
         If not start from checkpoint (resume is False),
         some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
-        assert (
-            self.__class__ == base_class.__class__
-        ), "Only fitting nets of the same type can share params!"
+        assert self.__class__ == base_class.__class__, (
+            "Only fitting nets of the same type can share params!"
+        )
         if shared_level == 0:
-            # link buffers
-            if hasattr(self, "bias_atom_e"):
-                self.bias_atom_e = base_class.bias_atom_e
-            # the following will successfully link all the params except buffers, which need manually link.
-            for item in self._modules:
-                self._modules[item] = base_class._modules[item]
-        elif shared_level == 1:
-            # only not share the bias_atom_e
+            # only not share the bias_atom_e and the case_embd
             # the following will successfully link all the params except buffers, which need manually link.
             for item in self._modules:
                 self._modules[item] = base_class._modules[item]
         else:
             raise NotImplementedError
+
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], list[dict]], list[dict]],
+        protection: float = 1e-2,
+    ) -> None:
+        """
+        Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        protection : float
+            Divided-by-zero protection
+        """
+        if self.numb_fparam == 0 and self.numb_aparam == 0:
+            # skip data statistics
+            return
+        if callable(merged):
+            sampled = merged()
+        else:
+            sampled = merged
+        # stat fparam
+        if self.numb_fparam > 0:
+            cat_data = torch.cat([frame["fparam"] for frame in sampled], dim=0)
+            cat_data = torch.reshape(cat_data, [-1, self.numb_fparam])
+            fparam_avg = torch.mean(cat_data, dim=0)
+            fparam_std = torch.std(cat_data, dim=0, unbiased=False)
+            fparam_std = torch.where(
+                fparam_std < protection,
+                torch.tensor(
+                    protection, dtype=fparam_std.dtype, device=fparam_std.device
+                ),
+                fparam_std,
+            )
+            fparam_inv_std = 1.0 / fparam_std
+            self.fparam_avg.copy_(
+                torch.tensor(fparam_avg, device=env.DEVICE, dtype=self.fparam_avg.dtype)
+            )
+            self.fparam_inv_std.copy_(
+                torch.tensor(
+                    fparam_inv_std, device=env.DEVICE, dtype=self.fparam_inv_std.dtype
+                )
+            )
+        # stat aparam
+        if self.numb_aparam > 0:
+            sys_sumv = []
+            sys_sumv2 = []
+            sys_sumn = []
+            for ss_ in [frame["aparam"] for frame in sampled]:
+                ss = torch.reshape(ss_, [-1, self.numb_aparam])
+                sys_sumv.append(torch.sum(ss, dim=0))
+                sys_sumv2.append(torch.sum(ss * ss, dim=0))
+                sys_sumn.append(ss.shape[0])
+            sumv = torch.sum(torch.stack(sys_sumv), dim=0)
+            sumv2 = torch.sum(torch.stack(sys_sumv2), dim=0)
+            sumn = sum(sys_sumn)
+            aparam_avg = sumv / sumn
+            aparam_std = torch.sqrt(sumv2 / sumn - (sumv / sumn) ** 2)
+            aparam_std = torch.where(
+                aparam_std < protection,
+                torch.tensor(
+                    protection, dtype=aparam_std.dtype, device=aparam_std.device
+                ),
+                aparam_std,
+            )
+            aparam_inv_std = 1.0 / aparam_std
+            self.aparam_avg.copy_(
+                torch.tensor(aparam_avg, device=env.DEVICE, dtype=self.aparam_avg.dtype)
+            )
+            self.aparam_inv_std.copy_(
+                torch.tensor(
+                    aparam_inv_std, device=env.DEVICE, dtype=self.aparam_inv_std.dtype
+                )
+            )
 
 
 class GeneralFitting(Fitting):
@@ -102,6 +177,8 @@ class GeneralFitting(Fitting):
         Number of frame parameters.
     numb_aparam : int
         Number of atomic parameters.
+    dim_case_embd : int
+        Dimension of case specific embedding.
     activation_function : str
         Activation function.
     precision : str
@@ -139,6 +216,7 @@ class GeneralFitting(Fitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        dim_case_embd: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
@@ -160,6 +238,7 @@ class GeneralFitting(Fitting):
         self.resnet_dt = resnet_dt
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
+        self.dim_case_embd = dim_case_embd
         self.activation_function = activation_function
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
@@ -211,10 +290,20 @@ class GeneralFitting(Fitting):
         else:
             self.aparam_avg, self.aparam_inv_std = None, None
 
+        if self.dim_case_embd > 0:
+            self.register_buffer(
+                "case_embd",
+                torch.zeros(self.dim_case_embd, dtype=self.prec, device=device),
+                # torch.eye(self.dim_case_embd, dtype=self.prec, device=device)[0],
+            )
+        else:
+            self.case_embd = None
+
         in_dim = (
             self.dim_descrpt
             + self.numb_fparam
             + (0 if self.use_aparam_as_mask else self.numb_aparam)
+            + self.dim_case_embd
         )
 
         self.filter_layers = NetworkCollection(
@@ -252,9 +341,9 @@ class GeneralFitting(Fitting):
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
         """
-        assert (
-            self.type_map is not None
-        ), "'type_map' must be defined when performing type changing!"
+        assert self.type_map is not None, (
+            "'type_map' must be defined when performing type changing!"
+        )
         assert self.mixed_types, "Only models in mixed types can perform type changing!"
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map
@@ -274,7 +363,7 @@ class GeneralFitting(Fitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
-            "@version": 2,
+            "@version": 3,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -282,6 +371,7 @@ class GeneralFitting(Fitting):
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
+            "dim_case_embd": self.dim_case_embd,
             "activation_function": self.activation_function,
             "precision": self.precision,
             "mixed_types": self.mixed_types,
@@ -290,6 +380,7 @@ class GeneralFitting(Fitting):
             "exclude_types": self.exclude_types,
             "@variables": {
                 "bias_atom_e": to_numpy_array(self.bias_atom_e),
+                "case_embd": to_numpy_array(self.case_embd),
                 "fparam_avg": to_numpy_array(self.fparam_avg),
                 "fparam_inv_std": to_numpy_array(self.fparam_inv_std),
                 "aparam_avg": to_numpy_array(self.aparam_avg),
@@ -349,6 +440,15 @@ class GeneralFitting(Fitting):
         """Get the name to each type of atoms."""
         return self.type_map
 
+    def set_case_embd(self, case_idx: int):
+        """
+        Set the case embedding of this fitting net by the given case_idx,
+        typically concatenated with the output of the descriptor and fed into the fitting net.
+        """
+        self.case_embd = torch.eye(self.dim_case_embd, dtype=self.prec, device=device)[
+            case_idx
+        ]
+
     def __setitem__(self, key, value) -> None:
         if key in ["bias_atom_e"]:
             value = value.view([self.ntypes, self._net_out_dim()])
@@ -361,6 +461,8 @@ class GeneralFitting(Fitting):
             self.aparam_avg = value
         elif key in ["aparam_inv_std"]:
             self.aparam_inv_std = value
+        elif key in ["case_embd"]:
+            self.case_embd = value
         elif key in ["scale"]:
             self.scale = value
         else:
@@ -377,6 +479,8 @@ class GeneralFitting(Fitting):
             return self.aparam_avg
         elif key in ["aparam_inv_std"]:
             return self.aparam_inv_std
+        elif key in ["case_embd"]:
+            return self.case_embd
         elif key in ["scale"]:
             return self.scale
         else:
@@ -472,6 +576,19 @@ class GeneralFitting(Fitting):
             if xx_zeros is not None:
                 xx_zeros = torch.cat(
                     [xx_zeros, aparam],
+                    dim=-1,
+                )
+
+        if self.dim_case_embd > 0:
+            assert self.case_embd is not None
+            case_embd = torch.tile(self.case_embd.reshape([1, 1, -1]), [nf, nloc, 1])
+            xx = torch.cat(
+                [xx, case_embd],
+                dim=-1,
+            )
+            if xx_zeros is not None:
+                xx_zeros = torch.cat(
+                    [xx_zeros, case_embd],
                     dim=-1,
                 )
 

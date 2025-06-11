@@ -1,7 +1,7 @@
-# Parallel training {{ tensorflow_icon }} {{ pytorch_icon }}
+# Parallel training {{ tensorflow_icon }} {{ pytorch_icon }} {{ paddle_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
 :::
 
 ## TensorFlow Implementation {{ tensorflow_icon }}
@@ -27,13 +27,14 @@ In some cases, it won't work well when scaling the learning rate by worker count
 ### Scaling test
 
 Testing `examples/water/se_e2_a` on an 8-GPU host, linear acceleration can be observed with the increasing number of cards.
+In this example, the number of samples per batch on a single GPU card ({ref}`batch_size <training/training_data/batch_size>`) is set to `1`.
 
-| Num of GPU cards | Seconds every 100 samples | Samples per second | Speed up |
-| ---------------- | ------------------------- | ------------------ | -------- |
-| 1                | 1.4515                    | 68.89              | 1.00     |
-| 2                | 1.5962                    | 62.65\*2           | 1.82     |
-| 4                | 1.7635                    | 56.71\*4           | 3.29     |
-| 8                | 1.7267                    | 57.91\*8           | 6.72     |
+| Num of GPU cards | Samples per batch | Seconds every 100 batches | Samples per second | Speed up |
+| ---------------- | ----------------- | ------------------------- | ------------------ | -------- |
+| 1                | 1                 | 1.4515                    | 68.89              | 1.00     |
+| 2                | 2                 | 1.5962                    | 62.65\*2           | 1.82     |
+| 4                | 4                 | 1.7635                    | 56.71\*4           | 3.29     |
+| 8                | 8                 | 1.7267                    | 57.91\*8           | 6.72     |
 
 ### How to use
 
@@ -187,3 +188,39 @@ torchrun --rdzv_endpoint=node0:12321 --nnodes=2 --nproc_per_node=4 --node_rank=1
 > **Note** for developers: `torchrun` by default passes settings as environment variables [(list here)](https://pytorch.org/docs/stable/elastic/run.html#environment-variables).
 
 > To check forward, backward, and communication time, please set env var `TORCH_CPP_LOG_LEVEL=INFO TORCH_DISTRIBUTED_DEBUG=DETAIL`. More details can be found [here](https://pytorch.org/docs/stable/distributed.html#logging).
+
+## Paddle Implementation {{ paddle_icon }}
+
+### How to use
+
+We use [`paddle.distributed.fleet`](https://www.paddlepaddle.org.cn/documentation/docs/zh/guides/06_distributed_training/cluster_quick_start_collective_cn.html) to launch a DDP training session.
+
+To start training with multiple GPUs in one node, set environment variable `CUDA_VISIBLE_DEVICES` as the list of GPUs you want to use:
+
+```bash
+# example for training with 4 gpus in one node
+NUM_WORKERS=0 HDF5_USE_FILE_LOCKING=0 CUDA_VISIBLE_DEVICES=0,1,2,3 python -m paddle.distributed.launch --gpus="0,1,2,3" dp --pd train input.json
+```
+
+Suppose you have 2 nodes each with 4 GPUs and their ip address are: `192.168.1.2` and `192.168.1.3`, then you can use `paddle.distributed.launch` to launch a DDP training session:
+
+```bash
+# run in node 192.168.1.2
+NUM_WORKERS=0 HDF5_USE_FILE_LOCKING=0 python -m paddle.distributed.launch \
+    --gpus=0,1,2,3 \
+    --ips=192.168.1.2,192.168.1.3 \
+    dp --pd train input.json
+
+# then run in the other node 192.168.1.3
+NUM_WORKERS=0 HDF5_USE_FILE_LOCKING=0 python -m paddle.distributed.launch \
+    --gpus=0,1,2,3 \
+    --ips=192.168.1.2,192.168.1.3 \
+    dp --pd train input.json
+```
+
+:::{note}
+
+If `NUM_WORKERS` is too large, it may cause the program to be terminated by the system;
+if it is too small, it may slow down data reading. You can try adjusting it to an appropriate size.
+
+:::
