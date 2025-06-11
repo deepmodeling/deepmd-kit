@@ -330,7 +330,6 @@ class Wrap:
             NBIT_FLTE = nbit["NBIT_FLTE"]
             NBIT_NSTEP = nbit["NBIT_NSTEP"]
             NIX = dscp["NIX"]
-            print(dscp)
             # shift_idx_s2g
             x_st, x_ed, x_dt, N0, N1 = mapt["cfg_s2g"][0]
             shift_idx_s2g = int(np.round(-x_st / x_dt))
