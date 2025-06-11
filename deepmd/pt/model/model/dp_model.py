@@ -64,3 +64,13 @@ class DPModelCommon:
     def eval_descriptor(self) -> torch.Tensor:
         """Evaluate the descriptor."""
         return self.atomic_model.eval_descriptor()
+
+    @torch.jit.export
+    def set_eval_fitting_last_layer_hook(self, enable: bool) -> None:
+        """Set the hook for evaluating fitting_last_layer and clear the cache for fitting_last_layer list."""
+        self.atomic_model.set_eval_fitting_last_layer_hook(enable)
+
+    @torch.jit.export
+    def eval_fitting_last_layer(self) -> torch.Tensor:
+        """Evaluate the fitting_last_layer."""
+        return self.atomic_model.eval_fitting_last_layer()

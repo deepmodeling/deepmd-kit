@@ -633,6 +633,23 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
                 x = layer(x)
             return x
 
+        def call_until_last(self, x):
+            """Return the output before last layer.
+
+            Parameters
+            ----------
+            x : np.ndarray
+                The input.
+
+            Returns
+            -------
+            np.ndarray
+                The output before last layer.
+            """
+            for layer in self.layers[:-1]:
+                x = layer(x)
+            return x
+
         def clear(self) -> None:
             """Clear the network parameters to zero."""
             for layer in self.layers:

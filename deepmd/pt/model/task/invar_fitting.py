@@ -181,10 +181,17 @@ class InvarFitting(GeneralFitting):
         -------
         - `torch.Tensor`: Total energy with shape [nframes, natoms[0]].
         """
-        out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
-            self.var_name
-        ]
-        return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
+        out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)
+        result = {self.var_name: out[self.var_name].to(env.GLOBAL_PT_FLOAT_PRECISION)}
+        if "middle_output" in out:
+            result.update(
+                {
+                    "middle_output": out["middle_output"].to(
+                        env.GLOBAL_PT_FLOAT_PRECISION
+                    )
+                }
+            )
+        return result
 
     # make jit happy with torch 2.0.0
     exclude_types: list[int]
