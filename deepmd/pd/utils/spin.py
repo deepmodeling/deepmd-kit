@@ -21,7 +21,6 @@ def concat_switch_virtual(
     extended_tensor_updated = paddle.zeros(
         out_shape,
         dtype=extended_tensor.dtype,
-        device=extended_tensor.place,
     )
     extended_tensor_updated[:, :nloc] = extended_tensor[:, :nloc]
     extended_tensor_updated[:, nloc : nloc + nloc] = extended_tensor_virtual[:, :nloc]

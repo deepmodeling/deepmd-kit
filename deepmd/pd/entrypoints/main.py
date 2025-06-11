@@ -41,6 +41,9 @@ from deepmd.pd.train import (
 from deepmd.pd.train.wrapper import (
     ModelWrapper,
 )
+from deepmd.pd.utils import (
+    env,
+)
 from deepmd.pd.utils.dataloader import (
     DpLoaderSet,
 )
@@ -233,6 +236,7 @@ def train(
     output: str = "out.json",
 ) -> None:
     log.info("Configuration path: %s", input_file)
+    env.CUSTOM_OP_USE_JIT = False
     if LOCAL_RANK == 0:
         SummaryPrinter()()
     with open(input_file) as fin:
