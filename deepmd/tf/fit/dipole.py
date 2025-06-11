@@ -414,6 +414,7 @@ class DipoleFittingSeA(Fitting):
                 activation_function=self.activation_function_name,
                 resnet_dt=self.resnet_dt,
                 variables=self.fitting_net_variables,
+                trainable=self.trainable,
                 suffix=suffix,
             ),
             "type_map": self.type_map,
