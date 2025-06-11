@@ -690,10 +690,12 @@ def make_embedding_network(T_Network, T_NetworkLayer):
             precision: str = DEFAULT_PRECISION,
             seed: Optional[Union[int, list[int]]] = None,
             bias: bool = True,
-            trainable: bool = True,
+            trainable: Union[bool, list[bool]] = True,
         ) -> None:
             layers = []
             i_in = in_dim
+            if isinstance(trainable, bool):
+                trainable = [trainable] * len(neuron)
             for idx, ii in enumerate(neuron):
                 i_ot = ii
                 layers.append(
@@ -706,7 +708,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
                         resnet=True,
                         precision=precision,
                         seed=child_seed(seed, idx),
-                        trainable=trainable,
+                        trainable=trainable[idx],
                     ).serialize()
                 )
                 i_in = i_ot
@@ -797,8 +799,10 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
             precision: str = DEFAULT_PRECISION,
             bias_out: bool = True,
             seed: Optional[Union[int, list[int]]] = None,
-            trainable: bool = True,
+            trainable: Optional[list[bool]] = None,
         ) -> None:
+            if trainable is None:
+                trainable = [True] * (len(neuron) + 1)
             super().__init__(
                 in_dim,
                 neuron=neuron,
@@ -806,7 +810,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
                 resnet_dt=resnet_dt,
                 precision=precision,
                 seed=seed,
-                trainable=trainable,
+                trainable=trainable[:-1],
             )
             i_in = neuron[-1] if len(neuron) > 0 else in_dim
             i_ot = out_dim
@@ -820,7 +824,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
                     resnet=False,
                     precision=precision,
                     seed=child_seed(seed, len(neuron)),
-                    trainable=trainable,
+                    trainable=trainable[-1],
                 )
             )
             self.out_dim = out_dim
