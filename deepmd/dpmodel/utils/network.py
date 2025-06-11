@@ -799,10 +799,10 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
             precision: str = DEFAULT_PRECISION,
             bias_out: bool = True,
             seed: Optional[Union[int, list[int]]] = None,
-            trainable: Optional[list[bool]] = None,
+            trainable: Union[bool, list[bool]] = True,
         ) -> None:
-            if trainable is None:
-                trainable = [True] * (len(neuron) + 1)
+            if isinstance(trainable, bool):
+                trainable = [trainable] * (len(neuron) + 1)
             super().__init__(
                 in_dim,
                 neuron=neuron,
