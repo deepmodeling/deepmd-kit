@@ -199,7 +199,6 @@ def filter_lower_R42GR(inputs_i, atype, nei_type_vec, recovered_switch):
     shape_i = inputs_i.get_shape().as_list()
     inputs_reshape = tf.reshape(inputs_i, [-1, 4])
     M1 = nvnmd_cfg.dscp["M1"]
-    M3 = nvnmd_cfg.dscp["M3"]
     ntype = nvnmd_cfg.dscp["ntype"]
     NIDP = nvnmd_cfg.dscp["NIDP"]
     two_embd_value = nvnmd_cfg.map["gt"]
