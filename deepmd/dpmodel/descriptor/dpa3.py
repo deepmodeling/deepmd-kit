@@ -251,7 +251,7 @@ class RepFlowArgs:
 
 @BaseDescriptor.register("dpa3")
 class DescrptDPA3(NativeOP, BaseDescriptor):
-    r"""The DPA-3 descriptor[1]_.
+    r"""The DPA3 descriptor[1]_.
 
     Parameters
     ----------
