@@ -627,7 +627,9 @@ class Trainer:
                 "natoms": static.InputSpec([1, -1], "int32", name="natoms"),
             }
             # Build spec only for keys present in sample data
-            label_dict_spec = {k: spec_templates[k] for k in label_dict.keys() if k in spec_templates}
+            label_dict_spec = {
+                k: spec_templates[k] for k in label_dict.keys() if k in spec_templates
+            }
             self.wrapper.forward = jit.to_static(
                 backend=backend,
                 input_spec=[
