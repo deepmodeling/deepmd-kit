@@ -608,9 +608,7 @@ class Trainer:
 
             backend = "CINN" if CINN else None
             # NOTE: This is a trick to decide the right input_spec for wrapper.forward
-            # Use appropriate task_key for multi-task scenarios
-            sample_task_key = self.model_keys[0] if self.multi_task else "Default"
-            _, label_dict, _ = self.get_data(is_train=True, task_key=sample_task_key)
+            _, label_dict, _ = self.get_data(is_train=True)
 
             # Define specification templates
             spec_templates = {
