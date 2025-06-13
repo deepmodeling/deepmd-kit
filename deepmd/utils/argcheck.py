@@ -3153,6 +3153,10 @@ def training_args(
         "If the gradient norm exceeds this value, it will be clipped to this limit. "
         "No gradient clipping will occur if set to 0."
     )
+    doc_min_frames_per_element_forstat = "The minimum number of frames per element used for statistics when using the mixed type."
+    doc_enable_element_completion = (
+        "Whether to check elements when using the mixed type"
+    )
     doc_stat_file = (
         "The file path for saving the data statistics results. "
         "If set, the results will be saved and directly loaded during the next training session, "
@@ -3258,6 +3262,20 @@ def training_args(
             float,
             optional=True,
             doc=doc_only_pt_supported + doc_gradient_max_norm,
+        ),
+        Argument(
+            "min_frames_per_element_forstat",
+            int,
+            default=10,
+            optional=True,
+            doc=doc_only_pt_supported + doc_min_frames_per_element_forstat,
+        ),
+        Argument(
+            "enable_element_completion",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_enable_element_completion,
         ),
     ]
     variants = [

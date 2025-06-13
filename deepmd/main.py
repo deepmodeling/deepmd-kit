@@ -739,6 +739,18 @@ def main_parser() -> argparse.ArgumentParser:
         default=None,
         help="Model branch chosen for changing bias if multi-task model.",
     )
+    parser_change_bias.add_argument(
+        "--skip-elementcheck",
+        action="store_true",
+        help="Enable this option to skip element checks if any error occurs while retrieving statistical data.",
+    )
+    parser_change_bias.add_argument(
+        "-mfee",
+        "--minframes-eachelement",
+        default=10,
+        type=int,
+        help="The minimum number of frames for each element used for statistics.",
+    )
 
     # --version
     parser.add_argument(

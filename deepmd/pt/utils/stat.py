@@ -35,52 +35,196 @@ from deepmd.utils.path import (
 log = logging.getLogger(__name__)
 
 
-def make_stat_input(datasets, dataloaders, nbatches):
-    """Pack data for statistics.
+def make_stat_input(
+    datasets,
+    dataloaders,
+    nbatches,
+    min_frames_per_element_forstat=10,
+    enable_element_completion=True,
+):
+    """Pack data for statistics with element completion.
 
-    Args:
-    - dataset: A list of dataset to analyze.
-    - nbatches: Batch count for collecting stats.
+    Parameters
+    ----------
+    nbatches : int
+        The number of batches to process from each dataloader.
+    min_frames_per_element_forstat : int, optional
+        The minimum number of frames required for an element to be considered, default is 10.
+    enable_element_completion : bool, optional
+        If True, enables element completion for missing elements, default is True.
 
     Returns
     -------
-    - a list of dicts, each of which contains data from a system
+    list
+        A list of dicts, each of which contains data from a system.
     """
     lst = []
     log.info(f"Packing data for statistics from {len(datasets)} systems")
-    for i in range(len(datasets)):
+    total_element_types = set()
+    global_element_counts = {}
+    global_type_name = {}
+    collect_ele = defaultdict(int)
+
+    if datasets[0].mixed_type:
+        log.info(
+            "Element check enabled..."
+            if enable_element_completion
+            else "Element completion is disabled..."
+        )
+
+    do_element_completion = datasets[0].mixed_type and enable_element_completion
+
+    for sys_index, (dataset, dataloader) in enumerate(zip(datasets, dataloaders)):
         sys_stat = {}
         with torch.device("cpu"):
-            iterator = iter(dataloaders[i])
-            numb_batches = min(nbatches, len(dataloaders[i]))
-            for _ in range(numb_batches):
-                try:
-                    stat_data = next(iterator)
-                except StopIteration:
-                    iterator = iter(dataloaders[i])
-                    stat_data = next(iterator)
-                for dd in stat_data:
-                    if stat_data[dd] is None:
-                        sys_stat[dd] = None
-                    elif isinstance(stat_data[dd], torch.Tensor):
-                        if dd not in sys_stat:
-                            sys_stat[dd] = []
-                        sys_stat[dd].append(stat_data[dd])
-                    elif isinstance(stat_data[dd], np.float32):
-                        sys_stat[dd] = stat_data[dd]
-                    else:
-                        pass
-
-        for key in sys_stat:
-            if isinstance(sys_stat[key], np.float32):
-                pass
-            elif sys_stat[key] is None or sys_stat[key][0] is None:
-                sys_stat[key] = None
-            elif isinstance(stat_data[dd], torch.Tensor):
-                sys_stat[key] = torch.cat(sys_stat[key], dim=0)
-        dict_to_device(sys_stat)
+            process_batches(dataloader, sys_stat, nbatches)
+            if do_element_completion:
+                element_data = torch.cat(sys_stat["atype"], dim=0)
+                collect_values = torch.unique(element_data.flatten(), sorted=True)
+                for elem in collect_values.tolist():
+                    frames_with_elem = torch.any(element_data == elem, dim=1)
+                    row_indices = torch.where(frames_with_elem)[0]
+                    collect_ele[elem] += len(row_indices)
+        finalize_stats(sys_stat)
         lst.append(sys_stat)
+
+        if do_element_completion:
+            process_element_counts(
+                sys_index,
+                dataset,
+                min_frames_per_element_forstat,
+                global_element_counts,
+                global_type_name,
+                total_element_types,
+            )
+
+    if do_element_completion:
+        process_missing_elements(
+            min_frames_per_element_forstat,
+            global_element_counts,
+            total_element_types,
+            collect_ele,
+            datasets,
+            lst,
+        )
+
     return lst
+
+
+def process_batches(dataloader, sys_stat, nbatches):
+    """Process nbatches frames from each system."""
+    iterator = iter(dataloader)
+    numb_batches = min(nbatches, len(dataloader))
+    for _ in range(numb_batches):
+        try:
+            stat_data = next(iterator)
+        except StopIteration:
+            iterator = iter(dataloader)
+            stat_data = next(iterator)
+        for dd in stat_data:
+            if stat_data[dd] is None:
+                sys_stat[dd] = None
+            elif isinstance(stat_data[dd], torch.Tensor):
+                if dd not in sys_stat:
+                    sys_stat[dd] = []
+                sys_stat[dd].append(stat_data[dd])
+            elif isinstance(stat_data[dd], np.float32):
+                sys_stat[dd] = stat_data[dd]
+
+
+def finalize_stats(sys_stat):
+    """Finalize statistics based on the data type."""
+    for key in sys_stat:
+        if isinstance(sys_stat[key], np.float32):
+            pass
+        elif sys_stat[key] is None or (
+            isinstance(sys_stat[key], list)
+            and (len(sys_stat[key]) == 0 or sys_stat[key][0] is None)
+        ):
+            sys_stat[key] = None
+        elif isinstance(sys_stat[key][0], torch.Tensor):
+            sys_stat[key] = torch.cat(sys_stat[key], dim=0)
+    dict_to_device(sys_stat)
+
+
+def process_element_counts(
+    sys_index,
+    dataset,
+    min_frames,
+    global_element_counts,
+    global_type_name,
+    total_element_types,
+):
+    """Count element occurrences in the dataset and update global statistics."""
+    element_counts, type_name = dataset.get_frame_index_for_elements()
+    for new_idx, elem_name in type_name.items():
+        if new_idx not in global_type_name:
+            global_type_name[new_idx] = elem_name
+    for elem, data in element_counts.items():
+        indices = data["indices"]
+        count = data["frames"]
+        total_element_types.add(elem)
+        if elem not in global_element_counts:
+            global_element_counts[elem] = {"count": 0, "indices": []}
+        if count > min_frames:
+            global_element_counts[elem]["count"] += min_frames
+            indices = indices[:min_frames]
+        else:
+            global_element_counts[elem]["count"] += count
+        global_element_counts[elem]["indices"].append(
+            {"sys_index": sys_index, "frames": indices}
+        )
+
+
+def process_missing_elements(
+    min_frames, global_element_counts, total_element_types, collect_ele, datasets, lst
+):
+    """Handle missing elements by adding them to the statistics."""
+    collect_elements = collect_ele.keys()
+    missing_elements = total_element_types - collect_elements
+    collect_miss_element = set()
+    for ele, count in collect_ele.items():
+        if count < min_frames:
+            collect_miss_element.add(ele)
+            missing_elements.add(ele)
+    for miss in missing_elements:
+        sys_indices = global_element_counts[miss].get("indices", [])
+        newele_counter = collect_ele.get(miss, 0) if miss in collect_miss_element else 0
+        process_with_new_frame(
+            sys_indices, newele_counter, min_frames, datasets, lst, collect_ele, miss
+        )
+
+
+def process_with_new_frame(
+    sys_indices, newele_counter, min_frames, datasets, lst, collect_ele, miss
+):
+    """Process missing elements by adding new frames until the minimum is reached."""
+    for sys_info in sys_indices:
+        sys_index = sys_info["sys_index"]
+        frames = sys_info["frames"]
+        sys = datasets if isinstance(datasets, list) else [datasets]
+        sys = sys[sys_index]
+        for frame in frames:
+            newele_counter += 1
+            if newele_counter > min_frames:
+                break
+            frame_data = sys.__getitem__(frame)
+            sys_stat_new = {}
+            for dd in frame_data:
+                if dd == "type":
+                    continue
+                if frame_data[dd] is None:
+                    sys_stat_new[dd] = None
+                elif isinstance(frame_data[dd], np.ndarray):
+                    if dd not in sys_stat_new:
+                        sys_stat_new[dd] = []
+                    tensor_data = torch.from_numpy(frame_data[dd]).unsqueeze(0)
+                    sys_stat_new[dd].append(tensor_data)
+                elif isinstance(frame_data[dd], np.float32):
+                    sys_stat_new[dd] = frame_data[dd]
+            finalize_stats(sys_stat_new)
+            lst.append(sys_stat_new)
+    collect_ele[miss] = newele_counter
 
 
 def _restore_from_file(
