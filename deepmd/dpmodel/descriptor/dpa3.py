@@ -357,6 +357,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             env_protection=env_protection,
             precision=precision,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
 
         self.use_econf_tebd = use_econf_tebd
@@ -374,6 +375,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             use_tebd_bias=use_tebd_bias,
             type_map=type_map,
             seed=child_seed(seed, 2),
+            trainable=trainable,
         )
         self.concat_output_tebd = concat_output_tebd
         self.precision = precision

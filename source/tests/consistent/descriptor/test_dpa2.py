@@ -181,7 +181,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             "smooth": smooth,
             "exclude_types": exclude_types,
             "env_protection": 0.0,
-            "trainable": True,
+            "trainable": False,
             "use_econf_tebd": use_econf_tebd,
             "use_tebd_bias": use_tebd_bias,
             "type_map": ["O", "H"] if use_econf_tebd else None,

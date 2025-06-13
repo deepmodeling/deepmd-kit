@@ -319,6 +319,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             trainable_ln=trainable_ln,
             ln_eps=ln_eps,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias
@@ -333,6 +334,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             use_tebd_bias=use_tebd_bias,
             type_map=type_map,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
@@ -691,6 +693,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         ln_eps: Optional[float] = 1e-5,
         smooth: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         self.rcut = rcut
         self.rcut_smth = rcut_smth
@@ -741,6 +744,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             self.resnet_dt,
             self.precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.embeddings = embeddings
         if self.tebd_input_mode in ["strip"]:
@@ -756,6 +760,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                 self.resnet_dt,
                 self.precision,
                 seed=child_seed(seed, 1),
+                trainable=trainable,
             )
             self.embeddings_strip = embeddings_strip
         else:
@@ -774,6 +779,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             smooth=self.smooth,
             precision=self.precision,
             seed=child_seed(seed, 2),
+            trainable=trainable,
         )
 
         wanted_shape = (self.ntypes, self.nnei, 4)
@@ -1186,6 +1192,7 @@ class NeighborGatedAttention(NativeOP):
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         """Construct a neighbor-wise attention net."""
         super().__init__()
@@ -1219,6 +1226,7 @@ class NeighborGatedAttention(NativeOP):
                 smooth=smooth,
                 precision=precision,
                 seed=child_seed(seed, ii),
+                trainable=trainable,
             )
             for ii in range(layer_num)
         ]
@@ -1314,6 +1322,7 @@ class NeighborGatedAttentionLayer(NativeOP):
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         """Construct a neighbor-wise attention layer."""
         super().__init__()
@@ -1340,6 +1349,7 @@ class NeighborGatedAttentionLayer(NativeOP):
             smooth=smooth,
             precision=precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.attn_layer_norm = LayerNorm(
             self.embed_dim,
@@ -1420,6 +1430,7 @@ class GatedAttentionLayer(NativeOP):
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         """Construct a multi-head neighbor-wise attention net."""
         super().__init__()
@@ -1449,6 +1460,7 @@ class GatedAttentionLayer(NativeOP):
             use_timestep=False,
             precision=precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.out_proj = NativeLayer(
             hidden_dim,
@@ -1457,6 +1469,7 @@ class GatedAttentionLayer(NativeOP):
             use_timestep=False,
             precision=precision,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
 
     def call(self, query, nei_mask, input_r=None, sw=None, attnw_shift=20.0):

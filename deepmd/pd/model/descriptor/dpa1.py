@@ -292,6 +292,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
             trainable_ln=trainable_ln,
             ln_eps=ln_eps,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias
@@ -305,6 +306,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
             use_econf_tebd=use_econf_tebd,
             use_tebd_bias=use_tebd_bias,
             type_map=type_map,
+            trainable=trainable,
         )
         self.prec = PRECISION_DICT[precision]
         self.tebd_dim = tebd_dim

@@ -135,6 +135,7 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
         resnet_dt: bool,
         variables: dict,
         out_dim: Optional[int] = 1,
+        trainable: Optional[list[bool]] = None,
         suffix: str = "",
     ) -> dict:
         """Serialize network.
@@ -155,6 +156,8 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
             Whether to use resnet
         variables : dict
             The input variables
+        trainable : list[bool]
+            Whether the network is trainable
         suffix : str, optional
             The suffix of the scope
         out_dim : int, optional
@@ -191,6 +194,8 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
                 raise ValueError(f"Invalid ndim: {ndim}")
             if fittings[network_idx] is None:
                 # initialize the network if it is not initialized
+                if trainable is None:
+                    trainable = [True for _ in range(len(neuron) + 1)]
                 fittings[network_idx] = FittingNet(
                     in_dim=in_dim,
                     out_dim=out_dim,
@@ -199,6 +204,7 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
                     resnet_dt=resnet_dt,
                     precision=self.precision.name,
                     bias_out=True,
+                    trainable=trainable,
                 )
             assert fittings[network_idx] is not None
             if weight_name == "idt":

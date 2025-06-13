@@ -253,6 +253,7 @@ class TypeEmbedNet(nn.Module):
         use_econf_tebd=False,
         use_tebd_bias: bool = False,
         type_map=None,
+        trainable: bool = True,
     ) -> None:
         """Construct a type embedding net."""
         super().__init__()
@@ -273,6 +274,7 @@ class TypeEmbedNet(nn.Module):
             type_map=type_map,
             precision=precision,
             seed=seed,
+            trainable=trainable,
         )
         # nn.init.normal_(self.embedding.weight[:-1], mean=bavg, std=stddev)
 

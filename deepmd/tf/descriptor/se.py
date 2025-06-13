@@ -192,6 +192,7 @@ class DescrptSe(Descriptor):
         resnet_dt: bool,
         variables: dict,
         excluded_types: set[tuple[int, int]] = set(),
+        trainable: bool = True,
         suffix: str = "",
     ) -> dict:
         """Serialize network.
@@ -214,6 +215,8 @@ class DescrptSe(Descriptor):
             The input variables
         excluded_types : set[tuple[int, int]], optional
             The excluded types
+        trainable : bool
+            Whether the network is trainable
         suffix : str, optional
             The suffix of the scope
 
@@ -236,6 +239,7 @@ class DescrptSe(Descriptor):
                     activation_function=activation_function,
                     resnet_dt=resnet_dt,
                     precision=self.precision.name,
+                    trainable=trainable,
                 )
                 embeddings[(type_j, type_i)] = EmbeddingNet(
                     in_dim=in_dim,
@@ -243,6 +247,7 @@ class DescrptSe(Descriptor):
                     activation_function=activation_function,
                     resnet_dt=resnet_dt,
                     precision=self.precision.name,
+                    trainable=trainable,
                 )
                 embeddings[(type_i, type_j)].clear()
                 embeddings[(type_j, type_i)].clear()
@@ -278,6 +283,7 @@ class DescrptSe(Descriptor):
                     activation_function=activation_function,
                     resnet_dt=resnet_dt,
                     precision=self.precision.name,
+                    trainable=trainable,
                 )
             assert embeddings[network_idx] is not None
             if weight_name == "idt":

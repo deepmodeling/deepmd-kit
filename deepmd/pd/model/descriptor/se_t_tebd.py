@@ -160,6 +160,7 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
             env_protection=env_protection,
             smooth=smooth,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         self.prec = PRECISION_DICT[precision]
         self.use_econf_tebd = use_econf_tebd
@@ -173,6 +174,7 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
             use_econf_tebd=use_econf_tebd,
             type_map=type_map,
             use_tebd_bias=use_tebd_bias,
+            trainable=trainable,
         )
         self.tebd_dim = tebd_dim
         self.tebd_input_mode = tebd_input_mode
@@ -529,6 +531,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         env_protection: float = 0.0,
         smooth: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.rcut = float(rcut)
@@ -585,6 +588,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             precision=self.precision,
             resnet_dt=self.resnet_dt,
             seed=child_seed(self.seed, 1),
+            trainable=trainable,
         )
         self.filter_layers = filter_layers
         if self.tebd_input_mode in ["strip"]:
@@ -598,6 +602,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
                 precision=self.precision,
                 resnet_dt=self.resnet_dt,
                 seed=child_seed(self.seed, 2),
+                trainable=trainable,
             )
             self.filter_layers_strip = filter_layers_strip
         self.stats = None

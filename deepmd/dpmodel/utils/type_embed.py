@@ -93,6 +93,7 @@ class TypeEmbedNet(NativeOP):
             self.precision,
             seed=self.seed,
             bias=self.use_tebd_bias,
+            trainable=trainable,
         )
 
     @support_array_api(version="2022.12")

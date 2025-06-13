@@ -795,6 +795,7 @@ class DescrptSeR(DescrptSe):
                 resnet_dt=self.filter_resnet_dt,
                 variables=self.embedding_net_variables,
                 excluded_types=self.exclude_types,
+                trainable=self.trainable,
                 suffix=suffix,
             ),
             "env_mat": EnvMat(self.rcut, self.rcut_smth).serialize(),
