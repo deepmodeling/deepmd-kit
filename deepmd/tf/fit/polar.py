@@ -90,6 +90,10 @@ class PolarFittingSeA(Fitting):
         different fitting nets for different atom types.
     type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
+    trainable : list[bool], Optional
+        If the weights of fitting net are trainable.
+        Suppose that we have :math:`N_l` hidden layers in the fitting net,
+        this list is of length :math:`N_l + 1`, specifying if the hidden layers and the output layer are trainable.
     """
 
     def __init__(
@@ -113,6 +117,7 @@ class PolarFittingSeA(Fitting):
         uniform_seed: bool = False,
         mixed_types: bool = False,
         type_map: Optional[list[str]] = None,  # to be compat with input
+        trainable: Optional[list[bool]] = None,
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -182,6 +187,15 @@ class PolarFittingSeA(Fitting):
         self.aparam_avg = None
         self.aparam_std = None
         self.aparam_inv_std = None
+        if trainable is None:
+            self.trainable = [True for _ in range(len(self.n_neuron) + 1)]
+        elif isinstance(trainable, bool):
+            self.trainable = [trainable] * (len(self.n_neuron) + 1)
+        else:
+            self.trainable = trainable
+        assert len(self.trainable) == len(self.n_neuron) + 1, (
+            "length of trainable should be that of n_neuron + 1"
+        )
 
     def get_sel_type(self) -> list[int]:
         """Get selected atom types."""
@@ -312,6 +326,7 @@ class PolarFittingSeA(Fitting):
                     uniform_seed=self.uniform_seed,
                     initial_variables=self.fitting_net_variables,
                     mixed_prec=self.mixed_prec,
+                    trainable=self.trainable[ii],
                 )
             else:
                 layer = one_layer(
@@ -325,6 +340,7 @@ class PolarFittingSeA(Fitting):
                     uniform_seed=self.uniform_seed,
                     initial_variables=self.fitting_net_variables,
                     mixed_prec=self.mixed_prec,
+                    trainable=self.trainable[ii],
                 )
             if (not self.uniform_seed) and (self.seed is not None):
                 self.seed += self.seed_shift
@@ -347,6 +363,7 @@ class PolarFittingSeA(Fitting):
                 initial_variables=self.fitting_net_variables,
                 mixed_prec=self.mixed_prec,
                 final_layer=True,
+                trainable=self.trainable[-1],
             )
             if (not self.uniform_seed) and (self.seed is not None):
                 self.seed += self.seed_shift
