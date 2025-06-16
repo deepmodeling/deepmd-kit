@@ -136,8 +136,6 @@ def get_graph_index(
     eik2a_index = edge_index_ik[a_nlist_mask_3d]
 
     edge_index_result = torch.stack([n2e_index, n_ext2e_index], dim=0)
-    angle_index_result = torch.stack(
-        [n2a_index, eij2a_index, eik2a_index], dim=0
-    )
+    angle_index_result = torch.stack([n2a_index, eij2a_index, eik2a_index], dim=0)
 
     return edge_index_result, angle_index_result
