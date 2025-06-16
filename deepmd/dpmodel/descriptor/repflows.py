@@ -623,7 +623,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
                 edge_ebd,
                 h2,
                 sw,
-                owner=edge_index[0],
+                owner=edge_index[0, :],
                 num_owner=nframes * nloc,
                 nb=nframes,
                 nloc=nloc,
@@ -1363,11 +1363,11 @@ class RepFlowLayer(NativeOP):
             assert (n_edge, 3) == h2.shape
         del a_nlist  # may be used in the future
 
-        n2e_index, n_ext2e_index = edge_index[0], edge_index[1]
+        n2e_index, n_ext2e_index = edge_index[0, :], edge_index[1, :]
         n2a_index, eij2a_index, eik2a_index = (
-            angle_index[0],
-            angle_index[1],
-            angle_index[2],
+            angle_index[0, :],
+            angle_index[1, :],
+            angle_index[2, :],
         )
 
         # nb x nloc x nnei x n_dim [OR] n_edge x n_dim
