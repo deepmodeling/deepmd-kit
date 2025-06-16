@@ -936,8 +936,10 @@ class Trainer:
                         )
                     )
                 if (
-                    (self.num_steps - self.start_step) <= 2 * self.disp_freq  # not enough steps
-                    or (_step_id - self.start_step) >= self.disp_freq  # skip first disp_freq steps
+                    (self.num_steps - self.start_step)
+                    <= 2 * self.disp_freq  # not enough steps
+                    or (_step_id - self.start_step)
+                    >= self.disp_freq  # skip first disp_freq steps
                 ):
                     self.total_train_time += train_time
 
