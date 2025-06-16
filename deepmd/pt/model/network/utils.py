@@ -4,6 +4,7 @@ from typing import (
 )
 
 import torch
+import torch_scatter
 
 
 @torch.jit.script
@@ -42,8 +43,14 @@ def aggregate(
     else:
         bin_count = None
 
-    output = data.new_zeros([num_owner, data.shape[1]])
-    output = output.index_add_(0, owners, data)
+    # output = data.new_zeros([num_owner, data.shape[1]])
+    # output1 = output.index_add_(0, owners, data)
+    # assuming the index is sorted
+    output2 = torch_scatter.segment_coo(src=data, index=owners, dim_size=num_owner, reduce="sum") # reduce=mean for average
+    # print(f"output1: {output1.shape}, output2: {output2.shape}")
+    # print(f"{torch.max(output1-output2)=}")
+    # assert torch.allclose(output1, output2), "index_add_ and segment_coo do not match"
+    output = output2
     if average:
         assert bin_count is not None
         output = (output.T / bin_count).T
