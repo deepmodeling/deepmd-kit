@@ -935,10 +935,9 @@ class Trainer:
                             eta=eta,
                         )
                     )
-                # the first training time is not accurate
                 if (
-                    (_step_id + 1 - self.start_step) > self.disp_freq
-                    or self.num_steps - self.start_step < 2 * self.disp_freq
+                    (self.num_steps - self.start_step) <= 2 * self.disp_freq  # not enough steps
+                    or (_step_id - self.start_step) >= self.disp_freq  # skip first disp_freq steps
                 ):
                     self.total_train_time += train_time
 
@@ -951,11 +950,14 @@ class Trainer:
                     )
 
             if (
-                ((_step_id + 1) % self.save_freq == 0 and _step_id != self.start_step)
-                or (_step_id + 1) == self.num_steps
+                (
+                    (display_step_id) % self.save_freq == 0
+                    and _step_id != self.start_step
+                )
+                or (display_step_id) == self.num_steps
             ) and (self.rank == 0 or dist.get_rank() == 0):
                 # Handle the case if rank 0 aborted and re-assigned
-                self.latest_model = Path(self.save_ckpt + f"-{_step_id + 1}.pt")
+                self.latest_model = Path(self.save_ckpt + f"-{display_step_id}.pt")
 
                 module = (
                     self.wrapper.module
@@ -1021,23 +1023,15 @@ class Trainer:
                 with open("checkpoint", "w") as f:
                     f.write(str(self.latest_model))
 
-            elapsed_batch = self.num_steps - self.start_step
-            if self.timing_in_training and elapsed_batch // self.disp_freq > 0:
-                if self.start_step >= 2 * self.disp_freq:
+            elapsed_steps = self.num_steps - self.start_step
+            if self.timing_in_training:
+                if elapsed_steps <= 2 * self.disp_freq:
                     log.info(
-                        "average training time: %.4f s/batch (exclude first %d batches)",
-                        self.total_train_time
-                        / (
-                            elapsed_batch // self.disp_freq * self.disp_freq
-                            - self.disp_freq
-                        ),
-                        self.disp_freq,
+                        f"average training time: {self.total_train_time / elapsed_steps:.4f} s/batch"
                     )
                 else:
                     log.info(
-                        "average training time: %.4f s/batch",
-                        self.total_train_time
-                        / (elapsed_batch // self.disp_freq * self.disp_freq),
+                        f"average training time: {self.total_train_time / (elapsed_steps - self.disp_freq - elapsed_steps % self.disp_freq):.4f} s/batch (first {self.disp_freq} batches excluded)",
                     )
 
             if JIT:
