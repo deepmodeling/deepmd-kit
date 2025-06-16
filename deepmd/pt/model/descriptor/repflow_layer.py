@@ -370,7 +370,7 @@ class RepFlowLayer(torch.nn.Module):
         # n_edge x e_dim
         flat_edge_ebd = flat_edge_ebd * flat_sw.unsqueeze(-1)
         # n_edge x 3 x e_dim
-        flat_h2g2 = (flat_h2[..., None] * flat_edge_ebd[:, None, :]).reshape(
+        flat_h2g2 = (flat_h2.unsqueeze(-1) * flat_edge_ebd.unsqueeze(-2)).reshape(
             -1, 3 * e_dim
         )
         # nf x nloc x 3 x e_dim
@@ -745,12 +745,14 @@ class RepFlowLayer(torch.nn.Module):
         nb, nloc, nnei = nlist.shape
         nall = node_ebd_ext.shape[1]
         node_ebd = node_ebd_ext[:, :nloc, :]
-        n_edge = int(nlist_mask.sum().item())
         assert (nb, nloc) == node_ebd.shape[:2]
         if not self.use_dynamic_sel:
             assert (nb, nloc, nnei, 3) == h2.shape
+            n_edge = None
         else:
-            assert (n_edge, 3) == h2.shape
+            # n_edge = int(nlist_mask.sum().item())
+            # assert (n_edge, 3) == h2.shape
+            n_edge = h2.shape[0]
         del a_nlist  # may be used in the future
 
         n2e_index, n_ext2e_index = edge_index[:, 0], edge_index[:, 1]
