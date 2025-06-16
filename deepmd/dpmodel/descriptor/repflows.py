@@ -578,7 +578,8 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
             # n_angle x 1
             a_sw = (a_sw[:, :, :, None] * a_sw[:, :, None, :])[a_nlist_mask]
         else:
-            edge_index = angle_index = xp.zeros([1, 3], dtype=nlist.dtype)
+            edge_index = xp.zeros([2, 1], dtype=nlist.dtype)
+            angle_index = xp.zeros([3, 1], dtype=nlist.dtype)
 
         # get edge and angle embedding
         # nb x nloc x nnei x e_dim [OR] n_edge x e_dim
@@ -622,7 +623,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
                 edge_ebd,
                 h2,
                 sw,
-                owner=edge_index[:, 0],
+                owner=edge_index[0],
                 num_owner=nframes * nloc,
                 nb=nframes,
                 nloc=nloc,
@@ -1286,8 +1287,8 @@ class RepFlowLayer(NativeOP):
         a_nlist: np.ndarray,  # nf x nloc x a_nnei
         a_nlist_mask: np.ndarray,  # nf x nloc x a_nnei
         a_sw: np.ndarray,  # switch func, nf x nloc x a_nnei
-        edge_index: np.ndarray,  # n_edge x 2
-        angle_index: np.ndarray,  # n_angle x 3
+        edge_index: np.ndarray,  # 2 x n_edge
+        angle_index: np.ndarray,  # 3 x n_angle
     ):
         """
         Parameters
@@ -1312,12 +1313,12 @@ class RepFlowLayer(NativeOP):
             Masks of the neighbor list for angle. real nei 1 otherwise 0
         a_sw : nf x nloc x a_nnei
             Switch function for angle.
-        edge_index : Optional for dynamic sel, n_edge x 2
+        edge_index : Optional for dynamic sel, 2 x n_edge
             n2e_index : n_edge
                 Broadcast indices from node(i) to edge(ij), or reduction indices from edge(ij) to node(i).
             n_ext2e_index : n_edge
                 Broadcast indices from extended node(j) to edge(ij).
-        angle_index : Optional for dynamic sel, n_angle x 3
+        angle_index : Optional for dynamic sel, 3 x n_angle
             n2a_index : n_angle
                 Broadcast indices from extended node(j) to angle(ijk).
             eij2a_index : n_angle
@@ -1362,11 +1363,11 @@ class RepFlowLayer(NativeOP):
             assert (n_edge, 3) == h2.shape
         del a_nlist  # may be used in the future
 
-        n2e_index, n_ext2e_index = edge_index[:, 0], edge_index[:, 1]
+        n2e_index, n_ext2e_index = edge_index[0], edge_index[1]
         n2a_index, eij2a_index, eik2a_index = (
-            angle_index[:, 0],
-            angle_index[:, 1],
-            angle_index[:, 2],
+            angle_index[0],
+            angle_index[1],
+            angle_index[2],
         )
 
         # nb x nloc x nnei x n_dim [OR] n_edge x n_dim

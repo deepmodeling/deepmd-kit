@@ -694,8 +694,8 @@ class RepFlowLayer(torch.nn.Module):
         a_nlist: torch.Tensor,  # nf x nloc x a_nnei
         a_nlist_mask: torch.Tensor,  # nf x nloc x a_nnei
         a_sw: torch.Tensor,  # switch func, nf x nloc x a_nnei
-        edge_index: torch.Tensor,  # n_edge x 2
-        angle_index: torch.Tensor,  # n_angle x 3
+        edge_index: torch.Tensor,  # 2 x n_edge
+        angle_index: torch.Tensor,  # 3 x n_angle
     ):
         """
         Parameters
@@ -720,12 +720,12 @@ class RepFlowLayer(torch.nn.Module):
             Masks of the neighbor list for angle. real nei 1 otherwise 0
         a_sw : nf x nloc x a_nnei
             Switch function for angle.
-        edge_index : Optional for dynamic sel, n_edge x 2
+        edge_index : Optional for dynamic sel, 2 x n_edge
             n2e_index : n_edge
                 Broadcast indices from node(i) to edge(ij), or reduction indices from edge(ij) to node(i).
             n_ext2e_index : n_edge
                 Broadcast indices from extended node(j) to edge(ij).
-        angle_index : Optional for dynamic sel, n_angle x 3
+        angle_index : Optional for dynamic sel, 3 x n_angle
             n2a_index : n_angle
                 Broadcast indices from extended node(j) to angle(ijk).
             eij2a_index : n_angle
@@ -755,11 +755,11 @@ class RepFlowLayer(torch.nn.Module):
             n_edge = h2.shape[0]
         del a_nlist  # may be used in the future
 
-        n2e_index, n_ext2e_index = edge_index[:, 0], edge_index[:, 1]
+        n2e_index, n_ext2e_index = edge_index[0], edge_index[1]
         n2a_index, eij2a_index, eik2a_index = (
-            angle_index[:, 0],
-            angle_index[:, 1],
-            angle_index[:, 2],
+            angle_index[0],
+            angle_index[1],
+            angle_index[2],
         )
 
         # nb x nloc x nnei x n_dim [OR] n_edge x n_dim
