@@ -370,9 +370,9 @@ class RepFlowLayer(torch.nn.Module):
         # n_edge x e_dim
         flat_edge_ebd = flat_edge_ebd * flat_sw.unsqueeze(-1)
         # n_edge x 3 x e_dim
-        flat_h2g2 = (flat_h2.unsqueeze(-1) * flat_edge_ebd.unsqueeze(-2)).reshape(
-            -1, 3 * e_dim
-        )
+        flat_h2g2 = (
+            flat_h2.unsqueeze(-1) * flat_edge_ebd.unsqueeze(-2)
+        ).reshape(-1, 3 * e_dim)
         # nf x nloc x 3 x e_dim
         h2g2 = (
             aggregate(flat_h2g2, owner, average=False, num_owner=num_owner).reshape(
@@ -1028,7 +1028,9 @@ class RepFlowLayer(torch.nn.Module):
             if not self.use_dynamic_sel:
                 # nb x nloc x a_nnei x a_nnei x e_dim
                 weighted_edge_angle_update = (
-                    a_sw[..., None, None] * a_sw[..., None, :, None] * edge_angle_update
+                    a_sw.unsqueeze(-1).unsqueeze(-1)
+                    * a_sw.unsqueeze(-2).unsqueeze(-1)
+                    * edge_angle_update
                 )
                 # nb x nloc x a_nnei x e_dim
                 reduced_edge_angle_update = torch.sum(
