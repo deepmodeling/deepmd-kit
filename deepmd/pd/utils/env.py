@@ -71,7 +71,7 @@ if CINN:
 
 CACHE_PER_SYS = 5  # keep at most so many sets per sys in memory
 ENERGY_BIAS_TRAINABLE = True
-CUSTOM_OP_USE_JIT = False
+CUSTOM_OP_USE_JIT = to_bool(os.environ.get("CUSTOM_OP_USE_JIT", False))
 
 PRECISION_DICT = {
     "float16": paddle.float16,
@@ -194,6 +194,7 @@ def enable_prim(enable: bool = True):
 
     log = logging.getLogger(__name__)
     log.info(f"{'Enable' if enable else 'Disable'} prim in eager and static mode.")
+    log.info(f"{'Enable' if CUSTOM_OP_USE_JIT else 'Disable'} CUSTOM_OP_USE_JIT.")
 
 
 __all__ = [
