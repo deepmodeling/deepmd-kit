@@ -490,7 +490,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
 
         # get angle nlist (maybe smaller)
-        a_dist_mask = (xp.linalg.vector_norm(diff, axis=-1) < self.a_rcut)[
+        a_dist_mask = (safe_for_vector_norm(diff, axis=-1) < self.a_rcut)[
             :, :, : self.a_sel
         ]
         a_nlist = nlist[:, :, : self.a_sel]
