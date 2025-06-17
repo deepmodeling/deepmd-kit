@@ -189,7 +189,7 @@ class EnvMatStatSe(EnvMatStat):
             for type_i in range(self.descriptor.get_ntypes()):
                 dd = env_mat[type_idx[type_i, ...]]
                 dd = xp.reshape(
-                    dd, [-1, self.last_dim]
+                    dd, (-1, self.last_dim)
                 )  # typen_atoms * unmasked_nnei, 4
                 env_mats = {}
                 env_mats[f"r_{type_i}"] = dd[:, :1]

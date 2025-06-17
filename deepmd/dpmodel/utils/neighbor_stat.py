@@ -82,8 +82,8 @@ class NeighborStatOP(NativeOP):
         nall = coord1.shape[1] // 3
         coord0 = coord1[:, : nloc * 3]
         diff = (
-            xp.reshape(coord1, [nframes, -1, 3])[:, None, :, :]
-            - xp.reshape(coord0, [nframes, -1, 3])[:, :, None, :]
+            xp.reshape(coord1, (nframes, -1, 3))[:, None, :, :]
+            - xp.reshape(coord0, (nframes, -1, 3))[:, :, None, :]
         )
         assert list(diff.shape) == [nframes, nloc, nall, 3]
         # remove the diagonal elements
