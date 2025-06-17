@@ -194,7 +194,6 @@ def enable_prim(enable: bool = True):
 
     log = logging.getLogger(__name__)
     log.info(f"{'Enable' if enable else 'Disable'} prim in eager and static mode.")
-    log.info(f"{'Enable' if CUSTOM_OP_USE_JIT else 'Disable'} CUSTOM_OP_USE_JIT.")
 
 
 __all__ = [
