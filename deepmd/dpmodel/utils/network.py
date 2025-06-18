@@ -805,6 +805,8 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
                 trainable = [True] * (len(neuron) + 1)
             elif isinstance(trainable, bool):
                 trainable = [trainable] * (len(neuron) + 1)
+            else:
+                trainable = trainable
             super().__init__(
                 in_dim,
                 neuron=neuron,
