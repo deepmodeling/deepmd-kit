@@ -942,6 +942,13 @@ class Trainer:
                     >= self.disp_freq  # skip first disp_freq steps
                 ):
                     self.total_train_time += train_time
+                    if display_step_id == 1:
+                        self.timed_steps += 1
+                    else:
+                        self.timed_steps += min(
+                            self.disp_freq, _step_id - self.start_step
+                        )
+                    print(f"{self.timed_steps=}")
 
                 if fout:
                     if self.lcurve_should_print_header:
@@ -986,6 +993,7 @@ class Trainer:
         self.wrapper.train()
         self.t0 = time.time()
         self.total_train_time = 0.0
+        self.timed_steps = 0
         for step_id in range(self.start_step, self.num_steps):
             step(step_id)
             if JIT:
@@ -1025,16 +1033,12 @@ class Trainer:
                 with open("checkpoint", "w") as f:
                     f.write(str(self.latest_model))
 
-            elapsed_steps = self.num_steps - self.start_step
             if self.timing_in_training:
-                if elapsed_steps <= 2 * self.disp_freq:
-                    log.info(
-                        f"average training time: {self.total_train_time / elapsed_steps:.4f} s/batch"
-                    )
-                else:
-                    log.info(
-                        f"average training time: {self.total_train_time / (elapsed_steps - self.disp_freq - elapsed_steps % self.disp_freq):.4f} s/batch (first {self.disp_freq} batches excluded)",
-                    )
+                msg = f"average training time: {self.total_train_time / self.timed_steps:.4f} s/batch"
+                excluded_steps = self.num_steps - self.start_step - self.timed_steps
+                if excluded_steps > 0:
+                    msg += f" ({excluded_steps} batches excluded)"
+                log.info(msg)
 
             if JIT:
                 pth_model_path = (
