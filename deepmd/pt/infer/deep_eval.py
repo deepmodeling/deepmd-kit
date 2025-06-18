@@ -183,6 +183,9 @@ class DeepEval(DeepEvalBackend):
         """Get the number (dimension) of atomic parameters of this DP."""
         return self.dp.model["Default"].get_dim_aparam()
 
+    def has_default_fparam(self) -> bool:
+        return self.dp.model["Default"].has_default_fparam()
+
     def get_intensive(self) -> bool:
         return self.dp.model["Default"].get_intensive()
 

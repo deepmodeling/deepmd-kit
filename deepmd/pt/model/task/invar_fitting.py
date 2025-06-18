@@ -103,6 +103,7 @@ class InvarFitting(GeneralFitting):
         atom_ener: Optional[list[Optional[torch.Tensor]]] = None,
         type_map: Optional[list[str]] = None,
         use_aparam_as_mask: bool = False,
+        default_fparam: Optional[list] = None,
         **kwargs,
     ) -> None:
         self.dim_out = dim_out
@@ -128,6 +129,7 @@ class InvarFitting(GeneralFitting):
             else [x is not None for x in atom_ener],
             type_map=type_map,
             use_aparam_as_mask=use_aparam_as_mask,
+            default_fparam=default_fparam,
             **kwargs,
         )
 
