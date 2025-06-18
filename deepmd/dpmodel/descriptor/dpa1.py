@@ -1027,7 +1027,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                     xp.tile(
                         (xp.reshape(atype, (-1, 1)) * ntypes_with_padding), (1, nnei)
                     ),
-                    (-1),
+                    (-1,),
                 )
                 idx_j = xp.reshape(nei_type, (-1,))
                 # (nf x nl x nnei) x ng
