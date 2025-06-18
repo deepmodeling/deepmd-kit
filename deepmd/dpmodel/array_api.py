@@ -60,7 +60,7 @@ def xp_take_along_axis(arr, indices, axis):
 
     shape = list(arr.shape)
     shape.pop(-1)
-    shape = [*shape, n]
+    shape = (*shape, n)
 
     arr = xp.reshape(arr, (-1,))
     if n != 0:
