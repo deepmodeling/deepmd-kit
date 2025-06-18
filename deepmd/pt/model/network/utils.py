@@ -13,7 +13,6 @@ except ImportError:
     has_torch_scatter = False
 
 
-@torch.jit.script
 def aggregate(
     data: torch.Tensor,
     owners: torch.Tensor,
@@ -37,6 +36,7 @@ def aggregate(
     -------
     output: [num_owner, feature_dim]
     """
+    # faster and recommended
     if has_torch_scatter:
         output = torch_scatter.segment_coo(
             src=data,
@@ -46,7 +46,7 @@ def aggregate(
         )
         return output
 
-    # if torch_scatter is not available, use index_add_
+    # if torch_scatter is not available, use native index_add
     if num_owner is None or average:
         # requires bincount
         bin_count = torch.bincount(owners)
