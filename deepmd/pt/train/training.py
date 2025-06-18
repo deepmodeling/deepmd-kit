@@ -948,7 +948,6 @@ class Trainer:
                         self.timed_steps += min(
                             self.disp_freq, _step_id - self.start_step
                         )
-                    print(f"{self.timed_steps=}")
 
                 if fout:
                     if self.lcurve_should_print_header:
