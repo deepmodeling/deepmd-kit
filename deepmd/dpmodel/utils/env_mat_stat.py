@@ -166,7 +166,7 @@ class EnvMatStatSe(EnvMatStat):
                     self.last_dim,
                 ),
             )
-            atype = xp.reshape(atype, (coord.shape[0] * coord.shape[1]))
+            atype = xp.reshape(atype, (coord.shape[0] * coord.shape[1],))
             # (1, nloc) eq (ntypes, 1), so broadcast is possible
             # shape: (ntypes, nloc)
             type_idx = xp.equal(
