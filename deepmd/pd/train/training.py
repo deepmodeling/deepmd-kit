@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import contextlib
 import functools
 import logging
 import time
@@ -18,6 +19,7 @@ import paddle.distributed as dist
 from paddle.distributed import (
     fleet,
 )
+from paddle.distributed.fleet.utils import hybrid_parallel_util as hpu
 from paddle.framework import (
     core,
 )
@@ -741,16 +743,27 @@ class Trainer:
                     pref_lr = _lr.start_lr
                 else:
                     pref_lr = cur_lr
-                with nvprof_context(enable_profiling, "Forward pass"):
-                    model_pred, loss, more_loss = self.wrapper(
-                        **input_dict,
-                        cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
-                        label=label_dict,
-                        task_key=task_key,
-                    )
+                sync_context = (
+                    self.wrapper.no_sync
+                    if self.world_size > 1
+                    else contextlib.nullcontext
+                )
+                with sync_context():
+                    with nvprof_context(enable_profiling, "Forward pass"):
+                        model_pred, loss, more_loss = self.wrapper(
+                            **input_dict,
+                            cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
+                            label=label_dict,
+                            task_key=task_key,
+                        )
 
-                with nvprof_context(enable_profiling, "Backward pass"):
-                    loss.backward()
+                    with nvprof_context(enable_profiling, "Backward pass"):
+                        loss.backward()
+
+                if self.world_size > 1:
+                    # fuse + allreduce manually before optimization if use DDP + no_sync
+                    # details in https://github.com/PaddlePaddle/Paddle/issues/48898#issuecomment-1343838622
+                    hpu.fused_allreduce_gradients(list(self.wrapper.parameters()), None)
 
                 if self.gradient_max_norm > 0.0:
                     with nvprof_context(enable_profiling, "Gradient clip"):
