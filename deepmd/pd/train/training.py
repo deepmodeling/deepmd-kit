@@ -607,10 +607,11 @@ class Trainer:
             )
 
             backend = "CINN" if CINN else None
-
             # NOTE: This is a trick to decide the right input_spec for wrapper.forward
-            _, label_dict, _ = self.get_data(is_train=True, task_key="Default")
-            label_dict_spec = {
+            _, label_dict, _ = self.get_data(is_train=True)
+
+            # Define specification templates
+            spec_templates = {
                 "find_box": np.float32(1.0),
                 "find_coord": np.float32(1.0),
                 "find_numb_copy": np.float32(0.0),
@@ -623,19 +624,10 @@ class Trainer:
                 "virial": static.InputSpec([1, 9], "float64", name="virial"),
                 "natoms": static.InputSpec([1, -1], "int32", name="natoms"),
             }
-            if "virial" not in label_dict:
-                label_dict_spec.pop("virial")
-            if "find_virial" not in label_dict:
-                label_dict_spec.pop("find_virial")
-            if "energy" not in label_dict:
-                label_dict_spec.pop("energy")
-            if "find_energy" not in label_dict:
-                label_dict_spec.pop("find_energy")
-            if "force" not in label_dict:
-                label_dict_spec.pop("force")
-            if "find_force" not in label_dict:
-                label_dict_spec.pop("find_force")
-
+            # Build spec only for keys present in sample data
+            label_dict_spec = {
+                k: spec_templates[k] for k in label_dict.keys() if k in spec_templates
+            }
             self.wrapper.forward = jit.to_static(
                 backend=backend,
                 input_spec=[
