@@ -63,7 +63,7 @@ from .repflows import (
 
 @BaseDescriptor.register("dpa3")
 class DescrptDPA3(BaseDescriptor, torch.nn.Module):
-    r"""The DPA-3 descriptor[1]_.
+    r"""The DPA3 descriptor[1]_.
 
     Parameters
     ----------

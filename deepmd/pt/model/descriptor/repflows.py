@@ -66,7 +66,7 @@ if not hasattr(torch.ops.deepmd, "border_op"):
     ) -> torch.Tensor:
         raise NotImplementedError(
             "border_op is not available since customized PyTorch OP library is not built when freezing the model. "
-            "See documentation for DPA-3 for details."
+            "See documentation for DPA3 for details."
         )
 
     # Note: this hack cannot actually save a model that can be run using LAMMPS.
@@ -537,9 +537,8 @@ class DescrptBlockRepflows(DescriptorBlock):
             a_sw = (a_sw[:, :, :, None] * a_sw[:, :, None, :])[a_nlist_mask]
         else:
             # avoid jit assertion
-            edge_index = angle_index = torch.zeros(
-                [1, 3], device=nlist.device, dtype=nlist.dtype
-            )
+            edge_index = torch.zeros([2, 1], device=nlist.device, dtype=nlist.dtype)
+            angle_index = torch.zeros([3, 1], device=nlist.device, dtype=nlist.dtype)
         # get edge and angle embedding
         # nb x nloc x nnei x e_dim [OR] n_edge x e_dim
         if not self.edge_init_use_dist:
@@ -646,7 +645,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                 edge_ebd,
                 h2,
                 sw,
-                owner=edge_index[:, 0],
+                owner=edge_index[0],
                 num_owner=nframes * nloc,
                 nb=nframes,
                 nloc=nloc,

@@ -115,8 +115,8 @@ def build_neighbor_list(
     nsel = sum(sel)
     coord0 = coord1[:, : nloc * 3]
     diff = (
-        xp.reshape(coord1, [batch_size, -1, 3])[:, None, :, :]
-        - xp.reshape(coord0, [batch_size, -1, 3])[:, :, None, :]
+        xp.reshape(coord1, (batch_size, -1, 3))[:, None, :, :]
+        - xp.reshape(coord0, (batch_size, -1, 3))[:, :, None, :]
     )
     assert list(diff.shape) == [batch_size, nloc, nall, 3]
     rr = xp.linalg.vector_norm(diff, axis=-1)
