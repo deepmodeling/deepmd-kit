@@ -1032,7 +1032,7 @@ class Trainer:
                 with open("checkpoint", "w") as f:
                     f.write(str(self.latest_model))
 
-            if self.timing_in_training:
+            if self.timing_in_training and self.timed_steps:
                 msg = f"average training time: {self.total_train_time / self.timed_steps:.4f} s/batch"
                 excluded_steps = self.num_steps - self.start_step - self.timed_steps
                 if excluded_steps > 0:
