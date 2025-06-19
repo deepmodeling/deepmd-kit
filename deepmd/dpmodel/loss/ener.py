@@ -132,18 +132,18 @@ class EnergyLoss(Loss):
             atom_ener_coeff = xp.reshape(atom_ener_coeff, xp.shape(atom_ener))
             energy = xp.sum(atom_ener_coeff * atom_ener, 1)
         if self.has_f or self.has_pf or self.relative_f or self.has_gf:
-            force_reshape = xp.reshape(force, [-1])
-            force_hat_reshape = xp.reshape(force_hat, [-1])
+            force_reshape = xp.reshape(force, (-1,))
+            force_hat_reshape = xp.reshape(force_hat, (-1,))
             diff_f = force_hat_reshape - force_reshape
         else:
             diff_f = None
 
         if self.relative_f is not None:
-            force_hat_3 = xp.reshape(force_hat, [-1, 3])
-            norm_f = xp.reshape(xp.norm(force_hat_3, axis=1), [-1, 1]) + self.relative_f
-            diff_f_3 = xp.reshape(diff_f, [-1, 3])
+            force_hat_3 = xp.reshape(force_hat, (-1, 3))
+            norm_f = xp.reshape(xp.norm(force_hat_3, axis=1), (-1, 1)) + self.relative_f
+            diff_f_3 = xp.reshape(diff_f, (-1, 3))
             diff_f_3 = diff_f_3 / norm_f
-            diff_f = xp.reshape(diff_f_3, [-1])
+            diff_f = xp.reshape(diff_f_3, (-1,))
 
         atom_norm = 1.0 / natoms
         atom_norm_ener = 1.0 / natoms
@@ -184,15 +184,15 @@ class EnergyLoss(Loss):
                 loss += pref_f * l2_force_loss
             else:
                 l_huber_loss = custom_huber_loss(
-                    xp.reshape(force, [-1]),
-                    xp.reshape(force_hat, [-1]),
+                    xp.reshape(force, (-1,)),
+                    xp.reshape(force_hat, (-1,)),
                     delta=self.huber_delta,
                 )
                 loss += pref_f * l_huber_loss
             more_loss["rmse_f"] = self.display_if_exist(l2_force_loss, find_force)
         if self.has_v:
-            virial_reshape = xp.reshape(virial, [-1])
-            virial_hat_reshape = xp.reshape(virial_hat, [-1])
+            virial_reshape = xp.reshape(virial, (-1,))
+            virial_hat_reshape = xp.reshape(virial_hat, (-1,))
             l2_virial_loss = xp.mean(
                 xp.square(virial_hat_reshape - virial_reshape),
             )
@@ -207,8 +207,8 @@ class EnergyLoss(Loss):
                 loss += pref_v * l_huber_loss
             more_loss["rmse_v"] = self.display_if_exist(l2_virial_loss, find_virial)
         if self.has_ae:
-            atom_ener_reshape = xp.reshape(atom_ener, [-1])
-            atom_ener_hat_reshape = xp.reshape(atom_ener_hat, [-1])
+            atom_ener_reshape = xp.reshape(atom_ener, (-1,))
+            atom_ener_hat_reshape = xp.reshape(atom_ener_hat, (-1,))
             l2_atom_ener_loss = xp.mean(
                 xp.square(atom_ener_hat_reshape - atom_ener_reshape),
             )
@@ -225,7 +225,7 @@ class EnergyLoss(Loss):
                 l2_atom_ener_loss, find_atom_ener
             )
         if self.has_pf:
-            atom_pref_reshape = xp.reshape(atom_pref, [-1])
+            atom_pref_reshape = xp.reshape(atom_pref, (-1,))
             l2_pref_force_loss = xp.mean(
                 xp.multiply(xp.square(diff_f), atom_pref_reshape),
             )
@@ -236,10 +236,10 @@ class EnergyLoss(Loss):
         if self.has_gf:
             find_drdq = label_dict["find_drdq"]
             drdq = label_dict["drdq"]
-            force_reshape_nframes = xp.reshape(force, [-1, natoms[0] * 3])
-            force_hat_reshape_nframes = xp.reshape(force_hat, [-1, natoms[0] * 3])
+            force_reshape_nframes = xp.reshape(force, (-1, natoms[0] * 3))
+            force_hat_reshape_nframes = xp.reshape(force_hat, (-1, natoms[0] * 3))
             drdq_reshape = xp.reshape(
-                drdq, [-1, natoms[0] * 3, self.numb_generalized_coord]
+                drdq, (-1, natoms[0] * 3, self.numb_generalized_coord)
             )
             gen_force_hat = xp.einsum(
                 "bij,bi->bj", drdq_reshape, force_hat_reshape_nframes

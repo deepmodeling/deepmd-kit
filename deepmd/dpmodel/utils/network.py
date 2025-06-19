@@ -1036,12 +1036,12 @@ def get_graph_index(
 
     Returns
     -------
-    edge_index : n_edge x 2
+    edge_index : 2 x n_edge
         n2e_index : n_edge
             Broadcast indices from node(i) to edge(ij), or reduction indices from edge(ij) to node(i).
         n_ext2e_index : n_edge
             Broadcast indices from extended node(j) to edge(ij).
-    angle_index : n_angle x 3
+    angle_index : 3 x n_angle
         n2a_index : n_angle
             Broadcast indices from extended node(j) to angle(ijk).
         eij2a_index : n_angle
@@ -1111,7 +1111,7 @@ def get_graph_index(
     # n_angle
     eik2a_index = edge_index_ik[a_nlist_mask_3d]
 
-    edge_index_result = xp.stack([n2e_index, n_ext2e_index], axis=-1)
-    angle_index_result = xp.stack([n2a_index, eij2a_index, eik2a_index], axis=-1)
+    edge_index_result = xp.stack([n2e_index, n_ext2e_index], axis=0)
+    angle_index_result = xp.stack([n2a_index, eij2a_index, eik2a_index], axis=0)
 
     return edge_index_result, angle_index_result
