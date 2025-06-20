@@ -18,6 +18,7 @@ def aggregate(
     owners: torch.Tensor,
     average: bool = True,
     num_owner: Optional[int] = None,
+    use_torch_scatter: bool = has_torch_scatter,
 ) -> torch.Tensor:
     """
     Aggregate rows in data by specifying the owners.
@@ -31,13 +32,17 @@ def aggregate(
     num_owner : the number of owners, this is needed if the
         max idx of owner is not presented in owners tensor
         Default = None
+    use_torch_scatter : if True, use torch_scatter to aggregate,
+        which is faster and more memory efficient.
+        if False, use native index_add_.
+        Default = True if torch_scatter is available, else False
 
     Returns
     -------
     output: [num_owner, feature_dim]
     """
     # faster and recommended
-    if has_torch_scatter:
+    if use_torch_scatter:
         output = torch_scatter.segment_coo(
             src=data,
             index=owners,
