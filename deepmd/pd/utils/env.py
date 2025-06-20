@@ -71,6 +71,7 @@ if CINN:
 
 CACHE_PER_SYS = 5  # keep at most so many sets per sys in memory
 ENERGY_BIAS_TRAINABLE = True
+CUSTOM_OP_USE_JIT = to_bool(os.environ.get("CUSTOM_OP_USE_JIT", False))
 
 PRECISION_DICT = {
     "float16": paddle.float16,
@@ -198,6 +199,7 @@ def enable_prim(enable: bool = True):
 __all__ = [
     "CACHE_PER_SYS",
     "CINN",
+    "CUSTOM_OP_USE_JIT",
     "DEFAULT_PRECISION",
     "DEVICE",
     "ENERGY_BIAS_TRAINABLE",
