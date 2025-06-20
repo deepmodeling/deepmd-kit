@@ -34,7 +34,9 @@ def aggregate(
 
     if (num_owner is not None) and (bin_count.shape[0] != num_owner):
         difference = num_owner - bin_count.shape[0]
-        bin_count = paddle.concat([bin_count, paddle.ones_like(difference)])
+        bin_count = paddle.concat(
+            [bin_count, paddle.ones([difference], dtype=bin_count.dtype)]
+        )
 
     # make sure this operation is done on the same device of data and owners
     output = paddle.zeros([bin_count.shape[0], data.shape[1]])
