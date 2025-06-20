@@ -282,7 +282,7 @@ class DPTrainer:
                 sel=model.get_sel(),
                 coord=jax_data["coord"],
                 atype=jax_data["type"],
-                box=jax_data["box"] if jax_data["default_mesh"].size > 0 else None,
+                box=jax_data["box"] if jax_data["default_mesh"].size > 1 else None,
                 fparam=jax_data.get("fparam", None),
                 aparam=jax_data.get("aparam", None),
             )
