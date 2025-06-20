@@ -169,6 +169,9 @@ class DPTrainer:
                 }
                 for ii in range(train_data.get_nsystems())
             ]
+            for ii, single_data in enumerate(all_stat_sys):
+                if not train_data.data_systems[ii].pbc:
+                    single_data["box"] = None
             model.atomic_model.descriptor.compute_input_stats(all_stat_sys)
             model.atomic_model.fitting.compute_output_stats(all_stat)
 
@@ -279,7 +282,7 @@ class DPTrainer:
                 sel=model.get_sel(),
                 coord=jax_data["coord"],
                 atype=jax_data["type"],
-                box=jax_data["box"] if jax_data["find_box"] else None,
+                box=jax_data["box"] if jax_data["default_mesh"].size > 0 else None,
                 fparam=jax_data.get("fparam", None),
                 aparam=jax_data.get("aparam", None),
             )
