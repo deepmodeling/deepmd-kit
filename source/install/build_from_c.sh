@@ -13,7 +13,7 @@ NPROC=$(nproc --all)
 BUILD_TMP_DIR=${SCRIPT_PATH}/../build
 mkdir -p ${BUILD_TMP_DIR}
 cd ${BUILD_TMP_DIR}
-cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} -DDEEPMD_C_ROOT=${DEEPMD_C_ROOT} -DLAMMPS_VERSION=stable_29Aug2024_update1 ..
+cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} -DDEEPMD_C_ROOT=${DEEPMD_C_ROOT} -DLAMMPS_VERSION=stable_29Aug2024_update3 ..
 cmake --build . -j${NPROC}
 cmake --install .
 cmake --build . --target=lammps
