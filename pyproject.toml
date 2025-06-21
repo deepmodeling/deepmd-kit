@@ -108,7 +108,7 @@ docs = [
     "sphinx-remove-toctrees",
 ]
 lmp = [
-    "lammps~=2024.8.29.1.0",
+    "lammps~=2024.8.29.3.0",
 ]
 ipi = [
     "ipi",
