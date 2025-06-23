@@ -5,13 +5,18 @@ from typing import (
 
 import torch
 
-try:
-    import torch_scatter
+from deepmd.pt.utils.env import JIT
 
-    has_torch_scatter = True
-except ImportError:
+if not JIT:  # only for training
+    try:
+        import torch_scatter
+
+        has_torch_scatter = True
+        # raise ImportError
+    except ImportError:
+        has_torch_scatter = False
+else:
     has_torch_scatter = False
-
 
 def aggregate(
     data: torch.Tensor,
@@ -42,7 +47,7 @@ def aggregate(
     output: [num_owner, feature_dim]
     """
     # faster and recommended
-    if use_torch_scatter:
+    if not torch.jit.is_scripting() and use_torch_scatter:
         output = torch_scatter.segment_coo(
             src=data,
             index=owners,
