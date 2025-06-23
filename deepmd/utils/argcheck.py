@@ -1597,6 +1597,18 @@ def dpa3_repflow_args():
             default=False,  # For compatability. This will be True in the future
             doc=doc_smooth_edge_update,
         ),
+        Argument(
+            "use_dynamic_sel",
+            bool,
+            optional=True,
+            default=False,
+        ),
+        Argument(
+            "sel_reduce_factor",
+            float,
+            optional=True,
+            default=10.0,
+        ),
     ]
 
 

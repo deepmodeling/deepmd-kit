@@ -151,6 +151,8 @@ class RepFlowArgs:
         skip_stat: bool = False,
         optim_update: bool = True,
         smooth_edge_update: bool = False,
+        use_dynamic_sel: bool = False,
+        sel_reduce_factor: float = 10.0,
     ) -> None:
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -177,6 +179,8 @@ class RepFlowArgs:
         self.a_compress_use_split = a_compress_use_split
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
+        self.use_dynamic_sel = use_dynamic_sel
+        self.sel_reduce_factor = sel_reduce_factor
 
     def __getitem__(self, key):
         if hasattr(self, key):
