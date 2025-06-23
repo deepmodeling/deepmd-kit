@@ -5,7 +5,9 @@ from typing import (
 
 import torch
 
-from deepmd.pt.utils.env import JIT
+from deepmd.pt.utils.env import (
+    JIT,
+)
 
 if not JIT:  # only for training
     try:
@@ -17,6 +19,7 @@ if not JIT:  # only for training
         has_torch_scatter = False
 else:
     has_torch_scatter = False
+
 
 def aggregate(
     data: torch.Tensor,
