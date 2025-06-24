@@ -4,6 +4,9 @@ import logging
 from deepmd.infer.deep_eval import (
     DeepEval,
 )
+from deepmd.utils.econf_embd import (
+    sort_element_type,
+)
 
 log = logging.getLogger(__name__)
 
@@ -69,3 +72,32 @@ def show(
         log.info(f"Parameter counts{log_prefix}:")
         for k in sorted(size_dict):
             log.info(f"Parameters in {k}: {size_dict[k]:,}")
+
+    if "type-coverage" in ATTRIBUTES:
+        if model_is_multi_task:
+            log.info("The type coverage for each branch: ")
+            total_type_coverage_list = []
+            model_branches = list(model_params["model_dict"].keys())
+            for branch in model_branches:
+                tmp_model = DeepEval(INPUT, head=branch, no_jit=True)
+                type_coverage = tmp_model.get_type_coverage()
+                log.info(
+                    f"{branch}: Number of covered types: {type_coverage['type_num']} "
+                )
+                log.info(f"{branch}: Covered types: {type_coverage['covered_type']} ")
+                total_type_coverage_list += [
+                    tt
+                    for tt in type_coverage["covered_type"]
+                    if tt not in total_type_coverage_list
+                ]
+            log.info(
+                f"TOTAL number of covered types in the model: {len(total_type_coverage_list)} "
+            )
+            log.info(
+                f"TOTAL covered types in the model: {sort_element_type(total_type_coverage_list)} "
+            )
+        else:
+            log.info("The type coverage for this model: ")
+            type_coverage = model.get_type_coverage()
+            log.info(f"Number of covered types: {type_coverage['type_num']} ")
+            log.info(f"Covered types: {type_coverage['covered_type']} ")

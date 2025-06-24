@@ -64,6 +64,9 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
 )
+from deepmd.utils.econf_embd import (
+    sort_element_type,
+)
 
 if TYPE_CHECKING:
     import ase.neighborlist
@@ -98,6 +101,7 @@ class DeepEval(DeepEvalBackend):
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         head: Optional[Union[str, int]] = None,
+        no_jit: bool = False,
         **kwargs: Any,
     ) -> None:
         self.output_def = output_def
@@ -130,7 +134,7 @@ class DeepEval(DeepEvalBackend):
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
             model = get_model(self.input_param).to(DEVICE)
-            if not self.input_param.get("hessian_mode"):
+            if not self.input_param.get("hessian_mode") and not no_jit:
                 model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
             self.dp.load_state_dict(state_dict)
@@ -646,6 +650,35 @@ class DeepEval(DeepEvalBackend):
             "descriptor": sum_param_des,
             "fitting-net": sum_param_fit,
             "total": sum_param_des + sum_param_fit,
+        }
+
+    def get_type_coverage(self) -> dict:
+        """Get model type (element) coverage.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the information of type coverage in the model:
+            - 'type_num': the total number of covered types in this model.
+            - 'covered_type': a list of the covered types in this model.
+        """
+        buffers_dict = dict(self.dp.named_buffers())
+        type_map = np.array(self.type_map)
+        out_bias = None
+        for k in buffers_dict:
+            if ".out_bias" in k:
+                # only use out_bias in the first fitting out_def
+                out_bias = buffers_dict[k].detach().cpu().numpy()[0]
+                break
+        assert out_bias is not None, "No out_bias found in the model buffers."
+        assert len(out_bias.shape) == 2, "The supported out_bias should be a 2D array."
+        assert out_bias.shape[0] == len(type_map), (
+            "The out_bias shape does not match the type map length."
+        )
+        bias_mask = (np.abs(out_bias) > 1e-6).any(-1)  # 1e-6 for stability
+        return {
+            "type_num": bias_mask.sum(),
+            "covered_type": sort_element_type(type_map[bias_mask].tolist()),
         }
 
     def eval_descriptor(
