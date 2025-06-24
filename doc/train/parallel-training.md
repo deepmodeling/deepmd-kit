@@ -218,6 +218,21 @@ NUM_WORKERS=0 HDF5_USE_FILE_LOCKING=0 python -m paddle.distributed.launch \
     dp --pd train input.json
 ```
 
+or you can wrapper the training script with `mpirun`:
+
+```bash
+# ----- train_pp.sh -------
+unset CUDA_DEVICE_MAX_CONNECTIONS
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" --log_dir logs dp --pd train input_torch.json -l train_pp.log
+# -------------------------
+```
+
+Then, run the script on the first node with:
+
+```bash
+mpirun run_pp.sh
+```
+
 :::{note}
 
 If `NUM_WORKERS` is too large, it may cause the program to be terminated by the system;

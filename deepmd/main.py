@@ -851,7 +851,7 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_show.add_argument(
         "ATTRIBUTES",
-        choices=["model-branch", "type-map", "descriptor", "fitting-net"],
+        choices=["model-branch", "type-map", "descriptor", "fitting-net", "size"],
         nargs="+",
     )
     return parser

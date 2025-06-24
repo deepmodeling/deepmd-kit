@@ -63,7 +63,7 @@ from .repflows import (
 
 @BaseDescriptor.register("dpa3")
 class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
-    r"""The DPA-3 descriptor.
+    r"""The DPA3 descriptor[1]_.
 
     Parameters
     ----------
@@ -91,9 +91,15 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         Whether to use bias in the type embedding layer.
     use_loc_mapping : bool, Optional
         Whether to use local atom index mapping in training or non-parallel inference.
-        Not supported yet in Paddle.
+        When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.
     type_map : list[str], Optional
         A list of strings. Give the name to each type of atoms.
+
+    References
+    ----------
+    .. [1] Zhang, D., Peng, A., Cai, C. et al. Graph neural
+       network model for the era of large atomistic models.
+       arXiv preprint arXiv:2506.01686 (2025).
     """
 
     def __init__(
@@ -111,7 +117,7 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         seed: Optional[Union[int, list[int]]] = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        use_loc_mapping: bool = False,
+        use_loc_mapping: bool = True,
         type_map: Optional[list[str]] = None,
     ) -> None:
         super().__init__()
@@ -154,6 +160,8 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             fix_stat_std=self.repflow_args.fix_stat_std,
             optim_update=self.repflow_args.optim_update,
             smooth_edge_update=self.repflow_args.smooth_edge_update,
+            edge_init_use_dist=self.repflow_args.edge_init_use_dist,
+            use_exp_switch=self.repflow_args.use_exp_switch,
             use_dynamic_sel=self.repflow_args.use_dynamic_sel,
             sel_reduce_factor=self.repflow_args.sel_reduce_factor,
             use_loc_mapping=use_loc_mapping,
@@ -164,8 +172,8 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         )
 
         self.use_econf_tebd = use_econf_tebd
-        self.use_tebd_bias = use_tebd_bias
         self.use_loc_mapping = use_loc_mapping
+        self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
         self.tebd_dim = self.repflow_args.n_dim
         self.type_embedding = TypeEmbedNet(
@@ -481,12 +489,16 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             The smooth switch function. shape: nf x nloc x nnei
 
         """
+        parallel_mode = comm_dict is not None
         # cast the input to internal precsion
         extended_coord = extended_coord.to(dtype=self.prec)
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.reshape([nframes, -1]).shape[1] // 3
 
-        node_ebd_ext = self.type_embedding(extended_atype)
+        if not parallel_mode and self.use_loc_mapping:
+            node_ebd_ext = self.type_embedding(extended_atype[:, :nloc])
+        else:
+            node_ebd_ext = self.type_embedding(extended_atype)
         node_ebd_inp = node_ebd_ext[:, :nloc, :]
         # repflows
         node_ebd, edge_ebd, h2, rot_mat, sw = self.repflows(

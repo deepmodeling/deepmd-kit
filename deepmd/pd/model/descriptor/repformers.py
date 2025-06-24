@@ -267,10 +267,10 @@ class DescrptBlockRepformers(DescriptorBlock):
 
         wanted_shape = (self.ntypes, self.nnei, 4)
         mean = paddle.zeros(wanted_shape, dtype=env.GLOBAL_PD_FLOAT_PRECISION).to(
-            device=env.DEVICE
+            env.DEVICE
         )
         stddev = paddle.ones(wanted_shape, dtype=env.GLOBAL_PD_FLOAT_PRECISION).to(
-            device=env.DEVICE
+            env.DEVICE
         )
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
@@ -503,11 +503,11 @@ class DescrptBlockRepformers(DescriptorBlock):
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
             paddle.assign(
-                paddle.to_tensor(mean, dtype=self.mean.dtype).to(device=env.DEVICE),
+                paddle.to_tensor(mean, dtype=self.mean.dtype).to(env.DEVICE),
                 self.mean,
             )  # pylint: disable=no-explicit-dtype
         paddle.assign(
-            paddle.to_tensor(stddev, dtype=self.stddev.dtype).to(device=env.DEVICE),
+            paddle.to_tensor(stddev, dtype=self.stddev.dtype).to(env.DEVICE),
             self.stddev,
         )  # pylint: disable=no-explicit-dtype
 

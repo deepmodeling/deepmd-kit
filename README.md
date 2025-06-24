@@ -76,7 +76,7 @@ See [our v2 paper](https://doi.org/10.1063/5.0155600) for details of all feature
 #### v3
 
 - Multiple backends supported. Add PyTorch and JAX backends.
-- The DPA-2 model.
+- The DPA2 and DPA3 models.
 - Plugin mechanisms for external models.
 
 See [our v3 paper](https://doi.org/10.1021/acs.jctc.5c00340) for details of all features until v3.0.

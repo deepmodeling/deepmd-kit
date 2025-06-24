@@ -289,7 +289,7 @@ class PolarFitting(GeneralFitting):
         ]
         # out = out * self.scale[atype, ...]
         scale_atype = xp.reshape(
-            xp.take(xp.astype(self.scale, out.dtype), xp.reshape(atype, [-1]), axis=0),
+            xp.take(xp.astype(self.scale, out.dtype), xp.reshape(atype, (-1,)), axis=0),
             (*atype.shape, 1),
         )
         out = out * scale_atype
@@ -315,7 +315,7 @@ class PolarFitting(GeneralFitting):
             bias = xp.reshape(
                 xp.take(
                     xp.astype(self.constant_matrix, out.dtype),
-                    xp.reshape(atype, [-1]),
+                    xp.reshape(atype, (-1,)),
                     axis=0,
                 ),
                 (nframes, nloc),

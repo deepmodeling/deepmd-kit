@@ -27,7 +27,7 @@ except AttributeError:
     ncpus = os.cpu_count()
 NUM_WORKERS = int(os.environ.get("NUM_WORKERS", min(0, ncpus)))
 # Make sure DDP uses correct device if applicable
-LOCAL_RANK = paddle.distributed.get_rank()
+LOCAL_RANK = int(os.environ.get("PADDLE_LOCAL_RANK", 0))
 
 if os.environ.get("DEVICE") == "cpu" or paddle.device.cuda.device_count() <= 0:
     DEVICE = "cpu"
@@ -71,6 +71,7 @@ if CINN:
 
 CACHE_PER_SYS = 5  # keep at most so many sets per sys in memory
 ENERGY_BIAS_TRAINABLE = True
+CUSTOM_OP_USE_JIT = to_bool(os.environ.get("CUSTOM_OP_USE_JIT", False))
 
 PRECISION_DICT = {
     "float16": paddle.float16,
@@ -198,6 +199,7 @@ def enable_prim(enable: bool = True):
 __all__ = [
     "CACHE_PER_SYS",
     "CINN",
+    "CUSTOM_OP_USE_JIT",
     "DEFAULT_PRECISION",
     "DEVICE",
     "ENERGY_BIAS_TRAINABLE",
