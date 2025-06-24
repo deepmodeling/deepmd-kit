@@ -132,7 +132,9 @@ class DP(Calculator):
         atype = [self.type_dict[k] for k in symbols]
         fparam = atoms.info.get("fparam", None)
         aparam = atoms.info.get("aparam", None)
-        e, f, v = self.dp.eval(coords=coord, cells=cell, atom_types=atype, fparam=fparam, aparam=aparam)[:3]
+        e, f, v = self.dp.eval(
+            coords=coord, cells=cell, atom_types=atype, fparam=fparam, aparam=aparam
+        )[:3]
         self.results["energy"] = e[0][0]
         # see https://gitlab.com/ase/ase/-/merge_requests/2485
         self.results["free_energy"] = e[0][0]

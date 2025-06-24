@@ -104,7 +104,6 @@ class TestCalculator(unittest.TestCase):
         np.testing.assert_allclose(v0, v1, rtol=low_prec, atol=prec)
 
 
-
 class TestCalculatorWithFparamAparam(unittest.TestCase):
     def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
