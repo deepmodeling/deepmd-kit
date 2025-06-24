@@ -597,7 +597,7 @@ def print_ener_sys_avg(avg: dict[str, float]) -> None:
     log.info(f"Energy RMSE        : {avg['rmse_e']:e} eV")
     log.info(f"Energy MAE/Natoms  : {avg['mae_ea']:e} eV")
     log.info(f"Energy RMSE/Natoms : {avg['rmse_ea']:e} eV")
-    if "rmse_f" in avg.keys():
+    if "rmse_f" in avg:
         log.info(f"Force  MAE         : {avg['mae_f']:e} eV/A")
         log.info(f"Force  RMSE        : {avg['rmse_f']:e} eV/A")
     else:
@@ -605,11 +605,12 @@ def print_ener_sys_avg(avg: dict[str, float]) -> None:
         log.info(f"Force spin MAE      : {avg['mae_fm']:e} eV/uB")
         log.info(f"Force atom RMSE     : {avg['rmse_fr']:e} eV/A")
         log.info(f"Force spin RMSE     : {avg['rmse_fm']:e} eV/uB")
-    log.info(f"Virial MAE         : {avg['mae_v']:e} eV")
-    log.info(f"Virial RMSE        : {avg['rmse_v']:e} eV")
-    log.info(f"Virial MAE/Natoms  : {avg['mae_va']:e} eV")
-    log.info(f"Virial RMSE/Natoms : {avg['rmse_va']:e} eV")
-    if "rmse_h" in avg.keys():
+    if "rmse_v" in avg:
+        log.info(f"Virial MAE         : {avg['mae_v']:e} eV")
+        log.info(f"Virial RMSE        : {avg['rmse_v']:e} eV")
+        log.info(f"Virial MAE/Natoms  : {avg['mae_va']:e} eV")
+        log.info(f"Virial RMSE/Natoms : {avg['rmse_va']:e} eV")
+    if "rmse_h" in avg:
         log.info(f"Hessian MAE         : {avg['mae_h']:e} eV/A^2")
         log.info(f"Hessian RMSE        : {avg['rmse_h']:e} eV/A^2")
 
