@@ -162,7 +162,8 @@ class TestMultiTaskModel(unittest.TestCase):
         with redirect_stderr(io.StringIO()) as f:
             run_dp(f"dp --pt show {INPUT} {ATTRIBUTES}")
         results = f.getvalue().split("\n")[:-1]
-        assert "This is a multitask model" in results
+        assert len(results) == 10
+        assert "This is a multitask model" in results[-19]
         assert (
             "Available model branches are ['model_1', 'model_2', 'RANDOM'], "
             "where 'RANDOM' means using a randomly initialized fitting net."
