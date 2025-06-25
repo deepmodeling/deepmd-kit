@@ -335,6 +335,12 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         help="(Supported backend: PyTorch) Task head (alias: model branch) to freeze if in multi-task mode.",
     )
+    parser_frz.add_argument(
+        "--hessian",
+        action="store_true",
+        default=False,
+        help="Add the Hessian to the model output.",
+    )
 
     # * test script ********************************************************************
     parser_tst = subparsers.add_parser(

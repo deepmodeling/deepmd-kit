@@ -13,6 +13,7 @@ def freeze(
     *,
     checkpoint_folder: str,
     output: str,
+    hessian: bool = False,
     **kwargs,
 ) -> None:
     """Freeze the graph in supplied folder.
@@ -23,6 +24,8 @@ def freeze(
         location of either the folder with checkpoint or the checkpoint prefix
     output : str
         output file name
+    hessian : bool, optional
+        whether to freeze the hessian, by default False
     **kwargs
         other arguments
     """
@@ -31,6 +34,6 @@ def freeze(
         checkpoint_folder = checkpoint_meta.read_text().strip()
     if Path(checkpoint_folder).is_dir():
         data = serialize_from_file(checkpoint_folder)
-        deserialize_to_file(output, data)
+        deserialize_to_file(output, data, hessian=hessian)
     else:
         raise FileNotFoundError(f"Checkpoint {checkpoint_folder} does not exist.")

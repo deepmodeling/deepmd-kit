@@ -31,6 +31,14 @@ OUTPUT_DEFS = {
         r_differentiable=True,
         c_differentiable=True,
     ),
+    "energy_hessian": OutputVariableDef(
+        "energy",
+        shape=[1],
+        reducible=True,
+        r_differentiable=True,
+        c_differentiable=True,
+        r_hessian=True,
+    ),
     "mask": OutputVariableDef(
         "mask",
         shape=[1],
@@ -167,7 +175,7 @@ class HLO(BaseModel):
 
     def model_output_def(self):
         return ModelOutputDef(
-            FittingOutputDef([OUTPUT_DEFS[tt] for tt in self.model_output_type()])
+            FittingOutputDef([OUTPUT_DEFS[tt if not (self.model_def_script.get("hessian_mode", False) and tt == "energy") else f"{tt}_hessian"] for tt in self.model_output_type()])
         )
 
     def call_lower(

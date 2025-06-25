@@ -21,7 +21,7 @@ from deepmd.jax.model.base_model import (
 )
 
 
-def deserialize_to_file(model_file: str, data: dict) -> None:
+def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> None:
     """Deserialize the dictionary to a model file.
 
     Parameters
@@ -30,10 +30,15 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         The model file to be saved.
     data : dict
         The dictionary to be deserialized.
+    hessian : bool
+        Add the Hessian to the model output.
     """
     if model_file.endswith(".savedmodel"):
         model = BaseModel.deserialize(data["model"])
         model_def_script = data["model_def_script"]
+        if hessian:
+            model.enable_hessian()
+            model_def_script["hessian_mode"] = True
         call_lower = model.call_lower
 
         tf_model = tf.Module()
