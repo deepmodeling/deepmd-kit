@@ -17,6 +17,7 @@ dp --pt show <INPUT> <ATTRIBUTES...>
   - `descriptor`: Displays the model descriptor parameters.
   - `fitting-net`: Displays parameters of the fitting network.
   - `size`: (Supported Backends: PyTorch and PaddlePaddle) Shows the parameter counts for various components.
+  - `type-coverage`: (Supported Backends: PyTorch) Shows the type (element) coverage for this model.
 
 ## Example Usage
 
@@ -60,6 +61,12 @@ Depending on the provided attributes and the model type, the output includes:
 
   - Prints the number of parameters for each component (`descriptor`, `fitting-net`, etc.), as well as the total parameter count.
 
+- **type-coverage**
+
+  - Displays the count and list of element types covered by the model.
+  - For multitask models, it shows the type coverage for each branch.
+  - Note: Type coverage reflects the types observed during training data statistics, which may differ from the type map.
+
 ## Example Output
 
 For a singletask model, the output might look like:
@@ -73,6 +80,9 @@ Parameter counts:
 Parameters in descriptor: 19,350
 Parameters in fitting-net: 119,091
 Parameters in total: 138,441
+The type coverage for this model:
+Number of covered types: 2
+Covered types: ['H', 'O']
 ```
 
 For a multitask model, if `model-branch` is selected, it will additionally display available branches:
