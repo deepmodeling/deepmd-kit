@@ -239,7 +239,7 @@ manylinux-aarch64-image = "manylinux_2_28"
 
 [tool.cibuildwheel.macos]
 before-all = [
-    '''pip install -i https://pypi.anaconda.org/mpi4py/simple mpich''',
+    '''pip install mpich''',
 ]
 repair-wheel-command = """delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel} --ignore-missing-dependencies"""
 
@@ -272,7 +272,7 @@ before-all = [
     # https://almalinux.org/blog/2023-12-20-almalinux-8-key-update/
     """rpm --import https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux""",
     """{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-nvcc-${CUDA_VERSION/./-} cuda-cudart-devel-${CUDA_VERSION/./-}; fi }""",
-    '''/opt/python/cp311-cp311/bin/python -m pip install -i https://pypi.anaconda.org/mpi4py/simple mpich''',
+    '''/opt/python/cp311-cp311/bin/python -m pip install mpich''',
     # uv is not available in the old manylinux image
     """{ if [ "$(uname -m)" = "x86_64" ] ; then pipx install uv; fi }""",
 ]
@@ -458,15 +458,6 @@ select = [
     "TOR1",
     "TOR2",
 ]
-
-[tool.uv.sources]
-mpich = { index = "mpi4py" }
-openmpi = { index = "mpi4py" }
-
-[[tool.uv.index]]
-name = "mpi4py"
-url = "https://pypi.anaconda.org/mpi4py/simple"
-explicit = true
 
 [[tool.uv.dependency-metadata]]
 # Fix https://github.com/deepmodeling/deepmd-kit/issues/4679
