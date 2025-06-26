@@ -21,17 +21,13 @@ jobs:
       with:
         python-version: '3.11'
         cache: 'pip'
-    - name: Setup MPI
-      uses: mpi4py/setup-mpi@v1
-      with:
-        mpi: mpich
     - uses: lukka/get-cmake@latest
     - run: python -m pip install uv
     - name: Install Python dependencies
       run: |
         source/install/uv_with_retry.sh pip install --system tensorflow-cpu~=2.18.0 jax==0.5.0
         export TENSORFLOW_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
-        source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp,jax] mpi4py
+        source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp,jax] mpi4py mpich
         source/install/uv_with_retry.sh pip install --system 'torch==2.7' --index-url https://download.pytorch.org/whl/cpu
     - name: Convert models
       run: source/tests/infer/convert-models.sh
