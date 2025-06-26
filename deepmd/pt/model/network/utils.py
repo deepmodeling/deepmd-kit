@@ -12,11 +12,10 @@ from deepmd.pt.utils.env import (
 if not JIT:  # only for training
     try:
         import torch_scatter
-
-        has_torch_scatter = True
-        # raise ImportError
     except ImportError:
         has_torch_scatter = False
+    else:
+        has_torch_scatter = True
 else:
     has_torch_scatter = False
 
