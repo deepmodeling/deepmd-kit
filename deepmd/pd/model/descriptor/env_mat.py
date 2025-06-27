@@ -3,6 +3,7 @@
 import paddle
 
 from deepmd.pd.utils.preprocess import (
+    compute_exp_sw,
     compute_smooth_weight,
 )
 
@@ -14,6 +15,7 @@ def _make_env_mat(
     ruct_smth: float,
     radial_only: bool = False,
     protection: float = 0.0,
+    use_exp_switch: bool = False,
 ):
     """Make smooth environment matrix."""
     bsz, natoms, nnei = nlist.shape
@@ -24,7 +26,8 @@ def _make_env_mat(
     nlist = paddle.where(mask, nlist, nall - 1)
     coord_l = coord[:, :natoms].reshape([bsz, -1, 1, 3])
     index = nlist.reshape([bsz, -1]).unsqueeze(-1).expand([-1, -1, 3])
-    coord_r = paddle.take_along_axis(coord, axis=1, indices=index)
+    coord_pad = paddle.concat([coord, coord[:, -1:, :] + rcut], axis=1)
+    coord_r = paddle.take_along_axis(coord_pad, axis=1, indices=index)
     coord_r = coord_r.reshape([bsz, natoms, nnei, 3])
     diff = coord_r - coord_l
     length = paddle.linalg.norm(diff, axis=-1, keepdim=True)
@@ -32,7 +35,11 @@ def _make_env_mat(
     length = length + (~mask.unsqueeze(-1)).astype(length.dtype)
     t0 = 1 / (length + protection)
     t1 = diff / (length + protection) ** 2
-    weight = compute_smooth_weight(length, ruct_smth, rcut)
+    weight = (
+        compute_smooth_weight(length, ruct_smth, rcut)
+        if not use_exp_switch
+        else compute_exp_sw(length, ruct_smth, rcut)
+    )
     weight = weight * mask.unsqueeze(-1).astype(weight.dtype)
     if radial_only:
         env_mat = t0 * weight
@@ -51,6 +58,7 @@ def prod_env_mat(
     rcut_smth: float,
     radial_only: bool = False,
     protection: float = 0.0,
+    use_exp_switch: bool = False,
 ):
     """Generate smooth environment matrix from atom coordinates and other context.
 
@@ -63,6 +71,7 @@ def prod_env_mat(
     - rcut_smth: Smooth hyper-parameter for pair force & energy.
     - radial_only: Whether to return a full description or a radial-only descriptor.
     - protection: Protection parameter to prevent division by zero errors during calculations.
+    - use_exp_switch: Whether to use the exponential switch function.
 
     Returns
     -------
@@ -75,6 +84,7 @@ def prod_env_mat(
         rcut_smth,
         radial_only,
         protection=protection,
+        use_exp_switch=use_exp_switch,
     )  # shape [n_atom, dim, 4 or 1]
     t_avg = mean[atype]  # [n_atom, dim, 4 or 1]
     t_std = stddev[atype]  # [n_atom, dim, 4 or 1]
