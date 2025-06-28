@@ -134,7 +134,7 @@ class NvnmdConfig:
         r"""Initialize version-dependent parameters."""
         self.version = version
         self.max_nnei = max_nnei
-        log.debug("#Set nvnmd version as %d " % self.version)
+        log.debug(f"#Set nvnmd version as {self.version} ")
         if self.version == 0:
             if self.max_nnei == 128:
                 self.jdata_deepmd_input = copy.deepcopy(jdata_deepmd_input_v0_ni128)
@@ -213,7 +213,7 @@ class NvnmdConfig:
             jdata["nlayer_fea"] = len(jdata["neuron"])
             jdata["same_net"] = 1 if jdata["type_one_side"] else 0
             # neighbor
-            jdata["NI"] = self.max_nnei
+            jdata["NI"] = jdata["sel"]
             jdata["NIDP"] = int(jdata["sel"])
             jdata["NIX"] = 2 ** int(np.ceil(np.log2(jdata["NIDP"] / 1.5)))
             if jdata["sel"] <= 128:
