@@ -79,9 +79,13 @@ class Wrap:
         self.map_file = map_file
         self.model_file = model_file
         # init according to local file
-        loc_config = np.load(config_file,allow_pickle=True)
-        loc_version = loc_config[0]['ctrl']['VERSION']
-        jdata = jdata_deepmd_input_v1_ni256["nvnmd"] if loc_version == 1 else jdata_deepmd_input_v0["nvnmd"]
+        loc_config = np.load(config_file, allow_pickle=True)
+        loc_version = loc_config[0]["ctrl"]["VERSION"]
+        jdata = (
+            jdata_deepmd_input_v1_ni256["nvnmd"]
+            if loc_version == 1
+            else jdata_deepmd_input_v0["nvnmd"]
+        )
         jdata["config_file"] = config_file
         jdata["weight_file"] = weight_file
         jdata["map_file"] = map_file
@@ -433,7 +437,12 @@ class Wrap:
                         for rr in range(nrs)
                         for cc in range(nc)
                     ]
-                    bbp += [''.join([bdc[ll][tt][sc * ncs * 0 + cc] for cc in range(ncs)]*numdata)] # fix bug-adjust to multi data
+                    bbp += [
+                        "".join(
+                            [bdc[ll][tt][sc * ncs * 0 + cc] for cc in range(ncs)]
+                            * numdata
+                        )
+                    ]  # fix bug-adjust to multi data
                     bbp += [bb[ll][tt][sc * ncs * 0 + cc] for cc in range(ncs)]
                 else:
                     # fp
