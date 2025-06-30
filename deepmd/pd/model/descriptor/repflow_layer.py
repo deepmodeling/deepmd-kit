@@ -586,7 +586,7 @@ class RepFlowLayer(paddle.nn.Layer):
         sub_node_update = paddle.matmul(node_ebd, sub_node)
         # n_angle * angle_dim
         sub_node_update = paddle.index_select(
-            sub_node_update.reshape(nf * nloc, sub_node_update.shape[-1]), n2a_index, 0
+            sub_node_update.reshape((nf * nloc, sub_node_update.shape[-1])), n2a_index, 0
         )
 
         # n_edge * angle_dim
@@ -666,7 +666,7 @@ class RepFlowLayer(paddle.nn.Layer):
         sub_node_update = paddle.matmul(node_ebd, node)
         # n_edge * node/edge_dim
         sub_node_update = paddle.index_select(
-            sub_node_update.reshape(nf * nloc, sub_node_update.shape[-1]),
+            sub_node_update.reshape((nf * nloc, sub_node_update.shape[-1])),
             n2e_index,
             0,
         )
@@ -675,7 +675,7 @@ class RepFlowLayer(paddle.nn.Layer):
         sub_node_ext_update = paddle.matmul(node_ebd_ext, node_ext)
         # n_edge * node/edge_dim
         sub_node_ext_update = paddle.index_select(
-            sub_node_ext_update.reshape(nf * nall, sub_node_update.shape[-1]),
+            sub_node_ext_update.reshape((nf * nall, sub_node_update.shape[-1])),
             n_ext2e_index,
             0,
         )
@@ -746,7 +746,7 @@ class RepFlowLayer(paddle.nn.Layer):
         a_updated : nf x nloc x a_nnei x a_nnei x a_dim
             Updated angle embedding.
         """
-        nb, nloc, nnei, _ = edge_ebd.shape
+        nb, nloc, nnei = nlist.shape
         nall = node_ebd_ext.shape[1]
         node_ebd = node_ebd_ext[:, :nloc, :]
         n_edge = int(nlist_mask.sum().item())
@@ -896,7 +896,7 @@ class RepFlowLayer(paddle.nn.Layer):
                     n2e_index,
                     average=False,
                     num_owner=nb * nloc,
-                ).reshape(nb, nloc, node_edge_update.shape[-1])
+                ).reshape((nb, nloc, node_edge_update.shape[-1]))
                 / self.dynamic_e_sel
             )
         )

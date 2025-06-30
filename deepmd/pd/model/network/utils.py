@@ -30,7 +30,7 @@ def aggregate(
     output: [num_owner, feature_dim]
     """
     bin_count = paddle.bincount(owners)
-    bin_count = bin_count.where(bin_count != 0, paddle.ones_like(bin_count))
+    bin_count = paddle.where(bin_count != 0, bin_count, paddle.ones_like(bin_count))
 
     if (num_owner is not None) and (bin_count.shape[0] != num_owner):
         difference = num_owner - bin_count.shape[0]
@@ -51,6 +51,7 @@ def get_graph_index(
     nlist_mask: paddle.Tensor,
     a_nlist_mask: paddle.Tensor,
     nall: int,
+    use_loc_mapping: bool = True,
 ):
     """
     Get the index mapping for edge graph and angle graph, ready in `aggregate` or `index_select`.
@@ -100,7 +101,9 @@ def get_graph_index(
     n2e_index = n2e_index[nlist_mask]  # graph node index, atom_graph[:, 0]
 
     # node_ext(j) to edge(ij) index_select
-    frame_shift = paddle.arange(0, nf, dtype=nlist.dtype) * nall
+    frame_shift = paddle.arange(0, nf, dtype=nlist.dtype) * (
+        nall if not use_loc_mapping else nloc
+    )
     shifted_nlist = nlist + frame_shift[:, None, None]
     # n_edge
     n_ext2e_index = shifted_nlist[nlist_mask]  # graph neighbor index, atom_graph[:, 1]
