@@ -515,7 +515,8 @@ class DescrptBlockRepflows(DescriptorBlock):
             a_sw = (a_sw[:, :, :, None] * a_sw[:, :, None, :])[a_nlist_mask]
         else:
             # avoid jit assertion
-            edge_index = angle_index = paddle.zeros([1, 3], dtype=nlist.dtype)
+            edge_index = paddle.zeros([2, 1], dtype=nlist.dtype)
+            angle_index = paddle.zeros([3, 1], dtype=nlist.dtype)
         # get edge and angle embedding
         # nb x nloc x nnei x e_dim [OR] n_edge x e_dim
         if not self.edge_init_use_dist:
@@ -566,7 +567,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                 edge_ebd,
                 h2,
                 sw,
-                owner=edge_index[:, 0],
+                owner=edge_index[0],
                 num_owner=nframes * nloc,
                 nb=nframes,
                 nloc=nloc,
