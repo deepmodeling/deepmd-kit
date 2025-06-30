@@ -207,6 +207,7 @@ def enable_prim(enable: bool = True):
 __all__ = [
     "CACHE_PER_SYS",
     "CINN",
+    "CINN_ALLOW_DYNAMIC_SHAPE",
     "CUSTOM_OP_USE_JIT",
     "DEFAULT_PRECISION",
     "DEVICE",

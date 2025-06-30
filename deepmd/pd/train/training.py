@@ -610,11 +610,10 @@ class Trainer:
             )
 
             backend = "CINN" if CINN else None
-            # NOTE: This is a trick to decide the right input_spec for wrapper.forward
-            _, label_dict, _ = self.get_data(is_train=True)
-
-            # Build spec only for keys present in sample data
             if CINN_ALLOW_DYNAMIC_SHAPE:
+                # Build spec only for keys present in sample data
+                # NOTE: This is a trick to decide the right input_spec for wrapper.forward
+                _, label_dict, _ = self.get_data(is_train=True)
                 # Define specification templates
                 spec_templates = {
                     "find_box": np.float32(1.0),
@@ -635,7 +634,7 @@ class Trainer:
                     if k in spec_templates
                 }
                 self.wrapper.forward = jit.to_static(
-                    backend=None,
+                    backend=backend,
                     input_spec=[
                         static.InputSpec([1, -1, 3], "float64", name="coord"),  # coord
                         static.InputSpec([1, -1], "int32", name="atype"),  # atype
@@ -657,9 +656,19 @@ class Trainer:
                 )
 
             log.info(
-                "Enable CINN during training, there may be some additional "
-                "compilation time in the first traning step."
+                "[CINN] Enable CINN during training, there may be some additional "
+                "compilation time in the first training step."
             )
+            if not CINN_ALLOW_DYNAMIC_SHAPE:
+                log.info(
+                    "[CINN] Dynamic shape is disabled (CINN_ALLOW_DYNAMIC_SHAPE=0). "
+                    "Make sure the input batch shapes are fixed during training. "
+                    "This is recommended for optimal performance, e.g., as in examples/water."
+                )
+                log.info(
+                    "[CINN] If batch data from your dataset(s) has varying input shapes, consider setting "
+                    "CINN_ALLOW_DYNAMIC_SHAPE=1 to enable dynamic shape support."
+                )
 
         if dist.is_available() and dist.is_initialized():
             # DDP will guarantee the model parameters are identical across all processes
