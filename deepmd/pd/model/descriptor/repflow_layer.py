@@ -586,7 +586,9 @@ class RepFlowLayer(paddle.nn.Layer):
         sub_node_update = paddle.matmul(node_ebd, sub_node)
         # n_angle * angle_dim
         sub_node_update = paddle.index_select(
-            sub_node_update.reshape((nf * nloc, sub_node_update.shape[-1])), n2a_index, 0
+            sub_node_update.reshape((nf * nloc, sub_node_update.shape[-1])),
+            n2a_index,
+            0,
         )
 
         # n_edge * angle_dim
