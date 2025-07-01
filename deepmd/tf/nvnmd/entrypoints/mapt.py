@@ -460,7 +460,9 @@ class MapTable:
         res_lst = run_sess(sess, vals, feed_dict={dic_ph["u"]: u})
         res_dic = dict(zip(keys, res_lst))
 
-        u2 = N2 * np.reshape(np.arange(0, N * 16 + 1, dtype=np.float64) / (N * 16), [-1, 1])
+        u2 = N2 * np.reshape(
+            np.arange(0, N * 16 + 1, dtype=np.float64) / (N * 16), [-1, 1]
+        )
         res_lst2 = run_sess(sess, vals, feed_dict={dic_ph["u"]: u2})
         res_dic2 = dict(zip(keys, res_lst2))  # reference for commpare
 
@@ -564,7 +566,11 @@ class MapTable:
         res_lst = run_sess(sess, vals, feed_dict={dic_ph["s"]: s})
         res_dic = dict(zip(keys, res_lst))
 
-        s2 = N2 * np.reshape(np.arange(0, N * 16 + 1, dtype=np.float64) / (N * 16), [-1, 1]) + smin_
+        s2 = (
+            N2
+            * np.reshape(np.arange(0, N * 16 + 1, dtype=np.float64) / (N * 16), [-1, 1])
+            + smin_
+        )
         res_lst2 = run_sess(sess, vals, feed_dict={dic_ph["s"]: s2})
         res_dic2 = dict(zip(keys, res_lst2))
 
