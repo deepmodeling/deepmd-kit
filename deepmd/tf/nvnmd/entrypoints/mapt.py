@@ -595,7 +595,7 @@ class MapTable:
         # type_embedding of i, j atoms -> two_side_type_embedding
         type_embedding = dic_ph["t_ebd"]
         padding_ntypes = type_embedding.shape[0]
-        type_embedding_nei = tf.tile(
+        type_embedding_nei = tf.tile( # pylint: disable=no-explicit-dtype
             tf.reshape(type_embedding, [1, padding_ntypes, -1]),
             [padding_ntypes, 1, 1],
         )  # (ntypes) * ntypes * Y
