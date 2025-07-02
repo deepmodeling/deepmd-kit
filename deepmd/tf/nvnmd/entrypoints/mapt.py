@@ -7,6 +7,7 @@ from typing import (
 import numpy as np
 
 from deepmd.tf.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
     op_module,
     tf,
 )
@@ -202,7 +203,7 @@ class MapTable:
                     val_i = val[ii]
                     nr = np.shape(val_i)[0]
                     nc = np.shape(val_i)[1] // 4
-                    dat_i = np.zeros([n, nc], dtype=np.float64)
+                    dat_i = np.zeros([n, nc], dtype=GLOBAL_NP_FLOAT_PRECISION)
                     for kk in range(n):
                         xk = x[kk]
                         for cfg in cfgs:
@@ -456,11 +457,11 @@ class MapTable:
         keys = list(dic_ph.keys())
         vals = list(dic_ph.values())
 
-        u = N2 * np.reshape(np.arange(0, N + 1, dtype=np.float64) / N, [-1, 1])
+        u = N2 * np.reshape(np.arange(0, N + 1, dtype=GLOBAL_NP_FLOAT_PRECISION) / N, [-1, 1])
         res_lst = run_sess(sess, vals, feed_dict={dic_ph["u"]: u})
         res_dic = dict(zip(keys, res_lst))
 
-        u2 = N2 * np.reshape(np.arange(0, N * 16 + 1, dtype=np.float64) / (N * 16), [-1, 1])
+        u2 = N2 * np.reshape(np.arange(0, N * 16 + 1, dtype=GLOBAL_NP_FLOAT_PRECISION) / (N * 16), [-1, 1])
         res_lst2 = run_sess(sess, vals, feed_dict={dic_ph["u"]: u2})
         res_dic2 = dict(zip(keys, res_lst2))  # reference for commpare
 
@@ -560,11 +561,11 @@ class MapTable:
         keys = list(dic_ph.keys())
         vals = list(dic_ph.values())
 
-        s = N2 * np.reshape(np.arange(0, N + 1, dtype=np.float64) / N, [-1, 1]) + smin_
+        s = N2 * np.reshape(np.arange(0, N + 1, dtype=GLOBAL_NP_FLOAT_PRECISION) / N, [-1, 1]) + smin_
         res_lst = run_sess(sess, vals, feed_dict={dic_ph["s"]: s})
         res_dic = dict(zip(keys, res_lst))
 
-        s2 = N2 * np.reshape(np.arange(0, N * 16 + 1, dtype=np.float64) / (N * 16), [-1, 1]) + smin_
+        s2 = N2 * np.reshape(np.arange(0, N * 16 + 1, dtype=GLOBAL_NP_FLOAT_PRECISION) / (N * 16), [-1, 1]) + smin_
         res_lst2 = run_sess(sess, vals, feed_dict={dic_ph["s"]: s2})
         res_dic2 = dict(zip(keys, res_lst2))
 

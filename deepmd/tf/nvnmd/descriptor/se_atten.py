@@ -61,9 +61,9 @@ def check_switch_range(davg, dstd) -> None:
     #  'init_from_model', 'restart', 'init_from_frz_model', 'finetune'
     if (davg is not None) or (dstd is not None):
         if davg is None:
-            davg = np.zeros([ntype, ndescrpt], dtype=np.float64)
+            davg = np.zeros([ntype, ndescrpt], dtype=GLOBAL_NP_FLOAT_PRECISION)
         if dstd is None:
-            dstd = np.ones([ntype, ndescrpt], dtype=np.float64)
+            dstd = np.ones([ntype, ndescrpt], dtype=GLOBAL_NP_FLOAT_PRECISION)
         nvnmd_cfg.get_s_range(davg, dstd)
 
 
