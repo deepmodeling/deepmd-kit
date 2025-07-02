@@ -271,7 +271,7 @@ class DPAtomicModel(BaseAtomicModel):
         )
         if self.enable_eval_fitting_last_layer_hook:
             assert "middle_output" in fit_ret, (
-                f"eval_fitting_last_layer not supported for fitting net {type(self.fitting_net.__class__)}!"
+                "eval_fitting_last_layer not supported for this fitting net!"
             )
             self.eval_fitting_last_layer_list.append(
                 fit_ret.pop("middle_output").detach()

@@ -646,8 +646,10 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
             np.ndarray
                 The output before last layer.
             """
-            for layer in self.layers[:-1]:
-                x = layer(x)
+            # avoid slice (self.layers[:-1]) for jit
+            for ii, layer in enumerate(self.layers):
+                if ii < len(self.layers) - 1:
+                    x = layer(x)
             return x
 
         def clear(self) -> None:
