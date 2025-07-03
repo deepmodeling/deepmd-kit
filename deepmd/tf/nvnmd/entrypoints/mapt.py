@@ -7,6 +7,7 @@ from typing import (
 import numpy as np
 
 from deepmd.tf.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
     op_module,
     tf,
 )
@@ -202,7 +203,7 @@ class MapTable:
                     val_i = val[ii]
                     nr = np.shape(val_i)[0]
                     nc = np.shape(val_i)[1] // 4
-                    dat_i = np.zeros([n, nc], dtype=np.float64)
+                    dat_i = np.zeros([n, nc], dtype=GLOBAL_NP_FLOAT_PRECISION)
                     for kk in range(n):
                         xk = x[kk]
                         for cfg in cfgs:
@@ -456,7 +457,7 @@ class MapTable:
         keys = list(dic_ph.keys())
         vals = list(dic_ph.values())
 
-        u = N2 * np.reshape(np.arange(0, N + 1, dtype=np.float64) / N, [-1, 1])
+        u = N2 * np.reshape(np.arange(0, N + 1, dtype=GLOBAL_NP_FLOAT_PRECISION) / N, [-1, 1])
         res_lst = run_sess(sess, vals, feed_dict={dic_ph["u"]: u})
         res_dic = dict(zip(keys, res_lst))
 
@@ -562,7 +563,7 @@ class MapTable:
         keys = list(dic_ph.keys())
         vals = list(dic_ph.values())
 
-        s = N2 * np.reshape(np.arange(0, N + 1, dtype=np.float64) / N, [-1, 1]) + smin_
+        s = N2 * np.reshape(np.arange(0, N + 1, dtype=GLOBAL_NP_FLOAT_PRECISION) / N, [-1, 1]) + smin_
         res_lst = run_sess(sess, vals, feed_dict={dic_ph["s"]: s})
         res_dic = dict(zip(keys, res_lst))
 
@@ -601,7 +602,7 @@ class MapTable:
         # type_embedding of i, j atoms -> two_side_type_embedding
         type_embedding = dic_ph["t_ebd"]
         padding_ntypes = type_embedding.shape[0]
-        type_embedding_nei = tf.tile(
+        type_embedding_nei = tf.tile( # pylint: disable=no-explicit-dtype
             tf.reshape(type_embedding, [1, padding_ntypes, -1]),
             [padding_ntypes, 1, 1],
         )  # (ntypes) * ntypes * Y
