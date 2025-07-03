@@ -14,7 +14,7 @@
         "nlayers": 6,
         "e_rcut": 6.0,
         "e_rcut_smth": 5.3,
-        "e_sel": 120,
+        "e_sel": 1200,
         "a_rcut": 4.0,
         "a_rcut_smth": 3.5,
         "a_sel": 30,
