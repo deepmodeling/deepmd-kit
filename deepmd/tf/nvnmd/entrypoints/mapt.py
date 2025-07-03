@@ -457,7 +457,9 @@ class MapTable:
         keys = list(dic_ph.keys())
         vals = list(dic_ph.values())
 
-        u = N2 * np.reshape(np.arange(0, N + 1, dtype=GLOBAL_NP_FLOAT_PRECISION) / N, [-1, 1])
+        u = N2 * np.reshape(
+            np.arange(0, N + 1, dtype=GLOBAL_NP_FLOAT_PRECISION) / N, [-1, 1]
+        )
         res_lst = run_sess(sess, vals, feed_dict={dic_ph["u"]: u})
         res_dic = dict(zip(keys, res_lst))
 
@@ -563,7 +565,13 @@ class MapTable:
         keys = list(dic_ph.keys())
         vals = list(dic_ph.values())
 
-        s = N2 * np.reshape(np.arange(0, N + 1, dtype=GLOBAL_NP_FLOAT_PRECISION) / N, [-1, 1]) + smin_
+        s = (
+            N2
+            * np.reshape(
+                np.arange(0, N + 1, dtype=GLOBAL_NP_FLOAT_PRECISION) / N, [-1, 1]
+            )
+            + smin_
+        )
         res_lst = run_sess(sess, vals, feed_dict={dic_ph["s"]: s})
         res_dic = dict(zip(keys, res_lst))
 
@@ -602,7 +610,7 @@ class MapTable:
         # type_embedding of i, j atoms -> two_side_type_embedding
         type_embedding = dic_ph["t_ebd"]
         padding_ntypes = type_embedding.shape[0]
-        type_embedding_nei = tf.tile( # pylint: disable=no-explicit-dtype
+        type_embedding_nei = tf.tile(  # pylint: disable=no-explicit-dtype
             tf.reshape(type_embedding, [1, padding_ntypes, -1]),
             [padding_ntypes, 1, 1],
         )  # (ntypes) * ntypes * Y

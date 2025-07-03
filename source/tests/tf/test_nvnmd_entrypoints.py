@@ -51,11 +51,15 @@ class TestNvnmdEntrypointsV0(tf.test.TestCase):
     def test_mapt_cnn_v0(self) -> None:
         config_file = str(tests_path / "nvnmd" / "ref" / "config_v0_cnn.npy")
         weight_file = str(tests_path / "nvnmd" / "ref" / "weight_v0_cnn.npy")
-        output_filename = f'{tests_path}/nvnmd/out/map_v0_cnn.npy'
-        parts = [f'{tests_path}/nvnmd/out/map_v0_cnn_part_1.npy', f'{tests_path}/nvnmd/out/map_v0_cnn_part_2.npy', f'{tests_path}/nvnmd/out/map_v0_cnn_part_3.npy']
-        with open(output_filename, 'wb') as output_file:
+        output_filename = f"{tests_path}/nvnmd/out/map_v0_cnn.npy"
+        parts = [
+            f"{tests_path}/nvnmd/out/map_v0_cnn_part_1.npy",
+            f"{tests_path}/nvnmd/out/map_v0_cnn_part_2.npy",
+            f"{tests_path}/nvnmd/out/map_v0_cnn_part_3.npy",
+        ]
+        with open(output_filename, "wb") as output_file:
             for part_filename in parts:
-                with open(part_filename, 'rb') as part_file:
+                with open(part_filename, "rb") as part_file:
                     output_file.write(part_file.read())
         map_file = str(tests_path / "nvnmd" / "out" / "map_v0_cnn.npy")
         # mapt
@@ -528,11 +532,14 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
     def test_mapt_cnn_v1(self) -> None:
         config_file = str(tests_path / "nvnmd" / "ref" / "config_v1_cnn.npy")
         weight_file = str(tests_path / "nvnmd" / "ref" / "weight_v1_cnn.npy")
-        output_filename = f'{tests_path}/nvnmd/out/map_v1_cnn.npy'
-        parts = [f'{tests_path}/nvnmd/out/map_v1_cnn_part_1.npy', f'{tests_path}/nvnmd/out/map_v1_cnn_part_2.npy']
-        with open(output_filename, 'wb') as output_file:
+        output_filename = f"{tests_path}/nvnmd/out/map_v1_cnn.npy"
+        parts = [
+            f"{tests_path}/nvnmd/out/map_v1_cnn_part_1.npy",
+            f"{tests_path}/nvnmd/out/map_v1_cnn_part_2.npy",
+        ]
+        with open(output_filename, "wb") as output_file:
             for part_filename in parts:
-                with open(part_filename, 'rb') as part_file:
+                with open(part_filename, "rb") as part_file:
                     output_file.write(part_file.read())
         map_file = str(tests_path / "nvnmd" / "out" / "map_v1_cnn.npy")
         # mapt
