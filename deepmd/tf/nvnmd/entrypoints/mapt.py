@@ -610,18 +610,22 @@ class MapTable:
         # type_embedding of i, j atoms -> two_side_type_embedding
         type_embedding = dic_ph["t_ebd"]
         padding_ntypes = type_embedding.shape[0]
-        type_embedding_nei = tf.tile( 
-            tf.reshape(type_embedding, [1, padding_ntypes, -1], dtype=GLOBAL_TF_FLOAT_PRECISION),
+        type_embedding_nei = tf.tile(
+            tf.reshape(
+                type_embedding, [1, padding_ntypes, -1], dtype=GLOBAL_TF_FLOAT_PRECISION
+            ),
             [padding_ntypes, 1, 1],
         )  # (ntypes) * ntypes * Y
-        type_embedding_center = tf.tile( 
-            tf.reshape(type_embedding, [padding_ntypes, 1, -1], dtype=GLOBAL_TF_FLOAT_PRECISION),
+        type_embedding_center = tf.tile(
+            tf.reshape(
+                type_embedding, [padding_ntypes, 1, -1], dtype=GLOBAL_TF_FLOAT_PRECISION
+            ),
             [1, padding_ntypes, 1],
         )  # ntypes * (ntypes) * Y
-        two_side_type_embedding = tf.concat( 
+        two_side_type_embedding = tf.concat(
             [type_embedding_nei, type_embedding_center], -1
         )  # ntypes * ntypes * (Y+Y)
-        two_side_type_embedding = tf.reshape( 
+        two_side_type_embedding = tf.reshape(
             two_side_type_embedding,
             [-1, two_side_type_embedding.shape[-1]],
             dtype=GLOBAL_TF_FLOAT_PRECISION,
