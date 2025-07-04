@@ -614,13 +614,13 @@ class MapTable:
         padding_ntypes = type_embedding.shape[0]
         type_embedding_nei = tf.tile(
             tf.reshape(
-                type_embedding, [1, padding_ntypes, -1], dtype=GLOBAL_TF_FLOAT_PRECISION
+                type_embedding, [1, padding_ntypes, -1]
             ),
             [padding_ntypes, 1, 1],
         )  # (ntypes) * ntypes * Y
         type_embedding_center = tf.tile(
             tf.reshape(
-                type_embedding, [padding_ntypes, 1, -1], dtype=GLOBAL_TF_FLOAT_PRECISION
+                type_embedding, [padding_ntypes, 1, -1]
             ),
             [1, padding_ntypes, 1],
         )  # ntypes * (ntypes) * Y
