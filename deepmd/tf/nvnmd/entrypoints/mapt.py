@@ -613,15 +613,11 @@ class MapTable:
         type_embedding = dic_ph["t_ebd"]
         padding_ntypes = type_embedding.shape[0]
         type_embedding_nei = tf.tile(
-            tf.reshape(
-                type_embedding, [1, padding_ntypes, -1]
-            ),
+            tf.reshape(type_embedding, [1, padding_ntypes, -1]),
             [padding_ntypes, 1, 1],
         )  # (ntypes) * ntypes * Y
         type_embedding_center = tf.tile(
-            tf.reshape(
-                type_embedding, [padding_ntypes, 1, -1]
-            ),
+            tf.reshape(type_embedding, [padding_ntypes, 1, -1]),
             [1, padding_ntypes, 1],
         )  # ntypes * (ntypes) * Y
         two_side_type_embedding = tf.concat(
