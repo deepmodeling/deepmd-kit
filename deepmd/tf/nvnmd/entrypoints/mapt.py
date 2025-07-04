@@ -604,7 +604,9 @@ class MapTable:
         dic_ph["t_one_hot"] = ebd_type
         wbs = [get_type_embedding_weight(nvnmd_cfg.weight, ll) for ll in range(1, 5)]
         ebd_type = self.build_embedding_net(dic_ph["t_one_hot"], wbs, None)
-        last_type = tf.cast(tf.zeros([1, ebd_type.shape[1]], dtype=filter_precision), filter_precision)
+        last_type = tf.cast(
+            tf.zeros([1, ebd_type.shape[1]], dtype=filter_precision), filter_precision
+        )
         ebd_type = tf.concat([ebd_type, last_type], 0)
         dic_ph["t_ebd"] = ebd_type
         # type_embedding of i, j atoms -> two_side_type_embedding
