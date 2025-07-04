@@ -591,18 +591,18 @@ class MapTable:
         dic_ph["t_one_hot"] = ebd_type
         wbs = [get_type_embedding_weight(nvnmd_cfg.weight, ll) for ll in range(1, 5)]
         ebd_type = self.build_embedding_net(dic_ph["t_one_hot"], wbs, None)
-        last_type = tf.cast(tf.zeros([1, ebd_type.shape[1]]), filter_precision)
+        last_type = tf.cast(tf.zeros([1, ebd_type.shape[1]], dtype=filter_precision), filter_precision)
         ebd_type = tf.concat([ebd_type, last_type], 0)
         dic_ph["t_ebd"] = ebd_type
         # type_embedding of i, j atoms -> two_side_type_embedding
         type_embedding = dic_ph["t_ebd"]
         padding_ntypes = type_embedding.shape[0]
         type_embedding_nei = tf.tile( 
-            tf.reshape(type_embedding, [1, padding_ntypes, -1], dtype=GLOBAL_TF_FLOAT_PRECISION),
+            tf.reshape(type_embedding, [1, padding_ntypes, -1]),
             [padding_ntypes, 1, 1],
         )  # (ntypes) * ntypes * Y
         type_embedding_center = tf.tile( 
-            tf.reshape(type_embedding, [padding_ntypes, 1, -1], dtype=GLOBAL_TF_FLOAT_PRECISION),
+            tf.reshape(type_embedding, [padding_ntypes, 1, -1]),
             [1, padding_ntypes, 1],
         )  # ntypes * (ntypes) * Y
         two_side_type_embedding = tf.concat( 
@@ -611,7 +611,6 @@ class MapTable:
         two_side_type_embedding = tf.reshape( 
             two_side_type_embedding,
             [-1, two_side_type_embedding.shape[-1]],
-            dtype=GLOBAL_TF_FLOAT_PRECISION,
         )
         # see se_atten.py in dp
         wbs = [get_filter_type_weight(nvnmd_cfg.weight, ll) for ll in range(1, 5)]
