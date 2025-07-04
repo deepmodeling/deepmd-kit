@@ -7,6 +7,7 @@ from typing import (
 import numpy as np
 
 from deepmd.tf.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
     op_module,
     tf,
@@ -614,14 +615,14 @@ class MapTable:
             tf.reshape(type_embedding, [1, padding_ntypes, -1]),
             [padding_ntypes, 1, 1],
         )  # (ntypes) * ntypes * Y
-        type_embedding_center = tf.tile(
+        type_embedding_center = tf.tile( # pylint: disable=no-explicit-dtype
             tf.reshape(type_embedding, [padding_ntypes, 1, -1]),
             [1, padding_ntypes, 1],
         )  # ntypes * (ntypes) * Y
-        two_side_type_embedding = tf.concat(
+        two_side_type_embedding = tf.concat( # pylint: disable=no-explicit-dtype
             [type_embedding_nei, type_embedding_center], -1
         )  # ntypes * ntypes * (Y+Y)
-        two_side_type_embedding = tf.reshape(
+        two_side_type_embedding = tf.reshape( # pylint: disable=no-explicit-dtype
             two_side_type_embedding,
             [-1, two_side_type_embedding.shape[-1]],
         )
