@@ -54,6 +54,7 @@ from deepmd.pd.utils.dataloader import (
 )
 from deepmd.pd.utils.env import (
     CINN,
+    CINN_ALLOW_DYNAMIC_SHAPE,
     DEFAULT_PRECISION,
     DEVICE,
     JIT,
@@ -609,49 +610,65 @@ class Trainer:
             )
 
             backend = "CINN" if CINN else None
-            # NOTE: This is a trick to decide the right input_spec for wrapper.forward
-            _, label_dict, _ = self.get_data(is_train=True)
-
-            # Define specification templates
-            spec_templates = {
-                "find_box": np.float32(1.0),
-                "find_coord": np.float32(1.0),
-                "find_numb_copy": np.float32(0.0),
-                "numb_copy": static.InputSpec([1, 1], "int64", name="numb_copy"),
-                "find_energy": np.float32(1.0),
-                "energy": static.InputSpec([1, 1], "float64", name="energy"),
-                "find_force": np.float32(1.0),
-                "force": static.InputSpec([1, -1, 3], "float64", name="force"),
-                "find_virial": np.float32(0.0),
-                "virial": static.InputSpec([1, 9], "float64", name="virial"),
-                "natoms": static.InputSpec([1, -1], "int32", name="natoms"),
-            }
-            # Build spec only for keys present in sample data
-            label_dict_spec = {
-                k: spec_templates[k] for k in label_dict.keys() if k in spec_templates
-            }
-            self.wrapper.forward = jit.to_static(
-                backend=backend,
-                input_spec=[
-                    static.InputSpec([1, -1, 3], "float64", name="coord"),  # coord
-                    static.InputSpec([1, -1], "int32", name="atype"),  # atype
-                    None,  # spin
-                    static.InputSpec([1, 9], "float64", name="box"),  # box
-                    static.InputSpec([], "float64", name="cur_lr"),  # cur_lr
-                    label_dict_spec,  # label,
-                    # None, # task_key
-                    # False, # inference_only
-                    # False, # do_atomic_virial
-                    # None, # fparam
-                    # None, # aparam
-                ],
-                full_graph=True,
-            )(self.wrapper.forward)
+            if CINN_ALLOW_DYNAMIC_SHAPE:
+                # Build spec only for keys present in sample data
+                # NOTE: This is a trick to decide the right input_spec for wrapper.forward
+                _, label_dict, _ = self.get_data(is_train=True)
+                # Define specification templates
+                spec_templates = {
+                    "find_box": np.float32(1.0),
+                    "find_coord": np.float32(1.0),
+                    "find_numb_copy": np.float32(0.0),
+                    "numb_copy": static.InputSpec([1, 1], "int64", name="numb_copy"),
+                    "find_energy": np.float32(1.0),
+                    "energy": static.InputSpec([1, 1], "float64", name="energy"),
+                    "find_force": np.float32(1.0),
+                    "force": static.InputSpec([1, -1, 3], "float64", name="force"),
+                    "find_virial": np.float32(0.0),
+                    "virial": static.InputSpec([1, 9], "float64", name="virial"),
+                    "natoms": static.InputSpec([1, -1], "int32", name="natoms"),
+                }
+                label_dict_spec = {
+                    k: spec_templates[k]
+                    for k in label_dict.keys()
+                    if k in spec_templates
+                }
+                self.wrapper.forward = jit.to_static(
+                    backend=backend,
+                    input_spec=[
+                        static.InputSpec([1, -1, 3], "float64", name="coord"),  # coord
+                        static.InputSpec([1, -1], "int32", name="atype"),  # atype
+                        None,  # spin
+                        static.InputSpec([1, 9], "float64", name="box"),  # box
+                        static.InputSpec([], "float64", name="cur_lr"),  # cur_lr
+                        label_dict_spec,  # label,
+                        # None, # task_key
+                        # False, # inference_only
+                        # False, # do_atomic_virial
+                        # None, # fparam
+                        # None, # aparam
+                    ],
+                    full_graph=True,
+                )(self.wrapper.forward)
+            else:
+                self.wrapper.forward = jit.to_static(full_graph=True, backend=backend)(
+                    self.wrapper.forward
+                )
 
             log.info(
-                "Enable CINN during training, there may be some additional "
-                "compilation time in the first traning step."
+                "[CINN] Enable CINN during training, there may be some additional "
+                "compilation time in the first training step."
             )
+            if not CINN_ALLOW_DYNAMIC_SHAPE:
+                log.info(
+                    "[CINN] Dynamic shape is disabled (CINN_ALLOW_DYNAMIC_SHAPE=0). "
+                    "Make sure the input batch shapes are fixed during training. "
+                    "This is recommended for optimal performance, e.g., as in examples/water."
+                )
+                log.info(
+                    "[CINN] If batch data from your dataset(s) has varying input shapes, consider setting "
+                    "CINN_ALLOW_DYNAMIC_SHAPE=1 to enable dynamic shape support."
+                )
 
         if dist.is_available() and dist.is_initialized():
             # DDP will guarantee the model parameters are identical across all processes

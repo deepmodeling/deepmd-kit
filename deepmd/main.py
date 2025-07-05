@@ -112,7 +112,7 @@ def main_parser() -> argparse.ArgumentParser:
     if default_backend not in BACKEND_TABLE.keys():
         raise ValueError(
             f"Unknown backend {default_backend}. "
-            "Please set DP_BACKEND to either tensorflow or pytorch."
+            "Please set DP_BACKEND to either tensorflow, pytorch, or paddle."
         )
 
     parser_backend = parser.add_mutually_exclusive_group()
@@ -312,7 +312,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--output",
         type=str,
         default="frozen_model",
-        help="Filename (prefix) of the output model file. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth",
+        help="Filename (prefix) of the output model file. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth; Paddle backend: suffix is .json and .pdiparams",
     )
     parser_frz.add_argument(
         "-n",
