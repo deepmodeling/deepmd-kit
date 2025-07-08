@@ -16,6 +16,7 @@ from deepmd.dpmodel.utils.network import (
     make_multilayer_network,
 )
 from deepmd.jax.common import (
+    ArrayAPIVariable,
     flax_module,
     to_jax_array,
 )
@@ -44,7 +45,10 @@ class NativeLayer(NativeLayerDP):
         if name in {"w", "b", "idt"}:
             value = to_jax_array(value)
             if value is not None:
-                value = ArrayAPIParam(value)
+                if self.trainable:
+                    value = ArrayAPIParam(value)
+                else:
+                    value = ArrayAPIVariable(value)
         return super().__setattr__(name, value)
 
 
