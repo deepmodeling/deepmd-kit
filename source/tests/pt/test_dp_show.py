@@ -47,7 +47,7 @@ class TestSingleTaskModel(unittest.TestCase):
 
     def test_checkpoint(self) -> None:
         INPUT = "model.pt"
-        ATTRIBUTES = "type-map descriptor fitting-net size type-coverage"
+        ATTRIBUTES = "type-map descriptor fitting-net size observed-type"
         with redirect_stderr(io.StringIO()) as f:
             run_dp(f"dp --pt show {INPUT} {ATTRIBUTES}")
         results = [
@@ -66,13 +66,13 @@ class TestSingleTaskModel(unittest.TestCase):
         assert "Parameters in descriptor: 19,350" in results[5]
         assert "Parameters in fitting-net: 119,091" in results[6]
         assert "Parameters in total: 138,441" in results[7]
-        assert "The type coverage for this model:" in results[8]
-        assert "Number of covered types: 2" in results[9]
-        assert "Covered types: ['H', 'O']" in results[10]
+        assert "The observed types for this model:" in results[8]
+        assert "Number of observed types: 2" in results[9]
+        assert "Observed types: ['H', 'O']" in results[10]
 
     def test_frozen_model(self) -> None:
         INPUT = "frozen_model.pth"
-        ATTRIBUTES = "type-map descriptor fitting-net size type-coverage"
+        ATTRIBUTES = "type-map descriptor fitting-net size observed-type"
         with redirect_stderr(io.StringIO()) as f:
             run_dp(f"dp --pt show {INPUT} {ATTRIBUTES}")
         results = [
@@ -91,9 +91,9 @@ class TestSingleTaskModel(unittest.TestCase):
         assert "Parameters in descriptor: 19,350" in results[5]
         assert "Parameters in fitting-net: 119,091" in results[6]
         assert "Parameters in total: 138,441" in results[7]
-        assert "The type coverage for this model:" in results[8]
-        assert "Number of covered types: 2" in results[9]
-        assert "Covered types: ['H', 'O']" in results[10]  # only covers two elements
+        assert "The observed types for this model:" in results[8]
+        assert "Number of observed types: 2" in results[9]
+        assert "Observed types: ['H', 'O']" in results[10]  # only covers two elements
 
     def test_checkpoint_error(self) -> None:
         INPUT = "model.pt"
@@ -162,7 +162,7 @@ class TestMultiTaskModel(unittest.TestCase):
 
     def test_checkpoint(self) -> None:
         INPUT = "model.ckpt.pt"
-        ATTRIBUTES = "model-branch type-map descriptor fitting-net size type-coverage"
+        ATTRIBUTES = "model-branch type-map descriptor fitting-net size observed-type"
         with redirect_stderr(io.StringIO()) as f:
             run_dp(f"dp --pt show {INPUT} {ATTRIBUTES}")
         results = [
@@ -200,17 +200,17 @@ class TestMultiTaskModel(unittest.TestCase):
         assert "Parameters in descriptor: 19,350" in results[9]
         assert "Parameters in fitting-net: 4,860" in results[10]
         assert "Parameters in total: 24,210" in results[11]
-        assert "The type coverage for each branch:" in results[12]
-        assert "model_1: Number of covered types: 2" in results[13]
-        assert "model_1: Covered types: ['H', 'O']" in results[14]
-        assert "model_2: Number of covered types: 2" in results[15]
-        assert "model_2: Covered types: ['H', 'O']" in results[16]
-        assert "TOTAL number of covered types in the model: 2" in results[17]
-        assert "TOTAL covered types in the model: ['H', 'O']" in results[18]
+        assert "The observed types for each branch:" in results[12]
+        assert "model_1: Number of observed types: 2" in results[13]
+        assert "model_1: Observed types: ['H', 'O']" in results[14]
+        assert "model_2: Number of observed types: 2" in results[15]
+        assert "model_2: Observed types: ['H', 'O']" in results[16]
+        assert "TOTAL number of observed types in the model: 2" in results[17]
+        assert "TOTAL observed types in the model: ['H', 'O']" in results[18]
 
     def test_frozen_model(self) -> None:
         INPUT = "frozen_model.pth"
-        ATTRIBUTES = "type-map descriptor fitting-net size type-coverage"
+        ATTRIBUTES = "type-map descriptor fitting-net size observed-type"
         with redirect_stderr(io.StringIO()) as f:
             run_dp(f"dp --pt show {INPUT} {ATTRIBUTES}")
         results = [
@@ -229,9 +229,9 @@ class TestMultiTaskModel(unittest.TestCase):
         assert "Parameters in descriptor: 19,350" in results[5]
         assert "Parameters in fitting-net: 4,860" in results[6]
         assert "Parameters in total: 24,210" in results[7]
-        assert "The type coverage for this model:" in results[8]
-        assert "Number of covered types: 2" in results[9]
-        assert "Covered types: ['H', 'O']" in results[10]  # only covers two elements
+        assert "The observed types for this model:" in results[8]
+        assert "Number of observed types: 2" in results[9]
+        assert "Observed types: ['H', 'O']" in results[10]  # only covers two elements
 
     def tearDown(self) -> None:
         for f in os.listdir("."):

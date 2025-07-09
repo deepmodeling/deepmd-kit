@@ -73,31 +73,33 @@ def show(
         for k in sorted(size_dict):
             log.info(f"Parameters in {k}: {size_dict[k]:,}")
 
-    if "type-coverage" in ATTRIBUTES:
+    if "observed-type" in ATTRIBUTES:
         if model_is_multi_task:
-            log.info("The type coverage for each branch: ")
-            total_type_coverage_list = []
+            log.info("The observed types for each branch: ")
+            total_observed_types_list = []
             model_branches = list(model_params["model_dict"].keys())
             for branch in model_branches:
                 tmp_model = DeepEval(INPUT, head=branch, no_jit=True)
-                type_coverage = tmp_model.get_type_coverage()
+                observed_types = tmp_model.get_observed_types()
                 log.info(
-                    f"{branch}: Number of covered types: {type_coverage['type_num']} "
+                    f"{branch}: Number of observed types: {observed_types['type_num']} "
                 )
-                log.info(f"{branch}: Covered types: {type_coverage['covered_type']} ")
-                total_type_coverage_list += [
+                log.info(
+                    f"{branch}: Observed types: {observed_types['observed_type']} "
+                )
+                total_observed_types_list += [
                     tt
-                    for tt in type_coverage["covered_type"]
-                    if tt not in total_type_coverage_list
+                    for tt in observed_types["observed_type"]
+                    if tt not in total_observed_types_list
                 ]
             log.info(
-                f"TOTAL number of covered types in the model: {len(total_type_coverage_list)} "
+                f"TOTAL number of observed types in the model: {len(total_observed_types_list)} "
             )
             log.info(
-                f"TOTAL covered types in the model: {sort_element_type(total_type_coverage_list)} "
+                f"TOTAL observed types in the model: {sort_element_type(total_observed_types_list)} "
             )
         else:
-            log.info("The type coverage for this model: ")
-            type_coverage = model.get_type_coverage()
-            log.info(f"Number of covered types: {type_coverage['type_num']} ")
-            log.info(f"Covered types: {type_coverage['covered_type']} ")
+            log.info("The observed types for this model: ")
+            observed_types = model.get_observed_types()
+            log.info(f"Number of observed types: {observed_types['type_num']} ")
+            log.info(f"Observed types: {observed_types['observed_type']} ")

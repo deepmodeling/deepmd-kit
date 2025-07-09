@@ -857,7 +857,7 @@ def main_parser() -> argparse.ArgumentParser:
             "descriptor",
             "fitting-net",
             "size",
-            "type-coverage",
+            "observed-type",
         ],
         nargs="+",
     )

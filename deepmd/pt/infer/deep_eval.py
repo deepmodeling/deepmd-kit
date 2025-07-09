@@ -652,15 +652,15 @@ class DeepEval(DeepEvalBackend):
             "total": sum_param_des + sum_param_fit,
         }
 
-    def get_type_coverage(self) -> dict:
-        """Get model type (element) coverage.
+    def get_observed_types(self) -> dict:
+        """Get observed types (elements) during model training.
 
         Returns
         -------
         dict
-            A dictionary containing the information of type coverage in the model:
-            - 'type_num': the total number of covered types in this model.
-            - 'covered_type': a list of the covered types in this model.
+            A dictionary containing the information of observed type in the model:
+            - 'type_num': the total number of observed types in this model.
+            - 'observed_type': a list of the observed types in this model.
         """
         buffers_dict = dict(self.dp.named_buffers())
         type_map = np.array(self.type_map)
@@ -678,7 +678,7 @@ class DeepEval(DeepEvalBackend):
         bias_mask = (np.abs(out_bias) > 1e-6).any(-1)  # 1e-6 for stability
         return {
             "type_num": bias_mask.sum(),
-            "covered_type": sort_element_type(type_map[bias_mask].tolist()),
+            "observed_type": sort_element_type(type_map[bias_mask].tolist()),
         }
 
     def eval_descriptor(

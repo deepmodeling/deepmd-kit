@@ -295,8 +295,8 @@ class DeepEvalBackend(ABC):
         """Get model parameter count."""
         raise NotImplementedError("Not implemented in this backend.")
 
-    def get_type_coverage(self) -> dict:
-        """Get model type (element) coverage."""
+    def get_observed_types(self) -> dict:
+        """Get observed types (elements) during model training."""
         raise NotImplementedError("Not implemented in this backend.")
 
 
@@ -573,6 +573,6 @@ class DeepEval(ABC):
         """Get model parameter count."""
         return self.deep_eval.get_model_size()
 
-    def get_type_coverage(self) -> dict:
-        """Get model type (element) coverage."""
-        return self.deep_eval.get_type_coverage()
+    def get_observed_types(self) -> dict:
+        """Get observed types (elements) during model training."""
+        return self.deep_eval.get_observed_types()
