@@ -296,7 +296,7 @@ class DeepEvalBackend(ABC):
         raise NotImplementedError("Not implemented in this backend.")
 
     def get_observed_types(self) -> dict:
-        """Get observed types (elements) during model training."""
+        """Get observed types (elements) of the model during data statistics."""
         raise NotImplementedError("Not implemented in this backend.")
 
 
@@ -574,5 +574,5 @@ class DeepEval(ABC):
         return self.deep_eval.get_model_size()
 
     def get_observed_types(self) -> dict:
-        """Get observed types (elements) during model training."""
+        """Get observed types (elements) of the model during data statistics."""
         return self.deep_eval.get_observed_types()

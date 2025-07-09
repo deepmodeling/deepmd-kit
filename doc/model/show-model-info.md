@@ -17,7 +17,7 @@ dp --pt show <INPUT> <ATTRIBUTES...>
   - `descriptor`: Displays the model descriptor parameters.
   - `fitting-net`: Displays parameters of the fitting network.
   - `size`: (Supported Backends: PyTorch and PaddlePaddle) Shows the parameter counts for various components.
-  - `observed-type`: (Supported Backends: PyTorch) Shows the type (element) coverage for this model.
+  - `observed-type`: (Supported Backends: PyTorch) Shows the observed types (elements) of the model during data statistics.
 
 ## Example Usage
 
@@ -63,9 +63,9 @@ Depending on the provided attributes and the model type, the output includes:
 
 - **observed-type**
 
-  - Displays the count and list of element types covered by the model.
+  - Displays the count and list of element types of the model during data statistics.
   - For multitask models, it shows the observed types for each branch.
-  - Note: Type coverage reflects the types observed during training data statistics, which may differ from the type map.
+  - Note: This info shows the types observed during training data statistics, which may differ from the type map.
 
 ## Example Output
 

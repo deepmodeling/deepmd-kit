@@ -653,7 +653,7 @@ class DeepEval(DeepEvalBackend):
         }
 
     def get_observed_types(self) -> dict:
-        """Get observed types (elements) during model training.
+        """Get observed types (elements) of the model during data statistics.
 
         Returns
         -------
