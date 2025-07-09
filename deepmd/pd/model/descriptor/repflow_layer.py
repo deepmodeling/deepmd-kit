@@ -64,6 +64,7 @@ class RepFlowLayer(paddle.nn.Layer):
         update_residual_init: str = "const",
         precision: str = "float64",
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
@@ -126,6 +127,7 @@ class RepFlowLayer(paddle.nn.Layer):
             n_dim,
             precision=precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             self.n_residual.append(
@@ -135,6 +137,7 @@ class RepFlowLayer(paddle.nn.Layer):
                     self.update_residual_init,
                     precision=precision,
                     seed=child_seed(seed, 1),
+                    trainable=trainable,
                 )
             )
 
@@ -145,6 +148,7 @@ class RepFlowLayer(paddle.nn.Layer):
             n_dim,
             precision=precision,
             seed=child_seed(seed, 2),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             self.n_residual.append(
@@ -154,6 +158,7 @@ class RepFlowLayer(paddle.nn.Layer):
                     self.update_residual_init,
                     precision=precision,
                     seed=child_seed(seed, 3),
+                    trainable=trainable,
                 )
             )
 
@@ -163,6 +168,7 @@ class RepFlowLayer(paddle.nn.Layer):
             self.n_multi_edge_message * n_dim,
             precision=precision,
             seed=child_seed(seed, 4),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             for head_index in range(self.n_multi_edge_message):
@@ -173,6 +179,7 @@ class RepFlowLayer(paddle.nn.Layer):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(child_seed(seed, 5), head_index),
+                        trainable=trainable,
                     )
                 )
 
@@ -182,6 +189,7 @@ class RepFlowLayer(paddle.nn.Layer):
             e_dim,
             precision=precision,
             seed=child_seed(seed, 6),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             self.e_residual.append(
@@ -191,6 +199,7 @@ class RepFlowLayer(paddle.nn.Layer):
                     self.update_residual_init,
                     precision=precision,
                     seed=child_seed(seed, 7),
+                    trainable=trainable,
                 )
             )
 
@@ -219,6 +228,7 @@ class RepFlowLayer(paddle.nn.Layer):
                         precision=precision,
                         bias=False,
                         seed=child_seed(seed, 8),
+                        trainable=trainable,
                     )
                     self.a_compress_e_linear = MLPLayer(
                         self.e_dim,
@@ -226,6 +236,7 @@ class RepFlowLayer(paddle.nn.Layer):
                         precision=precision,
                         bias=False,
                         seed=child_seed(seed, 9),
+                        trainable=trainable,
                     )
                 else:
                     self.a_compress_n_linear = None
@@ -237,12 +248,14 @@ class RepFlowLayer(paddle.nn.Layer):
                 self.e_dim,
                 precision=precision,
                 seed=child_seed(seed, 10),
+                trainable=trainable,
             )
             self.edge_angle_linear2 = MLPLayer(
                 self.e_dim,
                 self.e_dim,
                 precision=precision,
                 seed=child_seed(seed, 11),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 self.e_residual.append(
@@ -252,6 +265,7 @@ class RepFlowLayer(paddle.nn.Layer):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 12),
+                        trainable=trainable,
                     )
                 )
 
@@ -261,6 +275,7 @@ class RepFlowLayer(paddle.nn.Layer):
                 self.a_dim,
                 precision=precision,
                 seed=child_seed(seed, 13),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 self.a_residual.append(
@@ -270,6 +285,7 @@ class RepFlowLayer(paddle.nn.Layer):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 14),
+                        trainable=trainable,
                     )
                 )
         else:

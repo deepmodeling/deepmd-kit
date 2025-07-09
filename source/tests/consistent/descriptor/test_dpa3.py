@@ -130,7 +130,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             "exclude_types": exclude_types,
             "env_protection": 0.0,
             "use_loc_mapping": use_loc_mapping,
-            "trainable": True,
+            "trainable": False,
         }
 
     @property

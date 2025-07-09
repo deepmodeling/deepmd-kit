@@ -198,6 +198,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                     self.precision,
                     bias_out=True,
                     seed=child_seed(seed, ii),
+                    trainable=trainable,
                 )
                 for ii in range(self.ntypes if not self.mixed_types else 1)
             ],
