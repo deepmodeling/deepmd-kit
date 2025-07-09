@@ -130,7 +130,6 @@ class DeepEval(DeepEvalBackend):
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
             model = get_model(self.input_param).to(DEVICE)
-            # TODO fix jit
             if not self.input_param.get("hessian_mode"):
                 model = torch.jit.script(model)
             self.dp = ModelWrapper(model)

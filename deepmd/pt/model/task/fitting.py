@@ -617,9 +617,22 @@ class GeneralFitting(Fitting):
             )  # Shape is [nframes, natoms[0], net_dim_out]
         else:
             if self.eval_return_middle_output:
-                raise NotImplementedError(
-                    "Middle output is only supported for mixed types!"
-                )
+                outs_middle = torch.zeros(
+                    (nf, nloc, self.neuron[-1]),
+                    dtype=self.prec,
+                    device=descriptor.device,
+                )  # jit assertion
+                for type_i, ll in enumerate(self.filter_layers.networks):
+                    mask = (atype == type_i).unsqueeze(-1)
+                    mask = torch.tile(mask, (1, 1, net_dim_out))
+                    middle_output_type = ll.call_until_last(xx)
+                    middle_output_type = torch.where(
+                        torch.tile(mask, (1, 1, self.neuron[-1])),
+                        middle_output_type,
+                        0.0,
+                    )
+                    outs_middle = outs_middle + middle_output_type
+                results["middle_output"] = outs_middle
             for type_i, ll in enumerate(self.filter_layers.networks):
                 mask = (atype == type_i).unsqueeze(-1)
                 mask = torch.tile(mask, (1, 1, net_dim_out))
