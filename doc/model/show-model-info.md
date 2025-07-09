@@ -63,7 +63,7 @@ Depending on the provided attributes and the model type, the output includes:
 
 - **observed-type**
 
-  - Displays the count and list of element types of the model during data statistics.
+  - Displays the count and list of observed element types of the model during data statistics.
   - For multitask models, it shows the observed types for each branch.
   - Note: This info shows the types observed during training data statistics, which may differ from the type map.
 
