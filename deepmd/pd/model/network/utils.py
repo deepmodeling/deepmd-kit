@@ -44,7 +44,7 @@ def aggregate(
 
     # make sure this operation is done on the same device of data and owners
     output = paddle.zeros([num_owner, data.shape[1]])
-    output = output.index_add_(owners, 0, data)
+    output = output.index_add_(owners, 0, data.astype(output.dtype))
     if average:
         assert bin_count is not None
         output = (output.T / bin_count).T

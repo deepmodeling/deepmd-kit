@@ -539,8 +539,10 @@ class DescrptBlockRepflows(DescriptorBlock):
             # node_ebd_ext: nb x nall x n_dim [OR] nb x nloc x n_dim when not parallel_mode
             if not parallel_mode:
                 assert mapping is not None
-                node_ebd_ext = paddle.take_along_axis(
-                    node_ebd, mapping, 1, broadcast=False
+                node_ebd_ext = (
+                    paddle.take_along_axis(node_ebd, mapping, 1, broadcast=False)
+                    if not self.use_loc_mapping
+                    else node_ebd
                 )
             else:
                 raise NotImplementedError("Not implemented")
