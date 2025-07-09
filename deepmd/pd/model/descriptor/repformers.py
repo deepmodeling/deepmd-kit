@@ -87,6 +87,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         use_sqrt_nnei: bool = True,
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
+        trainable: bool = True,
     ) -> None:
         r"""
         The repformer descriptor block.
@@ -173,6 +174,8 @@ class DescrptBlockRepformers(DescriptorBlock):
             The epsilon value for layer normalization.
         seed : int, optional
             Random seed for parameter initialization.
+        trainable : bool, default: True
+            Whether this block is trainable
         """
         super().__init__()
         self.rcut = float(rcut)
@@ -223,7 +226,11 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.seed = seed
 
         self.g2_embd = MLPLayer(
-            1, self.g2_dim, precision=precision, seed=child_seed(seed, 0)
+            1,
+            self.g2_dim,
+            precision=precision,
+            seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         layers = []
         for ii in range(nlayers):
@@ -261,16 +268,17 @@ class DescrptBlockRepformers(DescriptorBlock):
                     g1_out_conv=self.g1_out_conv,
                     g1_out_mlp=self.g1_out_mlp,
                     seed=child_seed(child_seed(seed, 1), ii),
+                    trainable=trainable,
                 )
             )
         self.layers = paddle.nn.LayerList(layers)
 
         wanted_shape = (self.ntypes, self.nnei, 4)
         mean = paddle.zeros(wanted_shape, dtype=env.GLOBAL_PD_FLOAT_PRECISION).to(
-            device=env.DEVICE
+            env.DEVICE
         )
         stddev = paddle.ones(wanted_shape, dtype=env.GLOBAL_PD_FLOAT_PRECISION).to(
-            device=env.DEVICE
+            env.DEVICE
         )
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
@@ -503,11 +511,11 @@ class DescrptBlockRepformers(DescriptorBlock):
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
             paddle.assign(
-                paddle.to_tensor(mean, dtype=self.mean.dtype).to(device=env.DEVICE),
+                paddle.to_tensor(mean, dtype=self.mean.dtype).to(env.DEVICE),
                 self.mean,
             )  # pylint: disable=no-explicit-dtype
         paddle.assign(
-            paddle.to_tensor(stddev, dtype=self.stddev.dtype).to(device=env.DEVICE),
+            paddle.to_tensor(stddev, dtype=self.stddev.dtype).to(env.DEVICE),
             self.stddev,
         )  # pylint: disable=no-explicit-dtype
 

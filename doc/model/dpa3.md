@@ -1,23 +1,23 @@
-# Descriptor DPA-3 {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
+# Descriptor DPA3 {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
 :::{note}
 **Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
 :::
 
-DPA-3 is an advanced interatomic potential leveraging the message passing architecture.
-Designed as a large atomic model (LAM), DPA-3 is tailored to integrate and simultaneously train on datasets from various disciplines,
+DPA3 is an advanced interatomic potential leveraging the message passing architecture.
+Designed as a large atomic model (LAM), DPA3 is tailored to integrate and simultaneously train on datasets from various disciplines,
 encompassing diverse chemical and materials systems across different research domains.
 Its model design ensures exceptional fitting accuracy and robust generalization both within and beyond the training domain.
-Furthermore, DPA-3 maintains energy conservation and respects the physical symmetries of the potential energy surface,
+Furthermore, DPA3 maintains energy conservation and respects the physical symmetries of the potential energy surface,
 making it a dependable tool for a wide range of scientific applications.
 
-Reference: will be released soon.
+Reference: [DPA3 paper](https://arxiv.org/abs/2506.01686).
 
 Training example: `examples/water/dpa3/input_torch.json`.
 
 ## Hyperparameter tests
 
-We systematically conducted DPA-3 training on six representative DFT datasets (available at [AIS-Square](https://www.aissquare.com/datasets/detail?pageType=datasets&name=DPA3_hyperparameter_search&id=316)):
+We systematically conducted DPA3 training on six representative DFT datasets (available at [AIS-Square](https://www.aissquare.com/datasets/detail?pageType=datasets&name=DPA3_hyperparameter_search&id=316)):
 metallic systems (`Alloy`, `AlMgCu`, `W`), covalent material (`Boron`), molecular system (`Drug`), and liquid water (`Water`).
 Under consistent training conditions (0.5M training steps, batch_size "auto:128"),
 we rigorously evaluated the impacts of some critical hyperparameters on validation accuracy.
@@ -38,11 +38,11 @@ with results tabulated below to guide scenario-specific hyperparameter selection
 The loss prefactors (0.2|20, 100|60, 0.02|1) correspond to (`start_pref_e`|`limit_pref_e`, `start_pref_f`|`limit_pref_f`, `start_pref_v`|`limit_pref_v`) respectively.
 Virial RMSEs were averaged exclusively for systems containing virial labels (`Alloy`, `AlMgCu`, `W`, and `Boron`).
 
-Note that we set `float32` in all DPA-3 models, while `float64` in other models by default.
+Note that we set `float32` in all DPA3 models, while `float64` in other models by default.
 
 ## Requirements of installation from source code {{ pytorch_icon }}
 
-To run the DPA-3 model on LAMMPS via source code installation
+To run the DPA3 model on LAMMPS via source code installation
 (users can skip this step if using [easy installation](../install/easy-install.md)),
 the custom OP library for Python interface integration must be compiled and linked
 during the [model freezing process](../freeze/freeze.md).
@@ -65,7 +65,7 @@ See the example `examples/water/lmp/jax_dpa.lammps`.
 
 ## Data format
 
-DPA-3 supports both the [standard data format](../data/system.md) and the [mixed type data format](../data/system.md#mixed-type).
+DPA3 supports both the [standard data format](../data/system.md) and the [mixed type data format](../data/system.md#mixed-type).
 
 ## Type embedding
 

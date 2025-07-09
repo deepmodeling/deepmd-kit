@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-import jaxlib
 
 from deepmd.jax.env import (
     jax,
@@ -52,7 +51,7 @@ class AutoBatchSize(AutoBatchSizeBase):
         # several sources think CUSOLVER_STATUS_INTERNAL_ERROR is another out-of-memory error,
         # such as https://github.com/JuliaGPU/CUDA.jl/issues/1924
         # (the meaningless error message should be considered as a bug in cusolver)
-        if isinstance(e, (jaxlib.xla_extension.XlaRuntimeError, ValueError)) and (
+        if isinstance(e, (RuntimeError, ValueError)) and (
             "RESOURCE_EXHAUSTED:" in e.args[0]
         ):
             return True

@@ -34,7 +34,10 @@ $ dp --pd train input.json
 
 # [experimental] training model with CINN compiler for better performance,
 # see: https://www.paddlepaddle.org.cn/documentation/docs/zh/develop/guides/paddle_v3_features/cinn_cn.html
+## If the shape(s) of batch input data are dynamic during training(default).
 $ CINN=1 dp --pd train input.json
+## If the shape(s) of batch input data are fixed during training, e.g., examples/water.
+$ CINN=1 CINN_ALLOW_DYNAMIC_SHAPE=0 dp --pd train input.json
 ```
 
 :::

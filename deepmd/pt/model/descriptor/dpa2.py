@@ -188,6 +188,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             smooth=smooth,
             type_one_side=self.repinit_args.type_one_side,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.use_three_body = self.repinit_args.use_three_body
         if self.use_three_body:
@@ -207,6 +208,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
                 resnet_dt=self.repinit_args.resnet_dt,
                 smooth=smooth,
                 seed=child_seed(seed, 5),
+                trainable=trainable,
             )
         else:
             self.repinit_three_body = None
@@ -247,6 +249,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             g1_out_conv=self.repformer_args.g1_out_conv,
             g1_out_mlp=self.repformer_args.g1_out_mlp,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         self.rcsl_list = [
             (self.repformers.get_rcut(), self.repformers.get_nsel()),
@@ -274,6 +277,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             use_econf_tebd=self.use_econf_tebd,
             use_tebd_bias=use_tebd_bias,
             type_map=type_map,
+            trainable=trainable,
         )
         self.concat_output_tebd = concat_output_tebd
         self.precision = precision
@@ -299,6 +303,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
                 precision=precision,
                 init="glorot",
                 seed=child_seed(seed, 3),
+                trainable=trainable,
             )
         self.tebd_transform = None
         if self.add_tebd_to_repinit_out:
@@ -308,6 +313,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
                 bias=False,
                 precision=precision,
                 seed=child_seed(seed, 4),
+                trainable=trainable,
             )
         assert self.repinit.rcut > self.repformers.rcut
         assert self.repinit.sel[0] > self.repformers.sel[0]
