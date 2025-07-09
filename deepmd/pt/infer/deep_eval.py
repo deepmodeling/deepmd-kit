@@ -662,23 +662,10 @@ class DeepEval(DeepEvalBackend):
             - 'type_num': the total number of observed types in this model.
             - 'observed_type': a list of the observed types in this model.
         """
-        buffers_dict = dict(self.dp.named_buffers())
-        type_map = np.array(self.type_map)
-        out_bias = None
-        for k in buffers_dict:
-            if ".out_bias" in k:
-                # only use out_bias in the first fitting out_def
-                out_bias = buffers_dict[k].detach().cpu().numpy()[0]
-                break
-        assert out_bias is not None, "No out_bias found in the model buffers."
-        assert len(out_bias.shape) == 2, "The supported out_bias should be a 2D array."
-        assert out_bias.shape[0] == len(type_map), (
-            "The out_bias shape does not match the type map length."
-        )
-        bias_mask = (np.abs(out_bias) > 1e-6).any(-1)  # 1e-6 for stability
+        observed_type_list = self.dp.model["Default"].get_observed_type_list()
         return {
-            "type_num": bias_mask.sum(),
-            "observed_type": sort_element_type(type_map[bias_mask].tolist()),
+            "type_num": len(observed_type_list),
+            "observed_type": sort_element_type(observed_type_list),
         }
 
     def eval_descriptor(

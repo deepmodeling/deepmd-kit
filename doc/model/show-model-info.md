@@ -17,7 +17,7 @@ dp --pt show <INPUT> <ATTRIBUTES...>
   - `descriptor`: Displays the model descriptor parameters.
   - `fitting-net`: Displays parameters of the fitting network.
   - `size`: (Supported Backends: PyTorch and PaddlePaddle) Shows the parameter counts for various components.
-  - `observed-type`: (Supported Backends: PyTorch) Shows the observed types (elements) of the model during data statistics.
+  - `observed-type`: (Supported Backends: PyTorch) Shows the observed types (elements) of the model during data statistics. Only energy models are supported now.
 
 ## Example Usage
 
