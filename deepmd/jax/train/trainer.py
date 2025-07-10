@@ -173,7 +173,9 @@ class DPTrainer:
                 if not train_data.data_systems[ii].pbc:
                     single_data["box"] = None
             model.atomic_model.descriptor.compute_input_stats(all_stat_sys)
-            model.atomic_model.fitting.compute_output_stats(all_stat)
+            model.atomic_model.fitting.compute_output_stats(
+                all_stat, mixed_type=train_data.mixed_type
+            )
 
         def loss_fn(
             model,
