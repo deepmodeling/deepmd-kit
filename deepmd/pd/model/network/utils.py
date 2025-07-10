@@ -29,19 +29,24 @@ def aggregate(
     -------
     output: [num_owner, feature_dim]
     """
-    bin_count = paddle.bincount(owners)
-    bin_count = bin_count.where(bin_count != 0, paddle.ones_like(bin_count))
+    if num_owner is None or average:
+        # requires bincount
+        bin_count = paddle.bincount(owners)
+        bin_count = bin_count.where(bin_count != 0, paddle.ones_like(bin_count))
 
-    if (num_owner is not None) and (bin_count.shape[0] != num_owner):
-        difference = num_owner - bin_count.shape[0]
-        bin_count = paddle.concat(
-            [bin_count, paddle.ones([difference], dtype=bin_count.dtype)]
-        )
+        if (num_owner is not None) and (bin_count.shape[0] != num_owner):
+            difference = num_owner - bin_count.shape[0]
+            bin_count = paddle.concat(
+                [bin_count, paddle.ones([difference], dtype=bin_count.dtype)]
+            )
+    else:
+        bin_count = None
 
     # make sure this operation is done on the same device of data and owners
-    output = paddle.zeros([bin_count.shape[0], data.shape[1]])
-    output = output.index_add_(owners, 0, data)
+    output = paddle.zeros([num_owner, data.shape[1]])
+    output = output.index_add_(owners, 0, data.astype(output.dtype))
     if average:
+        assert bin_count is not None
         output = (output.T / bin_count).T
     return output
 
@@ -51,6 +56,7 @@ def get_graph_index(
     nlist_mask: paddle.Tensor,
     a_nlist_mask: paddle.Tensor,
     nall: int,
+    use_loc_mapping: bool = True,
 ):
     """
     Get the index mapping for edge graph and angle graph, ready in `aggregate` or `index_select`.
@@ -68,12 +74,12 @@ def get_graph_index(
 
     Returns
     -------
-    edge_index : n_edge x 2
+    edge_index : 2 x n_edge
         n2e_index : n_edge
             Broadcast indices from node(i) to edge(ij), or reduction indices from edge(ij) to node(i).
         n_ext2e_index : n_edge
             Broadcast indices from extended node(j) to edge(ij).
-    angle_index : n_angle x 3
+    angle_index : 3 x n_angle
         n2a_index : n_angle
             Broadcast indices from extended node(j) to angle(ijk).
         eij2a_index : n_angle
@@ -100,7 +106,9 @@ def get_graph_index(
     n2e_index = n2e_index[nlist_mask]  # graph node index, atom_graph[:, 0]
 
     # node_ext(j) to edge(ij) index_select
-    frame_shift = paddle.arange(0, nf, dtype=nlist.dtype) * nall
+    frame_shift = paddle.arange(0, nf, dtype=nlist.dtype) * (
+        nall if not use_loc_mapping else nloc
+    )
     shifted_nlist = nlist + frame_shift[:, None, None]
     # n_edge
     n_ext2e_index = shifted_nlist[nlist_mask]  # graph neighbor index, atom_graph[:, 1]
@@ -129,9 +137,7 @@ def get_graph_index(
     # n_angle
     eik2a_index = edge_index_ik[a_nlist_mask_3d]
 
-    return paddle.concat(
-        [n2e_index.unsqueeze(-1), n_ext2e_index.unsqueeze(-1)], axis=-1
-    ), paddle.concat(
-        [n2a_index.unsqueeze(-1), eij2a_index.unsqueeze(-1), eik2a_index.unsqueeze(-1)],
-        axis=-1,
-    )
+    edge_index_result = paddle.stack([n2e_index, n_ext2e_index], axis=0)
+    angle_index_result = paddle.stack([n2a_index, eij2a_index, eik2a_index], axis=0)
+
+    return edge_index_result, angle_index_result
