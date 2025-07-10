@@ -60,9 +60,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         assert out_bias.size(0) == len(type_map), (
             "The out_bias shape does not match the type_map length."
         )
-        bias_mask = torch.gt(torch.abs(out_bias), 1e-6).any(
-            dim=-1
-        ).detach().cpu()  # 1e-6 for stability
+        bias_mask = (
+            torch.gt(torch.abs(out_bias), 1e-6).any(dim=-1).detach().cpu()
+        )  # 1e-6 for stability
 
         observed_type_list: list[str] = []
         for i in range(len(type_map)):
