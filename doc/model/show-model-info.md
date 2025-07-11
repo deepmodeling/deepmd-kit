@@ -17,6 +17,7 @@ dp --pt show <INPUT> <ATTRIBUTES...>
   - `descriptor`: Displays the model descriptor parameters.
   - `fitting-net`: Displays parameters of the fitting network.
   - `size`: (Supported Backends: PyTorch and PaddlePaddle) Shows the parameter counts for various components.
+  - `observed-type`: (Supported Backends: PyTorch) Shows the observed types (elements) of the model during data statistics. Only energy models are supported now.
 
 ## Example Usage
 
@@ -60,6 +61,12 @@ Depending on the provided attributes and the model type, the output includes:
 
   - Prints the number of parameters for each component (`descriptor`, `fitting-net`, etc.), as well as the total parameter count.
 
+- **observed-type**
+
+  - Displays the count and list of observed element types of the model during data statistics.
+  - For multitask models, it shows the observed types for each branch.
+  - Note: This info shows the types observed during training data statistics, which may differ from the type map.
+
 ## Example Output
 
 For a singletask model, the output might look like:
@@ -73,6 +80,9 @@ Parameter counts:
 Parameters in descriptor: 19,350
 Parameters in fitting-net: 119,091
 Parameters in total: 138,441
+The observed types for this model:
+Number of observed types: 2
+Observed types: ['H', 'O']
 ```
 
 For a multitask model, if `model-branch` is selected, it will additionally display available branches:

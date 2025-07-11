@@ -64,6 +64,9 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
 )
+from deepmd.utils.econf_embd import (
+    sort_element_type,
+)
 
 if TYPE_CHECKING:
     import ase.neighborlist
@@ -98,6 +101,7 @@ class DeepEval(DeepEvalBackend):
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         head: Optional[Union[str, int]] = None,
+        no_jit: bool = False,
         **kwargs: Any,
     ) -> None:
         self.output_def = output_def
@@ -130,7 +134,7 @@ class DeepEval(DeepEvalBackend):
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
             model = get_model(self.input_param).to(DEVICE)
-            if not self.input_param.get("hessian_mode"):
+            if not self.input_param.get("hessian_mode") and not no_jit:
                 model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
             self.dp.load_state_dict(state_dict)
@@ -646,6 +650,22 @@ class DeepEval(DeepEvalBackend):
             "descriptor": sum_param_des,
             "fitting-net": sum_param_fit,
             "total": sum_param_des + sum_param_fit,
+        }
+
+    def get_observed_types(self) -> dict:
+        """Get observed types (elements) of the model during data statistics.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the information of observed type in the model:
+            - 'type_num': the total number of observed types in this model.
+            - 'observed_type': a list of the observed types in this model.
+        """
+        observed_type_list = self.dp.model["Default"].get_observed_type_list()
+        return {
+            "type_num": len(observed_type_list),
+            "observed_type": sort_element_type(observed_type_list),
         }
 
     def eval_descriptor(

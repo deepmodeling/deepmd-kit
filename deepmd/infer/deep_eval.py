@@ -295,6 +295,10 @@ class DeepEvalBackend(ABC):
         """Get model parameter count."""
         raise NotImplementedError("Not implemented in this backend.")
 
+    def get_observed_types(self) -> dict:
+        """Get observed types (elements) of the model during data statistics."""
+        raise NotImplementedError("Not implemented in this backend.")
+
 
 class DeepEval(ABC):
     """High-level Deep Evaluator interface.
@@ -568,3 +572,7 @@ class DeepEval(ABC):
     def get_model_size(self) -> dict:
         """Get model parameter count."""
         return self.deep_eval.get_model_size()
+
+    def get_observed_types(self) -> dict:
+        """Get observed types (elements) of the model during data statistics."""
+        return self.deep_eval.get_observed_types()

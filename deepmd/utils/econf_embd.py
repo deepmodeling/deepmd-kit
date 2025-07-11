@@ -9,6 +9,7 @@ __all__ = [
     "electronic_configuration_embedding",
     "make_econf_embedding",
     "normalized_electronic_configuration_embedding",
+    "sort_element_type",
     "transform_to_spin_rep",
 ]
 
@@ -263,3 +264,16 @@ def print_econf_embedding(res: dict[str, np.ndarray]) -> None:
         vvstr = ",".join([str(ii) for ii in vv])
         space = " " * (2 - len(kk))
         print(f'"{kk}"{space} : [{vvstr}],')  # noqa: T201
+
+
+def sort_element_type(elements: list[str]) -> list[str]:
+    """Sort element types based on their atomic number."""
+
+    def get_atomic_number(symbol):
+        try:
+            return element(symbol).atomic_number
+        except ValueError:
+            return float("inf")
+
+    sorted_elements = sorted(elements, key=lambda x: get_atomic_number(x))
+    return sorted_elements
