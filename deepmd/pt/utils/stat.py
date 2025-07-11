@@ -59,6 +59,14 @@ def make_stat_input(datasets, dataloaders, nbatches):
                 except StopIteration:
                     iterator = iter(dataloaders[i])
                     stat_data = next(iterator)
+                if (
+                    "find_fparam" in stat_data
+                    and "fparam" in stat_data
+                    and stat_data["find_fparam"] == 0.0
+                ):
+                    # for model using default fparam
+                    stat_data.pop("fparam")
+                    stat_data.pop("find_fparam")
                 for dd in stat_data:
                     if stat_data[dd] is None:
                         sys_stat[dd] = None
