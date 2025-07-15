@@ -8,7 +8,7 @@ ENV PATH="/opt/deepmd-kit/bin:$PATH"
 ENV VIRTUAL_ENV="/opt/deepmd-kit"
 # Install package
 COPY dist /dist
-RUN if [ "${CUDA_VERSION}" = 11 ]; then uv pip install 'torch==2.3.1.*' --index-url https://download.pytorch.org/whl/cu118; fi \
+RUN if [ "${CUDA_VERSION}" = 11 ]; then export UV_TORCH_BACKEND=cu118; fi \
     && uv pip install "$(ls /dist/deepmd_kit${VARIANT}-*manylinux*_x86_64.whl)[gpu,cu${CUDA_VERSION},lmp,ipi,torch]" \
     && dp -h \
     && lmp -h \
