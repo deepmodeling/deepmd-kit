@@ -157,6 +157,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
     seed : int, optional
         Random seed for parameter initialization.
+    trainable : bool, default: True
+        Whether this block is trainable
     """
 
     def __init__(
@@ -195,6 +197,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         use_loc_mapping: bool = True,
         optim_update: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.e_rcut = float(e_rcut)
@@ -259,10 +262,19 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.seed = seed
 
         self.edge_embd = MLPLayer(
-            1, self.e_dim, precision=precision, seed=child_seed(seed, 0)
+            1,
+            self.e_dim,
+            precision=precision,
+            seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.angle_embd = MLPLayer(
-            1, self.a_dim, precision=precision, bias=False, seed=child_seed(seed, 1)
+            1,
+            self.a_dim,
+            precision=precision,
+            bias=False,
+            seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         layers = []
         for ii in range(nlayers):
@@ -294,6 +306,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                     sel_reduce_factor=self.sel_reduce_factor,
                     smooth_edge_update=self.smooth_edge_update,
                     seed=child_seed(child_seed(seed, 1), ii),
+                    trainable=trainable,
                 )
             )
         self.layers = paddle.nn.LayerList(layers)
@@ -515,7 +528,8 @@ class DescrptBlockRepflows(DescriptorBlock):
             a_sw = (a_sw[:, :, :, None] * a_sw[:, :, None, :])[a_nlist_mask]
         else:
             # avoid jit assertion
-            edge_index = angle_index = paddle.zeros([1, 3], dtype=nlist.dtype)
+            edge_index = paddle.zeros([2, 1], dtype=nlist.dtype)
+            angle_index = paddle.zeros([3, 1], dtype=nlist.dtype)
         # get edge and angle embedding
         # nb x nloc x nnei x e_dim [OR] n_edge x e_dim
         if not self.edge_init_use_dist:
@@ -538,8 +552,10 @@ class DescrptBlockRepflows(DescriptorBlock):
             # node_ebd_ext: nb x nall x n_dim [OR] nb x nloc x n_dim when not parallel_mode
             if not parallel_mode:
                 assert mapping is not None
-                node_ebd_ext = paddle.take_along_axis(
-                    node_ebd, mapping, 1, broadcast=False
+                node_ebd_ext = (
+                    paddle.take_along_axis(node_ebd, mapping, 1, broadcast=False)
+                    if not self.use_loc_mapping
+                    else node_ebd
                 )
             else:
                 raise NotImplementedError("Not implemented")
@@ -566,7 +582,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                 edge_ebd,
                 h2,
                 sw,
-                owner=edge_index[:, 0],
+                owner=edge_index[0],
                 num_owner=nframes * nloc,
                 nb=nframes,
                 nloc=nloc,

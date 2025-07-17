@@ -167,6 +167,8 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
     seed : int, optional
         Random seed for parameter initialization.
+    trainable : bool, default: True
+        Whether the block is trainable
     """
 
     def __init__(
@@ -205,6 +207,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         sel_reduce_factor: float = 10.0,
         use_loc_mapping: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.e_rcut = float(e_rcut)
@@ -269,10 +272,19 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         self.seed = seed
 
         self.edge_embd = NativeLayer(
-            1, self.e_dim, precision=precision, seed=child_seed(seed, 0)
+            1,
+            self.e_dim,
+            precision=precision,
+            seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.angle_embd = NativeLayer(
-            1, self.a_dim, precision=precision, bias=False, seed=child_seed(seed, 1)
+            1,
+            self.a_dim,
+            precision=precision,
+            bias=False,
+            seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         layers = []
         for ii in range(nlayers):
@@ -304,6 +316,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
                     sel_reduce_factor=self.sel_reduce_factor,
                     smooth_edge_update=self.smooth_edge_update,
                     seed=child_seed(child_seed(seed, 1), ii),
+                    trainable=trainable,
                 )
             )
         self.layers = layers
@@ -861,6 +874,7 @@ class RepFlowLayer(NativeOP):
         update_residual_init: str = "const",
         precision: str = "float64",
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
@@ -923,6 +937,7 @@ class RepFlowLayer(NativeOP):
             n_dim,
             precision=precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             self.n_residual.append(
@@ -932,6 +947,7 @@ class RepFlowLayer(NativeOP):
                     self.update_residual_init,
                     precision=precision,
                     seed=child_seed(seed, 1),
+                    trainable=trainable,
                 )
             )
 
@@ -942,6 +958,7 @@ class RepFlowLayer(NativeOP):
             n_dim,
             precision=precision,
             seed=child_seed(seed, 2),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             self.n_residual.append(
@@ -951,6 +968,7 @@ class RepFlowLayer(NativeOP):
                     self.update_residual_init,
                     precision=precision,
                     seed=child_seed(seed, 3),
+                    trainable=trainable,
                 )
             )
 
@@ -960,6 +978,7 @@ class RepFlowLayer(NativeOP):
             self.n_multi_edge_message * n_dim,
             precision=precision,
             seed=child_seed(seed, 4),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             for head_index in range(self.n_multi_edge_message):
@@ -970,6 +989,7 @@ class RepFlowLayer(NativeOP):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(child_seed(seed, 5), head_index),
+                        trainable=trainable,
                     )
                 )
 
@@ -979,6 +999,7 @@ class RepFlowLayer(NativeOP):
             e_dim,
             precision=precision,
             seed=child_seed(seed, 6),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             self.e_residual.append(
@@ -988,6 +1009,7 @@ class RepFlowLayer(NativeOP):
                     self.update_residual_init,
                     precision=precision,
                     seed=child_seed(seed, 7),
+                    trainable=trainable,
                 )
             )
 
@@ -1016,6 +1038,7 @@ class RepFlowLayer(NativeOP):
                         precision=precision,
                         bias=False,
                         seed=child_seed(seed, 8),
+                        trainable=trainable,
                     )
                     self.a_compress_e_linear = NativeLayer(
                         self.e_dim,
@@ -1023,6 +1046,7 @@ class RepFlowLayer(NativeOP):
                         precision=precision,
                         bias=False,
                         seed=child_seed(seed, 9),
+                        trainable=trainable,
                     )
                 else:
                     self.a_compress_n_linear = None
@@ -1034,12 +1058,14 @@ class RepFlowLayer(NativeOP):
                 self.e_dim,
                 precision=precision,
                 seed=child_seed(seed, 10),
+                trainable=trainable,
             )
             self.edge_angle_linear2 = NativeLayer(
                 self.e_dim,
                 self.e_dim,
                 precision=precision,
                 seed=child_seed(seed, 11),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 self.e_residual.append(
@@ -1049,6 +1075,7 @@ class RepFlowLayer(NativeOP):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 12),
+                        trainable=trainable,
                     )
                 )
 
@@ -1058,6 +1085,7 @@ class RepFlowLayer(NativeOP):
                 self.a_dim,
                 precision=precision,
                 seed=child_seed(seed, 13),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 self.a_residual.append(
@@ -1067,6 +1095,7 @@ class RepFlowLayer(NativeOP):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 14),
+                        trainable=trainable,
                     )
                 )
         else:

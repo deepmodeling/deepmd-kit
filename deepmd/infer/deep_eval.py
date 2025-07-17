@@ -215,6 +215,48 @@ class DeepEvalBackend(ABC):
         """
         raise NotImplementedError
 
+    def eval_fitting_last_layer(
+        self,
+        coords: np.ndarray,
+        cells: Optional[np.ndarray],
+        atom_types: np.ndarray,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+        **kwargs: Any,
+    ) -> np.ndarray:
+        """Evaluate fitting before last layer by using this DP.
+
+        Parameters
+        ----------
+        coords
+            The coordinates of atoms.
+            The array should be of size nframes x natoms x 3
+        cells
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
+            The array should be of size nframes x 9
+        atom_types
+            The atom types
+            The list should contain natoms ints
+        fparam
+            The frame parameter.
+            The array can be of size :
+            - nframes x dim_fparam.
+            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+        aparam
+            The atomic parameter
+            The array can be of size :
+            - nframes x natoms x dim_aparam.
+            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+            - dim_aparam. Then all frames and atoms are provided with the same aparam.
+
+        Returns
+        -------
+        fitting
+            Fitting output before last layer.
+        """
+        raise NotImplementedError
+
     def eval_typeebd(self) -> np.ndarray:
         """Evaluate output of type embedding network by using this model.
 
@@ -293,6 +335,10 @@ class DeepEvalBackend(ABC):
 
     def get_model_size(self) -> dict:
         """Get model parameter count."""
+        raise NotImplementedError("Not implemented in this backend.")
+
+    def get_observed_types(self) -> dict:
+        """Get observed types (elements) of the model during data statistics."""
         raise NotImplementedError("Not implemented in this backend.")
 
 
@@ -463,6 +509,73 @@ class DeepEval(ABC):
         )
         return descriptor
 
+    def eval_fitting_last_layer(
+        self,
+        coords: np.ndarray,
+        cells: Optional[np.ndarray],
+        atom_types: np.ndarray,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+        mixed_type: bool = False,
+        **kwargs: Any,
+    ) -> np.ndarray:
+        """Evaluate fitting before last layer by using this DP.
+
+        Parameters
+        ----------
+        coords
+            The coordinates of atoms.
+            The array should be of size nframes x natoms x 3
+        cells
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
+            The array should be of size nframes x 9
+        atom_types
+            The atom types
+            The list should contain natoms ints
+        fparam
+            The frame parameter.
+            The array can be of size :
+            - nframes x dim_fparam.
+            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+        aparam
+            The atomic parameter
+            The array can be of size :
+            - nframes x natoms x dim_aparam.
+            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+            - dim_aparam. Then all frames and atoms are provided with the same aparam.
+        efield
+            The external field on atoms.
+            The array should be of size nframes x natoms x 3
+        mixed_type
+            Whether to perform the mixed_type mode.
+            If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
+            in which frames in a system may have different natoms_vec(s), with the same nloc.
+
+        Returns
+        -------
+        fitting
+            Fitting output before last layer.
+        """
+        (
+            coords,
+            cells,
+            atom_types,
+            fparam,
+            aparam,
+            nframes,
+            natoms,
+        ) = self._standard_input(coords, cells, atom_types, fparam, aparam, mixed_type)
+        fitting = self.deep_eval.eval_fitting_last_layer(
+            coords,
+            cells,
+            atom_types,
+            fparam=fparam,
+            aparam=aparam,
+            **kwargs,
+        )
+        return fitting
+
     def eval_typeebd(self) -> np.ndarray:
         """Evaluate output of type embedding network by using this model.
 
@@ -568,3 +681,7 @@ class DeepEval(ABC):
     def get_model_size(self) -> dict:
         """Get model parameter count."""
         return self.deep_eval.get_model_size()
+
+    def get_observed_types(self) -> dict:
+        """Get observed types (elements) of the model during data statistics."""
+        return self.deep_eval.get_observed_types()

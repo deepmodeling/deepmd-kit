@@ -87,6 +87,8 @@ class NativeLayer(NativeOP):
         The precision of the layer.
     seed : int, optional
         Random seed.
+    trainable : bool, default=True
+        Whether the layer is trainable.
     """
 
     def __init__(
@@ -99,7 +101,10 @@ class NativeLayer(NativeOP):
         resnet: bool = False,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
+        # trainable must be set before any array attribute is set
+        self.trainable = trainable
         prec = PRECISION_DICT[precision.lower()]
         self.precision = precision
         # only use_timestep when skip connection is established.
@@ -139,13 +144,14 @@ class NativeLayer(NativeOP):
         }
         return {
             "@class": "Layer",
-            "@version": 1,
+            "@version": 2,
             "bias": self.b is not None,
             "use_timestep": self.idt is not None,
             "activation_function": self.activation_function,
             "resnet": self.resnet,
             # make deterministic
             "precision": np.dtype(PRECISION_DICT[self.precision]).name,
+            "trainable": self.trainable,
             "@variables": data,
         }
 
@@ -159,7 +165,7 @@ class NativeLayer(NativeOP):
             The dict to deserialize from.
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
         variables = data.pop("@variables")
         assert variables["w"] is not None and len(variables["w"].shape) == 2
@@ -240,6 +246,8 @@ class NativeLayer(NativeOP):
             return self.resnet
         elif key == "precision":
             return self.precision
+        elif key == "trainable":
+            return self.trainable
         else:
             raise KeyError(key)
 
@@ -429,6 +437,7 @@ class LayerNorm(NativeLayer):
             resnet=False,
             precision=precision,
             seed=seed,
+            trainable=trainable,
         )
         xp = array_api_compat.array_namespace(self.w, self.b)
         self.w = xp.squeeze(self.w, 0)  # keep the weight shape to be [num_in]
@@ -633,6 +642,25 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
                 x = layer(x)
             return x
 
+        def call_until_last(self, x):
+            """Return the output before last layer.
+
+            Parameters
+            ----------
+            x : np.ndarray
+                The input.
+
+            Returns
+            -------
+            np.ndarray
+                The output before last layer.
+            """
+            # avoid slice (self.layers[:-1]) for jit
+            for ii, layer in enumerate(self.layers):
+                if ii < len(self.layers) - 1:
+                    x = layer(x)
+            return x
+
         def clear(self) -> None:
             """Clear the network parameters to zero."""
             for layer in self.layers:
@@ -681,9 +709,12 @@ def make_embedding_network(T_Network, T_NetworkLayer):
             precision: str = DEFAULT_PRECISION,
             seed: Optional[Union[int, list[int]]] = None,
             bias: bool = True,
+            trainable: Union[bool, list[bool]] = True,
         ) -> None:
             layers = []
             i_in = in_dim
+            if isinstance(trainable, bool):
+                trainable = [trainable] * len(neuron)
             for idx, ii in enumerate(neuron):
                 i_ot = ii
                 layers.append(
@@ -696,6 +727,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
                         resnet=True,
                         precision=precision,
                         seed=child_seed(seed, idx),
+                        trainable=trainable[idx],
                     ).serialize()
                 )
                 i_in = i_ot
@@ -786,7 +818,14 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
             precision: str = DEFAULT_PRECISION,
             bias_out: bool = True,
             seed: Optional[Union[int, list[int]]] = None,
+            trainable: Union[bool, list[bool]] = True,
         ) -> None:
+            if trainable is None:
+                trainable = [True] * (len(neuron) + 1)
+            elif isinstance(trainable, bool):
+                trainable = [trainable] * (len(neuron) + 1)
+            else:
+                pass
             super().__init__(
                 in_dim,
                 neuron=neuron,
@@ -794,6 +833,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
                 resnet_dt=resnet_dt,
                 precision=precision,
                 seed=seed,
+                trainable=trainable[:-1],
             )
             i_in = neuron[-1] if len(neuron) > 0 else in_dim
             i_ot = out_dim
@@ -807,6 +847,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
                     resnet=False,
                     precision=precision,
                     seed=child_seed(seed, len(neuron)),
+                    trainable=trainable[-1],
                 )
             )
             self.out_dim = out_dim

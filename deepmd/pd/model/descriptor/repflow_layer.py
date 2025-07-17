@@ -64,6 +64,7 @@ class RepFlowLayer(paddle.nn.Layer):
         update_residual_init: str = "const",
         precision: str = "float64",
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
@@ -126,6 +127,7 @@ class RepFlowLayer(paddle.nn.Layer):
             n_dim,
             precision=precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             self.n_residual.append(
@@ -135,6 +137,7 @@ class RepFlowLayer(paddle.nn.Layer):
                     self.update_residual_init,
                     precision=precision,
                     seed=child_seed(seed, 1),
+                    trainable=trainable,
                 )
             )
 
@@ -145,6 +148,7 @@ class RepFlowLayer(paddle.nn.Layer):
             n_dim,
             precision=precision,
             seed=child_seed(seed, 2),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             self.n_residual.append(
@@ -154,6 +158,7 @@ class RepFlowLayer(paddle.nn.Layer):
                     self.update_residual_init,
                     precision=precision,
                     seed=child_seed(seed, 3),
+                    trainable=trainable,
                 )
             )
 
@@ -163,6 +168,7 @@ class RepFlowLayer(paddle.nn.Layer):
             self.n_multi_edge_message * n_dim,
             precision=precision,
             seed=child_seed(seed, 4),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             for head_index in range(self.n_multi_edge_message):
@@ -173,6 +179,7 @@ class RepFlowLayer(paddle.nn.Layer):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(child_seed(seed, 5), head_index),
+                        trainable=trainable,
                     )
                 )
 
@@ -182,6 +189,7 @@ class RepFlowLayer(paddle.nn.Layer):
             e_dim,
             precision=precision,
             seed=child_seed(seed, 6),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             self.e_residual.append(
@@ -191,6 +199,7 @@ class RepFlowLayer(paddle.nn.Layer):
                     self.update_residual_init,
                     precision=precision,
                     seed=child_seed(seed, 7),
+                    trainable=trainable,
                 )
             )
 
@@ -219,6 +228,7 @@ class RepFlowLayer(paddle.nn.Layer):
                         precision=precision,
                         bias=False,
                         seed=child_seed(seed, 8),
+                        trainable=trainable,
                     )
                     self.a_compress_e_linear = MLPLayer(
                         self.e_dim,
@@ -226,6 +236,7 @@ class RepFlowLayer(paddle.nn.Layer):
                         precision=precision,
                         bias=False,
                         seed=child_seed(seed, 9),
+                        trainable=trainable,
                     )
                 else:
                     self.a_compress_n_linear = None
@@ -237,12 +248,14 @@ class RepFlowLayer(paddle.nn.Layer):
                 self.e_dim,
                 precision=precision,
                 seed=child_seed(seed, 10),
+                trainable=trainable,
             )
             self.edge_angle_linear2 = MLPLayer(
                 self.e_dim,
                 self.e_dim,
                 precision=precision,
                 seed=child_seed(seed, 11),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 self.e_residual.append(
@@ -252,6 +265,7 @@ class RepFlowLayer(paddle.nn.Layer):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 12),
+                        trainable=trainable,
                     )
                 )
 
@@ -261,6 +275,7 @@ class RepFlowLayer(paddle.nn.Layer):
                 self.a_dim,
                 precision=precision,
                 seed=child_seed(seed, 13),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 self.a_residual.append(
@@ -270,6 +285,7 @@ class RepFlowLayer(paddle.nn.Layer):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 14),
+                        trainable=trainable,
                     )
                 )
         else:
@@ -372,7 +388,7 @@ class RepFlowLayer(paddle.nn.Layer):
         # n_edge x e_dim
         flat_edge_ebd = flat_edge_ebd * flat_sw.unsqueeze(-1)
         # n_edge x 3 x e_dim
-        flat_h2g2 = (flat_h2[..., None] * flat_edge_ebd[:, None, :]).reshape(
+        flat_h2g2 = (flat_h2.unsqueeze(-1) * flat_edge_ebd.unsqueeze(-2)).reshape(
             [-1, 3 * e_dim]
         )
         # nf x nloc x 3 x e_dim
@@ -586,7 +602,9 @@ class RepFlowLayer(paddle.nn.Layer):
         sub_node_update = paddle.matmul(node_ebd, sub_node)
         # n_angle * angle_dim
         sub_node_update = paddle.index_select(
-            sub_node_update.reshape(nf * nloc, sub_node_update.shape[-1]), n2a_index, 0
+            sub_node_update.reshape([nf * nloc, sub_node_update.shape[-1]]),
+            n2a_index,
+            0,
         )
 
         # n_edge * angle_dim
@@ -666,7 +684,7 @@ class RepFlowLayer(paddle.nn.Layer):
         sub_node_update = paddle.matmul(node_ebd, node)
         # n_edge * node/edge_dim
         sub_node_update = paddle.index_select(
-            sub_node_update.reshape(nf * nloc, sub_node_update.shape[-1]),
+            sub_node_update.reshape([nf * nloc, sub_node_update.shape[-1]]),
             n2e_index,
             0,
         )
@@ -675,7 +693,7 @@ class RepFlowLayer(paddle.nn.Layer):
         sub_node_ext_update = paddle.matmul(node_ebd_ext, node_ext)
         # n_edge * node/edge_dim
         sub_node_ext_update = paddle.index_select(
-            sub_node_ext_update.reshape(nf * nall, sub_node_update.shape[-1]),
+            sub_node_ext_update.reshape([nf * nall, sub_node_update.shape[-1]]),
             n_ext2e_index,
             0,
         )
@@ -698,8 +716,8 @@ class RepFlowLayer(paddle.nn.Layer):
         a_nlist: paddle.Tensor,  # nf x nloc x a_nnei
         a_nlist_mask: paddle.Tensor,  # nf x nloc x a_nnei
         a_sw: paddle.Tensor,  # switch func, nf x nloc x a_nnei
-        edge_index: paddle.Tensor,  # n_edge x 2
-        angle_index: paddle.Tensor,  # n_angle x 3
+        edge_index: paddle.Tensor,  # 2 x n_edge
+        angle_index: paddle.Tensor,  # 3 x n_angle
     ):
         """
         Parameters
@@ -724,12 +742,12 @@ class RepFlowLayer(paddle.nn.Layer):
             Masks of the neighbor list for angle. real nei 1 otherwise 0
         a_sw : nf x nloc x a_nnei
             Switch function for angle.
-        edge_index : Optional for dynamic sel, n_edge x 2
+        edge_index : Optional for dynamic sel, 2 x n_edge
             n2e_index : n_edge
                 Broadcast indices from node(i) to edge(ij), or reduction indices from edge(ij) to node(i).
             n_ext2e_index : n_edge
                 Broadcast indices from extended node(j) to edge(ij).
-        angle_index : Optional for dynamic sel, n_angle x 3
+        angle_index : Optional for dynamic sel, 3 x n_angle
             n2a_index : n_angle
                 Broadcast indices from extended node(j) to angle(ijk).
             eij2a_index : n_angle
@@ -746,25 +764,24 @@ class RepFlowLayer(paddle.nn.Layer):
         a_updated : nf x nloc x a_nnei x a_nnei x a_dim
             Updated angle embedding.
         """
-        nb, nloc, nnei, _ = edge_ebd.shape
+        nb, nloc, nnei = nlist.shape
         nall = node_ebd_ext.shape[1]
         node_ebd = node_ebd_ext[:, :nloc, :]
-        n_edge = int(nlist_mask.sum().item())
         if paddle.in_dynamic_mode():
             assert [nb, nloc] == node_ebd.shape[:2]
         if not self.use_dynamic_sel:
             if paddle.in_dynamic_mode():
                 assert [nb, nloc, nnei, 3] == h2.shape
+            n_edge = None
         else:
-            if paddle.in_dynamic_mode():
-                assert [n_edge, 3] == h2.shape
+            n_edge = h2.shape[0]
         del a_nlist  # may be used in the future
 
-        n2e_index, n_ext2e_index = edge_index[:, 0], edge_index[:, 1]
+        n2e_index, n_ext2e_index = edge_index[0], edge_index[1]
         n2a_index, eij2a_index, eik2a_index = (
-            angle_index[:, 0],
-            angle_index[:, 1],
-            angle_index[:, 2],
+            angle_index[0],
+            angle_index[1],
+            angle_index[2],
         )
 
         # nb x nloc x nnei x n_dim [OR] n_edge x n_dim
@@ -896,7 +913,7 @@ class RepFlowLayer(paddle.nn.Layer):
                     n2e_index,
                     average=False,
                     num_owner=nb * nloc,
-                ).reshape(nb, nloc, node_edge_update.shape[-1])
+                ).reshape([nb, nloc, node_edge_update.shape[-1]])
                 / self.dynamic_e_sel
             )
         )
@@ -1042,7 +1059,9 @@ class RepFlowLayer(paddle.nn.Layer):
             if not self.use_dynamic_sel:
                 # nb x nloc x a_nnei x a_nnei x e_dim
                 weighted_edge_angle_update = (
-                    a_sw[..., None, None] * a_sw[..., None, :, None] * edge_angle_update
+                    a_sw.unsqueeze(-1).unsqueeze(-1)
+                    * a_sw.unsqueeze(-2).unsqueeze(-1)
+                    * edge_angle_update
                 )
                 # nb x nloc x a_nnei x e_dim
                 reduced_edge_angle_update = paddle.sum(

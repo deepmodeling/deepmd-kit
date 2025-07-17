@@ -125,6 +125,13 @@ class Result:
         else:
             self.descriptor = None
 
+        if "fit_ll" in data:
+            self.fit_ll = np.array(data["fit_ll"], dtype=np.float64).reshape(
+                self.nloc, -1
+            )
+        else:
+            self.fit_ll = None
+
 
 class Case:
     """Test case.
