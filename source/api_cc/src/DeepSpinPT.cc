@@ -205,7 +205,7 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
       torch::Tensor sendlist_tensor =
           torch::from_blob(lmp_list.sendlist, {total_send}, int32_option);
       torch::Tensor has_spin = torch::tensor({1}, int32_option);
-      comm_dict.insert("send_list", sendlist_tensor);
+      comm_dict.insert_or_assign("send_list", sendlist_tensor);
       comm_dict.insert("send_proc", sendproc_tensor);
       comm_dict.insert("recv_proc", recvproc_tensor);
       comm_dict.insert("send_num", sendnum_tensor);
