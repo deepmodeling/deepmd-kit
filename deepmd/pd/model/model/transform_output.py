@@ -27,6 +27,7 @@ def atomic_virial_corr(
     ce = coord * atom_energy
     sumce0, sumce1, sumce2 = paddle.split(paddle.sum(ce, axis=1), [1, 1, 1], axis=-1)
     # faked_grad = paddle.ones_like(sumce0)
+    raise
     extended_virial_corr0 = paddle.autograd.grad(
         [sumce0],
         [extended_coord],
@@ -93,6 +94,9 @@ def task_deriv_one(
         )
     else:
         extended_virial = None
+    print(
+        f"extended_force: {extended_force.min().item():.10f} {extended_force.max().item():.10f} {extended_force.mean().item():.10f} {extended_force.std().item():.10f}"
+    )
     return extended_force, extended_virial
 
 

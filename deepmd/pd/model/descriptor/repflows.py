@@ -5,6 +5,7 @@ from typing import (
     Union,
 )
 
+import numpy as np
 import paddle
 
 from deepmd.dpmodel.utils.seed import (
@@ -493,7 +494,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         # nf x nloc x a_nnei x a_nnei
         # 1 - 1e-6 for paddle.acos stability
         cosine_ij = paddle.matmul(normalized_diff_i, normalized_diff_j) * (1 - 1e-6)
-        angle_input = cosine_ij.unsqueeze(-1) / (paddle.pi**0.5)
+        angle_input = cosine_ij.unsqueeze(-1) / (np.pi**0.5)
 
         if not parallel_mode and self.use_loc_mapping:
             assert mapping is not None

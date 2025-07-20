@@ -175,6 +175,7 @@ class ModelWrapper(torch.nn.Module):
             return model_pred, None, None
         else:
             natoms = atype.shape[-1]
+            print(self.loss)
             model_pred, loss, more_loss = self.loss[task_key](
                 input_dict,
                 self.model[task_key],

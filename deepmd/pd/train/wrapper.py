@@ -173,6 +173,7 @@ class ModelWrapper(paddle.nn.Layer):
             model_pred = self.model[task_key](**input_dict)
             return model_pred, None, None
         else:
+            print(self.loss)
             natoms = atype.shape[-1]
             model_pred, loss, more_loss = self.loss[task_key](
                 input_dict,
