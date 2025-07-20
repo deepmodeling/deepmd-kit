@@ -198,11 +198,11 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       torch::Tensor sendlist_tensor =
           torch::from_blob(lmp_list.sendlist, {total_send}, int32_option);
       comm_dict.insert_or_assign("send_list", sendlist_tensor);
-      comm_dict.insert("send_proc", sendproc_tensor);
-      comm_dict.insert("recv_proc", recvproc_tensor);
-      comm_dict.insert("send_num", sendnum_tensor);
-      comm_dict.insert("recv_num", recvnum_tensor);
-      comm_dict.insert("communicator", communicator_tensor);
+      comm_dict.insert_or_assign("send_proc", sendproc_tensor);
+      comm_dict.insert_or_assign("recv_proc", recvproc_tensor);
+      comm_dict.insert_or_assign("send_num", sendnum_tensor);
+      comm_dict.insert_or_assign("recv_num", recvnum_tensor);
+      comm_dict.insert_or_assign("communicator", communicator_tensor);
     }
     if (lmp_list.mapping) {
       std::vector<std::int64_t> mapping(nall_real);
