@@ -408,7 +408,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         extended_atype_embd: Optional[paddle.Tensor] = None,
         mapping: Optional[paddle.Tensor] = None,
         type_embedding: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[list[paddle.Tensor]] = None,
     ):
         if comm_dict is None or len(comm_dict) == 0:
             if paddle.in_dynamic_mode():

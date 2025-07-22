@@ -250,7 +250,7 @@ class DPAtomicModel(BaseAtomicModel):
         mapping: Optional[paddle.Tensor] = None,
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[list[paddle.Tensor]] = None,
     ) -> dict[str, paddle.Tensor]:
         """Return atomic prediction.
 

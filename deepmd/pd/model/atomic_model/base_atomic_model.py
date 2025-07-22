@@ -191,7 +191,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         mapping: Optional[paddle.Tensor] = None,
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[list[paddle.Tensor]] = None,
     ) -> dict[str, paddle.Tensor]:
         """Common interface for atomic inference.
 
@@ -274,7 +274,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         mapping: Optional[paddle.Tensor] = None,
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[list[paddle.Tensor]] = None,
     ) -> dict[str, paddle.Tensor]:
         return self.forward_common_atomic(
             extended_coord,

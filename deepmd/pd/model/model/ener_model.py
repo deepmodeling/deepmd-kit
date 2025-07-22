@@ -99,7 +99,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[list[paddle.Tensor]] = None,
     ):
         model_ret = self.forward_common_lower(
             extended_coord,

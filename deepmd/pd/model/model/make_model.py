@@ -238,7 +238,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             fparam: Optional[paddle.Tensor] = None,
             aparam: Optional[paddle.Tensor] = None,
             do_atomic_virial: bool = False,
-            comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+            comm_dict: Optional[list[paddle.Tensor]] = None,
             extra_nlist_sort: bool = False,
         ):
             """Return model prediction. Lower interface that takes
