@@ -725,64 +725,9 @@ class Trainer:
                     pref_lr = _lr.start_lr
                 else:
                     pref_lr = cur_lr
-
-                # save
-                # torch.save(self.wrapper.state_dict(), "wrapper_dict.pt")
-                # import paddle
-                # psd = {}
-                # for k, v in self.wrapper.state_dict().items():
-                #     if isinstance(v, torch.Tensor):
-                #         psd[k] = paddle.from_dlpack(v.detach())
-                #     else:
-                #         psd[k] = v
-                # paddle.save(psd, "wrapper_dict.pd")
-                # inp = {}
-                # for k, v in input_dict.items():
-                #     if isinstance(v, torch.Tensor):
-                #         inp[k] = v.detach().cpu().numpy()
-                #     else:
-                #         inp[k] = v
-                # np.savez("./input_dict.npz", **inp)
-                # lab = {}
-                # for k, v in label_dict.items():
-                #     if isinstance(v, torch.Tensor):
-                #         lab[k] = v.detach().cpu().numpy()
-                #     else:
-                #         lab[k] = v
-                # np.savez("./label_dict.npz", **lab)
-
-                # load
-                self.wrapper.load_state_dict(torch.load("./wrapper_dict.pt"))
-                print("model loaded")
-                inp = np.load("./input_dict.npz", allow_pickle=True)
-                for k, v in inp.items():
-                    if isinstance(v, np.ndarray):
-                        # print(k, type(v), v.shape, v.dtype)
-                        try:
-                            input_dict[k] = torch.tensor(v)
-                        except TypeError:
-                            pass
-                        if isinstance(input_dict[k], torch.Tensor):
-                            input_dict[k] = input_dict[k].cuda()
-                print("input_dict loaded")
-                lab = np.load("./label_dict.npz", allow_pickle=True)
-                for k, v in lab.items():
-                    if isinstance(v, np.ndarray):
-                        # print(k, type(v), v.shape, v.dtype)
-                        try:
-                            label_dict[k] = torch.tensor(v)
-                        except TypeError:
-                            pass
-                        if isinstance(label_dict[k], torch.Tensor):
-                            label_dict[k] = label_dict[k].cuda()
-                print("label_dict loaded")
-
                 model_pred, loss, more_loss = self.wrapper(
                     **input_dict, cur_lr=pref_lr, label=label_dict, task_key=task_key
                 )
-                print({k: float(v) for k, v in more_loss.items()})
-                print(f"{loss.item():.10f}")
-                exit()
                 loss.backward()
                 if self.gradient_max_norm > 0.0:
                     torch.nn.utils.clip_grad_norm_(

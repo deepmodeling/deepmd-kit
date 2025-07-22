@@ -96,9 +96,6 @@ def task_deriv_one(
         extended_virial = extended_virial.view(list(extended_virial.shape[:-2]) + [9])  # noqa:RUF005
     else:
         extended_virial = None
-    print(
-        f"extended_force: {extended_force.min().item():.10f} {extended_force.max().item():.10f} {extended_force.mean().item():.10f} {extended_force.std().item():.10f}"
-    )
     return extended_force, extended_virial
 
 

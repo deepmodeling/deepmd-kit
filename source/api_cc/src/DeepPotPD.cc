@@ -205,8 +205,6 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
     if (do_message_passing == 1 && nghost > 0) {
-      // throw deepmd::deepmd_exception(
-      //     "(do_message_passing == 1 && nghost > 0) is not supported yet.");
       int nswap = lmp_list.nswap;
       auto sendproc_tensor = predictor_fl->GetInputHandle("sendproc");
       sendproc_tensor->Reshape({nswap});
@@ -249,10 +247,6 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
       this->mapping_tensor->Reshape({1, nall_real});
       this->mapping_tensor->CopyFromCpu(mapping.data());
     }
-    // if (do_message_passing == 1 && nghost == 0) {
-    //   throw deepmd::deepmd_exception(
-    //       "(do_message_passing == 1 && nghost == 0) is not supported yet.");
-    // }
   }
   std::vector<int> firstneigh = createNlistTensorPD(nlist_data.jlist);
   firstneigh_tensor = predictor_fl->GetInputHandle("nlist");

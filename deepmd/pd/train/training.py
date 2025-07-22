@@ -760,38 +760,6 @@ class Trainer:
                     pref_lr = _lr.start_lr
                 else:
                     pref_lr = cur_lr
-                self.wrapper.load_state_dict(paddle.load("./wrapper_dict.pd"))
-                print("model loaded")
-                inp = np.load("./input_dict.npz", allow_pickle=True)
-                for k, v in inp.items():
-                    if isinstance(v, np.ndarray):
-                        # print(k, type(v), v.shape, v.dtype)
-                        try:
-                            input_dict[k] = paddle.to_tensor(v)
-                            # print(k)
-                        except Exception:
-                            pass
-                        if isinstance(input_dict[k], paddle.Tensor):
-                            input_dict[k] = input_dict[k].cuda()
-                print("input_dict loaded")
-                lab = np.load("./label_dict.npz", allow_pickle=True)
-                for k, v in lab.items():
-                    if isinstance(v, np.ndarray):
-                        # print(k, type(v), v.shape, v.dtype)
-                        try:
-                            label_dict[k] = paddle.to_tensor(v)
-                            # print(k)
-                        except Exception:
-                            pass
-                        if isinstance(label_dict[k], paddle.Tensor):
-                            label_dict[k] = label_dict[k].cuda()
-                print("label_dict loaded")
-                model_pred, loss, more_loss = self.wrapper(
-                    **input_dict, cur_lr=pref_lr, label=label_dict, task_key=task_key
-                )
-                print({k: float(v) for k, v in more_loss.items()})
-                print(f"{loss.item():.10f}")
-                exit()
 
                 # disable synchronization in forward-backward manually
                 # as derivatives exist in model forward
@@ -811,7 +779,7 @@ class Trainer:
 
                     with nvprof_context(enable_profiling, "Backward pass"):
                         loss.backward()
-                exit()
+
                 # fuse + allreduce manually before optimization if use DDP + no_sync
                 # details in https://github.com/PaddlePaddle/Paddle/issues/48898#issuecomment-1343838622
                 if self.world_size > 1:
