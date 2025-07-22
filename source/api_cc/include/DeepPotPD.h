@@ -403,7 +403,8 @@ class DeepPotPD : public DeepPotBackend {
   */
   std::vector<paddle_infer::Tensor> comm_vec;
 
-  paddle_infer::Tensor mapping_tensor = predictor_fl->GetInputHandle("mapping");
+  std::unique_ptr<paddle_infer::Tensor> mapping_tensor =
+      predictor_fl->GetInputHandle("mapping");
 };
 
 }  // namespace deepmd

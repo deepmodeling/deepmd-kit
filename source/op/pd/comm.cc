@@ -95,7 +95,7 @@ void Border_forward_t(const paddle::Tensor& sendlist_tensor,
     }
     if (cuda_aware == 0) {
       recv_g1_tensor = paddle::empty_like(g1, g1.dtype(), paddle::CPUPlace());
-      recv_g1_tensor = g1.copy_to(recv_g1_tensor.place());
+      recv_g1_tensor = g1.copy_to(recv_g1_tensor.place(), true);
       // recv_g1_tensor.copy_(g1);
     }
   }
@@ -158,7 +158,7 @@ void Border_forward_t(const paddle::Tensor& sendlist_tensor,
 #ifdef USE_MPI
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
   if (cuda_aware == 0) {
-    g1.copy_(recv_g1_tensor);
+    g1 = recv_g1_tensor;
   }
 #endif
 #endif
@@ -233,7 +233,7 @@ std::vector<paddle::Tensor> Border_backward_t(
       d_local_g1_tensor = paddle::empty_like(
           recv_g1_tensor_grad, recv_g1_tensor_grad.dtype(), paddle::CPUPlace());
       d_local_g1_tensor =
-          recv_g1_tensor_grad.copy_to(d_local_g1_tensor.place());
+          recv_g1_tensor_grad.copy_to(d_local_g1_tensor.place(), true);
     }
   }
 #endif
@@ -331,8 +331,8 @@ std::vector<paddle::Tensor> Border_backward_t(
 #ifdef USE_MPI
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
   if (cuda_aware == 0) {
-    recv_g1_tensor_grad =
-        d_local_g1_tensor.copy_to(recv_g1_tensor_grad.place());
+    recv_g1_tensor_grad = d_local_g1_tensor;
+    // d_local_g1_tensor.copy_to(recv_g1_tensor_grad.place(), true);
     // grad_output[0].copy_(d_local_g1_tensor);
   }
 #endif

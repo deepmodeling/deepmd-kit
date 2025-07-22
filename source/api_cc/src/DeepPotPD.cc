@@ -230,14 +230,14 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
           std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
       auto sendlist_tensor = predictor_fl->GetInputHandle("sendlist");
       sendlist_tensor->Reshape({total_send});
-      sendlist_tensor->CopyFromCpu(lmp_list.sendlist);
+      sendlist_tensor->CopyFromCpu(static_cast<int*>(*lmp_list.sendlist));
 
-      this->comm_vec.emplace_back(sendlist_tensor);
-      this->comm_vec.emplace_back(sendproc_tensor);
-      this->comm_vec.emplace_back(recvproc_tensor);
-      this->comm_vec.emplace_back(sendnum_tensor);
-      this->comm_vec.emplace_back(recvnum_tensor);
-      this->comm_vec.emplace_back(communicator_tensor);
+      // this->comm_vec.push_back(sendlist_tensor);
+      // this->comm_vec.push_back(sendproc_tensor);
+      // this->comm_vec.push_back(recvproc_tensor);
+      // this->comm_vec.push_back(sendnum_tensor);
+      // this->comm_vec.push_back(recvnum_tensor);
+      // this->comm_vec.push_back(communicator_tensor);
     }
     if (lmp_list.mapping) {
       std::vector<std::int64_t> mapping(nall_real);
