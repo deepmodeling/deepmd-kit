@@ -258,7 +258,7 @@ jdata_config_v1 = {
     "end": "",
 }
 
-# change the configuration accordng to the max_nnei
+# change the configuration according to the max_nnei
 jdata_config_v1_ni128 = copy.deepcopy(jdata_config_v1)
 jdata_config_v1_ni256 = copy.deepcopy(jdata_config_v1)
 jdata_config_v1_ni256["ctrl"] = {
