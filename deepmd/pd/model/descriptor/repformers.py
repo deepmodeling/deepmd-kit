@@ -536,11 +536,7 @@ class DescrptBlockRepformers(DescriptorBlock):
                         place=paddle.CPUPlace(),
                     ),  # should be int of c++, placed on cpu
                 )
-                # print(f"ret.shape = {ret.shape}")
-                # print(f"ret[0].shape = ", ret[0].shape)
-                g1_ext = ret.unsqueeze(0)
-                # print(f"g1_ext.shape = ", g1_ext.shape)
-                # exit()
+                g1_ext = paddle.assign(ret).unsqueeze(0)
                 if has_spin:
                     g1_real_ext, g1_virtual_ext = paddle.split(
                         g1_ext, [ng1, ng1], dim=2

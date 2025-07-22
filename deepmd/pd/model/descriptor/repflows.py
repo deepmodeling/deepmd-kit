@@ -604,7 +604,10 @@ class DescrptBlockRepflows(DescriptorBlock):
                     _shapes = node_ebd.shape[1:]
                     _shapes[1] = n_padding
                     node_ebd = paddle.concat(
-                        [node_ebd, paddle.zeros(_shapes, dtype=node_ebd.dtype)],
+                        [
+                            node_ebd.squeeze(0),
+                            paddle.zeros(_shapes, dtype=node_ebd.dtype),
+                        ],
                         axis=1,
                     )
                     real_nloc = nloc
@@ -652,7 +655,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                         place=paddle.CPUPlace(),
                     ),  # should be int of c++, placed on cpu
                 )
-                node_ebd_ext = ret[0].unsqueeze(0)
+                node_ebd_ext = paddle.assign(ret).unsqueeze(0)
                 if has_spin:
                     node_ebd_real_ext, node_ebd_virtual_ext = paddle.split(
                         node_ebd_ext, [n_dim, n_dim], axis=2
