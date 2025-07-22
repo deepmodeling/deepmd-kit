@@ -192,11 +192,11 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   int nloc = nall_real - nghost_real;
   int nframes = 1;
   std::vector<VALUETYPE> coord_wrapped = dcoord;
-  auto coord_wrapped_Tensor = predictor_fl->GetInputHandle("coord");
+  auto coord_wrapped_Tensor = predictor_fl->GetInputHandle("extended_coord");
   coord_wrapped_Tensor->Reshape({1, nall_real, 3});
   coord_wrapped_Tensor->CopyFromCpu(coord_wrapped.data());
 
-  auto atype_Tensor = predictor_fl->GetInputHandle("atype");
+  auto atype_Tensor = predictor_fl->GetInputHandle("extended_atype");
   atype_Tensor->Reshape({1, nall_real});
   atype_Tensor->CopyFromCpu(datype.data());
 
@@ -205,37 +205,54 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
     if (do_message_passing == 1 && nghost > 0) {
-      throw deepmd::deepmd_exception(
-          "(do_message_passing == 1 && nghost > 0) is not supported yet.");
-      // int nswap = lmp_list.nswap;
-      // auto sendproc_tensor = predictor_fl->GetInputHandle("sendproc");
-      // sendproc_tensor->Reshape({nswap});
-      // sendproc_tensor->CopyFromCpu(lmp_list.sendproc);
-      // auto recvproc_tensor = predictor_fl->GetInputHandle("recvproc");
-      // recvproc_tensor->Reshape({nswap});
-      // recvproc_tensor->CopyFromCpu(lmp_list.recvproc);
-      // auto firstrecv_tensor = predictor_fl->GetInputHandle("firstrecv");
-      // firstrecv_tensor->Reshape({nswap});
-      // firstrecv_tensor->CopyFromCpu(lmp_list.firstrecv);
-      // auto recvnum_tensor = predictor_fl->GetInputHandle("recvnum");
-      // recvnum_tensor->Reshape({nswap});
-      // recvnum_tensor->CopyFromCpu(lmp_list.recvnum);
-      // auto sendnum_tensor = predictor_fl->GetInputHandle("sendnum");
-      // sendnum_tensor->Reshape({nswap});
-      // sendnum_tensor->CopyFromCpu(lmp_list.sendnum);
-      // auto communicator_tensor =
-      // predictor_fl->GetInputHandle("communicator");
-      // communicator_tensor->Reshape({1});
-      // communicator_tensor->CopyFromCpu(static_cast<int*>(lmp_list.world));
-      // auto sendlist_tensor = predictor_fl->GetInputHandle("sendlist");
+      // throw deepmd::deepmd_exception(
+      //     "(do_message_passing == 1 && nghost > 0) is not supported yet.");
+      int nswap = lmp_list.nswap;
+      auto sendproc_tensor = predictor_fl->GetInputHandle("sendproc");
+      sendproc_tensor->Reshape({nswap});
+      sendproc_tensor->CopyFromCpu(lmp_list.sendproc);
+      auto recvproc_tensor = predictor_fl->GetInputHandle("recvproc");
+      recvproc_tensor->Reshape({nswap});
+      recvproc_tensor->CopyFromCpu(lmp_list.recvproc);
+      auto firstrecv_tensor = predictor_fl->GetInputHandle("firstrecv");
+      firstrecv_tensor->Reshape({nswap});
+      firstrecv_tensor->CopyFromCpu(lmp_list.firstrecv);
+      auto recvnum_tensor = predictor_fl->GetInputHandle("recvnum");
+      recvnum_tensor->Reshape({nswap});
+      recvnum_tensor->CopyFromCpu(lmp_list.recvnum);
+      auto sendnum_tensor = predictor_fl->GetInputHandle("sendnum");
+      sendnum_tensor->Reshape({nswap});
+      sendnum_tensor->CopyFromCpu(lmp_list.sendnum);
+      auto communicator_tensor = predictor_fl->GetInputHandle("communicator");
+      communicator_tensor->Reshape({1});
+      if (lmp_list.world > 0) {
+        communicator_tensor->CopyFromCpu(static_cast<int*>(lmp_list.world));
+      }
+      int total_send =
+          std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
+      auto sendlist_tensor = predictor_fl->GetInputHandle("sendlist");
+      sendlist_tensor->Reshape({total_send});
+      sendlist_tensor->CopyFromCpu(lmp_list.sendlist);
 
-      // int total_send =
-      //     std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
+      this->comm_vec.emplace_back(sendlist_tensor);
+      this->comm_vec.emplace_back(sendproc_tensor);
+      this->comm_vec.emplace_back(recvproc_tensor);
+      this->comm_vec.emplace_back(sendnum_tensor);
+      this->comm_vec.emplace_back(recvnum_tensor);
+      this->comm_vec.emplace_back(communicator_tensor);
     }
-    if (do_message_passing == 1 && nghost == 0) {
-      throw deepmd::deepmd_exception(
-          "(do_message_passing == 1 && nghost == 0) is not supported yet.");
+    if (lmp_list.mapping) {
+      std::vector<std::int64_t> mapping(nall_real);
+      for (size_t ii = 0; ii < nall_real; ii++) {
+        mapping[ii] = lmp_list.mapping[fwd_map[ii]];
+      }
+      this->mapping_tensor->Reshape({1, nall_real});
+      this->mapping_tensor->CopyFromCpu(mapping.data());
     }
+    // if (do_message_passing == 1 && nghost == 0) {
+    //   throw deepmd::deepmd_exception(
+    //       "(do_message_passing == 1 && nghost == 0) is not supported yet.");
+    // }
   }
   std::vector<int> firstneigh = createNlistTensorPD(nlist_data.jlist);
   firstneigh_tensor = predictor_fl->GetInputHandle("nlist");

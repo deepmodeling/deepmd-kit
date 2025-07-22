@@ -11,6 +11,10 @@ import paddle
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.pd.cxx_op import (
+    ENABLE_CUSTOMIZED_OP,
+    paddle_ops_deepmd,
+)
 from deepmd.pd.model.descriptor.descriptor import (
     DescriptorBlock,
 )
@@ -35,6 +39,9 @@ from deepmd.pd.utils.env_mat_stat import (
 from deepmd.pd.utils.exclude_mask import (
     PairExcludeMask,
 )
+from deepmd.pd.utils.spin import (
+    concat_switch_virtual,
+)
 from deepmd.pd.utils.utils import (
     ActivationFn,
 )
@@ -48,6 +55,29 @@ from deepmd.utils.path import (
 from .repflow_layer import (
     RepFlowLayer,
 )
+
+if not ENABLE_CUSTOMIZED_OP:
+
+    def border_op(
+        argument0,
+        argument1,
+        argument2,
+        argument3,
+        argument4,
+        argument5,
+        argument6,
+        argument7,
+        argument8,
+    ) -> paddle.Tensor:
+        raise NotImplementedError(
+            "border_op is not available since customized Paddle OP library is not built when freezing the model. "
+            "See documentation for DPA3 for details."
+        )
+
+    # Note: this hack cannot actually save a model that can be run using LAMMPS.
+    paddle_ops_deepmd_border_op = border_op
+else:
+    paddle_ops_deepmd_border_op = paddle_ops_deepmd.border_op
 
 
 @DescriptorBlock.register("se_repflow")
@@ -418,13 +448,14 @@ class DescrptBlockRepflows(DescriptorBlock):
     ):
         parallel_mode = comm_dict is not None
         if not parallel_mode:
-            assert mapping is not None
+            if paddle.in_dynamic_mode():
+                assert mapping is not None and mapping.numel() > 0
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.reshape([nframes, -1]).shape[1] // 3
         atype = extended_atype[:, :nloc]
         # nb x nloc x nnei
         exclude_mask = self.emask(nlist, extended_atype)
-        nlist = paddle.where(exclude_mask != 0, nlist, -1)
+        nlist = paddle.where(exclude_mask != 0, nlist, paddle.full_like(nlist, -1))
         # nb x nloc x nnei x 4, nb x nloc x nnei x 3, nb x nloc x nnei x 1
         dmatrix, diff, sw = prod_env_mat(
             extended_coord,
@@ -447,7 +478,7 @@ class DescrptBlockRepflows(DescriptorBlock):
             :, :, : self.a_sel
         ]
         a_nlist = nlist[:, :, : self.a_sel]
-        a_nlist = paddle.where(a_dist_mask, a_nlist, -1)
+        a_nlist = paddle.where(a_dist_mask, a_nlist, paddle.full_like(a_nlist, -1))
         _, a_diff, a_sw = prod_env_mat(
             extended_coord,
             a_nlist,
@@ -497,7 +528,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         angle_input = cosine_ij.unsqueeze(-1) / (np.pi**0.5)
 
         if not parallel_mode and self.use_loc_mapping:
-            assert mapping is not None
+            if paddle.in_dynamic_mode():
+                assert mapping is not None and mapping.numel() > 0
             # convert nlist from nall to nloc index
             nlist = paddle.take_along_axis(
                 mapping,
@@ -542,7 +574,8 @@ class DescrptBlockRepflows(DescriptorBlock):
 
         # nb x nall x n_dim
         if not parallel_mode:
-            assert mapping is not None
+            if paddle.in_dynamic_mode():
+                assert mapping is not None and mapping.numel() > 0
             mapping = (
                 mapping.reshape([nframes, nall])
                 .unsqueeze(-1)
@@ -552,14 +585,81 @@ class DescrptBlockRepflows(DescriptorBlock):
             # node_ebd:     nb x nloc x n_dim
             # node_ebd_ext: nb x nall x n_dim [OR] nb x nloc x n_dim when not parallel_mode
             if not parallel_mode:
-                assert mapping is not None
+                if paddle.in_dynamic_mode():
+                    assert mapping is not None and mapping.numel() > 0
                 node_ebd_ext = (
                     paddle.take_along_axis(node_ebd, mapping, 1, broadcast=False)
                     if not self.use_loc_mapping
                     else node_ebd
                 )
             else:
-                raise NotImplementedError("Not implemented")
+                assert len(comm_dict) >= 6
+                has_spin = len(comm_dict) >= 7
+                if not has_spin:
+                    n_padding = nall - nloc
+                    # node_ebd = paddle.nn.functional.pad(
+                    #     node_ebd.squeeze(0), [0, 0, 0, n_padding], value=0.0
+                    # )
+                    # [nframes, nloc, tebd_dim]
+                    _shapes = node_ebd.shape[1:]
+                    _shapes[1] = n_padding
+                    node_ebd = paddle.concat(
+                        [node_ebd, paddle.zeros(_shapes, dtype=node_ebd.dtype)],
+                        axis=1,
+                    )
+                    real_nloc = nloc
+                    real_nall = nall
+                else:
+                    # for spin
+                    real_nloc = nloc // 2
+                    real_nall = nall // 2
+                    real_n_padding = real_nall - real_nloc
+                    node_ebd_real, node_ebd_virtual = paddle.split(
+                        node_ebd, [real_nloc, real_nloc], axis=1
+                    )
+                    # mix_node_ebd: nb x real_nloc x (n_dim * 2)
+                    mix_node_ebd = paddle.concat(
+                        [node_ebd_real, node_ebd_virtual], axis=2
+                    )
+                    # nb x real_nall x (n_dim * 2)
+                    node_ebd = paddle.nn.functional.pad(
+                        mix_node_ebd.squeeze(0), (0, 0, 0, real_n_padding), value=0.0
+                    )
+
+                assert len(comm_dict) >= 6
+                # assert "send_list" in comm_dict
+                # assert "send_proc" in comm_dict
+                # assert "recv_proc" in comm_dict
+                # assert "send_num" in comm_dict
+                # assert "recv_num" in comm_dict
+                # assert "communicator" in comm_dict
+                ret = paddle_ops_deepmd_border_op(
+                    comm_dict[0],
+                    comm_dict[1],
+                    comm_dict[2],
+                    comm_dict[3],
+                    comm_dict[4],
+                    node_ebd,
+                    comm_dict[5],
+                    paddle.to_tensor(
+                        real_nloc,
+                        dtype=paddle.int32,
+                        place=paddle.CPUPlace(),
+                    ),  # should be int of c++, placed on cpu
+                    paddle.to_tensor(
+                        real_nall - real_nloc,
+                        dtype=paddle.int32,
+                        place=paddle.CPUPlace(),
+                    ),  # should be int of c++, placed on cpu
+                )
+                node_ebd_ext = ret[0].unsqueeze(0)
+                if has_spin:
+                    node_ebd_real_ext, node_ebd_virtual_ext = paddle.split(
+                        node_ebd_ext, [n_dim, n_dim], axis=2
+                    )
+                    node_ebd_ext = concat_switch_virtual(
+                        node_ebd_real_ext, node_ebd_virtual_ext, real_nloc
+                    )
             node_ebd, edge_ebd, angle_ebd = ll.forward(
                 node_ebd_ext,
                 edge_ebd,

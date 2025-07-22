@@ -388,14 +388,25 @@ def freeze(
         model.forward_lower = paddle.jit.to_static(
             model.forward_lower,
             input_spec=[
-                InputSpec([1, -1, 3], dtype="float64", name="coord"),  # extended_coord
-                InputSpec([1, -1], dtype="int32", name="atype"),  # extended_atype
+                InputSpec(
+                    [1, -1, 3], dtype="float64", name="extended_coord"
+                ),  # extended_coord
+                InputSpec(
+                    [1, -1], dtype="int32", name="extended_atype"
+                ),  # extended_atype
                 InputSpec([1, -1, -1], dtype="int32", name="nlist"),  # nlist
                 InputSpec([1, -1], dtype="int64", name="mapping"),  # mapping
                 None,  # fparam
                 None,  # aparam
                 True,  # do_atomic_virial
-                None,  # comm_dict
+                [
+                    InputSpec([-1], "int32", name="send_list"),
+                    InputSpec([-1], "int32", name="send_proc"),
+                    InputSpec([-1], "int32", name="recv_proc"),
+                    InputSpec([-1], "int32", name="send_num"),
+                    InputSpec([-1], "int32", name="recv_num"),
+                    InputSpec([-1], "int64", name="communicator"),
+                ],  # comm_dict
             ],
             full_graph=True,
         )

@@ -798,8 +798,8 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             assert self.tebd_transform is not None
             g1 = g1 + self.tebd_transform(g1_inp)
         # mapping g1
-        if comm_dict is None:
-            assert mapping is not None
+        if comm_dict is None or len(comm_dict) == 0:
+            assert mapping.numel() > 0
             mapping_ext = (
                 mapping.reshape([nframes, nall])
                 .unsqueeze(-1)

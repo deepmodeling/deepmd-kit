@@ -10,6 +10,10 @@ import paddle
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.pd.cxx_op import (
+    ENABLE_CUSTOMIZED_OP,
+    paddle_ops_deepmd,
+)
 from deepmd.pd.model.descriptor.descriptor import (
     DescriptorBlock,
 )
@@ -31,6 +35,9 @@ from deepmd.pd.utils.env_mat_stat import (
 from deepmd.pd.utils.exclude_mask import (
     PairExcludeMask,
 )
+from deepmd.pd.utils.spin import (
+    concat_switch_virtual,
+)
 from deepmd.pd.utils.utils import (
     ActivationFn,
 )
@@ -44,6 +51,29 @@ from deepmd.utils.path import (
 from .repformer_layer import (
     RepformerLayer,
 )
+
+if not ENABLE_CUSTOMIZED_OP:
+
+    def border_op(
+        argument0,
+        argument1,
+        argument2,
+        argument3,
+        argument4,
+        argument5,
+        argument6,
+        argument7,
+        argument8,
+    ) -> paddle.Tensor:
+        raise NotImplementedError(
+            "border_op is not available since customized Paddle OP library is not built when freezing the model. "
+            "See documentation for DPA3 for details."
+        )
+
+    # Note: this hack cannot actually save a model that can be run using LAMMPS.
+    paddle_ops_deepmd_border_op = border_op
+else:
+    paddle_ops_deepmd_border_op = paddle_ops_deepmd.border_op
 
 
 @DescriptorBlock.register("se_repformer")
@@ -380,9 +410,10 @@ class DescrptBlockRepformers(DescriptorBlock):
         type_embedding: Optional[paddle.Tensor] = None,
         comm_dict: Optional[dict[str, paddle.Tensor]] = None,
     ):
-        if comm_dict is None:
-            assert mapping is not None
-            assert extended_atype_embd is not None
+        if comm_dict is None or len(comm_dict) == 0:
+            if paddle.in_dynamic_mode():
+                assert mapping is not None and mapping.numel() > 0
+            assert extended_atype_embd is not None or extended_atype_embd.numel() > 0
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.reshape([nframes, -1]).shape[1] // 3
         atype = extended_atype[:, :nloc]
@@ -406,7 +437,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         sw = sw.masked_fill(~nlist_mask, 0.0)
 
         # [nframes, nloc, tebd_dim]
-        if comm_dict is None:
+        if comm_dict is None or len(comm_dict) == 0:
             if paddle.in_dynamic_mode():
                 assert isinstance(extended_atype_embd, paddle.Tensor)  # for jit
             atype_embd = extended_atype_embd[:, :nloc, :]
@@ -432,8 +463,9 @@ class DescrptBlockRepformers(DescriptorBlock):
         # if the a neighbor is real or not is indicated by nlist_mask
         nlist[nlist == -1] = 0
         # nb x nall x ng1
-        if comm_dict is None:
-            assert mapping is not None
+        if comm_dict is None or len(comm_dict) == 0:
+            if paddle.in_dynamic_mode():
+                assert mapping is not None and mapping.numel() > 0
             mapping = (
                 mapping.reshape([nframes, nall])
                 .unsqueeze(-1)
@@ -442,13 +474,80 @@ class DescrptBlockRepformers(DescriptorBlock):
         for idx, ll in enumerate(self.layers):
             # g1:     nb x nloc x ng1
             # g1_ext: nb x nall x ng1
-            if comm_dict is None:
-                assert mapping is not None
+            if comm_dict is None or len(comm_dict) == 0:
+                if paddle.in_dynamic_mode():
+                    assert mapping is not None and mapping.numel() > 0
                 g1_ext = paddle.take_along_axis(
                     g1, axis=1, indices=mapping, broadcast=False
                 )
             else:
-                raise NotImplementedError("Not implemented yet")
+                has_spin = len(comm_dict) >= 7
+                if not has_spin:
+                    n_padding = nall - nloc
+                    # g1 = paddle.nn.functional.pad(
+                    #     g1.squeeze(0), (0, 0, 0, n_padding), value=0.0
+                    # )
+                    _shapes = g1.shape[1:]
+                    _shapes[1] = n_padding
+                    g1 = paddle.concat(
+                        [g1.squeeze(0), paddle.zeros(_shapes, dtype=g1.dtype)],
+                        axis=1,
+                    )
+                    real_nloc = nloc
+                    real_nall = nall
+                else:
+                    # for spin
+                    real_nloc = nloc // 2
+                    real_nall = nall // 2
+                    real_n_padding = real_nall - real_nloc
+                    g1_real, g1_virtual = paddle.split(
+                        g1, [real_nloc, real_nloc], axis=1
+                    )
+                    # mix_g1: nb x real_nloc x (ng1 * 2)
+                    mix_g1 = paddle.concat([g1_real, g1_virtual], axis=2)
+                    # nb x real_nall x (ng1 * 2)
+                    g1 = paddle.nn.functional.pad(
+                        mix_g1.squeeze(0), (0, 0, 0, real_n_padding), value=0.0
+                    )
+
+                # assert "send_list" in comm_dict
+                # assert "send_proc" in comm_dict
+                # assert "recv_proc" in comm_dict
+                # assert "send_num" in comm_dict
+                # assert "recv_num" in comm_dict
+                # assert "communicator" in comm_dict
+                # print(f"g1.shape = ", g1.shape)
+                ret = paddle_ops_deepmd_border_op(
+                    comm_dict[0],
+                    comm_dict[1],
+                    comm_dict[2],
+                    comm_dict[3],
+                    comm_dict[4],
+                    g1,
+                    comm_dict[5],
+                    paddle.to_tensor(
+                        real_nloc,
+                        dtype=paddle.int32,
+                        place=paddle.CPUPlace(),
+                    ),  # should be int of c++, placed on cpu
+                    paddle.to_tensor(
+                        real_nall - real_nloc,
+                        dtype=paddle.int32,
+                        place=paddle.CPUPlace(),
+                    ),  # should be int of c++, placed on cpu
+                )
+                # print(f"ret.shape = {ret.shape}")
+                # print(f"ret[0].shape = ", ret[0].shape)
+                g1_ext = ret.unsqueeze(0)
+                # print(f"g1_ext.shape = ", g1_ext.shape)
+                # exit()
+                if has_spin:
+                    g1_real_ext, g1_virtual_ext = paddle.split(
+                        g1_ext, [ng1, ng1], dim=2
+                    )
+                    g1_ext = concat_switch_virtual(
+                        g1_real_ext, g1_virtual_ext, real_nloc
+                    )
 
             g1, g2, h2 = ll.forward(
                 g1_ext,
