@@ -25,6 +25,7 @@ from deepmd.pd.model.network.network import (
     TypeEmbedNetConsistent,
 )
 from deepmd.pd.utils import (
+    decomp,
     env,
 )
 from deepmd.pd.utils.env import (
@@ -799,7 +800,8 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             g1 = g1 + self.tebd_transform(g1_inp)
         # mapping g1
         if comm_dict is None or len(comm_dict) == 0:
-            assert mapping.numel() > 0
+            if paddle.in_dynamic_mode():
+                assert decomp.numel(mapping) > 0
             mapping_ext = (
                 mapping.reshape([nframes, nall])
                 .unsqueeze(-1)

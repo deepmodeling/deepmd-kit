@@ -484,15 +484,17 @@ class DescrptBlockRepformers(DescriptorBlock):
                 has_spin = len(comm_dict) >= 7
                 if not has_spin:
                     n_padding = nall - nloc
-                    # g1 = paddle.nn.functional.pad(
-                    #     g1.squeeze(0), (0, 0, 0, n_padding), value=0.0
-                    # )
-                    _shapes = g1.shape[1:]
-                    _shapes[1] = n_padding
-                    g1 = paddle.concat(
-                        [g1.squeeze(0), paddle.zeros(_shapes, dtype=g1.dtype)],
-                        axis=1,
-                    )
+                    if paddle.in_dynamic_mode():
+                        g1 = paddle.nn.functional.pad(
+                            g1.squeeze(0), (0, 0, 0, n_padding), value=0.0
+                        )
+                    else:
+                        _fill_shape = g1.shape[1:]
+                        _fill_shape[1] = n_padding
+                        g1 = paddle.concat(
+                            [g1.squeeze(0), paddle.zeros(_fill_shape, dtype=g1.dtype)],
+                            axis=1,
+                        )
                     real_nloc = nloc
                     real_nall = nall
                 else:
@@ -510,13 +512,7 @@ class DescrptBlockRepformers(DescriptorBlock):
                         mix_g1.squeeze(0), (0, 0, 0, real_n_padding), value=0.0
                     )
 
-                # assert "send_list" in comm_dict
-                # assert "send_proc" in comm_dict
-                # assert "recv_proc" in comm_dict
-                # assert "send_num" in comm_dict
-                # assert "recv_num" in comm_dict
-                # assert "communicator" in comm_dict
-                # print(f"g1.shape = ", g1.shape)
+                assert len(comm_dict) >= 6
                 ret = paddle_ops_deepmd_border_op(
                     comm_dict[0],
                     comm_dict[1],

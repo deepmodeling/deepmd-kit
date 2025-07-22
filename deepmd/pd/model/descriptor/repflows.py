@@ -5,7 +5,6 @@ from typing import (
     Union,
 )
 
-import numpy as np
 import paddle
 
 from deepmd.dpmodel.utils.seed import (
@@ -525,7 +524,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         # nf x nloc x a_nnei x a_nnei
         # 1 - 1e-6 for paddle.acos stability
         cosine_ij = paddle.matmul(normalized_diff_i, normalized_diff_j) * (1 - 1e-6)
-        angle_input = cosine_ij.unsqueeze(-1) / (np.pi**0.5)
+        angle_input = cosine_ij.unsqueeze(-1) / (paddle.pi**0.5)
 
         if not parallel_mode and self.use_loc_mapping:
             if paddle.in_dynamic_mode():
@@ -597,19 +596,21 @@ class DescrptBlockRepflows(DescriptorBlock):
                 has_spin = len(comm_dict) >= 7
                 if not has_spin:
                     n_padding = nall - nloc
-                    # node_ebd = paddle.nn.functional.pad(
-                    #     node_ebd.squeeze(0), [0, 0, 0, n_padding], value=0.0
-                    # )
+                    if paddle.in_dynamic_mode():
+                        node_ebd = paddle.nn.functional.pad(
+                            node_ebd.squeeze(0), [0, 0, 0, n_padding], value=0.0
+                        )
+                    else:
+                        _fill_shape = node_ebd.shape[1:]
+                        _fill_shape[1] = n_padding
+                        node_ebd = paddle.concat(
+                            [
+                                node_ebd.squeeze(0),
+                                paddle.zeros(_fill_shape, dtype=node_ebd.dtype),
+                            ],
+                            axis=1,
+                        )
                     # [nframes, nloc, tebd_dim]
-                    _shapes = node_ebd.shape[1:]
-                    _shapes[1] = n_padding
-                    node_ebd = paddle.concat(
-                        [
-                            node_ebd.squeeze(0),
-                            paddle.zeros(_shapes, dtype=node_ebd.dtype),
-                        ],
-                        axis=1,
-                    )
                     real_nloc = nloc
                     real_nall = nall
                 else:
@@ -630,12 +631,6 @@ class DescrptBlockRepflows(DescriptorBlock):
                     )
 
                 assert len(comm_dict) >= 6
-                # assert "send_list" in comm_dict
-                # assert "send_proc" in comm_dict
-                # assert "recv_proc" in comm_dict
-                # assert "send_num" in comm_dict
-                # assert "recv_num" in comm_dict
-                # assert "communicator" in comm_dict
                 ret = paddle_ops_deepmd_border_op(
                     comm_dict[0],
                     comm_dict[1],
