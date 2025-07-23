@@ -35,6 +35,7 @@ DeepPotPD::DeepPotPD(const std::string& model,
 void DeepPotPD::init(const std::string& model,
                      const int& gpu_rank,
                      const std::string& file_content) {
+  std::cout << "[DeepPotPD::init]" << std::endl;
   if (inited) {
     std::cerr << "WARNING: deepmd-kit should not be initialized twice, do "
                  "nothing at the second call of initializer"
@@ -54,7 +55,7 @@ void DeepPotPD::init(const std::string& model,
 
   // initialize inference config
   config = std::make_shared<paddle_infer::Config>();
-  config->DisableGlogInfo();
+  // config->DisableGlogInfo();
   config->EnableNewExecutor(true);
   config->EnableNewIR(true);
   config->EnableCustomPasses({"add_shadow_output_after_dead_parameter_pass"},
@@ -62,7 +63,7 @@ void DeepPotPD::init(const std::string& model,
 
   // initialize inference config_fl
   config_fl = std::make_shared<paddle_infer::Config>();
-  config_fl->DisableGlogInfo();
+  // config_fl->DisableGlogInfo();
   config_fl->EnableNewExecutor(true);
   config_fl->EnableNewIR(true);
   config_fl->EnableCustomPasses({"add_shadow_output_after_dead_parameter_pass"},
@@ -223,7 +224,7 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
       sendnum_tensor->CopyFromCpu(lmp_list.sendnum);
       auto communicator_tensor = predictor_fl->GetInputHandle("communicator");
       communicator_tensor->Reshape({1});
-      if (lmp_list.world > 0) {
+      if (lmp_list.world) {
         communicator_tensor->CopyFromCpu(static_cast<int*>(lmp_list.world));
       }
       int total_send =
