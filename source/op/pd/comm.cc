@@ -95,6 +95,7 @@ void Border_forward_t(const paddle::Tensor& sendlist_tensor,
     }
     if (cuda_aware == 0) {
       recv_g1_tensor = paddle::empty_like(g1, g1.dtype(), paddle::CPUPlace());
+      std::cout << "[1]" << std::endl;
       recv_g1_tensor = g1.copy_to(recv_g1_tensor.place(), true);
       // recv_g1_tensor.copy_(g1);
     }
@@ -110,6 +111,7 @@ void Border_forward_t(const paddle::Tensor& sendlist_tensor,
     paddle::Tensor send_g1_tensor;
     FPTYPE* send_g1;
     if (nsend != 0) {
+      std::cout << "[2]" << std::endl;
       isendlist = paddle::from_blob(
           static_cast<void*>(sendlist[iswap]), {nsend}, paddle::DataType::INT32,
           phi::DataLayout::NCHW, recv_g1_tensor.place());
@@ -232,6 +234,7 @@ std::vector<paddle::Tensor> Border_backward_t(
     if (cuda_aware == 0) {
       d_local_g1_tensor = paddle::empty_like(
           recv_g1_tensor_grad, recv_g1_tensor_grad.dtype(), paddle::CPUPlace());
+      std::cout << "[3]" << std::endl;
       d_local_g1_tensor =
           recv_g1_tensor_grad.copy_to(d_local_g1_tensor.place(), true);
     }
@@ -259,6 +262,7 @@ std::vector<paddle::Tensor> Border_backward_t(
   if (nswap != 0) {
     send_g1_tensor = d_local_g1_tensor;
     int max_recvnum = *sendnum_tensor.max().data<int>();
+    std::cout << "[4]" << std::endl;
     recv_g1_tensor =
         paddle::empty({max_recvnum, tensor_size}, d_local_g1_tensor.dtype(),
                       d_local_g1_tensor.place());
@@ -274,6 +278,7 @@ std::vector<paddle::Tensor> Border_backward_t(
 
     paddle::Tensor irecvlist;
     if (nrecv) {
+      std::cout << "[5]" << std::endl;
       irecvlist = paddle::from_blob(
           static_cast<void*>(recvlist[iswap]), {nrecv}, paddle::DataType::INT32,
           paddle::DataLayout::NCHW, d_local_g1_tensor.place());

@@ -373,7 +373,8 @@ def freeze(
                 InputSpec([1, 9], dtype="float64", name="box"),  # box
                 None,  # fparam
                 None,  # aparam
-                True,  # do_atomic_virial
+                # InputSpec([], dtype="bool", name="do_atomic_virial"),  # do_atomic_virial
+                False,  # do_atomic_virial
             ],
             full_graph=True,
         )
@@ -398,15 +399,16 @@ def freeze(
                 InputSpec([1, -1], dtype="int64", name="mapping"),  # mapping
                 None,  # fparam
                 None,  # aparam
-                True,  # do_atomic_virial
-                [
+                # InputSpec([], dtype="bool", name="do_atomic_virial"),  # do_atomic_virial
+                False,  # do_atomic_virial
+                (
                     InputSpec([-1], "int32", name="send_list"),
                     InputSpec([-1], "int32", name="send_proc"),
                     InputSpec([-1], "int32", name="recv_proc"),
                     InputSpec([-1], "int32", name="send_num"),
                     InputSpec([-1], "int32", name="recv_num"),
                     InputSpec([-1], "int64", name="communicator"),
-                ],  # comm_dict
+                ),  # comm_dict
             ],
             full_graph=True,
         )

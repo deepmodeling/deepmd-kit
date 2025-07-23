@@ -35,7 +35,7 @@ DeepPotPD::DeepPotPD(const std::string& model,
 void DeepPotPD::init(const std::string& model,
                      const int& gpu_rank,
                      const std::string& file_content) {
-  std::cout << "[DeepPotPD::init]" << std::endl;
+  // std::cout << "[DeepPotPD::init]" << std::endl;
   if (inited) {
     std::cerr << "WARNING: deepmd-kit should not be initialized twice, do "
                  "nothing at the second call of initializer"
@@ -60,6 +60,39 @@ void DeepPotPD::init(const std::string& model,
   config->EnableNewIR(true);
   config->EnableCustomPasses({"add_shadow_output_after_dead_parameter_pass"},
                              true);
+  config->DeletePass("dead_code_elimination_pass");
+  config->DeletePass("inplace_pass");
+  config->DeletePass("remove_shadow_feed_pass");
+  config->DeletePass("constant_folding_pass");
+  config->DeletePass("replace_fetch_with_shadow_output_pass");
+  config->DeletePass("params_sync_among_devices_pass");
+  config->DeletePass("common_subexpression_elimination_pass");
+  config->DeletePass("transfer_layout_pass");
+  // config->DeletePass("add_shadow_output_after_dead_parameter_pass");
+  config->DeletePass("horizontal_fuse_pass");
+  config->DeletePass("remove_redundant_transpose_pass");
+  config->DeletePass("transpose_flatten_concat_fuse_pass");
+  config->DeletePass("matmul_transpose_fuse_pass");
+  config->DeletePass("matmul_scale_fuse_pass");
+  config->DeletePass("group_norm_silu_fuse_pass");
+  config->DeletePass("add_norm_fuse_pass");
+  config->DeletePass("fc_elementwise_layernorm_fuse_pass");
+  config->DeletePass("matmul_add_act_fuse_pass");
+  config->DeletePass("multihead_matmul_fuse_pass");
+  config->DeletePass("fused_flash_attn_pass");
+  config->DeletePass("fused_rotary_position_embedding_pass");
+  config->DeletePass("embedding_eltwise_layernorm_fuse_pass");
+  config->DeletePass("conv2d_add_fuse_pass");
+  config->DeletePass("conv2d_add_act_fuse_pass");
+  config->DeletePass("conv2d_bn_fuse_pass");
+  config->DeletePass("silu_fuse_pass");
+  config->DeletePass("identity_op_clean_pass");
+  config->DeletePass("map_op_to_another_pass");
+  config->DeletePass("delete_weight_dequant_linear_op_pass");
+  config->DeletePass("delete_quant_dequant_linear_op_pass");
+  // config->EnableCustomPasses({}, true);
+
+  // config->SwitchIrOptim(false);
 
   // initialize inference config_fl
   config_fl = std::make_shared<paddle_infer::Config>();
@@ -68,6 +101,39 @@ void DeepPotPD::init(const std::string& model,
   config_fl->EnableNewIR(true);
   config_fl->EnableCustomPasses({"add_shadow_output_after_dead_parameter_pass"},
                                 true);
+  config_fl->DeletePass("dead_code_elimination_pass");
+  config_fl->DeletePass("inplace_pass");
+  config_fl->DeletePass("remove_shadow_feed_pass");
+  config_fl->DeletePass("constant_folding_pass");
+  config_fl->DeletePass("replace_fetch_with_shadow_output_pass");
+  config_fl->DeletePass("params_sync_among_devices_pass");
+  config_fl->DeletePass("common_subexpression_elimination_pass");
+  config_fl->DeletePass("transfer_layout_pass");
+  // config_fl->DeletePass("add_shadow_output_after_dead_parameter_pass");
+  config_fl->DeletePass("horizontal_fuse_pass");
+  config_fl->DeletePass("remove_redundant_transpose_pass");
+  config_fl->DeletePass("transpose_flatten_concat_fuse_pass");
+  config_fl->DeletePass("matmul_transpose_fuse_pass");
+  config_fl->DeletePass("matmul_scale_fuse_pass");
+  config_fl->DeletePass("group_norm_silu_fuse_pass");
+  config_fl->DeletePass("add_norm_fuse_pass");
+  config_fl->DeletePass("fc_elementwise_layernorm_fuse_pass");
+  config_fl->DeletePass("matmul_add_act_fuse_pass");
+  config_fl->DeletePass("multihead_matmul_fuse_pass");
+  config_fl->DeletePass("fused_flash_attn_pass");
+  config_fl->DeletePass("fused_rotary_position_embedding_pass");
+  config_fl->DeletePass("embedding_eltwise_layernorm_fuse_pass");
+  config_fl->DeletePass("conv2d_add_fuse_pass");
+  config_fl->DeletePass("conv2d_add_act_fuse_pass");
+  config_fl->DeletePass("conv2d_bn_fuse_pass");
+  config_fl->DeletePass("silu_fuse_pass");
+  config_fl->DeletePass("identity_op_clean_pass");
+  config_fl->DeletePass("map_op_to_another_pass");
+  config_fl->DeletePass("delete_weight_dequant_linear_op_pass");
+  config_fl->DeletePass("delete_quant_dequant_linear_op_pass");
+  // config_fl->EnableCustomPasses({}, true);
+
+  // config_fl->SwitchIrOptim(false);
 
   // loading inference model
   std::string pdmodel_path, fl_pdmodel_path;
@@ -152,7 +218,9 @@ void DeepPotPD::init(const std::string& model,
   }
 
   predictor = paddle_infer::CreatePredictor(*config);
+  std::cout << "Setup model.forward model" << std::endl;
   predictor_fl = paddle_infer::CreatePredictor(*config_fl);
+  std::cout << "Setup model.forward_lower model" << std::endl;
 
   // initialize hyper params from model buffers
   ntypes_spin = 0;
@@ -245,14 +313,15 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
       for (size_t ii = 0; ii < nall_real; ii++) {
         mapping[ii] = lmp_list.mapping[fwd_map[ii]];
       }
+      this->mapping_tensor = predictor_fl->GetInputHandle("mapping");
       this->mapping_tensor->Reshape({1, nall_real});
       this->mapping_tensor->CopyFromCpu(mapping.data());
     }
   }
   std::vector<int> firstneigh = createNlistTensorPD(nlist_data.jlist);
-  firstneigh_tensor = predictor_fl->GetInputHandle("nlist");
-  firstneigh_tensor->Reshape({1, nloc, (int)firstneigh.size() / (int)nloc});
-  firstneigh_tensor->CopyFromCpu(firstneigh.data());
+  this->firstneigh_tensor = predictor_fl->GetInputHandle("nlist");
+  this->firstneigh_tensor->Reshape({1, nloc, (int)firstneigh.size() / (int)nloc});
+  this->firstneigh_tensor->CopyFromCpu(firstneigh.data());
   bool do_atom_virial_tensor = atomic;
   std::unique_ptr<paddle_infer::Tensor> fparam_tensor;
   if (!fparam.empty()) {

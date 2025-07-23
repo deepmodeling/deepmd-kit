@@ -256,7 +256,7 @@ def communicate_extended_output(
                 new_ret[kk_derv_c + "_redu"] = paddle.sum(
                     new_ret[kk_derv_c].to(redu_prec), axis=1
                 )
-                if not do_atomic_virial:
+                if not do_atomic_virial and paddle.in_dynamic_mode():
                     # pop atomic virial, because it is not correctly calculated.
                     new_ret.pop(kk_derv_c)
     return new_ret
