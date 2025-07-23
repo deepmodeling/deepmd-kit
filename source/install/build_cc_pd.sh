@@ -23,6 +23,7 @@ cd ${BUILD_TMP_DIR}
 DP_VARIANT=cuda DP_ENABLE_TENSORFLOW=0 DP_ENABLE_PYTORCH=0 cmake -D ENABLE_TENSORFLOW=OFF \
 	-D ENABLE_IPI=FALSE \
 	-D USE_CUDA_TOOLKIT=TRUE \
+	-D PADDLE_INFERENCE_DIR=/workspace/hesensen/PaddleScience_enn_debug/Paddle/build/paddle_inference_install_dir \
 	-D ENABLE_PYTORCH=OFF \
 	-D ENABLE_PADDLE=ON \
 	-D CMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
@@ -60,7 +61,7 @@ echo "START INFERENCE..."
 # export FLAGS_use_cinn=true
 
 export PATH=/workspace/hesensen/deepmd_partx/deepmd-kit-tmp/source/build/_deps/lammps_download-src/src:$PATH
-CUDA_VISIBLE_DEVICES=0 USE_CUDA_TOOLKIT=1 lmp_serial -in paddle_se_e2_a.lammps 2>&1 | tee paddle_infer_serial.log
+GLOG_v=4 CUDA_VISIBLE_DEVICES=0 USE_CUDA_TOOLKIT=1 lmp_serial -in paddle_se_e2_a.lammps
 # USE_CUDA_TOOLKIT=0 lmp_serial -in paddle_se_e2_a.lammps 2>&1 | tee paddle_infer_serial.log
 # USE_CUDA_TOOLKIT=1 lmp_serial -in paddle_dpa1.lammps 2>&1 | tee paddle_infer_serial.log
 # USE_CUDA_TOOLKIT=0 lmp_serial -in paddle_dpa1.lammps 2>&1 | tee paddle_infer_serial.log
