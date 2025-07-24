@@ -48,6 +48,13 @@ class StatItem:
             squared_sum=self.squared_sum + other.squared_sum,
         )
 
+    def __mul__(self, scalar: float) -> "StatItem":
+        return StatItem(
+            number=self.number * scalar,
+            sum=self.sum * scalar,
+            squared_sum=self.squared_sum * scalar,
+        )
+
     def compute_avg(self, default: float = 0) -> float:
         """Compute the average of the environment matrix.
 
