@@ -1989,6 +1989,7 @@ class DescrptSeAtten(DescrptSeA):
                 resnet_dt=self.filter_resnet_dt,
                 variables=self.embedding_net_variables,
                 excluded_types=self.exclude_types,
+                trainable=self.trainable,
                 suffix=suffix,
             ),
             "attention_layers": self.serialize_attention_layers(
@@ -2038,6 +2039,7 @@ class DescrptSeAtten(DescrptSeA):
                         variables=self.two_side_embeeding_net_variables,
                         suffix=suffix,
                         type_one_side=self.type_one_side,
+                        trainable=self.trainable,
                     )
                 }
             )

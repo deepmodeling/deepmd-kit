@@ -11,12 +11,12 @@ dp --pt show <INPUT> <ATTRIBUTES...>
 
 - `<INPUT>`: Path to the model checkpoint file or frozen model file.
 - `<ATTRIBUTES>`: One or more information categories to display. Supported values are:
-
   - `model-branch`: Shows available branches for multi-task models.
   - `type-map`: Shows the type mapping used by the model.
   - `descriptor`: Displays the model descriptor parameters.
   - `fitting-net`: Displays parameters of the fitting network.
   - `size`: (Supported Backends: PyTorch and PaddlePaddle) Shows the parameter counts for various components.
+  - `observed-type`: (Supported Backends: PyTorch) Shows the observed types (elements) of the model during data statistics. Only energy models are supported now.
 
 ## Example Usage
 
@@ -33,32 +33,31 @@ dp show frozen_model.pth type-map descriptor fitting-net size
 Depending on the provided attributes and the model type, the output includes:
 
 - **Model Type**
-
   - Logs whether the loaded model is a _singletask_ or _multitask_ model.
 
 - **model-branch**
-
   - _Only available for multitask models._
   - Lists all available model branches and the special `"RANDOM"` branch, which refers to a randomly initialized fitting net.
 
 - **type-map**
-
   - For multitask models: Shows the type map for each branch.
   - For singletask models: Shows the model's type map.
 
 - **descriptor**
-
   - For multitask models: Displays the descriptor parameter for each branch.
   - For singletask models: Displays the descriptor parameter.
 
 - **fitting-net**
-
   - For multitask models: Shows the fitting network parameters for each branch.
   - For singletask models: Shows the fitting network parameters.
 
 - **size**
-
   - Prints the number of parameters for each component (`descriptor`, `fitting-net`, etc.), as well as the total parameter count.
+
+- **observed-type**
+  - Displays the count and list of observed element types of the model during data statistics.
+  - For multitask models, it shows the observed types for each branch.
+  - Note: This info shows the types observed during training data statistics, which may differ from the type map.
 
 ## Example Output
 
@@ -73,6 +72,9 @@ Parameter counts:
 Parameters in descriptor: 19,350
 Parameters in fitting-net: 119,091
 Parameters in total: 138,441
+The observed types for this model:
+Number of observed types: 2
+Observed types: ['H', 'O']
 ```
 
 For a multitask model, if `model-branch` is selected, it will additionally display available branches:

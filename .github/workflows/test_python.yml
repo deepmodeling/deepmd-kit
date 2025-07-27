@@ -40,7 +40,6 @@ jobs:
         # changes, setting `TENSORFLOW_ROOT`.
         DP_ENABLE_PYTORCH: 1
         DP_BUILD_TESTING: 1
-        UV_EXTRA_INDEX_URL: "https://pypi.anaconda.org/mpi4py/simple"
         HOROVOD_WITH_TENSORFLOW: 1
         HOROVOD_WITHOUT_PYTORCH: 1
         HOROVOD_WITH_MPI: 1

@@ -522,7 +522,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         type_embedding = self.type_embedding.call()
         # nf x nall x tebd_dim
         atype_embd_ext = xp.reshape(
-            xp.take(type_embedding, xp.reshape(atype_ext, [-1]), axis=0),
+            xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
             (nf, nall, self.tebd_dim),
         )
         # nfnl x tebd_dim
@@ -1034,7 +1034,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                     xp.tile(
                         (xp.reshape(atype, (-1, 1)) * ntypes_with_padding), (1, nnei)
                     ),
-                    (-1),
+                    (-1,),
                 )
                 idx_j = xp.reshape(nei_type, (-1,))
                 # (nf x nl x nnei) x ng

@@ -413,7 +413,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                 )
             fparam = (fparam - self.fparam_avg[...]) * self.fparam_inv_std[...]
             fparam = xp.tile(
-                xp.reshape(fparam, [nf, 1, self.numb_fparam]), (1, nloc, 1)
+                xp.reshape(fparam, (nf, 1, self.numb_fparam)), (1, nloc, 1)
             )
             xx = xp.concat(
                 [xx, fparam],
@@ -432,7 +432,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                     f"get an input aparam of dim {aparam.shape[-1]}, "
                     f"which is not consistent with {self.numb_aparam}."
                 )
-            aparam = xp.reshape(aparam, [nf, nloc, self.numb_aparam])
+            aparam = xp.reshape(aparam, (nf, nloc, self.numb_aparam))
             aparam = (aparam - self.aparam_avg[...]) * self.aparam_inv_std[...]
             xx = xp.concat(
                 [xx, aparam],
@@ -447,7 +447,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         if self.dim_case_embd > 0:
             assert self.case_embd is not None
             case_embd = xp.tile(
-                xp.reshape(self.case_embd[...], [1, 1, -1]), [nf, nloc, 1]
+                xp.reshape(self.case_embd[...], (1, 1, -1)), (nf, nloc, 1)
             )
             xx = xp.concat(
                 [xx, case_embd],
@@ -466,7 +466,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             )
             for type_i in range(self.ntypes):
                 mask = xp.tile(
-                    xp.reshape((atype == type_i), [nf, nloc, 1]), (1, 1, net_dim_out)
+                    xp.reshape((atype == type_i), (nf, nloc, 1)), (1, 1, net_dim_out)
                 )
                 atom_property = self.nets[(type_i,)](xx)
                 if self.remove_vaccum_contribution is not None and not (
@@ -486,10 +486,10 @@ class GeneralFitting(NativeOP, BaseFitting):
         outs += xp.reshape(
             xp.take(
                 xp.astype(self.bias_atom_e[...], outs.dtype),
-                xp.reshape(atype, [-1]),
+                xp.reshape(atype, (-1,)),
                 axis=0,
             ),
-            [nf, nloc, net_dim_out],
+            (nf, nloc, net_dim_out),
         )
         # nf x nloc
         exclude_mask = self.emask.build_type_exclude_mask(atype)

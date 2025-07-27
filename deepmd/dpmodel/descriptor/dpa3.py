@@ -251,7 +251,7 @@ class RepFlowArgs:
 
 @BaseDescriptor.register("dpa3")
 class DescrptDPA3(NativeOP, BaseDescriptor):
-    r"""The DPA-3 descriptor[1]_.
+    r"""The DPA3 descriptor[1]_.
 
     Parameters
     ----------
@@ -564,12 +564,12 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         type_embedding = self.type_embedding.call()
         if self.use_loc_mapping:
             node_ebd_ext = xp.reshape(
-                xp.take(type_embedding, xp.reshape(atype_ext[:, :nloc], [-1]), axis=0),
+                xp.take(type_embedding, xp.reshape(atype_ext[:, :nloc], (-1,)), axis=0),
                 (nframes, nloc, self.tebd_dim),
             )
         else:
             node_ebd_ext = xp.reshape(
-                xp.take(type_embedding, xp.reshape(atype_ext, [-1]), axis=0),
+                xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
                 (nframes, nall, self.tebd_dim),
             )
         node_ebd_inp = node_ebd_ext[:, :nloc, :]

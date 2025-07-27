@@ -171,14 +171,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             n_multi_edge_message,
             precision,
         ) = self.param
-        return (
-            not INSTALLED_PD
-            or precision == "bfloat16"
-            or edge_init_use_dist
-            or use_exp_switch
-            or use_dynamic_sel
-            or use_loc_mapping
-        )  # not supported yet
+        return CommonTest.skip_pd
 
     @property
     def skip_dp(self) -> bool:

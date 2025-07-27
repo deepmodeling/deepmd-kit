@@ -847,7 +847,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         type_embedding = self.type_embedding.call()
         # repinit
         g1_ext = xp.reshape(
-            xp.take(type_embedding, xp.reshape(atype_ext, [-1]), axis=0),
+            xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
             (nframes, nall, self.tebd_dim),
         )
         g1_inp = g1_ext[:, :nloc, :]
