@@ -226,6 +226,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
+        compute_out_stat: bool = True,
     ) -> None:
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -243,7 +244,8 @@ class PairTabAtomicModel(BaseAtomicModel):
             The path to the stat file.
 
         """
-        self.compute_or_load_out_stat(merged, stat_file_path)
+        if compute_out_stat:
+            self.compute_or_load_out_stat(merged, stat_file_path)
 
     def forward_atomic(
         self,

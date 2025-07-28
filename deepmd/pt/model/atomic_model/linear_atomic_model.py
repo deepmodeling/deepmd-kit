@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import functools
 from typing import (
-    Callable,
     Optional,
     Union,
 )
@@ -319,6 +319,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             The atom types. nf x nloc
 
         """
+        out_bias, out_std = self._fetch_out_stat(self.bias_keys)
+        for kk in self.bias_keys:
+            # nf x nloc x odims, out_bias: ntypes x odims
+            ret[kk] = ret[kk] + out_bias[kk][atype]
         return ret
 
     @staticmethod
@@ -464,34 +468,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         return False
 
-    def compute_or_load_out_stat(
-        self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
-    ) -> None:
-        """
-        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
-
-        Parameters
-        ----------
-        merged : Union[Callable[[], list[dict]], list[dict]]
-            - list[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
-                originating from the `i`-th data system.
-            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
-                only when needed. Since the sampling process can be slow and memory-intensive,
-                the lazy function helps by only sampling once.
-        stat_file_path : Optional[DPPath]
-            The path to the stat file.
-
-        """
-        for md in self.models:
-            md.compute_or_load_out_stat(merged, stat_file_path)
-
     def compute_or_load_stat(
         self,
         sampled_func,
         stat_file_path: Optional[DPPath] = None,
+        compute_out_stat: bool = True,
     ) -> None:
         """
         Compute or load the statistics parameters of the model,
@@ -509,7 +490,29 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             The dictionary of paths to the statistics files.
         """
         for md in self.models:
-            md.compute_or_load_stat(sampled_func, stat_file_path)
+            md.compute_or_load_stat(
+                sampled_func, stat_file_path, compute_out_stat=False
+            )
+
+        if stat_file_path is not None and self.type_map is not None:
+            # descriptors and fitting net with different type_map
+            # should not share the same parameters
+            stat_file_path /= " ".join(self.type_map)
+
+        @functools.lru_cache
+        def wrapped_sampler():
+            sampled = sampled_func()
+            if self.pair_excl is not None:
+                pair_exclude_types = self.pair_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["pair_exclude_types"] = list(pair_exclude_types)
+            if self.atom_excl is not None:
+                atom_exclude_types = self.atom_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["atom_exclude_types"] = list(atom_exclude_types)
+            return sampled
+
+        self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
 
 class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):

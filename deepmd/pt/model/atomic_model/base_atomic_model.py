@@ -363,6 +363,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
+        compute_out_stat: bool = True,
     ) -> NoReturn:
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.

@@ -285,6 +285,7 @@ class DPAtomicModel(BaseAtomicModel):
         self,
         sampled_func,
         stat_file_path: Optional[DPPath] = None,
+        compute_out_stat: bool = True,
     ) -> None:
         """
         Compute or load the statistics parameters of the model,
@@ -323,7 +324,8 @@ class DPAtomicModel(BaseAtomicModel):
         self.fitting_net.compute_input_stats(
             wrapped_sampler, protection=self.data_stat_protect
         )
-        self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
+        if compute_out_stat:
+            self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
