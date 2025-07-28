@@ -842,7 +842,9 @@ class Trainer:
 
             # Log and persist
             display_step_id = _step_id + 1
-            if self.display_in_training and (display_step_id % self.disp_freq == 0 or display_step_id == 1):
+            if self.display_in_training and (
+                display_step_id % self.disp_freq == 0 or display_step_id == 1
+            ):
                 self.wrapper.eval()  # Will set to train mode before fininshing validation
 
                 def log_loss_train(_loss, _more_loss, _task_key="Default"):
@@ -850,12 +852,21 @@ class Trainer:
                     if not self.multi_task:
                         # Use accumulated average loss for single task
                         for item in self.loss_accumulator:
-                            results[item] = self.loss_accumulator[item] / self.step_count_in_interval
+                            results[item] = (
+                                self.loss_accumulator[item]
+                                / self.step_count_in_interval
+                            )
                     else:
                         # Use accumulated average loss for multi-task
-                        if _task_key in self.loss_accumulator and _task_key in self.step_count_per_task:
+                        if (
+                            _task_key in self.loss_accumulator
+                            and _task_key in self.step_count_per_task
+                        ):
                             for item in self.loss_accumulator[_task_key]:
-                                results[item] = self.loss_accumulator[_task_key][item] / self.step_count_per_task[_task_key]
+                                results[item] = (
+                                    self.loss_accumulator[_task_key][item]
+                                    / self.step_count_per_task[_task_key]
+                                )
                     return results
 
                 def log_loss_valid(_task_key="Default"):
@@ -917,7 +928,9 @@ class Trainer:
 
                     # For multi-task, use accumulated average loss for all tasks
                     for _key in self.model_keys:
-                        train_results[_key] = log_loss_train(loss, more_loss, _task_key=_key)
+                        train_results[_key] = log_loss_train(
+                            loss, more_loss, _task_key=_key
+                        )
                         valid_results[_key] = log_loss_valid(_task_key=_key)
                         if self.rank == 0:
                             log.info(
