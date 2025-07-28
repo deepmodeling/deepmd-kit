@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import json
 from typing import (
     TYPE_CHECKING,
     Any,

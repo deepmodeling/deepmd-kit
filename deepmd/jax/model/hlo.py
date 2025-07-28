@@ -175,7 +175,19 @@ class HLO(BaseModel):
 
     def model_output_def(self):
         return ModelOutputDef(
-            FittingOutputDef([OUTPUT_DEFS[tt if not (self.model_def_script.get("hessian_mode", False) and tt == "energy") else f"{tt}_hessian"] for tt in self.model_output_type()])
+            FittingOutputDef(
+                [
+                    OUTPUT_DEFS[
+                        tt
+                        if not (
+                            self.model_def_script.get("hessian_mode", False)
+                            and tt == "energy"
+                        )
+                        else f"{tt}_hessian"
+                    ]
+                    for tt in self.model_output_type()
+                ]
+            )
         )
 
     def call_lower(
