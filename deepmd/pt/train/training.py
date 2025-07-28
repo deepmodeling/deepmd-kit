@@ -509,7 +509,9 @@ class Trainer:
                             if i != "_extra_state" and f".{_model_key}." in i
                         ]
                         for item_key in target_keys:
-                            if _new_fitting and (".descriptor." not in item_key):
+                            if (
+                                _new_fitting and (".descriptor." not in item_key)
+                            ) or ".models.1." in item_key:
                                 # print(f'Keep {item_key} in old model!')
                                 _new_state_dict[item_key] = (
                                     _random_state_dict[item_key].clone().detach()
@@ -517,7 +519,7 @@ class Trainer:
                             else:
                                 new_key = item_key.replace(
                                     f".{_model_key}.", f".{_model_key_from}."
-                                )
+                                ).replace(".models.0.", ".")  # for ZBL models
                                 # print(f'Replace {item_key} with {new_key} in pretrained_model!')
                                 _new_state_dict[item_key] = (
                                     _origin_state_dict[new_key].clone().detach()
