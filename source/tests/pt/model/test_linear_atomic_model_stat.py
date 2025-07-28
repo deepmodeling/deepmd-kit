@@ -236,7 +236,6 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ener_bias = np.array([1.0, 3.0]).reshape(2, 1)
         ret = to_numpy_array(linear_model.forward_common_atomic(*args)["energy"])
         np.testing.assert_almost_equal((ret0 + ener_bias[at]), ret)
-        
 
         # linear model not adding bias again
         ret1 = linear_model.forward_common_atomic(*args)
