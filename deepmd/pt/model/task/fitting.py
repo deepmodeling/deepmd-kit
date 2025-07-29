@@ -320,6 +320,7 @@ class GeneralFitting(Fitting):
                     self.precision,
                     bias_out=True,
                     seed=child_seed(self.seed, ii),
+                    trainable=trainable,
                 )
                 for ii in range(self.ntypes if not self.mixed_types else 1)
             ],
@@ -327,6 +328,8 @@ class GeneralFitting(Fitting):
         # set trainable
         for param in self.parameters():
             param.requires_grad = self.trainable
+
+        self.eval_return_middle_output = False
 
     def reinit_exclude(
         self,
@@ -448,6 +451,9 @@ class GeneralFitting(Fitting):
         self.case_embd = torch.eye(self.dim_case_embd, dtype=self.prec, device=device)[
             case_idx
         ]
+
+    def set_return_middle_output(self, return_middle_output: bool = True) -> None:
+        self.eval_return_middle_output = return_middle_output
 
     def __setitem__(self, key, value) -> None:
         if key in ["bias_atom_e"]:
@@ -597,14 +603,37 @@ class GeneralFitting(Fitting):
             dtype=self.prec,
             device=descriptor.device,
         )  # jit assertion
+        results = {}
+
         if self.mixed_types:
             atom_property = self.filter_layers.networks[0](xx)
+            if self.eval_return_middle_output:
+                results["middle_output"] = self.filter_layers.networks[
+                    0
+                ].call_until_last(xx)
             if xx_zeros is not None:
                 atom_property -= self.filter_layers.networks[0](xx_zeros)
             outs = (
                 outs + atom_property + self.bias_atom_e[atype].to(self.prec)
             )  # Shape is [nframes, natoms[0], net_dim_out]
         else:
+            if self.eval_return_middle_output:
+                outs_middle = torch.zeros(
+                    (nf, nloc, self.neuron[-1]),
+                    dtype=self.prec,
+                    device=descriptor.device,
+                )  # jit assertion
+                for type_i, ll in enumerate(self.filter_layers.networks):
+                    mask = (atype == type_i).unsqueeze(-1)
+                    mask = torch.tile(mask, (1, 1, net_dim_out))
+                    middle_output_type = ll.call_until_last(xx)
+                    middle_output_type = torch.where(
+                        torch.tile(mask, (1, 1, self.neuron[-1])),
+                        middle_output_type,
+                        0.0,
+                    )
+                    outs_middle = outs_middle + middle_output_type
+                results["middle_output"] = outs_middle
             for type_i, ll in enumerate(self.filter_layers.networks):
                 mask = (atype == type_i).unsqueeze(-1)
                 mask = torch.tile(mask, (1, 1, net_dim_out))
@@ -626,4 +655,5 @@ class GeneralFitting(Fitting):
         mask = self.emask(atype).to(torch.bool)
         # nf x nloc x nod
         outs = torch.where(mask[:, :, None], outs, 0.0)
-        return {self.var_name: outs}
+        results.update({self.var_name: outs})
+        return results

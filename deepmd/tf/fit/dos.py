@@ -730,6 +730,7 @@ class DOSFitting(Fitting):
                 activation_function=self.activation_function,
                 resnet_dt=self.resnet_dt,
                 variables=self.fitting_net_variables,
+                trainable=self.trainable,
                 suffix=suffix,
             ),
             "@variables": {

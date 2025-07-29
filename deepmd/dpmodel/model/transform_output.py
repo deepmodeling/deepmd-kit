@@ -100,7 +100,9 @@ def communicate_extended_output(
             if vdef.r_differentiable:
                 if model_ret[kk_derv_r] is not None:
                     derv_r_ext_dims = list(vdef.shape) + [3]  # noqa:RUF005
-                    mapping = xp.reshape(mapping, (mldims + [1] * len(derv_r_ext_dims)))
+                    mapping = xp.reshape(
+                        mapping, tuple(mldims + [1] * len(derv_r_ext_dims))
+                    )
                     mapping = xp.tile(mapping, [1] * len(mldims) + derv_r_ext_dims)
                     force = xp.zeros(vldims + derv_r_ext_dims, dtype=vv.dtype)
                     force = xp_scatter_sum(

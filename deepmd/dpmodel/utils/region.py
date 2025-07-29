@@ -93,8 +93,8 @@ def to_face_distance(
     """
     xp = array_api_compat.array_namespace(cell)
     cshape = cell.shape
-    dist = b_to_face_distance(xp.reshape(cell, [-1, 3, 3]))
-    return xp.reshape(dist, list(cshape[:-2]) + [3])  # noqa:RUF005
+    dist = b_to_face_distance(xp.reshape(cell, (-1, 3, 3)))
+    return xp.reshape(dist, tuple(list(cshape[:-2]) + [3]))  # noqa:RUF005
 
 
 def b_to_face_distance(cell):

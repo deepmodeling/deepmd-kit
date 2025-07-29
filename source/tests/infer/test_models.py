@@ -164,6 +164,24 @@ class TestDeepPot(unittest.TestCase):
             expected_descpt = result.descriptor
             np.testing.assert_almost_equal(descpt.ravel(), expected_descpt.ravel())
 
+    def test_fitting_last_layer(self) -> None:
+        _, extension = self.param
+        if extension == ".pb":
+            self.skipTest("fitting_last_layer not supported for TensorFlow models")
+        for ii, result in enumerate(self.case.results):
+            if result.fit_ll is None:
+                continue
+            fit_ll = self.dp.eval_fitting_last_layer(
+                result.coord, result.box, result.atype
+            )
+            expected_fit_ll = result.fit_ll
+            np.testing.assert_almost_equal(fit_ll.ravel(), expected_fit_ll.ravel())
+            fit_ll = self.dp.eval_fitting_last_layer(
+                result.coord, result.box, result.atype
+            )
+            expected_fit_ll = result.fit_ll
+            np.testing.assert_almost_equal(fit_ll.ravel(), expected_fit_ll.ravel())
+
     def test_2frame_atm(self) -> None:
         for ii, result in enumerate(self.case.results):
             coords2 = np.concatenate((result.coord, result.coord))

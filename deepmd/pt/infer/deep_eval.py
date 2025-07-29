@@ -64,6 +64,9 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
 )
+from deepmd.utils.econf_embd import (
+    sort_element_type,
+)
 
 if TYPE_CHECKING:
     import ase.neighborlist
@@ -98,6 +101,7 @@ class DeepEval(DeepEvalBackend):
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         head: Optional[Union[str, int]] = None,
+        no_jit: bool = False,
         **kwargs: Any,
     ) -> None:
         self.output_def = output_def
@@ -130,7 +134,7 @@ class DeepEval(DeepEvalBackend):
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
             model = get_model(self.input_param).to(DEVICE)
-            if not self.input_param.get("hessian_mode"):
+            if not self.input_param.get("hessian_mode") and not no_jit:
                 model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
             self.dp.load_state_dict(state_dict)
@@ -648,6 +652,22 @@ class DeepEval(DeepEvalBackend):
             "total": sum_param_des + sum_param_fit,
         }
 
+    def get_observed_types(self) -> dict:
+        """Get observed types (elements) of the model during data statistics.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the information of observed type in the model:
+            - 'type_num': the total number of observed types in this model.
+            - 'observed_type': a list of the observed types in this model.
+        """
+        observed_type_list = self.dp.model["Default"].get_observed_type_list()
+        return {
+            "type_num": len(observed_type_list),
+            "observed_type": sort_element_type(observed_type_list),
+        }
+
     def eval_descriptor(
         self,
         coords: np.ndarray,
@@ -702,3 +722,58 @@ class DeepEval(DeepEvalBackend):
         descriptor = model.eval_descriptor()
         model.set_eval_descriptor_hook(False)
         return to_numpy_array(descriptor)
+
+    def eval_fitting_last_layer(
+        self,
+        coords: np.ndarray,
+        cells: Optional[np.ndarray],
+        atom_types: np.ndarray,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+        **kwargs: Any,
+    ) -> np.ndarray:
+        """Evaluate fitting before last layer by using this DP.
+
+        Parameters
+        ----------
+        coords
+            The coordinates of atoms.
+            The array should be of size nframes x natoms x 3
+        cells
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
+            The array should be of size nframes x 9
+        atom_types
+            The atom types
+            The list should contain natoms ints
+        fparam
+            The frame parameter.
+            The array can be of size :
+            - nframes x dim_fparam.
+            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+        aparam
+            The atomic parameter
+            The array can be of size :
+            - nframes x natoms x dim_aparam.
+            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+            - dim_aparam. Then all frames and atoms are provided with the same aparam.
+
+        Returns
+        -------
+        fitting
+            Fitting output before last layer.
+        """
+        model = self.dp.model["Default"]
+        model.set_eval_fitting_last_layer_hook(True)
+        self.eval(
+            coords,
+            cells,
+            atom_types,
+            atomic=False,
+            fparam=fparam,
+            aparam=aparam,
+            **kwargs,
+        )
+        fitting_net = model.eval_fitting_last_layer()
+        model.set_eval_fitting_last_layer_hook(False)
+        return to_numpy_array(fitting_net)

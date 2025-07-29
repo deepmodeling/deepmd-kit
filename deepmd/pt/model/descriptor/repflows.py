@@ -181,6 +181,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
     seed : int, optional
         Random seed for parameter initialization.
+    trainable : bool, default: True
+        Whether this block is trainable
     """
 
     def __init__(
@@ -219,6 +221,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         use_loc_mapping: bool = True,
         optim_update: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.e_rcut = float(e_rcut)
@@ -283,10 +286,19 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.seed = seed
 
         self.edge_embd = MLPLayer(
-            1, self.e_dim, precision=precision, seed=child_seed(seed, 0)
+            1,
+            self.e_dim,
+            precision=precision,
+            seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.angle_embd = MLPLayer(
-            1, self.a_dim, precision=precision, bias=False, seed=child_seed(seed, 1)
+            1,
+            self.a_dim,
+            precision=precision,
+            bias=False,
+            seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         layers = []
         for ii in range(nlayers):
@@ -318,6 +330,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                     sel_reduce_factor=self.sel_reduce_factor,
                     smooth_edge_update=self.smooth_edge_update,
                     seed=child_seed(child_seed(seed, 1), ii),
+                    trainable=trainable,
                 )
             )
         self.layers = torch.nn.ModuleList(layers)
@@ -537,9 +550,8 @@ class DescrptBlockRepflows(DescriptorBlock):
             a_sw = (a_sw[:, :, :, None] * a_sw[:, :, None, :])[a_nlist_mask]
         else:
             # avoid jit assertion
-            edge_index = angle_index = torch.zeros(
-                [1, 3], device=nlist.device, dtype=nlist.dtype
-            )
+            edge_index = torch.zeros([2, 1], device=nlist.device, dtype=nlist.dtype)
+            angle_index = torch.zeros([3, 1], device=nlist.device, dtype=nlist.dtype)
         # get edge and angle embedding
         # nb x nloc x nnei x e_dim [OR] n_edge x e_dim
         if not self.edge_init_use_dist:
@@ -646,7 +658,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                 edge_ebd,
                 h2,
                 sw,
-                owner=edge_index[:, 0],
+                owner=edge_index[0],
                 num_owner=nframes * nloc,
                 nb=nframes,
                 nloc=nloc,

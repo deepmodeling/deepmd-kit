@@ -49,6 +49,16 @@ class BaseModel(torch.nn.Module, make_base_model()):
         raise NotImplementedError
 
     @torch.jit.export
+    def get_observed_type_list(self) -> list[str]:
+        """Get observed types (elements) of the model during data statistics.
+
+        Returns
+        -------
+        observed_type_list: a list of the observed types in this model.
+        """
+        raise NotImplementedError
+
+    @torch.jit.export
     def get_model_def_script(self) -> str:
         """Get the model definition script."""
         return self.model_def_script

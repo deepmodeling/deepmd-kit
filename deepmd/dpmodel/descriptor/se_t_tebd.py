@@ -157,6 +157,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
             env_protection=env_protection,
             smooth=smooth,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.use_econf_tebd = use_econf_tebd
         self.type_map = type_map
@@ -171,6 +172,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
             use_tebd_bias=use_tebd_bias,
             type_map=type_map,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
@@ -358,7 +360,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         type_embedding = self.type_embedding.call()
         # nf x nall x tebd_dim
         atype_embd_ext = xp.reshape(
-            xp.take(type_embedding, xp.reshape(atype_ext, [-1]), axis=0),
+            xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
             (nf, nall, self.tebd_dim),
         )
         # nfnl x tebd_dim
@@ -497,6 +499,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         env_protection: float = 0.0,
         smooth: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         self.rcut = rcut
         self.rcut_smth = rcut_smth
@@ -542,6 +545,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
             self.resnet_dt,
             self.precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.embeddings = embeddings
         if self.tebd_input_mode in ["strip"]:
@@ -557,6 +561,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
                 self.resnet_dt,
                 self.precision,
                 seed=child_seed(seed, 1),
+                trainable=trainable,
             )
             self.embeddings_strip = embeddings_strip
         else:

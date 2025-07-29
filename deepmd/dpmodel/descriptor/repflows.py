@@ -167,6 +167,8 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
     seed : int, optional
         Random seed for parameter initialization.
+    trainable : bool, default: True
+        Whether the block is trainable
     """
 
     def __init__(
@@ -205,6 +207,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         sel_reduce_factor: float = 10.0,
         use_loc_mapping: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.e_rcut = float(e_rcut)
@@ -269,10 +272,19 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         self.seed = seed
 
         self.edge_embd = NativeLayer(
-            1, self.e_dim, precision=precision, seed=child_seed(seed, 0)
+            1,
+            self.e_dim,
+            precision=precision,
+            seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.angle_embd = NativeLayer(
-            1, self.a_dim, precision=precision, bias=False, seed=child_seed(seed, 1)
+            1,
+            self.a_dim,
+            precision=precision,
+            bias=False,
+            seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         layers = []
         for ii in range(nlayers):
@@ -304,6 +316,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
                     sel_reduce_factor=self.sel_reduce_factor,
                     smooth_edge_update=self.smooth_edge_update,
                     seed=child_seed(child_seed(seed, 1), ii),
+                    trainable=trainable,
                 )
             )
         self.layers = layers
@@ -490,7 +503,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
 
         # get angle nlist (maybe smaller)
-        a_dist_mask = (xp.linalg.vector_norm(diff, axis=-1) < self.a_rcut)[
+        a_dist_mask = (safe_for_vector_norm(diff, axis=-1) < self.a_rcut)[
             :, :, : self.a_sel
         ]
         a_nlist = nlist[:, :, : self.a_sel]
@@ -578,7 +591,8 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
             # n_angle x 1
             a_sw = (a_sw[:, :, :, None] * a_sw[:, :, None, :])[a_nlist_mask]
         else:
-            edge_index = angle_index = xp.zeros([1, 3], dtype=nlist.dtype)
+            edge_index = xp.zeros([2, 1], dtype=nlist.dtype)
+            angle_index = xp.zeros([3, 1], dtype=nlist.dtype)
 
         # get edge and angle embedding
         # nb x nloc x nnei x e_dim [OR] n_edge x e_dim
@@ -622,7 +636,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
                 edge_ebd,
                 h2,
                 sw,
-                owner=edge_index[:, 0],
+                owner=edge_index[0, :],
                 num_owner=nframes * nloc,
                 nb=nframes,
                 nloc=nloc,
@@ -860,6 +874,7 @@ class RepFlowLayer(NativeOP):
         update_residual_init: str = "const",
         precision: str = "float64",
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
@@ -922,6 +937,7 @@ class RepFlowLayer(NativeOP):
             n_dim,
             precision=precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             self.n_residual.append(
@@ -931,6 +947,7 @@ class RepFlowLayer(NativeOP):
                     self.update_residual_init,
                     precision=precision,
                     seed=child_seed(seed, 1),
+                    trainable=trainable,
                 )
             )
 
@@ -941,6 +958,7 @@ class RepFlowLayer(NativeOP):
             n_dim,
             precision=precision,
             seed=child_seed(seed, 2),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             self.n_residual.append(
@@ -950,6 +968,7 @@ class RepFlowLayer(NativeOP):
                     self.update_residual_init,
                     precision=precision,
                     seed=child_seed(seed, 3),
+                    trainable=trainable,
                 )
             )
 
@@ -959,6 +978,7 @@ class RepFlowLayer(NativeOP):
             self.n_multi_edge_message * n_dim,
             precision=precision,
             seed=child_seed(seed, 4),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             for head_index in range(self.n_multi_edge_message):
@@ -969,6 +989,7 @@ class RepFlowLayer(NativeOP):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(child_seed(seed, 5), head_index),
+                        trainable=trainable,
                     )
                 )
 
@@ -978,6 +999,7 @@ class RepFlowLayer(NativeOP):
             e_dim,
             precision=precision,
             seed=child_seed(seed, 6),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             self.e_residual.append(
@@ -987,6 +1009,7 @@ class RepFlowLayer(NativeOP):
                     self.update_residual_init,
                     precision=precision,
                     seed=child_seed(seed, 7),
+                    trainable=trainable,
                 )
             )
 
@@ -1015,6 +1038,7 @@ class RepFlowLayer(NativeOP):
                         precision=precision,
                         bias=False,
                         seed=child_seed(seed, 8),
+                        trainable=trainable,
                     )
                     self.a_compress_e_linear = NativeLayer(
                         self.e_dim,
@@ -1022,6 +1046,7 @@ class RepFlowLayer(NativeOP):
                         precision=precision,
                         bias=False,
                         seed=child_seed(seed, 9),
+                        trainable=trainable,
                     )
                 else:
                     self.a_compress_n_linear = None
@@ -1033,12 +1058,14 @@ class RepFlowLayer(NativeOP):
                 self.e_dim,
                 precision=precision,
                 seed=child_seed(seed, 10),
+                trainable=trainable,
             )
             self.edge_angle_linear2 = NativeLayer(
                 self.e_dim,
                 self.e_dim,
                 precision=precision,
                 seed=child_seed(seed, 11),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 self.e_residual.append(
@@ -1048,6 +1075,7 @@ class RepFlowLayer(NativeOP):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 12),
+                        trainable=trainable,
                     )
                 )
 
@@ -1057,6 +1085,7 @@ class RepFlowLayer(NativeOP):
                 self.a_dim,
                 precision=precision,
                 seed=child_seed(seed, 13),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 self.a_residual.append(
@@ -1066,6 +1095,7 @@ class RepFlowLayer(NativeOP):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 14),
+                        trainable=trainable,
                     )
                 )
         else:
@@ -1286,8 +1316,8 @@ class RepFlowLayer(NativeOP):
         a_nlist: np.ndarray,  # nf x nloc x a_nnei
         a_nlist_mask: np.ndarray,  # nf x nloc x a_nnei
         a_sw: np.ndarray,  # switch func, nf x nloc x a_nnei
-        edge_index: np.ndarray,  # n_edge x 2
-        angle_index: np.ndarray,  # n_angle x 3
+        edge_index: np.ndarray,  # 2 x n_edge
+        angle_index: np.ndarray,  # 3 x n_angle
     ):
         """
         Parameters
@@ -1312,12 +1342,12 @@ class RepFlowLayer(NativeOP):
             Masks of the neighbor list for angle. real nei 1 otherwise 0
         a_sw : nf x nloc x a_nnei
             Switch function for angle.
-        edge_index : Optional for dynamic sel, n_edge x 2
+        edge_index : Optional for dynamic sel, 2 x n_edge
             n2e_index : n_edge
                 Broadcast indices from node(i) to edge(ij), or reduction indices from edge(ij) to node(i).
             n_ext2e_index : n_edge
                 Broadcast indices from extended node(j) to edge(ij).
-        angle_index : Optional for dynamic sel, n_angle x 3
+        angle_index : Optional for dynamic sel, 3 x n_angle
             n2a_index : n_angle
                 Broadcast indices from extended node(j) to angle(ijk).
             eij2a_index : n_angle
@@ -1362,11 +1392,11 @@ class RepFlowLayer(NativeOP):
             assert (n_edge, 3) == h2.shape
         del a_nlist  # may be used in the future
 
-        n2e_index, n_ext2e_index = edge_index[:, 0], edge_index[:, 1]
+        n2e_index, n_ext2e_index = edge_index[0, :], edge_index[1, :]
         n2a_index, eij2a_index, eik2a_index = (
-            angle_index[:, 0],
-            angle_index[:, 1],
-            angle_index[:, 2],
+            angle_index[0, :],
+            angle_index[1, :],
+            angle_index[2, :],
         )
 
         # nb x nloc x nnei x n_dim [OR] n_edge x n_dim

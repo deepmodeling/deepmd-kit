@@ -3,16 +3,15 @@ from typing import (
     Optional,
 )
 
-import torch
+import paddle
 
 
-@torch.jit.script
 def aggregate(
-    data: torch.Tensor,
-    owners: torch.Tensor,
+    data: paddle.Tensor,
+    owners: paddle.Tensor,
     average: bool = True,
     num_owner: Optional[int] = None,
-) -> torch.Tensor:
+) -> paddle.Tensor:
     """
     Aggregate rows in data by specifying the owners.
 
@@ -32,29 +31,30 @@ def aggregate(
     """
     if num_owner is None or average:
         # requires bincount
-        bin_count = torch.bincount(owners)
-        bin_count = bin_count.where(bin_count != 0, bin_count.new_ones(1))
+        bin_count = paddle.bincount(owners)
+        bin_count = bin_count.where(bin_count != 0, paddle.ones_like(bin_count))
+
         if (num_owner is not None) and (bin_count.shape[0] != num_owner):
             difference = num_owner - bin_count.shape[0]
-            bin_count = torch.cat([bin_count, bin_count.new_ones(difference)])
-        else:
-            num_owner = bin_count.shape[0]
+            bin_count = paddle.concat(
+                [bin_count, paddle.ones([difference], dtype=bin_count.dtype)]
+            )
     else:
         bin_count = None
 
-    output = data.new_zeros([num_owner, data.shape[1]])
-    output = output.index_add_(0, owners, data)
+    # make sure this operation is done on the same device of data and owners
+    output = paddle.zeros([num_owner, data.shape[1]])
+    output = output.index_add_(owners, 0, data.astype(output.dtype))
     if average:
         assert bin_count is not None
         output = (output.T / bin_count).T
     return output
 
 
-@torch.jit.script
 def get_graph_index(
-    nlist: torch.Tensor,
-    nlist_mask: torch.Tensor,
-    a_nlist_mask: torch.Tensor,
+    nlist: paddle.Tensor,
+    nlist_mask: paddle.Tensor,
+    a_nlist_mask: paddle.Tensor,
     nall: int,
     use_loc_mapping: bool = True,
 ):
@@ -99,14 +99,14 @@ def get_graph_index(
 
     # 1. atom graph
     # node(i) to edge(ij) index_select; edge(ij) to node aggregate
-    nlist_loc_index = torch.arange(0, nf * nloc, dtype=nlist.dtype, device=nlist.device)
+    nlist_loc_index = paddle.arange(0, nf * nloc, dtype=nlist.dtype).to(nlist.place)
     # nf x nloc x nnei
-    n2e_index = nlist_loc_index.reshape(nf, nloc, 1).expand(-1, -1, nnei)
+    n2e_index = nlist_loc_index.reshape([nf, nloc, 1]).expand([-1, -1, nnei])
     # n_edge
     n2e_index = n2e_index[nlist_mask]  # graph node index, atom_graph[:, 0]
 
     # node_ext(j) to edge(ij) index_select
-    frame_shift = torch.arange(0, nf, dtype=nlist.dtype, device=nlist.device) * (
+    frame_shift = paddle.arange(0, nf, dtype=nlist.dtype) * (
         nall if not use_loc_mapping else nloc
     )
     shifted_nlist = nlist + frame_shift[:, None, None]
@@ -115,27 +115,29 @@ def get_graph_index(
 
     # 2. edge graph
     # node(i) to angle(ijk) index_select
-    n2a_index = nlist_loc_index.reshape(nf, nloc, 1, 1).expand(-1, -1, a_nnei, a_nnei)
+    n2a_index = nlist_loc_index.reshape([nf, nloc, 1, 1]).expand(
+        [-1, -1, a_nnei, a_nnei]
+    )
     # n_angle
     n2a_index = n2a_index[a_nlist_mask_3d]
 
     # edge(ij) to angle(ijk) index_select; angle(ijk) to edge(ij) aggregate
-    edge_id = torch.arange(0, n_edge, dtype=nlist.dtype, device=nlist.device)
+    edge_id = paddle.arange(0, n_edge, dtype=nlist.dtype)
     # nf x nloc x nnei
-    edge_index = torch.zeros([nf, nloc, nnei], dtype=nlist.dtype, device=nlist.device)
+    edge_index = paddle.zeros([nf, nloc, nnei], dtype=nlist.dtype)
     edge_index[nlist_mask] = edge_id
     # only cut a_nnei neighbors, to avoid nnei x nnei
     edge_index = edge_index[:, :, :a_nnei]
-    edge_index_ij = edge_index.unsqueeze(-1).expand(-1, -1, -1, a_nnei)
+    edge_index_ij = edge_index.unsqueeze(-1).expand([-1, -1, -1, a_nnei])
     # n_angle
     eij2a_index = edge_index_ij[a_nlist_mask_3d]
 
     # edge(ik) to angle(ijk) index_select
-    edge_index_ik = edge_index.unsqueeze(-2).expand(-1, -1, a_nnei, -1)
+    edge_index_ik = edge_index.unsqueeze(-2).expand([-1, -1, a_nnei, -1])
     # n_angle
     eik2a_index = edge_index_ik[a_nlist_mask_3d]
 
-    edge_index_result = torch.stack([n2e_index, n_ext2e_index], dim=0)
-    angle_index_result = torch.stack([n2a_index, eij2a_index, eik2a_index], dim=0)
+    edge_index_result = paddle.stack([n2e_index, n_ext2e_index], axis=0)
+    angle_index_result = paddle.stack([n2a_index, eij2a_index, eik2a_index], axis=0)
 
     return edge_index_result, angle_index_result

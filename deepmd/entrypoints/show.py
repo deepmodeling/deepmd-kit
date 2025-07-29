@@ -4,6 +4,9 @@ import logging
 from deepmd.infer.deep_eval import (
     DeepEval,
 )
+from deepmd.utils.econf_embd import (
+    sort_element_type,
+)
 
 log = logging.getLogger(__name__)
 
@@ -69,3 +72,34 @@ def show(
         log.info(f"Parameter counts{log_prefix}:")
         for k in sorted(size_dict):
             log.info(f"Parameters in {k}: {size_dict[k]:,}")
+
+    if "observed-type" in ATTRIBUTES:
+        if model_is_multi_task:
+            log.info("The observed types for each branch: ")
+            total_observed_types_list = []
+            model_branches = list(model_params["model_dict"].keys())
+            for branch in model_branches:
+                tmp_model = DeepEval(INPUT, head=branch, no_jit=True)
+                observed_types = tmp_model.get_observed_types()
+                log.info(
+                    f"{branch}: Number of observed types: {observed_types['type_num']} "
+                )
+                log.info(
+                    f"{branch}: Observed types: {observed_types['observed_type']} "
+                )
+                total_observed_types_list += [
+                    tt
+                    for tt in observed_types["observed_type"]
+                    if tt not in total_observed_types_list
+                ]
+            log.info(
+                f"TOTAL number of observed types in the model: {len(total_observed_types_list)} "
+            )
+            log.info(
+                f"TOTAL observed types in the model: {sort_element_type(total_observed_types_list)} "
+            )
+        else:
+            log.info("The observed types for this model: ")
+            observed_types = model.get_observed_types()
+            log.info(f"Number of observed types: {observed_types['type_num']} ")
+            log.info(f"Observed types: {observed_types['observed_type']} ")
