@@ -193,7 +193,7 @@ class PropertyLoss(TaskLoss):
                 torch.abs(
                     (label[var_name] - model_pred[var_name]) / (label[var_name] + 1e-3)
                 )
-            )
+            ).detach()
 
         return model_pred, loss, more_loss
 
