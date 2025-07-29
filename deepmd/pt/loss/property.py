@@ -189,10 +189,11 @@ class PropertyLoss(TaskLoss):
                 )
             ).detach()
         if "mape" in self.metric:
-            more_loss[f"mape"] = torch.mean(torch.abs(
-                    (label[var_name] - model_pred[var_name]) /( label[var_name] + 1e-3) 
+            more_loss["mape"] = torch.mean(
+                torch.abs(
+                    (label[var_name] - model_pred[var_name]) / (label[var_name] + 1e-3)
                 )
-            ) 
+            )
 
         return model_pred, loss, more_loss
 
