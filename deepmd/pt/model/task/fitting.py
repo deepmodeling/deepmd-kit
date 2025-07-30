@@ -592,8 +592,8 @@ class GeneralFitting(Fitting):
     def has_default_fparam(self) -> bool:
         return self.default_fparam is not None
 
-    def get_default_fparam(self) -> Optional[np.array]:
-        return self.default_fparam_tensor.cpu().numpy()
+    def get_default_fparam(self) -> Optional[torch.Tensor]:
+        return self.default_fparam_tensor
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
