@@ -1268,6 +1268,7 @@ def get_loss(loss_params, start_lr, _ntypes, _model):
         loss_params["task_dim"] = task_dim
         loss_params["var_name"] = var_name
         loss_params["intensive"] = intensive
+        loss_params["starter_learning_rate"] = start_lr
         return PropertyLoss(**loss_params)
     else:
         loss_params["starter_learning_rate"] = start_lr
