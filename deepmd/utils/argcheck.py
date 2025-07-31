@@ -3137,7 +3137,9 @@ def training_args(
     )
     doc_disp_training = "Displaying verbose information during training."
     doc_time_training = "Timing during training."
-    doc_disp_avg = "Display the average loss over the display interval for training sets."
+    doc_disp_avg = (
+        "Display the average loss over the display interval for training sets."
+    )
     doc_profiling = "Export the profiling results to the Chrome JSON file for performance analysis, driven by the legacy TensorFlow profiling API or PyTorch Profiler. The output file will be saved to `profiling_file`."
     doc_profiling_file = "Output file for profiling."
     doc_enable_profiler = "Export the profiling results to the TensorBoard log for performance analysis, driven by TensorFlow Profiler (available in TensorFlow 2.3) or PyTorch Profiler. The log will be saved to `tensorboard_log_dir`."
@@ -3214,9 +3216,7 @@ def training_args(
         Argument(
             "time_training", bool, optional=True, default=True, doc=doc_time_training
         ),
-        Argument(
-            "disp_avg", bool, optional=True, default=False, doc=doc_disp_avg
-        ),
+        Argument("disp_avg", bool, optional=True, default=False, doc=doc_disp_avg),
         Argument(
             "profiling",
             bool,

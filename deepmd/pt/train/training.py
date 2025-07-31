@@ -844,6 +844,7 @@ class Trainer:
                 self.wrapper.eval()  # Will set to train mode before fininshing validation
 
                 if self.disp_avg:
+
                     def log_loss_train(_loss, _more_loss, _task_key="Default"):
                         results = {}
                         if not self.multi_task:
@@ -866,9 +867,14 @@ class Trainer:
                                     )
                         return results
                 else:
+
                     def log_loss_train(_loss, _more_loss, _task_key="Default"):
                         results = {}
-                        rmse_val = {item: _more_loss[item] for item in _more_loss if "l2_" not in item}
+                        rmse_val = {
+                            item: _more_loss[item]
+                            for item in _more_loss
+                            if "l2_" not in item
+                        }
                         for item in sorted(rmse_val.keys()):
                             results[item] = rmse_val[item]
                         return results
@@ -936,18 +942,24 @@ class Trainer:
                                 loss, more_loss, _task_key=_key
                             )
                     else:
-                        train_results[task_key] = log_loss_train(loss, more_loss, _task_key=task_key)
+                        train_results[task_key] = log_loss_train(
+                            loss, more_loss, _task_key=task_key
+                        )
                         for _key in self.model_keys:
                             if _key != task_key:
                                 self.optimizer.zero_grad()
-                                input_dict, label_dict, _ = self.get_data(is_train=True, task_key=_key)
+                                input_dict, label_dict, _ = self.get_data(
+                                    is_train=True, task_key=_key
+                                )
                                 _, loss, more_loss = self.wrapper(
                                     **input_dict,
                                     cur_lr=pref_lr,
                                     label=label_dict,
                                     task_key=_key,
                                 )
-                                train_results[_key] = log_loss_train(loss, more_loss, _task_key=_key)
+                                train_results[_key] = log_loss_train(
+                                    loss, more_loss, _task_key=_key
+                                )
                         valid_results[_key] = log_loss_valid(_task_key=_key)
                         if self.rank == 0:
                             log.info(
