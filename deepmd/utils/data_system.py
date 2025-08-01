@@ -737,6 +737,7 @@ def process_systems(
     """Process the user-input systems.
 
     If it is a single directory, search for all the systems in the directory.
+    If it is a list, each item can be either a system path or a directory to search.
     Check if the systems are valid.
 
     Parameters
@@ -757,7 +758,15 @@ def process_systems(
         else:
             systems = rglob_sys_str(systems, patterns)
     elif isinstance(systems, list):
-        systems = systems.copy()
+        result_systems = []
+        for system in systems:
+            if isinstance(system, str):
+                # Try to expand as directory
+                expanded = expand_sys_str(system)
+                result_systems.extend(expanded)
+            else:
+                result_systems.append(system)
+        systems = result_systems
     return systems
 
 
