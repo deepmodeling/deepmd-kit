@@ -371,6 +371,13 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         help="The path to the datafile, each line of which is a path to one data system.",
     )
+    parser_tst_subgroup.add_argument(
+        "-i",
+        "--input-json",
+        default=None,
+        type=str,
+        help="The training input json file. Validation data in the training script will be used for testing.",
+    )
     parser_tst.add_argument(
         "-S",
         "--set-prefix",

@@ -30,7 +30,7 @@ from .model.test_permutation import (
 
 
 class DPTest:
-    def test_dp_test_1_frame(self) -> None:
+    def _run_dp_test(self, use_input_json: bool, numb_test: int = 0) -> None:
         trainer = get_trainer(deepcopy(self.config))
         with torch.device("cpu"):
             input_dict, label_dict, _ = trainer.get_data(is_train=False)
@@ -44,12 +44,16 @@ class DPTest:
         model = torch.jit.script(trainer.model)
         tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
         torch.jit.save(model, tmp_model.name)
+        val_sys = self.config["training"]["validation_data"]["systems"]
+        if isinstance(val_sys, list):
+            val_sys = val_sys[0]
         dp_test(
             model=tmp_model.name,
-            system=self.config["training"]["validation_data"]["systems"][0],
+            system=val_sys,
             datafile=None,
+            input_json=self.input_json if use_input_json else None,
             set_prefix="set",
-            numb_test=0,
+            numb_test=numb_test,
             rand_seed=None,
             shuffle_test=False,
             detail_file=self.detail_file,
@@ -92,6 +96,12 @@ class DPTest:
                     result["force_mag"][result["mask_mag"].bool().squeeze(-1)]
                 ).reshape(-1, 3),
             )
+
+    def test_dp_test_1_frame(self) -> None:
+        self._run_dp_test(False)
+
+    def test_dp_test_input_json(self) -> None:
+        self._run_dp_test(True)
 
     def tearDown(self) -> None:
         for f in os.listdir("."):
@@ -138,6 +148,61 @@ class TestDPTestSeASpin(DPTest, unittest.TestCase):
         self.input_json = "test_dp_test.json"
         with open(self.input_json, "w") as fp:
             json.dump(self.config, fp, indent=4)
+
+
+class TestDPTestSeARglob(unittest.TestCase):
+    def setUp(self) -> None:
+        self.detail_file = "test_dp_test_ener_rglob_detail"
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        data_file = [str(Path(__file__).parent / "water/data/single")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        root_dir = str(Path(__file__).parent)
+        self.config["training"]["validation_data"]["systems"] = root_dir
+        self.config["training"]["validation_data"]["rglob_patterns"] = [
+            "water/data/single"
+        ]
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.input_json = "test_dp_test_rglob.json"
+        with open(self.input_json, "w") as fp:
+            json.dump(self.config, fp, indent=4)
+
+    def test_dp_test_input_json_rglob(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        with torch.device("cpu"):
+            input_dict, _, _ = trainer.get_data(is_train=False)
+        input_dict.pop("spin", None)
+        model = torch.jit.script(trainer.model)
+        tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
+        torch.jit.save(model, tmp_model.name)
+        dp_test(
+            model=tmp_model.name,
+            system=self.config["training"]["validation_data"]["systems"],
+            datafile=None,
+            input_json=self.input_json,
+            set_prefix="set",
+            numb_test=1,
+            rand_seed=None,
+            shuffle_test=False,
+            detail_file=self.detail_file,
+            atomic=False,
+        )
+        os.unlink(tmp_model.name)
+        self.assertTrue(os.path.exists(self.detail_file + ".e.out"))
+
+    def tearDown(self) -> None:
+        for f in os.listdir("."):
+            if f.startswith("model") and f.endswith(".pt"):
+                os.remove(f)
+            if f.startswith(self.detail_file):
+                os.remove(f)
+            if f in ["lcurve.out", self.input_json]:
+                os.remove(f)
+            if f in ["stat_files"]:
+                shutil.rmtree(f)
 
 
 class TestDPTestPropertySeA(unittest.TestCase):

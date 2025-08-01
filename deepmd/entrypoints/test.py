@@ -14,6 +14,7 @@ import numpy as np
 
 from deepmd.common import (
     expand_sys_str,
+    j_loader,
 )
 from deepmd.infer.deep_dipole import (
     DeepDipole,
@@ -41,6 +42,9 @@ from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
     DeepmdData,
 )
+from deepmd.utils.data_system import (
+    process_systems,
+)
 from deepmd.utils.weight_avg import (
     weighted_average,
 )
@@ -60,6 +64,7 @@ def test(
     model: str,
     system: str,
     datafile: str,
+    input_json: Optional[str] = None,
     numb_test: int,
     rand_seed: Optional[int],
     shuffle_test: bool,
@@ -78,6 +83,8 @@ def test(
         system directory
     datafile : str
         the path to the list of systems to test
+    input_json : Optional[str]
+        the training input json file. Validation systems in this file will be used.
     numb_test : int
         munber of tests to do. 0 means all data.
     rand_seed : Optional[int]
@@ -101,7 +108,20 @@ def test(
     if numb_test == 0:
         # only float has inf, but should work for min
         numb_test = float("inf")
-    if datafile is not None:
+    if input_json is not None:
+        jdata = j_loader(input_json)
+        val_params = jdata.get("training", {}).get("validation_data", {})
+        validation = val_params.get("systems")
+        if not validation:
+            raise RuntimeError("No validation data found in input json")
+        root = Path(input_json).parent
+        if isinstance(validation, str):
+            validation = str((root / Path(validation)).resolve())
+        else:
+            validation = [str((root / Path(ss)).resolve()) for ss in validation]
+        patterns = val_params.get("rglob_patterns", None)
+        all_sys = process_systems(validation, patterns=patterns)
+    elif datafile is not None:
         with open(datafile) as datalist:
             all_sys = datalist.read().splitlines()
     else:
