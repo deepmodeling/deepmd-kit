@@ -3216,7 +3216,13 @@ def training_args(
         Argument(
             "time_training", bool, optional=True, default=True, doc=doc_time_training
         ),
-        Argument("disp_avg", bool, optional=True, default=False, doc=doc_only_pt_supported + doc_disp_avg),
+        Argument(
+            "disp_avg",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_disp_avg,
+        ),
         Argument(
             "profiling",
             bool,
