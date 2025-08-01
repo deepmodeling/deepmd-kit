@@ -3137,7 +3137,7 @@ def training_args(
     )
     doc_disp_training = "Displaying verbose information during training."
     doc_time_training = "Timing during training."
-    doc_profiling = "Export the profiling results to the Chrome JSON file for performance analysis, driven by the legacy TensorFlow profiling API or PyTorch Profiler. The output file will be saved to `profiling_file`. When enable_profiler is True, this option is ignored, since the profiling results will be saved to the TensorBoard log."
+    doc_profiling = "Export the profiling results to the Chrome JSON file for performance analysis, driven by the legacy TensorFlow profiling API or PyTorch Profiler. The output file will be saved to `profiling_file`. In the PyTorch backend, when enable_profiler is True, this option is ignored, since the profiling results will be saved to the TensorBoard log."
     doc_profiling_file = "Output file for profiling."
     doc_enable_profiler = "Export the profiling results to the TensorBoard log for performance analysis, driven by TensorFlow Profiler (available in TensorFlow 2.3) or PyTorch Profiler. The log will be saved to `tensorboard_log_dir`."
     doc_tensorboard = "Enable tensorboard"
