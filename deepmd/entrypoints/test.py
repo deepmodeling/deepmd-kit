@@ -110,6 +110,7 @@ def test(
         numb_test = float("inf")
     if input_json is not None:
         jdata = j_loader(input_json)
+        jdata = update_deepmd_input(jdata)
         val_params = jdata.get("training", {}).get("validation_data", {})
         validation = val_params.get("systems")
         if not validation:
