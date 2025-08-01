@@ -356,7 +356,7 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         help="Frozen model file (prefix) to import. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth.",
     )
-    parser_tst_subgroup = parser_tst.add_mutually_exclusive_group()
+    parser_tst_subgroup = parser_tst.add_mutually_exclusive_group(required=True)
     parser_tst_subgroup.add_argument(
         "-s",
         "--system",
