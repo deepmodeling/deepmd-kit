@@ -2923,8 +2923,8 @@ def training_data_args():  # ! added by Ziyao: new specification style for data 
     link_sys = make_link("systems", "training/training_data/systems")
     doc_systems = (
         "The data systems for training. "
-        "This key can be provided with a list that specifies the systems, or be provided with a string "
-        "by which the prefix of all systems are given and the list of the systems is automatically generated."
+        "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
+        "When provided as a list, each string item is processed the same way as individual string inputs."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all training systems. "
@@ -3002,8 +3002,8 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
     link_sys = make_link("systems", "training/validation_data/systems")
     doc_systems = (
         "The data systems for validation. "
-        "This key can be provided with a list that specifies the systems, or be provided with a string "
-        "by which the prefix of all systems are given and the list of the systems is automatically generated."
+        "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
+        "When provided as a list, each string item is processed the same way as individual string inputs."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all validation systems. "
