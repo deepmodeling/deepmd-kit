@@ -80,7 +80,7 @@ class DeepEval(DeepEvalBackend):
         The output definition of the model.
     *args : list
         Positional arguments.
-    auto_batch_size : bool or int or AutomaticBatchSize, default: False
+    auto_batch_size : bool or int or AutomaticBatchSize, default: True
         If True, automatic batch size will be used. If int, it will be used
         as the initial batch size.
     neighbor_list : ase.neighborlist.NewPrimitiveNeighborList, optional
