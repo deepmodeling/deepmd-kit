@@ -44,7 +44,7 @@ __all__ = [
     "select_idx_map",
 ]
 
-_PRECISION = Literal["default", "float16", "float32", "float64"]
+_PRECISION = Literal["default", "float16", "bfloat16", "float32", "float64"]
 _ACTIVATION = Literal[
     "relu",
     "relu6",
