@@ -39,6 +39,7 @@ from deepmd.infer.deep_wfc import (
     DeepWFC,
 )
 from deepmd.utils import random as dp_random
+from deepmd.utils.compat import update_deepmd_input
 from deepmd.utils.data import (
     DeepmdData,
 )
@@ -65,6 +66,7 @@ def test(
     system: str,
     datafile: str,
     input_json: Optional[str] = None,
+    use_train: bool = False,
     numb_test: int,
     rand_seed: Optional[int],
     shuffle_test: bool,
@@ -84,7 +86,9 @@ def test(
     datafile : str
         the path to the list of systems to test
     input_json : Optional[str]
-        the training input json file. Validation systems in this file will be used.
+        the training input.json file. Validation systems will be used if use_train is False.
+    use_train : bool
+        use training systems in the input.json file instead of validation systems
     numb_test : int
         munber of tests to do. 0 means all data.
     rand_seed : Optional[int]
@@ -111,17 +115,22 @@ def test(
     if input_json is not None:
         jdata = j_loader(input_json)
         jdata = update_deepmd_input(jdata)
-        val_params = jdata.get("training", {}).get("validation_data", {})
-        validation = val_params.get("systems")
-        if not validation:
-            raise RuntimeError("No validation data found in input json")
+        data_key = "training_data" if use_train else "validation_data"
+        data_params = jdata.get("training", {}).get(data_key, {})
+        systems = data_params.get("systems")
+        if not systems:
+            raise RuntimeError(
+                f"No {'training' if use_train else 'validation'} data found in input json"
+            )
         root = Path(input_json).parent
-        if isinstance(validation, str):
-            validation = str((root / Path(validation)).resolve())
+        if isinstance(systems, str):
+            systems = str((root / Path(systems)).resolve())
         else:
-            validation = [str((root / Path(ss)).resolve()) for ss in validation]
-        patterns = val_params.get("rglob_patterns", None)
-        all_sys = process_systems(validation, patterns=patterns)
+            systems = [str((root / Path(ss)).resolve()) for ss in systems]
+        patterns = data_params.get("rglob_patterns", None)
+        all_sys = process_systems(systems, patterns=patterns)
+    elif use_train:
+        raise RuntimeError("--train-data requires --input-json")
     elif datafile is not None:
         with open(datafile) as datalist:
             all_sys = datalist.read().splitlines()
