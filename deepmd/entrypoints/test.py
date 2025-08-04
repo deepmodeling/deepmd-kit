@@ -39,7 +39,9 @@ from deepmd.infer.deep_wfc import (
     DeepWFC,
 )
 from deepmd.utils import random as dp_random
-from deepmd.utils.compat import update_deepmd_input
+from deepmd.utils.compat import (
+    update_deepmd_input,
+)
 from deepmd.utils.data import (
     DeepmdData,
 )
