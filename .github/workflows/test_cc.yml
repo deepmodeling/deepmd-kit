@@ -64,7 +64,7 @@ jobs:
         cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/paddle/lib/*.so ${{ github.workspace }}/dp_test/lib/
         cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/third_party/install/onednn/lib/* ${{ github.workspace }}/dp_test/lib/
         cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/third_party/install/mklml/lib/* ${{ github.workspace }}/dp_test/lib/
-        pytest --cov=deepmd source/ipi/tests
+        pytest -s --cov=deepmd source/ipi/tests
       env:
         OMP_NUM_THREADS: 1
         TF_INTRA_OP_PARALLELISM_THREADS: 1
