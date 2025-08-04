@@ -48,7 +48,6 @@ Specifically, there are several parts that need to be modified:
 - {ref}`model/model_dict <model/model_dict>`: The core definition of the model part and the explanation of sharing rules,
   starting with user-defined model name keys `model_key`, such as `my_model_1`.
   Each model part needs to align with the components of the single-task training {ref}`model <model>`, but with the following sharing rules:
-
   - If you want to share the current model component with other tasks, which should be part of the {ref}`model/shared_dict <model/shared_dict>`,
     you can directly fill in the corresponding `part_key`, such as
     `"descriptor": "my_descriptor", `
