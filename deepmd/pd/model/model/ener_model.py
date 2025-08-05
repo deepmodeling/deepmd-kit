@@ -82,7 +82,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                         -3
                     )
                 else:
-                    model_predict["atom_virial"] = paddle.zeros([ model_predict["energy"].shape[0], 1, 9], dtype=paddle.float64)
+                    model_predict["atom_virial"] = paddle.zeros(
+                        [model_predict["energy"].shape[0], 1, 9], dtype=paddle.float64
+                    )
             else:
                 model_predict["force"] = model_ret["dforce"]
             if "mask" in model_ret:
@@ -127,7 +129,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                         "energy_derv_c"
                     ].squeeze(-3)
                 else:
-                    model_predict["extended_virial"] = paddle.zeros([model_predict["energy"].shape[0], 1, 9], dtype=paddle.float64)
+                    model_predict["extended_virial"] = paddle.zeros(
+                        [model_predict["energy"].shape[0], 1, 9], dtype=paddle.float64
+                    )
             else:
                 assert model_ret["dforce"] is not None
                 model_predict["dforce"] = model_ret["dforce"]
