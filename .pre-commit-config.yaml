@@ -29,7 +29,7 @@ repos:
         exclude: ^source/3rdparty
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.12.3
+    rev: v0.12.7
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -74,7 +74,7 @@ repos:
   #       exclude: ^(source/3rdparty|\.github/workflows|\.clang-format)
   # Shell
   - repo: https://github.com/scop/pre-commit-shfmt
-    rev: v3.12.0-1
+    rev: v3.12.0-2
     hooks:
       - id: shfmt
   # CMake
@@ -83,25 +83,25 @@ repos:
     hooks:
       - id: cmake-format
       #- id: cmake-lint
-  # - repo: https://github.com/njzjz/mirrors-bibtex-tidy
-  #   rev: v1.13.0
-  #   hooks:
-  #     - id: bibtex-tidy
-  #       args:
-  #         - --curly
-  #         - --numeric
-  #         - --align=13
-  #         - --blank-lines
-  #         # disable sort: the order of keys and fields has explict meanings
-  #         #- --sort=key
-  #         - --duplicates=key,doi,citation,abstract
-  #         - --merge=combine
-  #         #- --sort-fields
-  #         #- --strip-comments
-  #         - --trailing-commas
-  #         - --encode-urls
-  #         - --remove-empty-fields
-  #         - --wrap=80
+  - repo: https://github.com/njzjz/mirrors-bibtex-tidy
+    rev: v1.14.0
+    hooks:
+      - id: bibtex-tidy
+        args:
+          - --curly
+          - --numeric
+          - --align=13
+          - --blank-lines
+          # disable sort: the order of keys and fields has explict meanings
+          #- --sort=key
+          - --duplicates=key,doi,citation,abstract
+          - --merge=combine
+          #- --sort-fields
+          #- --strip-comments
+          - --trailing-commas
+          - --encode-urls
+          - --remove-empty-fields
+          - --wrap=80
   # license header
   - repo: https://github.com/Lucas-C/pre-commit-hooks
     rev: v1.5.5
