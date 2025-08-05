@@ -1,6 +1,6 @@
 file(GLOB OP_SRC comm.cc)
 
-add_library(deepmd_op_pd MODULE ${OP_SRC})
+add_library(deepmd_op_pd SHARED ${OP_SRC})
 
 if(NOT DEFINED PADDLE_INFERENCE_DIR)
   message(
@@ -25,15 +25,7 @@ set(MKLML_LIB
     ${PADDLE_INFERENCE_DIR_THIRD_PARTY_PATH}/mklml/lib/libmklml_intel.so
     ${PADDLE_INFERENCE_DIR_THIRD_PARTY_PATH}/mklml/lib/libiomp5.so)
 
-# link: libdeepmd paddle - 添加 CXX ABI 兼容性处理 if(${OP_CXX_ABI_PT} EQUAL
-# ${OP_CXX_ABI})
 target_link_libraries(deepmd_op_pd PRIVATE ${LIB_DEEPMD})
-# else() target_link_libraries(deepmd_op_pd PRIVATE ${LIB_DEEPMD}_compat_cxxabi)
-# endif()
-
-# 添加 CXX ABI 编译定义 remove_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
-# target_compile_definitions( deepmd_op_pd PUBLIC
-# "$<$<COMPILE_LANGUAGE:CXX>:_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI_PT}>")
 
 # 添加 RPATH 设置
 if(APPLE)
@@ -77,5 +69,8 @@ target_link_libraries(
 if(BUILD_PY_IF)
   install(TARGETS deepmd_op_pd DESTINATION deepmd/lib/)
 else(BUILD_PY_IF)
-  install(TARGETS deepmd_op_pd DESTINATION lib/)
+  install(
+    TARGETS deepmd_op_pd
+    EXPORT DeePMDTargets
+    DESTINATION lib/)
 endif(BUILD_PY_IF)

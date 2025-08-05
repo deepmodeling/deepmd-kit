@@ -204,8 +204,8 @@ class DescrptBlockRepformers(DescriptorBlock):
             The epsilon value for layer normalization.
         seed : int, optional
             Random seed for parameter initialization.
-        trainable : bool, default: True
-            Whether this block is trainable
+        trainable : bool
+            Whether the block is trainable
         """
         super().__init__()
         self.rcut = float(rcut)
@@ -412,8 +412,8 @@ class DescrptBlockRepformers(DescriptorBlock):
     ):
         if comm_dict is None or len(comm_dict) == 0:
             if paddle.in_dynamic_mode():
-                assert mapping is not None and mapping.numel() > 0
-            assert extended_atype_embd is not None or extended_atype_embd.numel() > 0
+                assert mapping is not None
+                assert extended_atype_embd is not None
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.reshape([nframes, -1]).shape[1] // 3
         atype = extended_atype[:, :nloc]
@@ -445,8 +445,8 @@ class DescrptBlockRepformers(DescriptorBlock):
                 assert list(atype_embd.shape) == [nframes, nloc, self.g1_dim]
         else:
             atype_embd = extended_atype_embd
-            if paddle.in_dynamic_mode():
-                assert isinstance(atype_embd, paddle.Tensor)  # for jit
+        if paddle.in_dynamic_mode():
+            assert isinstance(atype_embd, paddle.Tensor)  # for jit
         g1 = self.act(atype_embd)
         ng1 = g1.shape[-1]
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
@@ -486,14 +486,17 @@ class DescrptBlockRepformers(DescriptorBlock):
                     n_padding = nall - nloc
                     if paddle.in_dynamic_mode():
                         g1 = paddle.nn.functional.pad(
-                            g1.squeeze(0), (0, 0, 0, n_padding), value=0.0
+                            g1.squeeze(0),
+                            (0, 0, 0, n_padding),
+                            value=0.0,
+                            pad_from_left_axis=False,
                         )
                     else:
                         _fill_shape = g1.shape[1:]
-                        _fill_shape[1] = n_padding
+                        _fill_shape[0] = n_padding
                         g1 = paddle.concat(
                             [g1.squeeze(0), paddle.zeros(_fill_shape, dtype=g1.dtype)],
-                            axis=1,
+                            axis=0,
                         )
                     real_nloc = nloc
                     real_nall = nall
@@ -508,9 +511,23 @@ class DescrptBlockRepformers(DescriptorBlock):
                     # mix_g1: nb x real_nloc x (ng1 * 2)
                     mix_g1 = paddle.concat([g1_real, g1_virtual], axis=2)
                     # nb x real_nall x (ng1 * 2)
-                    g1 = paddle.nn.functional.pad(
-                        mix_g1.squeeze(0), (0, 0, 0, real_n_padding), value=0.0
-                    )
+                    if paddle.in_dynamic_mode():
+                        g1 = paddle.nn.functional.pad(
+                            mix_g1.squeeze(0),
+                            (0, 0, 0, real_n_padding),
+                            value=0.0,
+                            pad_from_left_axis=False,
+                        )
+                    else:
+                        _fill_shape = mix_g1.shape[1:]
+                        _fill_shape[0] = real_n_padding
+                        g1 = paddle.concat(
+                            [
+                                mix_g1.squeeze(0),
+                                paddle.zeros(_fill_shape, dtype=mix_g1.dtype),
+                            ],
+                            axis=0,
+                        )
 
                 assert len(comm_dict) >= 6
                 ret = paddle_ops_deepmd_border_op(
@@ -522,25 +539,24 @@ class DescrptBlockRepformers(DescriptorBlock):
                     g1,
                     comm_dict[5],
                     paddle.to_tensor(
-                        real_nloc,
+                        [real_nloc],
                         dtype=paddle.int32,
                         place=paddle.CPUPlace(),
                     ),  # should be int of c++, placed on cpu
                     paddle.to_tensor(
-                        real_nall - real_nloc,
+                        [real_nall - real_nloc],
                         dtype=paddle.int32,
                         place=paddle.CPUPlace(),
                     ),  # should be int of c++, placed on cpu
                 )
-                g1_ext = paddle.assign(ret).unsqueeze(0)
+                g1_ext = ret.unsqueeze(0)
                 if has_spin:
                     g1_real_ext, g1_virtual_ext = paddle.split(
-                        g1_ext, [ng1, ng1], dim=2
+                        g1_ext, [ng1, ng1], axis=2
                     )
                     g1_ext = concat_switch_virtual(
                         g1_real_ext, g1_virtual_ext, real_nloc
                     )
-
             g1, g2, h2 = ll.forward(
                 g1_ext,
                 g2,

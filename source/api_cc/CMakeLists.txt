@@ -6,7 +6,6 @@ file(GLOB LIB_SRC src/*.cc src/*.cpp)
 file(GLOB INC_SRC include/*.h ${CMAKE_CURRENT_BINARY_DIR}/version.h)
 
 set(libname "${LIB_DEEPMD_CC}")
-
 add_library(${libname} SHARED ${LIB_SRC})
 
 # link: libdeepmd libdeepmd_op libtensorflow_cc libtensorflow_framework

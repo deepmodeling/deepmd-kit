@@ -223,9 +223,7 @@ def communicate_extended_output(
                 mapping = mapping.reshape(mldims + [1] * len(derv_r_ext_dims)).expand(
                     [-1] * len(mldims) + derv_r_ext_dims
                 )
-                force = paddle.zeros(vldims + derv_r_ext_dims, dtype=vv.dtype).to(
-                    device=vv.place
-                )
+                force = paddle.zeros(vldims + derv_r_ext_dims, dtype=vv.dtype)
                 # nf x nloc x nvar x 3
                 new_ret[kk_derv_r] = decomp.scatter_reduce(
                     force,
@@ -242,9 +240,7 @@ def communicate_extended_output(
                     mapping,
                     [1] * (len(mldims) + len(vdef.shape)) + [3],
                 )
-                virial = paddle.zeros(vldims + derv_c_ext_dims, dtype=vv.dtype).to(
-                    device=vv.place
-                )
+                virial = paddle.zeros(vldims + derv_c_ext_dims, dtype=vv.dtype)
                 # nf x nloc x nvar x 9
                 new_ret[kk_derv_c] = decomp.scatter_reduce(
                     virial,
@@ -254,7 +250,7 @@ def communicate_extended_output(
                     reduce="sum",
                 )
                 new_ret[kk_derv_c + "_redu"] = paddle.sum(
-                    new_ret[kk_derv_c].to(redu_prec), axis=1
+                    new_ret[kk_derv_c].astype(redu_prec), axis=1
                 )
                 if not do_atomic_virial:
                     # pop atomic virial, because it is not correctly calculated.

@@ -41,9 +41,7 @@ void DeepPotPD::init(const std::string& model,
               << std::endl;
     return;
   }
-  // NOTE: There is no custom operators need to be loaded now.
-  // deepmd::load_op_library();
-
+  deepmd::load_op_library();
   // NOTE: Only support 1 GPU now.
   int gpu_num = 1;
   if (gpu_num > 0) {
@@ -59,6 +57,7 @@ void DeepPotPD::init(const std::string& model,
   config->EnableNewIR(true);
   config->EnableCustomPasses({"add_shadow_output_after_dead_parameter_pass"},
                              true);
+  // config->SwitchIrOptim(false);
 
   // initialize inference config_fl
   config_fl = std::make_shared<paddle_infer::Config>();
@@ -67,6 +66,7 @@ void DeepPotPD::init(const std::string& model,
   config_fl->EnableNewIR(true);
   config_fl->EnableCustomPasses({"add_shadow_output_after_dead_parameter_pass"},
                                 true);
+  // config_fl->SwitchIrOptim(false);
 
   // loading inference model
   std::string pdmodel_path, fl_pdmodel_path;
@@ -205,39 +205,57 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
     if (do_message_passing == 1 && nghost > 0) {
+      auto sendproc_tensor = predictor_fl->GetInputHandle("send_proc");
+      auto recvproc_tensor = predictor_fl->GetInputHandle("recv_proc");
+      auto recvnum_tensor = predictor_fl->GetInputHandle("recv_num");
+      auto sendnum_tensor = predictor_fl->GetInputHandle("send_num");
+      auto communicator_tensor = predictor_fl->GetInputHandle("communicator");
+      auto sendlist_tensor = predictor_fl->GetInputHandle("send_list");
+
       int nswap = lmp_list.nswap;
-      auto sendproc_tensor = predictor_fl->GetInputHandle("sendproc");
       sendproc_tensor->Reshape({nswap});
       sendproc_tensor->CopyFromCpu(lmp_list.sendproc);
-      auto recvproc_tensor = predictor_fl->GetInputHandle("recvproc");
+
       recvproc_tensor->Reshape({nswap});
       recvproc_tensor->CopyFromCpu(lmp_list.recvproc);
-      auto firstrecv_tensor = predictor_fl->GetInputHandle("firstrecv");
-      firstrecv_tensor->Reshape({nswap});
-      firstrecv_tensor->CopyFromCpu(lmp_list.firstrecv);
-      auto recvnum_tensor = predictor_fl->GetInputHandle("recvnum");
+
       recvnum_tensor->Reshape({nswap});
       recvnum_tensor->CopyFromCpu(lmp_list.recvnum);
-      auto sendnum_tensor = predictor_fl->GetInputHandle("sendnum");
+
       sendnum_tensor->Reshape({nswap});
-      sendnum_tensor->CopyFromCpu(lmp_list.sendnum);
-      auto communicator_tensor = predictor_fl->GetInputHandle("communicator");
+      if (sizeof(lmp_list.sendnum[0]) != sizeof(int32_t)) {
+        std::vector<int32_t> temp_data(nswap);
+        for (int i = 0; i < nswap; i++) {
+          temp_data[i] = static_cast<int32_t>(lmp_list.sendnum[i]);
+        }
+        sendnum_tensor->CopyFromCpu(temp_data.data());
+      } else {
+        sendnum_tensor->CopyFromCpu(lmp_list.sendnum);
+      }
       communicator_tensor->Reshape({1});
       if (lmp_list.world > 0) {
         communicator_tensor->CopyFromCpu(static_cast<int*>(lmp_list.world));
       }
+
+      assert(sizeof(std::intptr_t) == 8);
       int total_send =
           std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
-      auto sendlist_tensor = predictor_fl->GetInputHandle("sendlist");
       sendlist_tensor->Reshape({total_send});
-      sendlist_tensor->CopyFromCpu(static_cast<int*>(*lmp_list.sendlist));
 
-      // this->comm_vec.push_back(sendlist_tensor);
-      // this->comm_vec.push_back(sendproc_tensor);
-      // this->comm_vec.push_back(recvproc_tensor);
-      // this->comm_vec.push_back(sendnum_tensor);
-      // this->comm_vec.push_back(recvnum_tensor);
-      // this->comm_vec.push_back(communicator_tensor);
+      /**
+      ** NOTE: paddle do not support construct a Tensor with from_blob(T**, ...)
+      ** from a double pointer, so we convert int* pointer to indptr_t for each
+      *entry
+      ** and wrap it into int64 Tensor as a workaround.
+      */
+      std::vector<std::intptr_t> pointer_addresses;
+      pointer_addresses.reserve(nswap);
+      for (int iswap = 0; iswap < nswap; ++iswap) {
+        std::intptr_t addr =
+            reinterpret_cast<std::intptr_t>(lmp_list.sendlist[iswap]);
+        pointer_addresses.push_back(addr);
+      }
+      sendlist_tensor->CopyFromCpu(pointer_addresses.data());
     }
     if (lmp_list.mapping) {
       std::vector<std::int64_t> mapping(nall_real);
@@ -249,18 +267,19 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
     }
   }
   std::vector<int> firstneigh = createNlistTensorPD(nlist_data.jlist);
-  firstneigh_tensor = predictor_fl->GetInputHandle("nlist");
-  firstneigh_tensor->Reshape({1, nloc, (int)firstneigh.size() / (int)nloc});
-  firstneigh_tensor->CopyFromCpu(firstneigh.data());
+  this->firstneigh_tensor = predictor_fl->GetInputHandle("nlist");
+  this->firstneigh_tensor->Reshape(
+      {1, nloc, (int)firstneigh.size() / (int)nloc});
+  this->firstneigh_tensor->CopyFromCpu(firstneigh.data());
   bool do_atom_virial_tensor = atomic;
-  std::unique_ptr<paddle_infer::Tensor> fparam_tensor;
   if (!fparam.empty()) {
+    std::unique_ptr<paddle_infer::Tensor> fparam_tensor;
     fparam_tensor = predictor_fl->GetInputHandle("fparam");
     fparam_tensor->Reshape({1, static_cast<int>(fparam.size())});
-    fparam_tensor->CopyFromCpu((fparam.data()));
+    fparam_tensor->CopyFromCpu(fparam.data());
   }
-  std::unique_ptr<paddle_infer::Tensor> aparam_tensor;
   if (!aparam_.empty()) {
+    std::unique_ptr<paddle_infer::Tensor> aparam_tensor;
     aparam_tensor = predictor_fl->GetInputHandle("aparam");
     aparam_tensor->Reshape(
         {1, lmp_list.inum, static_cast<int>(aparam_.size()) / lmp_list.inum});

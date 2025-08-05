@@ -602,13 +602,13 @@ class DescrptBlockRepflows(DescriptorBlock):
                         )
                     else:
                         _fill_shape = node_ebd.shape[1:]
-                        _fill_shape[1] = n_padding
+                        _fill_shape[0] = n_padding
                         node_ebd = paddle.concat(
                             [
                                 node_ebd.squeeze(0),
                                 paddle.zeros(_fill_shape, dtype=node_ebd.dtype),
                             ],
-                            axis=1,
+                            axis=0,
                         )
                     # [nframes, nloc, tebd_dim]
                     real_nloc = nloc
@@ -626,9 +626,22 @@ class DescrptBlockRepflows(DescriptorBlock):
                         [node_ebd_real, node_ebd_virtual], axis=2
                     )
                     # nb x real_nall x (n_dim * 2)
-                    node_ebd = paddle.nn.functional.pad(
-                        mix_node_ebd.squeeze(0), (0, 0, 0, real_n_padding), value=0.0
-                    )
+                    if paddle.in_dynamic_mode():
+                        node_ebd = paddle.nn.functional.pad(
+                            mix_node_ebd.squeeze(0),
+                            (0, 0, 0, real_n_padding),
+                            value=0.0,
+                        )
+                    else:
+                        _fill_shape = mix_node_ebd.shape[1:]
+                        _fill_shape[0] = real_n_padding
+                        node_ebd = paddle.concat(
+                            [
+                                mix_node_ebd.squeeze(0),
+                                paddle.zeros(_fill_shape, dtype=mix_node_ebd.dtype),
+                            ],
+                            axis=0,
+                        )
 
                 assert len(comm_dict) >= 6
                 ret = paddle_ops_deepmd_border_op(
@@ -650,7 +663,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                         place=paddle.CPUPlace(),
                     ),  # should be int of c++, placed on cpu
                 )
-                node_ebd_ext = paddle.assign(ret).unsqueeze(0)
+                node_ebd_ext = ret.unsqueeze(0)
                 if has_spin:
                     node_ebd_real_ext, node_ebd_virtual_ext = paddle.split(
                         node_ebd_ext, [n_dim, n_dim], axis=2
