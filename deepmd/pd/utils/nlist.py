@@ -472,15 +472,21 @@ def extend_coord_with_ghosts(
         nbuff = paddle.amax(nbuff, axis=0)
         nbuff_cpu = nbuff.cpu()
         xi = (
-            paddle.arange(-nbuff_cpu[0], nbuff_cpu[0] + 1, 1)
+            paddle.arange(
+                -nbuff_cpu[0], nbuff_cpu[0] + 1, 1, dtype=env.GLOBAL_PD_FLOAT_PRECISION
+            )
             # .cpu()
         )  # pylint: disable=no-explicit-dtype
         yi = (
-            paddle.arange(-nbuff_cpu[1], nbuff_cpu[1] + 1, 1)
+            paddle.arange(
+                -nbuff_cpu[1], nbuff_cpu[1] + 1, 1, dtype=env.GLOBAL_PD_FLOAT_PRECISION
+            )
             # .cpu()
         )  # pylint: disable=no-explicit-dtype
         zi = (
-            paddle.arange(-nbuff_cpu[2], nbuff_cpu[2] + 1, 1)
+            paddle.arange(
+                -nbuff_cpu[2], nbuff_cpu[2] + 1, 1, dtype=env.GLOBAL_PD_FLOAT_PRECISION
+            )
             # .cpu()
         )  # pylint: disable=no-explicit-dtype
         eye_3 = (
