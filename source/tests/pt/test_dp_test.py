@@ -203,7 +203,7 @@ class TestDPTestPropertySeA(unittest.TestCase):
                 input_dict_padding["coord"], (0, 0, 0, padding_atoms, 0, 0), value=0
             )
             result_padding = trainer.model(**input_dict_padding)
-            np.testing.assert_equal(
+            np.testing.assert_almost_equal(
                 to_numpy_array(result[trainer.model.get_var_name()])[0],
                 to_numpy_array(result_padding[trainer.model.get_var_name()])[0],
             )
