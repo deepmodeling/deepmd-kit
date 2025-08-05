@@ -443,7 +443,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         extended_atype: paddle.Tensor,
         extended_atype_embd: Optional[paddle.Tensor] = None,
         mapping: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[list[paddle.Tensor]] = None,
     ):
         parallel_mode = comm_dict is not None
         if not parallel_mode:

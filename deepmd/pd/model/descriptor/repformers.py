@@ -410,10 +410,9 @@ class DescrptBlockRepformers(DescriptorBlock):
         type_embedding: Optional[paddle.Tensor] = None,
         comm_dict: Optional[list[paddle.Tensor]] = None,
     ):
-        if comm_dict is None or len(comm_dict) == 0:
-            if paddle.in_dynamic_mode():
-                assert mapping is not None
-                assert extended_atype_embd is not None
+        if (comm_dict is None or len(comm_dict) == 0) and paddle.in_dynamic_mode():
+            assert mapping is not None
+            assert extended_atype_embd is not None
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.reshape([nframes, -1]).shape[1] // 3
         atype = extended_atype[:, :nloc]

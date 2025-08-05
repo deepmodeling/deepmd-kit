@@ -136,8 +136,10 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def reinit_atom_exclude(
         self,
-        exclude_types: list[int] = [],
+        exclude_types: Optional[list[int]] = None,
     ) -> None:
+        if exclude_types is None:
+            exclude_types = []
         self.atom_exclude_types = exclude_types
         if exclude_types == []:
             self.atom_excl = None
