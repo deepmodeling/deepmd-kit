@@ -137,7 +137,7 @@ def enable_prim(enable: bool = True):
         "exp_grad",
         "expand_grad",
         "floor_grad",
-        # "gather_grad",
+        "gather_grad",
         "gather_nd_grad",
         "gelu_grad",
         "group_norm_grad",
