@@ -29,7 +29,7 @@ jobs:
         export TENSORFLOW_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
         # 20250804: disable the MPI tests since mpi4py MPI is conflict with LAMMPS MPI
         # TODO: recover the MPI tests after the conflict is resolved
-        source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp,jax] # mpi4py mpich
+        source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp,jax] mpich # mpi4py
         source/install/uv_with_retry.sh pip install --system 'torch==2.7' --index-url https://download.pytorch.org/whl/cpu
     - name: Convert models
       run: source/tests/infer/convert-models.sh
