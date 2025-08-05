@@ -106,7 +106,7 @@ def build_neighbor_list(
     # nf x nall
     is_vir = atype < 0
     # batch_size x nall x 3
-    vcoord_xyz = paddle.where(is_vir[:, :, None], xmax, coord_xyz)
+    vcoord_xyz = paddle.where(is_vir.unsqueeze(2), xmax, coord_xyz)
     if isinstance(sel, int):
         sel = [sel]
 

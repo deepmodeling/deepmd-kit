@@ -18,16 +18,13 @@ include_directories(${PADDLE_INFERENCE_DIR_THIRD_PARTY_PATH}/glog/include)
 include_directories(${PADDLE_INFERENCE_DIR_THIRD_PARTY_PATH}/gflags/include)
 include_directories(${PADDLE_INFERENCE_DIR_THIRD_PARTY_PATH}/xxhash/include)
 
-# Paddle lib
 set(PADDLE_INFER_LIB ${PADDLE_INFERENCE_DIR}/paddle/lib/libpaddle_inference.so)
-# Math lib（默认用MKL）
 set(MKLML_LIB
     ${PADDLE_INFERENCE_DIR_THIRD_PARTY_PATH}/mklml/lib/libmklml_intel.so
     ${PADDLE_INFERENCE_DIR_THIRD_PARTY_PATH}/mklml/lib/libiomp5.so)
 
 target_link_libraries(deepmd_op_pd PRIVATE ${LIB_DEEPMD})
 
-# 添加 RPATH 设置
 if(APPLE)
   set_target_properties(deepmd_op_pd PROPERTIES INSTALL_RPATH "@loader_path")
 else()
@@ -54,7 +51,6 @@ if(CMAKE_TESTING_ENABLED)
   target_link_libraries(deepmd_op_pd PRIVATE coverage_config)
 endif()
 
-# 链接 Paddle 所需库
 target_link_libraries(
   deepmd_op_pd
   PRIVATE ${PADDLE_INFERENCE_DIR_THIRD_PARTY_PATH}/glog/lib/libglog.a

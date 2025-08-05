@@ -465,7 +465,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         # nb x nall x ng1
         if comm_dict is None or len(comm_dict) == 0:
             if paddle.in_dynamic_mode():
-                assert mapping is not None and mapping.numel() > 0
+                assert mapping is not None
             mapping = (
                 mapping.reshape([nframes, nall])
                 .unsqueeze(-1)
@@ -476,7 +476,7 @@ class DescrptBlockRepformers(DescriptorBlock):
             # g1_ext: nb x nall x ng1
             if comm_dict is None or len(comm_dict) == 0:
                 if paddle.in_dynamic_mode():
-                    assert mapping is not None and mapping.numel() > 0
+                    assert mapping is not None
                 g1_ext = paddle.take_along_axis(
                     g1, axis=1, indices=mapping, broadcast=False
                 )

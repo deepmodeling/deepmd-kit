@@ -270,7 +270,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
                 out_shape2 *= ss
             ret_dict[kk] = (
                 ret_dict[kk].reshape([out_shape[0], out_shape[1], out_shape2])
-                * atom_mask[:, :, None].astype(ret_dict[kk].dtype)
+                * atom_mask.unsqueeze(2).astype(ret_dict[kk].dtype)
             ).reshape(out_shape)
         ret_dict["mask"] = atom_mask
 

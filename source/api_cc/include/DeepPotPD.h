@@ -393,15 +393,6 @@ class DeepPotPD : public DeepPotBackend {
   bool gpu_enabled;
   std::unique_ptr<paddle_infer::Tensor> firstneigh_tensor;
   std::unique_ptr<paddle_infer::Tensor> mapping_tensor;
-  // std::vector<paddle_infer::Tensor> comm_vec;
-  /* comm_vec flatten all the communicatoin tensors below from comm dict:
-  - [0] send_list
-  - [1] send_proc
-  - [2] recv_proc
-  - [3] send_num
-  - [4] recv_num
-  - [5] communicator
-  */
 };
 
 }  // namespace deepmd

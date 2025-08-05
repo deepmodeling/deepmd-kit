@@ -247,8 +247,7 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
       /**
       ** NOTE: paddle do not support construct a Tensor with from_blob(T**, ...)
       ** from a double pointer, so we convert int* pointer to indptr_t for each
-      *entry
-      ** and wrap it into int64 Tensor as a workaround.
+      ** entry and wrap it into int64 Tensor as a workaround.
       */
       std::vector<std::intptr_t> pointer_addresses;
       pointer_addresses.reserve(nswap);

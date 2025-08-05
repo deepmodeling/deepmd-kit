@@ -1053,7 +1053,7 @@ class RepformerLayer(paddle.nn.Layer):
         # nb x nloc x 3 x ng2
         nb, nloc, _, ng2 = h2g2.shape
         # nb x nloc x 3 x axis
-        h2g2m = h2g2[..., :axis_neuron]
+        h2g2m = h2g2[..., :axis_neuron]  # use slice instead of split
         # nb x nloc x axis x ng2
         g1_13 = paddle.matmul(paddle.transpose(h2g2m, [0, 1, 3, 2]), h2g2) / (3.0**1)
         # nb x nloc x (axisxng2)

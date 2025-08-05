@@ -448,7 +448,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         parallel_mode = comm_dict is not None
         if not parallel_mode:
             if paddle.in_dynamic_mode():
-                assert mapping is not None and mapping.numel() > 0
+                assert mapping is not None
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.reshape([nframes, -1]).shape[1] // 3
         atype = extended_atype[:, :nloc]
@@ -528,7 +528,7 @@ class DescrptBlockRepflows(DescriptorBlock):
 
         if not parallel_mode and self.use_loc_mapping:
             if paddle.in_dynamic_mode():
-                assert mapping is not None and mapping.numel() > 0
+                assert mapping is not None
             # convert nlist from nall to nloc index
             nlist = paddle.take_along_axis(
                 mapping,
@@ -574,7 +574,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         # nb x nall x n_dim
         if not parallel_mode:
             if paddle.in_dynamic_mode():
-                assert mapping is not None and mapping.numel() > 0
+                assert mapping is not None
             mapping = (
                 mapping.reshape([nframes, nall])
                 .unsqueeze(-1)
@@ -585,7 +585,7 @@ class DescrptBlockRepflows(DescriptorBlock):
             # node_ebd_ext: nb x nall x n_dim [OR] nb x nloc x n_dim when not parallel_mode
             if not parallel_mode:
                 if paddle.in_dynamic_mode():
-                    assert mapping is not None and mapping.numel() > 0
+                    assert mapping is not None
                 node_ebd_ext = (
                     paddle.take_along_axis(node_ebd, mapping, 1, broadcast=False)
                     if not self.use_loc_mapping

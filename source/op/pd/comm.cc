@@ -82,8 +82,6 @@ void Border_forward_t(const paddle::Tensor& sendlist_tensor,
   int* recvnum = cpu_recvnum.data<int>();
 
   int tensor_size = g1.dims()[1];
-  for (int i = 0; i < nswap; i++) {
-  }
 
   paddle::Tensor cpu_nlocal =
       paddle::empty({nswap}, paddle::DataType::INT32, paddle::CPUPlace());
@@ -100,7 +98,7 @@ void Border_forward_t(const paddle::Tensor& sendlist_tensor,
   paddle::Tensor recv_g1_tensor = g1;
 
 #ifdef USE_MPI
-  // MPI 初始化检测
+  // MPI initialization check
   int mpi_init = 0;
   MPI_Initialized(&mpi_init);
   int cuda_aware = 1;
@@ -449,61 +447,8 @@ void Border_backward(const paddle::Tensor& sendlist_tensor,
   }
 }
 
-// std::vector<std::vector<int64_t>> Border_forwardInferShape(
-//     std::vector<int64_t> sendlist_tensor_shape,
-//     std::vector<int64_t> sendproc_tensor_shape,
-//     std::vector<int64_t> recvproc_tensor_shape,
-//     std::vector<int64_t> sendnum_tensor_shape,
-//     std::vector<int64_t> recvnum_tensor_shape,
-//     std::vector<int64_t> g1_shape,
-//     std::vector<int64_t> communicator_tensor_shape,
-//     std::vector<int64_t> nlocal_tensor_shape,
-//     std::vector<int64_t> nghost_tenso_shape) {
-//   return {g1_shape};
-// }
-
-// std::vector<paddle::DataType> Border_forwardInferDtype(
-//     paddle::DataType sendlist_tensor_dtype,
-//     paddle::DataType sendproc_tensor_dtype,
-//     paddle::DataType recvproc_tensor_dtype,
-//     paddle::DataType sendnum_tensor_dtype,
-//     paddle::DataType recvnum_tensor_dtype,
-//     paddle::DataType g1_dtype,
-//     paddle::DataType communicator_tensor_dtype,
-//     paddle::DataType nlocal_tensor_dtype,
-//     paddle::DataType nghost_tenso_dtype) {
-//   return {g1_dtype};
-// }
-
-// std::vector<std::vector<int64_t>> Border_backwardInferShape(
-//     std::vector<int64_t> sendlist_shape,
-//     std::vector<int64_t> sendproc_shape,
-//     std::vector<int64_t> recvproc_shape,
-//     std::vector<int64_t> sendnum_shape,
-//     std::vector<int64_t> recvnum_shape,
-//     std::vector<int64_t> communicator_shape,
-//     std::vector<int64_t> nlocal_shape,
-//     std::vector<int64_t> nghost_shape,
-//     std::vector<int64_t> recv_g1_grad_shape) {
-//   return {recv_g1_grad_shape};
-// }
-
-// std::vector<paddle::DataType> Border_backwardInferDtype(
-//     paddle::DataType sendlist_dtype,
-//     paddle::DataType sendproc_dtype,
-//     paddle::DataType recvproc_dtype,
-//     paddle::DataType sendnum_dtype,
-//     paddle::DataType recvnum_dtype,
-//     paddle::DataType communicator_dtype,
-//     paddle::DataType nlocal_dtype,
-//     paddle::DataType nghost_dtype,
-//     paddle::DataType recv_g1_dtype) {
-//   return {recv_g1_dtype};
-// }
-
 /**
  * @brief communicate the latest g1_tensor info to other lmp proc
- * @param[out] recv_g1_tensor g1_tensor after communication
  * @param[in]  sendlist_tensor list of atoms to send in each swap
  * @param[in]  sendproc_tensor proc to send to at each swap
  * @param[in]  recvproc_tensor proc to recv from at each swap
@@ -513,6 +458,7 @@ void Border_backward(const paddle::Tensor& sendlist_tensor,
  * @param[in]  communicator_tensor MPI_comm data in lmp
  * @param[in]  nlocal_tensor # of local atoms
  * @param[in]  nghost_tensor # of nghost atoms
+ * @param[out] recv_g1_tensor g1_tensor after communication
  **/
 PD_BUILD_OP(border_op)
     .Inputs({"sendlist_tensor", "sendproc_tensor", "recvproc_tensor",
@@ -521,8 +467,6 @@ PD_BUILD_OP(border_op)
     .Outputs({"recv_g1_tensor"})
     .SetKernelFn(PD_KERNEL(Border_forward))
     .SetInplaceMap({{"g1_tensor", "recv_g1_tensor"}});
-// .SetInferShapeFn(PD_INFER_SHAPE(Border_forwardInferShape))
-// .SetInferDtypeFn(PD_INFER_DTYPE(Border_forwardInferDtype));
 
 PD_BUILD_GRAD_OP(border_op)
     .Inputs({"sendlist_tensor", "sendproc_tensor", "recvproc_tensor",
@@ -533,5 +477,3 @@ PD_BUILD_GRAD_OP(border_op)
     .SetInplaceMap({{paddle::Grad("recv_g1_tensor"),
                      paddle::Grad("g1_tensor")}})
     .SetKernelFn(PD_KERNEL(Border_backward));
-// .SetInferShapeFn(PD_INFER_SHAPE(Border_backwardInferShape))
-// .SetInferDtypeFn(PD_INFER_DTYPE(Border_backwardInferDtype));
