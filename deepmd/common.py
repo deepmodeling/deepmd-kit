@@ -27,6 +27,9 @@ except ImportError:
 import numpy as np
 import yaml
 
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -39,6 +42,7 @@ __all__ = [
     "j_loader",
     "make_default_mesh",
     "select_idx_map",
+    "GLOBAL_NP_FLOAT_PRECISION",
 ]
 
 _PRECISION = Literal["default", "float16", "bfloat16", "float32", "float64"]
