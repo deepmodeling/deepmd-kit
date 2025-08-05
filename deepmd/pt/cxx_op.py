@@ -87,6 +87,35 @@ def load_library(module_name: str) -> bool:
     return False
 
 
+if GLOBAL_CONFIG.get("CIBUILDWHEEL", "0") == "1":
+    if platform.system() == "Linux":
+        lib_env = "LD_LIBRARY_PATH"
+        extension = ".so"
+    elif platform.system() == "Darwin":
+        lib_env = "DYLD_FALLBACK_LIBRARY_PATH"
+        exition = ".dylib"
+    else:
+        # windows
+        pass
+
+    if platform.system() in ("Linux", "Darwin"):
+        # try to find MPI directory and add to LD_LIBRARY_PATH
+        try:
+            MPI_ROOT = (
+                [p for p in metadata.files("mpich") if f"libmpi{extension}" in str(p)][0]
+                .locate()
+                .parent
+            )
+            # insert MPI_ROOT to LD_LIBRARY_PATH
+            current_ld_path = os.environ.get(lib_env, "")
+            if current_ld_path:
+                os.environ[lib_env] = f"{current_ld_path}:{MPI_ROOT}"
+            else:
+                os.environ[lib_env] = str(MPI_ROOT)
+        except Exception:
+            # MPI not found or not available, continue without it
+            pass
+
 ENABLE_CUSTOMIZED_OP = load_library("deepmd_op_pt")
 
 __all__ = [
