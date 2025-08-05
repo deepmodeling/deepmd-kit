@@ -196,8 +196,12 @@ class TestDPTestPropertySeA(unittest.TestCase):
         padding_atoms_list = [1, 5, 10]
         for padding_atoms in padding_atoms_list:
             input_dict_padding = deepcopy(input_dict)
-            input_dict_padding["atype"] = F.pad(input_dict_padding["atype"], (0, padding_atoms), value=-1)
-            input_dict_padding["coord"] = F.pad(input_dict_padding["coord"], (0, 0, 0, padding_atoms, 0, 0), value=0)
+            input_dict_padding["atype"] = F.pad(
+                input_dict_padding["atype"], (0, padding_atoms), value=-1
+            )
+            input_dict_padding["coord"] = F.pad(
+                input_dict_padding["coord"], (0, 0, 0, padding_atoms, 0, 0), value=0
+            )
             result_padding = trainer.model(**input_dict_padding)
             np.testing.assert_equal(
                 to_numpy_array(result[trainer.model.get_var_name()])[0],
