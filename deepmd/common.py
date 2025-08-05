@@ -35,6 +35,7 @@ from deepmd.utils.path import (
 )
 
 __all__ = [
+    "GLOBAL_NP_FLOAT_PRECISION",
     "VALID_ACTIVATION",
     "VALID_PRECISION",
     "expand_sys_str",
@@ -42,7 +43,6 @@ __all__ = [
     "j_loader",
     "make_default_mesh",
     "select_idx_map",
-    "GLOBAL_NP_FLOAT_PRECISION",
 ]
 
 _PRECISION = Literal["default", "float16", "bfloat16", "float32", "float64"]
