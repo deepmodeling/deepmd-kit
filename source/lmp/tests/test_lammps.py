@@ -340,7 +340,7 @@ def test_pair_deepmd_virial(lammps) -> None:
         assert lammps.atoms[ii].force == pytest.approx(
             expected_f[lammps.atoms[ii].id - 1]
         )
-    idx_map = lammps.lmp.numpy.extract_atom("id") - 1
+    idx_map = lammps.lmp.numpy.extract_atom("id")[:6] - 1
     assert np.array(lammps.variables["eatom"].value) == pytest.approx(
         expected_ae[idx_map]
     )
@@ -408,7 +408,7 @@ def test_pair_deepmd_model_devi_virial(lammps) -> None:
         assert lammps.atoms[ii].force == pytest.approx(
             expected_f[lammps.atoms[ii].id - 1]
         )
-    idx_map = lammps.lmp.numpy.extract_atom("id") - 1
+    idx_map = lammps.lmp.numpy.extract_atom("id")[:6] - 1
     assert np.array(lammps.variables["eatom"].value) == pytest.approx(
         expected_ae[idx_map]
     )
