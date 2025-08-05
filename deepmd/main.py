@@ -380,6 +380,7 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_tst.add_argument(
         "--train-data",
+        "--train",
         action="store_true",
         dest="use_train",
         help="Use training data in the input json file instead of validation data.",
