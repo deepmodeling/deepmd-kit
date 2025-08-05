@@ -18,13 +18,13 @@ from deepmd.env import (
 )
 
 if GLOBAL_CONFIG.get("LAMMPS_VERSION", "") == "":
+
     def get_op_dir() -> str:
         """Get the directory of the deepmd-kit OP library."""
         # empty
         return ""
 else:
-
-    import torch  # noqa: TID253
+    import torch
     from packaging.version import (
         Version,
     )
@@ -32,7 +32,7 @@ else:
     from deepmd.env import (
         SHARED_LIB_DIR,
     )
-    from deepmd.tf.env import (  # noqa: TID253
+    from deepmd.tf.env import (
         TF_VERSION,
         tf,
     )
@@ -44,11 +44,9 @@ else:
     else:
         find_libpython = None
 
-
     def get_env(paths: list[Optional[str]]) -> str:
         """Get the environment variable from given paths."""
         return ":".join(p for p in paths if p is not None)
-
 
     def get_library_path(module: str, filename: str) -> list[str]:
         """Get library path from a module.
@@ -73,7 +71,6 @@ else:
             libs = sorted(Path(m.__path__[0]).glob(filename))
             return [str(lib) for lib in libs]
 
-
     if platform.system() == "Linux":
         lib_env = "LD_LIBRARY_PATH"
     elif platform.system() == "Darwin":
@@ -91,7 +88,6 @@ else:
     tf_dir = tf.sysconfig.get_lib()
     pt_dir = os.path.join(torch.__path__[0], "lib")
     op_dir = str(SHARED_LIB_DIR)
-
 
     cuda_library_paths = []
     if platform.system() == "Linux":
@@ -135,7 +131,6 @@ else:
                 libpython,
             ]
         )
-
 
     def get_op_dir() -> str:
         """Get the directory of the deepmd-kit OP library."""

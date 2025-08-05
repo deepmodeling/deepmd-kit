@@ -102,7 +102,9 @@ if GLOBAL_CONFIG.get("CIBUILDWHEEL", "0") == "1":
         # try to find MPI directory and add to LD_LIBRARY_PATH
         try:
             MPI_ROOT = (
-                [p for p in metadata.files("mpich") if f"libmpi{extension}" in str(p)][0]
+                [p for p in metadata.files("mpich") if f"libmpi{extension}" in str(p)][
+                    0
+                ]
                 .locate()
                 .parent
             )
