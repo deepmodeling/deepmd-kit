@@ -390,24 +390,25 @@ def freeze(
             model.forward_lower,
             input_spec=[
                 InputSpec(
-                    [1, -1, 3], dtype="float64", name="extended_coord"
+                    [-1, -1, 3], dtype="float64", name="extended_coord"
                 ),  # extended_coord
                 InputSpec(
-                    [1, -1], dtype="int32", name="extended_atype"
+                    [-1, -1], dtype="int32", name="extended_atype"
                 ),  # extended_atype
-                InputSpec([1, -1, -1], dtype="int32", name="nlist"),  # nlist
-                InputSpec([1, -1], dtype="int64", name="mapping"),  # mapping
+                InputSpec([-1, -1, -1], dtype="int32", name="nlist"),  # nlist
+                InputSpec([-1, -1], dtype="int64", name="mapping"),  # mapping
                 None,  # fparam
                 None,  # aparam
                 # InputSpec([], dtype="bool", name="do_atomic_virial"),  # do_atomic_virial
                 False,  # do_atomic_virial
                 (
-                    InputSpec([-1], "int32", name="send_list"),
+                    InputSpec([-1], "int64", name="send_list"),
                     InputSpec([-1], "int32", name="send_proc"),
                     InputSpec([-1], "int32", name="recv_proc"),
                     InputSpec([-1], "int32", name="send_num"),
                     InputSpec([-1], "int32", name="recv_num"),
                     InputSpec([-1], "int64", name="communicator"),
+                    # InputSpec([1], "int64", name="has_spin"),
                 ),  # comm_dict
             ],
             full_graph=True,

@@ -94,36 +94,36 @@ def build_neighbor_list(
 
     """
     batch_size = coord.shape[0]
-    coord = coord.reshape([batch_size, -1])
     nall = coord.shape[1] // 3
     # fill virtual atoms with large coords so they are not neighbors of any
     # real atom.
-
     # NOTE: control flow with double backward is not supported well yet by paddle.jit
     if not paddle.in_dynamic_mode() or decomp.numel(coord) > 0:
         xmax = paddle.max(coord) + 2.0 * rcut
     else:
         xmax = paddle.zeros([], dtype=coord.dtype).to(device=coord.place) + 2.0 * rcut
+    coord_xyz = coord.reshape([batch_size, nall, 3])
     # nf x nall
     is_vir = atype < 0
-    coord1 = paddle.where(
-        is_vir[:, :, None], xmax, coord.reshape([batch_size, nall, 3])
-    ).reshape([batch_size, nall * 3])
+    # batch_size x nall x 3
+    vcoord_xyz = paddle.where(is_vir[:, :, None], xmax, coord_xyz)
     if isinstance(sel, int):
         sel = [sel]
-    # nloc x 3
-    coord0 = coord1[:, : nloc * 3]
-    # nloc x nall x 3
-    diff = coord1.reshape([batch_size, -1, 3]).unsqueeze(1) - coord0.reshape(
-        [batch_size, -1, 3]
-    ).unsqueeze(2)
+
+    # Get the coordinates for the local atoms (first nloc atoms)
+    # batch_size x nloc x 3
+    vcoord_local_xyz = vcoord_xyz[:, :nloc, :]
+
+    # Calculate displacement vectors.
+    diff = vcoord_xyz.unsqueeze(1) - vcoord_local_xyz.unsqueeze(2)
     if paddle.in_dynamic_mode():
         assert list(diff.shape) == [batch_size, nloc, nall, 3]
     # nloc x nall
     rr = paddle.linalg.norm(diff, axis=-1)
     # if central atom has two zero distances, sorting sometimes can not exclude itself
-    rr = rr - paddle.eye(nloc, nall, dtype=rr.dtype).to(device=rr.place).unsqueeze(0)
+    rr = rr - paddle.eye(nloc, nall, dtype=rr.dtype).unsqueeze(0)
     rr, nlist = paddle.sort(rr, axis=-1), paddle.argsort(rr, axis=-1)
+
     # nloc x (nall-1)
     rr = rr[:, :, 1:]
     nlist = nlist[:, :, 1:]
@@ -155,20 +155,13 @@ def _trim_mask_distinguish_nlist(
         rr = paddle.concat(
             [
                 rr,
-                paddle.ones([batch_size, nloc, nsel - nnei]).to(
-                    device=rr.place, dtype=rr.dtype
-                )
+                paddle.ones([batch_size, nloc, nsel - nnei]).astype(dtype=rr.dtype)
                 + rcut,
             ],
             axis=-1,
         )
         nlist = paddle.concat(
-            [
-                nlist,
-                paddle.ones([batch_size, nloc, nsel - nnei], dtype=nlist.dtype).to(
-                    device=rr.place
-                ),
-            ],
+            [nlist, paddle.ones([batch_size, nloc, nsel - nnei], dtype=nlist.dtype)],
             axis=-1,
         )
         if paddle.in_dynamic_mode():
@@ -305,6 +298,7 @@ def nlist_distinguish_types(
         tmp_atype,
         axis=2,
         indices=nlist.masked_fill(mask, 0),
+        broadcast=False,
     )
     tnlist = tnlist.masked_fill(mask, -1)
     snsel = tnlist.shape[2]
@@ -318,7 +312,7 @@ def nlist_distinguish_types(
             paddle.argsort(pick_mask, axis=-1, descending=True, stable=True),
         )
         # nloc x s(nsel)
-        inlist = paddle.take_along_axis(nlist, axis=2, indices=imap)
+        inlist = paddle.take_along_axis(nlist, axis=2, indices=imap, broadcast=False)
         inlist = inlist.masked_fill(~(pick_mask.to(paddle.bool)), -1)
         # nloc x nsel[ii]
         ret_nlist.append(paddle.split(inlist, [ss, snsel - ss], axis=-1)[0])
@@ -377,7 +371,7 @@ def build_multiple_neighbor_list(
         pad = -paddle.ones(
             [nb, nloc, nsels[-1] - nsel],
             dtype=nlist.dtype,
-        ).to(device=nlist.place)
+        )
         # nb x nloc x nsel
         nlist = paddle.concat([nlist, pad], axis=-1)
         if paddle.is_tensor(nsel):
@@ -399,9 +393,9 @@ def build_multiple_neighbor_list(
         .expand([-1, -1, 3])
     )
     # nb x nloc x nsel x 3
-    coord2 = paddle.take_along_axis(coord1, axis=1, indices=index).reshape(
-        [nb, nloc, nsel, 3]
-    )
+    coord2 = paddle.take_along_axis(
+        coord1, axis=1, indices=index, broadcast=False
+    ).reshape([nb, nloc, nsel, 3])
     # nb x nloc x nsel x 3
     diff = coord2 - coord0[:, :, None, :]
     # nb x nloc x nsel
@@ -452,7 +446,7 @@ def extend_coord_with_ghosts(
     device = coord.place
     nf, nloc = atype.shape[:2]
     # int64 for index
-    aidx = paddle.tile(paddle.arange(nloc).to(device=device).unsqueeze(0), [nf, 1])  # pylint: disable=no-explicit-dtype
+    aidx = paddle.tile(paddle.arange(nloc).unsqueeze(0), [nf, 1])  # pylint: disable=no-explicit-dtype
     if cell is None:
         nall = nloc
         extend_coord = coord.clone()
@@ -478,32 +472,24 @@ def extend_coord_with_ghosts(
         nbuff = paddle.amax(nbuff, axis=0)
         nbuff_cpu = nbuff.cpu()
         xi = (
-            paddle.arange(-nbuff_cpu[0], nbuff_cpu[0] + 1, 1).to(
-                dtype=env.GLOBAL_PD_FLOAT_PRECISION
-            )
+            paddle.arange(-nbuff_cpu[0], nbuff_cpu[0] + 1, 1)
             # .cpu()
         )  # pylint: disable=no-explicit-dtype
         yi = (
-            paddle.arange(-nbuff_cpu[1], nbuff_cpu[1] + 1, 1).to(
-                dtype=env.GLOBAL_PD_FLOAT_PRECISION
-            )
+            paddle.arange(-nbuff_cpu[1], nbuff_cpu[1] + 1, 1)
             # .cpu()
         )  # pylint: disable=no-explicit-dtype
         zi = (
-            paddle.arange(-nbuff_cpu[2], nbuff_cpu[2] + 1, 1).to(
-                dtype=env.GLOBAL_PD_FLOAT_PRECISION
-            )
+            paddle.arange(-nbuff_cpu[2], nbuff_cpu[2] + 1, 1)
             # .cpu()
         )  # pylint: disable=no-explicit-dtype
         eye_3 = (
-            paddle.eye(3, dtype=env.GLOBAL_PD_FLOAT_PRECISION).to(
-                dtype=env.GLOBAL_PD_FLOAT_PRECISION
-            )
+            paddle.eye(3, dtype=env.GLOBAL_PD_FLOAT_PRECISION)
             # .cpu()
         )
-        xyz = xi.reshape([-1, 1, 1, 1]) * eye_3[0]
-        xyz = xyz + yi.reshape([1, -1, 1, 1]) * eye_3[1]
-        xyz = xyz + zi.reshape([1, 1, -1, 1]) * eye_3[2]
+        xyz = xi.reshape([-1, 1, 1, 1]).astype(eye_3.dtype) * eye_3[0]
+        xyz = xyz + yi.reshape([1, -1, 1, 1]).astype(eye_3.dtype) * eye_3[1]
+        xyz = xyz + zi.reshape([1, 1, -1, 1]).astype(eye_3.dtype) * eye_3[2]
         xyz = xyz.reshape([-1, 3])
         # xyz = xyz.to(device=device)
         # ns x 3
@@ -519,7 +505,7 @@ def extend_coord_with_ghosts(
         # nf x ns x nloc
         extend_aidx = paddle.tile(aidx.unsqueeze(-2), [1, ns, 1])
     return (
-        extend_coord.reshape([nf, nall * 3]).to(device),
-        extend_atype.reshape([nf, nall]).to(device),
-        extend_aidx.reshape([nf, nall]).to(device),
+        extend_coord.reshape([nf, nall * 3]),
+        extend_atype.reshape([nf, nall]),
+        extend_aidx.reshape([nf, nall]),
     )

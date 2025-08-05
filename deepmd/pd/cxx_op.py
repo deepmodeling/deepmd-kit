@@ -1,13 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from pathlib import (
-    Path,
-)
+import importlib
 from types import (
     ModuleType,
-)
-
-from paddle.utils.cpp_extension import (
-    load,
 )
 
 
@@ -26,15 +20,11 @@ def load_library(module_name: str) -> tuple[bool, ModuleType]:
     ModuleType
         loaded custom operator module
     """
-    current_file = Path(__file__).resolve()
-    base_dir = current_file.parents[2]
+    if importlib.util.find_spec(module_name) is not None:
+        module = importlib.import_module(module_name)
+        return True, module
 
-    module_file = base_dir / "source" / "op" / "pd" / "comm.cc"
-    paddle_ops_deepmd = load(
-        name="deepmd_op_pd",
-        sources=[str(module_file)],
-    )
-    return True, paddle_ops_deepmd
+    return False, None
 
 
 ENABLE_CUSTOMIZED_OP, paddle_ops_deepmd = load_library("deepmd_op_pd")

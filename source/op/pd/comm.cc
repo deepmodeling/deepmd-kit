@@ -6,7 +6,6 @@
 #include <mpi-ext.h>
 #endif
 #endif
-// #include <paddle/include/paddle_inference_api.h>
 #include <cstdint>
 
 #include "paddle/extension.h"
@@ -53,33 +52,71 @@ void Border_forward_t(const paddle::Tensor& sendlist_tensor,
                       const paddle::Tensor& communicator_tensor,
                       const paddle::Tensor& nlocal_tensor,
                       const paddle::Tensor& nghost_tensor) {
-  int** sendlist = reinterpret_cast<int**>((sendlist_tensor + 0).data<int>());
-  const int* sendproc = sendproc_tensor.data<int>();
-  const int* recvproc = recvproc_tensor.data<int>();
-  const int* sendnum = sendnum_tensor.data<int>();
-  const int* recvnum = recvnum_tensor.data<int>();
-  int tensor_size = g1.dims()[1];
+  int64_t send_list_len = sendlist_tensor.numel();
+
+  paddle::Tensor cpu_sendlist = paddle::empty(
+      {send_list_len}, paddle::DataType::INT64, paddle::CPUPlace());
+  cpu_sendlist.copy_(sendlist_tensor, paddle::CPUPlace(), true);
+  int64_t* sendlist = cpu_sendlist.data<int64_t>();
+
   int nswap = sendproc_tensor.dims()[0];
 
-  int nlocal = *nlocal_tensor.data<int>();
-  int nghost = *nghost_tensor.data<int>();
+  paddle::Tensor cpu_sendproc =
+      paddle::empty({nswap}, paddle::DataType::INT32, paddle::CPUPlace());
+  cpu_sendproc.copy_(sendproc_tensor, paddle::CPUPlace(), true);
+  int* sendproc = cpu_sendproc.data<int>();
+
+  paddle::Tensor cpu_recvproc =
+      paddle::empty({nswap}, paddle::DataType::INT32, paddle::CPUPlace());
+  cpu_recvproc.copy_(recvproc_tensor, paddle::CPUPlace(), true);
+  int* recvproc = cpu_recvproc.data<int>();
+
+  paddle::Tensor cpu_sendnum =
+      paddle::empty({nswap}, paddle::DataType::INT32, paddle::CPUPlace());
+  cpu_sendnum.copy_(sendnum_tensor, paddle::CPUPlace(), true);
+  int* sendnum = cpu_sendnum.data<int>();
+
+  paddle::Tensor cpu_recvnum =
+      paddle::empty({nswap}, paddle::DataType::INT32, paddle::CPUPlace());
+  cpu_recvnum.copy_(recvnum_tensor, paddle::CPUPlace(), true);
+  int* recvnum = cpu_recvnum.data<int>();
+
+  int tensor_size = g1.dims()[1];
+  for (int i = 0; i < nswap; i++) {
+  }
+
+  paddle::Tensor cpu_nlocal =
+      paddle::empty({nswap}, paddle::DataType::INT32, paddle::CPUPlace());
+  cpu_nlocal.copy_(nlocal_tensor, paddle::CPUPlace(), true);
+  int nlocal = *(cpu_nlocal.data<int>());
+
+  paddle::Tensor cpu_nghost =
+      paddle::empty({nswap}, paddle::DataType::INT32, paddle::CPUPlace());
+  cpu_nghost.copy_(nghost_tensor, paddle::CPUPlace(), true);
+  int nghost = *(cpu_nghost.data<int>());
+
   int ntotal = nlocal + nghost;
+
   paddle::Tensor recv_g1_tensor = g1;
 
 #ifdef USE_MPI
+  // MPI 初始化检测
   int mpi_init = 0;
   MPI_Initialized(&mpi_init);
   int cuda_aware = 1;
   int me = 0;
   MPI_Comm world;
   int world_size = 0;
+
   if (mpi_init) {
     unpack_communicator(communicator_tensor, world);
     MPI_Comm_rank(world, &me);
     MPI_Comm_size(world, &world_size);
   }
+
   MPI_Datatype mpi_type = get_mpi_type<FPTYPE>();
   MPI_Request request;
+
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
   if (world_size >= 1) {
     int version, subversion;
@@ -93,31 +130,36 @@ void Border_forward_t(const paddle::Tensor& sendlist_tensor,
     } else {
       cuda_aware = 0;
     }
+
     if (cuda_aware == 0) {
       recv_g1_tensor = paddle::empty_like(g1, g1.dtype(), paddle::CPUPlace());
-      std::cout << "[1]" << std::endl;
-      recv_g1_tensor = g1.copy_to(recv_g1_tensor.place(), true);
-      // recv_g1_tensor.copy_(g1);
+      recv_g1_tensor.copy_(g1, recv_g1_tensor.place(), true);
     }
   }
 #endif
-#endif
+
+#endif  // USE_MPI
   FPTYPE* recv_g1 = recv_g1_tensor.data<FPTYPE>() + nlocal * tensor_size;
-  // auto int32_options = torch::TensorOptions().dtype(torch::kInt32);
+
   for (int iswap = 0; iswap < nswap; ++iswap) {
     int nrecv = recvnum[iswap];
     int nsend = sendnum[iswap];
     paddle::Tensor isendlist;
     paddle::Tensor send_g1_tensor;
-    FPTYPE* send_g1;
+    FPTYPE* send_g1 = nullptr;
+
     if (nsend != 0) {
-      std::cout << "[2]" << std::endl;
-      isendlist = paddle::from_blob(
-          static_cast<void*>(sendlist[iswap]), {nsend}, paddle::DataType::INT32,
-          phi::DataLayout::NCHW, recv_g1_tensor.place());
-      send_g1_tensor = paddle::gather(recv_g1_tensor, isendlist, 0);
+      std::intptr_t addr = static_cast<std::intptr_t>(sendlist[iswap]);
+      int* isendlist_ptr = reinterpret_cast<int*>(addr);
+      isendlist =
+          paddle::from_blob(isendlist_ptr, {nsend}, paddle::DataType::INT32,
+                            phi::DataLayout::NCHW, paddle::CPUPlace())
+              .copy_to(recv_g1_tensor.place(), true);
+      send_g1_tensor =
+          paddle::experimental::index_select(recv_g1_tensor, isendlist, 0);
       send_g1 = send_g1_tensor.data<FPTYPE>();
     }
+
 #ifdef USE_MPI
     if (sendproc[iswap] != me) {
       if (nrecv) {
@@ -133,6 +175,7 @@ void Border_forward_t(const paddle::Tensor& sendlist_tensor,
       }
     } else {
 #endif
+
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
 #ifdef USE_MPI
       if (cuda_aware == 0) {
@@ -148,23 +191,25 @@ void Border_forward_t(const paddle::Tensor& sendlist_tensor,
                 (unsigned long)nsend * tensor_size * sizeof(FPTYPE),
                 gpuMemcpyDeviceToDevice);
 #endif
+
 #else
     memcpy(recv_g1, send_g1,
            (unsigned long)nsend * tensor_size * sizeof(FPTYPE));
 #endif
+
 #ifdef USE_MPI
     }
 #endif
     recv_g1 += nrecv * tensor_size;
   }
+
 #ifdef USE_MPI
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
   if (cuda_aware == 0) {
-    g1 = recv_g1_tensor;
+    g1.copy_(recv_g1_tensor, g1.place(), true);
   }
 #endif
 #endif
-  // return {g1};
 }
 
 void Border_forward(const paddle::Tensor& sendlist_tensor,
@@ -172,56 +217,61 @@ void Border_forward(const paddle::Tensor& sendlist_tensor,
                     const paddle::Tensor& recvproc_tensor,
                     const paddle::Tensor& sendnum_tensor,
                     const paddle::Tensor& recvnum_tensor,
-                    paddle::Tensor& g1,
+                    paddle::Tensor& g1_tensor,
                     const paddle::Tensor& communicator_tensor,
                     const paddle::Tensor& nlocal_tensor,
                     const paddle::Tensor& nghost_tensor) {
-  bool type_flag = (g1.dtype() == phi::DataType::FLOAT64) ? true : false;
+  bool type_flag = (g1_tensor.dtype() == phi::DataType::FLOAT64) ? true : false;
   if (type_flag) {
     Border_forward_t<double>(sendlist_tensor, sendproc_tensor, recvproc_tensor,
-                             sendnum_tensor, recvnum_tensor, g1,
+                             sendnum_tensor, recvnum_tensor, g1_tensor,
                              communicator_tensor, nlocal_tensor, nghost_tensor);
   } else {
     Border_forward_t<float>(sendlist_tensor, sendproc_tensor, recvproc_tensor,
-                            sendnum_tensor, recvnum_tensor, g1,
+                            sendnum_tensor, recvnum_tensor, g1_tensor,
                             communicator_tensor, nlocal_tensor, nghost_tensor);
   }
 }
 
 template <typename FPTYPE>
-std::vector<paddle::Tensor> Border_backward_t(
-    const paddle::Tensor& sendlist_tensor,
-    const paddle::Tensor& sendproc_tensor,
-    const paddle::Tensor& recvproc_tensor,
-    const paddle::Tensor& sendnum_tensor,
-    const paddle::Tensor& recvnum_tensor,
-    const paddle::Tensor& communicator_tensor,
-    const paddle::Tensor& nlocal_tensor,
-    const paddle::Tensor& nghost_tensor,
-    paddle::Tensor& recv_g1_tensor_grad  // grad_output[0]
-) {
+void Border_backward_t(const paddle::Tensor& sendlist_tensor,
+                       const paddle::Tensor& sendproc_tensor,
+                       const paddle::Tensor& recvproc_tensor,
+                       const paddle::Tensor& sendnum_tensor,
+                       const paddle::Tensor& recvnum_tensor,
+                       const paddle::Tensor& g1_tensor,
+                       const paddle::Tensor& communicator_tensor,
+                       const paddle::Tensor& nlocal_tensor,
+                       const paddle::Tensor& nghost_tensor,
+                       paddle::Tensor& recv_g1_tensor_grad) {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
   gpuDeviceSynchronize();
 #endif
-  paddle::Tensor d_local_g1_tensor = (recv_g1_tensor_grad + 0).contiguous();
+  paddle::Tensor d_local_g1_tensor =
+      paddle::empty(recv_g1_tensor_grad.shape(), recv_g1_tensor_grad.dtype(),
+                    recv_g1_tensor_grad.place());
+  d_local_g1_tensor.copy_(recv_g1_tensor_grad.contiguous(),
+                          d_local_g1_tensor.place(), true);
+
 #ifdef USE_MPI
-  int mpi_init = 0;
+  int mpi_init = 0, world_size = 0, me = 0, cuda_aware = 1;
   MPI_Initialized(&mpi_init);
-  int world_size = 0;
-  int cuda_aware = 1;
-  int me = 0;
+
   MPI_Comm world;
   if (mpi_init) {
     unpack_communicator(communicator_tensor, world);
     MPI_Comm_rank(world, &me);
     MPI_Comm_size(world, &world_size);
   }
-  MPI_Datatype mpi_type = get_mpi_type<FPTYPE>();
+
+  auto mpi_type = get_mpi_type<FPTYPE>();
   MPI_Request request;
+
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
   if (world_size >= 1) {
     int version, subversion;
     MPI_Get_version(&version, &subversion);
+
     if (version >= 4) {
 #ifdef NO_CUDA_AWARE
       cuda_aware = 0;
@@ -231,38 +281,66 @@ std::vector<paddle::Tensor> Border_backward_t(
     } else {
       cuda_aware = 0;
     }
+
     if (cuda_aware == 0) {
       d_local_g1_tensor = paddle::empty_like(
           recv_g1_tensor_grad, recv_g1_tensor_grad.dtype(), paddle::CPUPlace());
-      std::cout << "[3]" << std::endl;
-      d_local_g1_tensor =
-          recv_g1_tensor_grad.copy_to(d_local_g1_tensor.place(), true);
+      d_local_g1_tensor = recv_g1_tensor_grad.copy_(
+          recv_g1_tensor_grad, d_local_g1_tensor.place(), true);
     }
   }
 #endif
-#endif
-  int** recvlist = reinterpret_cast<int**>((sendlist_tensor + 0).data<int>());
+#endif  // USE_MPI
+  int64_t send_list_len = sendlist_tensor.numel();
+  paddle::Tensor cpu_sendlist = paddle::empty(
+      {send_list_len}, paddle::DataType::INT64, paddle::CPUPlace());
+  cpu_sendlist.copy_(sendlist_tensor, paddle::CPUPlace(), true);
+  int64_t* recvlist = cpu_sendlist.data<int64_t>();
+
+  int nswap = sendproc_tensor.dims()[0];
   // swap send and recv here
-  const int* recvproc = sendproc_tensor.data<int>();
-  const int* sendproc = recvproc_tensor.data<int>();
-  const int* recvnum = sendnum_tensor.data<int>();
-  const int* sendnum = recvnum_tensor.data<int>();
+  paddle::Tensor cpu_recvproc =
+      paddle::empty({nswap}, paddle::DataType::INT32, paddle::CPUPlace());
+  cpu_recvproc.copy_(recvproc_tensor, paddle::CPUPlace(), true);
+  int* recvproc = cpu_recvproc.data<int>();
+
+  paddle::Tensor cpu_sendproc =
+      paddle::empty({nswap}, paddle::DataType::INT32, paddle::CPUPlace());
+  cpu_sendproc.copy_(sendproc_tensor, paddle::CPUPlace(), true);
+  int* sendproc = cpu_sendproc.data<int>();
+
+  paddle::Tensor cpu_sendnum =
+      paddle::empty({nswap}, paddle::DataType::INT32, paddle::CPUPlace());
+  cpu_sendnum.copy_(sendnum_tensor, paddle::CPUPlace(), true);
+  int* recvnum = cpu_sendnum.data<int>();
+
+  paddle::Tensor cpu_recvnum =
+      paddle::empty({nswap}, paddle::DataType::INT32, paddle::CPUPlace());
+  cpu_recvnum.copy_(recvnum_tensor, paddle::CPUPlace(), true);
+  int* sendnum = cpu_recvnum.data<int>();
 
   FPTYPE* local_g1 = d_local_g1_tensor.data<FPTYPE>();
   int tensor_size = d_local_g1_tensor.dims()[1];
-  int nswap = sendproc_tensor.dims()[0];
 
-  int nlocal = *nlocal_tensor.data<int>();
-  int nghost = *nghost_tensor.data<int>();
+  paddle::Tensor cpu_nlocal =
+      paddle::empty({1}, paddle::DataType::INT32, paddle::CPUPlace());
+  cpu_nlocal.copy_(nlocal_tensor, paddle::CPUPlace(), true);
+  int nlocal = *cpu_nlocal.data<int>();
+
+  paddle::Tensor cpu_nghost =
+      paddle::empty({1}, paddle::DataType::INT32, paddle::CPUPlace());
+  cpu_nghost.copy_(nghost_tensor, paddle::CPUPlace(), true);
+  int nghost = *cpu_nghost.data<int>();
   int ntotal = nlocal + nghost;
-  paddle::Tensor send_g1_tensor;
-  paddle::Tensor recv_g1_tensor;
-  FPTYPE* recv_g1;
-  FPTYPE* send_g1;
+
+  paddle::Tensor send_g1_tensor, recv_g1_tensor;
+  FPTYPE *recv_g1 = nullptr, *send_g1 = nullptr;
+
   if (nswap != 0) {
     send_g1_tensor = d_local_g1_tensor;
-    int max_recvnum = *sendnum_tensor.max().data<int>();
-    std::cout << "[4]" << std::endl;
+
+    int max_recvnum =
+        *(paddle::experimental::max(cpu_sendnum, {}, false).data<int>());
     recv_g1_tensor =
         paddle::empty({max_recvnum, tensor_size}, d_local_g1_tensor.dtype(),
                       d_local_g1_tensor.place());
@@ -270,22 +348,24 @@ std::vector<paddle::Tensor> Border_backward_t(
     send_g1 = send_g1_tensor.data<FPTYPE>() + ntotal * tensor_size;
   }
 
-  int end = ntotal;
-  // auto int32_options = torch::TensorOptions().dtype(torch::kInt32);
   for (int iswap = nswap - 1; iswap >= 0; --iswap) {
     int nrecv = recvnum[iswap];
     int nsend = sendnum[iswap];
 
     paddle::Tensor irecvlist;
     if (nrecv) {
-      std::cout << "[5]" << std::endl;
-      irecvlist = paddle::from_blob(
-          static_cast<void*>(recvlist[iswap]), {nrecv}, paddle::DataType::INT32,
-          paddle::DataLayout::NCHW, d_local_g1_tensor.place());
+      std::intptr_t addr = static_cast<std::intptr_t>(recvlist[iswap]);
+      int* irecvlist_ptr = reinterpret_cast<int*>(addr);
+      irecvlist =
+          paddle::from_blob(irecvlist_ptr, {nrecv}, paddle::DataType::INT32,
+                            paddle::DataLayout::NCHW, paddle::CPUPlace())
+              .copy_to(d_local_g1_tensor.place(), true);
     }
+
     if (nsend) {
       send_g1 -= nsend * tensor_size;
     }
+
 #ifdef USE_MPI
     if (sendproc[iswap] != me) {
       if (nrecv) {
@@ -333,106 +413,103 @@ std::vector<paddle::Tensor> Border_backward_t(
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
   gpuDeviceSynchronize();
 #endif
+
 #ifdef USE_MPI
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
   if (cuda_aware == 0) {
-    recv_g1_tensor_grad = d_local_g1_tensor;
-    // d_local_g1_tensor.copy_to(recv_g1_tensor_grad.place(), true);
-    // grad_output[0].copy_(d_local_g1_tensor);
+    recv_g1_tensor_grad.copy_(d_local_g1_tensor, recv_g1_tensor_grad.place(),
+                              true);
   }
 #endif
 #endif
-  return {paddle::Tensor(), paddle::Tensor(), paddle::Tensor(),
-          paddle::Tensor(), paddle::Tensor(), recv_g1_tensor_grad,
-          paddle::Tensor(), paddle::Tensor(), paddle::Tensor()};
 }
 
-std::vector<paddle::Tensor> Border_backward(
-    const paddle::Tensor& sendlist_tensor,
-    const paddle::Tensor& sendproc_tensor,
-    const paddle::Tensor& recvproc_tensor,
-    const paddle::Tensor& sendnum_tensor,
-    const paddle::Tensor& recvnum_tensor,
-    const paddle::Tensor& communicator_tensor,
-    const paddle::Tensor& nlocal_tensor,
-    const paddle::Tensor& nghost_tensor,
-    paddle::Tensor& recv_g1_tensor_grad) {
+void Border_backward(const paddle::Tensor& sendlist_tensor,
+                     const paddle::Tensor& sendproc_tensor,
+                     const paddle::Tensor& recvproc_tensor,
+                     const paddle::Tensor& sendnum_tensor,
+                     const paddle::Tensor& recvnum_tensor,
+                     const paddle::Tensor& g1_tensor,
+                     const paddle::Tensor& communicator_tensor,
+                     const paddle::Tensor& nlocal_tensor,
+                     const paddle::Tensor& nghost_tensor,
+                     paddle::Tensor& recv_g1_tensor_grad) {
   bool type_flag =
-      (sendlist_tensor.dtype() == paddle::DataType::FLOAT64) ? true : false;
+      (recv_g1_tensor_grad.dtype() == paddle::DataType::FLOAT64) ? true : false;
   if (type_flag) {
-    return Border_backward_t<double>(
-        sendlist_tensor, sendproc_tensor, recvproc_tensor, sendnum_tensor,
-        recvnum_tensor, communicator_tensor, nlocal_tensor, nghost_tensor,
-        recv_g1_tensor_grad);
+    Border_backward_t<double>(sendlist_tensor, sendproc_tensor, recvproc_tensor,
+                              sendnum_tensor, recvnum_tensor, g1_tensor,
+                              communicator_tensor, nlocal_tensor, nghost_tensor,
+                              recv_g1_tensor_grad);
   } else {
-    return Border_backward_t<float>(
-        sendlist_tensor, sendproc_tensor, recvproc_tensor, sendnum_tensor,
-        recvnum_tensor, communicator_tensor, nlocal_tensor, nghost_tensor,
-        recv_g1_tensor_grad);
+    Border_backward_t<float>(sendlist_tensor, sendproc_tensor, recvproc_tensor,
+                             sendnum_tensor, recvnum_tensor, g1_tensor,
+                             communicator_tensor, nlocal_tensor, nghost_tensor,
+                             recv_g1_tensor_grad);
   }
 }
 
-std::vector<std::vector<int64_t>> Border_forwardInferShape(
-    std::vector<int64_t> sendlist_tensor_shape,
-    std::vector<int64_t> sendproc_tensor_shape,
-    std::vector<int64_t> recvproc_tensor_shape,
-    std::vector<int64_t> sendnum_tensor_shape,
-    std::vector<int64_t> recvnum_tensor_shape,
-    std::vector<int64_t> g1_tensor_shape,
-    std::vector<int64_t> communicator_tensor_shape,
-    std::vector<int64_t> nlocal_tensor_shape,
-    std::vector<int64_t> nghost_tenso_shape) {
-  return {g1_tensor_shape};
-}
+// std::vector<std::vector<int64_t>> Border_forwardInferShape(
+//     std::vector<int64_t> sendlist_tensor_shape,
+//     std::vector<int64_t> sendproc_tensor_shape,
+//     std::vector<int64_t> recvproc_tensor_shape,
+//     std::vector<int64_t> sendnum_tensor_shape,
+//     std::vector<int64_t> recvnum_tensor_shape,
+//     std::vector<int64_t> g1_shape,
+//     std::vector<int64_t> communicator_tensor_shape,
+//     std::vector<int64_t> nlocal_tensor_shape,
+//     std::vector<int64_t> nghost_tenso_shape) {
+//   return {g1_shape};
+// }
 
-std::vector<paddle::DataType> Border_forwardInferDtype(
-    paddle::DataType sendlist_tensor_dtype,
-    paddle::DataType sendproc_tensor_dtype,
-    paddle::DataType recvproc_tensor_dtype,
-    paddle::DataType sendnum_tensor_dtype,
-    paddle::DataType recvnum_tensor_dtype,
-    paddle::DataType g1_tensor_dtype,
-    paddle::DataType communicator_tensor_dtype,
-    paddle::DataType nlocal_tensor_dtype,
-    paddle::DataType nghost_tenso_dtype) {
-  return {g1_tensor_dtype};
-}
+// std::vector<paddle::DataType> Border_forwardInferDtype(
+//     paddle::DataType sendlist_tensor_dtype,
+//     paddle::DataType sendproc_tensor_dtype,
+//     paddle::DataType recvproc_tensor_dtype,
+//     paddle::DataType sendnum_tensor_dtype,
+//     paddle::DataType recvnum_tensor_dtype,
+//     paddle::DataType g1_dtype,
+//     paddle::DataType communicator_tensor_dtype,
+//     paddle::DataType nlocal_tensor_dtype,
+//     paddle::DataType nghost_tenso_dtype) {
+//   return {g1_dtype};
+// }
 
-std::vector<std::vector<int64_t>> Border_backwardInferShape(
-    std::vector<int64_t> sendlist_shape,
-    std::vector<int64_t> sendproc_shape,
-    std::vector<int64_t> recvproc_shape,
-    std::vector<int64_t> sendnum_shape,
-    std::vector<int64_t> recvnum_shape,
-    std::vector<int64_t> communicator_shape,
-    std::vector<int64_t> nlocal_shape,
-    std::vector<int64_t> nghost_shape,
-    std::vector<int64_t> recv_g1_grad_shape) {
-  return {recv_g1_grad_shape};
-}
+// std::vector<std::vector<int64_t>> Border_backwardInferShape(
+//     std::vector<int64_t> sendlist_shape,
+//     std::vector<int64_t> sendproc_shape,
+//     std::vector<int64_t> recvproc_shape,
+//     std::vector<int64_t> sendnum_shape,
+//     std::vector<int64_t> recvnum_shape,
+//     std::vector<int64_t> communicator_shape,
+//     std::vector<int64_t> nlocal_shape,
+//     std::vector<int64_t> nghost_shape,
+//     std::vector<int64_t> recv_g1_grad_shape) {
+//   return {recv_g1_grad_shape};
+// }
 
-std::vector<paddle::DataType> Border_backwardInferDtype(
-    paddle::DataType sendlist_dtype,
-    paddle::DataType sendproc_dtype,
-    paddle::DataType recvproc_dtype,
-    paddle::DataType sendnum_dtype,
-    paddle::DataType recvnum_dtype,
-    paddle::DataType communicator_dtype,
-    paddle::DataType nlocal_dtype,
-    paddle::DataType nghost_dtype,
-    paddle::DataType recv_g1_tens_dtype) {
-  return {recv_g1_tens_dtype};
-}
+// std::vector<paddle::DataType> Border_backwardInferDtype(
+//     paddle::DataType sendlist_dtype,
+//     paddle::DataType sendproc_dtype,
+//     paddle::DataType recvproc_dtype,
+//     paddle::DataType sendnum_dtype,
+//     paddle::DataType recvnum_dtype,
+//     paddle::DataType communicator_dtype,
+//     paddle::DataType nlocal_dtype,
+//     paddle::DataType nghost_dtype,
+//     paddle::DataType recv_g1_dtype) {
+//   return {recv_g1_dtype};
+// }
 
 /**
- * @brief communicate the latest g1 info to other lmp proc
- * @param[out] recv_g1_tensor g1 after communication
+ * @brief communicate the latest g1_tensor info to other lmp proc
+ * @param[out] recv_g1_tensor g1_tensor after communication
  * @param[in]  sendlist_tensor list of atoms to send in each swap
  * @param[in]  sendproc_tensor proc to send to at each swap
  * @param[in]  recvproc_tensor proc to recv from at each swap
  * @param[in]  sendnum_tensor # of atoms to send in each swap
  * @param[in]  recvnum_tensor # of atoms to recv in each swap
- * @param[in]  g1_tensor tensor to store g1 info
+ * @param[in]  g1_tensor tensor to store g1_tensor info
  * @param[in]  communicator_tensor MPI_comm data in lmp
  * @param[in]  nlocal_tensor # of local atoms
  * @param[in]  nghost_tensor # of nghost atoms
@@ -443,9 +520,9 @@ PD_BUILD_OP(border_op)
              "communicator_tensor", "nlocal_tensor", "nghost_tensor"})
     .Outputs({"recv_g1_tensor"})
     .SetKernelFn(PD_KERNEL(Border_forward))
-    .SetInplaceMap({{"g1_tensor", "recv_g1_tensor"}})
-    .SetInferShapeFn(PD_INFER_SHAPE(Border_forwardInferShape))
-    .SetInferDtypeFn(PD_INFER_DTYPE(Border_forwardInferDtype));
+    .SetInplaceMap({{"g1_tensor", "recv_g1_tensor"}});
+// .SetInferShapeFn(PD_INFER_SHAPE(Border_forwardInferShape))
+// .SetInferDtypeFn(PD_INFER_DTYPE(Border_forwardInferDtype));
 
 PD_BUILD_GRAD_OP(border_op)
     .Inputs({"sendlist_tensor", "sendproc_tensor", "recvproc_tensor",
@@ -455,6 +532,6 @@ PD_BUILD_GRAD_OP(border_op)
     .Outputs({paddle::Grad("g1_tensor")})
     .SetInplaceMap({{paddle::Grad("recv_g1_tensor"),
                      paddle::Grad("g1_tensor")}})
-    .SetKernelFn(PD_KERNEL(Border_backward))
-    .SetInferShapeFn(PD_INFER_SHAPE(Border_backwardInferShape))
-    .SetInferDtypeFn(PD_INFER_DTYPE(Border_backwardInferDtype));
+    .SetKernelFn(PD_KERNEL(Border_backward));
+// .SetInferShapeFn(PD_INFER_SHAPE(Border_backwardInferShape))
+// .SetInferDtypeFn(PD_INFER_DTYPE(Border_backwardInferDtype));

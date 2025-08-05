@@ -35,16 +35,13 @@ DeepPotPD::DeepPotPD(const std::string& model,
 void DeepPotPD::init(const std::string& model,
                      const int& gpu_rank,
                      const std::string& file_content) {
-  // std::cout << "[DeepPotPD::init]" << std::endl;
   if (inited) {
     std::cerr << "WARNING: deepmd-kit should not be initialized twice, do "
                  "nothing at the second call of initializer"
               << std::endl;
     return;
   }
-  // NOTE: There is no custom operators need to be loaded now.
-  // deepmd::load_op_library();
-
+  deepmd::load_op_library();
   // NOTE: Only support 1 GPU now.
   int gpu_num = 1;
   if (gpu_num > 0) {
@@ -55,84 +52,20 @@ void DeepPotPD::init(const std::string& model,
 
   // initialize inference config
   config = std::make_shared<paddle_infer::Config>();
-  // config->DisableGlogInfo();
+  config->DisableGlogInfo();
   config->EnableNewExecutor(true);
   config->EnableNewIR(true);
   config->EnableCustomPasses({"add_shadow_output_after_dead_parameter_pass"},
                              true);
-  config->DeletePass("dead_code_elimination_pass");
-  config->DeletePass("inplace_pass");
-  config->DeletePass("remove_shadow_feed_pass");
-  config->DeletePass("constant_folding_pass");
-  config->DeletePass("replace_fetch_with_shadow_output_pass");
-  config->DeletePass("params_sync_among_devices_pass");
-  config->DeletePass("common_subexpression_elimination_pass");
-  config->DeletePass("transfer_layout_pass");
-  // config->DeletePass("add_shadow_output_after_dead_parameter_pass");
-  config->DeletePass("horizontal_fuse_pass");
-  config->DeletePass("remove_redundant_transpose_pass");
-  config->DeletePass("transpose_flatten_concat_fuse_pass");
-  config->DeletePass("matmul_transpose_fuse_pass");
-  config->DeletePass("matmul_scale_fuse_pass");
-  config->DeletePass("group_norm_silu_fuse_pass");
-  config->DeletePass("add_norm_fuse_pass");
-  config->DeletePass("fc_elementwise_layernorm_fuse_pass");
-  config->DeletePass("matmul_add_act_fuse_pass");
-  config->DeletePass("multihead_matmul_fuse_pass");
-  config->DeletePass("fused_flash_attn_pass");
-  config->DeletePass("fused_rotary_position_embedding_pass");
-  config->DeletePass("embedding_eltwise_layernorm_fuse_pass");
-  config->DeletePass("conv2d_add_fuse_pass");
-  config->DeletePass("conv2d_add_act_fuse_pass");
-  config->DeletePass("conv2d_bn_fuse_pass");
-  config->DeletePass("silu_fuse_pass");
-  config->DeletePass("identity_op_clean_pass");
-  config->DeletePass("map_op_to_another_pass");
-  config->DeletePass("delete_weight_dequant_linear_op_pass");
-  config->DeletePass("delete_quant_dequant_linear_op_pass");
-  // config->EnableCustomPasses({}, true);
-
   // config->SwitchIrOptim(false);
 
   // initialize inference config_fl
   config_fl = std::make_shared<paddle_infer::Config>();
-  // config_fl->DisableGlogInfo();
+  config_fl->DisableGlogInfo();
   config_fl->EnableNewExecutor(true);
   config_fl->EnableNewIR(true);
   config_fl->EnableCustomPasses({"add_shadow_output_after_dead_parameter_pass"},
                                 true);
-  config_fl->DeletePass("dead_code_elimination_pass");
-  config_fl->DeletePass("inplace_pass");
-  config_fl->DeletePass("remove_shadow_feed_pass");
-  config_fl->DeletePass("constant_folding_pass");
-  config_fl->DeletePass("replace_fetch_with_shadow_output_pass");
-  config_fl->DeletePass("params_sync_among_devices_pass");
-  config_fl->DeletePass("common_subexpression_elimination_pass");
-  config_fl->DeletePass("transfer_layout_pass");
-  // config_fl->DeletePass("add_shadow_output_after_dead_parameter_pass");
-  config_fl->DeletePass("horizontal_fuse_pass");
-  config_fl->DeletePass("remove_redundant_transpose_pass");
-  config_fl->DeletePass("transpose_flatten_concat_fuse_pass");
-  config_fl->DeletePass("matmul_transpose_fuse_pass");
-  config_fl->DeletePass("matmul_scale_fuse_pass");
-  config_fl->DeletePass("group_norm_silu_fuse_pass");
-  config_fl->DeletePass("add_norm_fuse_pass");
-  config_fl->DeletePass("fc_elementwise_layernorm_fuse_pass");
-  config_fl->DeletePass("matmul_add_act_fuse_pass");
-  config_fl->DeletePass("multihead_matmul_fuse_pass");
-  config_fl->DeletePass("fused_flash_attn_pass");
-  config_fl->DeletePass("fused_rotary_position_embedding_pass");
-  config_fl->DeletePass("embedding_eltwise_layernorm_fuse_pass");
-  config_fl->DeletePass("conv2d_add_fuse_pass");
-  config_fl->DeletePass("conv2d_add_act_fuse_pass");
-  config_fl->DeletePass("conv2d_bn_fuse_pass");
-  config_fl->DeletePass("silu_fuse_pass");
-  config_fl->DeletePass("identity_op_clean_pass");
-  config_fl->DeletePass("map_op_to_another_pass");
-  config_fl->DeletePass("delete_weight_dequant_linear_op_pass");
-  config_fl->DeletePass("delete_quant_dequant_linear_op_pass");
-  // config_fl->EnableCustomPasses({}, true);
-
   // config_fl->SwitchIrOptim(false);
 
   // loading inference model
@@ -274,39 +207,57 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
     if (do_message_passing == 1 && nghost > 0) {
+      auto sendproc_tensor = predictor_fl->GetInputHandle("send_proc");
+      auto recvproc_tensor = predictor_fl->GetInputHandle("recv_proc");
+      auto recvnum_tensor = predictor_fl->GetInputHandle("recv_num");
+      auto sendnum_tensor = predictor_fl->GetInputHandle("send_num");
+      auto communicator_tensor = predictor_fl->GetInputHandle("communicator");
+      auto sendlist_tensor = predictor_fl->GetInputHandle("send_list");
+
       int nswap = lmp_list.nswap;
-      auto sendproc_tensor = predictor_fl->GetInputHandle("sendproc");
       sendproc_tensor->Reshape({nswap});
       sendproc_tensor->CopyFromCpu(lmp_list.sendproc);
-      auto recvproc_tensor = predictor_fl->GetInputHandle("recvproc");
+
       recvproc_tensor->Reshape({nswap});
       recvproc_tensor->CopyFromCpu(lmp_list.recvproc);
-      auto firstrecv_tensor = predictor_fl->GetInputHandle("firstrecv");
-      firstrecv_tensor->Reshape({nswap});
-      firstrecv_tensor->CopyFromCpu(lmp_list.firstrecv);
-      auto recvnum_tensor = predictor_fl->GetInputHandle("recvnum");
+
       recvnum_tensor->Reshape({nswap});
       recvnum_tensor->CopyFromCpu(lmp_list.recvnum);
-      auto sendnum_tensor = predictor_fl->GetInputHandle("sendnum");
+
       sendnum_tensor->Reshape({nswap});
-      sendnum_tensor->CopyFromCpu(lmp_list.sendnum);
-      auto communicator_tensor = predictor_fl->GetInputHandle("communicator");
+      if (sizeof(lmp_list.sendnum[0]) != sizeof(int32_t)) {
+        std::vector<int32_t> temp_data(nswap);
+        for (int i = 0; i < nswap; i++) {
+          temp_data[i] = static_cast<int32_t>(lmp_list.sendnum[i]);
+        }
+        sendnum_tensor->CopyFromCpu(temp_data.data());
+      } else {
+        sendnum_tensor->CopyFromCpu(lmp_list.sendnum);
+      }
       communicator_tensor->Reshape({1});
       if (lmp_list.world) {
         communicator_tensor->CopyFromCpu(static_cast<int*>(lmp_list.world));
       }
+
+      assert(sizeof(std::intptr_t) == 8);
       int total_send =
           std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
-      auto sendlist_tensor = predictor_fl->GetInputHandle("sendlist");
       sendlist_tensor->Reshape({total_send});
-      sendlist_tensor->CopyFromCpu(static_cast<int*>(*lmp_list.sendlist));
 
-      // this->comm_vec.push_back(sendlist_tensor);
-      // this->comm_vec.push_back(sendproc_tensor);
-      // this->comm_vec.push_back(recvproc_tensor);
-      // this->comm_vec.push_back(sendnum_tensor);
-      // this->comm_vec.push_back(recvnum_tensor);
-      // this->comm_vec.push_back(communicator_tensor);
+      /**
+      ** NOTE: paddle do not support construct a Tensor with from_blob(T**, ...)
+      ** from a double pointer, so we convert int* pointer to indptr_t for each
+      *entry
+      ** and wrap it into int64 Tensor as a workaround.
+      */
+      std::vector<std::intptr_t> pointer_addresses;
+      pointer_addresses.reserve(nswap);
+      for (int iswap = 0; iswap < nswap; ++iswap) {
+        std::intptr_t addr =
+            reinterpret_cast<std::intptr_t>(lmp_list.sendlist[iswap]);
+        pointer_addresses.push_back(addr);
+      }
+      sendlist_tensor->CopyFromCpu(pointer_addresses.data());
     }
     if (lmp_list.mapping) {
       std::vector<std::int64_t> mapping(nall_real);
@@ -320,17 +271,18 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   }
   std::vector<int> firstneigh = createNlistTensorPD(nlist_data.jlist);
   this->firstneigh_tensor = predictor_fl->GetInputHandle("nlist");
-  this->firstneigh_tensor->Reshape({1, nloc, (int)firstneigh.size() / (int)nloc});
+  this->firstneigh_tensor->Reshape(
+      {1, nloc, (int)firstneigh.size() / (int)nloc});
   this->firstneigh_tensor->CopyFromCpu(firstneigh.data());
   bool do_atom_virial_tensor = atomic;
-  std::unique_ptr<paddle_infer::Tensor> fparam_tensor;
   if (!fparam.empty()) {
+    std::unique_ptr<paddle_infer::Tensor> fparam_tensor;
     fparam_tensor = predictor_fl->GetInputHandle("fparam");
     fparam_tensor->Reshape({1, static_cast<int>(fparam.size())});
-    fparam_tensor->CopyFromCpu((fparam.data()));
+    fparam_tensor->CopyFromCpu(fparam.data());
   }
-  std::unique_ptr<paddle_infer::Tensor> aparam_tensor;
   if (!aparam_.empty()) {
+    std::unique_ptr<paddle_infer::Tensor> aparam_tensor;
     aparam_tensor = predictor_fl->GetInputHandle("aparam");
     aparam_tensor->Reshape(
         {1, lmp_list.inum, static_cast<int>(aparam_.size()) / lmp_list.inum});
