@@ -285,8 +285,8 @@ void Border_backward_t(const paddle::Tensor& sendlist_tensor,
     if (cuda_aware == 0) {
       d_local_g1_tensor = paddle::empty_like(
           recv_g1_tensor_grad, recv_g1_tensor_grad.dtype(), paddle::CPUPlace());
-      d_local_g1_tensor = recv_g1_tensor_grad.copy_(
-          recv_g1_tensor_grad, d_local_g1_tensor.place(), true);
+      d_local_g1_tensor.copy_(recv_g1_tensor_grad, d_local_g1_tensor.place(),
+                              true);
     }
   }
 #endif

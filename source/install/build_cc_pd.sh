@@ -62,7 +62,7 @@ echo "START INFERENCE..."
 
 export PATH=${LAMMPS_SOURCE_ROOT}/src:$PATH
 # USE_CUDA_TOOLKIT=1 lmp_serial -in paddle_se_e2_a.lammps
-FLAGS_benchmark=1 USE_CUDA_TOOLKIT=1 lmp_serial -in paddle_dpa2.lammps
+USE_CUDA_TOOLKIT=1 lmp_serial -in paddle_dpa2.lammps
 # USE_CUDA_TOOLKIT=0 lmp_serial -in paddle_se_e2_a.lammps 2>&1 | tee paddle_infer_serial.log
 # USE_CUDA_TOOLKIT=1 lmp_serial -in paddle_dpa1.lammps 2>&1 | tee paddle_infer_serial.log
 # USE_CUDA_TOOLKIT=0 lmp_serial -in paddle_dpa1.lammps 2>&1 | tee paddle_infer_serial.log
