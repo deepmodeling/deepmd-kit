@@ -158,6 +158,7 @@ def fit_output_to_model_output(
     coord_ext: torch.Tensor,
     do_atomic_virial: bool = False,
     create_graph: bool = True,
+    mask: Optional[torch.Tensor] = None,
 ) -> dict[str, torch.Tensor]:
     """Transform the output of the fitting network to
     the model output.
@@ -172,7 +173,11 @@ def fit_output_to_model_output(
         if vdef.reducible:
             kk_redu = get_reduce_name(kk)
             if vdef.intensive:
-                model_ret[kk_redu] = torch.mean(vv.to(redu_prec), dim=atom_axis)
+                if (mask is not None) and (mask == 0.0).any(): # containing padding atoms
+                    mask = mask.to(dtype=torch.bool, device=vv.device) # [nbz, nreal+npadding]
+                    model_ret[kk_redu] = torch.stack([torch.mean(vv[ii].to(redu_prec)[mask[ii]], dim=atom_axis) for ii in range(mask.size(0))])
+                else:
+                    model_ret[kk_redu] = torch.mean(vv.to(redu_prec), dim=atom_axis)
             else:
                 model_ret[kk_redu] = torch.sum(vv.to(redu_prec), dim=atom_axis)
             if vdef.r_differentiable:
