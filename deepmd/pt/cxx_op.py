@@ -107,7 +107,7 @@ def load_mpi_library() -> None:
     else:
         raise RuntimeError("Unsupported platform")
     MPI_LIB = next(
-        p for p in metadata.files("mpich") if f"libmpi{extension}" in str(p)
+        p for p in metadata.files("mpich") if f"libmpi{extension}." in str(p)
     ).locate()
     # use CDLL to load the library
     CDLL(MPI_LIB, mode=RTLD_GLOBAL)
