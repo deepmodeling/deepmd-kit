@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import os
 import platform
+from ctypes import (
+    CDLL,
+    RTLD_GLOBAL,
+)
 from importlib import (
     metadata,
 )
@@ -91,36 +94,30 @@ def load_library(module_name: str) -> bool:
     return False
 
 
-if GLOBAL_CONFIG.get("cibuildwheel", "0") == "1":
+def load_mpi_library() -> None:
+    """Load MPI library.
+
+    When building with cibuildwheel, the link to the MPI library is lost
+    after the wheel is repaired.
+    """
     if platform.system() == "Linux":
-        lib_env = "LD_LIBRARY_PATH"
         extension = ".so"
     elif platform.system() == "Darwin":
-        lib_env = "DYLD_FALLBACK_LIBRARY_PATH"
         extension = ".dylib"
     else:
-        # windows
-        pass
+        raise RuntimeError("Unsupported platform")
+    MPI_LIB = next(
+        p for p in metadata.files("mpich") if f"libmpi{extension}" in str(p)
+    ).locate()
+    # use CDLL to load the library
+    CDLL(MPI_LIB, mode=RTLD_GLOBAL)
 
-    if platform.system() in ("Linux", "Darwin"):
-        # try to find MPI directory and add to LD_LIBRARY_PATH
-        try:
-            MPI_ROOT = (
-                next(
-                    p for p in metadata.files("mpich") if f"libmpi{extension}" in str(p)
-                )
-                .locate()
-                .parent
-            )
-            # insert MPI_ROOT to LD_LIBRARY_PATH
-            current_ld_path = os.environ.get(lib_env, "")
-            if current_ld_path:
-                os.environ[lib_env] = f"{current_ld_path}:{MPI_ROOT}"
-            else:
-                os.environ[lib_env] = str(MPI_ROOT)
-        except Exception:
-            # MPI not found or not available, continue without it
-            pass
+
+if GLOBAL_CONFIG.get("cibuildwheel", "0") == "1" and platform.system() in (
+    "Linux",
+    "Darwin",
+):
+    load_mpi_library()
 
 ENABLE_CUSTOMIZED_OP = load_library("deepmd_op_pt")
 
