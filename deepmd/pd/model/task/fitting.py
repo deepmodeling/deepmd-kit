@@ -111,15 +111,17 @@ class Fitting(paddle.nn.Layer, BaseFitting):
                 fparam_std,
             )
             fparam_inv_std = 1.0 / fparam_std
-            self.fparam_avg.copy_(
+            paddle.assign(
                 paddle.to_tensor(
                     fparam_avg, place=env.DEVICE, dtype=self.fparam_avg.dtype
-                )
+                ),
+                self.fparam_avg,
             )
-            self.fparam_inv_std.copy_(
+            paddle.assign(
                 paddle.to_tensor(
                     fparam_inv_std, place=env.DEVICE, dtype=self.fparam_inv_std.dtype
-                )
+                ),
+                self.fparam_inv_std,
             )
         # stat aparam
         if self.numb_aparam > 0:
@@ -144,15 +146,17 @@ class Fitting(paddle.nn.Layer, BaseFitting):
                 aparam_std,
             )
             aparam_inv_std = 1.0 / aparam_std
-            self.aparam_avg.copy_(
+            paddle.assign(
                 paddle.to_tensor(
                     aparam_avg, place=env.DEVICE, dtype=self.aparam_avg.dtype
-                )
+                ),
+                self.aparam_avg,
             )
-            self.aparam_inv_std.copy_(
+            paddle.assign(
                 paddle.to_tensor(
                     aparam_inv_std, place=env.DEVICE, dtype=self.aparam_inv_std.dtype
-                )
+                ),
+                self.aparam_inv_std,
             )
 
 
