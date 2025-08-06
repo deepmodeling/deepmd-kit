@@ -298,7 +298,6 @@ def nlist_distinguish_types(
         tmp_atype,
         axis=2,
         indices=nlist.masked_fill(mask, 0),
-        broadcast=False,
     )
     tnlist = tnlist.masked_fill(mask, -1)
     snsel = tnlist.shape[2]
@@ -312,7 +311,11 @@ def nlist_distinguish_types(
             paddle.argsort(pick_mask, axis=-1, descending=True, stable=True),
         )
         # nloc x s(nsel)
-        inlist = paddle.take_along_axis(nlist, axis=2, indices=imap, broadcast=False)
+        inlist = paddle.take_along_axis(
+            nlist,
+            axis=2,
+            indices=imap,
+        )
         inlist = inlist.masked_fill(~(pick_mask.to(paddle.bool)), -1)
         # nloc x nsel[ii]
         ret_nlist.append(paddle.split(inlist, [ss, snsel - ss], axis=-1)[0])
@@ -394,7 +397,9 @@ def build_multiple_neighbor_list(
     )
     # nb x nloc x nsel x 3
     coord2 = paddle.take_along_axis(
-        coord1, axis=1, indices=index, broadcast=False
+        coord1,
+        axis=1,
+        indices=index,
     ).reshape([nb, nloc, nsel, 3])
     # nb x nloc x nsel x 3
     diff = coord2 - coord0[:, :, None, :]
@@ -472,27 +477,27 @@ def extend_coord_with_ghosts(
         nbuff = paddle.amax(nbuff, axis=0)
         nbuff_cpu = nbuff.cpu()
         xi = (
-            paddle.arange(
-                -nbuff_cpu[0], nbuff_cpu[0] + 1, 1, dtype=env.GLOBAL_PD_FLOAT_PRECISION
+            paddle.arange(-nbuff_cpu[0], nbuff_cpu[0] + 1, 1).to(
+                dtype=env.GLOBAL_PD_FLOAT_PRECISION
             )
             # .cpu()
         )  # pylint: disable=no-explicit-dtype
         yi = (
-            paddle.arange(
-                -nbuff_cpu[1], nbuff_cpu[1] + 1, 1, dtype=env.GLOBAL_PD_FLOAT_PRECISION
+            paddle.arange(-nbuff_cpu[1], nbuff_cpu[1] + 1, 1).to(
+                dtype=env.GLOBAL_PD_FLOAT_PRECISION
             )
             # .cpu()
         )  # pylint: disable=no-explicit-dtype
         zi = (
-            paddle.arange(
-                -nbuff_cpu[2], nbuff_cpu[2] + 1, 1, dtype=env.GLOBAL_PD_FLOAT_PRECISION
+            paddle.arange(-nbuff_cpu[2], nbuff_cpu[2] + 1, 1).to(
+                dtype=env.GLOBAL_PD_FLOAT_PRECISION
             )
             # .cpu()
         )  # pylint: disable=no-explicit-dtype
         eye_3 = (
-            paddle.eye(3, dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+            paddle.eye(3)
             # .cpu()
-        )
+        ).to(dtype=env.GLOBAL_PD_FLOAT_PRECISION)
         xyz = xi.reshape([-1, 1, 1, 1]).astype(eye_3.dtype) * eye_3[0]
         xyz = xyz + yi.reshape([1, -1, 1, 1]).astype(eye_3.dtype) * eye_3[1]
         xyz = xyz + zi.reshape([1, 1, -1, 1]).astype(eye_3.dtype) * eye_3[2]
