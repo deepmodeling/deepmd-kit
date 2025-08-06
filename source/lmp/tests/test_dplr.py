@@ -357,7 +357,7 @@ def test_pair_deepmd_sr(lammps) -> None:
     lammps.pair_coeff("* *")
     lammps.run(0)
     assert lammps.eval("pe") == pytest.approx(expected_e_sr)
-    id_list = lammps.lmp.numpy.extract_atom("id")[:6]
+    id_list = lammps.lmp.numpy.extract_atom("id")[: coord.shape[0]]
     for ii in range(6):
         assert lammps.atoms[np.where(id_list == (ii + 1))[0][0]].force == pytest.approx(
             expected_f_sr[ii]
@@ -378,7 +378,7 @@ def test_pair_deepmd_sr_virial(lammps) -> None:
     )
     lammps.dump_modify("1 sort id")
     lammps.run(0)
-    id_list = lammps.lmp.numpy.extract_atom("id")[:6]
+    id_list = lammps.lmp.numpy.extract_atom("id")[: coord.shape[0]]
     idx_list = [np.where(id_list == i)[0][0] for i in range(1, 7)]
     assert lammps.eval("pe") == pytest.approx(expected_e_sr)
     for ii in range(6):
@@ -445,7 +445,7 @@ def test_pair_deepmd_lr_efield_constant(lammps) -> None:
     )
     lammps.fix_modify("0 energy yes virial yes")
     lammps.run(0)
-    id_list = lammps.lmp.numpy.extract_atom("id")[:6]
+    id_list = lammps.lmp.numpy.extract_atom("id")[: coord.shape[0]]
     assert lammps.eval("evdwl") == pytest.approx(expected_evdwl_lr_efield_constant)
     assert lammps.eval("f_0") == pytest.approx(expected_e_efield_constant)
     assert lammps.eval("pe") == pytest.approx(expected_e_lr_efield_constant)
@@ -481,7 +481,7 @@ def test_pair_deepmd_lr_efield_variable(lammps) -> None:
     )
     lammps.fix_modify("0 energy yes virial yes")
     lammps.run(0)
-    id_list = lammps.lmp.numpy.extract_atom("id")[:6]
+    id_list = lammps.lmp.numpy.extract_atom("id")[: coord.shape[0]]
     assert lammps.eval("evdwl") == pytest.approx(expected_evdwl_lr_efield_variable)
     assert lammps.eval("f_0") == pytest.approx(expected_e_efield_variable)
     assert lammps.eval("pe") == pytest.approx(expected_e_lr_efield_variable)
