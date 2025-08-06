@@ -101,14 +101,12 @@ def load_mpi_library() -> None:
     after the wheel is repaired.
     """
     if platform.system() == "Linux":
-        extension = ".so"
+        libname = "libmpi.so.*"
     elif platform.system() == "Darwin":
-        extension = ".dylib"
+        libname = "libmpi.*.dylib"
     else:
         raise RuntimeError("Unsupported platform")
-    MPI_LIB = next(
-        p for p in metadata.files("mpich") if f"libmpi{extension}." in str(p)
-    ).locate()
+    MPI_LIB = next(p for p in metadata.files("mpich") if p.match(libname)).locate()
     # use CDLL to load the library
     CDLL(MPI_LIB, mode=RTLD_GLOBAL)
 
