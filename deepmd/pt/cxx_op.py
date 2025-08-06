@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import os
 import platform
+from importlib import (
+    metadata,
+)
 
 import torch
 from packaging.version import (
@@ -87,13 +91,13 @@ def load_library(module_name: str) -> bool:
     return False
 
 
-if GLOBAL_CONFIG.get("CIBUILDWHEEL", "0") == "1":
+if GLOBAL_CONFIG.get("cibuildwheel", "0") == "1":
     if platform.system() == "Linux":
         lib_env = "LD_LIBRARY_PATH"
         extension = ".so"
     elif platform.system() == "Darwin":
         lib_env = "DYLD_FALLBACK_LIBRARY_PATH"
-        exition = ".dylib"
+        extension = ".dylib"
     else:
         # windows
         pass
@@ -102,9 +106,9 @@ if GLOBAL_CONFIG.get("CIBUILDWHEEL", "0") == "1":
         # try to find MPI directory and add to LD_LIBRARY_PATH
         try:
             MPI_ROOT = (
-                [p for p in metadata.files("mpich") if f"libmpi{extension}" in str(p)][
-                    0
-                ]
+                next(
+                    p for p in metadata.files("mpich") if f"libmpi{extension}" in str(p)
+                )
                 .locate()
                 .parent
             )

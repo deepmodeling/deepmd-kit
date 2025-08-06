@@ -17,7 +17,7 @@ from deepmd.env import (
     GLOBAL_CONFIG,
 )
 
-if GLOBAL_CONFIG.get("LAMMPS_VERSION", "") == "":
+if GLOBAL_CONFIG.get("lammps_version", "") == "":
 
     def get_op_dir() -> str:
         """Get the directory of the deepmd-kit OP library."""
