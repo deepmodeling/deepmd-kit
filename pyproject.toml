@@ -108,7 +108,7 @@ docs = [
     "sphinx-remove-toctrees",
 ]
 lmp = [
-    "lammps~=2025.7.22.0.2",
+    "lammps[mpi]~=2025.7.22.0.2",
 ]
 ipi = [
     "ipi",
@@ -230,9 +230,6 @@ test-command = [
     "pytest {project}/source/tests/common/test_lammps.py"
 ]
 test-extras = ["cpu", "test", "lmp", "ipi", "torch", "paddle"]
-test-requires = [
-    "mpich",
-]
 build = ["cp311-*"]
 skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
 # TODO: uncomment to use the latest image when CUDA 11 is deprecated

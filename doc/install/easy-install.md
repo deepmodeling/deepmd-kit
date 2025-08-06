@@ -227,4 +227,4 @@ If your platform is not supported, or you want to build against the installed ba
 pip install deepmd-kit[gpu,cu12,lmp,ipi]
 ```
 
-MPICH is required for parallel running.
+MPICH will be installed automatically - you do not need to install a MPI library by yourself.
