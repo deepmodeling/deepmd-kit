@@ -17,6 +17,7 @@ from deepmd.dpmodel.output_def import (
     get_hessian_name,
     get_reduce_name,
 )
+from typing import Optional
 
 
 def fit_output_to_model_output(
@@ -24,6 +25,7 @@ def fit_output_to_model_output(
     fit_output_def: FittingOutputDef,
     coord_ext: np.ndarray,
     do_atomic_virial: bool = False,
+    mask: Optional[np.ndarray] = None
 ) -> dict[str, np.ndarray]:
     """Transform the output of the fitting network to
     the model output.
@@ -38,9 +40,21 @@ def fit_output_to_model_output(
         if vdef.reducible:
             kk_redu = get_reduce_name(kk)
             # cast to energy prec before reduction
-            model_ret[kk_redu] = xp.sum(
-                vv.astype(GLOBAL_ENER_FLOAT_PRECISION), axis=atom_axis
-            )
+            if vdef.intensive:
+                if (mask is not None) and (mask == 0.0).any():
+                    mask = mask.astype(bool)
+                    model_ret[kk_redu] = xp.stack([
+                        xp.mean(vv[ii].astype(GLOBAL_ENER_FLOAT_PRECISION)[mask[ii]], axis=atom_axis)
+                        for ii in range(mask.shape[0])
+                    ])
+                else:
+                    model_ret[kk_redu] = xp.mean(
+                        vv.astype(GLOBAL_ENER_FLOAT_PRECISION), axis=atom_axis
+                    )
+            else:
+                model_ret[kk_redu] = xp.sum(
+                    vv.astype(GLOBAL_ENER_FLOAT_PRECISION), axis=atom_axis
+                )
             if vdef.r_differentiable:
                 kk_derv_r, kk_derv_c = get_deriv_name(kk)
                 # name-holders

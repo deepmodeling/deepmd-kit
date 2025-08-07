@@ -5,34 +5,17 @@ import unittest
 import numpy as np
 from copy import deepcopy
 
-from deepmd.dpmodel.common import (
-    to_numpy_array,
+from deepmd.dpmodel.descriptor.se_e2_a import (
+    DescrptSeA,
+)
+from deepmd.dpmodel.fitting import (
+    PropertyFittingNet,
+)
+from deepmd.dpmodel.model.property_model import (
+    PropertyModel,
 )
 
-if sys.version_info >= (3, 10):
-    from deepmd.jax.common import (
-        to_jax_array,
-    )
-    from deepmd.jax.descriptor.se_e2_a import (
-        DescrptSeA,
-    )
-    from deepmd.jax.env import (
-        jnp,
-    )
-    from deepmd.jax.fitting.fitting import (
-        PropertyFittingNet,
-    )
-    from deepmd.jax.model.property_model import (
-        PropertyModel,
-    )
 
-    dtype = jnp.float64
-
-
-@unittest.skipIf(
-    sys.version_info < (3, 10),
-    "JAX requires Python 3.10 or later",
-)
 class TestCaseSingleFrameWithoutNlist:
     def setUp(self) -> None:
         # nf=2, nloc == 3
@@ -62,10 +45,6 @@ class TestCaseSingleFrameWithoutNlist:
         self.atol = 1e-12
 
 
-@unittest.skipIf(
-    sys.version_info < (3, 10),
-    "JAX requires Python 3.10 or later",
-)
 class TestPaddingAtoms(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
     def setUp(self):
         TestCaseSingleFrameWithoutNlist.setUp(self)
@@ -85,12 +64,12 @@ class TestPaddingAtoms(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         type_map = ["foo", "bar"]
         model = PropertyModel(ds, ft, type_map=type_map)
         var_name = model.get_var_name()
-        args = [to_jax_array(ii) for ii in [self.coord, self.atype, self.cell]]
+        args = [self.coord, self.atype, self.cell]
         result = model.call(*args)
         # test intensive
         np.testing.assert_allclose(
-            to_numpy_array(result[f"{var_name}_redu"]),
-            np.mean(to_numpy_array(result[f"{var_name}"]),axis=1),
+            result[f"{var_name}_redu"],
+            np.mean(result[f"{var_name}"],axis=1),
             atol=self.atol,
         )
         # test padding atoms
@@ -110,11 +89,11 @@ class TestPaddingAtoms(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
                 mode='constant',
                 constant_values=0
             )
-            args = [to_jax_array(ii) for ii in [coord_padding, atype_padding, self.cell]]
+            args = [coord_padding, atype_padding, self.cell]
             result_padding = model.call(*args)
             np.testing.assert_allclose(
-                to_numpy_array(result[f"{var_name}_redu"]),
-                to_numpy_array(result_padding[f"{var_name}_redu"]),
+                result[f"{var_name}_redu"],
+                result_padding[f"{var_name}_redu"],
                 atol=self.atol,
             )
 

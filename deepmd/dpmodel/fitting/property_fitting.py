@@ -6,6 +6,10 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    OutputVariableDef,
+)
 from deepmd.dpmodel.common import (
     DEFAULT_PRECISION,
 )
@@ -106,6 +110,20 @@ class PropertyFittingNet(InvarFitting):
             mixed_types=mixed_types,
             exclude_types=exclude_types,
             type_map=type_map,
+        )
+
+    def output_def(self) -> FittingOutputDef:
+        return FittingOutputDef(
+            [
+                OutputVariableDef(
+                    self.var_name,
+                    [self.dim_out],
+                    reducible=True,
+                    r_differentiable=False,
+                    c_differentiable=False,
+                    intensive=self.intensive,
+                ),
+            ]
         )
 
     @classmethod
