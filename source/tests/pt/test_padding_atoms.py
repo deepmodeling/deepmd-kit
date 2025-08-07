@@ -98,12 +98,11 @@ class TestPaddingAtoms(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
                 mode="constant",
                 constant_values=0,
             )
-            with torch.device("cpu"):
-                args = [
-                    to_torch_tensor(ii)
-                    for ii in [coord_padding, atype_padding, self.cell]
-                ]
-                result_padding = model(*args)
+            args = [
+                to_torch_tensor(ii)
+                for ii in [coord_padding, atype_padding, self.cell]
+            ]
+            result_padding = model(*args)
             np.testing.assert_allclose(
                 to_numpy_array(result[var_name].cpu().detach()),
                 to_numpy_array(result_padding[var_name].cpu().detach()),
