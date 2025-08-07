@@ -372,11 +372,11 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   int nloc = nall_real - nghost_real;
   int nframes = 1;
   std::vector<VALUETYPE> coord_wrapped = dcoord;
-  auto coord_wrapped_Tensor = predictor_fl->GetInputHandle("extended_coord");
+  auto coord_wrapped_Tensor = predictor_fl->GetInputHandle("coord");
   coord_wrapped_Tensor->Reshape({1, nall_real, 3});
   coord_wrapped_Tensor->CopyFromCpu(coord_wrapped.data());
 
-  auto atype_Tensor = predictor_fl->GetInputHandle("extended_atype");
+  auto atype_Tensor = predictor_fl->GetInputHandle("atype");
   atype_Tensor->Reshape({1, nall_real});
   atype_Tensor->CopyFromCpu(datype.data());
 
