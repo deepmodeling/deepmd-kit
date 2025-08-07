@@ -13,7 +13,6 @@ from pathlib import (
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 from deepmd.entrypoints.test import test as dp_test
 from deepmd.pt.entrypoints.main import (
