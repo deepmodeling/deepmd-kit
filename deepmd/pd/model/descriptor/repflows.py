@@ -663,6 +663,8 @@ class DescrptBlockRepflows(DescriptorBlock):
                         place=paddle.CPUPlace(),
                     ),  # should be int of c++, placed on cpu
                 )
+                if not paddle.in_dynamic_mode():
+                    ret = paddle.assign(ret)
                 node_ebd_ext = ret.unsqueeze(0)
                 if has_spin:
                     node_ebd_real_ext, node_ebd_virtual_ext = paddle.split(

@@ -368,9 +368,9 @@ def freeze(
         model.forward = paddle.jit.to_static(
             model.forward,
             input_spec=[
-                InputSpec([1, -1, 3], dtype="float64", name="coord"),  # coord
-                InputSpec([1, -1], dtype="int64", name="atype"),  # atype
-                InputSpec([1, 9], dtype="float64", name="box"),  # box
+                InputSpec([-1, -1, 3], dtype="float64", name="coord"),  # coord
+                InputSpec([-1, -1], dtype="int64", name="atype"),  # atype
+                InputSpec([-1, 9], dtype="float64", name="box"),  # box
                 None,  # fparam
                 None,  # aparam
                 # InputSpec([], dtype="bool", name="do_atomic_virial"),  # do_atomic_virial

@@ -548,6 +548,8 @@ class DescrptBlockRepformers(DescriptorBlock):
                         place=paddle.CPUPlace(),
                     ),  # should be int of c++, placed on cpu
                 )
+                if not paddle.in_dynamic_mode():
+                    ret = paddle.assign(ret)
                 g1_ext = ret.unsqueeze(0)
                 if has_spin:
                     g1_real_ext, g1_virtual_ext = paddle.split(

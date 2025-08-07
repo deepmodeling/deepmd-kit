@@ -266,8 +266,7 @@ void DeepPotPD::init(const std::string& model,
   if (!gpu_enabled) {
     config->DisableGpu();
     config_fl->DisableGpu();
-    logg::info() << "[paddle] load model from: " << model << " to cpu "
-                 << std::endl;
+    logg::info() << "load model from: " << model << " to cpu " << std::endl;
   } else {
     config->EnableUseGpu(4096, 0);
     config_fl->EnableUseGpu(4096, 0);
