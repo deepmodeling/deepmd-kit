@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import sys
 import unittest
+from copy import (
+    deepcopy,
+)
 
 import numpy as np
-from copy import deepcopy
 
 from deepmd.dpmodel.descriptor.se_e2_a import (
     DescrptSeA,
@@ -32,13 +33,13 @@ class TestCaseSingleFrameWithoutNlist:
                     [1, 0, 1],
                     [0, 1, 1],
                     [1, 1, 0],
-                ]
+                ],
             ],
             dtype=np.float64,
         )
-        self.atype = np.array([[0, 0, 1],[1, 1, 0]], dtype=int).reshape([2, self.nloc])
+        self.atype = np.array([[0, 0, 1], [1, 1, 0]], dtype=int).reshape([2, self.nloc])
         self.cell = 2.0 * np.eye(3).reshape([1, 9])
-        self.cell = np.array([self.cell,self.cell]).reshape(2, 9)
+        self.cell = np.array([self.cell, self.cell]).reshape(2, 9)
         self.sel = [16, 8]
         self.rcut = 2.2
         self.rcut_smth = 0.4
@@ -69,7 +70,7 @@ class TestPaddingAtoms(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         # test intensive
         np.testing.assert_allclose(
             result[f"{var_name}_redu"],
-            np.mean(result[f"{var_name}"],axis=1),
+            np.mean(result[f"{var_name}"], axis=1),
             atol=self.atol,
         )
         # test padding atoms
@@ -80,14 +81,14 @@ class TestPaddingAtoms(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             atype_padding = np.pad(
                 atype,
                 pad_width=((0, 0), (0, padding_atoms)),
-                mode='constant',
-                constant_values=-1
+                mode="constant",
+                constant_values=-1,
             )
             coord_padding = np.pad(
                 coord,
                 pad_width=((0, 0), (0, padding_atoms), (0, 0)),
-                mode='constant',
-                constant_values=0
+                mode="constant",
+                constant_values=0,
             )
             args = [coord_padding, atype_padding, self.cell]
             result_padding = model.call(*args)

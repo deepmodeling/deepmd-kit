@@ -6,15 +6,15 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-    OutputVariableDef,
-)
 from deepmd.dpmodel.common import (
     DEFAULT_PRECISION,
 )
 from deepmd.dpmodel.fitting.invar_fitting import (
     InvarFitting,
+)
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    OutputVariableDef,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
