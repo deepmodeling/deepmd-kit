@@ -25,3 +25,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
     ) -> None:
         DPModelCommon.__init__(self)
         DPPropertyModel_.__init__(self, *args, **kwargs)
+
+    def get_var_name(self) -> str:
+        """Get the name of the property."""
+        return self.get_fitting_net().var_name
