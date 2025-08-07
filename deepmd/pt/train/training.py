@@ -194,7 +194,7 @@ class Trainer:
                     else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
                     drop_last=False,
                     collate_fn=lambda batch: batch,  # prevent extra conversion
-                    pin_memory=(DEVICE != "cpu"), # pin memory only if not on CPU
+                    pin_memory=(DEVICE != "cpu"),  # pin memory only if not on CPU
                 )
                 _data_iter = cycle_iterator(_dataloader)
                 return _dataloader, _data_iter
