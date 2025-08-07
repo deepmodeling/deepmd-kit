@@ -559,12 +559,12 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   std::vector<VALUETYPE> coord_wrapped = coord;
   int natoms = atype.size();
   int nframes = 1;
-  auto coord_wrapped_Tensor = predictor->GetInputHandle("extended_coord");
+  auto coord_wrapped_Tensor = predictor->GetInputHandle("coord");
   coord_wrapped_Tensor->Reshape({1, natoms, 3});
   coord_wrapped_Tensor->CopyFromCpu(coord_wrapped.data());
 
   std::vector<std::int64_t> atype_64(atype.begin(), atype.end());
-  auto atype_Tensor = predictor->GetInputHandle("extended_atype");
+  auto atype_Tensor = predictor->GetInputHandle("atype");
   atype_Tensor->Reshape({1, natoms});
   atype_Tensor->CopyFromCpu(atype_64.data());
 
