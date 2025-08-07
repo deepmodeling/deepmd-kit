@@ -5,7 +5,6 @@ from copy import (
 )
 
 import numpy as np
-import torch
 
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -99,8 +98,7 @@ class TestPaddingAtoms(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
                 constant_values=0,
             )
             args = [
-                to_torch_tensor(ii)
-                for ii in [coord_padding, atype_padding, self.cell]
+                to_torch_tensor(ii) for ii in [coord_padding, atype_padding, self.cell]
             ]
             result_padding = model(*args)
             np.testing.assert_allclose(
