@@ -310,7 +310,8 @@ If you use these features please cite [D. Tisi, L. Zhang, R. Bertossa, H. Wang, 
 
 ### D3 dispersion
 
-:::{versionadded} LAMMPS version 4Feb2025
+:::{note}
+Requires LAMMPS version 4Feb2025 or newer.
 :::
 
 The DP model can be trained using plain DFT calculations without the dispersion correction, and the dispersion correction can be added during the simulation via the [`pair_style dispersion/d3` command](https://docs.lammps.org/pair_dispersion_d3.html#pair-style-dispersion-d3-command).
