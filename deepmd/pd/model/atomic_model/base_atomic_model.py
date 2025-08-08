@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-import copy
 import logging
 from typing import (
     Callable,
+    NoReturn,
     Optional,
     Union,
 )
@@ -79,7 +79,8 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         pair_exclude_types: list[tuple[int, int]] = [],
         rcond: Optional[float] = None,
         preset_out_bias: Optional[dict[str, np.ndarray]] = None,
-    ):
+        data_stat_protect: float = 1e-2,
+    ) -> None:
         paddle.nn.Layer.__init__(self)
         BaseAtomicModel_.__init__(self)
         self.type_map = type_map
@@ -87,8 +88,9 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         self.reinit_pair_exclude(pair_exclude_types)
         self.rcond = rcond
         self.preset_out_bias = preset_out_bias
+        self.data_stat_protect = data_stat_protect
 
-    def init_out_stat(self):
+    def init_out_stat(self) -> None:
         """Initialize the output bias."""
         ntypes = self.get_ntypes()
         self.bias_keys: list[str] = list(self.fitting_output_def().keys())
@@ -104,7 +106,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
     def set_out_bias(self, out_bias: paddle.Tensor) -> None:
         self.out_bias = out_bias
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ["out_bias"]:
             self.out_bias = value
         elif key in ["out_std"]:
@@ -124,10 +126,20 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         """Get the type map."""
         return self.type_map
 
+    def get_compute_stats_distinguish_types(self) -> bool:
+        """Get whether the fitting net computes stats which are not distinguished between different types of atoms."""
+        return True
+
+    def get_intensive(self) -> bool:
+        """Whether the fitting property is intensive."""
+        return False
+
     def reinit_atom_exclude(
         self,
-        exclude_types: list[int] = [],
-    ):
+        exclude_types: Optional[list[int]] = None,
+    ) -> None:
+        if exclude_types is None:
+            exclude_types = []
         self.atom_exclude_types = exclude_types
         if exclude_types == []:
             self.atom_excl = None
@@ -137,7 +149,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
     def reinit_pair_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         self.pair_exclude_types = exclude_types
         if exclude_types == []:
             self.pair_excl = None
@@ -191,7 +203,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         mapping: Optional[paddle.Tensor] = None,
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[list[paddle.Tensor]] = None,
     ) -> dict[str, paddle.Tensor]:
         """Common interface for atomic inference.
 
@@ -232,7 +244,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         if self.pair_excl is not None:
             pair_mask = self.pair_excl(nlist, extended_atype)
             # exclude neighbors in the nlist
-            nlist = paddle.where(pair_mask == 1, nlist, -1)
+            nlist = paddle.where(pair_mask == 1, nlist, paddle.full_like(nlist, -1))
 
         ext_atom_mask = self.make_atom_mask(extended_atype)
         ret_dict = self.forward_atomic(
@@ -274,7 +286,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         mapping: Optional[paddle.Tensor] = None,
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[list[paddle.Tensor]] = None,
     ) -> dict[str, paddle.Tensor]:
         return self.forward_common_atomic(
             extended_coord,
@@ -332,7 +344,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     @classmethod
     def deserialize(cls, data: dict) -> "BaseAtomicModel":
-        data = copy.deepcopy(data)
+        data = data.copy()
         variables = data.pop("@variables", None)
         variables = (
             {"out_bias": None, "out_std": None} if variables is None else variables
@@ -354,7 +366,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
-    ):
+    ) -> NoReturn:
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
 
@@ -377,7 +389,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
 
@@ -457,7 +469,6 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
                 model_forward=self._get_forward_wrapper_func(),
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,
-                atomic_output=self.atomic_output_def(),
             )
             self._store_out_stat(delta_bias, out_std, add=True)
         elif bias_adjust_mode == "set-by-statistic":
@@ -468,7 +479,8 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
                 stat_file_path=stat_file_path,
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,
-                atomic_output=self.atomic_output_def(),
+                stats_distinguish_types=self.get_compute_stats_distinguish_types(),
+                intensive=self.get_intensive(),
             )
             self._store_out_stat(bias_out, std_out)
         else:
@@ -544,7 +556,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         out_bias: dict[str, paddle.Tensor],
         out_std: dict[str, paddle.Tensor],
         add: bool = False,
-    ):
+    ) -> None:
         ntypes = self.get_ntypes()
         out_bias_data = paddle.clone(self.out_bias)
         out_std_data = paddle.clone(self.out_std)
