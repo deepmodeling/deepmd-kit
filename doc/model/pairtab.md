@@ -103,3 +103,10 @@ To combine with a pairwise potential, use the [linear model](./linear.md):
 ```
 
 The {ref}`rcut <model[pairtab]/rcut>` can be larger than that of the DP model.
+
+:::{note}
+The above example shows a example of combining D3 dispersion.
+However, it is more efficiently to train a model using plain DFT calculations without the dispersion correction, and add the dispersion correction during the simulation via the LAMMPS [`pair_style dispersion/d3` command](https://docs.lammps.org/pair_dispersion_d3.html#pair-style-dispersion-d3-command).
+Train against data with dispersion directly is discouraged.
+See the [D3 dispersion section](../third-party/lammps-command.md#d3-dispersion) for details.
+:::
