@@ -415,7 +415,7 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
         extended_atype: paddle.Tensor,
         nlist: paddle.Tensor,
         mapping: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[list[paddle.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -845,7 +845,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             # nb x (nloc x nnei) x nt
             # atype_tebd_nlist = paddle.take_along_axis(atype_tebd_ext, axis=1, index=index)
             atype_tebd_nlist = paddle.take_along_axis(
-                atype_tebd_ext, axis=1, indices=index
+                atype_tebd_ext, axis=1, indices=index, broadcast=False
             )
             # nb x nloc x nnei x nt
             atype_tebd_nlist = atype_tebd_nlist.reshape([nb, nloc, nnei, nt])
@@ -869,7 +869,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             nlist_index = nlist.reshape([nb, nloc * nnei])
             # nf x (nl x nnei)
             nei_type = paddle.take_along_axis(
-                extended_atype, indices=nlist_index, axis=1
+                extended_atype, indices=nlist_index, axis=1, broadcast=False
             )
             # nfnl x nnei
             nei_type = nei_type.reshape([nfnl, nnei])
@@ -902,7 +902,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             ).reshape([-1, nt * 2])
             tt_full = self.filter_layers_strip.networks[0](two_side_type_embedding)
             # (nfnl x nt_i x nt_j) x ng
-            gg_t = paddle.take_along_axis(tt_full, indices=idx, axis=0)
+            gg_t = paddle.take_along_axis(tt_full, indices=idx, axis=0, broadcast=False)
             # (nfnl x nt_i x nt_j) x ng
             gg_t = gg_t.reshape([nfnl, nnei, nnei, ng])
             if self.smooth:

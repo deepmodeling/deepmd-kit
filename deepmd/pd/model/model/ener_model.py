@@ -81,6 +81,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                     model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(
                         -3
                     )
+                else:
+                    model_predict["atom_virial"] = paddle.zeros(
+                        [model_predict["energy"].shape[0], 1, 9], dtype=paddle.float64
+                    )
             else:
                 model_predict["force"] = model_ret["dforce"]
             if "mask" in model_ret:
@@ -99,7 +103,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[list[paddle.Tensor]] = None,
     ):
         model_ret = self.forward_common_lower(
             extended_coord,
@@ -124,6 +128,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                     model_predict["extended_virial"] = model_ret[
                         "energy_derv_c"
                     ].squeeze(-3)
+                else:
+                    model_predict["extended_virial"] = paddle.zeros(
+                        [model_predict["energy"].shape[0], 1, 9], dtype=paddle.float64
+                    )
             else:
                 assert model_ret["dforce"] is not None
                 model_predict["dforce"] = model_ret["dforce"]

@@ -525,7 +525,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
             index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand([-1, -1, nt])
             # nb x (nloc x nnei) x nt
             atype_tebd_nlist = paddle.take_along_axis(
-                atype_tebd_ext, axis=1, indices=index
+                atype_tebd_ext,
+                axis=1,
+                indices=index,
+                broadcast=False,
             )  # j
             # nb x nloc x nnei x nt
             atype_tebd_nlist = atype_tebd_nlist.reshape([nb, nloc, nnei, nt])
@@ -563,14 +566,16 @@ class DescrptBlockSeAtten(DescriptorBlock):
             nlist_index = nlist.reshape([nb, nloc * nnei])
             # nf x (nl x nnei)
             nei_type = paddle.take_along_axis(
-                extended_atype, indices=nlist_index, axis=1
+                extended_atype, indices=nlist_index, axis=1, broadcast=False
             )
             # (nf x nl x nnei) x ng
             nei_type_index = nei_type.reshape([-1, 1]).expand([-1, ng]).to(paddle.int64)
             if self.type_one_side:
                 tt_full = self.filter_layers_strip.networks[0](type_embedding)
                 # (nf x nl x nnei) x ng
-                gg_t = paddle.take_along_axis(tt_full, indices=nei_type_index, axis=0)
+                gg_t = paddle.take_along_axis(
+                    tt_full, indices=nei_type_index, axis=0, broadcast=False
+                )
             else:
                 idx_i = paddle.tile(
                     atype.reshape([-1, 1]) * ntypes_with_padding, [1, nnei]
@@ -594,7 +599,9 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 ).reshape([-1, nt * 2])
                 tt_full = self.filter_layers_strip.networks[0](two_side_type_embedding)
                 # (nf x nl x nnei) x ng
-                gg_t = paddle.take_along_axis(tt_full, axis=0, indices=idx)
+                gg_t = paddle.take_along_axis(
+                    tt_full, axis=0, indices=idx, broadcast=False
+                )
             # (nf x nl) x nnei x ng
             gg_t = gg_t.reshape([nfnl, nnei, ng])
             if self.smooth:
