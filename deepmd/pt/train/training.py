@@ -1147,7 +1147,7 @@ class Trainer:
                 log.info(
                     f"The profiling trace has been saved under {self.tensorboard_log_dir}"
                 )
-            if self.profiling:
+            if not self.enable_profiler and self.profiling:
                 prof.export_chrome_trace(self.profiling_file)
                 log.info(
                     f"The profiling trace has been saved to: {self.profiling_file}"
