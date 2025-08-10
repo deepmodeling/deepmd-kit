@@ -30,10 +30,6 @@ jobs:
       with:
         python-version: '3.11'
         # cache: 'pip'
-    - name: Setup MPI
-      uses: mpi4py/setup-mpi@v1
-      with:
-        mpi: mpich
     - name: Install wget and unzip
       run: apt-get update && apt-get install -y wget unzip
     - uses: lukka/get-cmake@latest
@@ -74,7 +70,6 @@ jobs:
         OMP_NUM_THREADS: 1
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
-        LMP_CXX11_ABI_0: 1
         CMAKE_GENERATOR: Ninja
         DP_VARIANT: cuda
         DP_USE_MPICH2: 1

@@ -392,7 +392,7 @@ class DeepPotPD : public DeepPotBackend {
   int do_message_passing;  // 1:dpa2 model 0:others
   bool gpu_enabled;
   std::unique_ptr<paddle_infer::Tensor> firstneigh_tensor;
-  // std::unordered_map<std::string, paddle::Tensor> comm_dict; # Not used yet
+  std::unique_ptr<paddle_infer::Tensor> mapping_tensor;
 };
 
 }  // namespace deepmd
