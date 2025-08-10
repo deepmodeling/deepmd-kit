@@ -168,7 +168,9 @@ class DeepmdDataSystem:
             elif "filter" == words[0]:
                 # Remove systems with natoms > rule, then set batch size like "max:rule"
                 if len(words) != 2:
-                    raise RuntimeError("batch size must be specified for filter systems")
+                    raise RuntimeError(
+                        "batch size must be specified for filter systems"
+                    )
                 rule = int(words[1])
                 filtered_data_systems = []
                 filtered_system_dirs = []
@@ -177,9 +179,13 @@ class DeepmdDataSystem:
                         filtered_data_systems.append(data_sys)
                         filtered_system_dirs.append(sys_dir)
                 if len(filtered_data_systems) == 0:
-                    raise RuntimeError(f"No system left after removing systems with more than {rule} atoms")
+                    raise RuntimeError(
+                        f"No system left after removing systems with more than {rule} atoms"
+                    )
                 if len(filtered_data_systems) != len(self.data_systems):
-                    warnings.warn(f"Remove {len(self.data_systems) - len(filtered_data_systems)} systems with more than {rule} atoms")
+                    warnings.warn(
+                        f"Remove {len(self.data_systems) - len(filtered_data_systems)} systems with more than {rule} atoms"
+                    )
                 self.data_systems = filtered_data_systems
                 self.system_dirs = filtered_system_dirs
                 self.nsystems = len(self.data_systems)
