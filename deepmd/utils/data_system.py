@@ -820,6 +820,8 @@ def process_systems(
             else:
                 result_systems.append(system)
         systems = result_systems
+    else:
+        raise ValueError(f"Invalid systems: {systems}")
     return systems
 
 
