@@ -15,6 +15,7 @@ using namespace deepmd;
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 
 class Logger {
@@ -669,10 +670,18 @@ void DeepPotPD::get_type_map(std::string& type_map) {
 template <typename BUFFERTYPE>
 void DeepPotPD::get_buffer(const std::string& buffer_name,
                            std::vector<BUFFERTYPE>& buffer_array) {
-  auto buffer_tensor = predictor->GetOutputHandle(buffer_name);
-  int buffer_size = numel(*buffer_tensor);
-  buffer_array.resize(buffer_size);
-  buffer_tensor->CopyToCpu(buffer_array.data());
+  try {
+    auto buffer_tensor = predictor->GetOutputHandle(buffer_name);
+    int buffer_size = numel(*buffer_tensor);
+    buffer_array.resize(buffer_size);
+    buffer_tensor->CopyToCpu(buffer_array.data());
+  } catch (const std::out_of_range& e) {
+    std::cerr << "Error: Output handle for buffer_name '" << buffer_name
+              << "' not found. Check if the model output names are correct."
+              << std::endl;
+    std::cerr << "Underlying exception: " << e.what() << std::endl;
+    throw;
+  }
 }
 
 template <typename BUFFERTYPE>
