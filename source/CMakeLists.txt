@@ -357,12 +357,18 @@ if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
     set(OP_CXX_ABI_PT ${DETECTED_PT_ABI})
     message(STATUS "Detected PyTorch CXX11 ABI: ${OP_CXX_ABI_PT}")
   else()
-    # python command failed; provide actionable message
-    message(
-      FATAL_ERROR
-        "Failed to detect PyTorch CXX11 ABI. "
-        "Please ensure 'torch' is installed and accessible in the current Python environment ('${Python_EXECUTABLE}')."
-    )
+    # Python torch not available -> warn and default
+    string(REGEX MATCH "-D_GLIBCXX_USE_CXX11_ABI=([01])" _m "${CMAKE_CXX_FLAGS}")
+    if(CMAKE_MATCH_1)
+      set(OP_CXX_ABI_PT "${CMAKE_MATCH_1}")
+      message(STATUS "Parsed PyTorch CXX11 ABI from CMAKE_CXX_FLAGS: ${OP_CXX_ABI_PT}")
+    else()
+      message(WARNING
+        "Could not detect PyTorch CXX11 ABI (torch import failed with code=${pt_abi_result}). "
+        "Defaulting OP_CXX_ABI_PT=1."
+      )
+      set(OP_CXX_ABI_PT 1)
+    endif()
   endif()
 
   if(DEFINED OP_CXX_ABI)
@@ -393,6 +399,7 @@ if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
     else()
       # ABI matches; no compat build needed
       set(DEEPMD_BUILD_COMPAT_CXXABI OFF)
+      add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
     endif()
   else()
     # no prior ABI; default to PyTorch ABI
