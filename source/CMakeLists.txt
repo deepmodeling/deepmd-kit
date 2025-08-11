@@ -303,6 +303,7 @@ if(ENABLE_TENSORFLOW AND NOT DEEPMD_C_ROOT)
   list(APPEND BACKEND_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH})
   list(APPEND BACKEND_INCLUDE_DIRS ${TENSORFLOW_INCLUDE_DIRS})
 endif()
+
 if(BUILD_CPP_IF
    AND USE_PT_PYTHON_LIBS
    AND NOT CMAKE_CROSSCOMPILING
@@ -319,6 +320,7 @@ if(BUILD_CPP_IF
     RESULT_VARIABLE PYTORCH_CMAKE_PREFIX_PATH_RESULT_VAR
     ERROR_VARIABLE PYTORCH_CMAKE_PREFIX_PATH_ERROR_VAR
     OUTPUT_STRIP_TRAILING_WHITESPACE)
+  # message(STATUS "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000")
   if(NOT ${PYTORCH_CMAKE_PREFIX_PATH_RESULT_VAR} EQUAL 0)
     message(
       FATAL_ERROR
@@ -327,6 +329,7 @@ if(BUILD_CPP_IF
   endif()
   list(APPEND CMAKE_PREFIX_PATH ${PYTORCH_CMAKE_PREFIX_PATH})
 endif()
+
 if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
   find_package(Torch REQUIRED)
   if(NOT Torch_VERSION VERSION_LESS "2.1.0")
@@ -334,50 +337,70 @@ if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
   elseif(NOT Torch_VERSION VERSION_LESS "1.5.0")
     set_if_higher(CMAKE_CXX_STANDARD 14)
   endif()
-  string(REGEX MATCH "_GLIBCXX_USE_CXX11_ABI=([0-9]+)" CXXABI_PT_MATCH
-               "${TORCH_CXX_FLAGS}")
-  if(CXXABI_PT_MATCH)
-    set(OP_CXX_ABI_PT ${CMAKE_MATCH_1})
-    message(STATUS "PyTorch CXX11 ABI: ${CMAKE_MATCH_1}")
-    if(DEFINED OP_CXX_ABI)
-      if(NOT ${CMAKE_MATCH_1} EQUAL ${OP_CXX_ABI})
-        if(NOT BUILD_PY_IF)
-          message(
-            FATAL_ERROR
-              "PyTorch CXX11 ABI mismatch TensorFlow: ${CMAKE_MATCH_1} != ${OP_CXX_ABI}"
-          )
-        else()
-          if(NOT BUILD_CPP_IF)
-            message(
-              STATUS
-                "PyTorch CXX11 ABI mismatch TensorFlow: ${CMAKE_MATCH_1} != ${OP_CXX_ABI}. "
-                "Try to build libraries with both ABIs.")
-          else()
-            message(
-              WARNING
-                "PyTorch CXX11 ABI mismatch TensorFlow: ${CMAKE_MATCH_1} != ${OP_CXX_ABI}. "
-                "PyTorch C++ OP will be built but PyTorch support for C++ libraries will be disabled. "
-                "Note that we don't officially support building C++ libraries in the Python package, "
-                "except for the wheels we officially release.")
-          endif()
-          set(DEEPMD_BUILD_COMPAT_CXXABI ON)
-          set(OP_CXX_ABI_COMPAT ${OP_CXX_ABI_PT})
-        endif()
+
+  # detect PyTorch CXX11 ABI via Python
+  message(STATUS "Detecting PyTorch CXX11 ABI via Python API...")
+  find_package(
+    Python
+    COMPONENTS Interpreter
+    REQUIRED)
+  message(STATUS "Using Python executable: ${Python_EXECUTABLE}")
+
+  execute_process(
+    COMMAND env PYTHONPATH=${Python_SITEARCH} ${Python_EXECUTABLE} -c "import torch; print(int(torch.compiled_with_cxx11_abi()))"
+    OUTPUT_VARIABLE DETECTED_PT_ABI
+    RESULT_VARIABLE pt_abi_result
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+
+  if(pt_abi_result EQUAL 0)
+    # python command succeeded
+    set(OP_CXX_ABI_PT ${DETECTED_PT_ABI})
+    message(STATUS "Detected PyTorch CXX11 ABI: ${OP_CXX_ABI_PT}")
+  else()
+    # python command failed; provide actionable message
+    message(
+      FATAL_ERROR
+        "Failed to detect PyTorch CXX11 ABI. "
+        "Please ensure 'torch' is installed and accessible in the current Python environment ('${Python_EXECUTABLE}')."
+    )
+  endif()
+
+  if(DEFINED OP_CXX_ABI)
+    # if ABI was previously set (e.g., from TensorFlow), check mismatch
+    if(NOT ${OP_CXX_ABI_PT} EQUAL ${OP_CXX_ABI})
+      if(NOT BUILD_PY_IF)
+        message(
+          FATAL_ERROR
+            "PyTorch CXX11 ABI mismatch TensorFlow: ${OP_CXX_ABI_PT} != ${OP_CXX_ABI}"
+        )
       else()
-        set(DEEPMD_BUILD_COMPAT_CXXABI OFF)
+        if(NOT BUILD_CPP_IF)
+          message(
+            STATUS
+              "PyTorch CXX11 ABI mismatch TensorFlow: ${OP_CXX_ABI_PT} != ${OP_CXX_ABI}. "
+              "Try to build libraries with both ABIs.")
+        else()
+          message(
+            WARNING
+              "PyTorch CXX11 ABI mismatch TensorFlow: ${OP_CXX_ABI_PT} != ${OP_CXX_ABI}. "
+              "PyTorch C++ OP will be built but PyTorch support for C++ libraries will be disabled. "
+              "Note that we don't officially support building C++ libraries in the Python package, "
+              "except for the wheels we officially release.")
+        endif()
+        set(DEEPMD_BUILD_COMPAT_CXXABI ON)
+        set(OP_CXX_ABI_COMPAT ${OP_CXX_ABI_PT})
       endif()
     else()
-      set(OP_CXX_ABI ${CMAKE_MATCH_1})
-      add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
+      # ABI matches; no compat build needed
+      set(DEEPMD_BUILD_COMPAT_CXXABI OFF)
     endif()
   else()
-    # Maybe in macos/windows
-    if(NOT DEFINED OP_CXX_ABI)
-      set(OP_CXX_ABI 0)
-    endif()
-    set(OP_CXX_ABI_PT "${OP_CXX_ABI}")
+    # no prior ABI; default to PyTorch ABI
+    set(OP_CXX_ABI ${OP_CXX_ABI_PT})
+    add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
   endif()
-  # get torch directory get the directory of the target "torch"
+  # get torch library directory from target "torch"
   get_target_property(_TORCH_LOCATION torch LOCATION)
   get_filename_component(PyTorch_LIBRARY_PATH ${_TORCH_LOCATION} DIRECTORY)
   list(APPEND BACKEND_LIBRARY_PATH ${PyTorch_LIBRARY_PATH})
@@ -387,6 +410,7 @@ if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
     link_directories(${PyTorch_LIBRARY_PATH}/../../torch.libs)
   endif()
 endif()
+
 if(ENABLE_JAX
    AND BUILD_CPP_IF
    AND NOT DEEPMD_C_ROOT)
