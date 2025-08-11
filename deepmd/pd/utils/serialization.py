@@ -67,15 +67,15 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     """
     model.forward = paddle.jit.to_static(
         model.forward,
-        full_graph=True,
         input_spec=[
-            InputSpec([-1, -1, 3], dtype="float64", name="coord"),
-            InputSpec([-1, -1], dtype="int64", name="atype"),
-            InputSpec([-1, 9], dtype="float64", name="box"),
-            None,
-            None,
-            True,
+            InputSpec([-1, -1, 3], dtype="float64", name="coord"),  # coord
+            InputSpec([-1, -1], dtype="int64", name="atype"),  # atype
+            InputSpec([-1, 9], dtype="float64", name="box"),  # box
+            None,  # fparam
+            None,  # aparam
+            True,  # do_atomic_virial
         ],
+        full_graph=True,
     )
     """ example output shape and dtype of forward_lower
     fetch_name_0: atom_energy [1, 192, 1] paddle.float64
@@ -86,17 +86,25 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     """
     model.forward_lower = paddle.jit.to_static(
         model.forward_lower,
-        full_graph=True,
         input_spec=[
-            InputSpec([-1, -1, 3], dtype="float64", name="coord"),
-            InputSpec([-1, -1], dtype="int32", name="atype"),
-            InputSpec([-1, -1, -1], dtype="int32", name="nlist"),
-            None,
-            None,
-            None,
-            True,
-            None,
+            InputSpec([-1, -1, 3], dtype="float64", name="coord"),  # extended_coord
+            InputSpec([-1, -1], dtype="int32", name="atype"),  # extended_atype
+            InputSpec([-1, -1, -1], dtype="int32", name="nlist"),  # nlist
+            InputSpec([-1, -1], dtype="int64", name="mapping"),  # mapping
+            None,  # fparam
+            None,  # aparam
+            True,  # do_atomic_virial
+            (
+                InputSpec([-1], "int64", name="send_list"),
+                InputSpec([-1], "int32", name="send_proc"),
+                InputSpec([-1], "int32", name="recv_proc"),
+                InputSpec([-1], "int32", name="send_num"),
+                InputSpec([-1], "int32", name="recv_num"),
+                InputSpec([-1], "int64", name="communicator"),
+                # InputSpec([1], "int64", name="has_spin"),
+            ),  # comm_dict
         ],
+        full_graph=True,
     )
     paddle.jit.save(
         model,

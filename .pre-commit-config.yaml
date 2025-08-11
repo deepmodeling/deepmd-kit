@@ -7,7 +7,7 @@ repos:
       - id: trailing-whitespace
         exclude: "^.+\\.pbtxt$"
       - id: end-of-file-fixer
-        exclude: "^.+\\.pbtxt$|deeppot_sea.*\\.json$"
+        exclude: "^.+\\.pbtxt$|deeppot_sea.*|deeppot_dpa.*\\.json$"
       - id: check-yaml
       - id: check-json
       - id: check-added-large-files

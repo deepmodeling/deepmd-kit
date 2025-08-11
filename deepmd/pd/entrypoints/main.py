@@ -374,7 +374,7 @@ def freeze(
                 None,  # fparam
                 None,  # aparam
                 # InputSpec([], dtype="bool", name="do_atomic_virial"),  # do_atomic_virial
-                False,  # do_atomic_virial
+                False,  # do_atomic_virial, NOTE: set to True if needed
             ],
             full_graph=True,
         )
@@ -396,7 +396,7 @@ def freeze(
                 None,  # fparam
                 None,  # aparam
                 # InputSpec([], dtype="bool", name="do_atomic_virial"),  # do_atomic_virial
-                False,  # do_atomic_virial
+                False,  # do_atomic_virial, NOTE: set to True if needed
                 (
                     InputSpec([-1], "int64", name="send_list"),
                     InputSpec([-1], "int32", name="send_proc"),
