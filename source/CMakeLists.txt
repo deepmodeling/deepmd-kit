@@ -346,11 +346,11 @@ if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
   message(STATUS "Using Python executable: ${Python_EXECUTABLE}")
 
   execute_process(
-    COMMAND env PYTHONPATH=${Python_SITEARCH} ${Python_EXECUTABLE} -c "import torch; print(int(torch.compiled_with_cxx11_abi()))"
+    COMMAND env PYTHONPATH=${Python_SITEARCH} ${Python_EXECUTABLE} -c
+            "import torch; print(int(torch.compiled_with_cxx11_abi()))"
     OUTPUT_VARIABLE DETECTED_PT_ABI
     RESULT_VARIABLE pt_abi_result
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-  )
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
 
   if(pt_abi_result EQUAL 0)
     # python command succeeded
