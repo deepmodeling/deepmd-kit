@@ -211,9 +211,7 @@ class TypeEmbedNetConsistent(nn.Layer):
             Type embedding network.
         """
         if not self.use_econf_tebd:
-            embed = self.embedding_net(
-                paddle.eye(self.ntypes, dtype=self.prec).to(device=device)
-            )
+            embed = self.embedding_net(paddle.eye(self.ntypes, dtype=self.prec))
         else:
             assert self.econf_tebd is not None
             embed = self.embedding_net(self.econf_tebd.to(device))
@@ -221,9 +219,7 @@ class TypeEmbedNetConsistent(nn.Layer):
             embed = paddle.concat(
                 [
                     embed,
-                    paddle.zeros([1, embed.shape[1]], dtype=self.prec).to(
-                        device=device
-                    ),
+                    paddle.zeros([1, embed.shape[1]], dtype=self.prec),
                 ]
             )
         return embed

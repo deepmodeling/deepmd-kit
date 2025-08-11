@@ -712,7 +712,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         extended_atype: paddle.Tensor,
         nlist: paddle.Tensor,
         mapping: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[list[paddle.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -747,7 +747,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
 
         """
         # cast the input to internal precsion
-        extended_coord = extended_coord.to(dtype=self.prec)
+        extended_coord = extended_coord.astype(dtype=self.prec)
 
         use_three_body = self.use_three_body
         nframes, nloc, nnei = nlist.shape
@@ -798,14 +798,15 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             assert self.tebd_transform is not None
             g1 = g1 + self.tebd_transform(g1_inp)
         # mapping g1
-        if comm_dict is None:
-            assert mapping is not None
+        if comm_dict is None or len(comm_dict) == 0:
+            if paddle.in_dynamic_mode():
+                assert mapping is not None
             mapping_ext = (
                 mapping.reshape([nframes, nall])
                 .unsqueeze(-1)
                 .expand([-1, -1, g1.shape[-1]])
             )
-            g1_ext = paddle.take_along_axis(g1, mapping_ext, 1)
+            g1_ext = paddle.take_along_axis(g1, mapping_ext, 1, broadcast=False)
             g1 = g1_ext
         # repformer
         g1, g2, h2, rot_mat, sw = self.repformers(
@@ -823,11 +824,11 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         if self.concat_output_tebd:
             g1 = paddle.concat([g1, g1_inp], axis=-1)
         return (
-            g1.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            rot_mat.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            g2.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            h2.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            sw.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            g1.astype(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            rot_mat.astype(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            g2.astype(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            h2.astype(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            sw.astype(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
         )
 
     @classmethod

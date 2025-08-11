@@ -58,7 +58,7 @@ class AtomExcludeMask(paddle.nn.Layer):
 
         """
         nf, natom = atype.shape
-        return self.type_mask[atype].reshape([nf, natom]).to(atype.place)
+        return self.type_mask[atype].reshape([nf, natom])
 
 
 class PairExcludeMask(paddle.nn.Layer):
@@ -126,31 +126,25 @@ class PairExcludeMask(paddle.nn.Layer):
         """
         if self.no_exclusion:
             # safely return 1 if nothing is excluded.
-            return paddle.ones_like(nlist, dtype=paddle.int32).to(device=nlist.place)
+            return paddle.ones_like(nlist, dtype=paddle.int32)
         nf, nloc, nnei = nlist.shape
         nall = atype_ext.shape[1]
         # add virtual atom of type ntypes. nf x nall+1
         ae = paddle.concat(
             [
                 atype_ext,
-                self.ntypes
-                * paddle.ones([nf, 1], dtype=atype_ext.dtype).to(atype_ext.place),
+                self.ntypes * paddle.ones([nf, 1], dtype=atype_ext.dtype),
             ],
             axis=-1,
         )
         type_i = atype_ext[:, :nloc].reshape([nf, nloc]) * (self.ntypes + 1)
         # nf x nloc x nnei
         index = paddle.where(nlist == -1, nall, nlist).reshape([nf, nloc * nnei])
-        type_j = paddle.take_along_axis(ae, axis=1, indices=index).reshape(
-            [nf, nloc, nnei]
-        )
+        type_j = paddle.take_along_axis(
+            ae, axis=1, indices=index, broadcast=False
+        ).reshape([nf, nloc, nnei])
         type_ij = type_i[:, :, None] + type_j
         # nf x (nloc x nnei)
         type_ij = type_ij.reshape([nf, nloc * nnei])
-        mask = (
-            self.type_mask[type_ij]
-            .reshape([nf, nloc, nnei])
-            .to(atype_ext.place)
-            .astype("bool")
-        )
+        mask = self.type_mask[type_ij].reshape([nf, nloc, nnei]).astype("bool")
         return mask
