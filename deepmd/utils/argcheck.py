@@ -2305,6 +2305,10 @@ def model_args(exclude_hybrid=False):
 def standard_model_args() -> Argument:
     doc_descrpt = "The descriptor of atomic environment."
     doc_fitting = "The fitting of physical properties."
+    doc_model_branch_alias = (
+        "The alias of this model branch. This is only used in the multi-task model."
+    )
+    doc_info = "The information of this model branch. This is only used in the multi-task model."
 
     ca = Argument(
         "standard",
@@ -2319,6 +2323,20 @@ def standard_model_args() -> Argument:
                 [],
                 [fitting_variant_type_args()],
                 doc=doc_fitting,
+            ),
+            Argument(
+                "model_branch_alias",
+                list,
+                optional=True,
+                default=[],
+                doc=doc_only_pt_supported + doc_model_branch_alias,
+            ),
+            Argument(
+                "info",
+                dict,
+                optional=True,
+                default={},
+                doc=doc_only_pt_supported + doc_info,
             ),
         ],
         doc="Standard model, which contains a descriptor and a fitting.",

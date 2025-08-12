@@ -7,6 +7,10 @@ from deepmd.infer.deep_eval import (
 from deepmd.utils.econf_embd import (
     sort_element_type,
 )
+from deepmd.utils.model_branch_dict import (
+    OrderedDictTableWrapper,
+    get_model_dict,
+)
 
 log = logging.getLogger(__name__)
 
@@ -33,9 +37,14 @@ def show(
             )
         model_branches = list(model_params["model_dict"].keys())
         model_branches += ["RANDOM"]
+        model_alias_dict, model_branch_dict = get_model_dict(model_params["model_dict"])
         log.info(
             f"Available model branches are {model_branches}, "
             f"where 'RANDOM' means using a randomly initialized fitting net."
+        )
+        log.info(
+            "Detailed information: \n"
+            + OrderedDictTableWrapper(model_branch_dict).as_table()
         )
     if "type-map" in ATTRIBUTES:
         if model_is_multi_task:
