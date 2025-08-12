@@ -510,17 +510,31 @@ class Trainer:
                             if i != "_extra_state" and f".{_model_key}." in i
                         ]
                         for item_key in target_keys:
+                            new_key = item_key.replace(
+                                f".{_model_key}.", f".{_model_key_from}."
+                            )
+                            use_random_state = _new_fitting and (
+                                ".descriptor." not in item_key
+                            )
                             if (
-                                _new_fitting and (".descriptor." not in item_key)
-                            ) or ".models.1." in item_key:
+                                not use_random_state
+                                and new_key not in _origin_state_dict
+                            ):
+                                # for ZBL models finetuning from standard models
+                                if ".models.0." in new_key:
+                                    new_key = new_key.replace(".models.0.", ".")
+                                elif ".models.1." in new_key:
+                                    use_random_state = True
+                                else:
+                                    raise KeyError(
+                                        f"Key {new_key} not found in pretrained model."
+                                    )
+                            if use_random_state:
                                 # print(f'Keep {item_key} in old model!')
                                 _new_state_dict[item_key] = (
                                     _random_state_dict[item_key].clone().detach()
                                 )
                             else:
-                                new_key = item_key.replace(
-                                    f".{_model_key}.", f".{_model_key_from}."
-                                ).replace(".models.0.", ".")  # for ZBL models
                                 # print(f'Replace {item_key} with {new_key} in pretrained_model!')
                                 _new_state_dict[item_key] = (
                                     _origin_state_dict[new_key].clone().detach()
