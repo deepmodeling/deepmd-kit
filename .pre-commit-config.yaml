@@ -2,7 +2,7 @@
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
         exclude: "^.+\\.pbtxt$"
@@ -29,7 +29,7 @@ repos:
         exclude: ^source/3rdparty
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.12.4
+    rev: v0.12.8
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -84,7 +84,7 @@ repos:
       - id: cmake-format
       #- id: cmake-lint
   - repo: https://github.com/njzjz/mirrors-bibtex-tidy
-    rev: v1.13.0
+    rev: v1.14.0
     hooks:
       - id: bibtex-tidy
         args:
@@ -154,7 +154,7 @@ repos:
         exclude: .pre-commit-config.yaml|source/lmp
   # customized pylint rules
   - repo: https://github.com/pylint-dev/pylint/
-    rev: v3.3.7
+    rev: v3.3.8
     hooks:
       - id: pylint
         entry: env PYTHONPATH=source/checker pylint

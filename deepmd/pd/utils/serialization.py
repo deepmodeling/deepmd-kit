@@ -69,9 +69,9 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         model.forward,
         full_graph=True,
         input_spec=[
-            InputSpec([1, -1, 3], dtype="float64", name="coord"),
-            InputSpec([1, -1], dtype="int64", name="atype"),
-            InputSpec([1, 9], dtype="float64", name="box"),
+            InputSpec([-1, -1, 3], dtype="float64", name="coord"),
+            InputSpec([-1, -1], dtype="int64", name="atype"),
+            InputSpec([-1, 9], dtype="float64", name="box"),
             None,
             None,
             True,
@@ -88,9 +88,9 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         model.forward_lower,
         full_graph=True,
         input_spec=[
-            InputSpec([1, -1, 3], dtype="float64", name="coord"),
-            InputSpec([1, -1], dtype="int32", name="atype"),
-            InputSpec([1, -1, -1], dtype="int32", name="nlist"),
+            InputSpec([-1, -1, 3], dtype="float64", name="coord"),
+            InputSpec([-1, -1], dtype="int32", name="atype"),
+            InputSpec([-1, -1, -1], dtype="int32", name="nlist"),
             None,
             None,
             None,
@@ -101,4 +101,5 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     paddle.jit.save(
         model,
         model_file.split(".json")[0],
+        skip_prune_program=True,
     )
