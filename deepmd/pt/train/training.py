@@ -1017,7 +1017,9 @@ class Trainer:
                 self.t0 = current_time
                 if self.rank == 0 and self.timing_in_training:
                     eta = int(
-                        (self.num_steps - display_step_id) / self.disp_freq * train_time
+                        (self.num_steps - display_step_id)
+                        / min(self.disp_freq, display_step_id - self.start_step)
+                        * train_time
                     )
                     log.info(
                         format_training_message(
