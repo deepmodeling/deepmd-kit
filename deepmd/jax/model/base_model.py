@@ -48,14 +48,8 @@ def forward_common_atomic(
             kk_redu = get_reduce_name(kk)
             if vdef.intensive:
                 mask = atomic_ret["mask"] if "mask" in atomic_ret else None
-                if (mask is not None) and (mask == 0.0).any():
-                    mask = mask.astype(jnp.bool_)
-                    model_predict[kk_redu] = jnp.stack(
-                        [
-                            jnp.mean(vv[ii][mask[ii]], axis=atom_axis)
-                            for ii in range(mask.shape[0])
-                        ]
-                    )
+                if mask is not None:
+                    model_predict[kk_redu] = jnp.sum(vv, axis=atom_axis) / jnp.sum(mask, axis=-1, keepdims=True)
                 else:
                     model_predict[kk_redu] = jnp.mean(vv, axis=atom_axis)
             else:

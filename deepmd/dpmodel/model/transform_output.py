@@ -44,17 +44,10 @@ def fit_output_to_model_output(
             kk_redu = get_reduce_name(kk)
             # cast to energy prec before reduction
             if vdef.intensive:
-                if (mask is not None) and (mask == 0.0).any():
-                    mask = mask.astype(bool)
-                    model_ret[kk_redu] = xp.stack(
-                        [
-                            xp.mean(
-                                vv[ii].astype(GLOBAL_ENER_FLOAT_PRECISION)[mask[ii]],
-                                axis=atom_axis,
-                            )
-                            for ii in range(mask.shape[0])
-                        ]
-                    )
+                if mask is not None:
+                    model_ret[kk_redu] = xp.sum(
+                        vv.astype(GLOBAL_ENER_FLOAT_PRECISION), axis=atom_axis
+                    ) / np.sum(mask, axis=-1, keepdims=True)
                 else:
                     model_ret[kk_redu] = xp.mean(
                         vv.astype(GLOBAL_ENER_FLOAT_PRECISION), axis=atom_axis
