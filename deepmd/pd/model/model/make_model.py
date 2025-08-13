@@ -37,6 +37,9 @@ from deepmd.pd.utils.nlist import (
 from deepmd.utils.path import (
     DPPath,
 )
+import paddle.distributed as dist
+from paddle.distributed import fleet
+import functools
 
 
 def make_model(T_AtomicModel: type[BaseAtomicModel]):
@@ -163,29 +166,60 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 coord, box=box, fparam=fparam, aparam=aparam
             )
             del coord, box, fparam, aparam
+            # (
+            #     extended_coord,
+            #     extended_atype,
+            #     mapping,
+            #     nlist,
+            # ) = extend_input_and_build_neighbor_list(
+            #     cc,
+            #     atype,
+            #     self.get_rcut(),
+            #     self.get_sel(),
+            #     # types will be distinguished in the lower interface,
+            #     # so it doesn't need to be distinguished here
+            #     mixed_types=True,
+            #     box=bb,
+            # )
+            wrapped_func_1 = dist.local_map(
+                func=lambda a,b,c: extend_input_and_build_neighbor_list(a,b,self.get_rcut(), self.get_sel(), True, c),
+                in_placements=[ele.placements for ele in [cc, atype, bb]],
+                out_placements=[[dist.Shard(0)] for _ in range(4)],
+                process_mesh=fleet.auto.get_mesh()
+            )
+
             (
                 extended_coord,
                 extended_atype,
                 mapping,
                 nlist,
-            ) = extend_input_and_build_neighbor_list(
+            ) = wrapped_func_1(
                 cc,
                 atype,
-                self.get_rcut(),
-                self.get_sel(),
-                # types will be distinguished in the lower interface,
-                # so it doesn't need to be distinguished here
-                mixed_types=True,
-                box=bb,
+                bb,
             )
-            model_predict_lower = self.forward_common_lower(
+            # model_predict_lower = self.forward_common_lower(
+            #     extended_coord,
+            #     extended_atype,
+            #     nlist,
+            #     mapping,
+            #     do_atomic_virial=do_atomic_virial,
+            #     fparam=fp,
+            #     aparam=ap,
+            # )
+
+            wrapped_func_2 = dist.local_map(
+                func=functools.partial(self.forward_common_lower, do_atomic_virial=do_atomic_virial, fparam=fp, aparam=ap),
+                in_placements=[ele.placements for ele in [extended_coord, extended_atype, nlist, mapping]],
+                out_placements=[[dist.Shard(0)] for _ in range(6)],
+                process_mesh=fleet.auto.get_mesh(),
+                reshard_inputs=True
+            )
+            model_predict_lower = wrapped_func_2(
                 extended_coord,
                 extended_atype,
                 nlist,
                 mapping,
-                do_atomic_virial=do_atomic_virial,
-                fparam=fp,
-                aparam=ap,
             )
             model_predict = communicate_extended_output(
                 model_predict_lower,
