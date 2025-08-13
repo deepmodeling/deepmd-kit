@@ -174,7 +174,9 @@ def fit_output_to_model_output(
             kk_redu = get_reduce_name(kk)
             if vdef.intensive:
                 if mask is not None:
-                    model_ret[kk_redu] = torch.sum(vv.to(redu_prec), dim=atom_axis) / torch.sum(mask, dim=-1, keepdim=True)
+                    model_ret[kk_redu] = torch.sum(
+                        vv.to(redu_prec), dim=atom_axis
+                    ) / torch.sum(mask, dim=-1, keepdim=True)
                 else:
                     model_ret[kk_redu] = torch.mean(vv.to(redu_prec), dim=atom_axis)
             else:
