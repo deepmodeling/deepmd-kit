@@ -88,8 +88,22 @@ def show(
             total_observed_types_list = []
             model_branches = list(model_params["model_dict"].keys())
             for branch in model_branches:
-                tmp_model = DeepEval(INPUT, head=branch, no_jit=True)
-                observed_types = tmp_model.get_observed_types()
+                if (
+                    model_params["model_dict"][branch]
+                    .get("info", {})
+                    .get("observed_type", None)
+                    is not None
+                ):
+                    observed_type_list = model_params["model_dict"][branch]["info"][
+                        "observed_type"
+                    ]
+                    observed_types = {
+                        "type_num": len(observed_type_list),
+                        "observed_type": sort_element_type(observed_type_list),
+                    }
+                else:
+                    tmp_model = DeepEval(INPUT, head=branch, no_jit=True)
+                    observed_types = tmp_model.get_observed_types()
                 log.info(
                     f"{branch}: Number of observed types: {observed_types['type_num']} "
                 )
