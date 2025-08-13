@@ -67,7 +67,7 @@ if(ENABLE_PADDLE)
           "PADDLE_INFERENCE_DIR is not defined, downloading CPU inference lib to: ${CMAKE_BINARY_DIR}/"
       )
       set(DOWNLOAD_URL
-          "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cpu_Mkl_Avx_D1/6ed5dd3833c32c3b21e14b1fb1a71f5a535a0fcc/paddle_inference.tgz"
+          "https://paddle-org.bj.bcebos.com/paddlescience/deepmd/paddle_inference.tgz"
       )
     endif()
     set(TGZ_FILE "${CMAKE_BINARY_DIR}/paddle_inference.tgz")
