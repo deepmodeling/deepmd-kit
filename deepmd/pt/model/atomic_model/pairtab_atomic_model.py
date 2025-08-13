@@ -226,10 +226,10 @@ class PairTabAtomicModel(BaseAtomicModel):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
-        compute_out_stat: bool = True,
+        compute_or_load_out_stat: bool = True,
     ) -> None:
         """
-        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
+        Compute the input and output statistics (e.g. energy bias) for the model from packed data.
 
         Parameters
         ----------
@@ -242,9 +242,12 @@ class PairTabAtomicModel(BaseAtomicModel):
                 the lazy function helps by only sampling once.
         stat_file_path : Optional[DPPath]
             The path to the stat file.
+        compute_or_load_out_stat : bool
+            Whether to compute the output statistics.
+            If False, it will only compute the input statistics (e.g. mean and standard deviation of descriptors).
 
         """
-        if compute_out_stat:
+        if compute_or_load_out_stat:
             self.compute_or_load_out_stat(merged, stat_file_path)
 
     def forward_atomic(

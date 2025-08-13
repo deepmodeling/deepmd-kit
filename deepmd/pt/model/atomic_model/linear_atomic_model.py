@@ -472,7 +472,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self,
         sampled_func,
         stat_file_path: Optional[DPPath] = None,
-        compute_out_stat: bool = True,
+        compute_or_load_out_stat: bool = True,
     ) -> None:
         """
         Compute or load the statistics parameters of the model,
@@ -488,10 +488,13 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             The lazy sampled function to get data frames from different data systems.
         stat_file_path
             The dictionary of paths to the statistics files.
+        compute_or_load_out_stat : bool
+            Whether to compute the output statistics.
+            If False, it will only compute the input statistics (e.g. mean and standard deviation of descriptors).
         """
         for md in self.models:
             md.compute_or_load_stat(
-                sampled_func, stat_file_path, compute_out_stat=False
+                sampled_func, stat_file_path, compute_or_load_out_stat=False
             )
 
         if stat_file_path is not None and self.type_map is not None:

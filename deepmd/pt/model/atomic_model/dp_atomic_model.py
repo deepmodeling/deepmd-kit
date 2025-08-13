@@ -285,7 +285,7 @@ class DPAtomicModel(BaseAtomicModel):
         self,
         sampled_func,
         stat_file_path: Optional[DPPath] = None,
-        compute_out_stat: bool = True,
+        compute_or_load_out_stat: bool = True,
     ) -> None:
         """
         Compute or load the statistics parameters of the model,
@@ -301,6 +301,9 @@ class DPAtomicModel(BaseAtomicModel):
             The lazy sampled function to get data frames from different data systems.
         stat_file_path
             The dictionary of paths to the statistics files.
+        compute_or_load_out_stat : bool
+            Whether to compute the output statistics.
+            If False, it will only compute the input statistics (e.g. mean and standard deviation of descriptors).
         """
         if stat_file_path is not None and self.type_map is not None:
             # descriptors and fitting net with different type_map
@@ -324,7 +327,7 @@ class DPAtomicModel(BaseAtomicModel):
         self.fitting_net.compute_input_stats(
             wrapped_sampler, protection=self.data_stat_protect
         )
-        if compute_out_stat:
+        if compute_or_load_out_stat:
             self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
     def get_dim_fparam(self) -> int:
