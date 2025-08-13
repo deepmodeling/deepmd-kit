@@ -299,6 +299,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 cc_ext,
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
+                mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
             )
             model_predict = self.output_type_cast(model_predict, input_prec)
             return model_predict
