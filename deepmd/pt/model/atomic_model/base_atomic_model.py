@@ -366,19 +366,19 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         compute_or_load_out_stat: bool = True,
     ) -> NoReturn:
         """
-        Compute the input and output statistics (e.g. energy bias) for the model from packed data.
+        Compute or load the statistics parameters of the model,
+        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
+        When `sampled` is provided, all the statistics parameters will be calculated (or re-calculated for update),
+        and saved in the `stat_file_path`(s).
+        When `sampled` is not provided, it will check the existence of `stat_file_path`(s)
+        and load the calculated statistics parameters.
 
         Parameters
         ----------
-        merged : Union[Callable[[], list[dict]], list[dict]]
-            - list[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
-                originating from the `i`-th data system.
-            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
-                only when needed. Since the sampling process can be slow and memory-intensive,
-                the lazy function helps by only sampling once.
-        stat_file_path : Optional[DPPath]
-            The path to the stat file.
+        merged
+            The lazy sampled function to get data frames from different data systems.
+        stat_file_path
+            The dictionary of paths to the statistics files.
         compute_or_load_out_stat : bool
             Whether to compute the output statistics.
             If False, it will only compute the input statistics (e.g. mean and standard deviation of descriptors).
