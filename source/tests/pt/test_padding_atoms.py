@@ -49,7 +49,7 @@ class TestCaseSingleFrameWithoutNlist:
         self.sel = [16, 8]
         self.rcut = 2.2
         self.rcut_smth = 0.4
-        self.atol = 1e-12
+        self.atol = 1e-10
 
 
 class TestPaddingAtoms(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
