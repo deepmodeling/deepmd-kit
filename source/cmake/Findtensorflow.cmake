@@ -146,7 +146,7 @@ if(NOT TensorFlowFramework_FIND_COMPONENTS)
   if(WIN32)
     if(TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.20)
       # in TF 2.20, _pywrap_tensorflow_internal.lib is missing, but
-      # tensorflow_framework.2.dll.if.lib is given
+      # tensorflow_framework.2.dll is given
       set(TensorFlowFramework_FIND_COMPONENTS tensorflow_framework)
     else()
       set(TensorFlowFramework_FIND_COMPONENTS _pywrap_tensorflow_internal)
@@ -160,6 +160,7 @@ endif()
 # the lib
 if(WIN32)
   list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT}/python)
+  list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .2.dll)
   list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .2.dll.if.lib)
 elseif(APPLE)
   list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .2.dylib)
