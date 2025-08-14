@@ -364,25 +364,25 @@ class ProdEnvMatAOp : public OpKernel {
     // set size of the sample. assume 't' is [[[1, 1, 1], [2, 2, 2]], [[3, 3,
     // 3], [4, 4, 4]]], then shape(t) ==> [2, 2, 3]
     OP_REQUIRES(context, (coord_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of coord should be 2"));
+                errors::InvalidArgument("Dim of coord should be 2"));
     OP_REQUIRES(context, (type_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of type should be 2"));
+                errors::InvalidArgument("Dim of type should be 2"));
     OP_REQUIRES(context, (natoms_tensor.shape().dims() == 1),
-                absl::InvalidArgumentError("Dim of natoms should be 1"));
+                errors::InvalidArgument("Dim of natoms should be 1"));
     OP_REQUIRES(context, (box_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of box should be 2"));
+                errors::InvalidArgument("Dim of box should be 2"));
     OP_REQUIRES(context, (mesh_tensor.shape().dims() == 1),
-                absl::InvalidArgumentError("Dim of mesh should be 1"));
+                errors::InvalidArgument("Dim of mesh should be 1"));
     OP_REQUIRES(context, (avg_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of avg should be 2"));
+                errors::InvalidArgument("Dim of avg should be 2"));
     OP_REQUIRES(context, (std_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of std should be 2"));
+                errors::InvalidArgument("Dim of std should be 2"));
     OP_REQUIRES(context, (sec_r.back() == 0),
-                absl::InvalidArgumentError(
+                errors::InvalidArgument(
                     "Rotational free descriptor only support all-angular "
                     "information: sel_r should be all zero."));
     OP_REQUIRES(context, (natoms_tensor.shape().dim_size(0) >= 3),
-                absl::InvalidArgumentError(
+                errors::InvalidArgument(
                     "number of atoms should be larger than (or equal to) 3"));
     DeviceFunctor()(device, context->eigen_device<Device>());
     const int* natoms = natoms_tensor.flat<int>().data();
@@ -393,30 +393,30 @@ class ProdEnvMatAOp : public OpKernel {
     int nsamples = coord_tensor.shape().dim_size(0);
     //// check the sizes
     OP_REQUIRES(context, (nsamples == type_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of samples should match"));
+                errors::InvalidArgument("number of samples should match"));
     OP_REQUIRES(context, (nsamples == box_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of samples should match"));
+                errors::InvalidArgument("number of samples should match"));
     OP_REQUIRES(context, (ntypes == avg_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of avg should be ntype"));
+                errors::InvalidArgument("number of avg should be ntype"));
     OP_REQUIRES(context, (ntypes == std_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of std should be ntype"));
+                errors::InvalidArgument("number of std should be ntype"));
 
     OP_REQUIRES(context, (nall * 3 == coord_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("number of atoms should match"));
+                errors::InvalidArgument("number of atoms should match"));
     OP_REQUIRES(context, (nall == type_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("number of atoms should match"));
+                errors::InvalidArgument("number of atoms should match"));
     OP_REQUIRES(context, (9 == box_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("number of box should be 9"));
+                errors::InvalidArgument("number of box should be 9"));
     OP_REQUIRES(context, (ndescrpt == avg_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("number of avg should be ndescrpt"));
+                errors::InvalidArgument("number of avg should be ndescrpt"));
     OP_REQUIRES(context, (ndescrpt == std_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("number of std should be ndescrpt"));
+                errors::InvalidArgument("number of std should be ndescrpt"));
 
     OP_REQUIRES(context, (ntypes == int(sel_a.size())),
-                absl::InvalidArgumentError(
+                errors::InvalidArgument(
                     "number of types should match the length of sel array"));
     OP_REQUIRES(context, (ntypes == int(sel_r.size())),
-                absl::InvalidArgumentError(
+                errors::InvalidArgument(
                     "number of types should match the length of sel array"));
 
     int nei_mode = 0;
@@ -680,21 +680,21 @@ class ProdEnvMatROp : public OpKernel {
     const Tensor& std_tensor = context->input(context_input_index++);
     // set size of the sample
     OP_REQUIRES(context, (coord_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of coord should be 2"));
+                errors::InvalidArgument("Dim of coord should be 2"));
     OP_REQUIRES(context, (type_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of type should be 2"));
+                errors::InvalidArgument("Dim of type should be 2"));
     OP_REQUIRES(context, (natoms_tensor.shape().dims() == 1),
-                absl::InvalidArgumentError("Dim of natoms should be 1"));
+                errors::InvalidArgument("Dim of natoms should be 1"));
     OP_REQUIRES(context, (box_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of box should be 2"));
+                errors::InvalidArgument("Dim of box should be 2"));
     OP_REQUIRES(context, (mesh_tensor.shape().dims() == 1),
-                absl::InvalidArgumentError("Dim of mesh should be 1"));
+                errors::InvalidArgument("Dim of mesh should be 1"));
     OP_REQUIRES(context, (avg_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of avg should be 2"));
+                errors::InvalidArgument("Dim of avg should be 2"));
     OP_REQUIRES(context, (std_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of std should be 2"));
+                errors::InvalidArgument("Dim of std should be 2"));
     OP_REQUIRES(context, (natoms_tensor.shape().dim_size(0) >= 3),
-                absl::InvalidArgumentError(
+                errors::InvalidArgument(
                     "number of atoms should be larger than (or equal to) 3"));
     DeviceFunctor()(device, context->eigen_device<Device>());
     const int* natoms = natoms_tensor.flat<int>().data();
@@ -707,23 +707,23 @@ class ProdEnvMatROp : public OpKernel {
     //// check the sizes
     // check the sizes
     OP_REQUIRES(context, (nsamples == type_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of samples should match"));
+                errors::InvalidArgument("number of samples should match"));
     OP_REQUIRES(context, (nsamples == box_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of samples should match"));
+                errors::InvalidArgument("number of samples should match"));
     OP_REQUIRES(context, (ntypes == avg_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of avg should be ntype"));
+                errors::InvalidArgument("number of avg should be ntype"));
     OP_REQUIRES(context, (ntypes == std_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of std should be ntype"));
+                errors::InvalidArgument("number of std should be ntype"));
     OP_REQUIRES(context, (nall * 3 == coord_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("number of atoms should match"));
+                errors::InvalidArgument("number of atoms should match"));
     OP_REQUIRES(context, (nall == type_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("number of atoms should match"));
+                errors::InvalidArgument("number of atoms should match"));
     OP_REQUIRES(context, (9 == box_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("number of box should be 9"));
+                errors::InvalidArgument("number of box should be 9"));
     OP_REQUIRES(context, (ndescrpt == avg_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("number of avg should be ndescrpt"));
+                errors::InvalidArgument("number of avg should be ndescrpt"));
     OP_REQUIRES(context, (ndescrpt == std_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("number of std should be ndescrpt"));
+                errors::InvalidArgument("number of std should be ndescrpt"));
 
     int nei_mode = 0;
     bool b_nlist_map = false;
@@ -995,25 +995,25 @@ class ProdEnvMatAMixOp : public OpKernel {
     // set size of the sample. assume 't' is [[[1, 1, 1], [2, 2, 2]], [[3, 3,
     // 3], [4, 4, 4]]], then shape(t) ==> [2, 2, 3]
     OP_REQUIRES(context, (coord_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of coord should be 2"));
+                errors::InvalidArgument("Dim of coord should be 2"));
     OP_REQUIRES(context, (type_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of type should be 2"));
+                errors::InvalidArgument("Dim of type should be 2"));
     OP_REQUIRES(context, (natoms_tensor.shape().dims() == 1),
-                absl::InvalidArgumentError("Dim of natoms should be 1"));
+                errors::InvalidArgument("Dim of natoms should be 1"));
     OP_REQUIRES(context, (box_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of box should be 2"));
+                errors::InvalidArgument("Dim of box should be 2"));
     OP_REQUIRES(context, (mesh_tensor.shape().dims() == 1),
-                absl::InvalidArgumentError("Dim of mesh should be 1"));
+                errors::InvalidArgument("Dim of mesh should be 1"));
     OP_REQUIRES(context, (avg_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of avg should be 2"));
+                errors::InvalidArgument("Dim of avg should be 2"));
     OP_REQUIRES(context, (std_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of std should be 2"));
+                errors::InvalidArgument("Dim of std should be 2"));
     OP_REQUIRES(context, (sec_r.back() == 0),
-                absl::InvalidArgumentError(
+                errors::InvalidArgument(
                     "Rotational free descriptor only support all-angular "
                     "information: sel_r should be all zero."));
     OP_REQUIRES(context, (natoms_tensor.shape().dim_size(0) >= 3),
-                absl::InvalidArgumentError(
+                errors::InvalidArgument(
                     "number of atoms should be larger than (or equal to) 3"));
     DeviceFunctor()(device, context->eigen_device<Device>());
     const int* natoms = natoms_tensor.flat<int>().data();
@@ -1023,30 +1023,30 @@ class ProdEnvMatAMixOp : public OpKernel {
     int nsamples = coord_tensor.shape().dim_size(0);
     //// check the sizes
     OP_REQUIRES(context, (nsamples == type_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of samples should match"));
+                errors::InvalidArgument("number of samples should match"));
     OP_REQUIRES(context, (nsamples == box_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of samples should match"));
+                errors::InvalidArgument("number of samples should match"));
     OP_REQUIRES(context, (ntypes == avg_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of avg should be ntype"));
+                errors::InvalidArgument("number of avg should be ntype"));
     OP_REQUIRES(context, (ntypes == std_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of std should be ntype"));
+                errors::InvalidArgument("number of std should be ntype"));
 
     OP_REQUIRES(context, (nall * 3 == coord_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("number of atoms should match"));
+                errors::InvalidArgument("number of atoms should match"));
     OP_REQUIRES(context, (nall == type_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("number of atoms should match"));
+                errors::InvalidArgument("number of atoms should match"));
     OP_REQUIRES(context, (9 == box_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("number of box should be 9"));
+                errors::InvalidArgument("number of box should be 9"));
     OP_REQUIRES(context, (ndescrpt == avg_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("number of avg should be ndescrpt"));
+                errors::InvalidArgument("number of avg should be ndescrpt"));
     OP_REQUIRES(context, (ndescrpt == std_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("number of std should be ndescrpt"));
+                errors::InvalidArgument("number of std should be ndescrpt"));
 
     OP_REQUIRES(context, (1 == int(sel_a.size())),
-                absl::InvalidArgumentError(
+                errors::InvalidArgument(
                     "the length of sel array should be 1 in this op"));
     OP_REQUIRES(context, (1 == int(sel_r.size())),
-                absl::InvalidArgumentError(
+                errors::InvalidArgument(
                     "the length of sel array should be 1 in this op"));
 
     int nei_mode = 0;
@@ -1716,7 +1716,7 @@ void _prepare_coord_nlist_gpu(OpKernelContext* context,
     deepmd::env_mat_nbor_update(inlist_temp, inlist, max_nbor_size,
                                 nbor_list_dev, fake_mesh_dev, 16);
     OP_REQUIRES(context, (max_numneigh(inlist_temp) <= max_nbor_size),
-                absl::InvalidArgumentError(
+                errors::InvalidArgument(
                     "Assert failed, max neighbor size of atom(lammps) " +
                     std::to_string(max_numneigh(inlist_temp)) +
                     " is larger than " + std::to_string(max_nbor_size) +
@@ -1730,7 +1730,7 @@ void _prepare_coord_nlist_gpu(OpKernelContext* context,
                                 nbor_list_dev, mesh_tensor_data,
                                 mesh_tensor_size);
     OP_REQUIRES(context, (max_numneigh(inlist_temp) <= max_nbor_size),
-                absl::InvalidArgumentError(
+                errors::InvalidArgument(
                     "Assert failed, max neighbor size of atom(lammps) " +
                     std::to_string(max_numneigh(inlist_temp)) +
                     " is larger than " + std::to_string(max_nbor_size) +

@@ -43,13 +43,13 @@ class EwaldRecpOp : public OpKernel {
 
     // set size of the sample
     OP_REQUIRES(context, (coord_tensor.shape().dims() == 1),
-                absl::InvalidArgumentError("Dim of coord should be 1"));
+                errors::InvalidArgument("Dim of coord should be 1"));
     OP_REQUIRES(context, (charge_tensor.shape().dims() == 1),
-                absl::InvalidArgumentError("Dim of charge should be 1"));
+                errors::InvalidArgument("Dim of charge should be 1"));
     OP_REQUIRES(context, (natoms_tensor.shape().dim_size(0) == 1),
-                absl::InvalidArgumentError("size of natoms should be 1"));
+                errors::InvalidArgument("size of natoms should be 1"));
     OP_REQUIRES(context, (box_tensor.shape().dims() == 1),
-                absl::InvalidArgumentError("Dim of box should be 1"));
+                errors::InvalidArgument("Dim of box should be 1"));
     auto natoms = natoms_tensor.flat<int>();
     int nloc = natoms(0);
     int nsamples = coord_tensor.shape().dim_size(0) / (nloc * 3);
@@ -59,15 +59,15 @@ class EwaldRecpOp : public OpKernel {
         context,
         (static_cast<int64_t>(nsamples) * nloc * 3 ==
          coord_tensor.shape().dim_size(0)),
-        absl::InvalidArgumentError("coord  number of samples should match"));
+        errors::InvalidArgument("coord  number of samples should match"));
     OP_REQUIRES(
         context,
         (static_cast<int64_t>(nsamples) * nloc * 1 ==
          charge_tensor.shape().dim_size(0)),
-        absl::InvalidArgumentError("charge number of samples should match"));
+        errors::InvalidArgument("charge number of samples should match"));
     OP_REQUIRES(
         context, (nsamples * 9 == box_tensor.shape().dim_size(0)),
-        absl::InvalidArgumentError("box    number of samples should match"));
+        errors::InvalidArgument("box    number of samples should match"));
 
     // Create an output tensor
     TensorShape energy_shape;

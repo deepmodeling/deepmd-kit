@@ -63,20 +63,20 @@ class DescrptSeAMaskOp : public OpKernel {
 
     // set size of the sample
     OP_REQUIRES(context, (coord_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of coord should be 2"));
-    OP_REQUIRES(context, (type_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError(
-                    "Dim of type for se_e2_a_mask op should be 2"));
+                errors::InvalidArgument("Dim of coord should be 2"));
+    OP_REQUIRES(
+        context, (type_tensor.shape().dims() == 2),
+        errors::InvalidArgument("Dim of type for se_e2_a_mask op should be 2"));
     OP_REQUIRES(context, (mask_matrix_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of mask matrix should be 2"));
+                errors::InvalidArgument("Dim of mask matrix should be 2"));
 
     int nsamples = coord_tensor.shape().dim_size(0);
 
     // check the sizes
     OP_REQUIRES(context, (nsamples == type_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of samples should match"));
+                errors::InvalidArgument("number of samples should match"));
     OP_REQUIRES(context, (nsamples == mask_matrix_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of samples should match"));
+                errors::InvalidArgument("number of samples should match"));
 
     // Set n_descrpt for each atom. Include 1/rr, cos(theta), cos(phi), sin(phi)
     int n_descrpt = 4;
@@ -87,10 +87,10 @@ class DescrptSeAMaskOp : public OpKernel {
     // check the sizes
     OP_REQUIRES(context,
                 (total_atom_num * 3 == coord_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("number of atoms should match"));
+                errors::InvalidArgument("number of atoms should match"));
     OP_REQUIRES(context,
                 (total_atom_num == mask_matrix_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("number of atoms should match"));
+                errors::InvalidArgument("number of atoms should match"));
 
     // Create an output tensor
     TensorShape descrpt_shape;

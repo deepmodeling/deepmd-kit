@@ -52,16 +52,16 @@ class SoftMinSwitchOp : public OpKernel {
 
     // set size of the sample
     OP_REQUIRES(context, (type_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of type should be 2"));
+                errors::InvalidArgument("Dim of type should be 2"));
     OP_REQUIRES(context, (rij_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of rij should be 2"));
+                errors::InvalidArgument("Dim of rij should be 2"));
     OP_REQUIRES(context, (nlist_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of nlist should be 2"));
+                errors::InvalidArgument("Dim of nlist should be 2"));
     OP_REQUIRES(context, (natoms_tensor.shape().dims() == 1),
-                absl::InvalidArgumentError("Dim of natoms should be 1"));
+                errors::InvalidArgument("Dim of natoms should be 1"));
 
     OP_REQUIRES(context, (natoms_tensor.shape().dim_size(0) >= 3),
-                absl::InvalidArgumentError(
+                errors::InvalidArgument(
                     "number of atoms should be larger than (or equal to) 3"));
     auto natoms = natoms_tensor.flat<int>();
 
@@ -74,22 +74,22 @@ class SoftMinSwitchOp : public OpKernel {
 
     // check the sizes
     OP_REQUIRES(context, (nframes == type_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of samples should match"));
+                errors::InvalidArgument("number of samples should match"));
     OP_REQUIRES(context, (nframes == rij_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of samples should match"));
+                errors::InvalidArgument("number of samples should match"));
     OP_REQUIRES(context, (nframes == nlist_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of samples should match"));
+                errors::InvalidArgument("number of samples should match"));
     OP_REQUIRES(context, (nall == type_tensor.shape().dim_size(1)),
-                absl::InvalidArgumentError("shape of type should be nall"));
+                errors::InvalidArgument("shape of type should be nall"));
     OP_REQUIRES(
         context,
         (3 * static_cast<int64_t>(nnei) * nloc ==
          rij_tensor.shape().dim_size(1)),
-        absl::InvalidArgumentError("shape of rij should be 3 * nloc * nnei"));
+        errors::InvalidArgument("shape of rij should be 3 * nloc * nnei"));
     OP_REQUIRES(
         context,
         (static_cast<int64_t>(nnei) * nloc == nlist_tensor.shape().dim_size(1)),
-        absl::InvalidArgumentError("shape of nlist should be nloc * nnei"));
+        errors::InvalidArgument("shape of nlist should be nloc * nnei"));
 
     // Create an output tensor
     TensorShape sw_value_shape;

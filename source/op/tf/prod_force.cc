@@ -40,18 +40,18 @@ class ProdForceOp : public OpKernel {
 
     // set size of the sample
     OP_REQUIRES(context, (net_deriv_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of net deriv should be 2"));
+                errors::InvalidArgument("Dim of net deriv should be 2"));
     OP_REQUIRES(context, (in_deriv_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of input deriv should be 2"));
+                errors::InvalidArgument("Dim of input deriv should be 2"));
     OP_REQUIRES(context, (nlist_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of nlist should be 2"));
+                errors::InvalidArgument("Dim of nlist should be 2"));
     OP_REQUIRES(context, (axis_tensor.shape().dims() == 2),
-                absl::InvalidArgumentError("Dim of axis should be 2"));
+                errors::InvalidArgument("Dim of axis should be 2"));
     OP_REQUIRES(context, (natoms_tensor.shape().dims() == 1),
-                absl::InvalidArgumentError("Dim of natoms should be 1"));
+                errors::InvalidArgument("Dim of natoms should be 1"));
 
     OP_REQUIRES(context, (natoms_tensor.shape().dim_size(0) >= 3),
-                absl::InvalidArgumentError(
+                errors::InvalidArgument(
                     "number of atoms should be larger than (or equal to) 3"));
     auto natoms = natoms_tensor.flat<int>();
 
@@ -63,22 +63,21 @@ class ProdForceOp : public OpKernel {
 
     // check the sizes
     OP_REQUIRES(context, (nframes == in_deriv_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of samples should match"));
+                errors::InvalidArgument("number of samples should match"));
     OP_REQUIRES(context, (nframes == nlist_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of samples should match"));
+                errors::InvalidArgument("number of samples should match"));
     OP_REQUIRES(context, (nframes == axis_tensor.shape().dim_size(0)),
-                absl::InvalidArgumentError("number of samples should match"));
+                errors::InvalidArgument("number of samples should match"));
 
-    OP_REQUIRES(
-        context,
-        (static_cast<int64_t>(nloc) * ndescrpt * 12 ==
-         in_deriv_tensor.shape().dim_size(1)),
-        absl::InvalidArgumentError("number of descriptors should match"));
+    OP_REQUIRES(context,
+                (static_cast<int64_t>(nloc) * ndescrpt * 12 ==
+                 in_deriv_tensor.shape().dim_size(1)),
+                errors::InvalidArgument("number of descriptors should match"));
     OP_REQUIRES(context, (nnei == n_a_sel + n_r_sel),
-                absl::InvalidArgumentError("number of neighbors should match"));
+                errors::InvalidArgument("number of neighbors should match"));
     OP_REQUIRES(
         context, (nloc * 4 == axis_tensor.shape().dim_size(1)),
-        absl::InvalidArgumentError("number of axis type+id should match 2+2"));
+        errors::InvalidArgument("number of axis type+id should match 2+2"));
 
     // Create an output tensor
     TensorShape force_shape;
