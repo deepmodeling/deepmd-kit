@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
+import re
 import site
 from functools import (
     lru_cache,
@@ -228,6 +229,22 @@ def get_tf_version(tf_path: Optional[Union[str, Path]]) -> str:
                 patch = line.split()[-1]
             elif line.startswith("#define TF_VERSION_SUFFIX"):
                 suffix = line.split()[-1].strip('"')
+    if None in (major, minor, patch):
+        # since TF 2.20.0, version information is no more contained in version.h
+        # try to read version from tools/pip_package/setup.py
+        # _VERSION = '2.20.0'
+        setup_file = Path(tf_path) / "tools" / "pip_package" / "setup.py"
+        if setup_file.exists():
+            with open(setup_file) as f:
+                for line in f:
+                    # parse with regex
+                    match = re.search(
+                        r"_VERSION[ \t]*=[ \t]*'(\d+)\.(\d+)\.(\d+)([a-zA-Z0-9]*)?'",
+                        line,
+                    )
+                    if match:
+                        major, minor, patch, suffix = match.groups()
+                        break
     if None in (major, minor, patch):
         raise RuntimeError("Failed to read TF version")
     return ".".join((major, minor, patch)) + suffix
