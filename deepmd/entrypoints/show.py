@@ -99,7 +99,7 @@ def show(
                     ]
                     observed_types = {
                         "type_num": len(observed_type_list),
-                        "observed_type": sort_element_type(observed_type_list),
+                        "observed_type": observed_type_list,
                     }
                 else:
                     tmp_model = DeepEval(INPUT, head=branch, no_jit=True)
