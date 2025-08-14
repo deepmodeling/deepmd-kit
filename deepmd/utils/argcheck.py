@@ -2326,7 +2326,7 @@ def standard_model_args() -> Argument:
             ),
             Argument(
                 "model_branch_alias",
-                list,
+                list[str],
                 optional=True,
                 default=[],
                 doc=doc_only_pt_supported + doc_model_branch_alias,
