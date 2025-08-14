@@ -14,6 +14,7 @@ import torch
 
 from deepmd.pt.entrypoints.main import (
     get_trainer,
+    train as train_entry,
 )
 from deepmd.pt.utils.finetune import (
     get_finetune_rules,
@@ -180,8 +181,29 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
 
+    def test_yaml_input(self) -> None:
+        import yaml
+
+        yaml_file = Path("input.yaml")
+        with open(yaml_file, "w") as fp:
+            yaml.safe_dump(self.config, fp)
+        train_entry(
+            input_file=str(yaml_file),
+            init_model=None,
+            restart=None,
+            finetune=None,
+            init_frz_model=None,
+            model_branch="main",
+            skip_neighbor_stat=True,
+            output="out.json",
+        )
+        self.assertTrue(Path("out.json").exists())
+
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
+        for ff in ["out.json", "input.yaml"]:
+            if Path(ff).exists():
+                os.remove(ff)
 
 
 class TestDOSModelSeA(unittest.TestCase, DPTrainTest):
