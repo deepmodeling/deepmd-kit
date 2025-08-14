@@ -22,7 +22,7 @@ jobs:
             tensorflow_version: ""
             filename: libdeepmd_c.tar.gz
           - tensorflow_build_version: "2.14"
-            tensorflow_version: ">=2.5.0rc0,<2.15"
+            tensorflow_version: ">=2.5.0,<2.15"
             filename: libdeepmd_c_cu11.tar.gz
     steps:
       - uses: actions/checkout@v4
@@ -55,7 +55,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Download artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: libdeepmd_c-*
           merge-multiple: true

@@ -62,7 +62,9 @@ class DPAtomicModel(BaseAtomicModel):
         self.fitting_net = fitting
         super().init_out_stat()
         self.enable_eval_descriptor_hook = False
+        self.enable_eval_fitting_last_layer_hook = False
         self.eval_descriptor_list = []
+        self.eval_fitting_last_layer_list = []
 
         # register 'type_map' as buffer
         def _string_to_array(s: str) -> list[int]:
@@ -112,15 +114,28 @@ class DPAtomicModel(BaseAtomicModel):
         self.buffer_aparam_nall.name = "buffer_aparam_nall"
 
     eval_descriptor_list: list[paddle.Tensor]
+    eval_fitting_last_layer_list: list[paddle.Tensor]
 
     def set_eval_descriptor_hook(self, enable: bool) -> None:
         """Set the hook for evaluating descriptor and clear the cache for descriptor list."""
         self.enable_eval_descriptor_hook = enable
-        self.eval_descriptor_list = []
+        # = [] does not work; See #4533
+        self.eval_descriptor_list.clear()
 
     def eval_descriptor(self) -> paddle.Tensor:
         """Evaluate the descriptor."""
         return paddle.concat(self.eval_descriptor_list)
+
+    def set_eval_fitting_last_layer_hook(self, enable: bool) -> None:
+        """Set the hook for evaluating fitting last layer output and clear the cache for fitting last layer output list."""
+        self.enable_eval_fitting_last_layer_hook = enable
+        self.fitting_net.set_return_middle_output(enable)
+        # = [] does not work; See #4533
+        self.eval_fitting_last_layer_list.clear()
+
+    def eval_fitting_last_layer(self) -> paddle.Tensor:
+        """Evaluate the fitting last layer output."""
+        return paddle.concat(self.eval_fitting_last_layer_list)
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
@@ -250,7 +265,7 @@ class DPAtomicModel(BaseAtomicModel):
         mapping: Optional[paddle.Tensor] = None,
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[list[paddle.Tensor]] = None,
     ) -> dict[str, paddle.Tensor]:
         """Return atomic prediction.
 
@@ -288,7 +303,7 @@ class DPAtomicModel(BaseAtomicModel):
         )
         assert descriptor is not None
         if self.enable_eval_descriptor_hook:
-            self.eval_descriptor_list.append(descriptor)
+            self.eval_descriptor_list.append(descriptor.detach())
         # energy, force
         fit_ret = self.fitting_net(
             descriptor,
@@ -299,6 +314,13 @@ class DPAtomicModel(BaseAtomicModel):
             fparam=fparam,
             aparam=aparam,
         )
+        if self.enable_eval_fitting_last_layer_hook:
+            assert "middle_output" in fit_ret, (
+                "eval_fitting_last_layer not supported for this fitting net!"
+            )
+            self.eval_fitting_last_layer_list.append(
+                fit_ret.pop("middle_output").detach()
+            )
         return fit_ret
 
     def get_out_bias(self) -> paddle.Tensor:
@@ -343,6 +365,9 @@ class DPAtomicModel(BaseAtomicModel):
             return sampled
 
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
+        self.fitting_net.compute_input_stats(
+            wrapped_sampler, protection=self.data_stat_protect
+        )
         self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
     def get_dim_fparam(self) -> int:

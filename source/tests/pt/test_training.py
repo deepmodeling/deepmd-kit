@@ -30,6 +30,8 @@ from .model.test_permutation import (
 
 
 class DPTrainTest:
+    test_zbl_from_standard: bool = False
+
     def test_dp_train(self) -> None:
         # test training from scratch
         trainer = get_trainer(deepcopy(self.config))
@@ -94,6 +96,34 @@ class DPTrainTest:
                         state_dict_trained[state_key],
                         state_dict_finetuned_random[state_key],
                     )
+
+        if self.test_zbl_from_standard:
+            # test fine-tuning using zbl from standard model
+            finetune_model = (
+                self.config["training"].get("save_ckpt", "model.ckpt") + ".pt"
+            )
+            self.config_zbl["model"], finetune_links = get_finetune_rules(
+                finetune_model,
+                self.config_zbl["model"],
+            )
+            trainer_finetune_zbl = get_trainer(
+                deepcopy(self.config_zbl),
+                finetune_model=finetune_model,
+                finetune_links=finetune_links,
+            )
+            state_dict_finetuned_zbl = trainer_finetune_zbl.wrapper.model.state_dict()
+            for state_key in state_dict_finetuned_zbl:
+                if "out_bias" not in state_key and "out_std" not in state_key:
+                    original_key = state_key
+                    if ".models.0." in state_key:
+                        original_key = state_key.replace(".models.0.", ".")
+                    if ".models.1." not in state_key:
+                        torch.testing.assert_close(
+                            state_dict_trained[original_key],
+                            state_dict_finetuned_zbl[state_key],
+                        )
+            # check running
+            trainer_finetune_zbl.run()
 
         # check running
         trainer_finetune.run()
@@ -221,6 +251,18 @@ class TestEnergyModelDPA1(unittest.TestCase, DPTrainTest):
         self.config["model"] = deepcopy(model_dpa1)
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
+
+        self.test_zbl_from_standard = True
+
+        input_json_zbl = str(Path(__file__).parent / "water/zbl.json")
+        with open(input_json_zbl) as f:
+            self.config_zbl = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config_zbl["training"]["training_data"]["systems"] = data_file
+        self.config_zbl["training"]["validation_data"]["systems"] = data_file
+        self.config_zbl["model"] = deepcopy(model_zbl)
+        self.config_zbl["training"]["numb_steps"] = 1
+        self.config_zbl["training"]["save_freq"] = 1
 
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)

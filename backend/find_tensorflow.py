@@ -88,14 +88,14 @@ def find_tensorflow() -> tuple[Optional[str], list[str]]:
                 # CUDA 12.2, cudnn 9
                 requires.extend(
                     [
-                        "tensorflow-cpu>=2.18.0rc0; platform_machine=='x86_64' and platform_system == 'Linux'",
+                        "tensorflow-cpu>=2.18.0; platform_machine=='x86_64' and platform_system == 'Linux'",
                     ]
                 )
             elif cuda_version in SpecifierSet(">=11,<12"):
                 # CUDA 11.8, cudnn 8
                 requires.extend(
                     [
-                        "tensorflow-cpu>=2.5.0rc0,<2.15; platform_machine=='x86_64' and platform_system == 'Linux'",
+                        "tensorflow-cpu>=2.5.0,<2.15; platform_machine=='x86_64' and platform_system == 'Linux'",
                     ]
                 )
                 tf_version = "2.14.1"

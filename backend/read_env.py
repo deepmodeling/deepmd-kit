@@ -119,6 +119,7 @@ def get_argument_from_env() -> tuple[str, list, list, dict, str, str]:
 
     cmake_args = [
         "-DBUILD_PY_IF:BOOL=TRUE",
+        f"-DCIBUILDWHEEL={os.environ.get('CIBUILDWHEEL', '0')}",
         *cmake_args,
     ]
     return (
