@@ -306,6 +306,23 @@ if(NOT DEFINED TENSORFLOW_VERSION)
   endif()
 endif()
 
+if(TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.20)
+  # since TF 2.20, macros like TF_MAJOR_VERSION, TF_MINOR_VERSION, and
+  # TF_PATCH_VERSION are not defined We manuanlly define them in our CMake files
+  # firstly, split TENSORFLOW_VERSION (e.g. 2.20.0rc0) to 2 20 0 rc0
+  string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)(.*)$" _match
+               ${TENSORFLOW_VERSION})
+  if(_match)
+    set(TF_MAJOR_VERSION ${CMAKE_MATCH_1})
+    set(TF_MINOR_VERSION ${CMAKE_MATCH_2})
+    set(TF_PATCH_VERSION ${CMAKE_MATCH_3})
+    # add defines
+    add_definitions(-DTF_MAJOR_VERSION=${TF_MAJOR_VERSION})
+    add_definitions(-DTF_MINOR_VERSION=${TF_MINOR_VERSION})
+    add_definitions(-DTF_PATCH_VERSION=${TF_PATCH_VERSION})
+  endif()
+endif()
+
 # print message
 if(NOT TensorFlow_FIND_QUIETLY)
   message(
