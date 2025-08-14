@@ -298,7 +298,11 @@ def test_ener(
         data.add("atom_ener", 1, atomic=True, must=True, high_prec=False)
     if dp.get_dim_fparam() > 0:
         data.add(
-            "fparam", dp.get_dim_fparam(), atomic=False, must=True, high_prec=False
+            "fparam",
+            dp.get_dim_fparam(),
+            atomic=False,
+            must=not dp.has_default_fparam(),
+            high_prec=False,
         )
     if dp.get_dim_aparam() > 0:
         data.add("aparam", dp.get_dim_aparam(), atomic=True, must=True, high_prec=False)
@@ -334,7 +338,7 @@ def test_ener(
         atype = test_data["type"][:numb_test].reshape([numb_test, -1])
     else:
         atype = test_data["type"][0]
-    if dp.get_dim_fparam() > 0:
+    if dp.get_dim_fparam() > 0 and test_data["find_fparam"] != 0.0:
         fparam = test_data["fparam"][:numb_test]
     else:
         fparam = None

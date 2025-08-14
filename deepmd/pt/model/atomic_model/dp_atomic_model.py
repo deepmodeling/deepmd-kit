@@ -334,6 +334,10 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the number (dimension) of frame parameters of this atomic model."""
         return self.fitting_net.get_dim_fparam()
 
+    def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
+        return self.fitting_net.has_default_fparam()
+
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.fitting_net.get_dim_aparam()

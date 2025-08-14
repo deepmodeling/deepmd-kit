@@ -88,6 +88,10 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Get the type map."""
         return self.type_map
 
+    def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
+        return False
+
     def reinit_atom_exclude(
         self,
         exclude_types: list[int] = [],

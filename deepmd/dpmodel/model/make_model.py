@@ -564,6 +564,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             """Get the number (dimension) of atomic parameters of this atomic model."""
             return self.atomic_model.get_dim_aparam()
 
+        def has_default_fparam(self) -> bool:
+            """Check if the model has default frame parameters."""
+            return self.atomic_model.has_default_fparam()
+
         def get_sel_type(self) -> list[int]:
             """Get the selected atom types of this model.
 

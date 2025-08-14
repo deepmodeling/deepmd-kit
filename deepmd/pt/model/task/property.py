@@ -91,6 +91,7 @@ class PropertyFittingNet(InvarFitting):
         mixed_types: bool = True,
         trainable: Union[bool, list[bool]] = True,
         seed: Optional[int] = None,
+        default_fparam: Optional[list] = None,
         **kwargs,
     ) -> None:
         self.task_dim = task_dim
@@ -111,6 +112,7 @@ class PropertyFittingNet(InvarFitting):
             mixed_types=mixed_types,
             trainable=trainable,
             seed=seed,
+            default_fparam=default_fparam,
             **kwargs,
         )
 

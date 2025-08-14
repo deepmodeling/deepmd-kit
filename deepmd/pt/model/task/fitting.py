@@ -204,6 +204,9 @@ class GeneralFitting(Fitting):
         A list of strings. Give the name to each type of atoms.
     use_aparam_as_mask: bool
         If True, the aparam will not be used in fitting net for embedding.
+    default_fparam: list[float], optional
+        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+        this value will be used as the default value for the frame parameter in the fitting net.
     """
 
     def __init__(
@@ -227,6 +230,7 @@ class GeneralFitting(Fitting):
         remove_vaccum_contribution: Optional[list[bool]] = None,
         type_map: Optional[list[str]] = None,
         use_aparam_as_mask: bool = False,
+        default_fparam: Optional[list[float]] = None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -238,6 +242,7 @@ class GeneralFitting(Fitting):
         self.resnet_dt = resnet_dt
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
+        self.default_fparam = default_fparam
         self.dim_case_embd = dim_case_embd
         self.activation_function = activation_function
         self.precision = precision
@@ -298,6 +303,20 @@ class GeneralFitting(Fitting):
             )
         else:
             self.case_embd = None
+
+        if self.default_fparam is not None:
+            if self.numb_fparam > 0:
+                assert len(self.default_fparam) == self.numb_fparam, (
+                    "default_fparam length mismatch!"
+                )
+            self.register_buffer(
+                "default_fparam_tensor",
+                torch.tensor(
+                    np.array(self.default_fparam), dtype=self.prec, device=device
+                ),
+            )
+        else:
+            self.default_fparam_tensor = None
 
         in_dim = (
             self.dim_descrpt
@@ -375,6 +394,7 @@ class GeneralFitting(Fitting):
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
             "dim_case_embd": self.dim_case_embd,
+            "default_fparam": self.default_fparam,
             "activation_function": self.activation_function,
             "precision": self.precision,
             "mixed_types": self.mixed_types,
@@ -417,6 +437,10 @@ class GeneralFitting(Fitting):
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
         return self.numb_fparam
+
+    def has_default_fparam(self) -> bool:
+        """Check if the fitting has default frame parameters."""
+        return self.default_fparam is not None
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
@@ -515,6 +539,13 @@ class GeneralFitting(Fitting):
     ):
         # cast the input to internal precsion
         xx = descriptor.to(self.prec)
+        nf, nloc, nd = xx.shape
+
+        if self.numb_fparam > 0 and fparam is None:
+            # use default fparam
+            assert self.default_fparam_tensor is not None
+            fparam = torch.tile(self.default_fparam_tensor.unsqueeze(0), [nf, 1])
+
         fparam = fparam.to(self.prec) if fparam is not None else None
         aparam = aparam.to(self.prec) if aparam is not None else None
 
@@ -527,7 +558,6 @@ class GeneralFitting(Fitting):
             xx_zeros = torch.zeros_like(xx)
         else:
             xx_zeros = None
-        nf, nloc, nd = xx.shape
         net_dim_out = self._net_out_dim()
 
         if nd != self.dim_descrpt:

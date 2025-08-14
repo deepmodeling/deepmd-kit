@@ -524,6 +524,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             return self.atomic_model.get_dim_fparam()
 
         @torch.jit.export
+        def has_default_fparam(self) -> bool:
+            """Check if the model has default frame parameters."""
+            return self.atomic_model.has_default_fparam()
+
+        @torch.jit.export
         def get_dim_aparam(self) -> int:
             """Get the number (dimension) of atomic parameters of this atomic model."""
             return self.atomic_model.get_dim_aparam()

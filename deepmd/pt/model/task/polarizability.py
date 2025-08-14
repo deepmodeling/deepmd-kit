@@ -75,7 +75,9 @@ class PolarFittingNet(GeneralFitting):
         Whether to shift the diagonal part of the polarizability matrix. The shift operation is carried out after scale.
     type_map: list[str], Optional
         A list of strings. Give the name to each type of atoms.
-
+    default_fparam: list[float], optional
+        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+        this value will be used as the default value for the frame parameter in the fitting net.
     """
 
     def __init__(
@@ -98,6 +100,7 @@ class PolarFittingNet(GeneralFitting):
         scale: Optional[Union[list[float], float]] = None,
         shift_diag: bool = True,
         type_map: Optional[list[str]] = None,
+        default_fparam: Optional[list] = None,
         **kwargs,
     ) -> None:
         self.embedding_width = embedding_width
@@ -139,6 +142,7 @@ class PolarFittingNet(GeneralFitting):
             seed=seed,
             exclude_types=exclude_types,
             type_map=type_map,
+            default_fparam=default_fparam,
             **kwargs,
         )
 

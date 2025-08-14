@@ -120,6 +120,10 @@ class DeepEval(DeepEvalBackend):
         """Get the number (dimension) of atomic parameters of this DP."""
         return self.dp.get_dim_aparam()
 
+    def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
+        return self.dp.has_default_fparam()
+
     @property
     def model_type(self) -> type["DeepEvalWrapper"]:
         """The the evaluator of the model type."""
