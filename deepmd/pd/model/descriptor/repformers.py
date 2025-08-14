@@ -66,8 +66,9 @@ if not ENABLE_CUSTOMIZED_OP:
         argument8,
     ) -> paddle.Tensor:
         raise NotImplementedError(
-            "border_op is not available since customized Paddle OP library is not built when freezing the model. "
-            "See documentation for DPA3 for details."
+            "The 'border_op' operator is unavailable because the custom Paddle OP library was not built when freezing the model .\n"
+            "To install 'border_op', run: python source/op/pd/setup.py install\n"
+            "For more information, please refer to the DPA3 documentation."
         )
 
     # Note: this hack cannot actually save a model that can be run using LAMMPS.
