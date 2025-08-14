@@ -8,6 +8,14 @@ file(GLOB INC_SRC include/*.h ${CMAKE_CURRENT_BINARY_DIR}/version.h)
 set(libname "${LIB_DEEPMD_CC}")
 add_library(${libname} SHARED ${LIB_SRC})
 
+if(ENABLE_PYTORCH)
+  find_package(MPI)
+  if(MPI_FOUND)
+    target_link_libraries(${libname} PRIVATE MPI::MPI_CXX)
+    target_compile_definitions(${libname} PRIVATE USE_MPI)
+  endif()
+endif()
+
 # link: libdeepmd libdeepmd_op libtensorflow_cc libtensorflow_framework
 target_link_libraries(${libname} PUBLIC ${LIB_DEEPMD})
 if(ENABLE_TENSORFLOW)
