@@ -57,6 +57,10 @@ def find_tensorflow() -> tuple[Optional[str], list[str]]:
     ) is not None:
         site_packages = Path(os.environ.get("TENSORFLOW_ROOT")).parent.absolute()
         tf_spec = FileFinder(str(site_packages)).find_spec("tensorflow")
+        if tf_spec is None:
+            raise RuntimeError(
+                f"cannot find TensorFlow under TENSORFLOW_ROOT {os.environ.get('TENSORFLOW_ROOT')}"
+            )
 
     # get tensorflow spec
     # note: isolated build will not work for backend
