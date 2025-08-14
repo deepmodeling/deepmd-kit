@@ -184,11 +184,11 @@ class TabulateFusionSeAOp : public OpKernel {
     const Tensor& em_tensor = context->input(context_input_index++);
     // set size of the sample
     OP_REQUIRES(context, (table_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of table should be 2"));
+                absl::InvalidArgumentError("Dim of table should be 2"));
     OP_REQUIRES(context, (em_x_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                absl::InvalidArgumentError("Dim of input should be 2"));
     OP_REQUIRES(context, (em_tensor.shape().dims() == 3),
-                errors::InvalidArgument("Dim of input should be 3"));
+                absl::InvalidArgumentError("Dim of input should be 3"));
     TensorShape descriptor_shape;
     descriptor_shape.AddDim(em_tensor.shape().dim_size(0));
     descriptor_shape.AddDim(4);  // be careful here;
@@ -247,7 +247,7 @@ class TabulateFusionSeAGradOp : public OpKernel {
     const Tensor& descriptor_tensor = context->input(context_input_index++);
     // set size of the sample
     OP_REQUIRES(context, (dy_tensor.shape().dims() == 3),
-                errors::InvalidArgument("Dim of table should be 3"));
+                absl::InvalidArgumentError("Dim of table should be 3"));
     int context_output_index = 0;
     Tensor* dy_dem_x_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
@@ -311,9 +311,9 @@ class TabulateFusionSeAGradGradOp : public OpKernel {
     const Tensor& descriptor_tensor = context->input(context_input_index++);
     // set size of the sample
     OP_REQUIRES(context, (dz_dy_dem_x_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                absl::InvalidArgumentError("Dim of input should be 2"));
     OP_REQUIRES(context, (dz_dy_dem_tensor.shape().dims() == 3),
-                errors::InvalidArgument("Dim of input should be 3"));
+                absl::InvalidArgumentError("Dim of input should be 3"));
     int context_output_index = 0;
     Tensor* dz_dy_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
@@ -342,7 +342,7 @@ class TabulateFusionSeAGradGradOp : public OpKernel {
           dz_dy_dtwo, nloc, nnei, last_layer_size, is_sorted);
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       OP_REQUIRES(context, (last_layer_size <= 1024),
-                  errors::InvalidArgument(
+                  absl::InvalidArgumentError(
                       "In the process of model compression, the size of the "
                       "last layer of embedding net must be less than 1024!"));
     } else if (device == "CPU") {
@@ -381,13 +381,13 @@ class TabulateFusionSeAttenOp : public OpKernel {
     const Tensor& two_embed_tensor = context->input(context_input_index++);
     // set size of the sample
     OP_REQUIRES(context, (table_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of table should be 2"));
+                absl::InvalidArgumentError("Dim of table should be 2"));
     OP_REQUIRES(context, (em_x_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                absl::InvalidArgumentError("Dim of input should be 2"));
     OP_REQUIRES(context, (em_tensor.shape().dims() == 3),
-                errors::InvalidArgument("Dim of input should be 3"));
+                absl::InvalidArgumentError("Dim of input should be 3"));
     OP_REQUIRES(context, (two_embed_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                absl::InvalidArgumentError("Dim of input should be 2"));
     TensorShape descriptor_shape;
     descriptor_shape.AddDim(em_tensor.shape().dim_size(0));
     descriptor_shape.AddDim(4);  // be careful here;
@@ -452,7 +452,7 @@ class TabulateFusionSeAttenGradOp : public OpKernel {
     const Tensor& descriptor_tensor = context->input(context_input_index++);
     // set size of the sample
     OP_REQUIRES(context, (dy_tensor.shape().dims() == 3),
-                errors::InvalidArgument("Dim of table should be 3"));
+                absl::InvalidArgumentError("Dim of table should be 3"));
     int context_output_index = 0;
     Tensor* dy_dem_x_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
@@ -528,9 +528,9 @@ class TabulateFusionSeAttenGradGradOp : public OpKernel {
     const Tensor& descriptor_tensor = context->input(context_input_index++);
     // set size of the sample
     OP_REQUIRES(context, (dz_dy_dem_x_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                absl::InvalidArgumentError("Dim of input should be 2"));
     OP_REQUIRES(context, (dz_dy_dem_tensor.shape().dims() == 3),
-                errors::InvalidArgument("Dim of input should be 3"));
+                absl::InvalidArgumentError("Dim of input should be 3"));
     int context_output_index = 0;
     Tensor* dz_dy_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
@@ -559,7 +559,7 @@ class TabulateFusionSeAttenGradGradOp : public OpKernel {
           dz_dy_dtwo, nloc, nnei, last_layer_size, is_sorted);
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       OP_REQUIRES(context, (last_layer_size <= 1024),
-                  errors::InvalidArgument(
+                  absl::InvalidArgumentError(
                       "In the process of model compression, the size of the "
                       "last layer of embedding net must be less than 1024!"));
     } else if (device == "CPU") {
@@ -596,11 +596,11 @@ class TabulateFusionSeTOp : public OpKernel {
     const Tensor& em_tensor = context->input(context_input_index++);
     // set size of the sample
     OP_REQUIRES(context, (table_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of table should be 2"));
+                absl::InvalidArgumentError("Dim of table should be 2"));
     OP_REQUIRES(context, (em_x_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of em_x_tensor should be 2"));
+                absl::InvalidArgumentError("Dim of em_x_tensor should be 2"));
     OP_REQUIRES(context, (em_tensor.shape().dims() == 3),
-                errors::InvalidArgument("Dim of em_tensor should be 3"));
+                absl::InvalidArgumentError("Dim of em_tensor should be 3"));
     TensorShape descriptor_shape;
     descriptor_shape.AddDim(em_tensor.shape().dim_size(0));
     descriptor_shape.AddDim(last_layer_size);
@@ -657,7 +657,7 @@ class TabulateFusionSeTGradOp : public OpKernel {
     const Tensor& descriptor_tensor = context->input(context_input_index++);
     // set size of the sample
     OP_REQUIRES(context, (dy_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of dy_tensor should be 2"));
+                absl::InvalidArgumentError("Dim of dy_tensor should be 2"));
     int context_output_index = 0;
     Tensor* dy_dem_x_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
@@ -717,9 +717,9 @@ class TabulateFusionSeTGradGradOp : public OpKernel {
     const Tensor& descriptor_tensor = context->input(context_input_index++);
     // set size of the sample
     OP_REQUIRES(context, (dz_dy_dem_x_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                absl::InvalidArgumentError("Dim of input should be 2"));
     OP_REQUIRES(context, (dz_dy_dem_tensor.shape().dims() == 3),
-                errors::InvalidArgument("Dim of input should be 3"));
+                absl::InvalidArgumentError("Dim of input should be 3"));
     int context_output_index = 0;
     Tensor* dz_dy_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
@@ -747,7 +747,7 @@ class TabulateFusionSeTGradGradOp : public OpKernel {
           nnei_i, nnei_j, last_layer_size);
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       OP_REQUIRES(context, (last_layer_size <= 1024),
-                  errors::InvalidArgument(
+                  absl::InvalidArgumentError(
                       "In the process of model compression, the size of the "
                       "last layer of embedding net must be less than 1024!"));
     } else if (device == "CPU") {
@@ -781,9 +781,9 @@ class TabulateFusionSeROp : public OpKernel {
     const Tensor& em_tensor = context->input(context_input_index++);
     // set size of the sample
     OP_REQUIRES(context, (table_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of table should be 2"));
+                absl::InvalidArgumentError("Dim of table should be 2"));
     OP_REQUIRES(context, (em_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                absl::InvalidArgumentError("Dim of input should be 2"));
     TensorShape descriptor_shape;
     descriptor_shape.AddDim(em_tensor.shape().dim_size(0));
     descriptor_shape.AddDim(em_tensor.shape().dim_size(1));  // be careful here;
@@ -838,7 +838,7 @@ class TabulateFusionSeRGradOp : public OpKernel {
     const Tensor& descriptor_tensor = context->input(context_input_index++);
     // set size of the sample
     OP_REQUIRES(context, (dy_tensor.shape().dims() == 3),
-                errors::InvalidArgument("Dim of table should be 3"));
+                absl::InvalidArgumentError("Dim of table should be 3"));
     int context_output_index = 0;
     Tensor* dy_dem_tensor = NULL;
     OP_REQUIRES_OK(context,
@@ -887,7 +887,7 @@ class TabulateFusionSeRGradGradOp : public OpKernel {
     const Tensor& descriptor_tensor = context->input(context_input_index++);
     // set size of the sample
     OP_REQUIRES(context, (dz_dy_dem_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input should be 2"));
+                absl::InvalidArgumentError("Dim of input should be 2"));
     int context_output_index = 0;
     Tensor* dz_dy_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
@@ -911,7 +911,7 @@ class TabulateFusionSeRGradGradOp : public OpKernel {
           dz_dy, table, table_info, em, dz_dy_dem, nloc, nnei, last_layer_size);
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       OP_REQUIRES(context, (last_layer_size <= 1024),
-                  errors::InvalidArgument(
+                  absl::InvalidArgumentError(
                       "In the process of model compression, the size of the "
                       "last layer of embedding net must be less than 1024!"));
     } else if (device == "CPU") {

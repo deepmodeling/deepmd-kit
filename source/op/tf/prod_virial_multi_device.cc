@@ -55,17 +55,17 @@ class ProdVirialSeAOp : public OpKernel {
     const Tensor& natoms_tensor = context->input(context_input_index++);
     // set size of the sample
     OP_REQUIRES(context, (net_deriv_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of net deriv should be 2"));
+                absl::InvalidArgumentError("Dim of net deriv should be 2"));
     OP_REQUIRES(context, (in_deriv_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input deriv should be 2"));
+                absl::InvalidArgumentError("Dim of input deriv should be 2"));
     OP_REQUIRES(context, (rij_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of rij should be 2"));
+                absl::InvalidArgumentError("Dim of rij should be 2"));
     OP_REQUIRES(context, (nlist_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of nlist should be 2"));
+                absl::InvalidArgumentError("Dim of nlist should be 2"));
     OP_REQUIRES(context, (natoms_tensor.shape().dims() == 1),
-                errors::InvalidArgument("Dim of natoms should be 1"));
+                absl::InvalidArgumentError("Dim of natoms should be 1"));
     OP_REQUIRES(context, (natoms_tensor.shape().dim_size(0) >= 3),
-                errors::InvalidArgument(
+                absl::InvalidArgumentError(
                     "number of atoms should be larger than (or equal to) 3"));
     const int* natoms = natoms_tensor.flat<int>().data();
     int nloc = natoms[0];
@@ -75,18 +75,18 @@ class ProdVirialSeAOp : public OpKernel {
     int ndescrpt = nloc > 0 ? net_deriv_tensor.shape().dim_size(1) / nloc : 0;
     // check the sizes
     OP_REQUIRES(context, (nframes == in_deriv_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
+                absl::InvalidArgumentError("number of samples should match"));
     OP_REQUIRES(context, (nframes == rij_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
+                absl::InvalidArgumentError("number of samples should match"));
     OP_REQUIRES(context, (nframes == nlist_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
+                absl::InvalidArgumentError("number of samples should match"));
     OP_REQUIRES(
         context,
         (int_64(nloc) * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1)),
-        errors::InvalidArgument("number of descriptors should match"));
+        absl::InvalidArgumentError("number of descriptors should match"));
     OP_REQUIRES(context,
                 (int_64(nloc) * nnei * 3 == rij_tensor.shape().dim_size(1)),
-                errors::InvalidArgument("dim of rij should be nnei * 3"));
+                absl::InvalidArgumentError("dim of rij should be nnei * 3"));
     // Create an output tensor
     TensorShape virial_shape;
     virial_shape.AddDim(nframes);
@@ -154,17 +154,17 @@ class ProdVirialSeROp : public OpKernel {
     const Tensor& natoms_tensor = context->input(context_input_index++);
     // set size of the sample
     OP_REQUIRES(context, (net_deriv_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of net deriv should be 2"));
+                absl::InvalidArgumentError("Dim of net deriv should be 2"));
     OP_REQUIRES(context, (in_deriv_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input deriv should be 2"));
+                absl::InvalidArgumentError("Dim of input deriv should be 2"));
     OP_REQUIRES(context, (rij_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of rij should be 2"));
+                absl::InvalidArgumentError("Dim of rij should be 2"));
     OP_REQUIRES(context, (nlist_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of nlist should be 2"));
+                absl::InvalidArgumentError("Dim of nlist should be 2"));
     OP_REQUIRES(context, (natoms_tensor.shape().dims() == 1),
-                errors::InvalidArgument("Dim of natoms should be 1"));
+                absl::InvalidArgumentError("Dim of natoms should be 1"));
     OP_REQUIRES(context, (natoms_tensor.shape().dim_size(0) >= 3),
-                errors::InvalidArgument(
+                absl::InvalidArgumentError(
                     "number of atoms should be larger than (or equal to) 3"));
     const int* natoms = natoms_tensor.flat<int>().data();
     int nloc = natoms[0];
@@ -174,18 +174,18 @@ class ProdVirialSeROp : public OpKernel {
     int ndescrpt = nloc > 0 ? net_deriv_tensor.shape().dim_size(1) / nloc : 0;
     // check the sizes
     OP_REQUIRES(context, (nframes == in_deriv_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
+                absl::InvalidArgumentError("number of samples should match"));
     OP_REQUIRES(context, (nframes == rij_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
+                absl::InvalidArgumentError("number of samples should match"));
     OP_REQUIRES(context, (nframes == nlist_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
+                absl::InvalidArgumentError("number of samples should match"));
     OP_REQUIRES(
         context,
         (int_64(nloc) * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1)),
-        errors::InvalidArgument("number of descriptors should match"));
+        absl::InvalidArgumentError("number of descriptors should match"));
     OP_REQUIRES(context,
                 (int_64(nloc) * nnei * 3 == rij_tensor.shape().dim_size(1)),
-                errors::InvalidArgument("dim of rij should be nnei * 3"));
+                absl::InvalidArgumentError("dim of rij should be nnei * 3"));
     // Create an output tensor
     TensorShape virial_shape;
     virial_shape.AddDim(nframes);
