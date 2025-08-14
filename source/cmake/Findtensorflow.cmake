@@ -309,7 +309,7 @@ endif()
 if(TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.20)
   # since TF 2.20, macros like TF_MAJOR_VERSION, TF_MINOR_VERSION, and
   # TF_PATCH_VERSION are not defined We manuanlly define them in our CMake files
-  # firstly, split TENSORFLOW_VERSION (e.g. 2.20.0rc0) to 2 20 0 rc0
+  # first, split TENSORFLOW_VERSION (e.g. 2.20.0rc0) to 2 20 0 rc0
   string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)(.*)$" _match
                ${TENSORFLOW_VERSION})
   if(_match)
