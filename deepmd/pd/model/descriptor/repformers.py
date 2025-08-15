@@ -66,7 +66,7 @@ if not ENABLE_CUSTOMIZED_OP:
         argument8,
     ) -> paddle.Tensor:
         raise NotImplementedError(
-            "The 'border_op' operator is unavailable because the custom Paddle OP library was not built when freezing the model .\n"
+            "The 'border_op' operator is unavailable because the custom Paddle OP library was not built when freezing the model.\n"
             "To install 'border_op', run: python source/op/pd/setup.py install\n"
             "For more information, please refer to the DPA3 documentation."
         )
