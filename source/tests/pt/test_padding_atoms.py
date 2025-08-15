@@ -49,7 +49,8 @@ class TestCaseSingleFrameWithoutNlist:
         self.sel = [16, 8]
         self.rcut = 2.2
         self.rcut_smth = 0.4
-        self.atol = 1e-5
+        self.atol = 1e-6
+        self.rtol = 1e-5
 
 
 class TestPaddingAtoms(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
@@ -79,6 +80,7 @@ class TestPaddingAtoms(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             to_numpy_array(result[var_name].cpu().detach()),
             np.mean(to_numpy_array(result[f"atom_{var_name}"].cpu().detach()), axis=1),
             atol=self.atol,
+            rtol=self.rtol,
         )
         # test padding atoms
         padding_atoms_list = [1, 5, 10]
@@ -105,6 +107,7 @@ class TestPaddingAtoms(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
                 to_numpy_array(result[var_name].cpu().detach()),
                 to_numpy_array(result_padding[var_name].cpu().detach()),
                 atol=self.atol,
+                rtol=self.rtol,
             )
 
 
