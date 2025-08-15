@@ -1388,6 +1388,12 @@ def descrpt_dpa3_args():
             doc=doc_concat_output_tebd,
         ),
         Argument(
+            "add_chg_spin_ebd",
+            bool,
+            optional=True,
+            default=False,
+        ),
+        Argument(
             "activation_function",
             str,
             optional=True,
@@ -2443,6 +2449,7 @@ def learning_rate_exp():
     ]
     return args
 
+
 def learning_rate_wsd():
     doc_start_lr = "The learning rate at the start of the training."
     doc_stop_lr = "The desired learning rate at the end of the training. "
@@ -2454,13 +2461,16 @@ def learning_rate_wsd():
     ]
     return args
 
+
 def learning_rate_variant_type_args():
     doc_lr = "The type of the learning rate."
 
     return Variant(
         "type",
-        [Argument("exp", dict, learning_rate_exp()),
-        Argument("wsd", dict, learning_rate_wsd())],
+        [
+            Argument("exp", dict, learning_rate_exp()),
+            Argument("wsd", dict, learning_rate_wsd()),
+        ],
         optional=True,
         default_tag="exp",
         doc=doc_lr,
