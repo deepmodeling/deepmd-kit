@@ -14,8 +14,8 @@ import torch
 
 from deepmd.pt.entrypoints.main import (
     get_trainer,
-    train as train_entry,
 )
+from deepmd.pt.entrypoints.main import train as train_entry
 from deepmd.pt.utils.finetune import (
     get_finetune_rules,
 )
