@@ -355,6 +355,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 self.atomic_output_def(),
                 extended_coord,
                 do_atomic_virial=do_atomic_virial,
+                mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
             )
 
         forward_lower = call_lower
