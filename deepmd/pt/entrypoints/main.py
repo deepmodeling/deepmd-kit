@@ -25,6 +25,7 @@ from deepmd import (
 )
 from deepmd.common import (
     expand_sys_str,
+    j_loader,
 )
 from deepmd.env import (
     GLOBAL_CONFIG,
@@ -254,8 +255,7 @@ def train(
     env.CUSTOM_OP_USE_JIT = True
     if LOCAL_RANK == 0:
         SummaryPrinter()()
-    with open(input_file) as fin:
-        config = json.load(fin)
+    config = j_loader(input_file)
     # ensure suffix, as in the command line help, we say "path prefix of checkpoint files"
     if init_model is not None and not init_model.endswith(".pt"):
         init_model += ".pt"
