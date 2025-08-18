@@ -54,7 +54,7 @@ jobs:
             platform_id: manylinux_aarch64
             dp_variant: cpu
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # https://github.com/pypa/setuptools_scm/issues/480
           fetch-depth: 0
@@ -87,7 +87,7 @@ jobs:
     name: Build source distribution
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Build sdist
@@ -128,7 +128,7 @@ jobs:
     steps:
       - name: Delete huge unnecessary tools folder
         run: rm -rf /opt/hostedtoolcache
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v5
         with:
           path: source/install/docker/dist
