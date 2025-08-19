@@ -373,7 +373,15 @@ if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
   else()
     # Maybe in macos/windows
     if(NOT DEFINED OP_CXX_ABI)
-      set(OP_CXX_ABI 0)
+      if(UNIX
+         AND NOT APPLE
+         AND Torch_VERSION VERSION_GREATER_EQUAL "2.8.0")
+        # https://github.com/deepmodeling/deepmd-kit/issues/4877
+        # torch.compiled_with_cxx11_abi in PyTorch 2.8 always return True
+        set(OP_CXX_ABI 1)
+      else()
+        set(OP_CXX_ABI 0)
+      endif()
     endif()
     set(OP_CXX_ABI_PT "${OP_CXX_ABI}")
   endif()

@@ -233,16 +233,11 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         linear_model.compute_or_load_out_stat(
             self.merged_output_stat, stat_file_path=self.stat_file_path
         )
-        # bias applied to sub atomic models.
         ener_bias = np.array([1.0, 3.0]).reshape(2, 1)
-        linear_ret = []
-        for idx, md in enumerate(linear_model.models):
-            ret = md.forward_common_atomic(*args)
-            ret = to_numpy_array(ret["energy"])
-            linear_ret.append(ret_no_bias[idx] + ener_bias[at])
-            np.testing.assert_almost_equal((ret_no_bias[idx] + ener_bias[at]), ret)
+        ret = to_numpy_array(linear_model.forward_common_atomic(*args)["energy"])
+        np.testing.assert_almost_equal((ret0 + ener_bias[at]), ret)
 
         # linear model not adding bias again
         ret1 = linear_model.forward_common_atomic(*args)
         ret1 = to_numpy_array(ret1["energy"])
-        np.testing.assert_almost_equal(np.mean(np.stack(linear_ret), axis=0), ret1)
+        np.testing.assert_almost_equal(ret, ret1)
