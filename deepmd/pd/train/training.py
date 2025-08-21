@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import contextlib
 import functools
 import logging
 import time
@@ -99,6 +100,10 @@ class Trainer:
         Args:
         - config: The Dict-like configuration with training options.
         """
+        mesh_dims = [("dp", 32)]
+        fleet.auto.create_mesh(mesh_dims)
+        fleet.init(is_collective=True)
+
         enable_prim(True)
         if init_model is not None:
             resume_model = init_model
@@ -162,10 +167,7 @@ class Trainer:
                     )  # None sampler will lead to a premature stop iteration. Replacement should be True in attribute of the sampler to produce expected number of items in one iteration.
                 _dataloader = DataLoader(
                     _data,
-                    batch_sampler=paddle.io.BatchSampler(
-                        sampler=_sampler,
-                        drop_last=False,
-                    ),
+                    batch_size=1,
                     num_workers=NUM_WORKERS
                     if dist.is_available()
                     else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
@@ -316,17 +318,18 @@ class Trainer:
                 self.validation_data,
                 self.valid_numb_batch,
             ) = get_data_loader(training_data, validation_data, training_params)
-            training_data.print_summary(
-                "training",
-                to_numpy_array(self.training_dataloader.batch_sampler.sampler.weights),
-            )
-            if validation_data is not None:
-                validation_data.print_summary(
-                    "validation",
-                    to_numpy_array(
-                        self.validation_dataloader.batch_sampler.sampler.weights
-                    ),
-                )
+            # no sampler, do not need print!
+            # training_data.print_summary(
+            #     "training",
+            #     to_numpy_array(self.training_dataloader.batch_sampler.sampler.weights),
+            # )
+            # if validation_data is not None:
+            #     validation_data.print_summary(
+            #         "validation",
+            #         to_numpy_array(
+            #             self.validation_dataloader.batch_sampler.sampler.weights
+            #         ),
+            #     )
         else:
             (
                 self.training_dataloader,
@@ -361,27 +364,27 @@ class Trainer:
                     validation_data[model_key],
                     training_params["data_dict"][model_key],
                 )
-
-                training_data[model_key].print_summary(
-                    f"training in {model_key}",
-                    to_numpy_array(
-                        self.training_dataloader[
-                            model_key
-                        ].batch_sampler.sampler.weights
-                    ),
-                )
-                if (
-                    validation_data is not None
-                    and validation_data[model_key] is not None
-                ):
-                    validation_data[model_key].print_summary(
-                        f"validation in {model_key}",
-                        to_numpy_array(
-                            self.validation_dataloader[
-                                model_key
-                            ].batch_sampler.sampler.weights
-                        ),
-                    )
+                # no sampler, do not need print!
+                # training_data[model_key].print_summary(
+                #     f"training in {model_key}",
+                #     to_numpy_array(
+                #         self.training_dataloader[
+                #             model_key
+                #         ].batch_sampler.sampler.weights
+                #     ),
+                # )
+                # if (
+                #     validation_data is not None
+                #     and validation_data[model_key] is not None
+                # ):
+                #     validation_data[model_key].print_summary(
+                #         f"validation in {model_key}",
+                #         to_numpy_array(
+                #             self.validation_dataloader[
+                #                 model_key
+                #             ].batch_sampler.sampler.weights
+                #         ),
+                #     )
 
         # Learning rate
         self.warmup_steps = training_params.get("warmup_steps", 0)
@@ -607,6 +610,27 @@ class Trainer:
             )
 
             backend = "CINN" if CINN else None
+            # NOTE: This is a trick to decide the right input_spec for wrapper.forward
+            _, label_dict, _ = self.get_data(is_train=True)
+
+            # Define specification templates
+            spec_templates = {
+                "find_box": np.float32(1.0),
+                "find_coord": np.float32(1.0),
+                "find_numb_copy": np.float32(0.0),
+                "numb_copy": static.InputSpec([1, 1], "int64", name="numb_copy"),
+                "find_energy": np.float32(1.0),
+                "energy": static.InputSpec([1, 1], "float64", name="energy"),
+                "find_force": np.float32(1.0),
+                "force": static.InputSpec([1, -1, 3], "float64", name="force"),
+                "find_virial": np.float32(0.0),
+                "virial": static.InputSpec([1, 9], "float64", name="virial"),
+                "natoms": static.InputSpec([1, -1], "int32", name="natoms"),
+            }
+            # Build spec only for keys present in sample data
+            label_dict_spec = {
+                k: spec_templates[k] for k in label_dict.keys() if k in spec_templates
+            }
             self.wrapper.forward = jit.to_static(
                 backend=backend,
                 input_spec=[
@@ -615,19 +639,7 @@ class Trainer:
                     None,  # spin
                     static.InputSpec([1, 9], "float64", name="box"),  # box
                     static.InputSpec([], "float64", name="cur_lr"),  # cur_lr
-                    {
-                        "find_box": np.float32(1.0),
-                        "find_coord": np.float32(1.0),
-                        "find_numb_copy": np.float32(0.0),
-                        "numb_copy": static.InputSpec(
-                            [1, 1], "int64", name="numb_copy"
-                        ),
-                        "find_energy": np.float32(1.0),
-                        "energy": static.InputSpec([1, 1], "float64", name="energy"),
-                        "find_force": np.float32(1.0),
-                        "force": static.InputSpec([1, -1, 3], "float64", name="force"),
-                        "natoms": static.InputSpec([1, -1], "int32", name="natoms"),
-                    },  # label,
+                    label_dict_spec,  # label,
                     # None, # task_key
                     # False, # inference_only
                     # False, # do_atomic_virial
@@ -732,7 +744,43 @@ class Trainer:
                     pref_lr = _lr.start_lr
                 else:
                     pref_lr = cur_lr
+                sync_context = (
+                    self.wrapper.no_sync
+                    if self.world_size > 1
+                    else contextlib.nullcontext
+                )
+
+                # with sync_context():
+                #     with nvprof_context(enable_profiling, "Forward pass"):
+                #         model_pred, loss, more_loss = self.wrapper(
+                #             **input_dict,
+                #             cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
+                #             label=label_dict,
+                #             task_key=task_key,
+                #         )
+
+                #     with nvprof_context(enable_profiling, "Backward pass"):
+                #         loss.backward()
+
+                # if self.world_size > 1:
+                #     # fuse + allreduce manually before optimization if use DDP + no_sync
+                #     # details in https://github.com/PaddlePaddle/Paddle/issues/48898#issuecomment-1343838622
+                #     hpu.fused_allreduce_gradients(list(self.wrapper.parameters()), None)
+
                 with nvprof_context(enable_profiling, "Forward pass"):
+                    for __key in ("coord", "atype", "box"):
+                        input_dict[__key] = dist.shard_tensor(
+                            input_dict[__key],
+                            mesh=dist.get_mesh(),
+                            placements=[dist.Shard(0)],
+                        )
+                    for __key, _ in label_dict.items():
+                        if isinstance(label_dict[__key], paddle.Tensor):
+                            label_dict[__key] = dist.shard_tensor(
+                                label_dict[__key],
+                                mesh=dist.get_mesh(),
+                                placements=[dist.Shard(0)],
+                            )
                     model_pred, loss, more_loss = self.wrapper(
                         **input_dict,
                         cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
@@ -810,7 +858,9 @@ class Trainer:
 
                 if not self.multi_task:
                     train_results = log_loss_train(loss, more_loss)
-                    valid_results = log_loss_valid()
+                    # valid_results = log_loss_valid()
+                    # no run valid!
+                    valid_results = None
                     if self.rank == 0:
                         log.info(
                             format_training_message_per_task(
