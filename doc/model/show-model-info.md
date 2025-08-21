@@ -11,7 +11,6 @@ dp --pt show <INPUT> <ATTRIBUTES...>
 
 - `<INPUT>`: Path to the model checkpoint file or frozen model file.
 - `<ATTRIBUTES>`: One or more information categories to display. Supported values are:
-
   - `model-branch`: Shows available branches for multi-task models.
   - `type-map`: Shows the type mapping used by the model.
   - `descriptor`: Displays the model descriptor parameters.
@@ -33,31 +32,25 @@ dp show frozen_model.pth type-map descriptor fitting-net size
 Depending on the provided attributes and the model type, the output includes:
 
 - **Model Type**
-
   - Logs whether the loaded model is a _singletask_ or _multitask_ model.
 
 - **model-branch**
-
   - _Only available for multitask models._
   - Lists all available model branches and the special `"RANDOM"` branch, which refers to a randomly initialized fitting net.
 
 - **type-map**
-
   - For multitask models: Shows the type map for each branch.
   - For singletask models: Shows the model's type map.
 
 - **descriptor**
-
   - For multitask models: Displays the descriptor parameter for each branch.
   - For singletask models: Displays the descriptor parameter.
 
 - **fitting-net**
-
   - For multitask models: Shows the fitting network parameters for each branch.
   - For singletask models: Shows the fitting network parameters.
 
 - **size**
-
   - Prints the number of parameters for each component (`descriptor`, `fitting-net`, etc.), as well as the total parameter count.
 
 ## Example Output
