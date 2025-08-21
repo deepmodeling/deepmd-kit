@@ -19,16 +19,13 @@ import paddle.distributed as dist
 from paddle.distributed import (
     fleet,
 )
-from paddle.distributed.fleet.utils import hybrid_parallel_util as hpu
 from paddle.framework import (
     core,
 )
 from paddle.io import (
     DataLoader,
 )
-import paddle.distributed as dist
-from paddle.distributed import fleet
-import functools
+
 from deepmd.common import (
     symlink_prefix_files,
 )
@@ -103,7 +100,6 @@ class Trainer:
         Args:
         - config: The Dict-like configuration with training options.
         """
-        from paddle.distributed import fleet
         mesh_dims = [("dp", 32)]
         fleet.auto.create_mesh(mesh_dims)
         fleet.init(is_collective=True)
@@ -753,7 +749,7 @@ class Trainer:
                     if self.world_size > 1
                     else contextlib.nullcontext
                 )
-                
+
                 # with sync_context():
                 #     with nvprof_context(enable_profiling, "Forward pass"):
                 #         model_pred, loss, more_loss = self.wrapper(
@@ -772,11 +768,19 @@ class Trainer:
                 #     hpu.fused_allreduce_gradients(list(self.wrapper.parameters()), None)
 
                 with nvprof_context(enable_profiling, "Forward pass"):
-                    for __key in ('coord', 'atype', 'box'):
-                        input_dict[__key] = dist.shard_tensor(input_dict[__key], mesh=dist.get_mesh(), placements=[dist.Shard(0)])
+                    for __key in ("coord", "atype", "box"):
+                        input_dict[__key] = dist.shard_tensor(
+                            input_dict[__key],
+                            mesh=dist.get_mesh(),
+                            placements=[dist.Shard(0)],
+                        )
                     for __key, _ in label_dict.items():
                         if isinstance(label_dict[__key], paddle.Tensor):
-                            label_dict[__key] = dist.shard_tensor(label_dict[__key], mesh=dist.get_mesh(), placements=[dist.Shard(0)])
+                            label_dict[__key] = dist.shard_tensor(
+                                label_dict[__key],
+                                mesh=dist.get_mesh(),
+                                placements=[dist.Shard(0)],
+                            )
                     model_pred, loss, more_loss = self.wrapper(
                         **input_dict,
                         cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),

@@ -1,9 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import functools
 from typing import (
     Optional,
 )
 
 import paddle
+import paddle.distributed as dist
+from paddle.distributed import (
+    fleet,
+)
 
 from deepmd.dpmodel import (
     ModelOutputDef,
@@ -37,9 +42,6 @@ from deepmd.pd.utils.nlist import (
 from deepmd.utils.path import (
     DPPath,
 )
-import paddle.distributed as dist
-from paddle.distributed import fleet
-import functools
 
 
 def make_model(T_AtomicModel: type[BaseAtomicModel]):
@@ -182,10 +184,12 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             #     box=bb,
             # )
             wrapped_func_1 = dist.local_map(
-                func=lambda a,b,c: extend_input_and_build_neighbor_list(a,b,self.get_rcut(), self.get_sel(), True, c),
+                func=lambda a, b, c: extend_input_and_build_neighbor_list(
+                    a, b, self.get_rcut(), self.get_sel(), True, c
+                ),
                 in_placements=[ele.placements for ele in [cc, atype, bb]],
                 out_placements=[[dist.Shard(0)] for _ in range(4)],
-                process_mesh=fleet.auto.get_mesh()
+                process_mesh=fleet.auto.get_mesh(),
             )
 
             (
@@ -209,11 +213,19 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             # )
 
             wrapped_func_2 = dist.local_map(
-                func=functools.partial(self.forward_common_lower, do_atomic_virial=do_atomic_virial, fparam=fp, aparam=ap),
-                in_placements=[ele.placements for ele in [extended_coord, extended_atype, nlist, mapping]],
+                func=functools.partial(
+                    self.forward_common_lower,
+                    do_atomic_virial=do_atomic_virial,
+                    fparam=fp,
+                    aparam=ap,
+                ),
+                in_placements=[
+                    ele.placements
+                    for ele in [extended_coord, extended_atype, nlist, mapping]
+                ],
                 out_placements=[[dist.Shard(0)] for _ in range(6)],
                 process_mesh=fleet.auto.get_mesh(),
-                reshard_inputs=True
+                reshard_inputs=True,
             )
             model_predict_lower = wrapped_func_2(
                 extended_coord,

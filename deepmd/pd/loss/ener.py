@@ -4,6 +4,7 @@ from typing import (
 )
 
 import paddle
+import paddle.distributed as dist
 import paddle.nn.functional as F
 
 from deepmd.pd.loss.loss import (
@@ -21,7 +22,6 @@ from deepmd.utils.data import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
-import paddle.distributed as dist
 
 
 def custom_huber_loss(predictions, targets, delta=1.0):
@@ -206,10 +206,9 @@ class EnergyStdLoss(TaskLoss):
             find_energy = label.get("find_energy", 0.0)
             pref_e = pref_e * find_energy
             if not self.use_l1_all:
-
                 logit = energy_pred - energy_label
                 logit = dist.reshard(tmp, tmp.process_mesh, [dist.Replicate()])
-                
+
                 l2_ener_loss = paddle.mean(paddle.square(logit))
                 if not self.inference:
                     more_loss["l2_ener_loss"] = self.display_if_exist(
@@ -264,7 +263,7 @@ class EnergyStdLoss(TaskLoss):
             force_label = label["force"]
             diff_f = (force_label - force_pred).reshape([-1])
             diff_f = dist.reshard(diff_f, diff_f.process_mesh, [dist.Replicate()])
-            
+
             if self.relative_f is not None:
                 force_label_3 = force_label.reshape([-1, 3])
                 norm_f = force_label_3.norm(axis=1, keepdim=True) + self.relative_f
