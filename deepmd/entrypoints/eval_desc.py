@@ -126,10 +126,10 @@ def eval_desc(
         )
 
         # save descriptors
-        system_name = os.path.basename(system_path.rstrip('/'))
+        system_name = os.path.basename(system_path.rstrip("/"))
         desc_file = output_dir / f"{system_name}.npy"
         np.save(desc_file, descriptors)
-        
+
         log.info(f"# descriptors saved to {desc_file}")
         log.info(f"# descriptor shape: {descriptors.shape}")
         log.info("# ----------------------------------- ")
