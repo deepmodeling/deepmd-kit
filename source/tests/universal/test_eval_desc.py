@@ -6,20 +6,14 @@ import inspect
 import shutil
 from pathlib import Path
 
-# Try to import deepmd modules, skip tests if not available
-try:
-    from deepmd.entrypoints.eval_desc import eval_desc
-    from deepmd.entrypoints import eval_desc as eval_desc_module
-    from deepmd.common import expand_sys_str
-    DEEPMD_AVAILABLE = True
-except ImportError:
-    DEEPMD_AVAILABLE = False
+from deepmd.entrypoints.eval_desc import eval_desc
+from deepmd.entrypoints import eval_desc as eval_desc_module
+from deepmd.common import expand_sys_str
 
 
 class TestEvalDesc(unittest.TestCase):
     """Test the eval-desc CLI functionality."""
     
-    @unittest.skipIf(not DEEPMD_AVAILABLE, "deepmd modules not available")
     def test_eval_desc_function_signature(self) -> None:
         """Test that eval_desc function has the expected signature."""
         # Check that it's callable
@@ -32,13 +26,11 @@ class TestEvalDesc(unittest.TestCase):
         self.assertEqual(expected_params, actual_params, 
                        f"Expected parameters {expected_params}, got {actual_params}")
     
-    @unittest.skipIf(not DEEPMD_AVAILABLE, "deepmd modules not available")        
     def test_eval_desc_module_docstring(self) -> None:
         """Test that eval_desc module has proper documentation."""
         self.assertIsNotNone(eval_desc_module.__doc__)
         self.assertIn("descriptor", eval_desc_module.__doc__.lower())
     
-    @unittest.skipIf(not DEEPMD_AVAILABLE, "deepmd modules not available")        
     def test_eval_desc_expansion_logic(self) -> None:
         """Test system expansion logic without requiring full deepmd."""
         # Create test directories
@@ -56,7 +48,6 @@ class TestEvalDesc(unittest.TestCase):
         finally:
             shutil.rmtree(test_dir, ignore_errors=True)
     
-    @unittest.skipIf(not DEEPMD_AVAILABLE, "deepmd modules not available")
     def test_eval_desc_parameter_validation(self) -> None:
         """Test parameter validation without requiring model loading."""
         # Test with completely invalid inputs - should fail early
