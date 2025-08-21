@@ -191,7 +191,7 @@ class DpLoaderSet(Dataset):
             system_dataloader = DataLoader(
                 dataset=system,
                 num_workers=0,  # Should be 0 to avoid too many threads forked
-                batch_sampler=system_batch_sampler,
+                batch_size=int(batch_size),
                 collate_fn=collate_batch,
                 use_buffer_reader=False,
                 places=["cpu"],

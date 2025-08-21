@@ -21,6 +21,7 @@ from deepmd.utils.data import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+import paddle.distributed as dist
 
 
 def custom_huber_loss(predictions, targets, delta=1.0):
@@ -205,7 +206,11 @@ class EnergyStdLoss(TaskLoss):
             find_energy = label.get("find_energy", 0.0)
             pref_e = pref_e * find_energy
             if not self.use_l1_all:
-                l2_ener_loss = paddle.mean(paddle.square(energy_pred - energy_label))
+
+                logit = energy_pred - energy_label
+                logit = dist.reshard(tmp, tmp.process_mesh, [dist.Replicate()])
+                
+                l2_ener_loss = paddle.mean(paddle.square(logit))
                 if not self.inference:
                     more_loss["l2_ener_loss"] = self.display_if_exist(
                         l2_ener_loss.detach(), find_energy
@@ -258,7 +263,8 @@ class EnergyStdLoss(TaskLoss):
             force_pred = model_pred["force"]
             force_label = label["force"]
             diff_f = (force_label - force_pred).reshape([-1])
-
+            diff_f = dist.reshard(diff_f, diff_f.process_mesh, [dist.Replicate()])
+            
             if self.relative_f is not None:
                 force_label_3 = force_label.reshape([-1, 3])
                 norm_f = force_label_3.norm(axis=1, keepdim=True) + self.relative_f
@@ -354,6 +360,7 @@ class EnergyStdLoss(TaskLoss):
             find_virial = label.get("find_virial", 0.0)
             pref_v = pref_v * find_virial
             diff_v = label["virial"] - model_pred["virial"].reshape([-1, 9])
+            diff_v = dist.reshard(diff_v, diff_v.process_mesh, [dist.Replicate()])
             l2_virial_loss = paddle.mean(paddle.square(diff_v))
             if not self.inference:
                 more_loss["l2_virial_loss"] = self.display_if_exist(
