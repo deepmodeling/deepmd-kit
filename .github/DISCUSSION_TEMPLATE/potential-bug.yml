@@ -1,0 +1,148 @@
+name: Potential Bug Discussion
+description: Discuss behavior that might be a bug before creating a formal issue - include reproducible examples
+labels: ["potential bug", "question"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What seems to be wrong?
+      description: |
+        Describe the behavior you think might be a bug. 
+        Use this template when you're not sure if something is a bug or if you need help confirming the issue before creating a formal bug report.
+      placeholder: Describe what you think might be wrong...
+      value:
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: DeePMD-kit Version
+      description: "Run `dp --version` to check."
+      placeholder: "e.g., 2.2.7"
+    validations:
+      required: true
+  - type: input
+    id: backend-version
+    attributes:
+      label: Backend and Version
+      description: "Which backend version? (shown when running DeePMD-kit)"
+      placeholder: "e.g., TensorFlow v2.15.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: installation-method
+    attributes:
+      label: How did you install DeePMD-kit?
+      options:
+        - conda
+        - pip
+        - docker
+        - Built from source
+        - Offline packages
+        - Others (specify below)
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: What did you expect to happen?
+      description: Describe what you think should happen.
+      placeholder: I expected...
+      value:
+    validations:
+      required: true
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: What actually happened?
+      description: Describe what you observed instead.
+      placeholder: Instead, what happened was...
+      value:
+    validations:
+      required: true
+  - type: textarea
+    id: reproducible-example
+    attributes:
+      label: Reproducible Example
+      description: |
+        **This is crucial for confirming if this is a bug!**
+        
+        Please provide a complete, minimal example that reproduces the issue:
+        - Input files (attach small files or paste relevant content)
+        - Exact commands you ran
+        - Configuration files
+        - Complete error messages or unexpected output
+        - System information if relevant
+        
+        The goal is to provide enough information that others can reproduce the exact same behavior.
+      placeholder: |
+        **Files and setup:**
+        ```
+        # Directory structure
+        myproject/
+        ├── input.json
+        ├── data/
+        │   ├── type_map.raw
+        │   └── set.000/
+        │       ├── coord.npy
+        │       └── energy.npy
+        ```
+        
+        **Configuration (input.json):**
+        ```json
+        {
+          "model": {
+            // your configuration
+          }
+        }
+        ```
+        
+        **Commands:**
+        ```bash
+        dp train input.json
+        ```
+        
+        **Output/Error:**
+        ```
+        # Complete error message or unexpected output
+        ```
+        
+        **System info:**
+        - OS: Ubuntu 20.04
+        - Python: 3.9.7
+        - Hardware: [relevant specs]
+      value:
+    validations:
+      required: true
+  - type: textarea
+    id: investigation
+    attributes:
+      label: What have you tried?
+      description: |
+        What steps have you taken to investigate or work around this issue?
+        - Different configurations you've tested
+        - Workarounds you've attempted
+        - Similar issues you've found online
+        - Other versions you've tested
+      placeholder: |
+        I tried:
+        1. Changing the configuration to...
+        2. Testing with a different dataset...
+        3. Searching for similar issues...
+      value:
+    validations:
+      required: false
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: |
+        Any other information that might be relevant:
+        - When did this behavior start?
+        - Does it happen consistently?
+        - Any relevant environmental factors?
+        - Links to related discussions or issues?
+      placeholder: Additional context that might be helpful...
+      value:
+    validations:
+      required: false
