@@ -18,7 +18,7 @@ An explanation will be provided
 
 ```
 
-# Evaluate descriptors
+## Evaluate descriptors
 
 The descriptors of a model can be evaluated and saved using `dp eval-desc`. A typical usage of `dp eval-desc` is
 
