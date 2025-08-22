@@ -173,8 +173,8 @@ void get_env_nthreads(int& num_intra_nthreads, int& num_inter_nthreads);
 void get_env_pytorch_profiler(bool& enable_profiler, std::string& output_dir);
 
 /**
- * @brief Get MPI rank if MPI is available and initialized, otherwise return -1.
- * @return The MPI rank or -1 if MPI is not available/initialized.
+ * @brief Get MPI rank. Currently disabled in api_cc to avoid MPI linking dependencies.
+ * @return Always returns -1. Users can distinguish ranks using different output directories.
  **/
 int get_mpi_rank();
 

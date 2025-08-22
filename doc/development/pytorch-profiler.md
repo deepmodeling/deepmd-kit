@@ -14,11 +14,15 @@ export DP_PYTORCH_PROFILER_OUTPUT_DIR=./profiler_results
 
 3. Check for profiler output in the specified directory:
 ```bash
-# For single-rank or non-MPI usage
 ls -la ./profiler_results/pytorch_profiler_trace.json
+```
 
-# For MPI usage, each rank gets its own file
-ls -la ./profiler_results/pytorch_profiler_trace_rank*.json
+For MPI applications, you can use different output directories per rank:
+```bash
+# Example for rank 0
+export DP_PYTORCH_PROFILER_OUTPUT_DIR=./profiler_results_rank0
+# Example for rank 1  
+export DP_PYTORCH_PROFILER_OUTPUT_DIR=./profiler_results_rank1
 ```
 
 ## Environment Variables
@@ -32,13 +36,11 @@ The profiler uses PyTorch's modern `torch::profiler` API and automatically:
 - Creates the output directory if it doesn't exist
 - Profiles all forward pass operations in DeepPotPT and DeepSpinPT
 - Saves profiling results to a JSON file when the object is destroyed
-- Automatically includes MPI rank in filename when MPI is available and initialized
 
 ## Output Files
 
-- **Single-rank or non-MPI usage**: `pytorch_profiler_trace.json`
-- **MPI usage**: `pytorch_profiler_trace_rank{rank}.json` (e.g., `pytorch_profiler_trace_rank0.json`, `pytorch_profiler_trace_rank1.json`)
+- **All usage**: `pytorch_profiler_trace.json`
 
-This ensures that each MPI rank saves its profiling data to a separate file, preventing conflicts in multi-rank simulations.
+For MPI applications, users can distinguish between ranks by setting different output directories per rank using the `DP_PYTORCH_PROFILER_OUTPUT_DIR` environment variable.
 
 This is intended for development and debugging purposes.
