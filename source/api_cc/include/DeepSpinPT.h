@@ -3,6 +3,9 @@
 
 #include <torch/script.h>
 #include <torch/torch.h>
+#ifdef BUILD_PYTORCH
+#include <torch/autograd/profiler.h>
+#endif
 
 #include "DeepSpin.h"
 
@@ -262,6 +265,12 @@ class DeepSpinPT : public DeepSpinBackend {
   at::Tensor firstneigh_tensor;
   c10::optional<torch::Tensor> mapping_tensor;
   torch::Dict<std::string, torch::Tensor> comm_dict;
+  // PyTorch profiler
+  bool profiler_enabled;
+  std::string profiler_output_dir;
+#ifdef BUILD_PYTORCH
+  std::unique_ptr<torch::autograd::profiler::RecordProfile> profiler;
+#endif
   /**
    * @brief Translate PyTorch exceptions to the DeePMD-kit exception.
    * @param[in] f The function to run.

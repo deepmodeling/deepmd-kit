@@ -381,6 +381,23 @@ void deepmd::get_env_nthreads(int& num_intra_nthreads,
   }
 }
 
+void deepmd::get_env_pytorch_profiler(bool& enable_profiler, std::string& output_dir) {
+  enable_profiler = false;
+  output_dir = "./profiler_output";  // default directory
+  
+  const char* env_enable = std::getenv("DP_ENABLE_PYTORCH_PROFILER");
+  if (env_enable &&
+      std::string(env_enable) != std::string("") &&
+      (std::string(env_enable) == "1" || std::string(env_enable) == "true")) {
+    enable_profiler = true;
+  }
+  
+  const char* env_output_dir = std::getenv("DP_PYTORCH_PROFILER_OUTPUT_DIR");
+  if (env_output_dir && std::string(env_output_dir) != std::string("")) {
+    output_dir = std::string(env_output_dir);
+  }
+}
+
 static inline void _load_library_path(std::string dso_path) {
 #if defined(_WIN32)
   void* dso_handle = LoadLibrary(dso_path.c_str());

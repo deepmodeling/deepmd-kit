@@ -164,6 +164,15 @@ void select_map_inv(typename std::vector<VT>::iterator out,
 void get_env_nthreads(int& num_intra_nthreads, int& num_inter_nthreads);
 
 /**
+ * @brief Get PyTorch profiler configuration from environment variables.
+ * @param[out] enable_profiler Whether to enable the profiler. Read from
+ *DP_ENABLE_PYTORCH_PROFILER.
+ * @param[out] output_dir Output directory for profiler traces. Read from
+ *DP_PYTORCH_PROFILER_OUTPUT_DIR.
+ **/
+void get_env_pytorch_profiler(bool& enable_profiler, std::string& output_dir);
+
+/**
  * @brief Dynamically load OP library. This should be called before loading
  * graphs.
  */

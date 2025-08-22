@@ -46,11 +46,11 @@ torch::Tensor createNlistTensor(const std::vector<std::vector<int>>& data) {
   int nnei = nloc > 0 ? total_size / nloc : 0;
   return flat_tensor.view({1, nloc, nnei});
 }
-DeepPotPT::DeepPotPT() : inited(false) {}
+DeepPotPT::DeepPotPT() : inited(false), profiler_enabled(false) {}
 DeepPotPT::DeepPotPT(const std::string& model,
                      const int& gpu_rank,
                      const std::string& file_content)
-    : inited(false) {
+    : inited(false), profiler_enabled(false) {
   try {
     translate_error([&] { init(model, gpu_rank, file_content); });
   } catch (...) {
@@ -108,6 +108,22 @@ void DeepPotPT::init(const std::string& model,
       at::set_num_threads(num_intra_nthreads);
     } catch (...) {
     }
+  }
+
+  // Initialize PyTorch profiler
+  get_env_pytorch_profiler(profiler_enabled, profiler_output_dir);
+  if (profiler_enabled) {
+#ifdef BUILD_PYTORCH
+    // Create output directory if it doesn't exist
+    std::string mkdir_cmd = "mkdir -p " + profiler_output_dir;
+    std::system(mkdir_cmd.c_str());
+    
+    std::cout << "PyTorch profiler enabled. Output directory: " << profiler_output_dir << std::endl;
+    profiler = std::make_unique<torch::autograd::profiler::RecordProfile>(
+        profiler_output_dir + "/pytorch_profiler_trace.json");
+#else
+    std::cerr << "Warning: PyTorch profiler requested but BUILD_PYTORCH not defined" << std::endl;
+#endif
   }
 
   auto rcut_ = module.run_method("get_rcut").toDouble();
@@ -234,6 +250,14 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
             options)
             .to(device);
   }
+  
+  // Start profiling if enabled
+#ifdef BUILD_PYTORCH
+  if (profiler_enabled && profiler) {
+    profiler->step();
+  }
+#endif
+  
   c10::Dict<c10::IValue, c10::IValue> outputs =
       (do_message_passing)
           ? module
@@ -383,6 +407,14 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   inputs.push_back(aparam_tensor);
   bool do_atom_virial_tensor = atomic;
   inputs.push_back(do_atom_virial_tensor);
+  
+  // Start profiling if enabled
+#ifdef BUILD_PYTORCH
+  if (profiler_enabled && profiler) {
+    profiler->step();
+  }
+#endif
+  
   c10::Dict<c10::IValue, c10::IValue> outputs =
       module.forward(inputs).toGenericDict();
   c10::IValue energy_ = outputs.at("energy");

@@ -90,3 +90,19 @@ These environment variables also apply to third-party programs using the C++ int
 List of customized OP plugin libraries to load, such as `/path/to/plugin1.so:/path/to/plugin2.so` on Linux and `/path/to/plugin1.dll;/path/to/plugin2.dll` on Windows.
 
 :::
+
+:::{envvar} DP_ENABLE_PYTORCH_PROFILER
+
+**Choices**: `0`, `1`, `true`; **Default**: `0`
+
+{{ pytorch_icon }} Enable PyTorch profiler for C++ backend. This is for development purposes.
+
+:::
+
+:::{envvar} DP_PYTORCH_PROFILER_OUTPUT_DIR
+
+**Default**: `./profiler_output`
+
+{{ pytorch_icon }} Output directory for PyTorch profiler traces when `DP_ENABLE_PYTORCH_PROFILER` is enabled.
+
+:::
