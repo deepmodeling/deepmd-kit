@@ -142,8 +142,16 @@ DeepSpinPT::~DeepSpinPT() {
 #ifdef BUILD_PYTORCH
   if (profiler_enabled) {
     try {
-      // Save profiler results to file
-      std::string output_file = profiler_output_dir + "/pytorch_profiler_trace.json";
+      // Save profiler results to file with MPI rank if available
+      int rank = get_mpi_rank();
+      std::string output_file;
+      if (rank >= 0) {
+        // MPI is available and initialized, include rank in filename
+        output_file = profiler_output_dir + "/pytorch_profiler_trace_rank" + std::to_string(rank) + ".json";
+      } else {
+        // MPI not available or not initialized, use original filename
+        output_file = profiler_output_dir + "/pytorch_profiler_trace.json";
+      }
       profiler_result = torch::profiler::disableProfiler();
       if (profiler_result) {
         profiler_result->save(output_file);

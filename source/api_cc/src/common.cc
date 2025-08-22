@@ -8,6 +8,13 @@
 #include <sstream>
 #include <string>
 
+// Try to include MPI if available - this will be a no-op if MPI is not available
+#ifdef __has_include
+  #if __has_include(<mpi.h>)
+    #include <mpi.h>
+  #endif
+#endif
+
 #include "AtomMap.h"
 #include "device.h"
 #if defined(_WIN32)
@@ -396,6 +403,20 @@ void deepmd::get_env_pytorch_profiler(bool& enable_profiler, std::string& output
   if (env_output_dir && std::string(env_output_dir) != std::string("")) {
     output_dir = std::string(env_output_dir);
   }
+}
+
+int deepmd::get_mpi_rank() {
+  int rank = -1;  // Use -1 to indicate MPI not available/initialized
+  // Try to detect MPI at runtime
+  #ifdef MPI_H
+  int initialized = 0;
+  if (MPI_Initialized(&initialized) == MPI_SUCCESS && initialized) {
+    if (MPI_Comm_rank(MPI_COMM_WORLD, &rank) != MPI_SUCCESS) {
+      rank = -1;  // fallback to -1 if MPI_Comm_rank fails
+    }
+  }
+  #endif
+  return rank;
 }
 
 static inline void _load_library_path(std::string dso_path) {

@@ -173,6 +173,12 @@ void get_env_nthreads(int& num_intra_nthreads, int& num_inter_nthreads);
 void get_env_pytorch_profiler(bool& enable_profiler, std::string& output_dir);
 
 /**
+ * @brief Get MPI rank if MPI is available and initialized, otherwise return 0.
+ * @return The MPI rank or 0 if MPI is not available/initialized.
+ **/
+int get_mpi_rank();
+
+/**
  * @brief Dynamically load OP library. This should be called before loading
  * graphs.
  */

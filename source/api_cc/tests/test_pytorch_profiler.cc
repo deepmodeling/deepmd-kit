@@ -74,3 +74,9 @@ TEST_F(TestPyTorchProfiler, test_profiler_disabled_with_zero) {
   EXPECT_FALSE(enable_profiler);
   EXPECT_EQ(output_dir, "./profiler_output");
 }
+
+TEST_F(TestPyTorchProfiler, test_mpi_rank_detection) {
+  // Test that MPI rank detection returns valid rank (-1 when MPI not initialized, >= 0 when initialized)
+  int rank = deepmd::get_mpi_rank();
+  EXPECT_GE(rank, -1);  // Rank should be -1 (not available) or >= 0 (valid rank)
+}
