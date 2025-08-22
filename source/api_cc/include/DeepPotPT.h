@@ -4,7 +4,7 @@
 #include <torch/script.h>
 #include <torch/torch.h>
 #ifdef BUILD_PYTORCH
-#include <torch/autograd/profiler.h>
+#include <torch/profiler.h>
 #endif
 
 #include "DeepPot.h"
@@ -347,7 +347,7 @@ class DeepPotPT : public DeepPotBackend {
   bool profiler_enabled;
   std::string profiler_output_dir;
 #ifdef BUILD_PYTORCH
-  std::unique_ptr<torch::autograd::profiler::RecordProfile> profiler;
+  std::shared_ptr<torch::profiler::Result> profiler_result;
 #endif
   /**
    * @brief Translate PyTorch exceptions to the DeePMD-kit exception.

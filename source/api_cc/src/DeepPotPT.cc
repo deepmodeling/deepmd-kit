@@ -119,8 +119,11 @@ void DeepPotPT::init(const std::string& model,
     std::system(mkdir_cmd.c_str());
     
     std::cout << "PyTorch profiler enabled. Output directory: " << profiler_output_dir << std::endl;
-    // Initialize profiler with default configuration
-    profiler = std::make_unique<torch::autograd::profiler::RecordProfile>();
+    // Start profiling using new API
+    torch::profiler::profile({
+        torch::profiler::ProfilerActivity::CPU,
+        torch::profiler::ProfilerActivity::CUDA,
+    }, true, true, false);  // record_shapes, profile_memory, with_stack
 #else
     std::cerr << "Warning: PyTorch profiler requested but BUILD_PYTORCH not defined" << std::endl;
 #endif
@@ -137,12 +140,15 @@ void DeepPotPT::init(const std::string& model,
 }
 DeepPotPT::~DeepPotPT() {
 #ifdef BUILD_PYTORCH
-  if (profiler_enabled && profiler) {
+  if (profiler_enabled) {
     try {
       // Save profiler results to file
       std::string output_file = profiler_output_dir + "/pytorch_profiler_trace.json";
-      profiler->save(output_file);
-      std::cout << "PyTorch profiler results saved to: " << output_file << std::endl;
+      profiler_result = torch::profiler::disableProfiler();
+      if (profiler_result) {
+        profiler_result->save(output_file);
+        std::cout << "PyTorch profiler results saved to: " << output_file << std::endl;
+      }
     } catch (const std::exception& e) {
       std::cerr << "Warning: Failed to save profiler results: " << e.what() << std::endl;
     }
@@ -264,7 +270,12 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
             .to(device);
   }
   
-  // Profiling is automatically active when RecordProfile is constructed
+  // Start profiling if enabled
+#ifdef BUILD_PYTORCH
+  if (profiler_enabled && profiler) {
+    profiler->step();
+  }
+#endif
   
   c10::Dict<c10::IValue, c10::IValue> outputs =
       (do_message_passing)
@@ -416,7 +427,12 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   bool do_atom_virial_tensor = atomic;
   inputs.push_back(do_atom_virial_tensor);
   
-  // Profiling is automatically active when RecordProfile is constructed
+  // Start profiling if enabled
+#ifdef BUILD_PYTORCH
+  if (profiler_enabled && profiler) {
+    profiler->step();
+  }
+#endif
   
   c10::Dict<c10::IValue, c10::IValue> outputs =
       module.forward(inputs).toGenericDict();
