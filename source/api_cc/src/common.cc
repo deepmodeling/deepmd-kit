@@ -7,6 +7,9 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <iostream>
+#include <sys/stat.h>
+#include <errno.h>
 
 // Try to include MPI if available - this will be a no-op if MPI is not available
 #ifdef __has_include
@@ -27,6 +30,7 @@
 #define PSAPI_VERSION 2
 #include <io.h>
 #include <windows.h>
+#include <direct.h>  // for _mkdir
 #define O_RDONLY _O_RDONLY
 #else
 // not windows
@@ -417,6 +421,50 @@ int deepmd::get_mpi_rank() {
   }
   #endif
   return rank;
+}
+
+bool deepmd::create_directories(const std::string& path) {
+  if (path.empty()) {
+    return false;
+  }
+  
+  // Check if directory already exists
+  struct stat st;
+  if (stat(path.c_str(), &st) == 0) {
+    return S_ISDIR(st.st_mode);
+  }
+  
+  // Find the parent directory
+  size_t pos = path.find_last_of("/\\");
+  if (pos != std::string::npos && pos > 0) {
+    std::string parent = path.substr(0, pos);
+    if (!create_directories(parent)) {
+      return false;
+    }
+  }
+  
+  // Create this directory
+#if defined(_WIN32)
+  return _mkdir(path.c_str()) == 0 || errno == EEXIST;
+#else
+  return mkdir(path.c_str(), 0755) == 0 || errno == EEXIST;
+#endif
+}
+
+std::string deepmd::join_path(const std::string& path1, const std::string& path2) {
+  if (path1.empty()) return path2;
+  if (path2.empty()) return path1;
+  
+  char sep = '/';
+#if defined(_WIN32)
+  sep = '\\';
+#endif
+  
+  if (path1.back() == '/' || path1.back() == '\\') {
+    return path1 + path2;
+  } else {
+    return path1 + sep + path2;
+  }
 }
 
 static inline void _load_library_path(std::string dso_path) {

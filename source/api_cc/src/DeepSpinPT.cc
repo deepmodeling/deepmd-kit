@@ -115,8 +115,9 @@ void DeepSpinPT::init(const std::string& model,
   if (profiler_enabled) {
 #ifdef BUILD_PYTORCH
     // Create output directory if it doesn't exist
-    std::string mkdir_cmd = "mkdir -p " + profiler_output_dir;
-    std::system(mkdir_cmd.c_str());
+    if (!create_directories(profiler_output_dir)) {
+      std::cerr << "Warning: Failed to create profiler output directory: " << profiler_output_dir << std::endl;
+    }
     
     std::cout << "PyTorch profiler enabled. Output directory: " << profiler_output_dir << std::endl;
     // Start profiling using new API
@@ -147,10 +148,10 @@ DeepSpinPT::~DeepSpinPT() {
       std::string output_file;
       if (rank >= 0) {
         // MPI is available and initialized, include rank in filename
-        output_file = profiler_output_dir + "/pytorch_profiler_trace_rank" + std::to_string(rank) + ".json";
+        output_file = join_path(profiler_output_dir, "pytorch_profiler_trace_rank" + std::to_string(rank) + ".json");
       } else {
         // MPI not available or not initialized, use original filename
-        output_file = profiler_output_dir + "/pytorch_profiler_trace.json";
+        output_file = join_path(profiler_output_dir, "pytorch_profiler_trace.json");
       }
       profiler_result = torch::profiler::disableProfiler();
       if (profiler_result) {

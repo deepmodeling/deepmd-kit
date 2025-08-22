@@ -173,10 +173,25 @@ void get_env_nthreads(int& num_intra_nthreads, int& num_inter_nthreads);
 void get_env_pytorch_profiler(bool& enable_profiler, std::string& output_dir);
 
 /**
- * @brief Get MPI rank if MPI is available and initialized, otherwise return 0.
- * @return The MPI rank or 0 if MPI is not available/initialized.
+ * @brief Get MPI rank if MPI is available and initialized, otherwise return -1.
+ * @return The MPI rank or -1 if MPI is not available/initialized.
  **/
 int get_mpi_rank();
+
+/**
+ * @brief Create directories recursively in a cross-platform way.
+ * @param path The path to create.
+ * @return true if successful or directory already exists, false otherwise.
+ **/
+bool create_directories(const std::string& path);
+
+/**
+ * @brief Join two path components using platform-appropriate separator.
+ * @param path1 The first path component.
+ * @param path2 The second path component.
+ * @return The joined path.
+ **/
+std::string join_path(const std::string& path1, const std::string& path2);
 
 /**
  * @brief Dynamically load OP library. This should be called before loading
