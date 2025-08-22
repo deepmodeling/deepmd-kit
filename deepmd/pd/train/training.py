@@ -171,10 +171,7 @@ class Trainer:
                     )  # None sampler will lead to a premature stop iteration. Replacement should be True in attribute of the sampler to produce expected number of items in one iteration.
                 _dataloader = DataLoader(
                     _data,
-                    batch_sampler=paddle.io.BatchSampler(
-                        sampler=_sampler,
-                        drop_last=False,
-                    ),
+                    batch_size=1,
                     num_workers=NUM_WORKERS
                     if dist.is_available()
                     else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
@@ -325,17 +322,18 @@ class Trainer:
                 self.validation_data,
                 self.valid_numb_batch,
             ) = get_data_loader(training_data, validation_data, training_params)
-            training_data.print_summary(
-                "training",
-                to_numpy_array(self.training_dataloader.batch_sampler.sampler.weights),
-            )
-            if validation_data is not None:
-                validation_data.print_summary(
-                    "validation",
-                    to_numpy_array(
-                        self.validation_dataloader.batch_sampler.sampler.weights
-                    ),
-                )
+            # no sampler, do not need print!
+            # training_data.print_summary(
+            #     "training",
+            #     to_numpy_array(self.training_dataloader.batch_sampler.sampler.weights),
+            # )
+            # if validation_data is not None:
+            #     validation_data.print_summary(
+            #         "validation",
+            #         to_numpy_array(
+            #             self.validation_dataloader.batch_sampler.sampler.weights
+            #         ),
+            #     )
         else:
             (
                 self.training_dataloader,
@@ -370,27 +368,27 @@ class Trainer:
                     validation_data[model_key],
                     training_params["data_dict"][model_key],
                 )
-
-                training_data[model_key].print_summary(
-                    f"training in {model_key}",
-                    to_numpy_array(
-                        self.training_dataloader[
-                            model_key
-                        ].batch_sampler.sampler.weights
-                    ),
-                )
-                if (
-                    validation_data is not None
-                    and validation_data[model_key] is not None
-                ):
-                    validation_data[model_key].print_summary(
-                        f"validation in {model_key}",
-                        to_numpy_array(
-                            self.validation_dataloader[
-                                model_key
-                            ].batch_sampler.sampler.weights
-                        ),
-                    )
+                # no sampler, do not need print!
+                # training_data[model_key].print_summary(
+                #     f"training in {model_key}",
+                #     to_numpy_array(
+                #         self.training_dataloader[
+                #             model_key
+                #         ].batch_sampler.sampler.weights
+                #     ),
+                # )
+                # if (
+                #     validation_data is not None
+                #     and validation_data[model_key] is not None
+                # ):
+                #     validation_data[model_key].print_summary(
+                #         f"validation in {model_key}",
+                #         to_numpy_array(
+                #             self.validation_dataloader[
+                #                 model_key
+                #             ].batch_sampler.sampler.weights
+                #         ),
+                #     )
 
         # Learning rate
         self.warmup_steps = training_params.get("warmup_steps", 0)
@@ -856,7 +854,9 @@ class Trainer:
 
                 if not self.multi_task:
                     train_results = log_loss_train(loss, more_loss)
-                    valid_results = log_loss_valid()
+                    # valid_results = log_loss_valid()
+                    # no run valid!
+                    valid_results = None
                     if self.rank == 0:
                         log.info(
                             format_training_message_per_task(
