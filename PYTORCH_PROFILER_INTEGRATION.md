@@ -24,7 +24,7 @@ ls -la ./profiler_results/pytorch_profiler_trace.json
 
 ## Implementation Details
 
-The profiler uses PyTorch's `torch::autograd::profiler::RecordProfile` and automatically:
+The profiler uses PyTorch's modern `torch::profiler` API and automatically:
 - Creates the output directory if it doesn't exist
 - Profiles all forward pass operations in DeepPotPT and DeepSpinPT
 - Saves profiling results to a JSON file when the object is destroyed
