@@ -244,6 +244,9 @@ def to_torch_tensor(
     if xx is None:
         return None
     assert xx is not None
+    # Handle PyTorch tensors - clone and move to target device/dtype if needed
+    if isinstance(xx, torch.Tensor):
+        return xx.clone().detach().to(device=DEVICE)
     if not isinstance(xx, np.ndarray):
         return xx
     # Create a reverse mapping of NP_PRECISION_DICT
