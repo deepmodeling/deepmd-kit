@@ -53,6 +53,11 @@ def eval_desc(
     **kwargs
         additional arguments
 
+    Notes
+    -----
+    Descriptors are saved as 2D numpy arrays with shape (nframes*natoms, ndesc)
+    where each row represents one atom's descriptor across all frames.
+
     Raises
     ------
     RuntimeError
@@ -124,6 +129,11 @@ def eval_desc(
             fparam=fparam,
             aparam=aparam,
         )
+
+        # reshape descriptors to 2D format (nframes*natoms, ndesc) for easier analysis
+        if len(descriptors.shape) == 3:
+            nframes_desc, natoms_desc, ndesc = descriptors.shape
+            descriptors = descriptors.reshape(nframes_desc * natoms_desc, ndesc)
 
         # save descriptors
         system_name = os.path.basename(system_path.rstrip("/"))
