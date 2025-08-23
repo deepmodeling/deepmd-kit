@@ -267,9 +267,6 @@ def to_paddle_tensor(
     if xx is None:
         return None
     assert xx is not None
-    # Handle PaddlePaddle tensors - clone and move to target device/dtype if needed
-    if isinstance(xx, paddle.Tensor):
-        return xx.clone().detach().to(device=DEVICE)
     if not isinstance(xx, np.ndarray):
         return xx
     # Create a reverse mapping of NP_PRECISION_DICT
