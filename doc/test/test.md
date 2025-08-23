@@ -26,7 +26,7 @@ The descriptors of a model can be evaluated and saved using `dp eval-desc`. A ty
 dp eval-desc -m graph.pb -s /path/to/system -o desc
 ```
 
-where `-m` gives the model file, `-s` the path to the system directory (or `-f` for a datafile containing paths to systems), and `-o` the output directory where descriptor files will be saved. The descriptors for each system will be saved as `.npy` files with the format `desc/(system_name).npy`. Each descriptor file contains a 2D array where each row represents one atom's descriptor (shape: nframes×natoms, ndesc).
+where `-m` gives the model file, `-s` the path to the system directory (or `-f` for a datafile containing paths to systems), and `-o` the output directory where descriptor files will be saved. The descriptors for each system will be saved as `.npy` files with the format `desc/(system_name).npy`. Each descriptor file contains a 3D array with shape (nframes, natoms, ndesc).
 
 Several other command line options can be passed to `dp eval-desc`, which can be checked with
 

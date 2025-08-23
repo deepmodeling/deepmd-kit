@@ -61,10 +61,11 @@ class DPEvalDesc:
         # Load and validate descriptor
         descriptors = np.load(desc_file)
         self.assertIsInstance(descriptors, np.ndarray)
-        # Descriptors should be 2D: (nframes*natoms, ndesc) for easier analysis
-        self.assertEqual(len(descriptors.shape), 2)  # Should be 2D array
-        self.assertGreater(descriptors.shape[0], 0)  # Should have frames*atoms
-        self.assertGreater(descriptors.shape[1], 0)  # Should have descriptor dimensions
+        # Descriptors should be 3D: (nframes, natoms, ndesc)
+        self.assertEqual(len(descriptors.shape), 3)  # Should be 3D array
+        self.assertGreater(descriptors.shape[0], 0)  # Should have frames
+        self.assertGreater(descriptors.shape[1], 0)  # Should have atoms
+        self.assertGreater(descriptors.shape[2], 0)  # Should have descriptor dimensions
 
     def tearDown(self) -> None:
         for f in os.listdir("."):

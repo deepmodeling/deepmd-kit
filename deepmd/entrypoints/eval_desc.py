@@ -55,8 +55,8 @@ def eval_desc(
 
     Notes
     -----
-    Descriptors are saved as 2D numpy arrays with shape (nframes*natoms, ndesc)
-    where each row represents one atom's descriptor across all frames.
+    Descriptors are saved as 3D numpy arrays with shape (nframes, natoms, ndesc)
+    where each frame contains the descriptors for all atoms.
 
     Raises
     ------
@@ -130,10 +130,7 @@ def eval_desc(
             aparam=aparam,
         )
 
-        # reshape descriptors to 2D format (nframes*natoms, ndesc) for easier analysis
-        if len(descriptors.shape) == 3:
-            nframes_desc, natoms_desc, ndesc = descriptors.shape
-            descriptors = descriptors.reshape(nframes_desc * natoms_desc, ndesc)
+        # descriptors are kept in 3D format (nframes, natoms, ndesc)
 
         # save descriptors
         system_name = os.path.basename(system_path.rstrip("/"))
