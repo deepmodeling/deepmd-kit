@@ -81,7 +81,7 @@ def eval_model(
         assert isinstance(atom_types, paddle.Tensor) or isinstance(atom_types, list)
         if isinstance(atom_types, paddle.Tensor):
             atom_types = (
-                atom_types.clone().detach().to(dtype=paddle.int32, place=DEVICE)
+                atom_types.clone().detach().to(dtype=paddle.int32, device=DEVICE)
             )
         else:
             atom_types = paddle.to_tensor(atom_types, dtype=paddle.int32, place=DEVICE)
@@ -111,7 +111,7 @@ def eval_model(
             coords.reshape([-1, natoms, 3])
             .clone()
             .detach()
-            .to(dtype=GLOBAL_PD_FLOAT_PRECISION, place=DEVICE)
+            .to(dtype=GLOBAL_PD_FLOAT_PRECISION, device=DEVICE)
         )
     else:
         coord_input = paddle.to_tensor(
@@ -126,7 +126,7 @@ def eval_model(
                 spins.reshape([-1, natoms, 3])
                 .clone()
                 .detach()
-                .to(dtype=GLOBAL_PD_FLOAT_PRECISION, place=DEVICE)
+                .to(dtype=GLOBAL_PD_FLOAT_PRECISION, device=DEVICE)
             )
         else:
             spin_input = paddle.to_tensor(
@@ -138,7 +138,7 @@ def eval_model(
     if callable(has_spin):
         has_spin = has_spin()
     if isinstance(atom_types, paddle.Tensor):
-        type_input = atom_types.clone().detach().to(dtype=paddle.int64, place=DEVICE)
+        type_input = atom_types.clone().detach().to(dtype=paddle.int64, device=DEVICE)
     else:
         type_input = paddle.to_tensor(atom_types, dtype=paddle.int64, place=DEVICE)
     box_input = None
@@ -151,7 +151,7 @@ def eval_model(
                 cells.reshape([-1, 3, 3])
                 .clone()
                 .detach()
-                .to(dtype=GLOBAL_PD_FLOAT_PRECISION, place=DEVICE)
+                .to(dtype=GLOBAL_PD_FLOAT_PRECISION, device=DEVICE)
             )
         else:
             box_input = paddle.to_tensor(
