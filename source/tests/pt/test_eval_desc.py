@@ -14,7 +14,9 @@ from pathlib import (
 import numpy as np
 import torch
 
-from deepmd.entrypoints.eval_desc import eval_desc
+from deepmd.entrypoints.eval_desc import (
+    eval_desc,
+)
 from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
@@ -39,7 +41,7 @@ class DPEvalDesc:
         model = torch.jit.script(trainer.model)
         tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
         torch.jit.save(model, tmp_model.name)
-        
+
         # Test eval_desc
         eval_desc(
             model=tmp_model.name,
@@ -48,14 +50,14 @@ class DPEvalDesc:
             output=self.output_dir,
         )
         os.unlink(tmp_model.name)
-        
+
         # Check that descriptor file was created
         system_name = os.path.basename(
             self.config["training"]["validation_data"]["systems"][0].rstrip("/")
         )
         desc_file = os.path.join(self.output_dir, f"{system_name}.npy")
         self.assertTrue(os.path.exists(desc_file))
-        
+
         # Load and validate descriptor
         descriptors = np.load(desc_file)
         self.assertIsInstance(descriptors, np.ndarray)
