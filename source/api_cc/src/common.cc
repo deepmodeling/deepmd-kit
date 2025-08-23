@@ -11,10 +11,9 @@
 #include <sys/stat.h>
 #include <errno.h>
 
-// Note: MPI rank detection has been removed from api_cc library
-// to avoid MPI linking dependencies. The profiler will use a generic
-// filename. Users can still distinguish between ranks by using different
-// output directories per rank if needed.
+#ifdef USE_MPI
+#include <mpi.h>
+#endif
 
 #include "AtomMap.h"
 #include "device.h"
@@ -408,10 +407,19 @@ void deepmd::get_env_pytorch_profiler(bool& enable_profiler, std::string& output
 }
 
 int deepmd::get_mpi_rank() {
-  // MPI rank detection removed from api_cc to avoid MPI linking dependencies
-  // Always return -1 to indicate no MPI rank available
-  // Users can distinguish between ranks by using different output directories
+#ifdef USE_MPI
+  int rank = -1;  // Use -1 to indicate MPI not available/initialized
+  int initialized = 0;
+  if (MPI_Initialized(&initialized) == MPI_SUCCESS && initialized) {
+    if (MPI_Comm_rank(MPI_COMM_WORLD, &rank) != MPI_SUCCESS) {
+      rank = -1;  // fallback to -1 if MPI_Comm_rank fails
+    }
+  }
+  return rank;
+#else
+  // MPI not available at compile time
   return -1;
+#endif
 }
 
 bool deepmd::create_directories(const std::string& path) {
