@@ -3,9 +3,6 @@
 
 #include <torch/script.h>
 #include <torch/torch.h>
-#ifdef BUILD_PYTORCH
-#include <torch/profiler.h>
-#endif
 
 #include "DeepSpin.h"
 
