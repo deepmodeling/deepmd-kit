@@ -137,7 +137,7 @@ source/               # C++ source code and tests
 
 - **Format**: `type(scope): description`
 - **Common types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `ci`
-- **Examples**: 
+- **Examples**:
   - `feat(core): add new descriptor type`
   - `fix(tf): resolve memory leak in training`
   - `docs: update installation guide`
