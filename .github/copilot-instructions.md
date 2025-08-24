@@ -15,7 +15,7 @@ DeePMD-kit is a deep learning package for many-body potential energy representat
 ### Test Repository
 - Run single test: `pytest source/tests/tf/test_dp_test.py::TestDPTestEner::test_1frame -v` -- takes 8-13 seconds
 - Run test subset: `pytest source/tests/tf/test_dp_test.py -v` -- takes 15 seconds. **NEVER CANCEL. Set timeout to 60+ seconds.**
-- Full test suite has 314 test files across backends. **NEVER CANCEL: Full test suite takes 60+ minutes. Set timeout to 120+ minutes.**
+- **Recommended: Use single test cases for validation instead of full test suite** -- full suite has 314 test files and takes 60+ minutes
 
 ### Lint and Format Code
 - Install linter: `uv pip install ruff`
@@ -107,8 +107,8 @@ source/               # C++ source code and tests
 ### Testing Times
 - **Single test**: 8-13 seconds
 - **Test file (~5 tests)**: ~15 seconds
-- **Backend-specific test suite**: 15-30 minutes. **NEVER CANCEL.**
-- **Full test suite (314 files)**: 60+ minutes. **NEVER CANCEL.**
+- **Backend-specific test subset**: 15-30 minutes. **Use sparingly.**
+- **Full test suite (314 files)**: 60+ minutes. **Avoid in development - use single tests instead.**
 
 ### Linting and Formatting
 - **Ruff check**: <1 second
@@ -150,7 +150,7 @@ source/               # C++ source code and tests
 ## Critical Warnings
 
 - **NEVER CANCEL BUILD OPERATIONS**: Python build takes 67 seconds, C++ build takes 164 seconds
-- **NEVER CANCEL FULL TEST SUITE**: Takes 60+ minutes, always set appropriate timeouts
+- **USE SINGLE TESTS FOR VALIDATION**: Run individual tests instead of full test suite for faster feedback
 - **ALWAYS activate virtual environment**: Build and runtime failures occur without proper environment
 - **ALWAYS install backend dependencies first**: TensorFlow/PyTorch required before building C++ components
 - **ALWAYS run linting before commits**: `ruff check . && ruff format .` or CI will fail
