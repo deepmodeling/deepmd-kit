@@ -131,6 +131,18 @@ source/               # C++ source code and tests
 - **Ruff format**: <1 second
 - **Pre-commit hooks**: May have network issues, use individual tools
 
+### Commit Messages and PR Titles
+
+**All commit messages and PR titles must follow [conventional commit specification](https://www.conventionalcommits.org/):**
+
+- **Format**: `type(scope): description`
+- **Common types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `ci`
+- **Examples**: 
+  - `feat(core): add new descriptor type`
+  - `fix(tf): resolve memory leak in training`
+  - `docs: update installation guide`
+  - `ci: add workflow for testing`
+
 ### Training and Model Operations
 
 - **Training initialization**: 10-30 seconds
@@ -176,3 +188,4 @@ source/               # C++ source code and tests
 - **ALWAYS install backend dependencies first**: TensorFlow/PyTorch required before building C++ components
 - **ALWAYS run linting before commits**: `ruff check . && ruff format .` or CI will fail
 - **ALWAYS test both Python and C++ components**: Some features require both to be built
+- **ALWAYS follow conventional commit format**: All commit messages and PR titles must use conventional commit specification (`type(scope): description`)
