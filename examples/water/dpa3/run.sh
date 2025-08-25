@@ -5,9 +5,15 @@
 # unset PADDLE_ELASTIC_TIMEOUT
 # export NNODES=1
 # export PADDLE_TRAINERS_NUM=1
-unset CUDA_DEVICE_MAX_CONNECTIONS
+# unset CUDA_DEVICE_MAX_CONNECTIONS
 
-HDFS_USE_FILE_LOCKING=0 python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" --log_dir "logs" dp --pd train input_torch.json -l dp_train.log
+
+rm -rf output/
+
+${nsys_args} python -m paddle.distributed.launch \
+    --log_dir output \
+    --run_mode=collective \
+    dp --pd train input_torch.json
 
 # NUM_WORKERS=0 HDFS_USE_FILE_LOCKING=0 python -m paddle.distributed.launch
 

@@ -164,17 +164,14 @@ class Trainer:
 
         def get_data_loader(_training_data, _validation_data, _training_params):
             def get_dataloader_and_buffer(_data, _params):
-                _sampler = get_sampler_from_params(_data, _params)
-                if _sampler is None:
-                    log.warning(
-                        "Sampler not specified!"
-                    )  # None sampler will lead to a premature stop iteration. Replacement should be True in attribute of the sampler to produce expected number of items in one iteration.
+                # _sampler = get_sampler_from_params(_data, _params)
+                # if _sampler is None:
+                #     log.warning(
+                #         "Sampler not specified!"
+                #     )  # None sampler will lead to a premature stop iteration. Replacement should be True in attribute of the sampler to produce expected number of items in one iteration.
                 _dataloader = DataLoader(
                     _data,
-                    batch_sampler=paddle.io.BatchSampler(
-                        sampler=_sampler,
-                        drop_last=False,
-                    ),
+                    batch_size=1,
                     num_workers=NUM_WORKERS
                     if dist.is_available()
                     else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
@@ -325,17 +322,18 @@ class Trainer:
                 self.validation_data,
                 self.valid_numb_batch,
             ) = get_data_loader(training_data, validation_data, training_params)
-            training_data.print_summary(
-                "training",
-                to_numpy_array(self.training_dataloader.batch_sampler.sampler.weights),
-            )
-            if validation_data is not None:
-                validation_data.print_summary(
-                    "validation",
-                    to_numpy_array(
-                        self.validation_dataloader.batch_sampler.sampler.weights
-                    ),
-                )
+            # no sampler, do not need print!
+            # training_data.print_summary(
+            #     "training",
+            #     to_numpy_array(self.training_dataloader.batch_sampler.sampler.weights),
+            # )
+            # if validation_data is not None:
+            #     validation_data.print_summary(
+            #         "validation",
+            #         to_numpy_array(
+            #             self.validation_dataloader.batch_sampler.sampler.weights
+            #         ),
+            #     )
         else:
             (
                 self.training_dataloader,
@@ -370,27 +368,27 @@ class Trainer:
                     validation_data[model_key],
                     training_params["data_dict"][model_key],
                 )
-
-                training_data[model_key].print_summary(
-                    f"training in {model_key}",
-                    to_numpy_array(
-                        self.training_dataloader[
-                            model_key
-                        ].batch_sampler.sampler.weights
-                    ),
-                )
-                if (
-                    validation_data is not None
-                    and validation_data[model_key] is not None
-                ):
-                    validation_data[model_key].print_summary(
-                        f"validation in {model_key}",
-                        to_numpy_array(
-                            self.validation_dataloader[
-                                model_key
-                            ].batch_sampler.sampler.weights
-                        ),
-                    )
+                # no sampler, do not need print!
+                # training_data[model_key].print_summary(
+                #     f"training in {model_key}",
+                #     to_numpy_array(
+                #         self.training_dataloader[
+                #             model_key
+                #         ].batch_sampler.sampler.weights
+                #     ),
+                # )
+                # if (
+                #     validation_data is not None
+                #     and validation_data[model_key] is not None
+                # ):
+                #     validation_data[model_key].print_summary(
+                #         f"validation in {model_key}",
+                #         to_numpy_array(
+                #             self.validation_dataloader[
+                #                 model_key
+                #             ].batch_sampler.sampler.weights
+                #         ),
+                #     )
 
         # Learning rate
         self.warmup_steps = training_params.get("warmup_steps", 0)
@@ -706,7 +704,7 @@ class Trainer:
             fout1 = open(record_file, mode="w", buffering=1)
         log.info("Start to train %d steps.", self.num_steps)
         if dist.is_available() and dist.is_initialized():
-            log.info(f"Rank: {dist.get_rank()}/{dist.get_world_size()}")
+            log.info(f"xxx Rank: {dist.get_rank()}/{dist.get_world_size()}")
         if self.enable_tensorboard:
             from tensorboardX import (
                 SummaryWriter,
@@ -755,50 +753,54 @@ class Trainer:
                     if self.world_size > 1
                     else contextlib.nullcontext
                 )
+
+                # with nvprof_context(enable_profiling, "Forward pass"):
+                log_dict = {}
+
+                input_dict = {
+                    "spin": None,
+                    "fparam": None,
+                    "aparam": None,
+                }
+                label_dict = {
+                    "find_box": 1.0,
+                    "find_coord": 1.0,
+                    "find_numb_copy": 0.0,
+                    "find_energy": 1.0,
+                    "find_force": 1.0,
+                    "find_virial": 0.0,
+                }
+                for k in ["atype", "box", "coord"]:
+                    input_dict[k] = paddle.load(f"./input_{k}.pd")
+                for k in ["energy", "force", "natoms", "numb_copy", "virial"]:
+                    label_dict[k] = paddle.load(f"./label_{k}.pd")
+
+                for __key in ('coord', 'atype', 'box'):
+                    input_dict[__key] = dist.shard_tensor(input_dict[__key], mesh=dist.get_mesh(), placements=[dist.Shard(0)])
+                for __key, _ in label_dict.items():
+                    if isinstance(label_dict[__key], paddle.Tensor):
+                        label_dict[__key] = dist.shard_tensor(label_dict[__key], mesh=dist.get_mesh(), placements=[dist.Shard(0)])
                 
-                # with sync_context():
-                #     with nvprof_context(enable_profiling, "Forward pass"):
-                #         model_pred, loss, more_loss = self.wrapper(
-                #             **input_dict,
-                #             cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
-                #             label=label_dict,
-                #             task_key=task_key,
-                #         )
+                model_pred, loss, more_loss = self.wrapper(
+                    **input_dict,
+                    cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
+                    label=label_dict,
+                    task_key=task_key,
+                )
 
-                #     with nvprof_context(enable_profiling, "Backward pass"):
-                #         loss.backward()
-
-                # if self.world_size > 1:
-                #     # fuse + allreduce manually before optimization if use DDP + no_sync
-                #     # details in https://github.com/PaddlePaddle/Paddle/issues/48898#issuecomment-1343838622
-                #     hpu.fused_allreduce_gradients(list(self.wrapper.parameters()), None)
-
-                with nvprof_context(enable_profiling, "Forward pass"):
-                    for __key in ('coord', 'atype', 'box'):
-                        input_dict[__key] = dist.shard_tensor(input_dict[__key], mesh=dist.get_mesh(), placements=[dist.Shard(0)])
-                    for __key, _ in label_dict.items():
-                        if isinstance(label_dict[__key], paddle.Tensor):
-                            label_dict[__key] = dist.shard_tensor(label_dict[__key], mesh=dist.get_mesh(), placements=[dist.Shard(0)])
-                    model_pred, loss, more_loss = self.wrapper(
-                        **input_dict,
-                        cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
-                        label=label_dict,
-                        task_key=task_key,
-                    )
-
-                with nvprof_context(enable_profiling, "Backward pass"):
-                    loss.backward()
+                # with nvprof_context(enable_profiling, "Backward pass"):
+                loss.backward()
 
                 if self.gradient_max_norm > 0.0:
-                    with nvprof_context(enable_profiling, "Gradient clip"):
-                        paddle.nn.utils.clip_grad_norm_(
-                            self.wrapper.parameters(),
-                            self.gradient_max_norm,
-                            error_if_nonfinite=True,
-                        )
+                    # with nvprof_context(enable_profiling, "Gradient clip"):
+                    paddle.nn.utils.clip_grad_norm_(
+                        self.wrapper.parameters(),
+                        self.gradient_max_norm,
+                        error_if_nonfinite=True,
+                    )
 
-                with nvprof_context(enable_profiling, "Adam update"):
-                    self.optimizer.step()
+                # with nvprof_context(enable_profiling, "Adam update"):
+                self.optimizer.step()
                 self.scheduler.step()
 
             else:
@@ -856,7 +858,9 @@ class Trainer:
 
                 if not self.multi_task:
                     train_results = log_loss_train(loss, more_loss)
-                    valid_results = log_loss_valid()
+                    # valid_results = log_loss_valid()
+                    # no run valid!
+                    valid_results = None
                     if self.rank == 0:
                         log.info(
                             format_training_message_per_task(
@@ -938,39 +942,39 @@ class Trainer:
                 ):
                     self.total_train_time += train_time
 
-                if fout:
-                    if self.lcurve_should_print_header:
-                        self.print_header(fout, train_results, valid_results)
-                        self.lcurve_should_print_header = False
-                    self.print_on_training(
-                        fout, display_step_id, cur_lr, train_results, valid_results
-                    )
+                # if fout:
+                #     if self.lcurve_should_print_header:
+                #         self.print_header(fout, train_results, valid_results)
+                #         self.lcurve_should_print_header = False
+                #     self.print_on_training(
+                #         fout, display_step_id, cur_lr, train_results, valid_results
+                #     )
 
-            if (
-                ((_step_id + 1) % self.save_freq == 0 and _step_id != self.start_step)
-                or (_step_id + 1) == self.num_steps
-            ) and (self.rank == 0 or dist.get_rank() == 0):
-                # Handle the case if rank 0 aborted and re-assigned
-                self.latest_model = Path(self.save_ckpt + f"-{_step_id + 1}.pd")
-                self.save_model(self.latest_model, lr=cur_lr, step=_step_id)
-                log.info(f"Saved model to {self.latest_model}")
-                symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
-                with open("checkpoint", "w") as f:
-                    f.write(str(self.latest_model))
+            # if (
+            #     ((_step_id + 1) % self.save_freq == 0 and _step_id != self.start_step)
+            #     or (_step_id + 1) == self.num_steps
+            # ) and (self.rank == 0 or dist.get_rank() == 0):
+            #     # Handle the case if rank 0 aborted and re-assigned
+            #     self.latest_model = Path(self.save_ckpt + f"-{_step_id + 1}.pd")
+            #     self.save_model(self.latest_model, lr=cur_lr, step=_step_id)
+            #     log.info(f"Saved model to {self.latest_model}")
+            #     symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
+            #     with open("checkpoint", "w") as f:
+            #         f.write(str(self.latest_model))
 
             # tensorboard
-            if self.enable_tensorboard and (
-                display_step_id % self.tensorboard_freq == 0 or display_step_id == 1
-            ):
-                writer.add_scalar(f"{task_key}/lr", cur_lr, display_step_id)
-                writer.add_scalar(f"{task_key}/loss", loss.item(), display_step_id)
-                for item in more_loss:
-                    writer.add_scalar(
-                        f"{task_key}/{item}", more_loss[item].item(), display_step_id
-                    )
+            # if self.enable_tensorboard and (
+            #     display_step_id % self.tensorboard_freq == 0 or display_step_id == 1
+            # ):
+            #     writer.add_scalar(f"{task_key}/lr", cur_lr, display_step_id)
+            #     writer.add_scalar(f"{task_key}/loss", loss.item(), display_step_id)
+            #     for item in more_loss:
+            #         writer.add_scalar(
+            #             f"{task_key}/{item}", more_loss[item].item(), display_step_id
+            #         )
 
-            if enable_profiling:
-                core.nvprof_nvtx_pop()
+            # if enable_profiling:
+            #     core.nvprof_nvtx_pop()
 
         self.wrapper.train()
         self.t0 = time.time()

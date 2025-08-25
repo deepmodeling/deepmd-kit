@@ -75,14 +75,14 @@
         "../data/data_1",
         "../data/data_2"
       ],
-      "batch_size": 1,
+      "batch_size": 32,
       "_comment": "that's all"
     },
     "validation_data": {
       "systems": [
         "../data/data_3"
       ],
-      "batch_size": 1,
+      "batch_size": 32,
       "_comment": "that's all"
     },
     "numb_steps": 2000,
