@@ -166,10 +166,12 @@ class TestDPTestForceWeight(DPTest, unittest.TestCase):
         shutil.copytree(src, tmp_dir, dirs_exist_ok=True)
         set_dir = Path(tmp_dir) / "set.000"
         forces = np.load(set_dir / "force.npy")
+        forces[0, :3] += 1.0
         forces[0, -3:] += 10.0
         np.save(set_dir / "force.npy", forces)
         natoms = forces.shape[1] // 3
         atom_pref = np.ones((forces.shape[0], natoms), dtype=forces.dtype)
+        atom_pref[:, 0] = 2.0
         atom_pref[:, -1] = 0.0
         np.save(set_dir / "atom_pref.npy", atom_pref)
         return tmp_dir
@@ -216,16 +218,17 @@ class TestDPTestForceWeight(DPTest, unittest.TestCase):
         force_true = test_data["force"][:1]
         weight = test_data["atom_pref"][:1]
         diff = force_pred - force_true
-        diff_w = diff * weight
+        mask = weight != 0
+        masked_diff = diff[mask]
+        mae_unweighted = np.sum(np.abs(masked_diff)) / mask.sum()
+        rmse_unweighted = np.sqrt(np.sum(masked_diff * masked_diff) / mask.sum())
         denom = weight.sum()
-        mae_expected = np.sum(np.abs(diff_w)) / denom
-        rmse_expected = np.sqrt(np.sum(diff * diff * weight) / denom)
-        mae_unweighted = np.sum(np.abs(diff)) / diff.size
-        rmse_unweighted = np.sqrt(np.sum(diff * diff) / diff.size)
+        mae_weighted = np.sum(np.abs(diff) * weight) / denom
+        rmse_weighted = np.sqrt(np.sum(diff * diff * weight) / denom)
         np.testing.assert_allclose(err["mae_f"][0], mae_unweighted)
         np.testing.assert_allclose(err["rmse_f"][0], rmse_unweighted)
-        np.testing.assert_allclose(err["mae_fw"][0], mae_expected)
-        np.testing.assert_allclose(err["rmse_fw"][0], rmse_expected)
+        np.testing.assert_allclose(err["mae_fw"][0], mae_weighted)
+        np.testing.assert_allclose(err["rmse_fw"][0], rmse_weighted)
         os.unlink(tmp_model.name)
 
     def tearDown(self) -> None:
