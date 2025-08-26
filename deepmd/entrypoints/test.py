@@ -419,11 +419,17 @@ def test_ener(
     mae_e = mae(diff_e)
     rmse_e = rmse(diff_e)
     diff_f = force - test_data["force"][:numb_test]
-    mae_f = mae(diff_f)
-    rmse_f = rmse(diff_f)
-    size_f = force.size
     if find_atom_pref == 1:
         atom_weight = test_data["atom_pref"][:numb_test]
+        mask = atom_weight != 0
+        masked_diff = diff_f[mask]
+        if masked_diff.size > 0:
+            mae_f = np.mean(np.abs(masked_diff))
+            rmse_f = np.sqrt(np.mean(masked_diff * masked_diff))
+        else:
+            mae_f = 0.0
+            rmse_f = 0.0
+        size_f = mask.sum()
         weight_sum = np.sum(atom_weight)
         if weight_sum > 0:
             mae_fw = np.sum(np.abs(diff_f) * atom_weight) / weight_sum
@@ -431,6 +437,10 @@ def test_ener(
         else:
             mae_fw = 0.0
             rmse_fw = 0.0
+    else:
+        mae_f = mae(diff_f)
+        rmse_f = rmse(diff_f)
+        size_f = diff_f.size
     diff_v = virial - test_data["virial"][:numb_test]
     mae_v = mae(diff_v)
     rmse_v = rmse(diff_v)
