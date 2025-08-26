@@ -783,7 +783,7 @@ class Trainer:
                         loss.backward()
 
                 # gradient accumulation
-                if _step_id % self.acc_freq == 0:
+                if (_step_id + 1) % self.acc_freq == 0:
                     # fuse + allreduce manually before optimization if use DDP + no_sync
                     # details in https://github.com/PaddlePaddle/Paddle/issues/48898#issuecomment-1343838622
                     if self.world_size > 1:
@@ -798,6 +798,7 @@ class Trainer:
                                 self.gradient_max_norm,
                                 error_if_nonfinite=True,
                             )
+
                     with nvprof_context(enable_profiling, "Adam update"):
                         self.optimizer.step()
                     self.optimizer.clear_grad(set_to_zero=False)
