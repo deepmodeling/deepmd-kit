@@ -10,10 +10,6 @@
 #include "device.h"
 #include "errors.h"
 
-#ifdef USE_MPI
-#include <mpi.h>
-#endif
-
 using namespace deepmd;
 
 void DeepPotPT::translate_error(std::function<void()> f) {
@@ -199,27 +195,9 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       }
 
       std::vector<int> recvnum_new(nswap, 0);
-#ifdef USE_MPI
-      if (lmp_list.world) {
-        MPI_Comm comm = *static_cast<MPI_Comm*>(lmp_list.world);
-        const int TAG_BASE = 0x7a31;
-        for (int s = 0; s < nswap; ++s) {
-          const int send_to = lmp_list.sendproc[s];
-          const int recv_from = lmp_list.recvproc[s];
-          int send_cnt = sendnum_new[s];
-          int recv_cnt = 0;
-          MPI_Sendrecv(&send_cnt, 1, MPI_INT, send_to, TAG_BASE + s, &recv_cnt,
-                       1, MPI_INT, recv_from, TAG_BASE + s, comm,
-                       MPI_STATUS_IGNORE);
-          recvnum_new[s] = recv_cnt;
-        }
-      } else
-#endif
-      {
-        // need check
-        for (int s = 0; s < nswap; ++s) {
-          recvnum_new[s] = sendnum_new[s];
-        }
+      // need check
+      for (int s = 0; s < nswap; ++s) {
+        recvnum_new[s] = sendnum_new[s];
       }
 
       std::vector<int> firstrecv_new(nswap, 0);
