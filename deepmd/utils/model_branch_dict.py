@@ -5,6 +5,7 @@ from collections import (
 )
 from typing import (
     Any,
+    Optional,
 )
 
 
@@ -66,7 +67,7 @@ class OrderedDictTableWrapper:
     - Prints the data as an ASCII table with borders and aligned columns.
     - The first two columns are fixed: "Model Branch Name" and "Alias".
     - The remaining columns are all unique keys found in `info` across all branches (order preserved by first occurrence).
-    - Long text in cells is automatically wrapped to fit the column width.
+    - Long text in cells is automatically wrapped to fit the column width, except column 1 & 2 auto-expanding to the **maximum content length** in that column.
     - Missing info values are shown as empty strings.
     """
 
@@ -97,20 +98,22 @@ class OrderedDictTableWrapper:
         # Construct table header: fixed columns + dynamic info keys
         self.headers: list[str] = ["Model Branch", "Alias", *self.info_keys]
 
-    def _wrap_cell(self, text: Any) -> list[str]:
+    def _wrap_cell(self, text: Any, width: Optional[int] = None) -> list[str]:
         """
         Convert a cell value into a list of wrapped text lines.
 
         Args:
             text: Any value that will be converted to a string.
+            width: Optional custom wrap width. If None, defaults to `self.col_width`.
 
         Returns
         -------
         A list of strings, each representing one wrapped line of the cell.
         """
         text = "" if text is None else str(text)
-        # Use textwrap to wrap text to col_width
-        return textwrap.wrap(text, self.col_width) or [""]
+        eff_width = self.col_width if width is None else width
+        # If eff_width is very large, this effectively disables wrapping for that cell.
+        return textwrap.wrap(text, eff_width) or [""]
 
     def as_table(self) -> str:
         """
@@ -120,6 +123,19 @@ class OrderedDictTableWrapper:
         -------
         A string representation of the table.
         """
+        # Step 0: Precompute dynamic widths for the first two columns.
+        # Column 0 (branch): width = max length over header + all branch names
+        branch_col_width = len(self.headers[0])  # "Model Branch Name"
+        for branch in self.data.keys():
+            branch_col_width = max(branch_col_width, len(str(branch)))
+
+        # Column 1 (alias): width = max length over header + all alias strings (joined by ", \n")
+        alias_col_width = len(self.headers[1])  # "Alias"
+        for payload in self.data.values():
+            alias_list = payload.get("alias", [])
+            for alias in alias_list:
+                alias_col_width = max(alias_col_width, len(str(alias)))
+
         # Step 1: Create raw rows (without wrapping)
         raw_rows: list[list[str]] = []
         # First row: header
@@ -132,18 +148,34 @@ class OrderedDictTableWrapper:
             row = [branch, alias_str] + [info.get(k, "") for k in self.info_keys]
             raw_rows.append(row)
 
-        # Step 2: Wrap each cell
-        # wrapped_rows: List of rows -> each row: list of cells -> each cell: list of wrapped lines
+        # Step 2: Wrap each cell, using dynamic widths for the first two columns,
+        # and fixed `self.col_width` for info columns.
         wrapped_rows: list[list[list[str]]] = []
         for row in raw_rows:
-            wrapped_rows.append([self._wrap_cell(cell) for cell in row])
+            wrapped_row: list[list[str]] = []
+            for j, cell in enumerate(row):
+                if j == 0:
+                    # First column: branch name -> no wrap by using its max width
+                    wrapped_row.append(self._wrap_cell(cell, width=branch_col_width))
+                elif j == 1:
+                    # Second column: alias -> no wrap by using its max width
+                    wrapped_row.append(self._wrap_cell(cell, width=alias_col_width))
+                else:
+                    # Info columns: keep using fixed col_width (wrapping allowed)
+                    wrapped_row.append(self._wrap_cell(cell))
+            wrapped_rows.append(wrapped_row)
 
         # Step 3: Determine actual width for each column
-        # The width is the maximum length of any wrapped line in the column, capped at col_width
-        col_widths = [
-            max(len(line) for cell in col for line in cell)
-            for col in zip(*wrapped_rows)
-        ]
+        # For the first two columns, we already decided the exact widths above.
+        col_widths: list[int] = []
+        for idx, col in enumerate(zip(*wrapped_rows)):
+            if idx == 0:
+                col_widths.append(branch_col_width)
+            elif idx == 1:
+                col_widths.append(alias_col_width)
+            else:
+                # Info columns: width is the maximum wrapped line length (<= self.col_width)
+                col_widths.append(max(len(line) for cell in col for line in cell))
 
         # Helper: Draw a horizontal separator line
         def draw_separator():

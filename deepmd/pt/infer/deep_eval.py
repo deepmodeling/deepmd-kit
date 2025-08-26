@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+import logging
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -74,6 +75,8 @@ from deepmd.utils.model_branch_dict import (
 if TYPE_CHECKING:
     import ase.neighborlist
 
+log = logging.getLogger(__name__)
+
 
 class DeepEval(DeepEvalBackend):
     """PyTorch backend implementation of DeepEval.
@@ -125,12 +128,23 @@ class DeepEval(DeepEvalBackend):
                 model_keys = list(self.input_param["model_dict"].keys())
                 if head is None and "Default" in model_alias_dict:
                     head = "Default"
+                    log.info(
+                        f"Using default head {model_alias_dict[head]} for multitask model."
+                    )
                 if isinstance(head, int):
                     head = model_keys[0]
                 assert head is not None, (
                     f"Head must be set for multitask model! Available heads are: {model_keys}, "
                     f"use `dp --pt show your_model.pt model-branch` to show detail information."
                 )
+                if head not in model_alias_dict:
+                    # preprocess with potentially case-insensitive input
+                    head_lower = head.lower()
+                    for mk in model_alias_dict:
+                        if mk.lower() == head_lower:
+                            # mapped the first matched head
+                            head = mk
+                            break
                 # replace with alias
                 assert head in model_alias_dict, (
                     f"No head or alias named {head} in model! Available heads are: {model_keys},"
