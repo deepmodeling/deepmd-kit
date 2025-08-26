@@ -14,13 +14,15 @@ from pathlib import (
 import numpy as np
 import torch
 
-from deepmd.entrypoints.test import test as dp_test
+from deepmd.entrypoints.test import test as dp_test, test_ener as dp_test_ener
 from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
+from deepmd.infer.deep_eval import DeepEval
+from deepmd.utils.data import DeepmdData
 
 from .model.test_permutation import (
     model_property,
@@ -138,6 +140,97 @@ class TestDPTestSeASpin(DPTest, unittest.TestCase):
         self.input_json = "test_dp_test.json"
         with open(self.input_json, "w") as fp:
             json.dump(self.config, fp, indent=4)
+
+
+class TestDPTestForceWeight(DPTest, unittest.TestCase):
+    def setUp(self) -> None:
+        self.detail_file = "test_dp_test_force_weight_detail"
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        system_dir = self._prepare_weighted_system()
+        data_file = [system_dir]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.system_dir = system_dir
+        self.input_json = "test_dp_test_force_weight.json"
+        with open(self.input_json, "w") as fp:
+            json.dump(self.config, fp, indent=4)
+
+    def _prepare_weighted_system(self) -> str:
+        src = Path(__file__).parent / "water/data/single"
+        tmp_dir = tempfile.mkdtemp()
+        shutil.copytree(src, tmp_dir, dirs_exist_ok=True)
+        set_dir = Path(tmp_dir) / "set.000"
+        forces = np.load(set_dir / "force.npy")
+        forces[0, -3:] += 10.0
+        np.save(set_dir / "force.npy", forces)
+        natoms = forces.shape[1] // 3
+        atom_pref = np.ones((forces.shape[0], natoms), dtype=forces.dtype)
+        atom_pref[:, -1] = 0.0
+        np.save(set_dir / "atom_pref.npy", atom_pref)
+        return tmp_dir
+
+    def test_force_weight(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        with torch.device("cpu"):
+            trainer.get_data(is_train=False)
+        model = torch.jit.script(trainer.model)
+        tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
+        torch.jit.save(model, tmp_model.name)
+        dp = DeepEval(tmp_model.name)
+        data = DeepmdData(
+            self.system_dir,
+            set_prefix="set",
+            shuffle_test=False,
+            type_map=dp.get_type_map(),
+            sort_atoms=False,
+        )
+        err = dp_test_ener(
+            dp,
+            data,
+            self.system_dir,
+            numb_test=1,
+            detail_file=None,
+            has_atom_ener=False,
+        )
+        test_data = data.get_test()
+        coord = test_data["coord"].reshape([1, -1])
+        box = test_data["box"][:1]
+        atype = test_data["type"][0]
+        ret = dp.eval(
+            coord,
+            box,
+            atype,
+            fparam=None,
+            aparam=None,
+            atomic=False,
+            efield=None,
+            mixed_type=False,
+            spin=None,
+        )
+        force_pred = ret[1].reshape([1, -1])
+        force_true = test_data["force"][:1]
+        weight = test_data["atom_pref"][:1]
+        diff = force_pred - force_true
+        diff_w = diff * weight
+        denom = weight.sum()
+        mae_expected = np.sum(np.abs(diff_w)) / denom
+        rmse_expected = np.sqrt(np.sum(diff * diff * weight) / denom)
+        mae_unweighted = np.sum(np.abs(diff)) / diff.size
+        rmse_unweighted = np.sqrt(np.sum(diff * diff) / diff.size)
+        np.testing.assert_allclose(err["mae_f"][0], mae_unweighted)
+        np.testing.assert_allclose(err["rmse_f"][0], rmse_unweighted)
+        np.testing.assert_allclose(err["mae_fw"][0], mae_expected)
+        np.testing.assert_allclose(err["rmse_fw"][0], rmse_expected)
+        os.unlink(tmp_model.name)
+
+    def tearDown(self) -> None:
+        super().tearDown()
+        shutil.rmtree(self.system_dir)
 
 
 class TestDPTestPropertySeA(unittest.TestCase):
