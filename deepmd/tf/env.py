@@ -263,7 +263,7 @@ def get_tf_session_config() -> Any:
     Any
         session configure object
     """
-    set_tf_default_nthreads()
+    set_tf_default_nthreads(use_cpu=os.environ.get("DEVICE") == "cpu")
     intra, inter = get_tf_default_nthreads()
     if int(os.environ.get("DP_JIT", 0)):
         set_env_if_empty("TF_XLA_FLAGS", "--tf_xla_auto_jit=2")

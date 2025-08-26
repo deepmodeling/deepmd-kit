@@ -79,7 +79,7 @@ assert set(PRECISION_DICT.values()) == set(RESERVED_PRECISION_DICT.keys())
 DEFAULT_PRECISION = "float64"
 
 # throw warnings if threads not set
-set_default_nthreads()
+set_default_nthreads(use_cpu=DEVICE.type == "cpu")
 inter_nthreads, intra_nthreads = get_default_nthreads()
 if inter_nthreads > 0:  # the behavior of 0 is not documented
     torch.set_num_interop_threads(inter_nthreads)

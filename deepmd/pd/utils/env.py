@@ -113,7 +113,7 @@ assert set(PRECISION_DICT.values()) == set(RESERVED_PRECISION_DICT.keys())
 DEFAULT_PRECISION = "float64"
 
 # throw warnings if threads not set
-set_default_nthreads()
+set_default_nthreads(use_cpu=DEVICE == "cpu")
 inter_nthreads, intra_nthreads = get_default_nthreads()
 # if inter_nthreads > 0:  # the behavior of 0 is not documented
 #     os.environ['OMP_NUM_THREADS'] = str(inter_nthreads)

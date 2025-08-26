@@ -68,15 +68,21 @@ def set_env_if_empty(key: str, value: str, verbose: bool = True) -> None:
             )
 
 
-def set_default_nthreads() -> None:
+def set_default_nthreads(use_cpu: bool = False) -> None:
     """Set internal number of threads to default=automatic selection.
+
+    Parameters
+    ----------
+    use_cpu : bool, optional
+        If ``True``, suppress warnings about thread configuration,
+        by default ``False``.
 
     Notes
     -----
     `DP_INTRA_OP_PARALLELISM_THREADS` and `DP_INTER_OP_PARALLELISM_THREADS`
     control configuration of multithreading.
     """
-    if (
+    if not use_cpu and (
         "OMP_NUM_THREADS" not in os.environ
         # for backward compatibility
         or (
@@ -89,10 +95,10 @@ def set_default_nthreads() -> None:
         )
     ):
         log.warning(
-            "To get the best performance, it is recommended to adjust "
-            "the number of threads by setting the environment variables "
-            "OMP_NUM_THREADS, DP_INTRA_OP_PARALLELISM_THREADS, and "
-            "DP_INTER_OP_PARALLELISM_THREADS. See "
+            "To get the best CPU performance, adjust the number of threads by "
+            "setting the environment variables OMP_NUM_THREADS, "
+            "DP_INTRA_OP_PARALLELISM_THREADS, and DP_INTER_OP_PARALLELISM_THREADS. "
+            "These variables are only effective when running on CPU. See "
             "https://deepmd.rtfd.io/parallelism/ for more information."
         )
     if "TF_INTRA_OP_PARALLELISM_THREADS" not in os.environ:
