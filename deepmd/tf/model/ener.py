@@ -135,13 +135,15 @@ class EnerModel(StandardModel):
         """Get the number of atomic parameters."""
         return self.numb_aparam
 
-    def data_stat(self, data) -> None:
+    def data_stat(self, data, stat_file_path=None) -> None:
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)
         m_all_stat = merge_sys_stat(all_stat)
         self._compute_input_stat(
             m_all_stat, protection=self.data_stat_protect, mixed_type=data.mixed_type
         )
-        self._compute_output_stat(all_stat, mixed_type=data.mixed_type)
+        self._compute_output_stat(
+            all_stat, mixed_type=data.mixed_type, stat_file_path=stat_file_path
+        )
         # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
     def _compute_input_stat(self, all_stat, protection=1e-2, mixed_type=False) -> None:
@@ -167,11 +169,37 @@ class EnerModel(StandardModel):
             )
         self.fitting.compute_input_stats(all_stat, protection=protection)
 
-    def _compute_output_stat(self, all_stat, mixed_type=False) -> None:
-        if mixed_type:
-            self.fitting.compute_output_stats(all_stat, mixed_type=mixed_type)
+    def _compute_output_stat(
+        self, all_stat, mixed_type=False, stat_file_path=None
+    ) -> None:
+        if stat_file_path is not None:
+            # Use the new stat functionality with file save/load
+            from deepmd.tf.utils.stat import (
+                compute_output_stats,
+            )
+
+            # Merge system stats for compatibility
+            m_all_stat = merge_sys_stat(all_stat)
+
+            bias_out, std_out = compute_output_stats(
+                m_all_stat,
+                self.ntypes,
+                keys=["energy"],
+                stat_file_path=stat_file_path,
+                rcond=getattr(self, "rcond", None),
+                mixed_type=mixed_type,
+            )
+
+            # Set the computed bias and std in the fitting object
+            if "energy" in bias_out:
+                self.fitting.bias_atom_e = bias_out["energy"]
+
         else:
-            self.fitting.compute_output_stats(all_stat)
+            # Use the original computation method
+            if mixed_type:
+                self.fitting.compute_output_stats(all_stat, mixed_type=mixed_type)
+            else:
+                self.fitting.compute_output_stats(all_stat)
 
     def build(
         self,

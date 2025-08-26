@@ -200,7 +200,7 @@ class FrozenModel(Model):
     def get_ntypes(self) -> int:
         return self.model.get_ntypes()
 
-    def data_stat(self, data) -> None:
+    def data_stat(self, data, stat_file_path=None) -> None:
         pass
 
     def init_variables(

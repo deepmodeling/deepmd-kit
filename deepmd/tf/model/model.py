@@ -458,7 +458,7 @@ class Model(ABC, make_plugin_registry("model")):
         """Get the number of types."""
 
     @abstractmethod
-    def data_stat(self, data: dict):
+    def data_stat(self, data: dict, stat_file_path=None):
         """Data staticis."""
 
     def get_feed_dict(

@@ -3175,9 +3175,7 @@ def training_args(
     data_args = [
         arg_training_data,
         arg_validation_data,
-        Argument(
-            "stat_file", str, optional=True, doc=doc_only_pt_supported + doc_stat_file
-        ),
+        Argument("stat_file", str, optional=True, doc=doc_stat_file),
     ]
     args = (
         data_args

@@ -90,7 +90,7 @@ class LinearModel(Model):
                 raise ValueError("Models have different ntypes")
         return self.models[0].get_ntypes()
 
-    def data_stat(self, data) -> None:
+    def data_stat(self, data, stat_file_path=None) -> None:
         for model in self.models:
             model.data_stat(data)
 

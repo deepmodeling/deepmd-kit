@@ -229,6 +229,29 @@ def _do_work(
     # setup data modifier
     modifier = get_modifier(jdata["model"].get("modifier", None))
 
+    # extract stat_file from training parameters
+    stat_file_path = None
+    if not is_compress:
+        stat_file_raw = jdata["training"].get("stat_file", None)
+        if stat_file_raw is not None and run_opt.is_chief:
+            from pathlib import (
+                Path,
+            )
+
+            from deepmd.utils.path import (
+                DPPath,
+            )
+
+            if not Path(stat_file_raw).exists():
+                if stat_file_raw.endswith((".h5", ".hdf5")):
+                    import h5py
+
+                    with h5py.File(stat_file_raw, "w") as f:
+                        pass
+                else:
+                    Path(stat_file_raw).mkdir()
+            stat_file_path = DPPath(stat_file_raw, "a")
+
     # decouple the training data from the model compress process
     train_data = None
     valid_data = None
@@ -261,7 +284,12 @@ def _do_work(
         origin_type_map = get_data(
             jdata["training"]["training_data"], rcut, None, modifier
         ).get_type_map()
-    model.build(train_data, stop_batch, origin_type_map=origin_type_map)
+    model.build(
+        train_data,
+        stop_batch,
+        origin_type_map=origin_type_map,
+        stat_file_path=stat_file_path,
+    )
 
     if not is_compress:
         # train the model with the provided systems in a cyclic way
