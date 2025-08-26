@@ -119,6 +119,8 @@ class EnerFitting(Fitting):
             Number of atomic parameter
     dim_case_embd
         Dimension of case specific embedding.
+    default_fparam
+        The default frame parameter. This parameter is not supported in TensorFlow.
     rcond
             The condition number for the regression of atomic energy.
     tot_ener_zero
@@ -172,6 +174,7 @@ class EnerFitting(Fitting):
         spin: Optional[Spin] = None,
         mixed_types: bool = False,
         type_map: Optional[list[str]] = None,  # to be compat with input
+        default_fparam: Optional[list[float]] = None,  # to be compat with input
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -196,6 +199,9 @@ class EnerFitting(Fitting):
         self.dim_case_embd = dim_case_embd
         if dim_case_embd > 0:
             raise ValueError("dim_case_embd is not supported in TensorFlow.")
+        self.default_fparam = default_fparam
+        if self.default_fparam is not None:
+            raise ValueError("default_fparam is not supported in TensorFlow.")
         self.n_neuron = neuron
         self.resnet_dt = resnet_dt
         self.rcond = rcond
@@ -921,6 +927,7 @@ class EnerFitting(Fitting):
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
             "dim_case_embd": self.dim_case_embd,
+            "default_fparam": self.default_fparam,
             "rcond": self.rcond,
             "tot_ener_zero": self.tot_ener_zero,
             "trainable": self.trainable,
