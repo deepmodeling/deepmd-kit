@@ -133,6 +133,9 @@ class Trainer:
 
         # Iteration config
         self.num_steps = training_params["numb_steps"]
+        self.acc_freq: int = training_params.get(
+            "acc_freq", 1
+        )  # gradient accumulation steps
         self.disp_file = training_params.get("disp_file", "lcurve.out")
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.save_ckpt = training_params.get("save_ckpt", "model.ckpt")
@@ -744,7 +747,6 @@ class Trainer:
                 _lr = self.lr_exp
             cur_lr = _lr.value(_step_id)
             pref_lr = cur_lr
-            self.optimizer.clear_grad(set_to_zero=False)
 
             with nvprof_context(enable_profiling, "Fetching data"):
                 input_dict, label_dict, log_dict = self.get_data(
@@ -780,22 +782,26 @@ class Trainer:
                     with nvprof_context(enable_profiling, "Backward pass"):
                         loss.backward()
 
-                # fuse + allreduce manually before optimization if use DDP + no_sync
-                # details in https://github.com/PaddlePaddle/Paddle/issues/48898#issuecomment-1343838622
-                if self.world_size > 1:
-                    hpu.fused_allreduce_gradients(list(self.wrapper.parameters()), None)
-
-                if self.gradient_max_norm > 0.0:
-                    with nvprof_context(enable_profiling, "Gradient clip"):
-                        paddle.nn.utils.clip_grad_norm_(
-                            self.wrapper.parameters(),
-                            self.gradient_max_norm,
-                            error_if_nonfinite=True,
+                # gradient accumulation
+                if _step_id % self.acc_freq == 0:
+                    # fuse + allreduce manually before optimization if use DDP + no_sync
+                    # details in https://github.com/PaddlePaddle/Paddle/issues/48898#issuecomment-1343838622
+                    if self.world_size > 1:
+                        hpu.fused_allreduce_gradients(
+                            list(self.wrapper.parameters()), None
                         )
 
-                with nvprof_context(enable_profiling, "Adam update"):
-                    self.optimizer.step()
-                self.scheduler.step()
+                    if self.gradient_max_norm > 0.0:
+                        with nvprof_context(enable_profiling, "Gradient clip"):
+                            paddle.nn.utils.clip_grad_norm_(
+                                self.wrapper.parameters(),
+                                self.gradient_max_norm,
+                                error_if_nonfinite=True,
+                            )
+                    with nvprof_context(enable_profiling, "Adam update"):
+                        self.optimizer.step()
+                    self.optimizer.clear_grad(set_to_zero=False)
+                    self.scheduler.step()
 
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
