@@ -16,6 +16,64 @@ from deepmd.utils.finetune import (
 log = logging.getLogger(__name__)
 
 
+def _warn_descriptor_config_differences(
+    input_descriptor: dict,
+    pretrained_descriptor: dict,
+    model_branch: str = "Default",
+) -> None:
+    """
+    Warn about differences between input descriptor config and pretrained model's descriptor config.
+
+    Parameters
+    ----------
+    input_descriptor : dict
+        Descriptor configuration from input.json
+    pretrained_descriptor : dict
+        Descriptor configuration from pretrained model
+    model_branch : str
+        Model branch name for logging context
+    """
+    if input_descriptor == pretrained_descriptor:
+        return
+
+    # Collect differences
+    differences = []
+
+    # Check for keys that differ in values
+    for key in input_descriptor:
+        if key in pretrained_descriptor:
+            if input_descriptor[key] != pretrained_descriptor[key]:
+                differences.append(
+                    f"  {key}: {input_descriptor[key]} -> {pretrained_descriptor[key]}"
+                )
+        else:
+            differences.append(f"  {key}: {input_descriptor[key]} -> (removed)")
+
+    # Check for keys only in pretrained model
+    for key in pretrained_descriptor:
+        if key not in input_descriptor:
+            differences.append(f"  {key}: (added) -> {pretrained_descriptor[key]}")
+
+    if differences:
+        log.warning(
+            f"Descriptor configuration in input.json differs from pretrained model "
+            f"(branch '{model_branch}'). The input configuration will be overwritten "
+            f"with the pretrained model's configuration:\n" + "\n".join(differences)
+        )
+
+        # Special warning for nlayer changes
+        if (
+            "nlayer" in input_descriptor
+            and "nlayer" in pretrained_descriptor
+            and input_descriptor["nlayer"] != pretrained_descriptor["nlayer"]
+        ):
+            log.warning(
+                f"IMPORTANT: nlayer changed from {input_descriptor['nlayer']} to "
+                f"{pretrained_descriptor['nlayer']}. This may significantly affect "
+                f"model architecture and performance."
+            )
+
+
 def get_finetune_rule_single(
     _single_param_target,
     _model_param_pretrained,
@@ -64,6 +122,15 @@ def get_finetune_rule_single(
             "descriptor": single_config.get("descriptor", {}).get("trainable", True),
             "fitting_net": single_config.get("fitting_net", {}).get("trainable", True),
         }
+
+        # Warn about descriptor configuration differences before overwriting
+        if "descriptor" in single_config and "descriptor" in single_config_chosen:
+            _warn_descriptor_config_differences(
+                single_config["descriptor"],
+                single_config_chosen["descriptor"],
+                model_branch_chosen,
+            )
+
         single_config["descriptor"] = single_config_chosen["descriptor"]
         if not new_fitting:
             single_config["fitting_net"] = single_config_chosen["fitting_net"]
