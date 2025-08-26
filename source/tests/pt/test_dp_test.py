@@ -14,20 +14,15 @@ from pathlib import (
 import numpy as np
 import torch
 
-from deepmd.entrypoints.test import test as dp_test
-from deepmd.entrypoints.test import test_ener as dp_test_ener
-from deepmd.infer.deep_eval import (
-    DeepEval,
-)
+from deepmd.entrypoints.test import test as dp_test, test_ener as dp_test_ener
 from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
-from deepmd.utils.data import (
-    DeepmdData,
-)
+from deepmd.infer.deep_eval import DeepEval
+from deepmd.utils.data import DeepmdData
 
 from .model.test_permutation import (
     model_property,
@@ -147,25 +142,25 @@ class TestDPTestSeASpin(DPTest, unittest.TestCase):
             json.dump(self.config, fp, indent=4)
 
 
-class TestDPTestForceMask(DPTest, unittest.TestCase):
+class TestDPTestForceWeight(DPTest, unittest.TestCase):
     def setUp(self) -> None:
-        self.detail_file = "test_dp_test_force_mask_detail"
+        self.detail_file = "test_dp_test_force_weight_detail"
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
-        system_dir = self._prepare_masked_system()
+        system_dir = self._prepare_weighted_system()
         data_file = [system_dir]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_se_e2_a)
         self.system_dir = system_dir
-        self.input_json = "test_dp_test_force_mask.json"
+        self.input_json = "test_dp_test_force_weight.json"
         with open(self.input_json, "w") as fp:
             json.dump(self.config, fp, indent=4)
 
-    def _prepare_masked_system(self) -> str:
+    def _prepare_weighted_system(self) -> str:
         src = Path(__file__).parent / "water/data/single"
         tmp_dir = tempfile.mkdtemp()
         shutil.copytree(src, tmp_dir, dirs_exist_ok=True)
@@ -179,7 +174,7 @@ class TestDPTestForceMask(DPTest, unittest.TestCase):
         np.save(set_dir / "atom_pref.npy", atom_pref)
         return tmp_dir
 
-    def test_force_mask(self) -> None:
+    def test_force_weight(self) -> None:
         trainer = get_trainer(deepcopy(self.config))
         with torch.device("cpu"):
             trainer.get_data(is_train=False)
@@ -219,13 +214,18 @@ class TestDPTestForceMask(DPTest, unittest.TestCase):
         )
         force_pred = ret[1].reshape([1, -1])
         force_true = test_data["force"][:1]
-        mask = test_data["atom_pref"][:1]
-        diff = (force_pred - force_true) * mask
-        denom = mask.sum()
-        mae_expected = np.sum(np.abs(diff)) / denom
-        rmse_expected = np.sqrt(np.sum(diff * diff) / denom)
-        np.testing.assert_allclose(err["mae_f"][0], mae_expected)
-        np.testing.assert_allclose(err["rmse_f"][0], rmse_expected)
+        weight = test_data["atom_pref"][:1]
+        diff = force_pred - force_true
+        diff_w = diff * weight
+        denom = weight.sum()
+        mae_expected = np.sum(np.abs(diff_w)) / denom
+        rmse_expected = np.sqrt(np.sum(diff * diff * weight) / denom)
+        mae_unweighted = np.sum(np.abs(diff)) / diff.size
+        rmse_unweighted = np.sqrt(np.sum(diff * diff) / diff.size)
+        np.testing.assert_allclose(err["mae_f"][0], mae_unweighted)
+        np.testing.assert_allclose(err["rmse_f"][0], rmse_unweighted)
+        np.testing.assert_allclose(err["mae_fw"][0], mae_expected)
+        np.testing.assert_allclose(err["rmse_fw"][0], rmse_expected)
         os.unlink(tmp_model.name)
 
     def tearDown(self) -> None:
