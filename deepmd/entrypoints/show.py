@@ -37,7 +37,7 @@ def show(
             )
         model_branches = list(model_params["model_dict"].keys())
         model_branches += ["RANDOM"]
-        model_alias_dict, model_branch_dict = get_model_dict(model_params["model_dict"])
+        _, model_branch_dict = get_model_dict(model_params["model_dict"])
         log.info(
             f"Available model branches are {model_branches}, "
             f"where 'RANDOM' means using a randomly initialized fitting net."
