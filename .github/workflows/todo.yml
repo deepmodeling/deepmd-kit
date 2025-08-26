@@ -3,10 +3,6 @@ on:
   push:
     branches:
       - devel
-    branches-ignore:
-      - "copilot/**"
-      - "dependabot/**"
-      - "pre-commit-ci-update-config"
 jobs:
   build:
     if: github.repository_owner == 'deepmodeling'
