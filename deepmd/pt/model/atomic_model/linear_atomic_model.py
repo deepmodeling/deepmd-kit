@@ -290,6 +290,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                     mapping,
                     fparam,
                     aparam,
+                    comm_dict=comm_dict,
                 )["energy"]
             )
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)
