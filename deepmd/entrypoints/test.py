@@ -427,9 +427,7 @@ def test_ener(
         weight_sum = np.sum(atom_weight)
         if weight_sum > 0:
             mae_fw = np.sum(np.abs(diff_f) * atom_weight) / weight_sum
-            rmse_fw = np.sqrt(
-                np.sum(diff_f * diff_f * atom_weight) / weight_sum
-            )
+            rmse_fw = np.sqrt(np.sum(diff_f * diff_f * atom_weight) / weight_sum)
         else:
             mae_fw = 0.0
             rmse_fw = 0.0

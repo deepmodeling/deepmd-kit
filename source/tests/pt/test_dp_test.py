@@ -14,15 +14,20 @@ from pathlib import (
 import numpy as np
 import torch
 
-from deepmd.entrypoints.test import test as dp_test, test_ener as dp_test_ener
+from deepmd.entrypoints.test import test as dp_test
+from deepmd.entrypoints.test import test_ener as dp_test_ener
+from deepmd.infer.deep_eval import (
+    DeepEval,
+)
 from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
-from deepmd.infer.deep_eval import DeepEval
-from deepmd.utils.data import DeepmdData
+from deepmd.utils.data import (
+    DeepmdData,
+)
 
 from .model.test_permutation import (
     model_property,
