@@ -58,7 +58,7 @@ def _warn_descriptor_config_differences(
             f"with the pretrained model's configuration:\n" + "\n".join(differences)
         )
 
-        # Special warning for nlayer changes
+        # Special warning for nlayer changes (check both top-level and nested)
         if (
             "nlayer" in input_descriptor
             and "nlayer" in pretrained_descriptor
@@ -67,6 +67,20 @@ def _warn_descriptor_config_differences(
             log.warning(
                 f"IMPORTANT: nlayer changed from {input_descriptor['nlayer']} to "
                 f"{pretrained_descriptor['nlayer']}. This may significantly affect "
+                f"model architecture and performance."
+            )
+
+        # Check for nested nlayers in repformer (DPA2/DPA3 models)
+        input_repformer = input_descriptor.get("repformer", {})
+        pretrained_repformer = pretrained_descriptor.get("repformer", {})
+        if (
+            "nlayers" in input_repformer
+            and "nlayers" in pretrained_repformer
+            and input_repformer["nlayers"] != pretrained_repformer["nlayers"]
+        ):
+            log.warning(
+                f"IMPORTANT: repformer.nlayers changed from {input_repformer['nlayers']} to "
+                f"{pretrained_repformer['nlayers']}. This may significantly affect "
                 f"model architecture and performance."
             )
 
