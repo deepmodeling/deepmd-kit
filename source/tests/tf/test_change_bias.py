@@ -5,7 +5,7 @@ from pathlib import (
     Path,
 )
 
-from deepmd.tf.entrypoints.main import (
+from deepmd.tf.entrypoints.change_bias import (
     change_bias,
 )
 
