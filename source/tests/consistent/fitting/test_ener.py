@@ -138,6 +138,18 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         # so skip this in CI test
         return not INSTALLED_PD or precision == "bfloat16" or default_fparam is not None
 
+    @property
+    def skip_tf(self) -> bool:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            (numb_fparam, default_fparam),
+            (numb_aparam, use_aparam_as_mask),
+            atom_ener,
+        ) = self.param
+        return not INSTALLED_TF or default_fparam is not None
+
     tf_class = EnerFittingTF
     dp_class = EnerFittingDP
     pt_class = EnerFittingPT

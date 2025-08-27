@@ -292,6 +292,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.case_embd = value
         elif key in ["scale"]:
             self.scale = value
+        elif key in ["default_fparam_tensor"]:
+            self.default_fparam_tensor = value
         else:
             raise KeyError(key)
 
@@ -310,6 +312,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             return self.case_embd
         elif key in ["scale"]:
             return self.scale
+        elif key in ["default_fparam_tensor"]:
+            return self.default_fparam_tensor
         else:
             raise KeyError(key)
 
