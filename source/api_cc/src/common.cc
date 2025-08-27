@@ -232,7 +232,7 @@ template void deepmd::select_real_atoms_coord<float>(
     const int& nall,
     const bool aparam_nall);
 
-void deepmd::select_real_atoms_sendlist(const deepmd::InputNlist& inlist, std::vector<int>& fwd_map){
+void deepmd::select_real_atoms_sendlist(const deepmd::InputNlist& inlist, const std::vector<int>& fwd_map){
       int nswap = inlist.nswap;
       std::vector<std::vector<int>> sendlist_new;
       sendlist_new.resize(nswap);
