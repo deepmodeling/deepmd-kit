@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """DeePMD change bias entrypoint script."""
 
-import json
 import logging
 import os
 import shutil
@@ -14,6 +13,7 @@ from typing import (
 
 from deepmd.common import (
     expand_sys_str,
+    j_loader,
 )
 from deepmd.tf.train.run_options import (
     RunOptions,
@@ -37,7 +37,7 @@ log = logging.getLogger(__name__)
 
 
 def change_bias(
-    input_file: str,
+    INPUT: str,
     mode: str = "change",
     bias_value: Optional[list] = None,
     datafile: Optional[str] = None,
@@ -45,12 +45,13 @@ def change_bias(
     numb_batch: int = 0,
     model_branch: Optional[str] = None,
     output: Optional[str] = None,
+    **kwargs,
 ) -> None:
     """Change model out bias according to the input data.
 
     Parameters
     ----------
-    input_file : str
+    INPUT : str
         The input checkpoint folder or frozen model file
     mode : str, optional
         The mode for changing energy bias, by default "change"
@@ -67,7 +68,7 @@ def change_bias(
     output : Optional[str], optional
         The model after changing bias, by default None
     """
-    input_path = Path(input_file)
+    input_path = Path(INPUT)
 
     # Check if input is a checkpoint directory or frozen model
     if input_path.is_dir():
@@ -76,7 +77,7 @@ def change_bias(
         # Check for valid checkpoint early
         if not (input_path / "checkpoint").exists():
             raise RuntimeError(f"No valid checkpoint found in {checkpoint_folder}")
-    elif input_file.endswith((".pb", ".pbtxt")):
+    elif INPUT.endswith((".pb", ".pbtxt")):
         # Frozen model - for now, not supported
         raise NotImplementedError(
             "Bias changing for frozen models (.pb/.pbtxt) is not yet implemented. "
@@ -133,8 +134,7 @@ def change_bias(
             )
 
     # Load the configuration
-    with open(input_json_path) as f:
-        jdata = json.load(f)
+    jdata = j_loader(input_json_path)
 
     # Update and normalize the configuration
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")

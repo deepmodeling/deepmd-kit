@@ -3,6 +3,9 @@
 
 import argparse
 import logging
+from pathlib import (
+    Path,
+)
 from typing import (
     Optional,
     Union,
@@ -88,16 +91,7 @@ def main(args: Optional[Union[list[str], argparse.Namespace]] = None) -> None:
     elif args.command == "convert-from":
         convert(**dict_args)
     elif args.command == "change-bias":
-        change_bias(
-            input_file=dict_args["INPUT"],
-            mode=dict_args["mode"],
-            bias_value=dict_args["bias_value"],
-            datafile=dict_args["datafile"],
-            system=dict_args["system"],
-            numb_batch=dict_args["numb_batch"],
-            model_branch=dict_args["model_branch"],
-            output=dict_args["output"],
-        )
+        change_bias(**dict_args)
     elif args.command == "train-nvnmd":  # nvnmd
         train_nvnmd(**dict_args)
     elif args.command is None:
