@@ -487,10 +487,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         else:
             raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
 
-    def compute_fitting_stat(
-        self,
-        sample_merged
-    ) -> None:
+    def compute_fitting_stat(self, sample_merged) -> None:
         """Compute the input statistics (e.g. mean and stddev) for the fittings from packed data..
 
         Parameters
