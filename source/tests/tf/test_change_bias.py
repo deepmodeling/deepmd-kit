@@ -41,11 +41,12 @@ class TestChangeBias(unittest.TestCase):
         """Clean up test fixtures."""
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def test_change_bias_frozen_model_not_implemented(self):
-        """Test that frozen model support raises NotImplementedError."""
+    def test_change_bias_frozen_model_partial_support(self):
+        """Test that frozen model support has limitations but provides helpful error."""
         fake_pb = self.temp_path / "model.pb"
         fake_pb.write_text("fake model content")
 
+        # Without bias_value, should suggest using bias_value or checkpoint
         with self.assertRaises(NotImplementedError) as cm:
             change_bias(
                 INPUT=str(fake_pb),
@@ -53,8 +54,26 @@ class TestChangeBias(unittest.TestCase):
                 system=".",
             )
 
-        self.assertIn("Bias changing for frozen models", str(cm.exception))
-        self.assertIn(".pb/.pbtxt", str(cm.exception))
+        self.assertIn(
+            "Data-based bias changing for frozen models is not yet implemented",
+            str(cm.exception),
+        )
+        self.assertIn("bias-value option", str(cm.exception))
+
+        # With bias_value, should provide implementation guidance
+        with self.assertRaises(NotImplementedError) as cm:
+            change_bias(
+                INPUT=str(fake_pb),
+                mode="change",
+                bias_value=[1.0, 2.0],
+                system=".",
+            )
+
+        self.assertIn(
+            "Bias modification for frozen models (.pb) is not yet fully implemented",
+            str(cm.exception),
+        )
+        self.assertIn("checkpoint_dir", str(cm.exception))
 
     def test_change_bias_invalid_model_type(self):
         """Test that invalid model types raise RuntimeError."""
@@ -68,7 +87,10 @@ class TestChangeBias(unittest.TestCase):
                 system=".",
             )
 
-        self.assertIn("checkpoint directory or frozen model file", str(cm.exception))
+        self.assertIn(
+            "checkpoint directory, checkpoint file, or frozen model file (.pb)",
+            str(cm.exception),
+        )
 
     def test_change_bias_no_checkpoint_in_directory(self):
         """Test that missing checkpoint in directory raises RuntimeError."""
@@ -90,13 +112,22 @@ class TestChangeBias(unittest.TestCase):
 
         self.assertIn("No valid checkpoint found", str(cm.exception))
 
-    def test_change_bias_user_defined_not_implemented(self):
-        """Test that user-defined bias raises NotImplementedError."""
+    def test_change_bias_user_defined_requires_real_model(self):
+        """Test that user-defined bias requires a real model with proper structure."""
         fake_dir = self.temp_path / "fake_checkpoint"
         fake_dir.mkdir()
         (fake_dir / "checkpoint").write_text("fake checkpoint")
+        # Create a minimal but complete input.json
+        minimal_config = {
+            "model": {"type_map": ["H", "O"]},
+            "training": {"systems": ["."], "validation_data": {"systems": ["."]}},
+        }
+        import json
 
-        with self.assertRaises(NotImplementedError) as cm:
+        (fake_dir / "input.json").write_text(json.dumps(minimal_config))
+
+        # Should fail because there's no real model structure, but with different error
+        with self.assertRaises((RuntimeError, FileNotFoundError, Exception)) as cm:
             change_bias(
                 INPUT=str(fake_dir),
                 mode="change",
@@ -104,9 +135,8 @@ class TestChangeBias(unittest.TestCase):
                 system=".",
             )
 
-        self.assertIn(
-            "User-defined bias setting is not yet implemented", str(cm.exception)
-        )
+        # The error should be about model loading, not about NotImplementedError
+        self.assertNotIn("not yet implemented", str(cm.exception))
 
     def test_change_bias_with_real_model(self):
         """Test change_bias with a real trained model and verify output."""
@@ -148,7 +178,7 @@ class TestChangeBias(unittest.TestCase):
         self.assertEqual(ret, 0, "DP freeze failed!")
         self.assertTrue(frozen_model_path.exists())
 
-        # Test change_bias function - this should raise NotImplementedError for frozen models
+        # Test change_bias function - this should provide implementation guidance for frozen models
         with self.assertRaises(NotImplementedError) as cm:
             change_bias(
                 INPUT=str(frozen_model_path),
@@ -156,7 +186,10 @@ class TestChangeBias(unittest.TestCase):
                 system=str(data_dir),
                 output=str(output_dir),
             )
-        self.assertIn("Bias changing for frozen models", str(cm.exception))
+        self.assertIn(
+            "Data-based bias changing for frozen models is not yet implemented",
+            str(cm.exception),
+        )
 
         # Now test change_bias on the real checkpoint (this is the real test)
         change_bias(
