@@ -2306,9 +2306,15 @@ def standard_model_args() -> Argument:
     doc_descrpt = "The descriptor of atomic environment."
     doc_fitting = "The fitting of physical properties."
     doc_model_branch_alias = (
-        "The alias of this model branch. This is only used in the multi-task model."
+        "List of aliases for this model branch. "
+        "Multiple aliases can be defined, and any alias can reference this branch throughout the model usage. "
+        "Used only in multitask models."
     )
-    doc_info = "The information of this model branch. This is only used in the multi-task model."
+    doc_info = (
+        "Dictionary of metadata for this model branch. "
+        "Store arbitrary key-value pairs with branch-specific information. "
+        "Used only in multitask models."
+    )
 
     ca = Argument(
         "standard",
