@@ -23,6 +23,9 @@ from deepmd.tf.entrypoints.freeze import (
 from deepmd.tf.env import (
     tf,
 )
+from deepmd.tf.infer import (
+    DeepPotential,
+)
 from deepmd.tf.train.run_options import (
     RunOptions,
 )
@@ -138,6 +141,9 @@ def _change_bias_checkpoint_file(
     log_level: int,
 ) -> None:
     """Change bias for individual checkpoint files."""
+    # Reset the default graph to avoid variable conflicts
+    tf.reset_default_graph()
+
     checkpoint_path = Path(checkpoint_prefix)
     checkpoint_dir = checkpoint_path.parent
 
@@ -210,23 +216,8 @@ def _change_bias_checkpoint_file(
             log.info(f"Changing bias for model with type_map: {type_map}")
             log.info(f"Using bias adjustment mode: {bias_adjust_mode}")
 
-            # Create a temporary frozen model from the checkpoint with current session state
-            with tempfile.NamedTemporaryFile(suffix=".pb", delete=False) as temp_frozen:
-                freeze(
-                    checkpoint_folder=str(checkpoint_dir),
-                    output=temp_frozen.name,
-                )
-
-                # Use the trainer's change energy bias functionality
-                trainer._change_energy_bias(
-                    data,
-                    temp_frozen.name,  # Use temporary frozen model
-                    type_map,
-                    bias_adjust_mode=bias_adjust_mode,
-                )
-
-                # Clean up temporary file
-                os.unlink(temp_frozen.name)
+            # Read current bias values from the session (after variables are restored)
+            _apply_data_based_bias(trainer, data, type_map, bias_adjust_mode)
 
         # Save the updated model as a frozen model
         freeze(
@@ -313,6 +304,74 @@ def _find_input_json(checkpoint_dir: Path) -> Path:
                 f"Please ensure input.json is available in {checkpoint_dir} or its parent directories."
             )
     return input_json_path
+
+
+def _apply_data_based_bias(
+    trainer: DPTrainer, data: DeepmdDataSystem, type_map: list, bias_adjust_mode: str
+) -> None:
+    """Apply data-based bias calculation by reading current bias from session."""
+    from deepmd.tf.env import (
+        tf,
+    )
+    from deepmd.tf.fit.ener import (
+        change_energy_bias_lower,
+    )
+
+    # Get the fitting object which contains the bias tensor
+    fitting = trainer.model.get_fitting()
+    if not hasattr(fitting, "t_bias_atom_e"):
+        raise RuntimeError(
+            "Model does not have t_bias_atom_e tensor for bias modification"
+        )
+
+    # Read current bias values from the session (these are the restored values)
+    current_bias = run_sess(trainer.sess, fitting.t_bias_atom_e)
+
+    log.info(f"Current bias values from session: {current_bias.flatten()}")
+
+    # Create a temporary frozen model to use with change_energy_bias_lower
+    with tempfile.NamedTemporaryFile(suffix=".pb", delete=False) as temp_frozen:
+        freeze(
+            checkpoint_folder=str(Path(trainer.run_opt.init_model).parent),
+            output=temp_frozen.name,
+        )
+
+        try:
+            # Create DeepPotential object for evaluation
+            dp = DeepPotential(temp_frozen.name)
+
+            # Use change_energy_bias_lower with the current bias values from session
+            new_bias = change_energy_bias_lower(
+                data,
+                dp,
+                type_map,  # origin_type_map
+                type_map,  # full_type_map
+                current_bias,  # Use the restored bias values
+                bias_adjust_mode=bias_adjust_mode,
+                ntest=1,
+            )
+
+            log.info(
+                f"Changing bias from {current_bias.flatten()} to {new_bias.flatten()}"
+            )
+
+            # Update the bias in the session
+            if len(new_bias.shape) == 1:
+                # 1D tensor, keep bias as 1D
+                new_bias_tensor = new_bias.flatten()
+            else:
+                # 2D tensor, reshape to match
+                new_bias_tensor = new_bias.reshape(-1, 1)
+
+            assign_op = tf.assign(fitting.t_bias_atom_e, new_bias_tensor)
+            run_sess(trainer.sess, assign_op)
+
+            # Also update the numpy array in the fitting object for consistency
+            fitting.bias_atom_e = new_bias
+
+        finally:
+            # Clean up temporary file
+            os.unlink(temp_frozen.name)
 
 
 def _apply_user_defined_bias(trainer: DPTrainer, bias_value: list) -> None:
