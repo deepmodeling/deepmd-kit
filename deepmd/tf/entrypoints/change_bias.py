@@ -156,9 +156,6 @@ def _change_bias_checkpoint_file(
 
     bias_adjust_mode = "change-by-statistic" if mode == "change" else "set-by-statistic"
 
-    # Load data systems for bias calculation
-    data = _load_data_systems(datafile, system)
-
     # Read the checkpoint to get the model configuration
     input_json_path = _find_input_json(checkpoint_dir)
     jdata = j_loader(input_json_path)
@@ -184,9 +181,20 @@ def _change_bias_checkpoint_file(
 
     trainer = DPTrainer(jdata, run_opt)
 
+    # Load data for bias calculation using trainer data requirements
+    data = _load_data_systems(datafile, system, trainer)
+
+    # Get stop_batch and origin_type_map like in train.py
+    stop_batch = jdata.get("training", {}).get("numb_steps", 0)
+    origin_type_map = jdata["model"].get("origin_type_map", None)
+    if origin_type_map is not None and not origin_type_map:
+        # get the type_map from data if not provided
+        origin_type_map = data.get_type_map()
+
     try:
-        # Build the model graph first, then initialize session and restore variables from checkpoint
-        trainer.build(data, stop_batch=0)
+        # Build the model graph first with proper parameters, then initialize session
+        # and restore variables from checkpoint - following train.py pattern
+        trainer.build(data, stop_batch, origin_type_map=origin_type_map)
         trainer._init_session()
 
         if bias_value is not None:
@@ -266,7 +274,9 @@ def _change_bias_frozen_model(
     )
 
 
-def _load_data_systems(datafile: Optional[str], system: str) -> DeepmdDataSystem:
+def _load_data_systems(
+    datafile: Optional[str], system: str, trainer: DPTrainer
+) -> DeepmdDataSystem:
     """Load data systems for bias calculation."""
     if datafile is not None:
         with open(datafile) as datalist:
@@ -282,28 +292,8 @@ def _load_data_systems(datafile: Optional[str], system: str) -> DeepmdDataSystem
         rcut=None,
         set_prefix="set",
     )
-    data.add_dict(
-        {
-            "energy": {
-                "ndof": 1,
-                "atomic": False,
-                "must": False,
-                "high_prec": True,
-                "type_sel": None,
-                "repeat": 1,
-                "default": 0.0,
-            },
-            "force": {
-                "ndof": 3,
-                "atomic": True,
-                "must": False,
-                "high_prec": False,
-                "type_sel": None,
-                "repeat": 1,
-                "default": 0.0,
-            },
-        }
-    )
+    # Use the data requirements from the trainer model instead of hardcoding them
+    data.add_data_requirements(trainer.data_requirements)
     return data
 
 
