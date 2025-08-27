@@ -21,6 +21,7 @@ class TestStatFileIntegration(unittest.TestCase):
         config = {
             "model": {
                 "type_map": ["O", "H"],
+                "data_stat_nbatch": 1,
                 "descriptor": {
                     "type": "se_e2_a",
                     "sel": [2, 4],
@@ -56,7 +57,6 @@ class TestStatFileIntegration(unittest.TestCase):
                     "batch_size": 1,
                 },
                 "numb_steps": 5,
-                "data_stat_nbatch": 1,
                 "disp_freq": 1,
                 "save_freq": 2,
             },
