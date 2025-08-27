@@ -56,6 +56,7 @@ def change_bias(
     numb_batch: int = 0,
     model_branch: Optional[str] = None,
     output: Optional[str] = None,
+    log_level: int = 0,
     **kwargs,
 ) -> None:
     """Change model out bias according to the input data.
@@ -78,6 +79,8 @@ def change_bias(
         Model branch chosen for changing bias if multi-task model, by default None
     output : Optional[str], optional
         The model after changing bias, by default None
+    log_level : int, optional
+        The log level for output, by default 0
     """
     input_path = Path(INPUT)
 
@@ -85,7 +88,15 @@ def change_bias(
     if INPUT.endswith(".pb"):
         # Frozen model (.pb)
         return _change_bias_frozen_model(
-            INPUT, mode, bias_value, datafile, system, numb_batch, model_branch, output
+            INPUT,
+            mode,
+            bias_value,
+            datafile,
+            system,
+            numb_batch,
+            model_branch,
+            output,
+            log_level,
         )
     elif INPUT.endswith(".pbtxt"):
         # Text format frozen model (.pbtxt) - not supported
@@ -107,6 +118,7 @@ def change_bias(
             numb_batch,
             model_branch,
             output,
+            log_level,
         )
     else:
         raise RuntimeError(
@@ -123,6 +135,7 @@ def _change_bias_checkpoint_file(
     numb_batch: int,
     model_branch: Optional[str],
     output: Optional[str],
+    log_level: int,
 ) -> None:
     """Change bias for individual checkpoint files."""
     checkpoint_path = Path(checkpoint_prefix)
@@ -160,9 +173,11 @@ def _change_bias_checkpoint_file(
         restart=None,
         finetune=None,
         init_frz_model=None,
+        log_level=log_level,
     )
 
     trainer = DPTrainer(jdata, run_opt)
+    # Variables are restored from checkpoint through trainer._init_session via saver.restore
 
     if bias_value is not None:
         # Use user-defined bias
@@ -213,6 +228,7 @@ def _change_bias_frozen_model(
     numb_batch: int,
     model_branch: Optional[str],
     output: Optional[str],
+    log_level: int,
 ) -> None:
     """Change bias for frozen model (.pb file)."""
     if bias_value is None:
