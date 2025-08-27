@@ -3168,7 +3168,7 @@ def training_args(
     doc_kf_blocksize = "The blocksize for the Kalman filter."
     doc_model_prob = "The visiting probability of each model for each training step in the multi-task mode."
     doc_data_dict = "The multiple definition of the data, used in the multi-task mode."
-    doc_acc_freq = "The accumulation steps for the gradients."
+    doc_acc_freq = "Gradient accumulation steps (number of steps to accumulate gradients before performing an update)."
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
@@ -3275,6 +3275,7 @@ def training_args(
             "acc_freq",
             int,
             optional=True,
+            default=1,
             doc=doc_only_pd_supported + doc_acc_freq,
         ),
     ]
