@@ -324,9 +324,7 @@ class DPAtomicModel(BaseAtomicModel):
             return sampled
 
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
-        self.fitting_net.compute_input_stats(
-            wrapped_sampler, protection=self.data_stat_protect
-        )
+        self.compute_fitting_stat(wrapped_sampler)
         if compute_or_load_out_stat:
             self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
