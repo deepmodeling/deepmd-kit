@@ -475,9 +475,9 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   auto energy_ = predictor_fl->GetOutputHandle(output_names.at(1));
   auto force_ = predictor_fl->GetOutputHandle(output_names.at(2));
   auto virial_ = predictor_fl->GetOutputHandle(output_names.at(4));
-  int output_energy_size = numel(*energy_);
-  int output_force_size = numel(*force_);
-  int output_virial_size = numel(*virial_);
+  size_t output_energy_size = numel(*energy_);
+  size_t output_force_size = numel(*force_);
+  size_t output_virial_size = numel(*virial_);
   // output energy
   ener.resize(output_energy_size);
   energy_->CopyToCpu(ener.data());
@@ -598,17 +598,17 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   auto force_ = predictor->GetOutputHandle(output_names.at(3));
   auto virial_ = predictor->GetOutputHandle(output_names.at(5));
 
-  int enery_numel = numel(*energy_);
+  size_t enery_numel = numel(*energy_);
   assert(enery_numel > 0);
   ener.resize(enery_numel);
   energy_->CopyToCpu(ener.data());
 
-  int force_numel = numel(*force_);
+  size_t force_numel = numel(*force_);
   assert(force_numel > 0);
   force.resize(force_numel);
   force_->CopyToCpu(force.data());
 
-  int virial_numel = numel(*virial_);
+  size_t virial_numel = numel(*virial_);
   assert(virial_numel > 0);
   virial.resize(virial_numel);
   virial_->CopyToCpu(virial.data());
@@ -616,8 +616,8 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   if (atomic) {
     auto atom_energy_ = predictor->GetOutputHandle(output_names.at(0));
     auto atom_virial_ = predictor->GetOutputHandle(output_names.at(1));
-    int atom_energy_numel = numel(*atom_energy_);
-    int atom_virial_numel = numel(*atom_virial_);
+    size_t atom_energy_numel = numel(*atom_energy_);
+    size_t atom_virial_numel = numel(*atom_virial_);
     assert(atom_energy_numel > 0);
     assert(atom_virial_numel > 0);
     atom_energy.resize(atom_energy_numel);
@@ -657,7 +657,7 @@ template void DeepPotPD::compute<float, std::vector<ENERGYTYPE>>(
 that need to be postprocessed */
 void DeepPotPD::get_type_map(std::string& type_map) {
   auto type_map_tensor = predictor->GetOutputHandle("buffer_type_map");
-  int type_map_size = numel(*type_map_tensor);
+  size_t type_map_size = numel(*type_map_tensor);
 
   std::vector<int> type_map_arr(type_map_size, 0);
   type_map_tensor->CopyToCpu(type_map_arr.data());
@@ -671,7 +671,7 @@ template <typename BUFFERTYPE>
 void DeepPotPD::get_buffer(const std::string& buffer_name,
                            std::vector<BUFFERTYPE>& buffer_array) {
   auto buffer_tensor = predictor->GetOutputHandle(buffer_name);
-  int buffer_size = numel(*buffer_tensor);
+  size_t buffer_size = numel(*buffer_tensor);
   buffer_array.resize(buffer_size);
   buffer_tensor->CopyToCpu(buffer_array.data());
 }

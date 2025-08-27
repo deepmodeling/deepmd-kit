@@ -26,14 +26,14 @@ jobs:
         - variant: clang
           dp_variant: clang
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
     - uses: lukka/get-cmake@latest
     - run: python -m pip install uv
     - run: source/install/uv_with_retry.sh pip install --system tensorflow
-    - run: source/install/uv_with_retry.sh pip install --system 'torch==2.7' --index-url https://download.pytorch.org/whl/cpu
+    - run: source/install/uv_with_retry.sh pip install --system 'torch==2.8.*' --index-url https://download.pytorch.org/whl/cpu
     - run: |
          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
          && sudo dpkg -i cuda-keyring_1.0-1_all.deb \

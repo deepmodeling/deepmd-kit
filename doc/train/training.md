@@ -29,10 +29,10 @@ $ dp --pt train input.json
 :::{tab-item} Paddle {{ paddle_icon }}
 
 ```bash
-# training model in eager mode
+# training model
 $ dp --pd train input.json
 
-# [experimental] training model with CINN compiler for better performance,
+# [experimental] training models with the CINN compiler (~40%+ speedup)
 # see: https://www.paddlepaddle.org.cn/documentation/docs/zh/develop/guides/paddle_v3_features/cinn_cn.html
 ## If the shape(s) of batch input data are dynamic during training(default).
 $ CINN=1 dp --pd train input.json
