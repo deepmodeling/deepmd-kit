@@ -223,10 +223,8 @@ class TestDPTestForceWeight(DPTest, unittest.TestCase):
         force_true = test_data["force"][:1]
         weight = test_data["atom_pref"][:1]
         diff = force_pred - force_true
-        mask = weight != 0
-        masked_diff = diff[mask]
-        mae_unweighted = np.sum(np.abs(masked_diff)) / mask.sum()
-        rmse_unweighted = np.sqrt(np.sum(masked_diff * masked_diff) / mask.sum())
+        mae_unweighted = np.sum(np.abs(diff)) / diff.size
+        rmse_unweighted = np.sqrt(np.sum(diff * diff) / diff.size)
         denom = weight.sum()
         mae_weighted = np.sum(np.abs(diff) * weight) / denom
         rmse_weighted = np.sqrt(np.sum(diff * diff * weight) / denom)
