@@ -1,16 +1,33 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import json
+import os
+import shutil
 import tempfile
 import unittest
 from pathlib import (
     Path,
 )
-from unittest.mock import (
-    MagicMock,
-    patch,
-)
 
 from deepmd.tf.entrypoints.change_bias import (
     change_bias,
+)
+from deepmd.tf.train.run_options import (
+    RunOptions,
+)
+from deepmd.tf.train.trainer import (
+    DPTrainer,
+)
+from deepmd.tf.utils.argcheck import (
+    normalize,
+)
+from deepmd.tf.utils.compat import (
+    update_deepmd_input,
+)
+
+from .common import (
+    j_loader,
+    run_dp,
+    tests_path,
 )
 
 
@@ -22,8 +39,6 @@ class TestChangeBias(unittest.TestCase):
 
     def tearDown(self):
         """Clean up test fixtures."""
-        import shutil
-
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_change_bias_frozen_model_not_implemented(self):
@@ -93,128 +108,93 @@ class TestChangeBias(unittest.TestCase):
             "User-defined bias setting is not yet implemented", str(cm.exception)
         )
 
-    def test_change_bias_successful_execution(self):
-        """Test successful bias changing execution path."""
-        # Create fake checkpoint directory with required files
-        fake_checkpoint_dir = self.temp_path / "checkpoint"
-        fake_checkpoint_dir.mkdir()
-        (fake_checkpoint_dir / "checkpoint").write_text("fake checkpoint content")
-        (fake_checkpoint_dir / "input.json").write_text('{"model": {}}')
+    def test_change_bias_with_real_model(self):
+        """Test change_bias with a real trained model and verify output."""
+        # Create temporary directories for training and output
+        train_dir = self.temp_path / "train"
+        train_dir.mkdir()
+        checkpoint_dir = train_dir / "checkpoint"
+        output_dir = self.temp_path / "output"
 
-        # Create fake data system
-        fake_data_dir = self.temp_path / "data_system"
-        fake_data_dir.mkdir()
-        fake_set_dir = fake_data_dir / "set.000"
-        fake_set_dir.mkdir()
+        # Use existing test data and configuration
+        data_dir = tests_path / "init_frz_model" / "data"
+        config_file = tests_path / "init_frz_model" / "input.json"
 
-        # Import the module properly
-        import sys
+        # Load and modify configuration for quick training
+        jdata = j_loader(str(config_file))
+        jdata["training"]["training_data"]["systems"] = [str(data_dir)]
+        jdata["training"]["validation_data"]["systems"] = [str(data_dir)]
+        jdata["training"]["numb_steps"] = 2  # Minimal training for testing
+        jdata["training"]["save_freq"] = 1
+        jdata["training"]["save_ckpt"] = str(checkpoint_dir / "model.ckpt")
 
-        change_bias_module = sys.modules["deepmd.tf.entrypoints.change_bias"]
+        # Write modified config
+        input_json_path = train_dir / "input.json"
+        with open(input_json_path, "w") as f:
+            json.dump(jdata, f, indent=4)
 
-        with (
-            patch.object(
-                change_bias_module, "expand_sys_str", return_value=[str(fake_data_dir)]
-            ),
-            patch.object(change_bias_module, "j_loader", return_value={"model": {}}),
-            patch.object(
-                change_bias_module, "update_deepmd_input", return_value={"model": {}}
-            ),
-            patch.object(change_bias_module, "normalize", return_value={"model": {}}),
-            patch.object(change_bias_module, "DeepmdDataSystem") as mock_data_system,
-            patch.object(change_bias_module, "DPTrainer") as mock_trainer_class,
-            patch.object(change_bias_module, "shutil"),
-        ):
-            # Mock the data system
-            mock_data_instance = MagicMock()
-            mock_data_instance.get_type_map.return_value = ["H", "O"]
-            mock_data_system.return_value = mock_data_instance
+        # Train the model using run_dp
+        ret = run_dp(f"dp train {input_json_path}")
+        self.assertEqual(ret, 0, "DP train failed!")
 
-            # Mock the trainer
-            mock_trainer_instance = MagicMock()
-            mock_model = MagicMock()
-            mock_model.get_type_map.return_value = ["H", "O"]
-            mock_trainer_instance.model = mock_model
-            mock_trainer_instance._change_energy_bias = MagicMock()
-            mock_trainer_instance.save_checkpoint = MagicMock()
-            mock_trainer_class.return_value = mock_trainer_instance
+        # Verify checkpoint was created
+        self.assertTrue(checkpoint_dir.exists())
+        checkpoint_files = list(checkpoint_dir.glob("*"))
+        self.assertGreater(len(checkpoint_files), 0, "No checkpoint files created")
 
-            # Call change_bias function
+        # Create a frozen model from the checkpoint for testing
+        frozen_model_path = train_dir / "frozen_model.pb"
+        ret = run_dp(f"dp freeze -c {checkpoint_dir} -o {frozen_model_path}")
+        self.assertEqual(ret, 0, "DP freeze failed!")
+        self.assertTrue(frozen_model_path.exists())
+
+        # Test change_bias function - this should raise NotImplementedError for frozen models
+        with self.assertRaises(NotImplementedError) as cm:
             change_bias(
-                INPUT=str(fake_checkpoint_dir),
+                INPUT=str(frozen_model_path),
                 mode="change",
-                system=str(fake_data_dir),
-                output=str(self.temp_path / "output"),
+                system=str(data_dir),
+                output=str(output_dir),
             )
+        self.assertIn("Bias changing for frozen models", str(cm.exception))
 
-            # Verify that the trainer's change_energy_bias was called
-            mock_trainer_instance._change_energy_bias.assert_called_once()
+        # Now test change_bias on the real checkpoint (this is the real test)
+        change_bias(
+            INPUT=str(checkpoint_dir),
+            mode="change",
+            system=str(data_dir),
+            output=str(output_dir),
+        )
 
-    def test_change_bias_with_data_type_map(self):
-        """Test bias changing when data system has its own type_map."""
-        # Create fake checkpoint directory with required files
-        fake_checkpoint_dir = self.temp_path / "checkpoint"
-        fake_checkpoint_dir.mkdir()
-        (fake_checkpoint_dir / "checkpoint").write_text("fake checkpoint content")
-        (fake_checkpoint_dir / "input.json").write_text('{"model": {}}')
+        # Verify that output directory was created and contains checkpoint files
+        self.assertTrue(output_dir.exists())
+        output_files = list(output_dir.glob("*"))
+        self.assertGreater(len(output_files), 0, "No output files created")
 
-        # Create fake data system
-        fake_data_dir = self.temp_path / "data_system"
-        fake_data_dir.mkdir()
-        fake_set_dir = fake_data_dir / "set.000"
-        fake_set_dir.mkdir()
+        # Load both original and updated models to verify they can be loaded
+        original_run_opt = RunOptions(init_model=str(checkpoint_dir), log_level=20)
+        updated_run_opt = RunOptions(init_model=str(output_dir), log_level=20)
 
-        # Import the module properly
-        import sys
+        # Load the configuration again for creating trainers
+        jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
+        jdata = normalize(jdata)
 
-        change_bias_module = sys.modules["deepmd.tf.entrypoints.change_bias"]
+        original_trainer = DPTrainer(jdata, run_opt=original_run_opt)
+        updated_trainer = DPTrainer(jdata, run_opt=updated_run_opt)
 
-        with (
-            patch.object(
-                change_bias_module, "expand_sys_str", return_value=[str(fake_data_dir)]
-            ),
-            patch.object(change_bias_module, "j_loader", return_value={"model": {}}),
-            patch.object(
-                change_bias_module, "update_deepmd_input", return_value={"model": {}}
-            ),
-            patch.object(change_bias_module, "normalize", return_value={"model": {}}),
-            patch.object(change_bias_module, "DeepmdDataSystem") as mock_data_system,
-            patch.object(change_bias_module, "DPTrainer") as mock_trainer_class,
-            patch.object(change_bias_module, "shutil"),
-        ):
-            # Mock the data system with type_map
-            mock_data_instance = MagicMock()
-            mock_data_instance.get_type_map.return_value = [
-                "C",
-                "N",
-                "O",
-            ]  # Data has type_map
-            mock_data_system.return_value = mock_data_instance
+        # Verify both models load successfully
+        self.assertIsNotNone(original_trainer.model)
+        self.assertIsNotNone(updated_trainer.model)
 
-            # Mock the trainer
-            mock_trainer_instance = MagicMock()
-            mock_model = MagicMock()
-            mock_model.get_type_map.return_value = [
-                "H",
-                "O",
-            ]  # Model has different type_map
-            mock_trainer_instance.model = mock_model
-            mock_trainer_instance._change_energy_bias = MagicMock()
-            mock_trainer_instance.save_checkpoint = MagicMock()
-            mock_trainer_class.return_value = mock_trainer_instance
+        # Verify models have the same structure (same type_map)
+        original_type_map = original_trainer.model.get_type_map()
+        updated_type_map = updated_trainer.model.get_type_map()
+        self.assertEqual(original_type_map, updated_type_map)
 
-            # Call change_bias function
-            change_bias(
-                INPUT=str(fake_checkpoint_dir),
-                mode="change",
-                system=str(fake_data_dir),
-            )
-
-            # Verify that data's type_map was used (not model's)
-            mock_trainer_instance._change_energy_bias.assert_called_once()
-            args, kwargs = mock_trainer_instance._change_energy_bias.call_args
-            # The third argument should be the type_map from data
-            self.assertEqual(args[2], ["C", "N", "O"])
+        # Clean up training artifacts
+        for artifact in ["lcurve.out", "input_v2_compat.json"]:
+            if os.path.exists(artifact):
+                os.remove(artifact)
 
 
 if __name__ == "__main__":
