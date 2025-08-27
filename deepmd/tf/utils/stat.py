@@ -141,12 +141,16 @@ def compute_output_stats(
             energy_data = np.concatenate(all_stat[key])
             natoms_vec = np.concatenate(all_stat["natoms_vec"])
 
-            # Handle different natoms_vec formats
+            # Calculate the number of frames and elements per frame
+            nframes = energy_data.shape[0]
+            elements_per_frame = natoms_vec.shape[0] // nframes
+
+            # Reshape natoms_vec to (nframes, elements_per_frame) then take type columns
             if natoms_vec.ndim == 1:
-                # If 1D, it should contain [nloc, nall, ntypes_0, ntypes_1, ...]
-                natoms_data = natoms_vec[2:].reshape(1, -1)  # Skip nloc, nall
+                # Reshape the 1D concatenated data into frames
+                natoms_data = natoms_vec.reshape(nframes, elements_per_frame)[:, 2:]
             else:
-                # If 2D, take slice starting from column 2
+                # Already 2D, slice directly
                 natoms_data = natoms_vec[:, 2:]
 
             # Compute statistics using existing utility

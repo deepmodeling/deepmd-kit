@@ -13,6 +13,9 @@ from deepmd.tf.entrypoints.train import (
     train,
 )
 
+# Get the test data directory
+tests_path = Path(__file__).parent.parent.parent.parent / "examples"
+
 
 class TestStatFileIntegration(unittest.TestCase):
     def test_stat_file_save_and_load(self) -> None:
@@ -52,13 +55,13 @@ class TestStatFileIntegration(unittest.TestCase):
             "training": {
                 "training_data": {
                     "systems": [
-                        "dummy_system"
-                    ],  # This will fail but that's OK for our test
+                        str(tests_path / "water" / "data" / "data_0")
+                    ],  # Use actual test data
                     "batch_size": 1,
                 },
-                "numb_steps": 5,
+                "numb_steps": 2,  # Very short training
                 "disp_freq": 1,
-                "save_freq": 2,
+                "save_freq": 1,
             },
         }
 
