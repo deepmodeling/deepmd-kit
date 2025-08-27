@@ -139,9 +139,15 @@ def compute_output_stats(
         if key in all_stat:
             # Get energy and natoms data
             energy_data = np.concatenate(all_stat[key])
-            natoms_data = np.concatenate(all_stat["natoms_vec"])[
-                :, 2:
-            ]  # Skip first 2 elements
+            natoms_vec = np.concatenate(all_stat["natoms_vec"])
+
+            # Handle different natoms_vec formats
+            if natoms_vec.ndim == 1:
+                # If 1D, it should contain [nloc, nall, ntypes_0, ntypes_1, ...]
+                natoms_data = natoms_vec[2:].reshape(1, -1)  # Skip nloc, nall
+            else:
+                # If 2D, take slice starting from column 2
+                natoms_data = natoms_vec[:, 2:]
 
             # Compute statistics using existing utility
             bias, std = compute_stats_from_redu(

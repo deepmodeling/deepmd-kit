@@ -26,9 +26,16 @@ class TestStatFile(unittest.TestCase):
         # Use a minimal config for testing
         self.config_file = str(tests_path / "model_compression" / "input.json")
         self.jdata = j_loader(self.config_file)
+        # Add missing type field for fitting_net
+        self.jdata["model"]["fitting_net"]["type"] = "ener"
+        # Move data_stat_nbatch to model section
+        self.jdata["model"]["data_stat_nbatch"] = 1
+        # Fix the data path to be absolute
+        data_path = str(tests_path / "model_compression" / "data")
+        self.jdata["training"]["training_data"]["systems"] = [data_path]
+        self.jdata["training"]["validation_data"]["systems"] = [data_path]
         # Reduce number of steps and data for faster testing
         self.jdata["training"]["numb_steps"] = 10
-        self.jdata["training"]["data_stat_nbatch"] = 1
         self.jdata["training"]["disp_freq"] = 1
         self.jdata["training"]["save_freq"] = 5
 
