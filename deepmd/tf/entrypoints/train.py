@@ -13,10 +13,7 @@ from typing import (
     Optional,
 )
 
-try:
-    import h5py
-except ImportError:
-    h5py = None
+import h5py
 
 from deepmd.common import (
     j_loader,
@@ -249,8 +246,6 @@ def _do_work(
 
             if not Path(stat_file_raw).exists():
                 if stat_file_raw.endswith((".h5", ".hdf5")):
-                    if h5py is None:
-                        raise ImportError("h5py is required for HDF5 stat files")
                     with h5py.File(stat_file_raw, "w") as f:
                         pass
                 else:
