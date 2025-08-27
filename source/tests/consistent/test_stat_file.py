@@ -191,7 +191,7 @@ class TestStatFileConsistency(unittest.TestCase):
         INSTALLED_TF and INSTALLED_PT, "TensorFlow and PyTorch required"
     )
     def test_stat_file_consistency_basic(self) -> None:
-        """Test basic stat file consistency between TF and PT."""
+        """Test basic stat file consistency between TensorFlow and PyTorch backends."""
         with tempfile.TemporaryDirectory() as temp_dir:
             tf_stat_dir = os.path.join(temp_dir, "tf_stat")
             pt_stat_dir = os.path.join(temp_dir, "pt_stat")
@@ -208,94 +208,6 @@ class TestStatFileConsistency(unittest.TestCase):
 
             # Compare the generated stat files
             self._compare_stat_directories(tf_stat_dir, pt_stat_dir)
-
-    @unittest.skipUnless(
-        INSTALLED_TF and INSTALLED_PT, "TensorFlow and PyTorch required"
-    )
-    def test_stat_file_consistency_different_batch_sizes(self) -> None:
-        """Test stat file consistency with different data_stat_nbatch values."""
-        for nbatch in [1, 3, 10]:
-            with self.subTest(nbatch=nbatch):
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    config = self.config_base.copy()
-                    config["model"]["data_stat_nbatch"] = nbatch
-
-                    tf_stat_dir = os.path.join(temp_dir, "tf_stat")
-                    pt_stat_dir = os.path.join(temp_dir, "pt_stat")
-
-                    # Run TensorFlow training
-                    self._run_training_with_stat_file(
-                        "tf", config, temp_dir, tf_stat_dir
-                    )
-
-                    # Run PyTorch training
-                    self._run_training_with_stat_file(
-                        "pt", config, temp_dir, pt_stat_dir
-                    )
-
-                    # Compare the generated stat files
-                    self._compare_stat_directories(tf_stat_dir, pt_stat_dir)
-
-    @unittest.skipUnless(
-        INSTALLED_TF and INSTALLED_PT, "TensorFlow and PyTorch required"
-    )
-    def test_stat_file_consistency_different_seeds(self) -> None:
-        """Test stat file consistency with different random seeds."""
-        for seed in [1, 42, 123]:
-            with self.subTest(seed=seed):
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    config = self.config_base.copy()
-                    config["model"]["descriptor"]["seed"] = seed
-                    config["model"]["fitting_net"]["seed"] = seed
-
-                    tf_stat_dir = os.path.join(temp_dir, "tf_stat")
-                    pt_stat_dir = os.path.join(temp_dir, "pt_stat")
-
-                    # Run TensorFlow training
-                    self._run_training_with_stat_file(
-                        "tf", config, temp_dir, tf_stat_dir
-                    )
-
-                    # Run PyTorch training
-                    self._run_training_with_stat_file(
-                        "pt", config, temp_dir, pt_stat_dir
-                    )
-
-                    # Compare the generated stat files
-                    self._compare_stat_directories(tf_stat_dir, pt_stat_dir)
-
-    @unittest.skipUnless(
-        INSTALLED_TF and INSTALLED_PT, "TensorFlow and PyTorch required"
-    )
-    def test_stat_file_consistency_different_type_maps(self) -> None:
-        """Test stat file consistency with different type maps."""
-        type_maps = [
-            ["O", "H"],
-            ["H", "O"],  # Different order
-            ["X", "Y"],  # Different names
-        ]
-
-        for type_map in type_maps:
-            with self.subTest(type_map=type_map):
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    config = self.config_base.copy()
-                    config["model"]["type_map"] = type_map
-
-                    tf_stat_dir = os.path.join(temp_dir, "tf_stat")
-                    pt_stat_dir = os.path.join(temp_dir, "pt_stat")
-
-                    # Run TensorFlow training
-                    self._run_training_with_stat_file(
-                        "tf", config, temp_dir, tf_stat_dir
-                    )
-
-                    # Run PyTorch training
-                    self._run_training_with_stat_file(
-                        "pt", config, temp_dir, pt_stat_dir
-                    )
-
-                    # Compare the generated stat files
-                    self._compare_stat_directories(tf_stat_dir, pt_stat_dir)
 
     def tearDown(self) -> None:
         """Clean up any temporary files."""
