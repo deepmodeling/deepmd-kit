@@ -2,7 +2,6 @@
 """DeePMD-Kit entry point module."""
 
 import argparse
-import logging
 from pathlib import (
     Path,
 )
@@ -38,8 +37,6 @@ from deepmd.tf.nvnmd.entrypoints.train import (
 )
 
 __all__ = ["get_ll", "main", "main_parser", "parse_args"]
-
-log = logging.getLogger(__name__)
 
 
 def main(args: Optional[Union[list[str], argparse.Namespace]] = None) -> None:

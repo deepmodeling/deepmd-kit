@@ -726,7 +726,7 @@ def main_parser() -> argparse.ArgumentParser:
         epilog=textwrap.dedent(
             """\
         examples:
-            dp change-bias model.pt -s data -n 10 -m change
+            dp --pt change-bias model.pt -s data -n 10 -m change
             dp --tf change-bias checkpoint_dir -s data -n 10 -m change
         """
         ),

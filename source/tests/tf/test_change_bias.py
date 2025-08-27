@@ -29,7 +29,7 @@ class TestChangeBias(unittest.TestCase):
 
         with self.assertRaises(NotImplementedError) as cm:
             change_bias(
-                input_file=str(fake_pb),
+                INPUT=str(fake_pb),
                 mode="change",
                 system=".",
             )
@@ -44,7 +44,7 @@ class TestChangeBias(unittest.TestCase):
 
         with self.assertRaises(RuntimeError) as cm:
             change_bias(
-                input_file=str(fake_model),
+                INPUT=str(fake_model),
                 mode="change",
                 system=".",
             )
@@ -64,7 +64,7 @@ class TestChangeBias(unittest.TestCase):
 
         with self.assertRaises(RuntimeError) as cm:
             change_bias(
-                input_file=str(fake_dir),
+                INPUT=str(fake_dir),
                 mode="change",
                 system=str(fake_data_dir),
             )
@@ -79,7 +79,7 @@ class TestChangeBias(unittest.TestCase):
 
         with self.assertRaises(NotImplementedError) as cm:
             change_bias(
-                input_file=str(fake_dir),
+                INPUT=str(fake_dir),
                 mode="change",
                 bias_value=[1.0, 2.0],
                 system=".",

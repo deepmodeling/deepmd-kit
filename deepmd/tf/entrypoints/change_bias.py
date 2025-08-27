@@ -150,8 +150,6 @@ def change_bias(
         restart=None,
         finetune=None,
         init_frz_model=None,
-        train_data=all_sys,
-        valid_data=None,
     )
 
     trainer = DPTrainer(jdata, run_opt)
