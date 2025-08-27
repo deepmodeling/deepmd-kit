@@ -6,6 +6,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.utils.out_stat import (
+    compute_stats_from_redu,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -147,10 +150,6 @@ def compute_output_stats(
 
     # If restore failed, compute from data
     log.info("Computing statistics from training data")
-
-    from deepmd.utils.out_stat import (
-        compute_stats_from_redu,
-    )
 
     bias_out = {}
     std_out = {}
