@@ -190,7 +190,8 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
             ++cnt;
           }
         }
-        std::memcpy(lmp_list.sendlist[s], sendlist_new[s].data(), cnt * sizeof(int));
+        std::memcpy(lmp_list.sendlist[s], sendlist_new[s].data(),
+                    cnt * sizeof(int));
         lmp_list.sendnum[s] = cnt;
         lmp_list.recvnum[s] = cnt;
       }
@@ -200,11 +201,11 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
           torch::from_blob(lmp_list.recvproc, {nswap}, int32_option);
 
       torch::Tensor firstrecv_tensor =
-            torch::from_blob(lmp_list.firstrecv, {nswap}, int32_option);
+          torch::from_blob(lmp_list.firstrecv, {nswap}, int32_option);
       torch::Tensor recvnum_tensor =
-            torch::from_blob(lmp_list.recvnum, {nswap}, int32_option);
+          torch::from_blob(lmp_list.recvnum, {nswap}, int32_option);
       torch::Tensor sendnum_tensor =
-            torch::from_blob(lmp_list.sendnum, {nswap}, int32_option);
+          torch::from_blob(lmp_list.sendnum, {nswap}, int32_option);
       torch::Tensor communicator_tensor;
       if (lmp_list.world == 0) {
         communicator_tensor = torch::empty({1}, torch::kInt64);
@@ -216,11 +217,9 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       torch::Tensor nswap_tensor = torch::tensor(nswap, int32_option);
 
       int total_send =
-            std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap,
-            0);
+          std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
       torch::Tensor sendlist_tensor =
-            torch::from_blob(lmp_list.sendlist, {total_send},
-            int32_option);
+          torch::from_blob(lmp_list.sendlist, {total_send}, int32_option);
       comm_dict.insert_or_assign("send_list", sendlist_tensor);
       comm_dict.insert_or_assign("send_proc", sendproc_tensor);
       comm_dict.insert_or_assign("recv_proc", recvproc_tensor);
