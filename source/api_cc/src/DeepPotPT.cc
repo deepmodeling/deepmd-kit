@@ -199,7 +199,6 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
           torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
       torch::Tensor recvproc_tensor =
           torch::from_blob(lmp_list.recvproc, {nswap}, int32_option);
-
       torch::Tensor firstrecv_tensor =
           torch::from_blob(lmp_list.firstrecv, {nswap}, int32_option);
       torch::Tensor recvnum_tensor =
@@ -215,7 +214,6 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       }
 
       torch::Tensor nswap_tensor = torch::tensor(nswap, int32_option);
-
       int total_send =
           std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
       torch::Tensor sendlist_tensor =
