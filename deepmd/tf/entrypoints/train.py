@@ -8,6 +8,9 @@ import copy
 import json
 import logging
 import time
+from pathlib import (
+    Path,
+)
 from typing import (
     Any,
     Optional,
@@ -47,6 +50,9 @@ from deepmd.tf.utils.finetune import (
 )
 from deepmd.utils.data_system import (
     get_data,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 __all__ = ["train"]
@@ -236,14 +242,6 @@ def _do_work(
     if not is_compress:
         stat_file_raw = jdata["training"].get("stat_file", None)
         if stat_file_raw is not None and run_opt.is_chief:
-            from pathlib import (
-                Path,
-            )
-
-            from deepmd.utils.path import (
-                DPPath,
-            )
-
             if not Path(stat_file_raw).exists():
                 if stat_file_raw.endswith((".h5", ".hdf5")):
                     with h5py.File(stat_file_raw, "w") as f:

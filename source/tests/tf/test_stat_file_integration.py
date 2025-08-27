@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""
-Integration test to validate stat_file functionality end-to-end
-"""
+"""Integration test to validate stat_file functionality end-to-end."""
 
 import json
 import os
@@ -76,27 +74,22 @@ class TestStatFileIntegration(unittest.TestCase):
             with open(config_file, "w") as f:
                 json.dump(config, f, indent=2)
 
-            try:
-                # Attempt to run training
-                # This will fail due to missing data but should still process stat_file parameter
-                train(
-                    INPUT=config_file,
-                    init_model=None,
-                    restart=None,
-                    output=os.path.join(temp_dir, "output.json"),
-                    init_frz_model=None,
-                    mpi_log="master",
-                    log_level=20,
-                    log_path=None,
-                    is_compress=False,
-                    skip_neighbor_stat=True,
-                    finetune=None,
-                    use_pretrain_script=False,
-                )
-            except Exception as e:
-                # Expected to fail due to missing training data
-                # But the stat_file parameter should have been processed
-                print(f"Expected training failure: {e}")
+            # Attempt to run training
+            # This will fail due to missing data but should still process stat_file parameter
+            train(
+                INPUT=config_file,
+                init_model=None,
+                restart=None,
+                output=os.path.join(temp_dir, "output.json"),
+                init_frz_model=None,
+                mpi_log="master",
+                log_level=20,
+                log_path=None,
+                is_compress=False,
+                skip_neighbor_stat=True,
+                finetune=None,
+                use_pretrain_script=False,
+            )
 
             # The main validation is that the code didn't crash with an unrecognized parameter
             # and that if the stat file directory was attempted to be created, it exists
@@ -105,7 +98,6 @@ class TestStatFileIntegration(unittest.TestCase):
                 self.assertTrue(
                     stat_path.is_dir(), "Stat file path should be a directory"
                 )
-                print(f"Stat file directory was created: {stat_file_path}")
 
             # This test primarily validates that the stat_file parameter is accepted
             # and processed without errors in the TF pipeline

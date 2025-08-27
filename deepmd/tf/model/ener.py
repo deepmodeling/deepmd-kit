@@ -21,6 +21,9 @@ from deepmd.tf.utils.pair_tab import (
 from deepmd.tf.utils.spin import (
     Spin,
 )
+from deepmd.tf.utils.stat import (
+    compute_output_stats,
+)
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
 )
@@ -174,10 +177,6 @@ class EnerModel(StandardModel):
     ) -> None:
         if stat_file_path is not None:
             # Use the new stat functionality with file save/load
-            from deepmd.tf.utils.stat import (
-                compute_output_stats,
-            )
-
             # Merge system stats for compatibility
             m_all_stat = merge_sys_stat(all_stat)
 

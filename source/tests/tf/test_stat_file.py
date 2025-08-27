@@ -51,40 +51,20 @@ class TestStatFile(unittest.TestCase):
                 mpi_log="master",
             )
 
-            try:
-                # Run training - this should create the stat file
-                _do_work(self.jdata, run_opt, is_compress=False)
+            # Run training - this should create the stat file
+            _do_work(self.jdata, run_opt, is_compress=False)
 
-                # Check if stat files were created
-                stat_path = Path(stat_file_path)
-                self.assertTrue(
-                    stat_path.exists(), "Stat file directory should be created"
-                )
+            # Check if stat files were created
+            stat_path = Path(stat_file_path)
+            self.assertTrue(stat_path.exists(), "Stat file directory should be created")
 
-                # Check for energy bias and std files
-                bias_file = stat_path / "bias_atom_energy"
-                std_file = stat_path / "std_atom_energy"
+            # Check for energy bias and std files
+            bias_file = stat_path / "bias_atom_energy"
+            std_file = stat_path / "std_atom_energy"
 
-                # At minimum, the directory structure should be created
-                # Even if files aren't created due to insufficient data, the directory should exist
-                self.assertTrue(
-                    stat_path.is_dir(), "Stat file path should be a directory"
-                )
-
-            except Exception as e:
-                # Print the exception for debugging but don't fail the test
-                # since we're mainly testing that the stat_file parameter is accepted
-                print(
-                    f"Training encountered an exception (expected for minimal test data): {e}"
-                )
-
-                # Still check that the stat file directory was created
-                stat_path = Path(stat_file_path)
-                if stat_path.exists():
-                    self.assertTrue(
-                        stat_path.is_dir(),
-                        "Stat file path should be a directory if created",
-                    )
+            # At minimum, the directory structure should be created
+            # Even if files aren't created due to insufficient data, the directory should exist
+            self.assertTrue(stat_path.is_dir(), "Stat file path should be a directory")
 
 
 if __name__ == "__main__":
