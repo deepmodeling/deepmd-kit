@@ -174,27 +174,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     nlist_data.padding();
     if (do_message_passing) {
       int nswap = lmp_list.nswap;
-      std::vector<std::vector<int>> sendlist_new;
-      sendlist_new.resize(nswap);
-      // select real atoms in sendlist
-      for (int s = 0; s < nswap; ++s) {
-        int cnt = 0;
-        sendlist_new[s].reserve(lmp_list.sendnum[s]);
-        for (int k = 0; k < lmp_list.sendnum[s]; ++k) {
-          const int old_idx = lmp_list.sendlist[s][k];
-          int mapped = (old_idx >= 0 && old_idx < (int)fwd_map.size())
-                           ? fwd_map[old_idx]
-                           : -1;
-          if (mapped >= 0) {
-            sendlist_new[s].push_back(mapped);
-            ++cnt;
-          }
-        }
-        std::memcpy(lmp_list.sendlist[s], sendlist_new[s].data(),
-                    cnt * sizeof(int));
-        lmp_list.sendnum[s] = cnt;
-        lmp_list.recvnum[s] = cnt;
-      }
+      select_real_atoms_sendlist(lmp_list, fwd_map);
       torch::Tensor sendproc_tensor =
           torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
       torch::Tensor recvproc_tensor =

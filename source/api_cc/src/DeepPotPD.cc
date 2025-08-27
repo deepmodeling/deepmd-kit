@@ -393,6 +393,7 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
       auto sendlist_tensor = predictor_fl->GetInputHandle("send_list");
 
       int nswap = lmp_list.nswap;
+      select_real_atoms_sendlist(lmp_list, fwd_map);
       sendproc_tensor->Reshape({nswap});
       sendproc_tensor->CopyFromCpu(lmp_list.sendproc);
 

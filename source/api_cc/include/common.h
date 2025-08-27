@@ -102,6 +102,8 @@ void select_real_atoms_coord(std::vector<VALUETYPE>& dcoord,
                              const int& nall,
                              const bool aparam_nall = false);
 
+void select_real_atoms_sendlist(const deepmd::InputNlist& inlist, std::vector<int>& fwd_map);
+
 /**
  * @brief Apply the given map to a vector.
  * @param[out] out The output vector.
