@@ -59,8 +59,6 @@ class TestStatFile(unittest.TestCase):
             self.assertTrue(stat_path.exists(), "Stat file directory should be created")
 
             # Check for energy bias and std files
-            bias_file = stat_path / "bias_atom_energy"
-            std_file = stat_path / "std_atom_energy"
 
             # At minimum, the directory structure should be created
             # Even if files aren't created due to insufficient data, the directory should exist
