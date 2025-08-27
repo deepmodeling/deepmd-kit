@@ -474,6 +474,7 @@ def test_pair_deepmd_type_map(lammps_type_map) -> None:
         )
     lammps_type_map.run(1)
 
+
 def test_pair_deepmd_type_map_with_null(lammps_type_map) -> None:
     lammps_type_map.pair_style(f"deepmd {pb_file.resolve()}")
     lammps_type_map.pair_coeff("* * H NULL")
