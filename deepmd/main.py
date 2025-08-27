@@ -727,7 +727,7 @@ def main_parser() -> argparse.ArgumentParser:
             """\
         examples:
             dp --pt change-bias model.pt -s data -n 10 -m change
-            dp --tf change-bias checkpoint_dir -s data -n 10 -m change
+            dp --tf change-bias model.ckpt -s data -n 10 -m change
         """
         ),
     )

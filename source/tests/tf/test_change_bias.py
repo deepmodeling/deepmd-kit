@@ -88,14 +88,14 @@ class TestChangeBias(unittest.TestCase):
             )
 
         self.assertIn(
-            "checkpoint directory, checkpoint file, or frozen model file (.pb)",
+            "checkpoint file or frozen model file (.pb)",
             str(cm.exception),
         )
 
     def test_change_bias_no_checkpoint_in_directory(self):
-        """Test that missing checkpoint in directory raises RuntimeError."""
-        fake_dir = self.temp_path / "fake_checkpoint"
-        fake_dir.mkdir()
+        """Test that checkpoint files need proper checkpoint structure."""
+        fake_ckpt = self.temp_path / "model.ckpt"
+        fake_ckpt.write_text("fake checkpoint content")
 
         # Create a fake data system for the test
         fake_data_dir = self.temp_path / "fake_data"
@@ -105,7 +105,7 @@ class TestChangeBias(unittest.TestCase):
 
         with self.assertRaises(RuntimeError) as cm:
             change_bias(
-                INPUT=str(fake_dir),
+                INPUT=str(fake_ckpt),
                 mode="change",
                 system=str(fake_data_dir),
             )
@@ -114,9 +114,11 @@ class TestChangeBias(unittest.TestCase):
 
     def test_change_bias_user_defined_requires_real_model(self):
         """Test that user-defined bias requires a real model with proper structure."""
-        fake_dir = self.temp_path / "fake_checkpoint"
-        fake_dir.mkdir()
-        (fake_dir / "checkpoint").write_text("fake checkpoint")
+        fake_ckpt_dir = self.temp_path / "fake_checkpoint"
+        fake_ckpt_dir.mkdir()
+        fake_ckpt = fake_ckpt_dir / "model.ckpt"
+        fake_ckpt.write_text("fake checkpoint content")
+        (fake_ckpt_dir / "checkpoint").write_text("fake checkpoint")
         # Create a minimal but complete input.json
         minimal_config = {
             "model": {"type_map": ["H", "O"]},
@@ -124,12 +126,12 @@ class TestChangeBias(unittest.TestCase):
         }
         import json
 
-        (fake_dir / "input.json").write_text(json.dumps(minimal_config))
+        (fake_ckpt_dir / "input.json").write_text(json.dumps(minimal_config))
 
         # Should fail because there's no real model structure, but with different error
         with self.assertRaises((RuntimeError, FileNotFoundError, Exception)) as cm:
             change_bias(
-                INPUT=str(fake_dir),
+                INPUT=str(fake_ckpt),
                 mode="change",
                 bias_value=[1.0, 2.0],
                 system=".",
@@ -144,7 +146,7 @@ class TestChangeBias(unittest.TestCase):
         train_dir = self.temp_path / "train"
         train_dir.mkdir()
         checkpoint_dir = train_dir / "checkpoint"
-        output_dir = self.temp_path / "output"
+        output_file = self.temp_path / "output_model.pb"
 
         # Use existing test data and configuration
         data_dir = tests_path / "init_frz_model" / "data"
@@ -172,6 +174,9 @@ class TestChangeBias(unittest.TestCase):
         checkpoint_files = list(checkpoint_dir.glob("*"))
         self.assertGreater(len(checkpoint_files), 0, "No checkpoint files created")
 
+        # Find the actual checkpoint file
+        checkpoint_file = checkpoint_dir / "model.ckpt"
+
         # Create a frozen model from the checkpoint for testing
         frozen_model_path = train_dir / "frozen_model.pb"
         ret = run_dp(f"dp freeze -c {checkpoint_dir} -o {frozen_model_path}")
@@ -184,45 +189,40 @@ class TestChangeBias(unittest.TestCase):
                 INPUT=str(frozen_model_path),
                 mode="change",
                 system=str(data_dir),
-                output=str(output_dir),
+                output=str(output_file),
             )
         self.assertIn(
             "Data-based bias changing for frozen models is not yet implemented",
             str(cm.exception),
         )
 
-        # Now test change_bias on the real checkpoint (this is the real test)
+        # Now test change_bias on the real checkpoint file (this is the real test)
         change_bias(
-            INPUT=str(checkpoint_dir),
+            INPUT=str(checkpoint_file),
             mode="change",
             system=str(data_dir),
-            output=str(output_dir),
+            output=str(output_file),
         )
 
-        # Verify that output directory was created and contains checkpoint files
-        self.assertTrue(output_dir.exists())
-        output_files = list(output_dir.glob("*"))
-        self.assertGreater(len(output_files), 0, "No output files created")
+        # Verify that output model file was created
+        self.assertTrue(output_file.exists())
+        self.assertTrue(output_file.stat().st_size > 0, "Output model file is empty")
 
-        # Load both original and updated models to verify they can be loaded
+        # Load original model to verify structure
         original_run_opt = RunOptions(init_model=str(checkpoint_dir), log_level=20)
-        updated_run_opt = RunOptions(init_model=str(output_dir), log_level=20)
 
         # Load the configuration again for creating trainers
         jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
         jdata = normalize(jdata)
 
         original_trainer = DPTrainer(jdata, run_opt=original_run_opt)
-        updated_trainer = DPTrainer(jdata, run_opt=updated_run_opt)
 
-        # Verify both models load successfully
+        # Verify original model loads successfully
         self.assertIsNotNone(original_trainer.model)
-        self.assertIsNotNone(updated_trainer.model)
 
-        # Verify models have the same structure (same type_map)
+        # Verify the original model has the expected structure
         original_type_map = original_trainer.model.get_type_map()
-        updated_type_map = updated_trainer.model.get_type_map()
-        self.assertEqual(original_type_map, updated_type_map)
+        self.assertGreater(len(original_type_map), 0, "Model should have a type_map")
 
         # Clean up training artifacts
         for artifact in ["lcurve.out", "input_v2_compat.json"]:

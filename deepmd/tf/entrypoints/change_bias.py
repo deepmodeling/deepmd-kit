@@ -3,7 +3,6 @@
 
 import logging
 import os
-import shutil
 import tempfile
 from pathlib import (
     Path,
@@ -12,12 +11,17 @@ from typing import (
     Optional,
 )
 
+import numpy as np
+
 from deepmd.common import (
     expand_sys_str,
     j_loader,
 )
 from deepmd.tf.entrypoints.freeze import (
     freeze,
+)
+from deepmd.tf.env import (
+    tf,
 )
 from deepmd.tf.train.run_options import (
     RunOptions,
@@ -30,6 +34,9 @@ from deepmd.tf.utils.argcheck import (
 )
 from deepmd.tf.utils.compat import (
     update_deepmd_input,
+)
+from deepmd.tf.utils.sess import (
+    run_sess,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -75,19 +82,7 @@ def change_bias(
     input_path = Path(INPUT)
 
     # Determine input type and handle accordingly
-    if input_path.is_dir():
-        # Checkpoint directory
-        return _change_bias_checkpoint_dir(
-            str(input_path),
-            mode,
-            bias_value,
-            datafile,
-            system,
-            numb_batch,
-            model_branch,
-            output,
-        )
-    elif INPUT.endswith(".pb"):
+    if INPUT.endswith(".pb"):
         # Frozen model (.pb)
         return _change_bias_frozen_model(
             INPUT, mode, bias_value, datafile, system, numb_batch, model_branch, output
@@ -115,12 +110,12 @@ def change_bias(
         )
     else:
         raise RuntimeError(
-            "The model provided must be a checkpoint directory, checkpoint file, or frozen model file (.pb)"
+            "The model provided must be a checkpoint file or frozen model file (.pb)"
         )
 
 
-def _change_bias_checkpoint_dir(
-    checkpoint_folder: str,
+def _change_bias_checkpoint_file(
+    checkpoint_prefix: str,
     mode: str,
     bias_value: Optional[list],
     datafile: Optional[str],
@@ -129,11 +124,13 @@ def _change_bias_checkpoint_dir(
     model_branch: Optional[str],
     output: Optional[str],
 ) -> None:
-    """Change bias for checkpoint directory."""
-    # Check for valid checkpoint early
-    checkpoint_path = Path(checkpoint_folder)
-    if not (checkpoint_path / "checkpoint").exists():
-        raise RuntimeError(f"No valid checkpoint found in {checkpoint_folder}")
+    """Change bias for individual checkpoint files."""
+    checkpoint_path = Path(checkpoint_prefix)
+    checkpoint_dir = checkpoint_path.parent
+
+    # Check for valid checkpoint
+    if not (checkpoint_dir / "checkpoint").exists():
+        raise RuntimeError(f"No valid checkpoint found in {checkpoint_dir}")
 
     bias_adjust_mode = "change-by-statistic" if mode == "change" else "set-by-statistic"
 
@@ -144,20 +141,22 @@ def _change_bias_checkpoint_dir(
         data = None
 
     # Read the checkpoint to get the model configuration
-    input_json_path = _find_input_json(checkpoint_path)
+    input_json_path = _find_input_json(checkpoint_dir)
     jdata = j_loader(input_json_path)
 
     # Update and normalize the configuration
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
     jdata = normalize(jdata)
 
-    # Determine output path
+    # Determine output path - should be a single model file
     if output is None:
-        output = str(checkpoint_path) + "_bias_updated"
+        output = str(checkpoint_path.with_suffix(".pb"))
+    elif not output.endswith(".pb"):
+        output = output + ".pb"
 
     # Create trainer to access model methods
     run_opt = RunOptions(
-        init_model=checkpoint_folder,
+        init_model=str(checkpoint_dir),
         restart=None,
         finetune=None,
         init_frz_model=None,
@@ -181,7 +180,7 @@ def _change_bias_checkpoint_dir(
         # Create a temporary frozen model from the checkpoint
         with tempfile.NamedTemporaryFile(suffix=".pb", delete=False) as temp_frozen:
             freeze(
-                checkpoint_folder=checkpoint_folder,
+                checkpoint_folder=str(checkpoint_dir),
                 output=temp_frozen.name,
             )
 
@@ -196,40 +195,13 @@ def _change_bias_checkpoint_dir(
             # Clean up temporary file
             os.unlink(temp_frozen.name)
 
-    # Save the updated model - just copy to output location
-    # Note: The bias has been updated in the trainer's session
-    # Copy the checkpoint files to output location
-    shutil.copytree(checkpoint_folder, output, dirs_exist_ok=True)
-
-    log.info(f"Bias changing complete. Model files saved to {output}")
-
-
-def _change_bias_checkpoint_file(
-    checkpoint_prefix: str,
-    mode: str,
-    bias_value: Optional[list],
-    datafile: Optional[str],
-    system: str,
-    numb_batch: int,
-    model_branch: Optional[str],
-    output: Optional[str],
-) -> None:
-    """Change bias for individual checkpoint files."""
-    # For individual checkpoint files, we need to find the directory containing them
-    checkpoint_path = Path(checkpoint_prefix)
-    checkpoint_dir = checkpoint_path.parent
-
-    # Use the same logic as checkpoint directory but with specific checkpoint prefix
-    _change_bias_checkpoint_dir(
-        str(checkpoint_dir),
-        mode,
-        bias_value,
-        datafile,
-        system,
-        numb_batch,
-        model_branch,
-        output,
+    # Save the updated model as a frozen model
+    freeze(
+        checkpoint_folder=str(checkpoint_dir),
+        output=output,
     )
+
+    log.info(f"Bias changing complete. Model saved to {output}")
 
 
 def _change_bias_frozen_model(
@@ -304,12 +276,12 @@ def _load_data_systems(datafile: Optional[str], system: str) -> DeepmdDataSystem
     return data
 
 
-def _find_input_json(checkpoint_path: Path) -> Path:
+def _find_input_json(checkpoint_dir: Path) -> Path:
     """Find the input.json file for the checkpoint."""
-    input_json_path = checkpoint_path / "input.json"
+    input_json_path = checkpoint_dir / "input.json"
     if not input_json_path.exists():
         # Look for input.json in parent directories or common locations
-        for parent in checkpoint_path.parents:
+        for parent in checkpoint_dir.parents:
             potential_input = parent / "input.json"
             if potential_input.exists():
                 input_json_path = potential_input
@@ -317,7 +289,7 @@ def _find_input_json(checkpoint_path: Path) -> Path:
         else:
             raise RuntimeError(
                 f"Cannot find input.json configuration file needed to load the model. "
-                f"Please ensure input.json is available in {checkpoint_path} or its parent directories."
+                f"Please ensure input.json is available in {checkpoint_dir} or its parent directories."
             )
     return input_json_path
 
@@ -348,8 +320,6 @@ def _apply_user_defined_bias(trainer: DPTrainer, bias_value: list) -> None:
         )
 
     # Convert user bias to numpy array with proper shape
-    import numpy as np
-
     new_bias = np.array(bias_value, dtype=np.float64).reshape(-1, 1)
 
     log.info(f"Changing bias from user-defined values for type_map: {type_map}")
@@ -360,13 +330,6 @@ def _apply_user_defined_bias(trainer: DPTrainer, bias_value: list) -> None:
     fitting.bias_atom_e = new_bias
 
     # Update the tensor in the session if needed
-    from deepmd.tf.env import (
-        tf,
-    )
-    from deepmd.tf.utils.sess import (
-        run_sess,
-    )
-
     if hasattr(fitting, "t_bias_atom_e"):
         assign_op = tf.assign(fitting.t_bias_atom_e, new_bias)
         run_sess(trainer.sess, assign_op)
