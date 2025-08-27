@@ -124,7 +124,6 @@ class TestChangeBias(unittest.TestCase):
             "model": {"type_map": ["H", "O"]},
             "training": {"systems": ["."], "validation_data": {"systems": ["."]}},
         }
-        import json
 
         (fake_ckpt_dir / "input.json").write_text(json.dumps(minimal_config))
 
