@@ -177,6 +177,12 @@ class EnerModel(StandardModel):
     ) -> None:
         if stat_file_path is not None:
             # Use the new stat functionality with file save/load
+            # Add type_map subdirectory for consistency with PyTorch backend
+            if stat_file_path is not None and self.type_map is not None:
+                # descriptors and fitting net with different type_map
+                # should not share the same parameters
+                stat_file_path = stat_file_path / " ".join(self.type_map)
+
             # Merge system stats for compatibility
             m_all_stat = merge_sys_stat(all_stat)
 

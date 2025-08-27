@@ -83,6 +83,26 @@ def _save_to_file(
         fp.save_numpy(vv)
 
 
+def _post_process_stat(
+    out_bias,
+    out_std,
+):
+    """Post process the statistics.
+
+    For global statistics, we do not have the std for each type of atoms,
+    thus fake the output std by ones for all the types.
+    If the shape of out_std is already the same as out_bias,
+    we do not need to do anything.
+    """
+    new_std = {}
+    for kk, vv in out_bias.items():
+        if vv.shape == out_std[kk].shape:
+            new_std[kk] = out_std[kk]
+        else:
+            new_std[kk] = np.ones_like(vv)
+    return out_bias, new_std
+
+
 def compute_output_stats(
     all_stat: dict,
     ntypes: int,
@@ -93,8 +113,8 @@ def compute_output_stats(
 ) -> tuple[dict, dict]:
     """Compute output statistics for TensorFlow models.
 
-    This is a simplified version of the PyTorch compute_output_stats function
-    adapted for TensorFlow models.
+    This function is designed to be compatible with the PyTorch backend
+    to ensure consistent stat file formats and values.
 
     Parameters
     ----------
@@ -114,9 +134,9 @@ def compute_output_stats(
     Returns
     -------
     bias_out : dict
-        Computed bias values
+        Computed bias values with shape (ntypes, 1) for compatibility
     std_out : dict
-        Computed standard deviation values
+        Computed standard deviation values with shape (ntypes, 1) for compatibility
     """
     # Try to restore from file first
     bias_out, std_out = _restore_from_file(stat_file_path, keys)
@@ -153,6 +173,12 @@ def compute_output_stats(
                 # Already 2D, slice directly
                 natoms_data = natoms_vec[:, 2:]
 
+            # Ensure we have the right number of types
+            if natoms_data.shape[1] != ntypes:
+                raise ValueError(
+                    f"Mismatch between ntypes ({ntypes}) and natoms data shape ({natoms_data.shape[1]})"
+                )
+
             # Compute statistics using existing utility
             bias, std = compute_stats_from_redu(
                 energy_data.reshape(-1, 1),  # Reshape to column vector
@@ -160,12 +186,20 @@ def compute_output_stats(
                 rcond=rcond,
             )
 
-            bias_out[key] = bias.reshape(-1)  # Flatten to 1D
-            std_out[key] = std.reshape(-1)  # Flatten to 1D
+            # Reshape outputs to match PyTorch format: (ntypes, 1)
+            bias_out[key] = bias.reshape(ntypes, 1)
+
+            # For std, we initially get a scalar from compute_stats_from_redu.
+            # To match PyTorch behavior exactly, we use the post-processing logic
+            # that sets std to ones when shape doesn't match bias shape.
+            std_out[key] = std.reshape(1, 1)  # First reshape to (1, 1)
 
             log.info(
                 f"Statistics computed for {key}: bias shape {bias_out[key].shape}, std shape {std_out[key].shape}"
             )
+
+    # Apply post-processing to match PyTorch behavior exactly
+    bias_out, std_out = _post_process_stat(bias_out, std_out)
 
     # Save to file if path provided
     if stat_file_path is not None and bias_out:
