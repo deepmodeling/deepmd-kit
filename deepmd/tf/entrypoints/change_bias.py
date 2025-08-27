@@ -141,17 +141,23 @@ def _change_bias_checkpoint_file(
     checkpoint_path = Path(checkpoint_prefix)
     checkpoint_dir = checkpoint_path.parent
 
-    # Check for valid checkpoint
-    if not (checkpoint_dir / "checkpoint").exists():
+    # Check for valid checkpoint and find the actual checkpoint path
+    checkpoint_state_file = checkpoint_dir / "checkpoint"
+    if not checkpoint_state_file.exists():
         raise RuntimeError(f"No valid checkpoint found in {checkpoint_dir}")
+
+    # Get the latest checkpoint path from the checkpoint state file
+    checkpoint_state = tf.train.get_checkpoint_state(str(checkpoint_dir))
+    if checkpoint_state is None or checkpoint_state.model_checkpoint_path is None:
+        raise RuntimeError(f"No valid checkpoint state found in {checkpoint_dir}")
+
+    # The model_checkpoint_path from get_checkpoint_state is the full path to the checkpoint
+    actual_checkpoint_path = checkpoint_state.model_checkpoint_path
 
     bias_adjust_mode = "change-by-statistic" if mode == "change" else "set-by-statistic"
 
-    # Load data systems for bias calculation (only if not using user-defined bias)
-    if bias_value is None:
-        data = _load_data_systems(datafile, system)
-    else:
-        data = None
+    # Load data systems for bias calculation
+    data = _load_data_systems(datafile, system)
 
     # Read the checkpoint to get the model configuration
     input_json_path = _find_input_json(checkpoint_dir)
@@ -169,7 +175,7 @@ def _change_bias_checkpoint_file(
 
     # Create trainer to access model methods
     run_opt = RunOptions(
-        init_model=str(checkpoint_dir),
+        init_model=actual_checkpoint_path,  # Use the actual checkpoint file path
         restart=None,
         finetune=None,
         init_frz_model=None,
@@ -177,46 +183,55 @@ def _change_bias_checkpoint_file(
     )
 
     trainer = DPTrainer(jdata, run_opt)
-    # Variables are restored from checkpoint through trainer._init_session via saver.restore
 
-    if bias_value is not None:
-        # Use user-defined bias
-        _apply_user_defined_bias(trainer, bias_value)
-    else:
-        # Use data-based bias calculation
-        type_map = data.get_type_map()
-        if len(type_map) == 0:
-            # If data doesn't have type_map, get from model
-            type_map = trainer.model.get_type_map()
+    try:
+        # Build the model graph first, then initialize session and restore variables from checkpoint
+        trainer.build(data, stop_batch=0)
+        trainer._init_session()
 
-        log.info(f"Changing bias for model with type_map: {type_map}")
-        log.info(f"Using bias adjustment mode: {bias_adjust_mode}")
+        if bias_value is not None:
+            # Use user-defined bias
+            _apply_user_defined_bias(trainer, bias_value)
+        else:
+            # Use data-based bias calculation
+            type_map = data.get_type_map()
+            if len(type_map) == 0:
+                # If data doesn't have type_map, get from model
+                type_map = trainer.model.get_type_map()
 
-        # Create a temporary frozen model from the checkpoint
-        with tempfile.NamedTemporaryFile(suffix=".pb", delete=False) as temp_frozen:
-            freeze(
-                checkpoint_folder=str(checkpoint_dir),
-                output=temp_frozen.name,
-            )
+            log.info(f"Changing bias for model with type_map: {type_map}")
+            log.info(f"Using bias adjustment mode: {bias_adjust_mode}")
 
-            # Use the trainer's change energy bias functionality
-            trainer._change_energy_bias(
-                data,
-                temp_frozen.name,  # Use temporary frozen model
-                type_map,
-                bias_adjust_mode=bias_adjust_mode,
-            )
+            # Create a temporary frozen model from the checkpoint with current session state
+            with tempfile.NamedTemporaryFile(suffix=".pb", delete=False) as temp_frozen:
+                freeze(
+                    checkpoint_folder=str(checkpoint_dir),
+                    output=temp_frozen.name,
+                )
 
-            # Clean up temporary file
-            os.unlink(temp_frozen.name)
+                # Use the trainer's change energy bias functionality
+                trainer._change_energy_bias(
+                    data,
+                    temp_frozen.name,  # Use temporary frozen model
+                    type_map,
+                    bias_adjust_mode=bias_adjust_mode,
+                )
 
-    # Save the updated model as a frozen model
-    freeze(
-        checkpoint_folder=str(checkpoint_dir),
-        output=output,
-    )
+                # Clean up temporary file
+                os.unlink(temp_frozen.name)
 
-    log.info(f"Bias changing complete. Model saved to {output}")
+        # Save the updated model as a frozen model
+        freeze(
+            checkpoint_folder=str(checkpoint_dir),
+            output=output,
+        )
+
+        log.info(f"Bias changing complete. Model saved to {output}")
+
+    finally:
+        # Ensure session is properly closed
+        if hasattr(trainer, "sess") and trainer.sess is not None:
+            trainer.sess.close()
 
 
 def _change_bias_frozen_model(
@@ -335,8 +350,21 @@ def _apply_user_defined_bias(trainer: DPTrainer, bias_value: list) -> None:
             "Model does not have bias_atom_e attribute for bias modification"
         )
 
-    # Convert user bias to numpy array with proper shape
-    new_bias = np.array(bias_value, dtype=np.float64).reshape(-1, 1)
+    # Convert user bias to numpy array with proper shape matching the tensor
+    new_bias = np.array(bias_value, dtype=np.float64)
+
+    # Check the shape of the existing bias tensor to match it
+    if hasattr(fitting, "t_bias_atom_e"):
+        existing_shape = fitting.t_bias_atom_e.get_shape().as_list()
+        if len(existing_shape) == 1:
+            # 1D tensor, keep bias as 1D
+            new_bias = new_bias.flatten()
+        else:
+            # 2D tensor, reshape to match
+            new_bias = new_bias.reshape(-1, 1)
+    else:
+        # If no tensor, use the fitting.bias_atom_e shape
+        new_bias = new_bias.reshape(fitting.bias_atom_e.shape)
 
     log.info(f"Changing bias from user-defined values for type_map: {type_map}")
     log.info(f"Old bias: {fitting.bias_atom_e.flatten()}")
