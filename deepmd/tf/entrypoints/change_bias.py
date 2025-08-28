@@ -3,6 +3,7 @@
 
 import logging
 import os
+import shutil
 import tempfile
 from pathlib import (
     Path,
@@ -218,23 +219,28 @@ def _change_bias_checkpoint_file(
             _apply_data_based_bias(trainer, data, type_map, bias_adjust_mode)
 
         # Save the updated variables back to checkpoint format first
-        updated_checkpoint_prefix = str(
-            checkpoint_path.with_name(f"{checkpoint_path.name}_updated")
-        )
+        # Create a separate directory for updated checkpoint to avoid polluting original
+        updated_checkpoint_dir = checkpoint_dir / f"{checkpoint_path.name}_updated"
+        updated_checkpoint_dir.mkdir(exist_ok=True)
+
+        # Copy the input.json file to the new directory
+        updated_input_json_path = updated_checkpoint_dir / "input.json"
+        shutil.copy2(input_json_path, updated_input_json_path)
+
+        updated_checkpoint_prefix = str(updated_checkpoint_dir / checkpoint_path.name)
         if hasattr(trainer, "saver") and trainer.saver is not None:
             log.info(f"Saving updated checkpoint to {updated_checkpoint_prefix}")
             trainer.saver.save(trainer.sess, updated_checkpoint_prefix)
 
-            # Update the checkpoint state file to point to the new checkpoint
-            checkpoint_state_file = checkpoint_dir / "checkpoint"
-            updated_checkpoint_name = f"{checkpoint_path.name}_updated"
-            with open(checkpoint_state_file, "w") as f:
-                f.write(f'model_checkpoint_path: "{updated_checkpoint_name}"\n')
-                f.write(f'all_model_checkpoint_paths: "{updated_checkpoint_name}"\n')
+            # Create a new checkpoint state file in the updated directory
+            updated_checkpoint_state_file = updated_checkpoint_dir / "checkpoint"
+            with open(updated_checkpoint_state_file, "w") as f:
+                f.write(f'model_checkpoint_path: "{checkpoint_path.name}"\n')
+                f.write(f'all_model_checkpoint_paths: "{checkpoint_path.name}"\n')
 
-        # Then save the updated model as a frozen model using the updated checkpoint
+        # Then save the updated model as a frozen model using the updated checkpoint directory
         freeze(
-            checkpoint_folder=str(checkpoint_dir),
+            checkpoint_folder=str(updated_checkpoint_dir),
             output=output,
         )
 
