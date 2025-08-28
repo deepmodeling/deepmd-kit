@@ -85,7 +85,6 @@ def change_bias(
     log_level : int, optional
         The log level for output, by default 0
     """
-    input_path = Path(INPUT)
 
     # Determine input type and handle accordingly
     if INPUT.endswith(".pb"):
