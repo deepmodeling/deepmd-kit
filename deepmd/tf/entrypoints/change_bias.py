@@ -370,10 +370,6 @@ def _apply_data_based_bias(
                 ntest=1,
             )
 
-            log.info(
-                f"Changing bias from {current_bias.flatten()} to {new_bias.flatten()}"
-            )
-
             # Update the bias in the session
             if len(new_bias.shape) == 1:
                 # 1D tensor, keep bias as 1D
