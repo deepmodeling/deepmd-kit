@@ -506,6 +506,16 @@ class DeepEval(DeepEvalBackend):
             "total": sum_param_des + sum_param_fit,
         }
 
+    def get_model(self):
+        """Get the Paddle model module (paddle.nn.Layer).
+
+        Returns
+        -------
+        paddle.nn.Layer
+            The Paddle model module.
+        """
+        return self.dp
+
     def eval_descriptor(
         self,
         coords: np.ndarray,

@@ -706,6 +706,16 @@ class DeepEval(DeepEvalBackend):
             "observed_type": sort_element_type(observed_type_list),
         }
 
+    def get_model(self):
+        """Get the PyTorch model module (nn.Module).
+
+        Returns
+        -------
+        torch.nn.Module
+            The PyTorch model module.
+        """
+        return self.dp
+
     def eval_descriptor(
         self,
         coords: np.ndarray,
