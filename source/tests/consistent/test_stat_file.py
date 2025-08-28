@@ -106,11 +106,11 @@ class TestStatFileConsistency(unittest.TestCase):
 
         # Run training with specified backend using subprocess
         env = os.environ.copy()
-        cmd = ["python", "-m", "deepmd.main", "train", config_file]
+        cmd = ["dp", "train", config_file]
         if backend == "pt":
-            cmd = ["python", "-m", "deepmd.main", "--pt", "train", config_file]
+            cmd = ["dp", "--pt", "train", config_file]
 
-        cmd.extend(["--skip-neighbor-stat", "--log-level", "WARNING"])
+        cmd.extend(["--log-level", "WARNING"])
 
         result = subprocess.run(
             cmd, cwd=temp_dir, capture_output=True, text=True, env=env
@@ -169,8 +169,8 @@ class TestStatFileConsistency(unittest.TestCase):
                 tf_file = tf_subdir / filename
                 pt_file = pt_subdir / filename
 
-                tf_data = np.loadtxt(tf_file)
-                pt_data = np.loadtxt(pt_file)
+                tf_data = np.load(tf_file)
+                pt_data = np.load(pt_file)
 
                 self.assertEqual(
                     tf_data.shape,
