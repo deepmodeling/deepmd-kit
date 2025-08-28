@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
-
-"""Test script for shared_dict functionality in linear models."""
-
 import tempfile
 import unittest
-from pathlib import Path
 
-import torch
-
-from deepmd.pt.model.model.dp_linear_model import LinearEnergyModel
-from deepmd.pt.utils import env
+from deepmd.pt.model.model.dp_linear_model import (
+    LinearEnergyModel,
+)
 
 
 class TestSharedDictLinear(unittest.TestCase):
@@ -69,26 +64,20 @@ class TestSharedDictLinear(unittest.TestCase):
         try:
             # Create the model - this should not raise an error
             model = LinearEnergyModel(**config)
-            print("✓ LinearEnergyModel with shared_dict created successfully")
 
             # Check that shared_links exist
             self.assertTrue(hasattr(model, "shared_links"))
             self.assertIsNotNone(model.shared_links)
-            print("✓ shared_links attribute exists and is not None")
 
             # Check that the model has the expected structure
             self.assertEqual(len(model.atomic_model.models), 2)
-            print("✓ Model has correct number of sub-models")
 
             # Check type map is correctly shared
             for sub_model in model.atomic_model.models:
                 self.assertEqual(sub_model.get_type_map(), ["O", "H"])
-            print("✓ Type map correctly shared across sub-models")
 
         except RuntimeError as e:
             if "statistics of the descriptor has not been computed" in str(e):
-                print("✓ LinearEnergyModel with shared_dict created successfully")
-                print("✓ Parameter sharing attempted (statistics not computed as expected)")
                 # This is expected in test environment - statistics would be computed during training
                 pass
             else:
@@ -144,15 +133,12 @@ class TestSharedDictLinear(unittest.TestCase):
         try:
             # Create the model - this should work as before
             model = LinearEnergyModel(**config)
-            print("✓ Traditional LinearEnergyModel created successfully")
 
             # Check that shared_links is None for traditional models
             self.assertIsNone(model.shared_links)
-            print("✓ shared_links is None for traditional models")
 
             # Check that the model has the expected structure
             self.assertEqual(len(model.atomic_model.models), 2)
-            print("✓ Traditional model has correct number of sub-models")
 
         except Exception as e:
             self.fail(f"Failed to create traditional LinearEnergyModel: {e}")

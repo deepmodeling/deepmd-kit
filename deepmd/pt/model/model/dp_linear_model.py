@@ -68,18 +68,18 @@ class LinearEnergyModel(DPLinearModel_):
                 descriptor_config = model_config["descriptor"]
                 fitting_config = model_config["fitting_net"]
                 model_type_map = model_config["type_map"]
-                
+
                 # Add ntypes and type_map to descriptor config if needed
                 descriptor_config = descriptor_config.copy()
                 if "ntypes" not in descriptor_config:
                     descriptor_config["ntypes"] = len(model_type_map)
                 if "type_map" not in descriptor_config:
                     descriptor_config["type_map"] = model_type_map
-                
+
                 descriptor = BaseDescriptor.get_class_by_type(
                     descriptor_config["type"]
                 )(**descriptor_config)
-                
+
                 # Add required parameters to fitting config
                 fitting_config = fitting_config.copy()
                 if "ntypes" not in fitting_config:
@@ -89,9 +89,12 @@ class LinearEnergyModel(DPLinearModel_):
                 if "type_map" not in fitting_config:
                     fitting_config["type_map"] = model_type_map
                 # Add embedding_width for dipole fitting if needed
-                if fitting_config.get("type") == "dipole" and "embedding_width" not in fitting_config:
+                if (
+                    fitting_config.get("type") == "dipole"
+                    and "embedding_width" not in fitting_config
+                ):
                     fitting_config["embedding_width"] = descriptor.get_dim_emb()
-                
+
                 fitting_net = BaseFitting.get_class_by_type(
                     fitting_config.get("type", "ener")
                 )(**fitting_config)
@@ -129,18 +132,18 @@ class LinearEnergyModel(DPLinearModel_):
                     descriptor_config = model_config["descriptor"]
                     fitting_config = model_config["fitting_net"]
                     model_type_map = model_config.get("type_map", type_map)
-                    
+
                     # Add ntypes and type_map to descriptor config if needed
                     descriptor_config = descriptor_config.copy()
                     if "ntypes" not in descriptor_config:
                         descriptor_config["ntypes"] = len(model_type_map)
                     if "type_map" not in descriptor_config:
                         descriptor_config["type_map"] = model_type_map
-                    
+
                     descriptor = BaseDescriptor.get_class_by_type(
                         descriptor_config["type"]
                     )(**descriptor_config)
-                    
+
                     # Add required parameters to fitting config
                     fitting_config = fitting_config.copy()
                     if "ntypes" not in fitting_config:
@@ -150,9 +153,12 @@ class LinearEnergyModel(DPLinearModel_):
                     if "type_map" not in fitting_config:
                         fitting_config["type_map"] = model_type_map
                     # Add embedding_width for dipole fitting if needed
-                    if fitting_config.get("type") == "dipole" and "embedding_width" not in fitting_config:
+                    if (
+                        fitting_config.get("type") == "dipole"
+                        and "embedding_width" not in fitting_config
+                    ):
                         fitting_config["embedding_width"] = descriptor.get_dim_emb()
-                    
+
                     fitting_net = BaseFitting.get_class_by_type(
                         fitting_config.get("type", "ener")
                     )(**fitting_config)
