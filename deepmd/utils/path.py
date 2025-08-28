@@ -13,7 +13,9 @@ from pathlib import (
 )
 from typing import (
     ClassVar,
+    List,
     Optional,
+    Tuple,
     Union,
 )
 
@@ -35,7 +37,7 @@ class DPPath(ABC):
         mode, by default "r"
     """
 
-    def __new__(cls, path: str, mode: str = "r"):
+    def __new__(cls, path: str, mode: str = "r") -> "DPPath":
         if cls is DPPath:
             if os.path.isdir(path):
                 return super().__new__(DPOSPath)
@@ -115,7 +117,7 @@ class DPPath(ABC):
         """Check if self is directory."""
 
     @abstractmethod
-    def __getnewargs__(self):
+    def __getnewargs__(self) -> Tuple[str, str]:
         """Return the arguments to be passed to __new__ when unpickling an instance."""
 
     @abstractmethod
@@ -133,10 +135,10 @@ class DPPath(ABC):
     def __repr__(self) -> str:
         return f"{type(self)} ({self!s})"
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
         return str(self) == str(other)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(str(self))
 
     @property
@@ -173,7 +175,7 @@ class DPOSPath(DPPath):
         self.mode = mode
         self.path = Path(path)
 
-    def __getnewargs__(self):
+    def __getnewargs__(self) -> Tuple[str, str]:
         return (self.path, self.mode)
 
     def load_numpy(self) -> np.ndarray:
@@ -311,7 +313,7 @@ class DPH5Path(DPPath):
         # h5 path: default is the root path
         self._name = s[1] if len(s) > 1 else "/"
 
-    def __getnewargs__(self):
+    def __getnewargs__(self) -> Tuple[str, str]:
         return (self.root_path, self.mode)
 
     @classmethod
@@ -416,7 +418,7 @@ class DPH5Path(DPPath):
     __file_new_keys: ClassVar[dict[h5py.File, list[str]]] = {}
 
     @property
-    def _new_keys(self):
+    def _new_keys(self) -> List[str]:
         """New keys that haven't been cached."""
         self.__file_new_keys.setdefault(self.root, [])
         return self.__file_new_keys[self.root]

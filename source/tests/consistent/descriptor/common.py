@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
+    Dict,
+    List,
+    Tuple,
 )
 
 import numpy as np
@@ -57,7 +60,15 @@ if INSTALLED_PD:
 class DescriptorTest:
     """Useful utilities for descriptor tests."""
 
-    def build_tf_descriptor(self, obj, natoms, coords, atype, box, suffix):
+    def build_tf_descriptor(
+        self,
+        obj: Any,
+        natoms: np.ndarray,
+        coords: np.ndarray,
+        atype: np.ndarray,
+        box: np.ndarray,
+        suffix: str,
+    ) -> Tuple[List[Any], Dict[Any, np.ndarray]]:
         t_coord = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="i_coord")
         t_type = tf.placeholder(tf.int32, [None], name="i_type")
         t_natoms = tf.placeholder(tf.int32, natoms.shape, name="i_natoms")
@@ -83,7 +94,13 @@ class DescriptorTest:
         }
 
     def eval_dp_descriptor(
-        self, dp_obj: Any, natoms, coords, atype, box, mixed_types: bool = False
+        self,
+        dp_obj: Any,
+        natoms: np.ndarray,
+        coords: np.ndarray,
+        atype: np.ndarray,
+        box: np.ndarray,
+        mixed_types: bool = False,
     ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts(
             coords.reshape(1, -1, 3),
@@ -102,7 +119,13 @@ class DescriptorTest:
         return dp_obj(ext_coords, ext_atype, nlist=nlist, mapping=mapping)
 
     def eval_pt_descriptor(
-        self, pt_obj: Any, natoms, coords, atype, box, mixed_types: bool = False
+        self,
+        pt_obj: Any,
+        natoms: np.ndarray,
+        coords: np.ndarray,
+        atype: np.ndarray,
+        box: np.ndarray,
+        mixed_types: bool = False,
     ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts_pt(
             torch.from_numpy(coords).to(PT_DEVICE).reshape(1, -1, 3),
@@ -124,7 +147,13 @@ class DescriptorTest:
         ]
 
     def eval_jax_descriptor(
-        self, jax_obj: Any, natoms, coords, atype, box, mixed_types: bool = False
+        self,
+        jax_obj: Any,
+        natoms: np.ndarray,
+        coords: np.ndarray,
+        atype: np.ndarray,
+        box: np.ndarray,
+        mixed_types: bool = False,
     ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts(
             jnp.array(coords).reshape(1, -1, 3),
@@ -146,7 +175,13 @@ class DescriptorTest:
         ]
 
     def eval_pd_descriptor(
-        self, pd_obj: Any, natoms, coords, atype, box, mixed_types: bool = False
+        self,
+        pd_obj: Any,
+        natoms: np.ndarray,
+        coords: np.ndarray,
+        atype: np.ndarray,
+        box: np.ndarray,
+        mixed_types: bool = False,
     ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts_pd(
             paddle.to_tensor(coords).to(PD_DEVICE).reshape([1, -1, 3]),
@@ -170,10 +205,10 @@ class DescriptorTest:
     def eval_array_api_strict_descriptor(
         self,
         array_api_strict_obj: Any,
-        natoms,
-        coords,
-        atype,
-        box,
+        natoms: np.ndarray,
+        coords: np.ndarray,
+        atype: np.ndarray,
+        box: np.ndarray,
         mixed_types: bool = False,
     ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts(

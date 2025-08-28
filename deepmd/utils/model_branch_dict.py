@@ -5,11 +5,14 @@ from collections import (
 )
 from typing import (
     Any,
+    Dict,
+    List,
     Optional,
+    Tuple,
 )
 
 
-def get_model_dict(model_dict):
+def get_model_dict(model_dict: Dict[str, Any]) -> Tuple[Dict[str, str], Dict[str, str]]:
     """
     Get the model branch alias dictionary from the model_dict.
 
@@ -71,7 +74,9 @@ class OrderedDictTableWrapper:
     - Missing info values are shown as empty strings.
     """
 
-    def __init__(self, data: "OrderedDict[str, dict[str, Any]]", col_width: int = 30):
+    def __init__(
+        self, data: "OrderedDict[str, dict[str, Any]]", col_width: int = 30
+    ) -> None:
         """
         Initialize the table wrapper.
 
@@ -178,11 +183,11 @@ class OrderedDictTableWrapper:
                 col_widths.append(max(len(line) for cell in col for line in cell))
 
         # Helper: Draw a horizontal separator line
-        def draw_separator():
+        def draw_separator() -> str:
             return "+" + "+".join("-" * (w + 2) for w in col_widths) + "+"
 
         # Helper: Draw one row of text parts (single lines per cell)
-        def draw_row_line(cells_parts):
+        def draw_row_line(cells_parts: List[List[str]]) -> str:
             return (
                 "| "
                 + " | ".join(

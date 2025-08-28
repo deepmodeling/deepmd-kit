@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 from typing import (
+    List,
+    Optional,
+    Tuple,
     Union,
 )
 
@@ -135,7 +138,9 @@ class Spin:
         """
         self.atom_exclude_types_p = self.placeholder_type.tolist()
 
-    def get_pair_exclude_types(self, exclude_types=None) -> list[tuple[int, int]]:
+    def get_pair_exclude_types(
+        self, exclude_types: Optional[List[Tuple[int, int]]] = None
+    ) -> list[tuple[int, int]]:
         """
         Return the pair-wise exclusion types for descriptor.
         The placeholder types for those without spin are excluded.
@@ -151,7 +156,9 @@ class Spin:
                 _exclude_types.append((tt[0], tt[1]))
             return _exclude_types
 
-    def get_atom_exclude_types(self, exclude_types=None) -> list[int]:
+    def get_atom_exclude_types(
+        self, exclude_types: Optional[List[int]] = None
+    ) -> list[int]:
         """
         Return the atom-wise exclusion types for fitting before out_def.
         Both the placeholder types and spin types are excluded.
@@ -164,7 +171,9 @@ class Spin:
             _exclude_types = list(set(_exclude_types))
             return _exclude_types
 
-    def get_atom_exclude_types_placeholder(self, exclude_types=None) -> list[int]:
+    def get_atom_exclude_types_placeholder(
+        self, exclude_types: Optional[List[int]] = None
+    ) -> list[int]:
         """
         Return the atom-wise exclusion types for fitting after out_def.
         The placeholder types for those without spin are excluded.
@@ -177,14 +186,14 @@ class Spin:
             _exclude_types = list(set(_exclude_types))
             return _exclude_types
 
-    def get_spin_mask(self):
+    def get_spin_mask(self) -> np.ndarray:
         """
         Return the spin mask of shape [ntypes],
         with spin types being 1, and non-spin types being 0.
         """
         return self.spin_mask
 
-    def get_virtual_scale_mask(self):
+    def get_virtual_scale_mask(self) -> np.ndarray:
         """
         Return the virtual scale mask of shape [ntypes],
         with spin types being its virtual scale, and non-spin types being 0.
