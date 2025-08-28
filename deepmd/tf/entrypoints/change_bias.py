@@ -217,7 +217,22 @@ def _change_bias_checkpoint_file(
             # Read current bias values from the session (after variables are restored)
             _apply_data_based_bias(trainer, data, type_map, bias_adjust_mode)
 
-        # Save the updated model as a frozen model
+        # Save the updated variables back to checkpoint format first
+        updated_checkpoint_prefix = str(
+            checkpoint_path.with_name(f"{checkpoint_path.name}_updated")
+        )
+        if hasattr(trainer, "saver") and trainer.saver is not None:
+            log.info(f"Saving updated checkpoint to {updated_checkpoint_prefix}")
+            trainer.saver.save(trainer.sess, updated_checkpoint_prefix)
+
+            # Update the checkpoint state file to point to the new checkpoint
+            checkpoint_state_file = checkpoint_dir / "checkpoint"
+            updated_checkpoint_name = f"{checkpoint_path.name}_updated"
+            with open(checkpoint_state_file, "w") as f:
+                f.write(f'model_checkpoint_path: "{updated_checkpoint_name}"\n')
+                f.write(f'all_model_checkpoint_paths: "{updated_checkpoint_name}"\n')
+
+        # Then save the updated model as a frozen model using the updated checkpoint
         freeze(
             checkpoint_folder=str(checkpoint_dir),
             output=output,
