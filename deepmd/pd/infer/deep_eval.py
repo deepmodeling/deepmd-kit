@@ -11,6 +11,9 @@ import numpy as np
 import paddle
 
 from deepmd.dpmodel.common import PRECISION_DICT as NP_PRECISION_DICT
+from deepmd.dpmodel.model.base_model import (
+    BaseModel,
+)
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
     OutputVariableCategory,
@@ -507,14 +510,16 @@ class DeepEval(DeepEvalBackend):
         }
 
     def get_model(self):
-        """Get the Paddle model module (paddle.nn.Layer).
+        """Get the Paddle model as BaseModel.
 
         Returns
         -------
-        paddle.nn.Layer
-            The Paddle model module.
+        BaseModel
+            The Paddle model converted to BaseModel.
         """
-        return self.dp
+        # Convert Paddle model to BaseModel by serializing and deserializing
+        model_dict = self.dp.model["Default"].serialize()
+        return BaseModel.deserialize(model_dict)
 
     def eval_descriptor(
         self,
