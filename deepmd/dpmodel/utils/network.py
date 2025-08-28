@@ -935,7 +935,7 @@ class NetworkCollection:
         self._networks = [None for ii in range(ntypes**ndim)]
         for ii, network in enumerate(networks):
             self[ii] = network
-        if len(networks):
+        if len(networks) and all(net is not None for net in networks):
             self.check_completeness()
 
     def check_completeness(self) -> None:
@@ -969,7 +969,9 @@ class NetworkCollection:
         return self._networks[self._convert_key(key)]
 
     def __setitem__(self, key, value) -> None:
-        if isinstance(value, self.network_type):
+        if value is None:
+            pass
+        elif isinstance(value, self.network_type):
             pass
         elif isinstance(value, dict):
             value = self.network_type.deserialize(value)
@@ -993,7 +995,9 @@ class NetworkCollection:
             "ndim": self.ndim,
             "ntypes": self.ntypes,
             "network_type": network_type_name,
-            "networks": [nn.serialize() for nn in self._networks],
+            "networks": [
+                nn.serialize() if nn is not None else None for nn in self._networks
+            ],
         }
 
     @classmethod

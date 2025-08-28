@@ -1,0 +1,73 @@
+{
+    "model": {
+        "type_map": [
+            "O",
+            "H"
+        ],
+        "descriptor": {
+            "type": "se_e2_a",
+            "sel": [
+                46,
+                92
+            ],
+            "rcut_smth": 3.8,
+            "rcut": 4.0,
+            "neuron": [
+                25,
+                50,
+                100
+            ],
+            "resnet_dt": false,
+            "axis_neuron": 6,
+            "type_one_side": true,
+            "precision": "float64",
+            "seed": 1
+        },
+        "fitting_net": {
+            "type": "dipole",
+            "sel_type": [
+                0
+            ],
+            "neuron": [
+                100,
+                100,
+                100
+            ],
+            "resnet_dt": true,
+            "precision": "float64",
+            "seed": 1
+        }
+    },
+    "learning_rate": {
+        "type": "exp",
+        "start_lr": 0.01,
+        "decay_steps": 5000
+    },
+    "loss": {
+        "type": "tensor",
+        "pref": 1.0,
+        "pref_atomic": 1.0
+    },
+    "training": {
+        "training_data": {
+            "systems": [
+                "./training_data_reformat/atomic_system",
+                "./training_data_reformat/global_system"
+            ],
+            "batch_size": "auto"
+        },
+        "validation_data": {
+            "systems": [
+                "./validation_data_reformat/atomic_system",
+                "./validation_data_reformat/global_system"
+            ],
+            "batch_size": 1,
+            "numb_btch": 3
+        },
+        "numb_steps": 10,
+        "seed": 10,
+        "disp_file": "lcurve.out",
+        "disp_freq": 5,
+        "save_freq": 5
+    }
+}

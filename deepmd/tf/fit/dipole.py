@@ -422,6 +422,7 @@ class DipoleFittingSeA(Fitting):
             "activation_function": self.activation_function_name,
             "precision": self.fitting_precision.name,
             "exclude_types": [],
+            "sel_type": self.sel_type,
             "nets": self.serialize_network(
                 ntypes=self.ntypes,
                 ndim=0 if self.mixed_types else 1,
@@ -434,6 +435,13 @@ class DipoleFittingSeA(Fitting):
                 trainable=self.trainable,
                 suffix=suffix,
             ),
+            "@variables": {
+                "fparam_avg": self.fparam_avg,
+                "fparam_inv_std": self.fparam_inv_std,
+                "aparam_avg": self.aparam_avg,
+                "aparam_inv_std": self.aparam_inv_std,
+                "case_embd": None,
+            },
             "type_map": self.type_map,
         }
         return data
