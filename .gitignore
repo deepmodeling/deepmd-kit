@@ -55,3 +55,4 @@ node_modules/
 test_dp_test/
 test_dp_test_*.out
 *_detail.out
+checkpoint

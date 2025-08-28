@@ -435,6 +435,9 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 
 [tool.pytest.ini_options]
 markers = "run"
+filterwarnings = [
+    "error::pytest.PytestUnhandledThreadExceptionWarning"
+]
 
 [tool.coverage.run]
 plugins = ["source.3rdparty.coverage_plugins.jit_plugin"]
