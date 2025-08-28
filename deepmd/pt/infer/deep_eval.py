@@ -13,9 +13,6 @@ import numpy as np
 import torch
 
 from deepmd.dpmodel.common import PRECISION_DICT as NP_PRECISION_DICT
-from deepmd.dpmodel.model.base_model import (
-    BaseModel,
-)
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
     OutputVariableCategory,
@@ -710,31 +707,14 @@ class DeepEval(DeepEvalBackend):
         }
 
     def get_model(self):
-        """Get the PyTorch model as BaseModel.
+        """Get the PyTorch model.
 
         Returns
         -------
         BaseModel
-            The PyTorch model converted to BaseModel.
+            The PyTorch model instance.
         """
-        # Convert PyTorch model to BaseModel by serializing and deserializing
-        if str(self.model_path).endswith(".pth"):
-            # For JIT models (.pth), we need to reconstruct the original model first
-            from deepmd.pt.model.model import (
-                get_model,
-            )
-
-            # The JIT model should have model_def_script
-            model_def_script = self.model_def_script
-            model = get_model(model_def_script)
-            # Load state dict with strict=False to handle compression info differences
-            model.load_state_dict(self.dp.model["Default"].state_dict(), strict=False)
-            model_dict = model.serialize()
-        else:
-            # For regular models (.pt), we can serialize directly
-            model_dict = self.dp.model["Default"].serialize()
-
-        return BaseModel.deserialize(model_dict)
+        return self.dp.model["Default"]
 
     def eval_descriptor(
         self,

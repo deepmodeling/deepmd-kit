@@ -51,19 +51,23 @@ class TestGetModelMethod(unittest.TestCase):
         model = self.dp.get_model()
 
         if extension == ".pth":
-            # For PyTorch models, should return nn.Module-like object
-            import torch
+            # For PyTorch models, should return the PyTorch BaseModel
+            from deepmd.pt.model.model.model import BaseModel as PTBaseModel
 
-            self.assertTrue(
-                hasattr(model, "forward") or isinstance(model, torch.nn.Module),
-                "PyTorch model should be or behave like nn.Module",
+            self.assertIsInstance(
+                model,
+                PTBaseModel,
+                "PyTorch model should return PyTorch BaseModel instance",
             )
-            # Check if it has model attribute (ModelWrapper)
-            if hasattr(model, "model"):
-                self.assertTrue(
-                    hasattr(model.model, "__getitem__"),
-                    "PyTorch ModelWrapper should have model dict",
-                )
+            # Check if it has common model methods
+            self.assertTrue(
+                hasattr(model, "get_type_map"),
+                "PyTorch BaseModel should have get_type_map method",
+            )
+            self.assertTrue(
+                hasattr(model, "get_rcut"),
+                "PyTorch BaseModel should have get_rcut method",
+            )
         elif extension == ".pb":
             # For TensorFlow models, should return graph
             try:
