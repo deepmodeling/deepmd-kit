@@ -2,7 +2,6 @@
 import itertools
 from typing import (
     Any,
-    Callable,
     NoReturn,
     Optional,
     Union,
@@ -17,6 +16,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.common import (
+    ComputeInputStatsMixin,
     cast_precision,
     to_numpy_array,
 )
@@ -26,9 +26,6 @@ from deepmd.dpmodel.utils import (
     NetworkCollection,
     PairExcludeMask,
 )
-from deepmd.dpmodel.utils.env_mat_stat import (
-    EnvMatStatSe,
-)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
@@ -37,9 +34,6 @@ from deepmd.dpmodel.utils.update_sel import (
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
-)
-from deepmd.utils.path import (
-    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -52,7 +46,7 @@ from .base_descriptor import (
 
 @BaseDescriptor.register("se_e2_a")
 @BaseDescriptor.register("se_a")
-class DescrptSeA(NativeOP, BaseDescriptor):
+class DescrptSeA(NativeOP, BaseDescriptor, ComputeInputStatsMixin):
     r"""DeepPot-SE constructed from all information (both angular and radial) of
     atomic configurations. The embedding takes the distance between atoms as input.
 
@@ -309,41 +303,11 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """Get the name to each type of atoms."""
         return self.type_map
 
-    def compute_input_stats(
-        self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
-    ) -> None:
-        """
-        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+    def _set_stat_mean_and_stddev(self, mean, stddev) -> None:
+        """Set the computed statistics to the descriptor's mean and stddev attributes.
 
-        Parameters
-        ----------
-        merged : Union[Callable[[], list[dict]], list[dict]]
-            - list[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
-                originating from the `i`-th data system.
-            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
-                only when needed. Since the sampling process can be slow and memory-intensive,
-                the lazy function helps by only sampling once.
-        path : Optional[DPPath]
-            The path to the stat file.
-
+        This is the dpmodel backend-specific implementation using array_api_compat.
         """
-        env_mat_stat = EnvMatStatSe(self)
-        if path is not None:
-            path = path / env_mat_stat.get_hash()
-        if path is None or not path.is_dir():
-            if callable(merged):
-                # only get data for once
-                sampled = merged()
-            else:
-                sampled = merged
-        else:
-            sampled = []
-        env_mat_stat.load_or_compute_stats(sampled, path)
-        self.stats = env_mat_stat.stats
-        mean, stddev = env_mat_stat()
         xp = array_api_compat.array_namespace(self.dstd)
         if not self.set_davg_zero:
             self.davg = xp.asarray(mean, dtype=self.davg.dtype, copy=True)

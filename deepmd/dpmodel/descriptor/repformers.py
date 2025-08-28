@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Callable,
     Optional,
     Union,
 )
@@ -16,14 +15,12 @@ from deepmd.dpmodel.array_api import (
     xp_take_along_axis,
 )
 from deepmd.dpmodel.common import (
+    ComputeInputStatsMixin,
     to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
     EnvMat,
     PairExcludeMask,
-)
-from deepmd.dpmodel.utils.env_mat_stat import (
-    EnvMatStatSe,
 )
 from deepmd.dpmodel.utils.network import (
     LayerNorm,
@@ -35,12 +32,6 @@ from deepmd.dpmodel.utils.safe_gradient import (
 )
 from deepmd.dpmodel.utils.seed import (
     child_seed,
-)
-from deepmd.utils.env_mat_stat import (
-    StatItem,
-)
-from deepmd.utils.path import (
-    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -78,7 +69,7 @@ def xp_transpose_01342(x):
 
 @DescriptorBlock.register("se_repformer")
 @DescriptorBlock.register("se_uni")
-class DescrptBlockRepformers(NativeOP, DescriptorBlock):
+class DescrptBlockRepformers(NativeOP, DescriptorBlock, ComputeInputStatsMixin):
     r"""
     The repformer descriptor block.
 
@@ -379,53 +370,15 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
-    def compute_input_stats(
-        self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
-    ) -> None:
-        """
-        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+    def _set_stat_mean_and_stddev(self, mean, stddev) -> None:
+        """Set the computed statistics to the descriptor's mean and stddev attributes.
 
-        Parameters
-        ----------
-        merged : Union[Callable[[], list[dict]], list[dict]]
-            - list[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
-                originating from the `i`-th data system.
-            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
-                only when needed. Since the sampling process can be slow and memory-intensive,
-                the lazy function helps by only sampling once.
-        path : Optional[DPPath]
-            The path to the stat file.
-
+        This is the dpmodel backend-specific implementation using array_api_compat.
         """
-        env_mat_stat = EnvMatStatSe(self)
-        if path is not None:
-            path = path / env_mat_stat.get_hash()
-        if path is None or not path.is_dir():
-            if callable(merged):
-                # only get data for once
-                sampled = merged()
-            else:
-                sampled = merged
-        else:
-            sampled = []
-        env_mat_stat.load_or_compute_stats(sampled, path)
-        self.stats = env_mat_stat.stats
-        mean, stddev = env_mat_stat()
         xp = array_api_compat.array_namespace(self.stddev)
         if not self.set_davg_zero:
             self.mean = xp.asarray(mean, dtype=self.mean.dtype, copy=True)
         self.stddev = xp.asarray(stddev, dtype=self.stddev.dtype, copy=True)
-
-    def get_stats(self) -> dict[str, StatItem]:
-        """Get the statistics of the descriptor."""
-        if self.stats is None:
-            raise RuntimeError(
-                "The statistics of the descriptor has not been computed."
-            )
-        return self.stats
 
     def reinit_exclude(
         self,
