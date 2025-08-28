@@ -1,0 +1,148 @@
+{
+  "_comment": "that's all",
+  "model": {
+    "shared_dict": {
+      "type_map_all": [
+        "O",
+        "H"
+      ],
+      "dpa3_descriptor": {
+        "type": "dpa3",
+        "repflow": {
+          "n_dim": 128,
+          "e_dim": 64,
+          "a_dim": 32,
+          "nlayers": 6,
+          "e_rcut": 6.0,
+          "e_rcut_smth": 5.3,
+          "e_sel": 1200,
+          "a_rcut": 4.0,
+          "a_rcut_smth": 3.5,
+          "a_sel": 300,
+          "axis_neuron": 4,
+          "fix_stat_std": 0.3,
+          "a_compress_rate": 1,
+          "a_compress_e_rate": 2,
+          "a_compress_use_split": true,
+          "update_angle": true,
+          "smooth_edge_update": true,
+          "edge_init_use_dist": true,
+          "use_dynamic_sel": true,
+          "sel_reduce_factor": 10.0,
+          "use_exp_switch": true,
+          "update_style": "res_residual",
+          "update_residual": 0.1,
+          "update_residual_init": "const"
+        },
+        "activation_function": "silut:10.0",
+        "use_tebd_bias": false,
+        "precision": "float32",
+        "concat_output_tebd": false
+      },
+      "shared_fit_with_id": {
+        "neuron": [
+          240,
+          240,
+          240
+        ],
+        "resnet_dt": true,
+        "seed": 1,
+        "dim_case_embd": 2,
+        "_comment": " that's all"
+      },
+      "_comment": "that's all"
+    },
+    "model_dict": {
+      "water_1": {
+        "type_map": "type_map_all",
+        "descriptor": "dpa3_descriptor",
+        "fitting_net": "shared_fit_with_id",
+        "model_branch_alias": ["Default","Water"],
+        "info": {
+            "description": "Water model with DPA3 descriptor and shared fitting net",
+            "observed_type": ["H", "O"]
+        }
+      },
+      "water_2": {
+        "type_map": "type_map_all",
+        "descriptor": "dpa3_descriptor",
+        "fitting_net": "shared_fit_with_id",
+        "model_branch_alias": ["Water2"],
+        "info": {
+            "description": "Water duplicated model with DPA3 descriptor and shared fitting net",
+            "observed_type": ["H", "O"]
+        }
+      }
+    }
+  },
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 5000,
+    "start_lr": 0.001,
+    "stop_lr": 3.51e-08,
+    "_comment": "that's all"
+  },
+  "loss_dict": {
+    "water_1": {
+      "type": "ener",
+      "start_pref_e": 0.02,
+      "limit_pref_e": 1,
+      "start_pref_f": 1000,
+      "limit_pref_f": 1,
+      "start_pref_v": 0,
+      "limit_pref_v": 0
+    },
+    "water_2": {
+      "type": "ener",
+      "start_pref_e": 0.02,
+      "limit_pref_e": 1,
+      "start_pref_f": 1000,
+      "limit_pref_f": 1,
+      "start_pref_v": 0,
+      "limit_pref_v": 0
+    }
+  },
+  "training": {
+    "model_prob": {
+      "water_1": 0.5,
+      "water_2": 0.5
+    },
+    "data_dict": {
+      "water_1": {
+        "training_data": {
+          "systems": [
+            "../../water/data/data_0/",
+            "../../water/data/data_1/",
+            "../../water/data/data_2/"
+          ],
+          "batch_size": 1,
+          "_comment": "that's all"
+        },
+        "validation_data": {
+          "systems": [
+            "../../water/data/data_3/"
+          ],
+          "batch_size": 1,
+          "_comment": "that's all"
+        }
+      },
+      "water_2": {
+        "training_data": {
+          "systems": [
+            "../../water/data/data_0/",
+            "../../water/data/data_1/",
+            "../../water/data/data_2/"
+          ],
+          "batch_size": 1,
+          "_comment": "that's all"
+        }
+      }
+    },
+    "numb_steps": 100000,
+    "seed": 10,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 100,
+    "_comment": "that's all"
+  }
+}

@@ -12,6 +12,9 @@ from deepmd.pt.utils import (
 from deepmd.utils.finetune import (
     FinetuneRuleItem,
 )
+from deepmd.utils.model_branch_dict import (
+    get_model_dict,
+)
 
 log = logging.getLogger(__name__)
 
@@ -44,10 +47,13 @@ def get_finetune_rule_single(
             )
         else:
             model_branch_chosen = model_branch_from
-        assert model_branch_chosen in model_dict_params, (
-            f"No model branch named '{model_branch_chosen}'! "
+        model_alias_dict, model_branch_dict = get_model_dict(model_dict_params)
+        assert model_branch_chosen in model_alias_dict, (
+            f"No model branch or alias named '{model_branch_chosen}'! "
             f"Available ones are {list(model_dict_params.keys())}."
+            f"Use `dp --pt show your_model.pt model-branch` to show detail information."
         )
+        model_branch_chosen = model_alias_dict[model_branch_chosen]
         single_config_chosen = deepcopy(model_dict_params[model_branch_chosen])
     old_type_map, new_type_map = (
         single_config_chosen["type_map"],

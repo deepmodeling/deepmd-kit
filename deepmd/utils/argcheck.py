@@ -40,6 +40,7 @@ PRECISION_DICT = dict.fromkeys(VALID_PRECISION)
 
 doc_only_tf_supported = "(Supported Backend: TensorFlow) "
 doc_only_pt_supported = "(Supported Backend: PyTorch) "
+doc_only_pd_supported = "(Supported Backend: Paddle) "
 # descriptors
 doc_loc_frame = "Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame."
 doc_se_e2_a = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor."
@@ -2305,6 +2306,16 @@ def model_args(exclude_hybrid=False):
 def standard_model_args() -> Argument:
     doc_descrpt = "The descriptor of atomic environment."
     doc_fitting = "The fitting of physical properties."
+    doc_model_branch_alias = (
+        "List of aliases for this model branch. "
+        "Multiple aliases can be defined, and any alias can reference this branch throughout the model usage. "
+        "Used only in multitask models."
+    )
+    doc_info = (
+        "Dictionary of metadata for this model branch. "
+        "Store arbitrary key-value pairs with branch-specific information. "
+        "Used only in multitask models."
+    )
 
     ca = Argument(
         "standard",
@@ -2319,6 +2330,20 @@ def standard_model_args() -> Argument:
                 [],
                 [fitting_variant_type_args()],
                 doc=doc_fitting,
+            ),
+            Argument(
+                "model_branch_alias",
+                list[str],
+                optional=True,
+                default=[],
+                doc=doc_only_pt_supported + doc_model_branch_alias,
+            ),
+            Argument(
+                "info",
+                dict,
+                optional=True,
+                default={},
+                doc=doc_only_pt_supported + doc_info,
             ),
         ],
         doc="Standard model, which contains a descriptor and a fitting.",
@@ -3167,6 +3192,7 @@ def training_args(
     doc_kf_blocksize = "The blocksize for the Kalman filter."
     doc_model_prob = "The visiting probability of each model for each training step in the multi-task mode."
     doc_data_dict = "The multiple definition of the data, used in the multi-task mode."
+    doc_acc_freq = "Gradient accumulation steps (number of steps to accumulate gradients before performing an update)."
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
@@ -3268,6 +3294,13 @@ def training_args(
             float,
             optional=True,
             doc=doc_only_pt_supported + doc_gradient_max_norm,
+        ),
+        Argument(
+            "acc_freq",
+            int,
+            optional=True,
+            default=1,
+            doc=doc_only_pd_supported + doc_acc_freq,
         ),
     ]
     variants = [
