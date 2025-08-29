@@ -357,7 +357,7 @@ class DeepmdData:
         """Get number of atoms."""
         return len(self.atom_type)
 
-    def get_natoms_vec(self, ntypes: int) -> list[int]:
+    def get_natoms_vec(self, ntypes: int) -> np.ndarray:
         """Get number of atoms and number of atoms in different types.
 
         Parameters
@@ -405,7 +405,7 @@ class DeepmdData:
         idx_map = np.lexsort((idx, new_types))
         return idx_map
 
-    def _get_natoms_2(self, ntypes: int) -> list[int]:
+    def _get_natoms_2(self, ntypes: int) -> tuple[int, np.ndarray]:
         sample_type = self.atom_type
         natoms = len(sample_type)
         natoms_vec = np.zeros(ntypes, dtype=np.int64)

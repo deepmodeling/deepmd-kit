@@ -26,6 +26,9 @@ if TYPE_CHECKING:
     from ase import (
         Atoms,
     )
+    from ase.neighborlist import (
+        NeighborList,
+    )
 
 __all__ = ["DP"]
 
@@ -86,8 +89,8 @@ class DP(Calculator):
         model: Union[str, "Path"],
         label: str = "DP",
         type_dict: Optional[dict[str, int]] = None,
-        neighbor_list: Optional[Any] = None,
-        head: Optional[Any] = None,
+        neighbor_list: Optional["NeighborList"] = None,
+        head: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         Calculator.__init__(self, label=label, **kwargs)

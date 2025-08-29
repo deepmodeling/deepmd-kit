@@ -3371,7 +3371,7 @@ def multi_loss_args() -> list[Argument]:
     return loss_dict
 
 
-def make_index(keys: list[str]) -> dict[str, int]:
+def make_index(keys: list[str]) -> str:
     ret = []
     for ii in keys:
         ret.append(make_link(ii, ii))
