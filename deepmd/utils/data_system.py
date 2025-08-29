@@ -49,10 +49,10 @@ class DeepmdDataSystem:
         shuffle_test: bool = True,
         type_map: Optional[list[str]] = None,
         optional_type_map: bool = True,
-        modifier=None,
-        trn_all_set=False,
-        sys_probs=None,
-        auto_prob_style="prob_sys_size",
+        modifier: Optional[Any] = None,
+        trn_all_set: bool = False,
+        sys_probs: Optional[list[float]] = None,
+        auto_prob_style: str = "prob_sys_size",
         sort_atoms: bool = True,
     ) -> None:
         """Constructor.
@@ -269,7 +269,7 @@ class DeepmdDataSystem:
                     f"system {self.system_dirs[ii]} required test size is larger than the size of the dataset {chk_ret[0]} ({self.test_size[ii]} > {chk_ret[1]})"
                 )
 
-    def _load_test(self, ntests=-1) -> None:
+    def _load_test(self, ntests: int = -1) -> None:
         self.test_data = collections.defaultdict(list)
         for ii in range(self.nsystems):
             test_system_data = self.data_systems[ii].get_test(ntests=ntests)
@@ -286,7 +286,9 @@ class DeepmdDataSystem:
             for ii in range(self.nsystems)
         ]
 
-    def compute_energy_shift(self, rcond=None, key="energy"):
+    def compute_energy_shift(
+        self, rcond: Optional[float] = None, key: str = "energy"
+    ) -> tuple[np.ndarray, np.ndarray]:
         sys_ener = []
         for ss in self.data_systems:
             sys_ener.append(ss.avg(key))
@@ -582,7 +584,7 @@ class DeepmdDataSystem:
         test_system_data["default_mesh"] = self.default_mesh[idx]
         return test_system_data
 
-    def get_sys_ntest(self, sys_idx=None):
+    def get_sys_ntest(self, sys_idx: Optional[int] = None) -> int:
         """Get number of tests for the currently selected system,
         or one defined by sys_idx.
         """
@@ -627,7 +629,7 @@ class DeepmdDataSystem:
             [ii.pbc for ii in self.data_systems],
         )
 
-    def _make_auto_bs(self, rule):
+    def _make_auto_bs(self, rule: int) -> list[int]:
         bs = []
         for ii in self.data_systems:
             ni = ii.get_natoms()
@@ -638,7 +640,7 @@ class DeepmdDataSystem:
         return bs
 
     # ! added by Marián Rynik
-    def _make_auto_ts(self, percent):
+    def _make_auto_ts(self, percent: float) -> list[int]:
         ts = []
         for ii in range(self.nsystems):
             ni = self.batch_size[ii] * self.nbatches[ii]
@@ -647,7 +649,9 @@ class DeepmdDataSystem:
 
         return ts
 
-    def _check_type_map_consistency(self, type_map_list):
+    def _check_type_map_consistency(
+        self, type_map_list: list[Optional[list[str]]]
+    ) -> list[str]:
         ret = []
         for ii in type_map_list:
             if ii is not None:
@@ -664,7 +668,7 @@ class DeepmdDataSystem:
         return ret
 
 
-def _format_name_length(name, width):
+def _format_name_length(name: str, width: int) -> str:
     if len(name) <= width:
         return "{: >{}}".format(name, width)
     else:
@@ -734,7 +738,7 @@ def print_summary(
     )
 
 
-def process_sys_probs(sys_probs, nbatch):
+def process_sys_probs(sys_probs: list[float], nbatch: int) -> np.ndarray:
     sys_probs = np.array(sys_probs)
     type_filter = sys_probs >= 0
     assigned_sum_prob = np.sum(type_filter * sys_probs)
@@ -753,7 +757,7 @@ def process_sys_probs(sys_probs, nbatch):
     return ret_prob
 
 
-def prob_sys_size_ext(keywords, nsystems, nbatch):
+def prob_sys_size_ext(keywords: str, nsystems: int, nbatch: int) -> list[float]:
     block_str = keywords.split(";")[1:]
     block_stt = []
     block_end = []
