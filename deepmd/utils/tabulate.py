@@ -243,7 +243,16 @@ class BaseTabulate(ABC):
         return self.lower, self.upper
 
     def _build_lower(
-        self, net, xx, idx, upper, lower, stride0, stride1, extrapolate, nspline
+        self,
+        net: int,
+        xx: np.ndarray,
+        idx: int,
+        upper: float,
+        lower: float,
+        stride0: int,
+        stride1: int,
+        extrapolate: bool,
+        nspline: int,
     ) -> None:
         vv, dd, d2 = self._make_data(xx, idx)
         self.data[net] = np.zeros(
@@ -338,7 +347,9 @@ class BaseTabulate(ABC):
         self.lower[net] = lower
 
     @abstractmethod
-    def _make_data(self, xx, idx) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _make_data(
+        self, xx: np.ndarray, idx: int
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Generate tabulation data for the given input.
 
         Parameters

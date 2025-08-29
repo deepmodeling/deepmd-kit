@@ -3378,7 +3378,13 @@ def make_index(keys: list[str]) -> dict[str, int]:
     return ", ".join(ret)
 
 
-def gen_doc(*, make_anchor=True, make_link=True, multi_task=False, **kwargs) -> str:
+def gen_doc(
+    *,
+    make_anchor: bool = True,
+    make_link: bool = True,
+    multi_task: bool = False,
+    **kwargs: Any,
+) -> str:
     if make_link:
         make_anchor = True
     ptr = []
@@ -3394,7 +3400,7 @@ def gen_doc(*, make_anchor=True, make_link=True, multi_task=False, **kwargs) -> 
     return "\n\n".join(ptr)
 
 
-def gen_json(multi_task: bool = False, **kwargs) -> str:
+def gen_json(multi_task: bool = False, **kwargs: Any) -> str:
     return json.dumps(
         tuple(gen_args(multi_task=multi_task)),
         cls=ArgumentEncoder,

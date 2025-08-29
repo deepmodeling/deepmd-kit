@@ -394,6 +394,11 @@ ignore-init-module-imports = true
 
 exclude = [
     "source/3rdparty/**",
+    "deepmd/tf/**",
+    "deepmd/pt/**",
+    "deepmd/jax/**",
+    "deepmd/pd/**",
+    "deepmd/dpmodel/**",
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -439,6 +444,11 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "deepmd/utils/update_sel.py" = ["ANN401"]  # Allow Any types for flexible sel parsing
 "deepmd/utils/path.py" = ["ANN401"]  # Allow Any types for flexible kwargs in path operations
 "deepmd/utils/model_stat.py" = ["ANN401"]  # Allow Any types for data objects
+"deepmd/utils/tabulate.py" = ["ANN401"]  # Allow Any types for descriptor objects
+"deepmd/utils/argcheck.py" = ["ANN401"]  # Allow Any types for flexible kwargs
+"deepmd/utils/data.py" = ["ANN401"]  # Allow Any types for flexible modifiers
+"deepmd/utils/data_system.py" = ["ANN401"]  # Allow Any types for flexible modifiers
+"deepmd/entrypoints/**" = ["ANN401"]  # Allow Any types for flexible kwargs
 "deepmd/calculator.py" = ["ANN401"]  # Allow Any types for ASE calculator interface
 "deepmd/main.py" = ["ANN401"]  # Allow Any types for argparse interface
 "deepmd/common.py" = ["ANN401"]  # Allow Any types for generic hash function

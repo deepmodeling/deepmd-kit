@@ -7,6 +7,7 @@ from pathlib import (
 )
 from typing import (
     TYPE_CHECKING,
+    Any,
     Optional,
 )
 
@@ -66,7 +67,7 @@ def test(
     detail_file: str,
     atomic: bool,
     head: Optional[str] = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> None:
     """Test model predictions.
 
@@ -935,7 +936,9 @@ def print_property_sys_avg(avg: dict[str, float]) -> None:
     log.info(f"PROPERTY RMSE           : {avg['rmse_property']:e} units")
 
 
-def run_test(dp: "DeepTensor", test_data: dict, numb_test: int, test_sys: DeepmdData):
+def run_test(
+    dp: "DeepTensor", test_data: dict, numb_test: int, test_sys: DeepmdData
+) -> dict:
     """Run tests.
 
     Parameters
@@ -1019,7 +1022,7 @@ def test_wfc(
     return {"rmse": (rmse_f, wfc.size)}
 
 
-def print_wfc_sys_avg(avg) -> None:
+def print_wfc_sys_avg(avg: dict) -> None:
     """Print errors summary for wfc type potential.
 
     Parameters
@@ -1161,7 +1164,7 @@ def test_polar(
     return {"rmse": (rmse_f, polar.size)}
 
 
-def print_polar_sys_avg(avg) -> None:
+def print_polar_sys_avg(avg: dict) -> None:
     """Print errors summary for polar type potential.
 
     Parameters
@@ -1275,7 +1278,7 @@ def test_dipole(
     return {"rmse": (rmse_f, dipole.size)}
 
 
-def print_dipole_sys_avg(avg) -> None:
+def print_dipole_sys_avg(avg: dict) -> None:
     """Print errors summary for dipole type potential.
 
     Parameters

@@ -55,7 +55,7 @@ class DeepmdData:
         shuffle_test: bool = True,
         type_map: Optional[list[str]] = None,
         optional_type_map: bool = True,
-        modifier=None,
+        modifier: Optional[Any] = None,
         trn_all_set: bool = False,
         sort_atoms: bool = True,
     ) -> None:
@@ -596,19 +596,19 @@ class DeepmdData:
 
     def _load_data(
         self,
-        set_name,
-        key,
-        nframes,
-        ndof_,
-        atomic=False,
-        must=True,
-        repeat=1,
-        high_prec=False,
-        type_sel=None,
+        set_name: str,
+        key: str,
+        nframes: int,
+        ndof_: int,
+        atomic: bool = False,
+        must: bool = True,
+        repeat: int = 1,
+        high_prec: bool = False,
+        type_sel: Optional[list[int]] = None,
         default: float = 0.0,
         dtype: Optional[np.dtype] = None,
         output_natoms_for_type_sel: bool = False,
-    ):
+    ) -> np.ndarray:
         if atomic:
             natoms = self.natoms
             idx_map = self.idx_map

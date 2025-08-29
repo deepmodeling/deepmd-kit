@@ -396,7 +396,7 @@ class DeepmdDataSystem:
                 output_natoms_for_type_sel=output_natoms_for_type_sel,
             )
 
-    def reduce(self, key_out, key_in) -> None:
+    def reduce(self, key_out: str, key_in: str) -> None:
         """Generate a new item from the reduction of another atom.
 
         Parameters
@@ -413,7 +413,9 @@ class DeepmdDataSystem:
         return self.data_systems[ii].get_data_dict()
 
     def set_sys_probs(
-        self, sys_probs=None, auto_prob_style: str = "prob_sys_size"
+        self,
+        sys_probs: Optional[list[float]] = None,
+        auto_prob_style: str = "prob_sys_size",
     ) -> None:
         if sys_probs is None:
             if auto_prob_style == "prob_uniform":
@@ -559,7 +561,9 @@ class DeepmdDataSystem:
         return b_data
 
     # ! altered by Marián Rynik
-    def get_test(self, sys_idx: Optional[int] = None, n_test: int = -1):  # depreciated
+    def get_test(
+        self, sys_idx: Optional[int] = None, n_test: int = -1
+    ) -> dict[str, np.ndarray]:  # depreciated
         """Get test data from the the data systems.
 
         Parameters
@@ -811,7 +815,11 @@ def process_systems(
 
 
 def get_data(
-    jdata: dict[str, Any], rcut, type_map, modifier, multi_task_mode=False
+    jdata: dict[str, Any],
+    rcut: float,
+    type_map: Optional[list[str]],
+    modifier: Optional[Any],
+    multi_task_mode: bool = False,
 ) -> DeepmdDataSystem:
     """Get the data system.
 
