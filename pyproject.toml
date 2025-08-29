@@ -376,6 +376,7 @@ select = [
 ]
 
 ignore = [
+    "ANN401", # Allow Any due to too many violations
     "E501", # line too long
     "F841", # local variable is assigned to but never used
     "E741", # ambiguous variable name
@@ -394,11 +395,6 @@ ignore-init-module-imports = true
 
 exclude = [
     "source/3rdparty/**",
-    "deepmd/tf/**",
-    "deepmd/pt/**",
-    "deepmd/jax/**",
-    "deepmd/pd/**",
-    "deepmd/dpmodel/**",
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -424,10 +420,12 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 
 [tool.ruff.lint.extend-per-file-ignores]
 # Also ignore `E402` in all `__init__.py` files.
-"deepmd/tf/**" = ["TID253"]
-"deepmd/pt/**" = ["TID253"]
-"deepmd/jax/**" = ["TID253"]
-"deepmd/pd/**" = ["TID253"]
+"source/3rdparty/**" = ["ALL"]
+"deepmd/tf/**" = ["TID253", "ANN"]
+"deepmd/pt/**" = ["TID253", "ANN"]
+"deepmd/jax/**" = ["TID253", "ANN"]
+"deepmd/pd/**" = ["TID253", "ANN"]
+"deepmd/dpmodel/**" = ["ANN"]
 "source/tests/tf/**" = ["TID253"]
 "source/tests/pt/**" = ["TID253"]
 "source/tests/jax/**" = ["TID253"]
@@ -438,22 +436,6 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "source/ipi/tests/**" = ["TID253"]
 "source/lmp/tests/**" = ["TID253"]
 "**/*.ipynb" = ["T20"]  # printing in a nb file is expected
-"deepmd/utils/plugin.py" = ["ANN401"]  # Allow Any types for metaclass
-"deepmd/utils/batch_size.py" = ["ANN401"]  # Allow Any types for generic execute_all
-"deepmd/utils/model_branch_dict.py" = ["ANN401"]  # Allow Any types for flexible table formatting
-"deepmd/utils/update_sel.py" = ["ANN401"]  # Allow Any types for flexible sel parsing
-"deepmd/utils/path.py" = ["ANN401"]  # Allow Any types for flexible kwargs in path operations
-"deepmd/utils/model_stat.py" = ["ANN401"]  # Allow Any types for data objects
-"deepmd/utils/tabulate.py" = ["ANN401"]  # Allow Any types for descriptor objects
-"deepmd/utils/argcheck.py" = ["ANN401"]  # Allow Any types for flexible kwargs
-"deepmd/utils/data.py" = ["ANN401"]  # Allow Any types for flexible modifiers
-"deepmd/utils/data_system.py" = ["ANN401"]  # Allow Any types for flexible modifiers
-"deepmd/entrypoints/**" = ["ANN401"]  # Allow Any types for flexible kwargs
-"deepmd/calculator.py" = ["ANN401"]  # Allow Any types for ASE calculator interface
-"deepmd/main.py" = ["ANN401"]  # Allow Any types for argparse interface
-"deepmd/common.py" = ["ANN401"]  # Allow Any types for generic hash function
-"deepmd/__init__.py" = ["ANN401"]  # Allow Any types for factory function
-"source/tests/consistent/descriptor/common.py" = ["ANN401"]  # Allow Any types for test interfaces
 
 [tool.pytest.ini_options]
 markers = "run"
