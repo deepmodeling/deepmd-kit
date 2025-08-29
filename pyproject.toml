@@ -440,6 +440,7 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "deepmd/utils/path.py" = ["ANN401"]  # Allow Any types for flexible kwargs in path operations
 "deepmd/utils/model_stat.py" = ["ANN401"]  # Allow Any types for data objects
 "deepmd/calculator.py" = ["ANN401"]  # Allow Any types for ASE calculator interface
+"deepmd/main.py" = ["ANN401"]  # Allow Any types for argparse interface
 "deepmd/common.py" = ["ANN401"]  # Allow Any types for generic hash function
 "deepmd/__init__.py" = ["ANN401"]  # Allow Any types for factory function
 "source/tests/consistent/descriptor/common.py" = ["ANN401"]  # Allow Any types for test interfaces
