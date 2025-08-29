@@ -291,6 +291,7 @@ def test_ener(
 
     data.add("energy", 1, atomic=False, must=False, high_prec=True)
     data.add("force", 3, atomic=True, must=False, high_prec=False)
+    data.add("atom_pref", 1, atomic=True, must=False, high_prec=False, repeat=3)
     data.add("virial", 9, atomic=False, must=False, high_prec=False)
     if dp.has_efield:
         data.add("efield", 3, atomic=True, must=True, high_prec=False)
@@ -313,6 +314,7 @@ def test_ener(
     find_force = test_data.get("find_force")
     find_virial = test_data.get("find_virial")
     find_force_mag = test_data.get("find_force_mag")
+    find_atom_pref = test_data.get("find_atom_pref")
     mixed_type = data.mixed_type
     natoms = len(test_data["type"][0])
     nframes = test_data["box"].shape[0]
@@ -419,6 +421,16 @@ def test_ener(
     diff_f = force - test_data["force"][:numb_test]
     mae_f = mae(diff_f)
     rmse_f = rmse(diff_f)
+    size_f = diff_f.size
+    if find_atom_pref == 1:
+        atom_weight = test_data["atom_pref"][:numb_test]
+        weight_sum = np.sum(atom_weight)
+        if weight_sum > 0:
+            mae_fw = np.sum(np.abs(diff_f) * atom_weight) / weight_sum
+            rmse_fw = np.sqrt(np.sum(diff_f * diff_f * atom_weight) / weight_sum)
+        else:
+            mae_fw = 0.0
+            rmse_fw = 0.0
     diff_v = virial - test_data["virial"][:numb_test]
     mae_v = mae(diff_v)
     rmse_v = rmse(diff_v)
@@ -453,8 +465,13 @@ def test_ener(
     if not out_put_spin and find_force == 1:
         log.info(f"Force  MAE         : {mae_f:e} eV/A")
         log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
-        dict_to_return["mae_f"] = (mae_f, force.size)
-        dict_to_return["rmse_f"] = (rmse_f, force.size)
+        dict_to_return["mae_f"] = (mae_f, size_f)
+        dict_to_return["rmse_f"] = (rmse_f, size_f)
+        if find_atom_pref == 1:
+            log.info(f"Force weighted MAE : {mae_fw:e} eV/A")
+            log.info(f"Force weighted RMSE: {rmse_fw:e} eV/A")
+            dict_to_return["mae_fw"] = (mae_fw, weight_sum)
+            dict_to_return["rmse_fw"] = (rmse_fw, weight_sum)
     if out_put_spin and find_force == 1:
         log.info(f"Force atom MAE      : {mae_fr:e} eV/A")
         log.info(f"Force atom RMSE     : {rmse_fr:e} eV/A")
@@ -600,6 +617,9 @@ def print_ener_sys_avg(avg: dict[str, float]) -> None:
     if "rmse_f" in avg:
         log.info(f"Force  MAE         : {avg['mae_f']:e} eV/A")
         log.info(f"Force  RMSE        : {avg['rmse_f']:e} eV/A")
+        if "rmse_fw" in avg:
+            log.info(f"Force weighted MAE : {avg['mae_fw']:e} eV/A")
+            log.info(f"Force weighted RMSE: {avg['rmse_fw']:e} eV/A")
     else:
         log.info(f"Force atom MAE      : {avg['mae_fr']:e} eV/A")
         log.info(f"Force spin MAE      : {avg['mae_fm']:e} eV/uB")
