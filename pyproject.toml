@@ -424,7 +424,6 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "backend/**" = ["ANN"]
 "data/**" = ["ANN"]
 "deepmd/tf/**" = ["TID253", "ANN"]
-"deepmd/pt/**" = ["TID253", "ANN"]
 "deepmd/jax/**" = ["TID253", "ANN"]
 "deepmd/pd/**" = ["TID253", "ANN"]
 "deepmd/dpmodel/**" = ["ANN"]
@@ -442,6 +441,8 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "**/tests/**/test_*.py" = ["ANN"]
 "**/tests/**/*_test.py" = ["ANN"]
 "**/*.ipynb" = ["T20"]  # printing in a nb file is expected
+# PyTorch backend: general exclusion for files that still need ANN fixes
+"deepmd/pt/**" = ["TID253", "ANN"]
 
 [tool.pytest.ini_options]
 markers = "run"
