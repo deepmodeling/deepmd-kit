@@ -6,6 +6,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Any,
     Callable,
 )
 
@@ -145,7 +146,12 @@ class AutoBatchSize(ABC):
         )
 
     def execute_all(
-        self, callable: Callable, total_size: int, natoms: int, *args, **kwargs
+        self,
+        callable: Callable,
+        total_size: int,
+        natoms: int,
+        *args: Any,
+        **kwargs: Any,
     ) -> tuple[np.ndarray]:
         """Excuate a method with all given data.
 

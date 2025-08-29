@@ -433,6 +433,12 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "source/ipi/tests/**" = ["TID253"]
 "source/lmp/tests/**" = ["TID253"]
 "**/*.ipynb" = ["T20"]  # printing in a nb file is expected
+"deepmd/utils/plugin.py" = ["ANN401"]  # Allow Any types for metaclass
+"deepmd/utils/batch_size.py" = ["ANN401"]  # Allow Any types for generic execute_all
+"deepmd/utils/model_branch_dict.py" = ["ANN401"]  # Allow Any types for flexible table formatting
+"deepmd/utils/update_sel.py" = ["ANN401"]  # Allow Any types for flexible sel parsing
+"deepmd/common.py" = ["ANN401"]  # Allow Any types for generic hash function
+"deepmd/__init__.py" = ["ANN401"]  # Allow Any types for factory function
 
 [tool.pytest.ini_options]
 markers = "run"
