@@ -4,7 +4,9 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Dict,
     NoReturn,
+    Union,
 )
 
 import torch
@@ -22,7 +24,14 @@ class TaskLoss(torch.nn.Module, ABC, make_plugin_registry("loss")):
         """Construct loss."""
         super().__init__()
 
-    def forward(self, input_dict, model, label, natoms, learning_rate) -> NoReturn:
+    def forward(
+        self,
+        input_dict: Dict[str, torch.Tensor],
+        model: torch.nn.Module,
+        label: Dict[str, torch.Tensor],
+        natoms: int,
+        learning_rate: Union[float, torch.Tensor],
+    ) -> NoReturn:
         """Return loss ."""
         raise NotImplementedError
 
