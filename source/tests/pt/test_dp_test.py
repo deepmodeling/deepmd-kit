@@ -51,10 +51,10 @@ class DPTest:
             val_sys = val_sys[0]
         dp_test(
             model=tmp_model.name,
-            system=val_sys,
+            system=None if use_input_json else val_sys,
             datafile=None,
-            input_json=self.input_json if use_input_json else None,
-            use_train=use_train,
+            train_json=self.input_json if use_input_json and use_train else None,
+            valid_json=self.input_json if use_input_json and not use_train else None,
             set_prefix="set",
             numb_test=numb_test,
             rand_seed=None,
@@ -191,9 +191,9 @@ class TestDPTestSeARglob(unittest.TestCase):
         torch.jit.save(model, tmp_model.name)
         dp_test(
             model=tmp_model.name,
-            system=self.config["training"]["validation_data"]["systems"],
+            system=None,
             datafile=None,
-            input_json=self.input_json,
+            valid_json=self.input_json,
             set_prefix="set",
             numb_test=1,
             rand_seed=None,
@@ -246,10 +246,9 @@ class TestDPTestSeARglobTrain(unittest.TestCase):
         torch.jit.save(model, tmp_model.name)
         dp_test(
             model=tmp_model.name,
-            system=self.config["training"]["validation_data"]["systems"],
+            system=None,
             datafile=None,
-            input_json=self.input_json,
-            use_train=True,
+            train_json=self.input_json,
             set_prefix="set",
             numb_test=1,
             rand_seed=None,
