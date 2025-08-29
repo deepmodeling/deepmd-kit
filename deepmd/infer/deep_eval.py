@@ -9,7 +9,6 @@ from typing import (
     ClassVar,
     Optional,
     Union,
-    tuple,
 )
 
 import numpy as np
