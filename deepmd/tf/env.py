@@ -14,7 +14,6 @@ from pathlib import (
 )
 from typing import (
     TYPE_CHECKING,
-    Any,
 )
 
 import numpy as np
@@ -84,7 +83,7 @@ FILTER_MSGS = [
 
 
 class TFWarningFilter(logging.Filter):
-    def filter(self, record) -> bool:
+    def filter(self, record: logging.LogRecord) -> bool:
         return not any(msg in record.getMessage().strip() for msg in FILTER_MSGS)
 
 
@@ -255,7 +254,7 @@ def set_mkl() -> None:
         reload(np)
 
 
-def get_tf_session_config() -> Any:
+def get_tf_session_config() -> tf.ConfigProto:
     """Configure tensorflow session.
 
     Returns

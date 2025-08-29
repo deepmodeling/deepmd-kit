@@ -3,6 +3,7 @@ import json
 import logging
 from typing import (
     Any,
+    Tuple,
 )
 
 from deepmd.tf.utils.errors import (
@@ -17,7 +18,7 @@ log = logging.getLogger(__name__)
 
 def replace_model_params_with_pretrained_model(
     jdata: dict[str, Any], pretrained_model: str
-):
+) -> Tuple[dict[str, Any], list[str]]:
     """Replace the model params in input script according to pretrained model.
 
     Parameters

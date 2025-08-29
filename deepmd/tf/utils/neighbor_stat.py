@@ -5,6 +5,7 @@ from collections.abc import (
 )
 from typing import (
     Optional,
+    Tuple,
 )
 
 import numpy as np
@@ -254,7 +255,7 @@ class NeighborStat(BaseNeighborStat):
         atype: np.ndarray,
         box: Optional[np.ndarray],
         pbc: bool,
-    ):
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Execute the operation.
 
         Parameters

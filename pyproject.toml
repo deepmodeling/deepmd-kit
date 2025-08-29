@@ -423,7 +423,27 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "source/3rdparty/**" = ["ALL"]
 "backend/**" = ["ANN"]
 "data/**" = ["ANN"]
-"deepmd/tf/**" = ["TID253", "ANN"]
+# TensorFlow backend - Type annotations partially complete
+# Files with completed type annotations are not ignored
+# Files still needing work are specifically ignored
+"deepmd/tf/**" = ["TID253"]  # Remove ANN ignore to enable type checking
+"deepmd/tf/model/**" = ["TID253", "ANN"]  # Large module - 1216 issues
+"deepmd/tf/descriptor/**" = ["TID253", "ANN"]  # Large module - 3515 issues
+"deepmd/tf/fit/**" = ["TID253", "ANN"]  # Large module - 885 issues
+"deepmd/tf/utils/network.py" = ["TID253", "ANN"]  # Large file - 575 issues
+"deepmd/tf/utils/compress.py" = ["TID253", "ANN"]  # Large file - 241 issues
+"deepmd/tf/utils/tabulate.py" = ["TID253", "ANN"]  # Large file - 166 issues
+"deepmd/tf/utils/nlist.py" = ["TID253", "ANN"]  # Medium file - 97 issues
+"deepmd/tf/utils/type_embed.py" = ["TID253", "ANN"]  # Medium file - 88 issues
+"deepmd/tf/train/**" = ["TID253", "ANN"]  # Training module
+"deepmd/tf/infer/**" = ["TID253", "ANN"]  # Inference module
+"deepmd/tf/entrypoints/**" = ["TID253", "ANN"]  # Entry points
+"deepmd/tf/loss/**" = ["TID253", "ANN"]  # Loss functions
+"deepmd/tf/cluster/**" = ["TID253", "ANN"]  # Cluster utilities
+"deepmd/tf/nvnmd/**" = ["TID253", "ANN"]  # NVNMD specific
+"deepmd/tf/modifier/**" = ["TID253", "ANN"]  # Modifiers
+"deepmd/tf/loggers/**" = ["TID253", "ANN"]  # Logging
+"deepmd/tf/op/**" = ["TID253", "ANN"]  # Operations
 "deepmd/pt/**" = ["TID253", "ANN"]
 "deepmd/jax/**" = ["TID253", "ANN"]
 "deepmd/pd/**" = ["TID253", "ANN"]
