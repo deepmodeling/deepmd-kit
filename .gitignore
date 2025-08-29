@@ -50,3 +50,8 @@ uv.lock
 buildcxx/
 node_modules/
 *.bib.original
+
+# Test output files (temporary)
+test_dp_test/
+test_dp_test_*.out
+*_detail.out

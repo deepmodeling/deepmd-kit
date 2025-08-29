@@ -166,8 +166,13 @@ class TestMultiTaskModel(unittest.TestCase):
         with redirect_stderr(io.StringIO()) as f:
             run_dp(f"dp --pt show {INPUT} {ATTRIBUTES}")
         results = [
-            res for res in f.getvalue().split("\n")[:-1] if "DEEPMD WARNING" not in res
-        ]  # filter out warnings
+            res
+            for res in f.getvalue().split("\n")[:-1]
+            if "DEEPMD WARNING" not in res
+            and "|" not in res
+            and "+-" not in res
+            and "Detailed information" not in res
+        ]  # filter out warnings and tables
         assert "This is a multitask model" in results[0]
         assert (
             "Available model branches are ['model_1', 'model_2', 'RANDOM'], "

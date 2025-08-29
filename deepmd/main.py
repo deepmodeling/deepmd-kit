@@ -430,6 +430,56 @@ def main_parser() -> argparse.ArgumentParser:
         help="(Supported backend: PyTorch) Task head (alias: model branch) to test if in multi-task mode.",
     )
 
+    # * eval_desc script ***************************************************************
+    parser_eval_desc = subparsers.add_parser(
+        "eval-desc",
+        parents=[parser_log],
+        help="evaluate descriptors using the model",
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+        examples:
+            dp eval-desc -m graph.pb -s /path/to/system -o desc
+        """
+        ),
+    )
+    parser_eval_desc.add_argument(
+        "-m",
+        "--model",
+        default="frozen_model",
+        type=str,
+        help="Frozen model file (prefix) to import. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth.",
+    )
+    parser_eval_desc_subgroup = parser_eval_desc.add_mutually_exclusive_group()
+    parser_eval_desc_subgroup.add_argument(
+        "-s",
+        "--system",
+        default=".",
+        type=str,
+        help="The system dir. Recursively detect systems in this directory",
+    )
+    parser_eval_desc_subgroup.add_argument(
+        "-f",
+        "--datafile",
+        default=None,
+        type=str,
+        help="The path to the datafile, each line of which is a path to one data system.",
+    )
+    parser_eval_desc.add_argument(
+        "-o",
+        "--output",
+        default="desc",
+        type=str,
+        help="Output directory for descriptor files. Descriptors will be saved as desc/(system_name).npy",
+    )
+    parser_eval_desc.add_argument(
+        "--head",
+        "--model-branch",
+        default=None,
+        type=str,
+        help="(Supported backend: PyTorch) Task head (alias: model branch) to use if in multi-task mode.",
+    )
+
     # * compress model *****************************************************************
     # Compress a model, which including tabulating the embedding-net.
     # The table is composed of fifth-order polynomial coefficients and is assembled
@@ -923,6 +973,7 @@ def main(args: Optional[list[str]] = None) -> None:
 
     if args.command in (
         "test",
+        "eval-desc",
         "doc-train-input",
         "model-devi",
         "neighbor-stat",

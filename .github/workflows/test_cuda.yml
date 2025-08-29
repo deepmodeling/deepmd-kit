@@ -25,15 +25,11 @@ jobs:
     steps:
     - name: Make sudo and git work
       run: apt-get update && apt-get install -y sudo git
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
         # cache: 'pip'
-    - name: Setup MPI
-      uses: mpi4py/setup-mpi@v1
-      with:
-        mpi: mpich
     - name: Install wget and unzip
       run: apt-get update && apt-get install -y wget unzip
     - uses: lukka/get-cmake@latest
@@ -50,7 +46,7 @@ jobs:
     - run: source/install/uv_with_retry.sh pip install --system "tensorflow~=2.18.0rc2" "torch~=2.7.0" "jax[cuda12]==0.5.0"
     - run: |
         export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
-        export TENSORFLOW_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
+        export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
         pip install "paddlepaddle-gpu==3.0.0" -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
         source/install/uv_with_retry.sh pip install --system -v -e .[gpu,test,lmp,cu12,torch,jax] mpi4py --reinstall-package deepmd-kit
       env:
@@ -74,7 +70,6 @@ jobs:
         OMP_NUM_THREADS: 1
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
-        LMP_CXX11_ABI_0: 1
         CMAKE_GENERATOR: Ninja
         DP_VARIANT: cuda
         DP_USE_MPICH2: 1

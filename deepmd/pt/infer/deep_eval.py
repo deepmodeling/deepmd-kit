@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+import logging
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -67,9 +68,14 @@ from deepmd.pt.utils.utils import (
 from deepmd.utils.econf_embd import (
     sort_element_type,
 )
+from deepmd.utils.model_branch_dict import (
+    get_model_dict,
+)
 
 if TYPE_CHECKING:
     import ase.neighborlist
+
+log = logging.getLogger(__name__)
 
 
 class DeepEval(DeepEvalBackend):
@@ -83,7 +89,7 @@ class DeepEval(DeepEvalBackend):
         The output definition of the model.
     *args : list
         Positional arguments.
-    auto_batch_size : bool or int or AutomaticBatchSize, default: False
+    auto_batch_size : bool or int or AutomaticBatchSize, default: True
         If True, automatic batch size will be used. If int, it will be used
         as the initial batch size.
     neighbor_list : ase.neighborlist.NewPrimitiveNeighborList, optional
@@ -116,15 +122,36 @@ class DeepEval(DeepEvalBackend):
             self.model_def_script = self.input_param
             self.multi_task = "model_dict" in self.input_param
             if self.multi_task:
+                model_alias_dict, model_branch_dict = get_model_dict(
+                    self.input_param["model_dict"]
+                )
                 model_keys = list(self.input_param["model_dict"].keys())
+                if head is None and "Default" in model_alias_dict:
+                    head = "Default"
+                    log.info(
+                        f"Using default head {model_alias_dict[head]} for multitask model."
+                    )
                 if isinstance(head, int):
                     head = model_keys[0]
                 assert head is not None, (
-                    f"Head must be set for multitask model! Available heads are: {model_keys}"
+                    f"Head must be set for multitask model! Available heads are: {model_keys}, "
+                    f"use `dp --pt show your_model.pt model-branch` to show detail information."
                 )
-                assert head in model_keys, (
-                    f"No head named {head} in model! Available heads are: {model_keys}"
+                if head not in model_alias_dict:
+                    # preprocess with potentially case-insensitive input
+                    head_lower = head.lower()
+                    for mk in model_alias_dict:
+                        if mk.lower() == head_lower:
+                            # mapped the first matched head
+                            head = mk
+                            break
+                # replace with alias
+                assert head in model_alias_dict, (
+                    f"No head or alias named {head} in model! Available heads are: {model_keys},"
+                    f"use `dp --pt show your_model.pt model-branch` to show detail information."
                 )
+                head = model_alias_dict[head]
+
                 self.input_param = self.input_param["model_dict"][head]
                 state_dict_head = {"_extra_state": state_dict["_extra_state"]}
                 for item in state_dict:
@@ -252,6 +279,17 @@ class DeepEval(DeepEvalBackend):
     def get_has_hessian(self):
         """Check if the model has hessian."""
         return self._has_hessian
+
+    def get_model_branch(self):
+        """Get the model branch information."""
+        if "model_dict" in self.model_def_script:
+            model_alias_dict, model_branch_dict = get_model_dict(
+                self.model_def_script["model_dict"]
+            )
+            return model_alias_dict, model_branch_dict
+        else:
+            # single-task model
+            return {"Default": "Default"}, {"Default": {"alias": [], "info": {}}}
 
     def eval(
         self,

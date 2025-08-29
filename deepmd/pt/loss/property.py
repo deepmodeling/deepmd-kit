@@ -42,7 +42,7 @@ class PropertyLoss(TaskLoss):
         var_name : str
             The atomic property to fit, 'energy', 'dipole', and 'polar'.
         loss_func : str
-            The loss function, such as "smooth_mae", "mae", "rmse".
+            The loss function, such as "smooth_mae", "mae", "rmse", "mape".
         metric : list
             The metric such as mae, rmse which will be printed.
         beta : float
@@ -151,6 +151,12 @@ class PropertyLoss(TaskLoss):
                     reduction="mean",
                 )
             )
+        elif self.loss_func == "mape":
+            loss += torch.mean(
+                torch.abs(
+                    (label[var_name] - model_pred[var_name]) / (label[var_name] + 1e-3)
+                )
+            )
         else:
             raise RuntimeError(f"Unknown loss function : {self.loss_func}")
 
@@ -180,6 +186,12 @@ class PropertyLoss(TaskLoss):
                     label[var_name],
                     model_pred[var_name],
                     reduction="mean",
+                )
+            ).detach()
+        if "mape" in self.metric:
+            more_loss["mape"] = torch.mean(
+                torch.abs(
+                    (label[var_name] - model_pred[var_name]) / (label[var_name] + 1e-3)
                 )
             ).detach()
 

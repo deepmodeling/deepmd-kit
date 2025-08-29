@@ -46,7 +46,16 @@ def forward_common_atomic(
         atom_axis = -(len(shap) + 1)
         if vdef.reducible:
             kk_redu = get_reduce_name(kk)
-            model_predict[kk_redu] = jnp.sum(vv, axis=atom_axis)
+            if vdef.intensive:
+                mask = atomic_ret["mask"] if "mask" in atomic_ret else None
+                if mask is not None:
+                    model_predict[kk_redu] = jnp.sum(vv, axis=atom_axis) / jnp.sum(
+                        mask, axis=-1, keepdims=True
+                    )
+                else:
+                    model_predict[kk_redu] = jnp.mean(vv, axis=atom_axis)
+            else:
+                model_predict[kk_redu] = jnp.sum(vv, axis=atom_axis)
             kk_derv_r, kk_derv_c = get_deriv_name(kk)
             if vdef.r_differentiable:
 

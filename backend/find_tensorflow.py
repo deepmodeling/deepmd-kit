@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
+import re
 import site
 from functools import (
     lru_cache,
@@ -56,6 +57,10 @@ def find_tensorflow() -> tuple[Optional[str], list[str]]:
     ) is not None:
         site_packages = Path(os.environ.get("TENSORFLOW_ROOT")).parent.absolute()
         tf_spec = FileFinder(str(site_packages)).find_spec("tensorflow")
+        if tf_spec is None:
+            raise RuntimeError(
+                f"cannot find TensorFlow under TENSORFLOW_ROOT {os.environ.get('TENSORFLOW_ROOT')}"
+            )
 
     # get tensorflow spec
     # note: isolated build will not work for backend
@@ -88,14 +93,14 @@ def find_tensorflow() -> tuple[Optional[str], list[str]]:
                 # CUDA 12.2, cudnn 9
                 requires.extend(
                     [
-                        "tensorflow-cpu>=2.18.0rc0; platform_machine=='x86_64' and platform_system == 'Linux'",
+                        "tensorflow-cpu>=2.18.0; platform_machine=='x86_64' and platform_system == 'Linux'",
                     ]
                 )
             elif cuda_version in SpecifierSet(">=11,<12"):
                 # CUDA 11.8, cudnn 8
                 requires.extend(
                     [
-                        "tensorflow-cpu>=2.5.0rc0,<2.15; platform_machine=='x86_64' and platform_system == 'Linux'",
+                        "tensorflow-cpu>=2.5.0,<2.15; platform_machine=='x86_64' and platform_system == 'Linux'",
                     ]
                 )
                 tf_version = "2.14.1"
@@ -153,7 +158,8 @@ def get_tf_requirement(tf_version: str = "") -> dict:
                 "tensorflow-cpu; platform_machine!='aarch64' and (platform_machine!='arm64' or platform_system != 'Darwin')",
                 "tensorflow; platform_machine=='aarch64' or (platform_machine=='arm64' and platform_system == 'Darwin')",
                 # https://github.com/tensorflow/tensorflow/issues/61830
-                "tensorflow-cpu!=2.15.*; platform_system=='Windows'",
+                # Since TF 2.20, not all symbols are exported to the public API.
+                "tensorflow-cpu!=2.15.*,<2.20; platform_system=='Windows'",
                 # https://github.com/h5py/h5py/issues/2408
                 "h5py>=3.6.0,!=3.11.0; platform_system=='Linux' and platform_machine=='aarch64'",
                 *extra_requires,
@@ -228,6 +234,22 @@ def get_tf_version(tf_path: Optional[Union[str, Path]]) -> str:
                 patch = line.split()[-1]
             elif line.startswith("#define TF_VERSION_SUFFIX"):
                 suffix = line.split()[-1].strip('"')
+    if None in (major, minor, patch):
+        # since TF 2.20.0, version information is no more contained in version.h
+        # try to read version from tools/pip_package/setup.py
+        # _VERSION = '2.20.0'
+        setup_file = Path(tf_path) / "tools" / "pip_package" / "setup.py"
+        if setup_file.exists():
+            with open(setup_file) as f:
+                for line in f:
+                    # parse with regex
+                    match = re.search(
+                        r"_VERSION[ \t]*=[ \t]*'(\d+)\.(\d+)\.(\d+)([a-zA-Z0-9]*)?'",
+                        line,
+                    )
+                    if match:
+                        major, minor, patch, suffix = match.groups()
+                        break
     if None in (major, minor, patch):
         raise RuntimeError("Failed to read TF version")
     return ".".join((major, minor, patch)) + suffix

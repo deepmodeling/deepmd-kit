@@ -13,7 +13,7 @@ from typing import (
     Optional,
 )
 
-from deepmd.tf.common import (
+from deepmd.common import (
     j_loader,
 )
 from deepmd.tf.env import (

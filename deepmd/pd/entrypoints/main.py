@@ -22,6 +22,7 @@ from deepmd import (
 )
 from deepmd.common import (
     expand_sys_str,
+    j_loader,
 )
 from deepmd.loggers.loggers import (
     set_log_handles,
@@ -235,8 +236,7 @@ def train(
     log.info("Configuration path: %s", input_file)
     if LOCAL_RANK == 0:
         SummaryPrinter()()
-    with open(input_file) as fin:
-        config = json.load(fin)
+    config = j_loader(input_file)
     # ensure suffix, as in the command line help, we say "path prefix of checkpoint files"
     if init_model is not None and not init_model.endswith(".pd"):
         init_model += ".pd"
@@ -368,12 +368,13 @@ def freeze(
         model.forward = paddle.jit.to_static(
             model.forward,
             input_spec=[
-                InputSpec([1, -1, 3], dtype="float64", name="coord"),  # coord
-                InputSpec([1, -1], dtype="int64", name="atype"),  # atype
-                InputSpec([1, 9], dtype="float64", name="box"),  # box
+                InputSpec([-1, -1, 3], dtype="float64", name="coord"),  # coord
+                InputSpec([-1, -1], dtype="int64", name="atype"),  # atype
+                InputSpec([-1, 9], dtype="float64", name="box"),  # box
                 None,  # fparam
                 None,  # aparam
-                True,  # do_atomic_virial
+                # InputSpec([], dtype="bool", name="do_atomic_virial"),  # do_atomic_virial
+                False,  # do_atomic_virial
             ],
             full_graph=True,
         )
@@ -388,14 +389,23 @@ def freeze(
         model.forward_lower = paddle.jit.to_static(
             model.forward_lower,
             input_spec=[
-                InputSpec([1, -1, 3], dtype="float64", name="coord"),  # extended_coord
-                InputSpec([1, -1], dtype="int32", name="atype"),  # extended_atype
-                InputSpec([1, -1, -1], dtype="int32", name="nlist"),  # nlist
-                InputSpec([1, -1], dtype="int64", name="mapping"),  # mapping
+                InputSpec([-1, -1, 3], dtype="float64", name="coord"),  # extended_coord
+                InputSpec([-1, -1], dtype="int32", name="atype"),  # extended_atype
+                InputSpec([-1, -1, -1], dtype="int32", name="nlist"),  # nlist
+                InputSpec([-1, -1], dtype="int64", name="mapping"),  # mapping
                 None,  # fparam
                 None,  # aparam
-                True,  # do_atomic_virial
-                None,  # comm_dict
+                # InputSpec([], dtype="bool", name="do_atomic_virial"),  # do_atomic_virial
+                False,  # do_atomic_virial
+                (
+                    InputSpec([-1], "int64", name="send_list"),
+                    InputSpec([-1], "int32", name="send_proc"),
+                    InputSpec([-1], "int32", name="recv_proc"),
+                    InputSpec([-1], "int32", name="send_num"),
+                    InputSpec([-1], "int32", name="recv_num"),
+                    InputSpec([-1], "int64", name="communicator"),
+                    # InputSpec([1], "int64", name="has_spin"),
+                ),  # comm_dict
             ],
             full_graph=True,
         )
