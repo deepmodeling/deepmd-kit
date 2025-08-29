@@ -376,6 +376,7 @@ select = [
 ]
 
 ignore = [
+    "ANN401", # Allow Any due to too many violations
     "E501", # line too long
     "F841", # local variable is assigned to but never used
     "E741", # ambiguous variable name
@@ -390,6 +391,7 @@ ignore = [
     "D401", # TODO: first line should be in imperative mood
     "D404", # TODO: first word of the docstring should not be This
 ]
+ignore-init-module-imports = true
 
 exclude = [
     "source/3rdparty/**",
@@ -419,21 +421,27 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 [tool.ruff.lint.extend-per-file-ignores]
 # Also ignore `E402` in all `__init__.py` files.
 "source/3rdparty/**" = ["ALL"]
-"deepmd/tf/**" = ["TID253"]
-"deepmd/jax/**" = ["TID253"]
-"deepmd/pd/**" = ["TID253"]
-"source/tests/tf/**" = ["TID253"]
-"source/tests/pt/**" = ["TID253"]
-"source/tests/jax/**" = ["TID253"]
-"source/tests/pd/**" = ["TID253"]
-"source/tests/universal/pt/**" = ["TID253"]
-"source/tests/universal/pd/**" = ["TID253"]
-"source/jax2tf_tests/**" = ["TID253"]
-"source/ipi/tests/**" = ["TID253"]
-"source/lmp/tests/**" = ["TID253"]
-"**/*.ipynb" = ["T20"]  # printing in a nb file is expected
-# PyTorch backend: TID253 exclusion for banned module imports
+"backend/**" = ["ANN"]
+"data/**" = ["ANN"]
+"deepmd/tf/**" = ["TID253", "ANN"]
 "deepmd/pt/**" = ["TID253"]
+"deepmd/jax/**" = ["TID253", "ANN"]
+"deepmd/pd/**" = ["TID253", "ANN"]
+"deepmd/dpmodel/**" = ["ANN"]
+"source/**" = ["ANN"]
+"source/tests/tf/**" = ["TID253", "ANN"]
+"source/tests/pt/**" = ["TID253", "ANN"]
+"source/tests/jax/**" = ["TID253", "ANN"]
+"source/tests/pd/**" = ["TID253", "ANN"]
+"source/tests/universal/pt/**" = ["TID253", "ANN"]
+"source/tests/universal/pd/**" = ["TID253", "ANN"]
+"source/tests/**" = ["ANN"]
+"source/jax2tf_tests/**" = ["TID253", "ANN"]
+"source/ipi/tests/**" = ["TID253", "ANN"]
+"source/lmp/tests/**" = ["TID253", "ANN"]
+"**/tests/**/test_*.py" = ["ANN"]
+"**/tests/**/*_test.py" = ["ANN"]
+"**/*.ipynb" = ["T20"]  # printing in a nb file is expected
 
 [tool.pytest.ini_options]
 markers = "run"
