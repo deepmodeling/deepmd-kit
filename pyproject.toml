@@ -372,6 +372,7 @@ select = [
     "DTZ", # datetime
     "TCH", # flake8-type-checking
     "PYI", # flake8-pyi
+    "ANN", # type annotations
 ]
 
 ignore = [
