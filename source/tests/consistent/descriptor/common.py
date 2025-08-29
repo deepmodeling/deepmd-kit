@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Dict,
-    List,
-    Tuple,
 )
 
 import numpy as np
@@ -68,7 +65,7 @@ class DescriptorTest:
         atype: np.ndarray,
         box: np.ndarray,
         suffix: str,
-    ) -> Tuple[List[Any], Dict[Any, np.ndarray]]:
+    ) -> tuple[list[Any], dict[Any, np.ndarray]]:
         t_coord = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="i_coord")
         t_type = tf.placeholder(tf.int32, [None], name="i_type")
         t_natoms = tf.placeholder(tf.int32, natoms.shape, name="i_natoms")

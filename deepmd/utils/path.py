@@ -12,10 +12,9 @@ from pathlib import (
     Path,
 )
 from typing import (
+    Any,
     ClassVar,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -58,7 +57,7 @@ class DPPath(ABC):
         """
 
     @abstractmethod
-    def load_txt(self, **kwargs) -> np.ndarray:
+    def load_txt(self, **kwargs: Any) -> np.ndarray:
         """Load NumPy array from text.
 
         Returns
@@ -117,7 +116,7 @@ class DPPath(ABC):
         """Check if self is directory."""
 
     @abstractmethod
-    def __getnewargs__(self) -> Tuple[str, str]:
+    def __getnewargs__(self) -> tuple[str, str]:
         """Return the arguments to be passed to __new__ when unpickling an instance."""
 
     @abstractmethod
@@ -175,7 +174,7 @@ class DPOSPath(DPPath):
         self.mode = mode
         self.path = Path(path)
 
-    def __getnewargs__(self) -> Tuple[str, str]:
+    def __getnewargs__(self) -> tuple[str, str]:
         return (self.path, self.mode)
 
     def load_numpy(self) -> np.ndarray:
@@ -188,7 +187,7 @@ class DPOSPath(DPPath):
         """
         return np.load(str(self.path))
 
-    def load_txt(self, **kwargs) -> np.ndarray:
+    def load_txt(self, **kwargs: Any) -> np.ndarray:
         """Load NumPy array from text.
 
         Returns
@@ -313,7 +312,7 @@ class DPH5Path(DPPath):
         # h5 path: default is the root path
         self._name = s[1] if len(s) > 1 else "/"
 
-    def __getnewargs__(self) -> Tuple[str, str]:
+    def __getnewargs__(self) -> tuple[str, str]:
         return (self.root_path, self.mode)
 
     @classmethod
@@ -343,7 +342,7 @@ class DPH5Path(DPPath):
         """
         return self.root[self._name][:]
 
-    def load_txt(self, dtype: Optional[np.dtype] = None, **kwargs) -> np.ndarray:
+    def load_txt(self, dtype: Optional[np.dtype] = None, **kwargs: Any) -> np.ndarray:
         """Load NumPy array from text.
 
         Returns
@@ -418,7 +417,7 @@ class DPH5Path(DPPath):
     __file_new_keys: ClassVar[dict[h5py.File, list[str]]] = {}
 
     @property
-    def _new_keys(self) -> List[str]:
+    def _new_keys(self) -> list[str]:
         """New keys that haven't been cached."""
         self.__file_new_keys.setdefault(self.root, [])
         return self.__file_new_keys[self.root]

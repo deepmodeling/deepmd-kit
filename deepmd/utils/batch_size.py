@@ -215,7 +215,7 @@ class AutoBatchSize(ABC):
                 result = (result,) if not isinstance(result, tuple) else result
             index += n_batch
 
-            def append_to_list(res_list, res):
+            def append_to_list(res_list: list[Any], res: Any) -> list[Any]:
                 if n_batch:
                     res_list.append(res)
                 return res_list
@@ -229,7 +229,7 @@ class AutoBatchSize(ABC):
         assert results is not None
         assert returned_dict is not None
 
-        def concate_result(r):
+        def concate_result(r: list[Any]) -> Any:
             if array_api_compat.is_array_api_obj(r[0]):
                 xp = array_api_compat.array_namespace(r[0])
                 ret = xp.concat(r, axis=0)

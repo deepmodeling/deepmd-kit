@@ -5,14 +5,11 @@ from collections import (
 )
 from typing import (
     Any,
-    Dict,
-    List,
     Optional,
-    Tuple,
 )
 
 
-def get_model_dict(model_dict: Dict[str, Any]) -> Tuple[Dict[str, str], Dict[str, str]]:
+def get_model_dict(model_dict: dict[str, Any]) -> tuple[dict[str, str], dict[str, str]]:
     """
     Get the model branch alias dictionary from the model_dict.
 
@@ -187,7 +184,7 @@ class OrderedDictTableWrapper:
             return "+" + "+".join("-" * (w + 2) for w in col_widths) + "+"
 
         # Helper: Draw one row of text parts (single lines per cell)
-        def draw_row_line(cells_parts: List[List[str]]) -> str:
+        def draw_row_line(cells_parts: list[list[str]]) -> str:
             return (
                 "| "
                 + " | ".join(

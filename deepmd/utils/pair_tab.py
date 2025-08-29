@@ -4,7 +4,6 @@
 import logging
 from typing import (
     Any,
-    Dict,
     Optional,
 )
 
@@ -97,7 +96,7 @@ class PairTab:
         }
 
     @classmethod
-    def deserialize(cls, data: Dict[str, Any]) -> "PairTab":
+    def deserialize(cls, data: dict[str, Any]) -> "PairTab":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class")

@@ -1,9 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 from typing import (
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -139,7 +137,7 @@ class Spin:
         self.atom_exclude_types_p = self.placeholder_type.tolist()
 
     def get_pair_exclude_types(
-        self, exclude_types: Optional[List[Tuple[int, int]]] = None
+        self, exclude_types: Optional[list[tuple[int, int]]] = None
     ) -> list[tuple[int, int]]:
         """
         Return the pair-wise exclusion types for descriptor.
@@ -157,7 +155,7 @@ class Spin:
             return _exclude_types
 
     def get_atom_exclude_types(
-        self, exclude_types: Optional[List[int]] = None
+        self, exclude_types: Optional[list[int]] = None
     ) -> list[int]:
         """
         Return the atom-wise exclusion types for fitting before out_def.
@@ -172,7 +170,7 @@ class Spin:
             return _exclude_types
 
     def get_atom_exclude_types_placeholder(
-        self, exclude_types: Optional[List[int]] = None
+        self, exclude_types: Optional[list[int]] = None
     ) -> list[int]:
         """
         Return the atom-wise exclusion types for fitting after out_def.
