@@ -426,16 +426,7 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "deepmd/tf/**" = ["TID253", "ANN"]
 "deepmd/pt/**" = ["TID253", "ANN"]
 "deepmd/jax/**" = ["TID253", "ANN"]
-# Paddle backend: Gradually enabling ANN rule
-# Completed files with full type annotations:
-"deepmd/pd/entrypoints/main.py" = ["TID253"]  # ✅ Fully typed
-# TODO: Complete type hints and remove ANN exclusion for remaining files:
-"deepmd/pd/train/**" = ["TID253", "ANN"]     # 🚧 Partial progress
-"deepmd/pd/utils/**" = ["TID253", "ANN"]     # 🚧 Partial progress
-"deepmd/pd/loss/**" = ["TID253", "ANN"]      # ❌ Not started
-"deepmd/pd/model/**" = ["TID253", "ANN"]     # ❌ Not started
-"deepmd/pd/infer/**" = ["TID253", "ANN"]     # ❌ Not started
-"deepmd/pd/cxx_op.py" = ["ANN"]              # ❌ Not started
+"deepmd/pd/**" = ["TID253", "ANN"]
 "deepmd/dpmodel/**" = ["ANN"]
 "source/**" = ["ANN"]
 "source/tests/tf/**" = ["TID253", "ANN"]

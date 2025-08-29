@@ -83,7 +83,7 @@ def silut_double_backward(
 
 
 class SiLUTScript(paddle.nn.Layer):
-    def __init__(self, threshold: float = 3.0):
+    def __init__(self, threshold: float = 3.0) -> None:
         super().__init__()
         self.threshold = threshold
 
@@ -95,7 +95,7 @@ class SiLUTScript(paddle.nn.Layer):
         self.const_val = float(threshold * sigmoid_threshold)
         self.get_script_code()
 
-    def get_script_code(self):
+    def get_script_code(self) -> None:
         silut_forward_script = paddle.jit.to_static(silut_forward, full_graph=True)
         silut_backward_script = paddle.jit.to_static(silut_backward, full_graph=True)
         silut_double_backward_script = paddle.jit.to_static(
@@ -142,12 +142,12 @@ class SiLUTScript(paddle.nn.Layer):
 
         self.SiLUTFunction = SiLUTFunction
 
-    def forward(self, x):
+    def forward(self, x: paddle.Tensor) -> paddle.Tensor:
         return self.SiLUTFunction.apply(x, self.threshold, self.slope, self.const_val)
 
 
 class SiLUT(paddle.nn.Layer):
-    def __init__(self, threshold=3.0):
+    def __init__(self, threshold: float = 3.0) -> None:
         super().__init__()
 
         def sigmoid(x):

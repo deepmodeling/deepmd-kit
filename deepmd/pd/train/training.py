@@ -11,6 +11,8 @@ from pathlib import (
 )
 from typing import (
     Any,
+    Optional,
+    Union,
 )
 
 import numpy as np
@@ -86,16 +88,16 @@ class Trainer:
     def __init__(
         self,
         config: dict[str, Any],
-        training_data,
-        stat_file_path=None,
-        validation_data=None,
-        init_model=None,
-        restart_model=None,
-        finetune_model=None,
-        force_load=False,
-        shared_links=None,
-        finetune_links=None,
-        init_frz_model=None,
+        training_data: Any,
+        stat_file_path: Optional[Union[str, Path]] = None,
+        validation_data: Optional[Any] = None,
+        init_model: Optional[str] = None,
+        restart_model: Optional[str] = None,
+        finetune_model: Optional[str] = None,
+        force_load: bool = False,
+        shared_links: Optional[dict[str, Any]] = None,
+        finetune_links: Optional[dict[str, Any]] = None,
+        init_frz_model: Optional[str] = None,
     ) -> None:
         """Construct a DeePMD trainer.
 
@@ -1057,7 +1059,7 @@ class Trainer:
                 "files, which can be viewd in NVIDIA Nsight Systems software"
             )
 
-    def save_model(self, save_path, lr=0.0, step=0) -> None:
+    def save_model(self, save_path: str, lr: float = 0.0, step: int = 0) -> None:
         module = (
             self.wrapper._layers
             if dist.is_available() and dist.is_initialized()
@@ -1079,7 +1081,9 @@ class Trainer:
             checkpoint_files.sort(key=lambda x: x.stat().st_mtime)
             checkpoint_files[0].unlink()
 
-    def get_data(self, is_train=True, task_key="Default"):
+    def get_data(
+        self, is_train: bool = True, task_key: str = "Default"
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         if not self.multi_task:
             if is_train:
                 try:
@@ -1155,7 +1159,9 @@ class Trainer:
         log_dict["sid"] = batch_data["sid"]
         return input_dict, label_dict, log_dict
 
-    def print_header(self, fout, train_results, valid_results) -> None:
+    def print_header(
+        self, fout: Any, train_results: dict[str, Any], valid_results: dict[str, Any]
+    ) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""
         print_str += "# {:5s}".format("step")
@@ -1187,7 +1193,12 @@ class Trainer:
         fout.flush()
 
     def print_on_training(
-        self, fout, step_id, cur_lr, train_results, valid_results
+        self,
+        fout: Any,
+        step_id: int,
+        cur_lr: float,
+        train_results: dict[str, Any],
+        valid_results: dict[str, Any],
     ) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""
