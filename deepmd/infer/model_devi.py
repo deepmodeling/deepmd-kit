@@ -186,7 +186,7 @@ def calc_model_devi_v(
 
 def write_model_devi_out(
     devi: np.ndarray, fname: str, header: str = "", atomic: bool = False
-):
+) -> None:
     """Write output of model deviation.
 
     Parameters

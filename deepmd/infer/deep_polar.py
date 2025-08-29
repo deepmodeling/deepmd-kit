@@ -55,7 +55,7 @@ class DeepGlobalPolar(OldDeepTensor):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         mixed_type: bool = False,
-        **kwargs,
+        **kwargs: object,
     ) -> np.ndarray:
         """Evaluate the model.
 
