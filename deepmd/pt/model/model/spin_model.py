@@ -71,7 +71,7 @@ class SpinModel(torch.nn.Module):
         extended_spin: torch.Tensor,
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
         """
         Add `extended_spin` into `extended_coord` to generate virtual atoms, and extend `nlist` and `mapping`.
         Note that the final `extended_coord_updated` with shape [nframes, nall + nall, 3] has the following order:
