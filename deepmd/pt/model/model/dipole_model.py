@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Optional,
 )
 
@@ -28,8 +29,8 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
 
     def __init__(
         self,
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         DPModelCommon.__init__(self)
         DPDipoleModel_.__init__(self, *args, **kwargs)
@@ -54,8 +55,8 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
 
     def forward(
         self,
-        coord,
-        atype,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
         box: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
@@ -91,9 +92,9 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
     @torch.jit.export
     def forward_lower(
         self,
-        extended_coord,
-        extended_atype,
-        nlist,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,

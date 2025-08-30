@@ -151,20 +151,20 @@ class PolarFittingNet(GeneralFitting):
             else self.embedding_width * self.embedding_width
         )
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         if key in ["constant_matrix"]:
             self.constant_matrix = value
         else:
             super().__setitem__(key, value)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if key in ["constant_matrix"]:
             return self.constant_matrix
         else:
             return super().__getitem__(key)
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.

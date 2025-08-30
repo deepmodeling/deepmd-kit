@@ -419,7 +419,7 @@ class DeepEval(DeepEvalBackend):
         """
         if self.auto_batch_size is not None:
 
-            def eval_func(*args, **kwargs):
+            def eval_func(*args: Any, **kwargs: Any) -> Any:
                 return self.auto_batch_size.execute_all(
                     inner_func, numb_test, natoms, *args, **kwargs
                 )

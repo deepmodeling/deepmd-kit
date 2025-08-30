@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Callable,
     Optional,
     Union,
@@ -236,8 +237,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         scaling_factor: int = 1.0,
-        normalize=True,
-        temperature=None,
+        normalize: bool = True,
+        temperature: Optional[float] = None,
         concat_output_tebd: bool = True,
         trainable: bool = True,
         trainable_ln: bool = True,
@@ -250,7 +251,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
         # not implemented
-        spin=None,
+        spin: Optional[Any] = None,
         type: Optional[str] = None,
     ) -> None:
         super().__init__()
@@ -380,7 +381,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         """Returns the protection of building environment matrix."""
         return self.se_atten.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: Any, shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -448,7 +451,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         return self.se_atten.mean, self.se_atten.stddev
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -548,7 +551,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             data["use_tebd_bias"] = True
         obj = cls(**data)
 
-        def t_cvt(xx):
+        def t_cvt(xx: Any) -> torch.Tensor:
             return torch.tensor(xx, dtype=obj.se_atten.prec, device=env.DEVICE)
 
         obj.type_embedding.embedding = TypeEmbedNetConsistent.deserialize(

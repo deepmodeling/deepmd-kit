@@ -3,6 +3,9 @@ import logging
 from functools import (
     cached_property,
 )
+from typing import (
+    Any,
+)
 
 import numpy as np
 import torch
@@ -48,7 +51,7 @@ class DPTabulate(BaseTabulate):
 
     def __init__(
         self,
-        descrpt,
+        descrpt: Any,
         neuron: list[int],
         type_one_side: bool = False,
         exclude_types: list[list[int]] = [],
@@ -113,7 +116,7 @@ class DPTabulate(BaseTabulate):
         self.data_type = self._get_data_type()
         self.last_layer_size = self._get_last_layer_size()
 
-    def _make_data(self, xx, idx):
+    def _make_data(self, xx: np.ndarray, idx: int) -> Any:
         """Generate tabulation data for the given input.
 
         Parameters
@@ -282,12 +285,12 @@ class DPTabulate(BaseTabulate):
         d2 = dy2.detach().cpu().numpy().astype(self.data_type)
         return vv, dd, d2
 
-    def _layer_0(self, x, w, b):
+    def _layer_0(self, x: torch.Tensor, w: np.ndarray, b: np.ndarray) -> torch.Tensor:
         w = torch.from_numpy(w).to(env.DEVICE)
         b = torch.from_numpy(b).to(env.DEVICE)
         return self.activation_fn(torch.matmul(x, w) + b)
 
-    def _layer_1(self, x, w, b):
+    def _layer_1(self, x: torch.Tensor, w: np.ndarray, b: np.ndarray) -> torch.Tensor:
         w = torch.from_numpy(w).to(env.DEVICE)
         b = torch.from_numpy(b).to(env.DEVICE)
         t = torch.cat([x, x], dim=1)

@@ -4,6 +4,7 @@ from collections import (
     defaultdict,
 )
 from typing import (
+    Any,
     Callable,
     Optional,
     Union,
@@ -35,7 +36,9 @@ from deepmd.utils.path import (
 log = logging.getLogger(__name__)
 
 
-def make_stat_input(datasets, dataloaders, nbatches):
+def make_stat_input(
+    datasets: list[Any], dataloaders: list[Any], nbatches: int
+) -> dict[str, Any]:
     """Pack data for statistics.
 
     Args:
@@ -127,9 +130,9 @@ def _save_to_file(
 
 
 def _post_process_stat(
-    out_bias,
-    out_std,
-):
+    out_bias: torch.Tensor,
+    out_std: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Post process the statistics.
 
     For global statistics, we do not have the std for each type of atoms,
@@ -165,7 +168,7 @@ def _compute_model_predict(
         fparam = system.get("fparam", None)
         aparam = system.get("aparam", None)
 
-        def model_forward_auto_batch_size(*args, **kwargs):
+        def model_forward_auto_batch_size(*args: Any, **kwargs: Any) -> Any:
             return auto_batch_size.execute_all(
                 model_forward,
                 nframes,
@@ -522,7 +525,7 @@ def compute_output_stats_global(
         }
     atom_numbs = {kk: merged_natoms[kk].sum(-1) for kk in bias_atom_e.keys()}
 
-    def rmse(x):
+    def rmse(x: np.ndarray) -> float:
         return np.sqrt(np.mean(np.square(x)))
 
     for kk in bias_atom_e.keys():

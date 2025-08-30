@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Optional,
     Union,
     overload,
@@ -88,7 +89,13 @@ class SiLUTScript(torch.nn.Module):
 
         class SiLUTFunction(torch.autograd.Function):
             @staticmethod
-            def forward(ctx, x, threshold, slope, const_val):
+            def forward(
+                ctx: Any,
+                x: torch.Tensor,
+                threshold: float,
+                slope: float,
+                const_val: float,
+            ) -> torch.Tensor:
                 ctx.save_for_backward(x)
                 ctx.threshold = threshold
                 ctx.slope = slope
@@ -96,7 +103,9 @@ class SiLUTScript(torch.nn.Module):
                 return silut_forward_script(x, threshold, slope, const_val)
 
             @staticmethod
-            def backward(ctx, grad_output):
+            def backward(
+                ctx: Any, grad_output: torch.Tensor
+            ) -> tuple[torch.Tensor, None, None, None]:
                 (x,) = ctx.saved_tensors
                 threshold = ctx.threshold
                 slope = ctx.slope
@@ -106,7 +115,13 @@ class SiLUTScript(torch.nn.Module):
 
         class SiLUTGradFunction(torch.autograd.Function):
             @staticmethod
-            def forward(ctx, x, grad_output, threshold, slope):
+            def forward(
+                ctx: Any,
+                x: torch.Tensor,
+                grad_output: torch.Tensor,
+                threshold: float,
+                slope: float,
+            ) -> torch.Tensor:
                 ctx.threshold = threshold
                 ctx.slope = slope
                 grad_input = silut_backward_script(x, grad_output, threshold, slope)
@@ -114,7 +129,9 @@ class SiLUTScript(torch.nn.Module):
                 return grad_input
 
             @staticmethod
-            def backward(ctx, grad_grad_output):
+            def backward(
+                ctx: Any, grad_grad_output: torch.Tensor
+            ) -> tuple[torch.Tensor, torch.Tensor]:
                 (x, grad_output) = ctx.saved_tensors
                 threshold = ctx.threshold
                 slope = ctx.slope
@@ -126,21 +143,21 @@ class SiLUTScript(torch.nn.Module):
 
         self.SiLUTFunction = SiLUTFunction
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.SiLUTFunction.apply(x, self.threshold, self.slope, self.const_val)
 
 
 class SiLUT(torch.nn.Module):
-    def __init__(self, threshold=3.0):
+    def __init__(self, threshold: float = 3.0) -> None:
         super().__init__()
 
-        def sigmoid(x):
+        def sigmoid(x: float) -> float:
             return 1 / (1 + np.exp(-x))
 
-        def silu(x):
+        def silu(x: float) -> float:
             return x * sigmoid(x)
 
-        def silu_grad(x):
+        def silu_grad(x: float) -> float:
             sig = sigmoid(x)
             return sig + x * sig * (1 - sig)
 
@@ -259,7 +276,7 @@ def to_torch_tensor(
     return torch.tensor(xx, dtype=prec, device=DEVICE)
 
 
-def dict_to_device(sample_dict) -> None:
+def dict_to_device(sample_dict: dict[str, Any]) -> None:
     for key in sample_dict:
         if isinstance(sample_dict[key], list):
             sample_dict[key] = [item.to(DEVICE) for item in sample_dict[key]]

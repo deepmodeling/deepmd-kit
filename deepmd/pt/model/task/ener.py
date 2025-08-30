@@ -188,7 +188,7 @@ class EnergyFittingNetDirect(Fitting):
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
     ) -> None:
         raise NotImplementedError
 
