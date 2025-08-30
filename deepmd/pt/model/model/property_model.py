@@ -1,10 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Optional,
 )
 
 import torch
 
+from deepmd.dpmodel.output_def import (
+    OutputVariableDef,
+)
 from deepmd.pt.model.atomic_model import (
     DPPropertyAtomicModel,
 )

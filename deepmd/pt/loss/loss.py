@@ -5,7 +5,6 @@ from abc import (
 )
 from typing import (
     Any,
-    Dict,
     NoReturn,
     Union,
 )
@@ -27,9 +26,9 @@ class TaskLoss(torch.nn.Module, ABC, make_plugin_registry("loss")):
 
     def forward(
         self,
-        input_dict: Dict[str, torch.Tensor],
+        input_dict: dict[str, torch.Tensor],
         model: torch.nn.Module,
-        label: Dict[str, torch.Tensor],
+        label: dict[str, torch.Tensor],
         natoms: int,
         learning_rate: Union[float, torch.Tensor],
     ) -> NoReturn:

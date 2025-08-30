@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Optional,
-    Tuple,
     Union,
 )
 
@@ -31,7 +30,7 @@ from deepmd.pt.utils.utils import (
 device = env.DEVICE
 
 
-def empty_t(shape: Tuple[int, ...], precision: torch.dtype) -> torch.Tensor:
+def empty_t(shape: tuple[int, ...], precision: torch.dtype) -> torch.Tensor:
     return torch.empty(shape, dtype=precision, device=device)
 
 

@@ -2,9 +2,7 @@
 import logging
 from typing import (
     Any,
-    Dict,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -22,8 +20,8 @@ class ModelWrapper(torch.nn.Module):
         self,
         model: Union[torch.nn.Module, dict],
         loss: Union[torch.nn.Module, dict] = None,
-        model_params: Optional[Dict[str, Any]] = None,
-        shared_links: Optional[Dict[str, Any]] = None,
+        model_params: Optional[dict[str, Any]] = None,
+        shared_links: Optional[dict[str, Any]] = None,
     ) -> None:
         """Construct a DeePMD model wrapper.
 
@@ -62,7 +60,7 @@ class ModelWrapper(torch.nn.Module):
                     self.loss[task_key] = loss[task_key]
         self.inference_only = self.loss is None
 
-    def share_params(self, shared_links: Dict[str, Any], resume: bool = False) -> None:
+    def share_params(self, shared_links: dict[str, Any], resume: bool = False) -> None:
         """
         Share the parameters of classes following rules defined in shared_links during multitask training.
         If not start from checkpoint (resume is False),
@@ -152,7 +150,7 @@ class ModelWrapper(torch.nn.Module):
         do_atomic_virial: bool = False,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
-    ) -> Tuple[Any, Any, Any]:
+    ) -> tuple[Any, Any, Any]:
         if not self.multi_task:
             task_key = "Default"
         else:

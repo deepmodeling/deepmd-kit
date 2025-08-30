@@ -15,9 +15,7 @@ from pathlib import (
 from typing import (
     Any,
     Callable,
-    Dict,
     Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -516,9 +514,9 @@ class Trainer:
                     def collect_single_finetune_params(
                         _model_key: str,
                         _finetune_rule_single: Any,
-                        _new_state_dict: Dict[str, Any],
-                        _origin_state_dict: Dict[str, Any],
-                        _random_state_dict: Dict[str, Any],
+                        _new_state_dict: dict[str, Any],
+                        _origin_state_dict: dict[str, Any],
+                        _random_state_dict: dict[str, Any],
                     ) -> None:
                         _new_fitting = _finetune_rule_single.get_random_fitting()
                         _model_key_from = _finetune_rule_single.get_model_branch()
@@ -1220,7 +1218,7 @@ class Trainer:
 
     def get_data(
         self, is_train: bool = True, task_key: str = "Default"
-    ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         if is_train:
             iterator = self.training_data
         else:
@@ -1265,7 +1263,7 @@ class Trainer:
         return input_dict, label_dict, log_dict
 
     def print_header(
-        self, fout: Any, train_results: Dict[str, Any], valid_results: Dict[str, Any]
+        self, fout: Any, train_results: dict[str, Any], valid_results: dict[str, Any]
     ) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""

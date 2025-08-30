@@ -2,7 +2,6 @@
 import logging
 from typing import (
     Any,
-    Dict,
     Optional,
     Union,
 )
@@ -172,7 +171,7 @@ class InvarFitting(GeneralFitting):
         h2: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """Based on embedding net output, alculate total energy.
 
         Args:

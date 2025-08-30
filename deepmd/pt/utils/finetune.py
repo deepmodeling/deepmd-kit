@@ -5,8 +5,6 @@ from copy import (
 )
 from typing import (
     Any,
-    Dict,
-    Tuple,
 )
 
 import torch
@@ -25,13 +23,13 @@ log = logging.getLogger(__name__)
 
 
 def get_finetune_rule_single(
-    _single_param_target: Dict[str, Any],
-    _model_param_pretrained: Dict[str, Any],
+    _single_param_target: dict[str, Any],
+    _model_param_pretrained: dict[str, Any],
     from_multitask: bool = False,
     model_branch: str = "Default",
     model_branch_from: str = "",
     change_model_params: bool = False,
-) -> Tuple[Dict[str, Any], FinetuneRuleItem]:
+) -> tuple[dict[str, Any], FinetuneRuleItem]:
     single_config = deepcopy(_single_param_target)
     new_fitting = False
     model_branch_chosen = "Default"
@@ -92,10 +90,10 @@ def get_finetune_rule_single(
 
 def get_finetune_rules(
     finetune_model: str,
-    model_config: Dict[str, Any],
+    model_config: dict[str, Any],
     model_branch: str = "",
     change_model_params: bool = True,
-) -> Tuple[Dict[str, Any], Dict[str, FinetuneRuleItem]]:
+) -> tuple[dict[str, Any], dict[str, FinetuneRuleItem]]:
     """
     Get fine-tuning rules and (optionally) change the model_params according to the pretrained one.
 

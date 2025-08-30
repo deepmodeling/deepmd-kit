@@ -344,7 +344,7 @@ class GeneralFitting(Fitting):
     def change_type_map(
         self,
         type_map: list[str],
-        model_with_new_type_stat: Optional["InvarFittingNet"] = None,
+        model_with_new_type_stat: Optional["GeneralFitting"] = None,
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.

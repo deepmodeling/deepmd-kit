@@ -2,6 +2,7 @@
 import copy
 import math
 from typing import (
+    Any,
     Optional,
     Union,
 )
@@ -10,6 +11,9 @@ import torch
 
 from deepmd.dpmodel import (
     get_hessian_name,
+)
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
 )
 
 

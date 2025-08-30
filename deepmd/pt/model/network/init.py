@@ -22,7 +22,7 @@ def _no_grad_uniform_(
     tensor: torch.Tensor,
     a: float,
     b: float,
-    generator: Optional[torch.Generator] = None,
+    generator: _Optional[torch.Generator] = None,
 ) -> torch.Tensor:
     with torch.no_grad():
         return tensor.uniform_(a, b, generator=generator)
@@ -32,7 +32,7 @@ def _no_grad_normal_(
     tensor: torch.Tensor,
     mean: float,
     std: float,
-    generator: Optional[torch.Generator] = None,
+    generator: _Optional[torch.Generator] = None,
 ) -> torch.Tensor:
     with torch.no_grad():
         return tensor.normal_(mean, std, generator=generator)
@@ -44,7 +44,7 @@ def _no_grad_trunc_normal_(
     std: float,
     a: float,
     b: float,
-    generator: Optional[torch.Generator] = None,
+    generator: _Optional[torch.Generator] = None,
 ) -> torch.Tensor:
     # Method based on https://people.sc.fsu.edu/~jburkardt/presentations/truncated_normal.pdf
     def norm_cdf(x: float) -> float:
@@ -92,7 +92,7 @@ def _no_grad_fill_(tensor: torch.Tensor, val: float) -> torch.Tensor:
         return tensor.fill_(val)
 
 
-def calculate_gain(nonlinearity: str, param: Optional[float] = None) -> float:
+def calculate_gain(nonlinearity: str, param: _Optional[float] = None) -> float:
     r"""Return the recommended gain value for the given nonlinearity function.
 
     The values are as follows:

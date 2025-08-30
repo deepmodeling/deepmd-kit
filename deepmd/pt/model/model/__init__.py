@@ -139,7 +139,7 @@ def get_spin_model(model_params: dict) -> SpinModel:
     return SpinEnergyModel(backbone_model=backbone_model, spin=spin)
 
 
-def get_linear_model(model_params: dict) -> DPLinearModel:
+def get_linear_model(model_params: dict) -> LinearEnergyModel:
     model_params = copy.deepcopy(model_params)
     weights = model_params.get("weights", "mean")
     list_of_models = []
@@ -244,7 +244,7 @@ def _convert_preset_out_bias_to_array(
     return preset_out_bias
 
 
-def get_standard_model(model_params: dict) -> DPModel:
+def get_standard_model(model_params: dict) -> BaseModel:
     model_params_old = model_params
     model_params = copy.deepcopy(model_params)
     ntypes = len(model_params["type_map"])

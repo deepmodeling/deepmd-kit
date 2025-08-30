@@ -3,7 +3,6 @@ from typing import (
     Any,
     ClassVar,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -45,7 +44,7 @@ from deepmd.pt.utils.utils import (
 )
 
 
-def empty_t(shape: Tuple[int, ...], precision: torch.dtype) -> torch.Tensor:
+def empty_t(shape: tuple[int, ...], precision: torch.dtype) -> torch.Tensor:
     return torch.empty(shape, dtype=precision, device=device)
 
 

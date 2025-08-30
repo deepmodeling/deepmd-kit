@@ -6,9 +6,7 @@ from copy import (
 from typing import (
     Any,
     Callable,
-    Dict,
     Optional,
-    Tuple,
 )
 
 import torch
@@ -54,7 +52,7 @@ class SpinModel(torch.nn.Module):
 
     def process_spin_input(
         self, coord: torch.Tensor, atype: torch.Tensor, spin: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Generate virtual coordinates and types, concat into the input."""
         nframes, nloc = atype.shape
         coord = coord.reshape(nframes, nloc, 3)
@@ -73,7 +71,7 @@ class SpinModel(torch.nn.Module):
         extended_spin: torch.Tensor,
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Add `extended_spin` into `extended_coord` to generate virtual atoms, and extend `nlist` and `mapping`.
         Note that the final `extended_coord_updated` with shape [nframes, nall + nall, 3] has the following order:
@@ -114,7 +112,7 @@ class SpinModel(torch.nn.Module):
         out_tensor: torch.Tensor,
         add_mag: bool = True,
         virtual_scale: bool = True,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Split the output both real and virtual atoms, and scale the latter.
         add_mag: whether to add magnetic tensor onto the real tensor.
@@ -147,7 +145,7 @@ class SpinModel(torch.nn.Module):
         nloc: int,
         add_mag: bool = True,
         virtual_scale: bool = True,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Split the extended output of both real and virtual atoms with switch, and scale the latter.
         add_mag: whether to add magnetic tensor onto the real tensor.
@@ -353,7 +351,7 @@ class SpinModel(torch.nn.Module):
 
     def compute_or_load_stat(
         self,
-        sampled_func: Callable[[], list[Dict[str, Any]]],
+        sampled_func: Callable[[], list[dict[str, Any]]],
         stat_file_path: Optional[DPPath] = None,
     ) -> None:
         """
@@ -373,7 +371,7 @@ class SpinModel(torch.nn.Module):
         """
 
         @functools.lru_cache
-        def spin_sampled_func() -> list[Dict[str, Any]]:
+        def spin_sampled_func() -> list[dict[str, Any]]:
             sampled = sampled_func()
             spin_sampled = []
             for sys in sampled:
@@ -516,7 +514,7 @@ class SpinModel(torch.nn.Module):
         }
 
     @classmethod
-    def deserialize(cls, data: Dict[str, Any]) -> "SpinModel":
+    def deserialize(cls, data: dict[str, Any]) -> "SpinModel":
         backbone_model_obj = make_model(DPAtomicModel).deserialize(
             data["backbone_model"]
         )
@@ -539,7 +537,7 @@ class SpinEnergyModel(SpinModel):
     ) -> None:
         super().__init__(backbone_model, spin)
 
-    def translated_output_def(self) -> Dict[str, Any]:
+    def translated_output_def(self) -> dict[str, Any]:
         out_def_data = self.model_output_def().get_data()
         output_def = {
             "atom_energy": out_def_data["energy"],

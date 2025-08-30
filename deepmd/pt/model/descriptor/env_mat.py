@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-from typing import (
-    Tuple,
-)
-
 import torch
 
 from deepmd.pt.utils.preprocess import (
@@ -20,7 +16,7 @@ def _make_env_mat(
     radial_only: bool = False,
     protection: float = 0.0,
     use_exp_switch: bool = False,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Make smooth environment matrix."""
     bsz, natoms, nnei = nlist.shape
     coord = coord.view(bsz, -1, 3)
@@ -63,7 +59,7 @@ def prod_env_mat(
     radial_only: bool = False,
     protection: float = 0.0,
     use_exp_switch: bool = False,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Generate smooth environment matrix from atom coordinates and other context.
 
     Args:

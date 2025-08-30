@@ -4,9 +4,7 @@ from copy import (
 )
 from typing import (
     Any,
-    Dict,
     Optional,
-    Tuple,
 )
 
 from deepmd.pt.model.descriptor import (
@@ -18,8 +16,8 @@ from deepmd.pt.model.task import (
 
 
 def preprocess_shared_params(
-    model_config: Dict[str, Any],
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    model_config: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Preprocess the model params for multitask model, and generate the links dict for further sharing.
 
     Args:
@@ -105,7 +103,7 @@ def preprocess_shared_params(
     type_map_keys = []
 
     def replace_one_item(
-        params_dict: Dict[str, Any],
+        params_dict: dict[str, Any],
         key_type: str,
         key_in_dict: str,
         suffix: str = "",
@@ -167,7 +165,7 @@ def preprocess_shared_params(
     return model_config, shared_links
 
 
-def get_class_name(item_key: str, item_params: Dict[str, Any]) -> type:
+def get_class_name(item_key: str, item_params: dict[str, Any]) -> type:
     if item_key == "descriptor":
         return BaseDescriptor.get_class_by_type(item_params.get("type", "se_e2_a"))
     elif item_key == "fitting_net":
