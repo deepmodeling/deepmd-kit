@@ -518,10 +518,14 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             node_ebd = torch.cat([node_ebd, node_ebd_inp], dim=-1)
         return (
             node_ebd.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            rot_mat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            edge_ebd.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            h2.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            rot_mat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION)
+            if rot_mat is not None
+            else None,
+            edge_ebd.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION)
+            if edge_ebd is not None
+            else None,
+            h2.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION) if h2 is not None else None,
+            sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION) if sw is not None else None,
         )
 
     @classmethod
