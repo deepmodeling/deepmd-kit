@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    Any,
     Optional,
     Union,
 )
@@ -98,7 +99,7 @@ class PolarFittingNet(GeneralFitting):
         scale: Optional[Union[list[float], float]] = None,
         shift_diag: bool = True,
         type_map: Optional[list[str]] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         self.embedding_width = embedding_width
         self.fit_diag = fit_diag

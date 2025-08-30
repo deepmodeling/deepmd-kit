@@ -8,6 +8,7 @@ from pathlib import (
     Path,
 )
 from typing import (
+    Any,
     Optional,
     Union,
 )
@@ -95,20 +96,23 @@ log = logging.getLogger(__name__)
 
 
 def get_trainer(
-    config,
-    init_model=None,
-    restart_model=None,
-    finetune_model=None,
-    force_load=False,
-    init_frz_model=None,
-    shared_links=None,
-    finetune_links=None,
-):
+    config: dict[str, Any],
+    init_model: Optional[str] = None,
+    restart_model: Optional[str] = None,
+    finetune_model: Optional[str] = None,
+    force_load: bool = False,
+    init_frz_model: Optional[str] = None,
+    shared_links: Optional[dict[str, Any]] = None,
+    finetune_links: Optional[dict[str, Any]] = None,
+) -> training.Trainer:
     multi_task = "model_dict" in config.get("model", {})
 
     def prepare_trainer_input_single(
-        model_params_single, data_dict_single, rank=0, seed=None
-    ):
+        model_params_single: dict[str, Any],
+        data_dict_single: dict[str, Any],
+        rank: int = 0,
+        seed: Optional[int] = None,
+    ) -> tuple[DpLoaderSet, Optional[DpLoaderSet], Optional[DPPath]]:
         training_dataset_params = data_dict_single["training_data"]
         validation_dataset_params = data_dict_single.get("validation_data", None)
         validation_systems = (

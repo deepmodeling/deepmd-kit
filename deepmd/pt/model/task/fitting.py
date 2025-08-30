@@ -4,6 +4,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Any,
     Callable,
     Optional,
     Union,
@@ -227,7 +228,7 @@ class GeneralFitting(Fitting):
         remove_vaccum_contribution: Optional[list[bool]] = None,
         type_map: Optional[list[str]] = None,
         use_aparam_as_mask: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         super().__init__()
         self.var_name = var_name

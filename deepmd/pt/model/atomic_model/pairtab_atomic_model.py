@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Callable,
     Optional,
     Union,
@@ -68,7 +69,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         rcut: float,
         sel: Union[int, list[int]],
         type_map: list[str],
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
         super().init_out_stat()
@@ -141,7 +142,7 @@ class PairTabAtomicModel(BaseAtomicModel):
     def get_sel(self) -> list[int]:
         return [self.sel]
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -175,7 +176,9 @@ class PairTabAtomicModel(BaseAtomicModel):
         return False
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self,
+        type_map: list[str],
+        model_with_new_type_stat: Optional["PairTabAtomicModel"] = None,
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -202,7 +205,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         return dd
 
     @classmethod
-    def deserialize(cls, data) -> "PairTabAtomicModel":
+    def deserialize(cls, data: dict[str, Any]) -> "PairTabAtomicModel":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         tab = PairTab.deserialize(data.pop("tab"))
