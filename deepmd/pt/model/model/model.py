@@ -72,6 +72,6 @@ class BaseModel(torch.nn.Module, make_base_model()):
         return self.min_nbor_dist.item()
 
     @torch.jit.export
-    def get_ntypes(self):
+    def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return len(self.get_type_map())

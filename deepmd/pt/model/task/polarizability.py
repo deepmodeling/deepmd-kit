@@ -143,7 +143,7 @@ class PolarFittingNet(GeneralFitting):
             **kwargs,
         )
 
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         return (
             self.embedding_width
@@ -233,7 +233,7 @@ class PolarFittingNet(GeneralFitting):
         h2: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
-    ):
+    ) -> dict[str, torch.Tensor]:
         nframes, nloc, _ = descriptor.shape
         assert gr is not None, (
             "Must provide the rotation matrix for polarizability fitting."

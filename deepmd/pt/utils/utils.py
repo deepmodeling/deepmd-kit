@@ -82,7 +82,7 @@ class SiLUTScript(torch.nn.Module):
         self.const_val = float(threshold * sigmoid_threshold)
         self.get_script_code()
 
-    def get_script_code(self):
+    def get_script_code(self) -> None:
         silut_forward_script = torch.jit.script(silut_forward)
         silut_backward_script = torch.jit.script(silut_backward)
         silut_double_backward_script = torch.jit.script(silut_double_backward)
@@ -229,8 +229,8 @@ def to_numpy_array(xx: None) -> None: ...
 
 
 def to_numpy_array(
-    xx,
-):
+    xx: Union[torch.Tensor, None],
+) -> Union[np.ndarray, None]:
     if xx is None:
         return None
     assert xx is not None
@@ -256,8 +256,8 @@ def to_torch_tensor(xx: None) -> None: ...
 
 
 def to_torch_tensor(
-    xx,
-):
+    xx: Union[np.ndarray, None],
+) -> Union[torch.Tensor, None]:
     if xx is None:
         return None
     assert xx is not None
@@ -297,7 +297,7 @@ MIX_MULT_R = 0x4973F715
 XSHIFT = 16
 
 
-def hashmix(value: int, hash_const: list[int]):
+def hashmix(value: int, hash_const: list[int]) -> int:
     value ^= INIT_A
     hash_const[0] *= MULT_A
     value *= INIT_A
@@ -308,7 +308,7 @@ def hashmix(value: int, hash_const: list[int]):
     return value
 
 
-def mix(x: int, y: int):
+def mix(x: int, y: int) -> int:
     result = MIX_MULT_L * x - MIX_MULT_R * y
     # prevent overflow
     result &= 0xFFFF_FFFF_FFFF_FFFF

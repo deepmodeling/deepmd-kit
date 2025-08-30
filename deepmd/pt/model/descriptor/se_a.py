@@ -93,11 +93,11 @@ if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_a"):
 class DescrptSeA(BaseDescriptor, torch.nn.Module):
     def __init__(
         self,
-        rcut,
-        rcut_smth,
-        sel,
-        neuron=[25, 50, 100],
-        axis_neuron=16,
+        rcut: float,
+        rcut_smth: float,
+        sel: Union[list[int], int],
+        neuron: list[int] = [25, 50, 100],
+        axis_neuron: int = 16,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "float64",
@@ -110,7 +110,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         ntypes: Optional[int] = None,  # to be compat with input
         type_map: Optional[list[str]] = None,
         # not implemented
-        spin=None,
+        spin: Optional[Any] = None,
     ) -> None:
         del ntypes
         if spin is not None:
@@ -168,7 +168,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """Returns the output dimension."""
         return self.sea.get_dim_emb()
 
-    def mixed_types(self):
+    def mixed_types(self) -> bool:
         """Returns if the descriptor requires a neighbor list that distinguish different
         atomic types or not.
         """

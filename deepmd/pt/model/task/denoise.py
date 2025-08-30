@@ -26,11 +26,11 @@ from deepmd.pt.utils import (
 class DenoiseNet(Fitting):
     def __init__(
         self,
-        feature_dim,
-        ntypes,
-        attn_head=8,
-        prefactor=[0.5, 0.5],
-        activation_function="gelu",
+        feature_dim: int,
+        ntypes: int,
+        attn_head: int = 8,
+        prefactor: list[float] = [0.5, 0.5],
+        activation_function: str = "gelu",
         **kwargs,
     ) -> None:
         """Construct a denoise net.
@@ -71,7 +71,7 @@ class DenoiseNet(Fitting):
                 self.pair2coord_proj.append(_pair2coord_proj)
             self.pair2coord_proj = torch.nn.ModuleList(self.pair2coord_proj)
 
-    def output_def(self):
+    def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
                 OutputVariableDef(
@@ -93,13 +93,13 @@ class DenoiseNet(Fitting):
 
     def forward(
         self,
-        pair_weights,
-        diff,
-        nlist_mask,
-        features,
-        sw,
+        pair_weights: torch.Tensor,
+        diff: torch.Tensor,
+        nlist_mask: torch.Tensor,
+        features: torch.Tensor,
+        sw: torch.Tensor,
         masked_tokens: Optional[torch.Tensor] = None,
-    ):
+    ) -> dict[str, torch.Tensor]:
         """Calculate the updated coord.
         Args:
         - coord: Input noisy coord with shape [nframes, nloc, 3].

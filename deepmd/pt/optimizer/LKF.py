@@ -161,10 +161,10 @@ class LKFOptimizer(Optimizer):
         self._state.setdefault("weights_num", len(P))
         self._state.setdefault("params_packed_index", params_packed_index)
 
-    def __get_blocksize(self):
+    def __get_blocksize(self) -> int:
         return self.param_groups[0]["block_size"]
 
-    def __get_nue(self):
+    def __get_nue(self) -> float:
         return self.param_groups[0]["kalman_nue"]
 
     def __split_weights(self, weight: torch.Tensor) -> list[torch.Tensor]:

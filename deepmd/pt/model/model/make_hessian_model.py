@@ -13,7 +13,7 @@ from deepmd.dpmodel import (
 )
 
 
-def make_hessian_model(T_Model):
+def make_hessian_model(T_Model: type) -> type:
     """Make a model that can compute Hessian.
 
     LIMITATION: this model is not jitable due to the restrictions of torch jit script.
@@ -54,14 +54,14 @@ def make_hessian_model(T_Model):
                 if kk in keys:
                     self.hess_fitting_def[kk].r_hessian = True
 
-        def atomic_output_def(self):
+        def atomic_output_def(self) -> FittingOutputDef:
             """Get the fitting output def."""
             return self.hess_fitting_def
 
         def forward_common(
             self,
-            coord,
-            atype,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
             box: Optional[torch.Tensor] = None,
             fparam: Optional[torch.Tensor] = None,
             aparam: Optional[torch.Tensor] = None,
@@ -159,9 +159,9 @@ def make_hessian_model(T_Model):
 
         def _cal_hessian_one_component(
             self,
-            ci,
-            coord,
-            atype,
+            ci: int,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
             box: Optional[torch.Tensor] = None,
             fparam: Optional[torch.Tensor] = None,
             aparam: Optional[torch.Tensor] = None,
@@ -195,8 +195,8 @@ def make_hessian_model(T_Model):
 
         def __call__(
             self,
-            xx,
-        ):
+            xx: torch.Tensor,
+        ) -> torch.Tensor:
             ci = self.ci
             atype, box, fparam, aparam = self.atype, self.box, self.fparam, self.aparam
             res = super(CM, self.obj).forward_common(

@@ -154,7 +154,7 @@ def _compute_model_predict(
     sampled: Union[Callable[[], list[dict]], list[dict]],
     keys: list[str],
     model_forward: Callable[..., torch.Tensor],
-):
+) -> dict[str, list[torch.Tensor]]:
     auto_batch_size = AutoBatchSize()
     model_predict = {kk: [] for kk in keys}
     for system in sampled:
@@ -217,7 +217,7 @@ def _make_preset_out_bias(
 def _fill_stat_with_global(
     atomic_stat: Union[np.ndarray, None],
     global_stat: np.ndarray,
-):
+) -> Union[np.ndarray, None]:
     """This function is used to fill atomic stat with global stat.
 
     Parameters
@@ -250,7 +250,7 @@ def compute_output_stats(
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
     stats_distinguish_types: bool = True,
     intensive: bool = False,
-):
+) -> dict[str, Any]:
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
 
@@ -417,7 +417,7 @@ def compute_output_stats_global(
     model_pred: Optional[dict[str, np.ndarray]] = None,
     stats_distinguish_types: bool = True,
     intensive: bool = False,
-):
+) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     """This function only handle stat computation from reduced global labels."""
     # return directly if model predict is empty for global
     if model_pred == {}:
@@ -544,7 +544,7 @@ def compute_output_stats_atomic(
     ntypes: int,
     keys: list[str],
     model_pred: Optional[dict[str, np.ndarray]] = None,
-):
+) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     # get label dict from sample; for each key, only picking the system with atomic labels.
     outputs = {
         kk: [
