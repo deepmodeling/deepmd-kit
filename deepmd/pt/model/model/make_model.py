@@ -67,10 +67,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
     class CM(BaseModel):
         def __init__(
             self,
-            *args,
+            *args: Any,
             # underscore to prevent conflict with normal inputs
             atomic_model_: Optional[T_AtomicModel] = None,
-            **kwargs,
+            **kwargs: Any,
         ) -> None:
             super().__init__(*args, **kwargs)
             if atomic_model_ is not None:

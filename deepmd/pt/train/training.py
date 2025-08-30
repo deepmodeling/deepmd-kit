@@ -804,7 +804,7 @@ class Trainer:
                         else self.wrapper
                     )
 
-                    def fake_model():
+                    def fake_model() -> dict:
                         return model_pred
 
                     _, loss, more_loss = module.loss[task_key](
@@ -879,7 +879,9 @@ class Trainer:
 
                 if self.disp_avg:
 
-                    def log_loss_train(_loss, _more_loss, _task_key="Default"):
+                    def log_loss_train(
+                        _loss: Any, _more_loss: Any, _task_key: str = "Default"
+                    ) -> dict:
                         results = {}
                         if not self.multi_task:
                             # Use accumulated average loss for single task
@@ -902,7 +904,9 @@ class Trainer:
                         return results
                 else:
 
-                    def log_loss_train(_loss, _more_loss, _task_key="Default"):
+                    def log_loss_train(
+                        _loss: Any, _more_loss: Any, _task_key: str = "Default"
+                    ) -> dict:
                         results = {}
                         rmse_val = {
                             item: _more_loss[item]
@@ -913,7 +917,7 @@ class Trainer:
                             results[item] = rmse_val[item]
                         return results
 
-                def log_loss_valid(_task_key="Default"):
+                def log_loss_valid(_task_key: str = "Default") -> dict:
                     single_results = {}
                     sum_natoms = 0
                     if not self.multi_task:
@@ -1294,7 +1298,12 @@ class Trainer:
         fout.flush()
 
     def print_on_training(
-        self, fout, step_id, cur_lr, train_results, valid_results
+        self,
+        fout: Any,
+        step_id: int,
+        cur_lr: float,
+        train_results: dict,
+        valid_results: dict,
     ) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""

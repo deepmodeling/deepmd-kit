@@ -70,7 +70,7 @@ def silut_double_backward(
 
 
 class SiLUTScript(torch.nn.Module):
-    def __init__(self, threshold: float = 3.0):
+    def __init__(self, threshold: float = 3.0) -> None:
         super().__init__()
         self.threshold = threshold
 

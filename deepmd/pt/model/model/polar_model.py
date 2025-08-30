@@ -28,8 +28,8 @@ class PolarModel(DPModelCommon, DPPolarModel_):
 
     def __init__(
         self,
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         DPModelCommon.__init__(self)
         DPPolarModel_.__init__(self, *args, **kwargs)

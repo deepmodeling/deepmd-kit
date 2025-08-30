@@ -51,7 +51,7 @@ log = logging.getLogger(__name__)
 class Fitting(torch.nn.Module, BaseFitting):
     # plugin moved to BaseFitting
 
-    def __new__(cls, *args, **kwargs) -> "Fitting":
+    def __new__(cls, *args: Any, **kwargs: Any) -> "Fitting":
         if cls is Fitting:
             return BaseFitting.__new__(BaseFitting, *args, **kwargs)
         return super().__new__(cls)

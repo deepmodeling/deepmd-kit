@@ -34,8 +34,8 @@ def make_hessian_model(T_Model: type) -> type:
     class CM(T_Model):
         def __init__(
             self,
-            *args,
-            **kwargs,
+            *args: Any,
+            **kwargs: Any,
         ) -> None:
             super().__init__(
                 *args,

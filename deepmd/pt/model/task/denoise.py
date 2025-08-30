@@ -31,7 +31,7 @@ class DenoiseNet(Fitting):
         attn_head: int = 8,
         prefactor: list[float] = [0.5, 0.5],
         activation_function: str = "gelu",
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Construct a denoise net.
 

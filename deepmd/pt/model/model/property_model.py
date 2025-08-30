@@ -28,8 +28,8 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
 
     def __init__(
         self,
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         DPModelCommon.__init__(self)
         DPPropertyModel_.__init__(self, *args, **kwargs)
