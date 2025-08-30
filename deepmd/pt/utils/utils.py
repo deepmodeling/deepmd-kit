@@ -229,8 +229,8 @@ def to_numpy_array(xx: None) -> None: ...
 
 
 def to_numpy_array(
-    xx: Union[torch.Tensor, None],
-) -> Union[np.ndarray, None]:
+    xx: Optional[torch.Tensor],
+) -> Optional[np.ndarray]:
     if xx is None:
         return None
     assert xx is not None
@@ -256,8 +256,8 @@ def to_torch_tensor(xx: None) -> None: ...
 
 
 def to_torch_tensor(
-    xx: Union[np.ndarray, None],
-) -> Union[torch.Tensor, None]:
+    xx: Optional[np.ndarray],
+) -> Optional[torch.Tensor]:
     if xx is None:
         return None
     assert xx is not None

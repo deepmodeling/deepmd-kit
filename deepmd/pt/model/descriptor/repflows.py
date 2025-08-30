@@ -4,7 +4,6 @@ from typing import (
     Callable,
     Optional,
     Union,
-    tuple,
 )
 
 import torch

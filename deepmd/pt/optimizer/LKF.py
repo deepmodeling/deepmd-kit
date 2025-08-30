@@ -3,6 +3,7 @@ import logging
 import math
 from typing import (
     Any,
+    Optional,
 )
 
 import torch
@@ -318,7 +319,7 @@ class LKFOptimizer(Optimizer):
 
         self.__update(H, error, weights)
 
-    def get_device_id(self, index: int) -> int | None:
+    def get_device_id(self, index: int) -> Optional[int]:
         for i, (start, end) in enumerate(self.dindex):
             if start <= index < end:
                 return i
