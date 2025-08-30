@@ -4,7 +4,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    NoReturn,
+    Any,
     Optional,
 )
 
@@ -47,7 +47,7 @@ def make_base_fitting(
         @abstractmethod
         def output_def(self) -> FittingOutputDef:
             """Returns the output def of the fitting net."""
-            pass
+            raise NotImplementedError
 
         @abstractmethod
         def fwd(
@@ -61,16 +61,16 @@ def make_base_fitting(
             aparam: Optional[t_tensor] = None,
         ) -> dict[str, t_tensor]:
             """Calculate fitting."""
-            pass
+            raise NotImplementedError
 
-        def compute_output_stats(self, merged) -> NoReturn:
+        def compute_output_stats(self, merged) -> None:
             """Update the output bias for fitting net."""
             raise NotImplementedError
 
         @abstractmethod
         def get_type_map(self) -> list[str]:
             """Get the name to each type of atoms."""
-            pass
+            raise NotImplementedError
 
         @abstractmethod
         def change_type_map(
@@ -79,15 +79,15 @@ def make_base_fitting(
             """Change the type related params to new ones, according to `type_map` and the original one in the model.
             If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
             """
-            pass
+            raise NotImplementedError
 
         @abstractmethod
-        def serialize(self) -> dict:
+        def serialize(self) -> dict[str, Any]:
             """Serialize the obj to dict."""
-            pass
+            raise NotImplementedError
 
         @classmethod
-        def deserialize(cls, data: dict) -> "BF":
+        def deserialize(cls, data: dict[str, Any]) -> "BF":
             """Deserialize the fitting.
 
             Parameters
@@ -100,9 +100,9 @@ def make_base_fitting(
             BF
                 The deserialized fitting
             """
-            if cls is BF:
-                return BF.get_class_by_type(data["type"]).deserialize(data)
-            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
+            # Note: This method should not be called during TorchScript compilation
+            # It's only used for model serialization/deserialization
+            raise NotImplementedError("deserialize not supported")
 
     setattr(BF, fwd_method_name, BF.fwd)
     delattr(BF, "fwd")
