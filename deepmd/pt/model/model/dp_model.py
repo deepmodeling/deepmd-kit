@@ -8,6 +8,9 @@ import torch
 from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
 )
+from deepmd.pt.model.task.base_fitting import (
+    BaseFitting,
+)
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
@@ -47,11 +50,11 @@ class DPModelCommon:
         )
         return local_jdata_cpy, min_nbor_dist
 
-    def get_fitting_net(self):
+    def get_fitting_net(self) -> BaseFitting:
         """Get the fitting network."""
         return self.atomic_model.fitting_net
 
-    def get_descriptor(self):
+    def get_descriptor(self) -> BaseDescriptor:
         """Get the descriptor."""
         return self.atomic_model.descriptor
 

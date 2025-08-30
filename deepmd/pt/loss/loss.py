@@ -4,6 +4,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Any,
     Dict,
     NoReturn,
     Union,
@@ -20,7 +21,7 @@ from deepmd.utils.plugin import (
 
 
 class TaskLoss(torch.nn.Module, ABC, make_plugin_registry("loss")):
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """Construct loss."""
         super().__init__()
 

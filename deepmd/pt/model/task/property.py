@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    Any,
     Optional,
     Union,
 )
@@ -91,7 +92,7 @@ class PropertyFittingNet(InvarFitting):
         mixed_types: bool = True,
         trainable: Union[bool, list[bool]] = True,
         seed: Optional[int] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         self.task_dim = task_dim
         self.intensive = intensive

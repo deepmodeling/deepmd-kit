@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    Any,
     Callable,
     Optional,
     Union,
@@ -93,7 +94,7 @@ class DipoleFittingNet(GeneralFitting):
         r_differentiable: bool = True,
         c_differentiable: bool = True,
         type_map: Optional[list[str]] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         self.embedding_width = embedding_width
         self.r_differentiable = r_differentiable
