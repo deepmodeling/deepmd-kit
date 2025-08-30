@@ -35,7 +35,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
         DPModelCommon.__init__(self)
         DPDipoleModel_.__init__(self, *args, **kwargs)
 
-    def translated_output_def(self):
+    def translated_output_def(self) -> dict[str, Any]:
         out_def_data = self.model_output_def().get_data()
         output_def = {
             "dipole": out_def_data["dipole"],
@@ -100,7 +100,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
-    ):
+    ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,

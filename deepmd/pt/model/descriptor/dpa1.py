@@ -4,6 +4,7 @@ from typing import (
     Callable,
     Optional,
     Union,
+    tuple,
 )
 
 import torch
@@ -654,7 +655,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
-    ):
+    ) -> tuple[
+        torch.Tensor, torch.Tensor, Optional[torch.Tensor], torch.Tensor, torch.Tensor
+    ]:
         """Compute the descriptor.
 
         Parameters
