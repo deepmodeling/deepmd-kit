@@ -36,7 +36,7 @@ class DPPropertyAtomicModel(DPAtomicModel):
         self,
         ret: dict[str, torch.Tensor],
         atype: torch.Tensor,
-    ):
+    ) -> dict[str, torch.Tensor]:
         """Apply the stat to each atomic output.
         In property fitting, each output will be multiplied by label std and then plus the label average value.
 

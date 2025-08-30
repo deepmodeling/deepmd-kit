@@ -28,6 +28,6 @@ class DPDipoleAtomicModel(DPAtomicModel):
         self,
         ret: dict[str, torch.Tensor],
         atype: torch.Tensor,
-    ):
+    ) -> dict[str, torch.Tensor]:
         # dipole not applying bias
         return ret

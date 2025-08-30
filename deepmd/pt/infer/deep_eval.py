@@ -531,7 +531,7 @@ class DeepEval(DeepEvalBackend):
         fparam: Optional[np.ndarray],
         aparam: Optional[np.ndarray],
         request_defs: list[OutputVariableDef],
-    ):
+    ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
 
         nframes = coords.shape[0]

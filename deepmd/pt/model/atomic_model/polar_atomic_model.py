@@ -28,7 +28,7 @@ class DPPolarAtomicModel(DPAtomicModel):
         self,
         ret: dict[str, torch.Tensor],
         atype: torch.Tensor,
-    ):
+    ) -> dict[str, torch.Tensor]:
         """Apply the stat to each atomic output.
 
         Parameters
