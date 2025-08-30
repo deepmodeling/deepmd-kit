@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
-from typing import (
-    Any,
-)
 
 from deepmd.tf.env import (
     tf,
@@ -12,7 +9,7 @@ from deepmd.tf.utils.errors import (
 )
 
 
-def run_sess(sess: tf.Session, *args: Any, **kwargs: Any) -> Any:
+def run_sess(sess: tf.Session, *args: object, **kwargs: object) -> object:
     """Run session with errors caught.
 
     Parameters

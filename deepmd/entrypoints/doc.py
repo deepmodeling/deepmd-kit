@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Module that prints train input arguments docstrings."""
 
-from typing import (
-    Any,
-)
-
 from deepmd.utils.argcheck import (
     gen_doc,
     gen_json,
@@ -15,7 +11,7 @@ __all__ = ["doc_train_input"]
 
 
 def doc_train_input(
-    *, out_type: str = "rst", multi_task: bool = False, **kwargs: Any
+    *, out_type: str = "rst", multi_task: bool = False, **kwargs: object
 ) -> None:
     """Print out trining input arguments to console."""
     if out_type == "rst":

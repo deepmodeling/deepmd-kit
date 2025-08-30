@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Any,
     Optional,
     Union,
 )
@@ -67,7 +66,7 @@ class DeepDOS(DeepEval):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         mixed_type: bool = False,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> tuple[np.ndarray, ...]:
         """Evaluate energy, force, and virial. If atomic is True,
         also return atomic energy and atomic virial.

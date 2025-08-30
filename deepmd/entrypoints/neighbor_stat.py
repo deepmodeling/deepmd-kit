@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    Any,
     Optional,
 )
 
@@ -25,7 +24,7 @@ def neighbor_stat(
     type_map: Optional[list[str]],
     mixed_type: bool = False,
     backend: str = "tensorflow",
-    **kwargs: Any,
+    **kwargs: object,
 ) -> None:
     """Calculate neighbor statistics.
 

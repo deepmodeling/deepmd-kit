@@ -7,7 +7,6 @@ from pathlib import (
     Path,
 )
 from typing import (
-    Any,
     Optional,
 )
 
@@ -35,7 +34,7 @@ def eval_desc(
     datafile: str,
     output: str = "desc",
     head: Optional[str] = None,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> None:
     """Evaluate descriptors for given systems.
 

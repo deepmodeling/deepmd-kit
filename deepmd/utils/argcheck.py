@@ -3383,7 +3383,7 @@ def gen_doc(
     make_anchor: bool = True,
     make_link: bool = True,
     multi_task: bool = False,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> str:
     if make_link:
         make_anchor = True
@@ -3400,7 +3400,7 @@ def gen_doc(
     return "\n\n".join(ptr)
 
 
-def gen_json(multi_task: bool = False, **kwargs: Any) -> str:
+def gen_json(multi_task: bool = False, **kwargs: object) -> str:
     return json.dumps(
         tuple(gen_args(multi_task=multi_task)),
         cls=ArgumentEncoder,

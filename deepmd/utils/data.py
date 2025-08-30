@@ -55,7 +55,7 @@ class DeepmdData:
         shuffle_test: bool = True,
         type_map: Optional[list[str]] = None,
         optional_type_map: bool = True,
-        modifier: Optional[Any] = None,
+        modifier: Optional[object] = None,
         trn_all_set: bool = False,
         sort_atoms: bool = True,
     ) -> None:

@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Any,
     Optional,
     overload,
 )
@@ -364,7 +363,7 @@ def make_model_devi(
     atomic: bool = False,
     relative: Optional[float] = None,
     relative_v: Optional[float] = None,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> None:
     """Make model deviation calculation.
 

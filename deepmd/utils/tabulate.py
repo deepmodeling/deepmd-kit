@@ -25,7 +25,7 @@ class BaseTabulate(ABC):
 
     def __init__(
         self,
-        descrpt: Any,
+        descrpt: object,
         neuron: list[int],
         type_one_side: bool,
         exclude_types: list[list[int]],

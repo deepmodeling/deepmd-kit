@@ -7,7 +7,6 @@ from abc import (
     ABCMeta,
 )
 from typing import (
-    Any,
     Callable,
     Optional,
 )
@@ -74,7 +73,7 @@ class Plugin:
 
 
 class VariantMeta:
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+    def __call__(self, *args: object, **kwargs: object) -> object:
         """Remove `type` and keys that starts with underline."""
         obj = self.__new__(self, *args, **kwargs)
         kwargs.pop("type", None)
