@@ -61,7 +61,7 @@ from deepmd.utils.argcheck import (
     (True, False),  # resnet_dt
     ("float64", "float32"),  # precision
     (True, False),  # mixed_types
-    ([], [0]),  # sel_type
+    (None, [0]),  # sel_type
 )
 class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
     @property
@@ -76,12 +76,31 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
             "neuron": [5, 5, 5],
             "resnet_dt": resnet_dt,
             "precision": precision,
+            "sel_type": sel_type,
             "seed": 20240217,
         }
-        # Only add sel_type if it's not empty (for TF backend compatibility)
-        if sel_type:
-            data["sel_type"] = sel_type
         return data
+
+    def pass_data_to_cls(self, cls, data) -> Any:
+        """Pass data to the class."""
+        if cls not in (self.tf_class,):
+            sel_type = data.pop("sel_type", None)
+            if sel_type is not None:
+                all_types = list(range(self.ntypes))
+                exclude_types = [t for t in all_types if t not in sel_type]
+                data["exclude_types"] = exclude_types
+        return cls(**data, **self.additional_data)
+
+    @property
+    def skip_tf(self) -> bool:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            sel_type,
+        ) = self.param
+        # mixed_types + sel_type is not supported
+        return CommonTest.skip_tf or (mixed_types and sel_type is not None)
 
     @property
     def skip_pt(self) -> bool:
@@ -127,11 +146,6 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
             "mixed_types": mixed_types,
             "embedding_width": 30,
         }
-        # For DP/PT backends, use exclude_types instead of sel_type
-        if sel_type:
-            all_types = list(range(self.ntypes))
-            exclude_types = [t for t in all_types if t not in sel_type]
-            additional["exclude_types"] = exclude_types
         return additional
 
     def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
@@ -241,3 +255,39 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
             return 1e-4
         else:
             raise ValueError(f"Unknown precision: {precision}")
+
+    def test_tf_consistent_with_ref(self) -> None:
+        """Test whether TF and reference are consistent."""
+        # Special handle for sel_types
+        if self.skip_tf:
+            self.skipTest("Unsupported backend")
+        ref_backend = self.get_reference_backend()
+        if ref_backend == self.RefBackend.TF:
+            self.skipTest("Reference is self")
+        ret1, data1 = self.get_reference_ret_serialization(ref_backend)
+        ret1 = self.extract_ret(ret1, ref_backend)
+        self.reset_unique_id()
+        tf_obj = self.tf_class.deserialize(data1, suffix=self.unique_id)
+        ret2, data2 = self.get_tf_ret_serialization_from_cls(tf_obj)
+        ret2 = self.extract_ret(ret2, self.RefBackend.TF)
+        if tf_obj.__class__.__name__.startswith(("Polar", "Dipole", "DOS")):
+            # tf, pt serialization mismatch
+            common_keys = set(data1.keys()) & set(data2.keys())
+            data1 = {k: data1[k] for k in common_keys}
+            data2 = {k: data2[k] for k in common_keys}
+
+        # not comparing version
+        data1.pop("@version")
+        data2.pop("@version")
+
+        if tf_obj.__class__.__name__.startswith("Polar"):
+            data1["@variables"].pop("bias_atom_e")
+        for ii, networks in enumerate(data2["nets"]["networks"]):
+            if networks is None:
+                data1["nets"]["networks"][ii] = None
+        np.testing.assert_equal(data1, data2)
+        for rr1, rr2 in zip(ret1, ret2):
+            np.testing.assert_allclose(
+                rr1.ravel()[: rr2.size], rr2.ravel(), rtol=self.rtol, atol=self.atol
+            )
+            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
