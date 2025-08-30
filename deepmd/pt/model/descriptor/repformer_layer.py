@@ -1141,7 +1141,7 @@ class RepformerLayer(torch.nn.Module):
         nlist: torch.Tensor,  # nf x nloc x nnei
         nlist_mask: torch.Tensor,  # nf x nloc x nnei
         sw: torch.Tensor,  # switch func, nf x nloc x nnei
-    ):
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Parameters
         ----------

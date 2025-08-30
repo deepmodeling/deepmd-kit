@@ -32,7 +32,7 @@ from deepmd.utils.version import (
 )
 
 
-def Tensor(*shape):
+def Tensor(*shape: int) -> torch.Tensor:
     return torch.empty(shape, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
 
 
@@ -41,12 +41,12 @@ class SimpleLinear(nn.Module):
 
     def __init__(
         self,
-        num_in,
-        num_out,
-        bavg=0.0,
-        stddev=1.0,
-        use_timestep=False,
-        activate=None,
+        num_in: int,
+        num_out: int,
+        bavg: float = 0.0,
+        stddev: float = 1.0,
+        use_timestep: bool = False,
+        activate: Optional[str] = None,
         bias: bool = True,
     ) -> None:
         """Construct a linear layer.
@@ -74,7 +74,7 @@ class SimpleLinear(nn.Module):
             self.idt = nn.Parameter(data=Tensor(1, num_out))
             nn.init.normal_(self.idt.data, mean=0.1, std=0.001)
 
-    def forward(self, inputs):
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         """Return X*W+b."""
         xw = torch.matmul(inputs, self.matrix)
         hidden = xw + self.bias if self.bias is not None else xw

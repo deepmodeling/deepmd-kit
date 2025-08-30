@@ -39,7 +39,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         DPEnergyModel_.__init__(self, *args, **kwargs)
         self._hessian_enabled = False
 
-    def enable_hessian(self):
+    def enable_hessian(self) -> None:
         self.__class__ = make_hessian_model(type(self))
         self.hess_fitting_def = super(type(self), self).atomic_output_def()
         self.requires_hessian("energy")
@@ -71,7 +71,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 observed_type_list.append(type_map[i])
         return observed_type_list
 
-    def translated_output_def(self):
+    def translated_output_def(self) -> dict[str, Any]:
         out_def_data = self.model_output_def().get_data()
         output_def = {
             "atom_energy": out_def_data["energy"],
@@ -142,7 +142,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
-    ):
+    ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,
