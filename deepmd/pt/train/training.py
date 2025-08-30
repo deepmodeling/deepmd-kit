@@ -15,7 +15,9 @@ from pathlib import (
 from typing import (
     Any,
     Callable,
+    Dict,
     Optional,
+    Tuple,
 )
 
 import numpy as np
@@ -512,11 +514,11 @@ class Trainer:
                     state_dict = pretrained_model_wrapper.state_dict()
 
                     def collect_single_finetune_params(
-                        _model_key,
-                        _finetune_rule_single,
-                        _new_state_dict,
-                        _origin_state_dict,
-                        _random_state_dict,
+                        _model_key: str,
+                        _finetune_rule_single: Any,
+                        _new_state_dict: Dict[str, Any],
+                        _origin_state_dict: Dict[str, Any],
+                        _random_state_dict: Dict[str, Any],
                     ) -> None:
                         _new_fitting = _finetune_rule_single.get_random_fitting()
                         _model_key_from = _finetune_rule_single.get_model_branch()
@@ -577,10 +579,10 @@ class Trainer:
                 if finetune_model is not None:
 
                     def single_model_finetune(
-                        _model,
-                        _finetune_rule_single,
-                        _sample_func,
-                    ):
+                        _model: Any,
+                        _finetune_rule_single: Any,
+                        _sample_func: Callable,
+                    ) -> Any:
                         _model = model_change_out_bias(
                             _model,
                             _sample_func,
@@ -635,7 +637,7 @@ class Trainer:
 
         # TODO add lr warmups for multitask
         # author: iProzd
-        def warm_up_linear(step, warmup_steps):
+        def warm_up_linear(step: int, warmup_steps: int) -> float:
             if step < warmup_steps:
                 return step / warmup_steps
             else:
@@ -728,7 +730,7 @@ class Trainer:
             )
             prof.start()
 
-        def step(_step_id, task_key="Default") -> None:
+        def step(_step_id: int, task_key: str = "Default") -> None:
             if self.multi_task:
                 model_index = dp_random.choice(
                     np.arange(self.num_model, dtype=np.int_),
@@ -1187,7 +1189,7 @@ class Trainer:
                     f"The profiling trace has been saved to: {self.profiling_file}"
                 )
 
-    def save_model(self, save_path, lr=0.0, step=0) -> None:
+    def save_model(self, save_path: str, lr: float = 0.0, step: int = 0) -> None:
         module = (
             self.wrapper.module
             if dist.is_available() and dist.is_initialized()
@@ -1212,7 +1214,9 @@ class Trainer:
             checkpoint_files.sort(key=lambda x: x.stat().st_mtime)
             checkpoint_files[0].unlink()
 
-    def get_data(self, is_train=True, task_key="Default"):
+    def get_data(
+        self, is_train: bool = True, task_key: str = "Default"
+    ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
         if is_train:
             iterator = self.training_data
         else:
@@ -1256,7 +1260,9 @@ class Trainer:
         log_dict["sid"] = batch_data["sid"]
         return input_dict, label_dict, log_dict
 
-    def print_header(self, fout, train_results, valid_results) -> None:
+    def print_header(
+        self, fout: Any, train_results: Dict[str, Any], valid_results: Dict[str, Any]
+    ) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""
         print_str += "# {:5s}".format("step")
