@@ -14,6 +14,9 @@ import torch.nn as nn
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.pt.common import (
+    ComputeInputStatsMixin,
+)
 from deepmd.pt.model.descriptor import (
     DescriptorBlock,
     prod_env_mat,
@@ -25,17 +28,11 @@ from deepmd.pt.utils.env import (
     PRECISION_DICT,
     RESERVED_PRECISION_DICT,
 )
-from deepmd.pt.utils.env_mat_stat import (
-    EnvMatStatSe,
-)
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
-)
-from deepmd.utils.env_mat_stat import (
-    StatItem,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -449,7 +446,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 
 
 @DescriptorBlock.register("se_e2_a")
-class DescrptBlockSeA(DescriptorBlock):
+class DescrptBlockSeA(DescriptorBlock, ComputeInputStatsMixin):
     ndescrpt: Final[int]
     __constants__: ClassVar[list] = ["ndescrpt"]
 
@@ -627,41 +624,11 @@ class DescrptBlockSeA(DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def compute_input_stats(
-        self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
-    ) -> None:
-        """
-        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+    def _set_stat_mean_and_stddev(self, mean, stddev) -> None:
+        """Set the computed statistics to the descriptor's mean and stddev attributes.
 
-        Parameters
-        ----------
-        merged : Union[Callable[[], list[dict]], list[dict]]
-            - list[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
-                originating from the `i`-th data system.
-            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
-                only when needed. Since the sampling process can be slow and memory-intensive,
-                the lazy function helps by only sampling once.
-        path : Optional[DPPath]
-            The path to the stat file.
-
+        This is the PyTorch backend-specific implementation using torch.tensor.
         """
-        env_mat_stat = EnvMatStatSe(self)
-        if path is not None:
-            path = path / env_mat_stat.get_hash()
-        if path is None or not path.is_dir():
-            if callable(merged):
-                # only get data for once
-                sampled = merged()
-            else:
-                sampled = merged
-        else:
-            sampled = []
-        env_mat_stat.load_or_compute_stats(sampled, path)
-        self.stats = env_mat_stat.stats
-        mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
             self.mean.copy_(
                 torch.tensor(mean, device=env.DEVICE, dtype=self.mean.dtype)
@@ -669,14 +636,6 @@ class DescrptBlockSeA(DescriptorBlock):
         self.stddev.copy_(
             torch.tensor(stddev, device=env.DEVICE, dtype=self.stddev.dtype)
         )
-
-    def get_stats(self) -> dict[str, StatItem]:
-        """Get the statistics of the descriptor."""
-        if self.stats is None:
-            raise RuntimeError(
-                "The statistics of the descriptor has not been computed."
-            )
-        return self.stats
 
     def reinit_exclude(
         self,
