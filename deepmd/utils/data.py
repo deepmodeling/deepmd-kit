@@ -4,6 +4,7 @@
 import bisect
 import logging
 from typing import (
+    Any,
     Optional,
 )
 
@@ -54,7 +55,7 @@ class DeepmdData:
         shuffle_test: bool = True,
         type_map: Optional[list[str]] = None,
         optional_type_map: bool = True,
-        modifier=None,
+        modifier: Optional[Any] = None,
         trn_all_set: bool = False,
         sort_atoms: bool = True,
     ) -> None:
@@ -145,7 +146,7 @@ class DeepmdData:
         default: float = 0.0,
         dtype: Optional[np.dtype] = None,
         output_natoms_for_type_sel: bool = False,
-    ):
+    ) -> "DeepmdData":
         """Add a data item that to be loaded.
 
         Parameters
@@ -188,7 +189,7 @@ class DeepmdData:
         }
         return self
 
-    def reduce(self, key_out: str, key_in: str):
+    def reduce(self, key_out: str, key_in: str) -> "DeepmdData":
         """Generate a new item from the reduction of another atom.
 
         Parameters
@@ -220,7 +221,7 @@ class DeepmdData:
         """Get the `data_dict`."""
         return self.data_dict
 
-    def check_batch_size(self, batch_size):
+    def check_batch_size(self, batch_size: int) -> bool:
         """Check if the system can get a batch of data with `batch_size` frames."""
         for ii in self.dirs:
             if self.data_dict["coord"]["high_prec"]:
@@ -235,7 +236,7 @@ class DeepmdData:
                 return ii, tmpe.shape[0]
         return None
 
-    def check_test_size(self, test_size):
+    def check_test_size(self, test_size: int) -> bool:
         """Check if the system can get a test dataset with `test_size` frames."""
         return self.check_batch_size(test_size)
 
@@ -352,11 +353,11 @@ class DeepmdData:
             ret += self.get_numb_batch(batch_size, ii)
         return ret
 
-    def get_natoms(self):
+    def get_natoms(self) -> int:
         """Get number of atoms."""
         return len(self.atom_type)
 
-    def get_natoms_vec(self, ntypes: int):
+    def get_natoms_vec(self, ntypes: int) -> np.ndarray:
         """Get number of atoms and number of atoms in different types.
 
         Parameters
@@ -376,7 +377,7 @@ class DeepmdData:
         tmp = np.append(tmp, natoms_vec)
         return tmp.astype(np.int32)
 
-    def avg(self, key):
+    def avg(self, key: str) -> float:
         """Return the average value of an item."""
         if key not in self.data_dict.keys():
             raise RuntimeError(f"key {key} has not been added")
@@ -393,7 +394,7 @@ class DeepmdData:
         else:
             return np.average(eners, axis=0)
 
-    def _idx_map_sel(self, atom_type, type_sel):
+    def _idx_map_sel(self, atom_type: np.ndarray, type_sel: list[int]) -> np.ndarray:
         new_types = []
         for ii in atom_type:
             if ii in type_sel:
@@ -404,7 +405,7 @@ class DeepmdData:
         idx_map = np.lexsort((idx, new_types))
         return idx_map
 
-    def _get_natoms_2(self, ntypes):
+    def _get_natoms_2(self, ntypes: int) -> tuple[int, np.ndarray]:
         sample_type = self.atom_type
         natoms = len(sample_type)
         natoms_vec = np.zeros(ntypes, dtype=np.int64)
@@ -412,7 +413,9 @@ class DeepmdData:
             natoms_vec[ii] = np.count_nonzero(sample_type == ii)
         return natoms, natoms_vec
 
-    def _get_subdata(self, data, idx=None):
+    def _get_subdata(
+        self, data: dict[str, Any], idx: Optional[np.ndarray] = None
+    ) -> dict[str, Any]:
         new_data = {}
         for ii in data:
             dd = data[ii]
@@ -454,7 +457,7 @@ class DeepmdData:
         if shuffle_test:
             self.test_set, _ = self._shuffle_data(self.test_set)
 
-    def _shuffle_data(self, data):
+    def _shuffle_data(self, data: dict[str, Any]) -> dict[str, Any]:
         ret = {}
         nframes = data["coord"].shape[0]
         idx = np.arange(nframes, dtype=np.int64)
@@ -473,7 +476,7 @@ class DeepmdData:
                 ret[kk] = data[kk]
         return ret, idx
 
-    def _get_nframes(self, set_name: DPPath):
+    def _get_nframes(self, set_name: DPPath) -> int:
         # get nframes
         if not isinstance(set_name, DPPath):
             set_name = DPPath(set_name)
@@ -487,7 +490,7 @@ class DeepmdData:
         nframes = coord.shape[0]
         return nframes
 
-    def reformat_data_torch(self, data):
+    def reformat_data_torch(self, data: dict[str, Any]) -> dict[str, Any]:
         """Modify the data format for the requirements of Torch backend.
 
         Parameters
@@ -506,7 +509,7 @@ class DeepmdData:
             data["box"] = None
         return data
 
-    def _load_set(self, set_name: DPPath):
+    def _load_set(self, set_name: DPPath) -> dict[str, Any]:
         # get nframes
         if not isinstance(set_name, DPPath):
             set_name = DPPath(set_name)
@@ -593,19 +596,19 @@ class DeepmdData:
 
     def _load_data(
         self,
-        set_name,
-        key,
-        nframes,
-        ndof_,
-        atomic=False,
-        must=True,
-        repeat=1,
-        high_prec=False,
-        type_sel=None,
+        set_name: str,
+        key: str,
+        nframes: int,
+        ndof_: int,
+        atomic: bool = False,
+        must: bool = True,
+        repeat: int = 1,
+        high_prec: bool = False,
+        type_sel: Optional[list[int]] = None,
         default: float = 0.0,
         dtype: Optional[np.dtype] = None,
         output_natoms_for_type_sel: bool = False,
-    ):
+    ) -> np.ndarray:
         if atomic:
             natoms = self.natoms
             idx_map = self.idx_map
@@ -704,16 +707,16 @@ class DeepmdData:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
             return np.float32(0.0), data
 
-    def _load_type(self, sys_path: DPPath):
+    def _load_type(self, sys_path: DPPath) -> np.ndarray:
         atom_type = (sys_path / "type.raw").load_txt(ndmin=1).astype(np.int32)
         return atom_type
 
-    def _load_type_mix(self, set_name: DPPath):
+    def _load_type_mix(self, set_name: DPPath) -> np.ndarray:
         type_path = set_name / "real_atom_types.npy"
         real_type = type_path.load_numpy().astype(np.int32).reshape([-1, self.natoms])
         return real_type
 
-    def _make_idx_map(self, atom_type):
+    def _make_idx_map(self, atom_type: np.ndarray) -> np.ndarray:
         natoms = atom_type.shape[0]
         idx = np.arange(natoms, dtype=np.int64)
         if self.sort_atoms:
@@ -722,20 +725,20 @@ class DeepmdData:
             idx_map = idx
         return idx_map
 
-    def _load_type_map(self, sys_path: DPPath):
+    def _load_type_map(self, sys_path: DPPath) -> Optional[list[str]]:
         fname = sys_path / "type_map.raw"
         if fname.is_file():
             return fname.load_txt(dtype=str, ndmin=1).tolist()
         else:
             return None
 
-    def _check_pbc(self, sys_path: DPPath):
+    def _check_pbc(self, sys_path: DPPath) -> bool:
         pbc = True
         if (sys_path / "nopbc").is_file():
             pbc = False
         return pbc
 
-    def _check_mode(self, set_path: DPPath):
+    def _check_mode(self, set_path: DPPath) -> bool:
         return (set_path / "real_atom_types.npy").is_file()
 
 
@@ -808,7 +811,7 @@ class DataRequirementItem:
             "output_natoms_for_type_sel": self.output_natoms_for_type_sel,
         }
 
-    def __getitem__(self, key: str):
+    def __getitem__(self, key: str) -> np.ndarray:
         if key not in self.dict:
             raise KeyError(key)
         return self.dict[key]

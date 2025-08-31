@@ -14,6 +14,7 @@ from collections import (
     defaultdict,
 )
 from typing import (
+    Any,
     Optional,
 )
 
@@ -63,19 +64,31 @@ BACKEND_TABLE: dict[str, str] = {kk: vv.name.lower() for kk, vv in BACKENDS.item
 class BackendOption(argparse.Action):
     """Map backend alias to unique name."""
 
-    def __call__(self, parser, namespace, values, option_string=None):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: Optional[str] = None,
+    ) -> None:
         setattr(namespace, self.dest, BACKEND_TABLE[values])
 
 
 class DeprecateAction(argparse.Action):
     # See https://stackoverflow.com/a/69052677/9567349 by Ibolit under CC BY-SA 4.0
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.call_count = 0
         if "help" in kwargs:
             kwargs["help"] = f"[DEPRECATED] {kwargs['help']}"
         super().__init__(*args, **kwargs)
 
-    def __call__(self, parser, namespace, values, option_string=None):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: Optional[str] = None,
+    ) -> None:
         if self.call_count == 0:
             warnings.warn(
                 f"The option `{option_string}` is deprecated. It will be ignored.",

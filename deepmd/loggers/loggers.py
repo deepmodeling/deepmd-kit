@@ -44,7 +44,7 @@ CFORMATTER_MPI = logging.Formatter(
 class _AppFilter(logging.Filter):
     """Add field `app_name` to log messages."""
 
-    def filter(self, record) -> bool:
+    def filter(self, record: logging.LogRecord) -> bool:
         record.app_name = "DEEPMD"
         return True
 
@@ -56,7 +56,7 @@ class _MPIRankFilter(logging.Filter):
         super().__init__(name="MPI_rank_id")
         self.mpi_rank = str(rank)
 
-    def filter(self, record) -> bool:
+    def filter(self, record: logging.LogRecord) -> bool:
         record.rank = self.mpi_rank
         return True
 
@@ -68,7 +68,7 @@ class _MPIMasterFilter(logging.Filter):
         super().__init__(name="MPI_master_log")
         self.mpi_rank = rank
 
-    def filter(self, record) -> bool:
+    def filter(self, record: logging.LogRecord) -> bool:
         if self.mpi_rank == 0:
             return True
         else:
@@ -135,10 +135,10 @@ class _MPIHandler(logging.FileHandler):
         self.MPI = MPI
         super().__init__(filename, mode=mode, encoding=None, delay=False)
 
-    def _open(self):
+    def _open(self) -> "_MPIFileStream":
         return _MPIFileStream(self.baseFilename, self.MPI, self.mode)
 
-    def setStream(self, stream) -> NoReturn:
+    def setStream(self, stream: "_MPIFileStream") -> NoReturn:
         """Stream cannot be reasigned in MPI mode."""
         raise NotImplementedError("Unable to do for MPI file handler!")
 
