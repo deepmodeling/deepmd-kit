@@ -7,11 +7,11 @@ from functools import (
 )
 from typing import (
     TYPE_CHECKING,
-    Any,
     Callable,
     Union,
 )
 
+import numpy as np
 import tensorflow
 from packaging.version import (
     Version,
@@ -116,7 +116,7 @@ def gelu_tf(x: tf.Tensor) -> tf.Tensor:
     https://arxiv.org/abs/1606.08415
     """
 
-    def gelu_wrapper(x):
+    def gelu_wrapper(x: tf.Tensor) -> tf.Tensor:
         try:
             return tensorflow.nn.gelu(x, approximate=True)
         except AttributeError:
@@ -144,16 +144,14 @@ def silu(x: tf.Tensor) -> tf.Tensor:
     return x * tf.sigmoid(x)
 
 
-def get_silut(activation_function: str = "silut"):
-    import numpy as np
-
-    def sigmoid(x):
+def get_silut(activation_function: str = "silut") -> Callable[[tf.Tensor], tf.Tensor]:
+    def sigmoid(x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
         return 1 / (1 + np.exp(-x))
 
-    def silu(x):
+    def silu(x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
         return x * sigmoid(x)
 
-    def silu_grad(x):
+    def silu_grad(x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
         sig = sigmoid(x)
         return sig + x * sig * (1 - sig)
 
@@ -231,7 +229,7 @@ def get_activation_func(
     return ACTIVATION_FN_DICT[activation_fn.lower()]
 
 
-def get_precision(precision: "_PRECISION") -> Any:
+def get_precision(precision: "_PRECISION") -> tf.DType:
     """Convert str to TF DType constant.
 
     Parameters
@@ -317,7 +315,7 @@ def cast_precision(func: Callable) -> Callable:
     """
 
     @wraps(func)
-    def wrapper(self, *args, **kwargs):
+    def wrapper(self: object, *args: object, **kwargs: object) -> object:
         # only convert tensors
         returned_tensor = func(
             self,

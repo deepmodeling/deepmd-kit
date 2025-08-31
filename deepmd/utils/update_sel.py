@@ -5,7 +5,6 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    Any,
     Optional,
     Union,
 )
@@ -56,7 +55,7 @@ class BaseUpdateSel(ABC):
                     )
         return min_nbor_dist, sel
 
-    def parse_auto_sel(self, sel: Any) -> bool:
+    def parse_auto_sel(self, sel: object) -> bool:
         if not isinstance(sel, str):
             return False
         words = sel.split(":")
@@ -65,7 +64,7 @@ class BaseUpdateSel(ABC):
         else:
             return False
 
-    def parse_auto_sel_ratio(self, sel: Any) -> float:
+    def parse_auto_sel_ratio(self, sel: object) -> float:
         if not self.parse_auto_sel(sel):
             raise RuntimeError(f"invalid auto sel format {sel}")
         else:

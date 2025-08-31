@@ -254,7 +254,7 @@ class NeighborStat(BaseNeighborStat):
         atype: np.ndarray,
         box: Optional[np.ndarray],
         pbc: bool,
-    ):
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Execute the operation.
 
         Parameters

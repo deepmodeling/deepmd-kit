@@ -9,7 +9,7 @@ from deepmd.tf.utils.errors import (
 )
 
 
-def run_sess(sess: tf.Session, *args, **kwargs):
+def run_sess(sess: tf.Session, *args: object, **kwargs: object) -> object:
     """Run session with errors caught.
 
     Parameters

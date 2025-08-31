@@ -12,7 +12,6 @@ from pathlib import (
     Path,
 )
 from typing import (
-    Any,
     ClassVar,
     Optional,
     Union,
@@ -57,7 +56,7 @@ class DPPath(ABC):
         """
 
     @abstractmethod
-    def load_txt(self, **kwargs: Any) -> np.ndarray:
+    def load_txt(self, **kwargs: object) -> np.ndarray:
         """Load NumPy array from text.
 
         Returns
@@ -187,7 +186,7 @@ class DPOSPath(DPPath):
         """
         return np.load(str(self.path))
 
-    def load_txt(self, **kwargs: Any) -> np.ndarray:
+    def load_txt(self, **kwargs: object) -> np.ndarray:
         """Load NumPy array from text.
 
         Returns
@@ -342,7 +341,9 @@ class DPH5Path(DPPath):
         """
         return self.root[self._name][:]
 
-    def load_txt(self, dtype: Optional[np.dtype] = None, **kwargs: Any) -> np.ndarray:
+    def load_txt(
+        self, dtype: Optional[np.dtype] = None, **kwargs: object
+    ) -> np.ndarray:
         """Load NumPy array from text.
 
         Returns

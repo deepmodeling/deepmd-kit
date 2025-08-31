@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-from typing import (
-    Any,
-)
 
 from deepmd.infer.deep_eval import (
     DeepEval,
@@ -22,7 +19,7 @@ def show(
     *,
     INPUT: str,
     ATTRIBUTES: list[str],
-    **kwargs: Any,
+    **kwargs: object,
 ) -> None:
     model = DeepEval(INPUT, head=0)
     model_params = model.get_model_def_script()

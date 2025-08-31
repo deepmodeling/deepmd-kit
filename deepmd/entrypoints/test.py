@@ -7,7 +7,6 @@ from pathlib import (
 )
 from typing import (
     TYPE_CHECKING,
-    Any,
     Optional,
 )
 
@@ -76,7 +75,7 @@ def test(
     detail_file: str,
     atomic: bool,
     head: Optional[str] = None,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> None:
     """Test model predictions.
 

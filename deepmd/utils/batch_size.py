@@ -6,7 +6,6 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    Any,
     Callable,
 )
 
@@ -150,8 +149,8 @@ class AutoBatchSize(ABC):
         callable: Callable,
         total_size: int,
         natoms: int,
-        *args: Any,
-        **kwargs: Any,
+        *args: object,
+        **kwargs: object,
     ) -> tuple[np.ndarray]:
         """Excuate a method with all given data.
 
@@ -215,7 +214,7 @@ class AutoBatchSize(ABC):
                 result = (result,) if not isinstance(result, tuple) else result
             index += n_batch
 
-            def append_to_list(res_list: list[Any], res: Any) -> list[Any]:
+            def append_to_list(res_list: list[object], res: object) -> list[object]:
                 if n_batch:
                     res_list.append(res)
                 return res_list
@@ -229,7 +228,7 @@ class AutoBatchSize(ABC):
         assert results is not None
         assert returned_dict is not None
 
-        def concate_result(r: list[Any]) -> Any:
+        def concate_result(r: list[object]) -> object:
             if array_api_compat.is_array_api_obj(r[0]):
                 xp = array_api_compat.array_namespace(r[0])
                 ret = xp.concat(r, axis=0)

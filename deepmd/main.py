@@ -14,7 +14,6 @@ from collections import (
     defaultdict,
 )
 from typing import (
-    Any,
     Optional,
 )
 
@@ -68,7 +67,7 @@ class BackendOption(argparse.Action):
         self,
         parser: argparse.ArgumentParser,
         namespace: argparse.Namespace,
-        values: Any,
+        values: object,
         option_string: Optional[str] = None,
     ) -> None:
         setattr(namespace, self.dest, BACKEND_TABLE[values])
@@ -76,7 +75,7 @@ class BackendOption(argparse.Action):
 
 class DeprecateAction(argparse.Action):
     # See https://stackoverflow.com/a/69052677/9567349 by Ibolit under CC BY-SA 4.0
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: object, **kwargs: object) -> None:
         self.call_count = 0
         if "help" in kwargs:
             kwargs["help"] = f"[DEPRECATED] {kwargs['help']}"
@@ -86,7 +85,7 @@ class DeprecateAction(argparse.Action):
         self,
         parser: argparse.ArgumentParser,
         namespace: argparse.Namespace,
-        values: Any,
+        values: object,
         option_string: Optional[str] = None,
     ) -> None:
         if self.call_count == 0:

@@ -99,7 +99,7 @@ class DeepPot(DeepEval):
         fparam: Optional[np.ndarray],
         aparam: Optional[np.ndarray],
         mixed_type: bool,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> Union[
         tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
         tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
@@ -116,7 +116,7 @@ class DeepPot(DeepEval):
         fparam: Optional[np.ndarray],
         aparam: Optional[np.ndarray],
         mixed_type: bool,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> Union[
         tuple[np.ndarray, np.ndarray, np.ndarray],
         tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
@@ -133,7 +133,7 @@ class DeepPot(DeepEval):
         fparam: Optional[np.ndarray],
         aparam: Optional[np.ndarray],
         mixed_type: bool,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> tuple[np.ndarray, ...]:
         pass
 

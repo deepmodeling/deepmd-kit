@@ -5,7 +5,6 @@ from abc import (
 )
 from typing import (
     TYPE_CHECKING,
-    Any,
     ClassVar,
     Optional,
     Union,
@@ -83,10 +82,10 @@ class DeepEvalBackend(ABC):
         self,
         model_file: str,
         output_def: ModelOutputDef,
-        *args: Any,
+        *args: object,
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> None:
         pass
 
@@ -107,7 +106,7 @@ class DeepEvalBackend(ABC):
         atomic: bool = False,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
 
@@ -175,7 +174,7 @@ class DeepEvalBackend(ABC):
         aparam: Optional[np.ndarray] = None,
         efield: Optional[np.ndarray] = None,
         mixed_type: bool = False,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> np.ndarray:
         """Evaluate descriptors by using this DP.
 
@@ -224,7 +223,7 @@ class DeepEvalBackend(ABC):
         atom_types: np.ndarray,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> np.ndarray:
         """Evaluate fitting before last layer by using this DP.
 
@@ -381,10 +380,10 @@ class DeepEval(ABC):
     def __init__(
         self,
         model_file: str,
-        *args: Any,
+        *args: object,
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> None:
         self.deep_eval = DeepEvalBackend(
             model_file,
@@ -454,7 +453,7 @@ class DeepEval(ABC):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         mixed_type: bool = False,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> np.ndarray:
         """Evaluate descriptors by using this DP.
 
@@ -521,7 +520,7 @@ class DeepEval(ABC):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         mixed_type: bool = False,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> np.ndarray:
         """Evaluate fitting before last layer by using this DP.
 

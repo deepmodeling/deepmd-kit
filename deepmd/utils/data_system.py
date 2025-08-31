@@ -49,7 +49,7 @@ class DeepmdDataSystem:
         shuffle_test: bool = True,
         type_map: Optional[list[str]] = None,
         optional_type_map: bool = True,
-        modifier: Optional[Any] = None,
+        modifier: Optional[object] = None,
         trn_all_set: bool = False,
         sys_probs: Optional[list[float]] = None,
         auto_prob_style: str = "prob_sys_size",
@@ -818,7 +818,7 @@ def get_data(
     jdata: dict[str, Any],
     rcut: float,
     type_map: Optional[list[str]],
-    modifier: Optional[Any],
+    modifier: Optional[object],
     multi_task_mode: bool = False,
 ) -> DeepmdDataSystem:
     """Get the data system.

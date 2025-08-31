@@ -6,7 +6,6 @@ from pathlib import (
 )
 from typing import (
     TYPE_CHECKING,
-    Any,
     ClassVar,
     Optional,
     Union,
@@ -91,7 +90,7 @@ class DP(Calculator):
         type_dict: Optional[dict[str, int]] = None,
         neighbor_list: Optional["NeighborList"] = None,
         head: Optional[str] = None,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> None:
         Calculator.__init__(self, label=label, **kwargs)
         self.dp = DeepPot(
