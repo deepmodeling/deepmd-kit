@@ -140,13 +140,12 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
             mixed_types,
             sel_type,
         ) = self.param
-        additional = {
+        return {
             "ntypes": self.ntypes,
             "dim_descrpt": self.inputs.shape[-1],
             "mixed_types": mixed_types,
             "embedding_width": 30,
         }
-        return additional
 
     def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         (
