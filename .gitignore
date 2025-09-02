@@ -51,6 +51,10 @@ buildcxx/
 node_modules/
 *.bib.original
 
+# Coverage files
+.coverage
+.coverage.*
+
 # Test output files (temporary)
 test_dp_test/
 test_dp_test_*.out

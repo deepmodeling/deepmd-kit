@@ -7,6 +7,7 @@ from pathlib import (
 )
 from typing import (
     TYPE_CHECKING,
+    Any,
     Optional,
 )
 
@@ -14,6 +15,7 @@ import numpy as np
 
 from deepmd.common import (
     expand_sys_str,
+    j_loader,
 )
 from deepmd.infer.deep_dipole import (
     DeepDipole,
@@ -38,8 +40,14 @@ from deepmd.infer.deep_wfc import (
     DeepWFC,
 )
 from deepmd.utils import random as dp_random
+from deepmd.utils.compat import (
+    update_deepmd_input,
+)
 from deepmd.utils.data import (
     DeepmdData,
+)
+from deepmd.utils.data_system import (
+    process_systems,
 )
 from deepmd.utils.weight_avg import (
     weighted_average,
@@ -58,15 +66,17 @@ log = logging.getLogger(__name__)
 def test(
     *,
     model: str,
-    system: str,
-    datafile: str,
+    system: Optional[str],
+    datafile: Optional[str],
+    train_json: Optional[str] = None,
+    valid_json: Optional[str] = None,
     numb_test: int,
     rand_seed: Optional[int],
     shuffle_test: bool,
     detail_file: str,
     atomic: bool,
     head: Optional[str] = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> None:
     """Test model predictions.
 
@@ -74,12 +84,16 @@ def test(
     ----------
     model : str
         path where model is stored
-    system : str
+    system : str, optional
         system directory
-    datafile : str
+    datafile : str, optional
         the path to the list of systems to test
+    train_json : Optional[str]
+        Path to the input.json file provided via ``--train-data``. Training systems will be used for testing.
+    valid_json : Optional[str]
+        Path to the input.json file provided via ``--valid-data``. Validation systems will be used for testing.
     numb_test : int
-        munber of tests to do. 0 means all data.
+        number of tests to do. 0 means all data.
     rand_seed : Optional[int]
         seed for random generator
     shuffle_test : bool
@@ -101,11 +115,41 @@ def test(
     if numb_test == 0:
         # only float has inf, but should work for min
         numb_test = float("inf")
-    if datafile is not None:
+    if train_json is not None:
+        jdata = j_loader(train_json)
+        jdata = update_deepmd_input(jdata)
+        data_params = jdata.get("training", {}).get("training_data", {})
+        systems = data_params.get("systems")
+        if not systems:
+            raise RuntimeError("No training data found in input json")
+        root = Path(train_json).parent
+        if isinstance(systems, str):
+            systems = str((root / Path(systems)).resolve())
+        else:
+            systems = [str((root / Path(ss)).resolve()) for ss in systems]
+        patterns = data_params.get("rglob_patterns", None)
+        all_sys = process_systems(systems, patterns=patterns)
+    elif valid_json is not None:
+        jdata = j_loader(valid_json)
+        jdata = update_deepmd_input(jdata)
+        data_params = jdata.get("training", {}).get("validation_data", {})
+        systems = data_params.get("systems")
+        if not systems:
+            raise RuntimeError("No validation data found in input json")
+        root = Path(valid_json).parent
+        if isinstance(systems, str):
+            systems = str((root / Path(systems)).resolve())
+        else:
+            systems = [str((root / Path(ss)).resolve()) for ss in systems]
+        patterns = data_params.get("rglob_patterns", None)
+        all_sys = process_systems(systems, patterns=patterns)
+    elif datafile is not None:
         with open(datafile) as datalist:
             all_sys = datalist.read().splitlines()
-    else:
+    elif system is not None:
         all_sys = expand_sys_str(system)
+    else:
+        raise RuntimeError("No data source specified for testing")
 
     if len(all_sys) == 0:
         raise RuntimeError("Did not find valid system")
@@ -291,6 +335,7 @@ def test_ener(
 
     data.add("energy", 1, atomic=False, must=False, high_prec=True)
     data.add("force", 3, atomic=True, must=False, high_prec=False)
+    data.add("atom_pref", 1, atomic=True, must=False, high_prec=False, repeat=3)
     data.add("virial", 9, atomic=False, must=False, high_prec=False)
     if dp.has_efield:
         data.add("efield", 3, atomic=True, must=True, high_prec=False)
@@ -313,6 +358,7 @@ def test_ener(
     find_force = test_data.get("find_force")
     find_virial = test_data.get("find_virial")
     find_force_mag = test_data.get("find_force_mag")
+    find_atom_pref = test_data.get("find_atom_pref")
     mixed_type = data.mixed_type
     natoms = len(test_data["type"][0])
     nframes = test_data["box"].shape[0]
@@ -419,6 +465,16 @@ def test_ener(
     diff_f = force - test_data["force"][:numb_test]
     mae_f = mae(diff_f)
     rmse_f = rmse(diff_f)
+    size_f = diff_f.size
+    if find_atom_pref == 1:
+        atom_weight = test_data["atom_pref"][:numb_test]
+        weight_sum = np.sum(atom_weight)
+        if weight_sum > 0:
+            mae_fw = np.sum(np.abs(diff_f) * atom_weight) / weight_sum
+            rmse_fw = np.sqrt(np.sum(diff_f * diff_f * atom_weight) / weight_sum)
+        else:
+            mae_fw = 0.0
+            rmse_fw = 0.0
     diff_v = virial - test_data["virial"][:numb_test]
     mae_v = mae(diff_v)
     rmse_v = rmse(diff_v)
@@ -453,8 +509,13 @@ def test_ener(
     if not out_put_spin and find_force == 1:
         log.info(f"Force  MAE         : {mae_f:e} eV/A")
         log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
-        dict_to_return["mae_f"] = (mae_f, force.size)
-        dict_to_return["rmse_f"] = (rmse_f, force.size)
+        dict_to_return["mae_f"] = (mae_f, size_f)
+        dict_to_return["rmse_f"] = (rmse_f, size_f)
+        if find_atom_pref == 1:
+            log.info(f"Force weighted MAE : {mae_fw:e} eV/A")
+            log.info(f"Force weighted RMSE: {rmse_fw:e} eV/A")
+            dict_to_return["mae_fw"] = (mae_fw, weight_sum)
+            dict_to_return["rmse_fw"] = (rmse_fw, weight_sum)
     if out_put_spin and find_force == 1:
         log.info(f"Force atom MAE      : {mae_fr:e} eV/A")
         log.info(f"Force atom RMSE     : {rmse_fr:e} eV/A")
@@ -600,6 +661,9 @@ def print_ener_sys_avg(avg: dict[str, float]) -> None:
     if "rmse_f" in avg:
         log.info(f"Force  MAE         : {avg['mae_f']:e} eV/A")
         log.info(f"Force  RMSE        : {avg['rmse_f']:e} eV/A")
+        if "rmse_fw" in avg:
+            log.info(f"Force weighted MAE : {avg['mae_fw']:e} eV/A")
+            log.info(f"Force weighted RMSE: {avg['rmse_fw']:e} eV/A")
     else:
         log.info(f"Force atom MAE      : {avg['mae_fr']:e} eV/A")
         log.info(f"Force spin MAE      : {avg['mae_fm']:e} eV/uB")
@@ -935,7 +999,9 @@ def print_property_sys_avg(avg: dict[str, float]) -> None:
     log.info(f"PROPERTY RMSE           : {avg['rmse_property']:e} units")
 
 
-def run_test(dp: "DeepTensor", test_data: dict, numb_test: int, test_sys: DeepmdData):
+def run_test(
+    dp: "DeepTensor", test_data: dict, numb_test: int, test_sys: DeepmdData
+) -> dict:
     """Run tests.
 
     Parameters
@@ -1019,7 +1085,7 @@ def test_wfc(
     return {"rmse": (rmse_f, wfc.size)}
 
 
-def print_wfc_sys_avg(avg) -> None:
+def print_wfc_sys_avg(avg: dict) -> None:
     """Print errors summary for wfc type potential.
 
     Parameters
@@ -1161,7 +1227,7 @@ def test_polar(
     return {"rmse": (rmse_f, polar.size)}
 
 
-def print_polar_sys_avg(avg) -> None:
+def print_polar_sys_avg(avg: dict) -> None:
     """Print errors summary for polar type potential.
 
     Parameters
@@ -1275,7 +1341,7 @@ def test_dipole(
     return {"rmse": (rmse_f, dipole.size)}
 
 
-def print_dipole_sys_avg(avg) -> None:
+def print_dipole_sys_avg(avg: dict) -> None:
     """Print errors summary for dipole type potential.
 
     Parameters

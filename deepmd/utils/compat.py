@@ -375,10 +375,10 @@ def deprecate_numb_test(
 def update_deepmd_input(
     jdata: dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
 ) -> dict[str, Any]:
-    def is_deepmd_v0_input(jdata):
+    def is_deepmd_v0_input(jdata: dict[str, Any]) -> bool:
         return "model" not in jdata.keys()
 
-    def is_deepmd_v1_input(jdata):
+    def is_deepmd_v1_input(jdata: dict[str, Any]) -> bool:
         return "systems" in jdata["training"].keys()
 
     if is_deepmd_v0_input(jdata):

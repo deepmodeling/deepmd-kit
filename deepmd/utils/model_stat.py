@@ -2,11 +2,14 @@
 from collections import (
     defaultdict,
 )
+from typing import (
+    Any,
+)
 
 import numpy as np
 
 
-def _make_all_stat_ref(data, nbatches):
+def _make_all_stat_ref(data: Any, nbatches: int) -> dict[str, list[Any]]:
     all_stat = defaultdict(list)
     for ii in range(data.get_nsystems()):
         for jj in range(nbatches):
@@ -18,7 +21,9 @@ def _make_all_stat_ref(data, nbatches):
     return all_stat
 
 
-def make_stat_input(data, nbatches, merge_sys=True):
+def make_stat_input(
+    data: Any, nbatches: int, merge_sys: bool = True
+) -> dict[str, list[Any]]:
     """Pack data for statistics.
 
     Parameters
@@ -57,7 +62,7 @@ def make_stat_input(data, nbatches, merge_sys=True):
     return all_stat
 
 
-def merge_sys_stat(all_stat):
+def merge_sys_stat(all_stat: dict[str, list[Any]]) -> dict[str, list[Any]]:
     first_key = next(iter(all_stat.keys()))
     nsys = len(all_stat[first_key])
     ret = defaultdict(list)
