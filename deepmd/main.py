@@ -752,12 +752,13 @@ def main_parser() -> argparse.ArgumentParser:
     parser_change_bias = subparsers.add_parser(
         "change-bias",
         parents=[parser_log],
-        help="(Supported backend: PyTorch) Change model out bias according to the input data.",
+        help="Change model out bias according to the input data.",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
         epilog=textwrap.dedent(
             """\
         examples:
-            dp change-bias model.pt -s data -n 10 -m change
+            dp --pt change-bias model.pt -s data -n 10 -m change
+            dp --tf change-bias model.ckpt -s data -n 10 -m change
         """
         ),
     )
