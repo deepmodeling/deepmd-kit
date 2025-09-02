@@ -5,7 +5,7 @@ NPROC=$(nproc --all)
 SCRIPT_PATH=$(dirname $(realpath -s $0))
 
 export CMAKE_PREFIX_PATH=${SCRIPT_PATH}/../libtorch
-TENSORFLOW_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
+TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
 
 mkdir -p ${SCRIPT_PATH}/../buildcxx/
 cd ${SCRIPT_PATH}/../buildcxx/

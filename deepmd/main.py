@@ -14,6 +14,7 @@ from collections import (
     defaultdict,
 )
 from typing import (
+    Any,
     Optional,
 )
 
@@ -63,19 +64,31 @@ BACKEND_TABLE: dict[str, str] = {kk: vv.name.lower() for kk, vv in BACKENDS.item
 class BackendOption(argparse.Action):
     """Map backend alias to unique name."""
 
-    def __call__(self, parser, namespace, values, option_string=None):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: Optional[str] = None,
+    ) -> None:
         setattr(namespace, self.dest, BACKEND_TABLE[values])
 
 
 class DeprecateAction(argparse.Action):
     # See https://stackoverflow.com/a/69052677/9567349 by Ibolit under CC BY-SA 4.0
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.call_count = 0
         if "help" in kwargs:
             kwargs["help"] = f"[DEPRECATED] {kwargs['help']}"
         super().__init__(*args, **kwargs)
 
-    def __call__(self, parser, namespace, values, option_string=None):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: Optional[str] = None,
+    ) -> None:
         if self.call_count == 0:
             warnings.warn(
                 f"The option `{option_string}` is deprecated. It will be ignored.",
@@ -371,6 +384,24 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         help="The path to the datafile, each line of which is a path to one data system.",
     )
+    parser_tst_subgroup.add_argument(
+        "--train-data",
+        dest="train_json",
+        default=None,
+        type=str,
+        help=(
+            "The input json file. Training data in the file will be used for testing."
+        ),
+    )
+    parser_tst_subgroup.add_argument(
+        "--valid-data",
+        dest="valid_json",
+        default=None,
+        type=str,
+        help=(
+            "The input json file. Validation data in the file will be used for testing."
+        ),
+    )
     parser_tst.add_argument(
         "-S",
         "--set-prefix",
@@ -414,6 +445,56 @@ def main_parser() -> argparse.ArgumentParser:
         default=None,
         type=str,
         help="(Supported backend: PyTorch) Task head (alias: model branch) to test if in multi-task mode.",
+    )
+
+    # * eval_desc script ***************************************************************
+    parser_eval_desc = subparsers.add_parser(
+        "eval-desc",
+        parents=[parser_log],
+        help="evaluate descriptors using the model",
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+        examples:
+            dp eval-desc -m graph.pb -s /path/to/system -o desc
+        """
+        ),
+    )
+    parser_eval_desc.add_argument(
+        "-m",
+        "--model",
+        default="frozen_model",
+        type=str,
+        help="Frozen model file (prefix) to import. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth.",
+    )
+    parser_eval_desc_subgroup = parser_eval_desc.add_mutually_exclusive_group()
+    parser_eval_desc_subgroup.add_argument(
+        "-s",
+        "--system",
+        default=".",
+        type=str,
+        help="The system dir. Recursively detect systems in this directory",
+    )
+    parser_eval_desc_subgroup.add_argument(
+        "-f",
+        "--datafile",
+        default=None,
+        type=str,
+        help="The path to the datafile, each line of which is a path to one data system.",
+    )
+    parser_eval_desc.add_argument(
+        "-o",
+        "--output",
+        default="desc",
+        type=str,
+        help="Output directory for descriptor files. Descriptors will be saved as desc/(system_name).npy",
+    )
+    parser_eval_desc.add_argument(
+        "--head",
+        "--model-branch",
+        default=None,
+        type=str,
+        help="(Supported backend: PyTorch) Task head (alias: model branch) to use if in multi-task mode.",
     )
 
     # * compress model *****************************************************************
@@ -671,12 +752,13 @@ def main_parser() -> argparse.ArgumentParser:
     parser_change_bias = subparsers.add_parser(
         "change-bias",
         parents=[parser_log],
-        help="(Supported backend: PyTorch) Change model out bias according to the input data.",
+        help="Change model out bias according to the input data.",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
         epilog=textwrap.dedent(
             """\
         examples:
-            dp change-bias model.pt -s data -n 10 -m change
+            dp --pt change-bias model.pt -s data -n 10 -m change
+            dp --tf change-bias model.ckpt -s data -n 10 -m change
         """
         ),
     )
@@ -909,6 +991,7 @@ def main(args: Optional[list[str]] = None) -> None:
 
     if args.command in (
         "test",
+        "eval-desc",
         "doc-train-input",
         "model-devi",
         "neighbor-stat",

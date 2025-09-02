@@ -2,6 +2,9 @@ on:
   push:
     branches-ignore:
       - "gh-readonly-queue/**"
+      - "copilot/**"
+      - "dependabot/**"
+      - "pre-commit-ci-update-config"
   pull_request:
   merge_group:
 concurrency:
@@ -19,7 +22,7 @@ jobs:
         python: ["3.9", "3.12"]
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python }}
@@ -27,7 +30,7 @@ jobs:
     - run: |
         source/install/uv_with_retry.sh pip install --system openmpi tensorflow-cpu~=2.18.0
         source/install/uv_with_retry.sh pip install --system torch -i https://download.pytorch.org/whl/cpu
-        export TENSORFLOW_ROOT=$(python -c 'import tensorflow;print(tensorflow.__path__[0])')
+        export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
         export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
         source/install/uv_with_retry.sh pip install --system -e .[test,jax] mpi4py "jax==0.5.0;python_version>='3.10'"
         source/install/uv_with_retry.sh pip install --system -U setuptools

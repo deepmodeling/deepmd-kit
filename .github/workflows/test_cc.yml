@@ -2,6 +2,9 @@ on:
   push:
     branches-ignore:
       - "gh-readonly-queue/**"
+      - "copilot/**"
+      - "dependabot/**"
+      - "pre-commit-ci-update-config"
   pull_request:
   merge_group:
 concurrency:
@@ -16,7 +19,7 @@ jobs:
       matrix:
         check_memleak: [true, false]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
@@ -26,9 +29,9 @@ jobs:
     - name: Install Python dependencies
       run: |
         source/install/uv_with_retry.sh pip install --system tensorflow-cpu~=2.18.0 jax==0.5.0
-        export TENSORFLOW_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
+        export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
         source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp,jax] mpi4py mpich
-        source/install/uv_with_retry.sh pip install --system 'torch==2.7' --index-url https://download.pytorch.org/whl/cpu
+        source/install/uv_with_retry.sh pip install --system 'torch==2.8.*' --index-url https://download.pytorch.org/whl/cpu
     - name: Convert models
       run: source/tests/infer/convert-models.sh
     # https://github.com/actions/runner-images/issues/9491

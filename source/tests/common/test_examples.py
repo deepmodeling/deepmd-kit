@@ -68,6 +68,7 @@ input_files = (
 input_files_multi = (
     p_examples / "water_multi_task" / "pytorch_example" / "input_torch.json",
     p_examples / "water_multi_task" / "pytorch_example" / "input_torch_sharefit.json",
+    p_examples / "water_multi_task" / "pytorch_example" / "input_torch_with_alias.json",
     p_examples / "hessian" / "multi_task" / "input.json",
 )
 

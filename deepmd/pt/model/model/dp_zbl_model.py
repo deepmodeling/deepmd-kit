@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Optional,
 )
 
@@ -31,12 +32,12 @@ class DPZBLModel(DPZBLModel_):
 
     def __init__(
         self,
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
 
-    def translated_output_def(self):
+    def translated_output_def(self) -> dict[str, Any]:
         out_def_data = self.model_output_def().get_data()
         output_def = {
             "atom_energy": out_def_data["energy"],
@@ -56,8 +57,8 @@ class DPZBLModel(DPZBLModel_):
 
     def forward(
         self,
-        coord,
-        atype,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
         box: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
@@ -90,14 +91,15 @@ class DPZBLModel(DPZBLModel_):
     @torch.jit.export
     def forward_lower(
         self,
-        extended_coord,
-        extended_atype,
-        nlist,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
-    ):
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+    ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,
@@ -106,6 +108,7 @@ class DPZBLModel(DPZBLModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            comm_dict=comm_dict,
             extra_nlist_sort=self.need_sorted_nlist_for_lower(),
         )
 
