@@ -5,6 +5,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 from deepmd.tf.common import (
     cast_precision,
     get_activation_func,
@@ -421,7 +424,9 @@ class DipoleFittingSeA(Fitting):
             "dim_case_embd": self.dim_case_embd,
             "activation_function": self.activation_function_name,
             "precision": self.fitting_precision.name,
-            "exclude_types": [],
+            "exclude_types": []
+            if self.sel_type is None
+            else [ii for ii in range(self.ntypes) if ii not in self.sel_type],
             "nets": self.serialize_network(
                 ntypes=self.ntypes,
                 ndim=0 if self.mixed_types else 1,
@@ -434,6 +439,16 @@ class DipoleFittingSeA(Fitting):
                 trainable=self.trainable,
                 suffix=suffix,
             ),
+            "@variables": {
+                "fparam_avg": self.fparam_avg,
+                "fparam_inv_std": self.fparam_inv_std,
+                "aparam_avg": self.aparam_avg,
+                "aparam_inv_std": self.aparam_inv_std,
+                "case_embd": None,
+                "bias_atom_e": np.zeros(
+                    (self.ntypes, self.dim_rot_mat_1), dtype=GLOBAL_NP_FLOAT_PRECISION
+                ),
+            },
             "type_map": self.type_map,
         }
         return data
@@ -454,6 +469,11 @@ class DipoleFittingSeA(Fitting):
         """
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 3, 1)
+        exclude_types = data.pop("exclude_types", [])
+        if len(exclude_types) > 0:
+            data["sel_type"] = [
+                ii for ii in range(data["ntypes"]) if ii not in exclude_types
+            ]
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
             data["nets"],
