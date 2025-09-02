@@ -342,7 +342,7 @@ class DeepEvalBackend(ABC):
         raise NotImplementedError("Not implemented in this backend.")
 
     @abstractmethod
-    def get_model(self):
+    def get_model(self) -> Any:
         """Get the model module implemented by the deep learning framework.
 
         For PyTorch, this returns the nn.Module. For Paddle, this returns
@@ -700,7 +700,7 @@ class DeepEval(ABC):
         """Get observed types (elements) of the model during data statistics."""
         return self.deep_eval.get_observed_types()
 
-    def get_model(self):
+    def get_model(self) -> Any:
         """Get the model module implemented by the deep learning framework.
 
         For PyTorch, this returns the nn.Module. For Paddle, this returns

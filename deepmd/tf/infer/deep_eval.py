@@ -1126,7 +1126,7 @@ class DeepEval(DeepEvalBackend):
         model_def_script = script.decode("utf-8")
         return json.loads(model_def_script)["model"]
 
-    def get_model(self):
+    def get_model(self) -> "tf.Graph":
         """Get the TensorFlow graph.
 
         Returns

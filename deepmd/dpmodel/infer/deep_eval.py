@@ -393,7 +393,7 @@ class DeepEval(DeepEvalBackend):
         """Get model definition script."""
         return json.loads(self.dp.get_model_def_script())
 
-    def get_model(self):
+    def get_model(self) -> "BaseModel":
         """Get the dpmodel BaseModel.
 
         Returns
