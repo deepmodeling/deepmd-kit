@@ -11,6 +11,9 @@ from typing import (
 import array_api_compat
 import numpy as np
 
+# Type alias for array_api compatible arrays
+ArrayLike = Union[np.ndarray, Any]  # Any to support JAX, PyTorch, etc. arrays
+
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
@@ -74,7 +77,7 @@ from .descriptor import (
 )
 
 
-def np_softmax(x, axis=-1):
+def np_softmax(x: ArrayLike, axis: int = -1) -> ArrayLike:
     xp = array_api_compat.array_namespace(x)
     # x = xp.nan_to_num(x)  # to avoid value warning
     x = xp.where(xp.isnan(x), xp.zeros_like(x), x)
@@ -82,7 +85,7 @@ def np_softmax(x, axis=-1):
     return e_x / xp.sum(e_x, axis=axis, keepdims=True)
 
 
-def np_normalize(x, axis=-1):
+def np_normalize(x: ArrayLike, axis: int = -1) -> ArrayLike:
     xp = array_api_compat.array_namespace(x)
     return x / xp.linalg.vector_norm(x, axis=axis, keepdims=True)
 
@@ -262,7 +265,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        scaling_factor=1.0,
+        scaling_factor: float = 1.0,
         normalize: bool = True,
         temperature: Optional[float] = None,
         trainable_ln: bool = True,
@@ -399,7 +402,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """Returns the protection of building environment matrix."""
         return self.se_atten.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False) -> NoReturn:
+    def share_params(
+        self, base_class: Any, shared_level: int, resume: bool = False
+    ) -> NoReturn:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -408,18 +413,18 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         raise NotImplementedError
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         return self.get_dim_out()
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         return self.get_dim_emb()
 
     def compute_input_stats(
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -452,7 +457,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         return self.se_atten.mean, self.se_atten.stddev
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -481,11 +486,11 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     @cast_precision
     def call(
         self,
-        coord_ext,
-        atype_ext,
-        nlist,
+        coord_ext: np.ndarray,
+        atype_ext: np.ndarray,
+        nlist: np.ndarray,
         mapping: Optional[np.ndarray] = None,
-    ):
+    ) -> np.ndarray:
         """Compute the descriptor.
 
         Parameters
@@ -686,7 +691,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        scaling_factor=1.0,
+        scaling_factor: float = 1.0,
         normalize: bool = True,
         temperature: Optional[float] = None,
         trainable_ln: bool = True,
@@ -820,7 +825,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.filter_neuron[-1]
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -828,7 +833,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -853,17 +858,17 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         return self.env_protection
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.filter_neuron[-1] * self.axis_neuron
 
     @property
-    def dim_in(self):
+    def dim_in(self) -> int:
         """Returns the atomic input dimension of this descriptor."""
         return self.tebd_dim
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the output dimension of embedding."""
         return self.get_dim_emb()
 
