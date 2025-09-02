@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Utilities for the array API."""
 
+from typing import (
+    Any,
+    Callable,
+    Optional,
+)
+
 import array_api_compat
 import numpy as np
 from packaging.version import (
@@ -8,7 +14,7 @@ from packaging.version import (
 )
 
 
-def support_array_api(version: str) -> callable:
+def support_array_api(version: str) -> Callable:
     """Mark a function as supporting the specific version of the array API.
 
     Parameters
@@ -18,7 +24,7 @@ def support_array_api(version: str) -> callable:
 
     Returns
     -------
-    callable
+    Callable
         The decorated function
 
     Examples
@@ -28,7 +34,7 @@ def support_array_api(version: str) -> callable:
     ...     pass
     """
 
-    def set_version(func: callable) -> callable:
+    def set_version(func: Callable) -> Callable:
         func.array_api_version = version
         return func
 
@@ -39,7 +45,7 @@ def support_array_api(version: str) -> callable:
 # but it hasn't been released yet
 # below is a pure Python implementation of take_along_axis
 # https://github.com/data-apis/array-api/issues/177#issuecomment-2093630595
-def xp_swapaxes(a, axis1, axis2):
+def xp_swapaxes(a: Any, axis1: int, axis2: int) -> Any:
     xp = array_api_compat.array_namespace(a)
     axes = list(range(a.ndim))
     axes[axis1], axes[axis2] = axes[axis2], axes[axis1]
@@ -47,7 +53,7 @@ def xp_swapaxes(a, axis1, axis2):
     return a
 
 
-def xp_take_along_axis(arr, indices, axis):
+def xp_take_along_axis(arr: Any, indices: Any, axis: int) -> Any:
     xp = array_api_compat.array_namespace(arr)
     if Version(xp.__array_api_version__) >= Version("2024.12"):
         # see: https://github.com/data-apis/array-api-strict/blob/d086c619a58f35c38240592ef994aa19ca7beebc/array_api_strict/_indexing_functions.py#L30-L39
@@ -76,7 +82,9 @@ def xp_take_along_axis(arr, indices, axis):
     return xp_swapaxes(out, axis, -1)
 
 
-def xp_scatter_sum(input, dim, index: np.ndarray, src: np.ndarray) -> np.ndarray:
+def xp_scatter_sum(
+    input: Any, dim: int, index: np.ndarray, src: np.ndarray
+) -> np.ndarray:
     """Reduces all values from the src tensor to the indices specified in the index tensor."""
     # jax only
     if array_api_compat.is_jax_array(input):
@@ -94,7 +102,7 @@ def xp_scatter_sum(input, dim, index: np.ndarray, src: np.ndarray) -> np.ndarray
         raise NotImplementedError("Only JAX arrays are supported.")
 
 
-def xp_add_at(x, indices, values):
+def xp_add_at(x: Any, indices: Any, values: Any) -> Any:
     """Adds values to the specified indices of x in place or returns new x (for JAX)."""
     xp = array_api_compat.array_namespace(x, indices, values)
     if array_api_compat.is_numpy_array(x):
@@ -115,7 +123,7 @@ def xp_add_at(x, indices, values):
         return x
 
 
-def xp_bincount(x, weights=None, minlength=0):
+def xp_bincount(x: Any, weights: Optional[Any] = None, minlength: int = 0) -> Any:
     """Counts the number of occurrences of each value in x."""
     xp = array_api_compat.array_namespace(x)
     if array_api_compat.is_numpy_array(x) or array_api_compat.is_jax_array(x):

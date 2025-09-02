@@ -4,8 +4,10 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Any,
     NoReturn,
     Optional,
+    Type,
 )
 
 from deepmd.common import (
@@ -21,9 +23,9 @@ from deepmd.utils.plugin import (
 
 
 def make_base_fitting(
-    t_tensor,
+    t_tensor: Any,
     fwd_method_name: str = "forward",
-):
+) -> Type:
     """Make the base class for the fitting.
 
     Parameters
@@ -39,7 +41,7 @@ def make_base_fitting(
     class BF(ABC, PluginVariant, make_plugin_registry("fitting")):
         """Base fitting provides the interfaces of fitting net."""
 
-        def __new__(cls, *args, **kwargs):
+        def __new__(cls: Type, *args: Any, **kwargs: Any) -> Any:
             if cls is BF:
                 cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
             return super().__new__(cls)
@@ -63,7 +65,7 @@ def make_base_fitting(
             """Calculate fitting."""
             pass
 
-        def compute_output_stats(self, merged) -> NoReturn:
+        def compute_output_stats(self, merged: Any) -> NoReturn:
             """Update the output bias for fitting net."""
             raise NotImplementedError
 
@@ -74,7 +76,7 @@ def make_base_fitting(
 
         @abstractmethod
         def change_type_map(
-            self, type_map: list[str], model_with_new_type_stat=None
+            self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
         ) -> None:
             """Change the type related params to new ones, according to `type_map` and the original one in the model.
             If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.

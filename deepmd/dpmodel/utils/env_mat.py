@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Optional,
+    Tuple,
 )
 
 import array_api_compat
@@ -23,7 +25,7 @@ def compute_smooth_weight(
     distance: np.ndarray,
     rmin: float,
     rmax: float,
-):
+) -> np.ndarray:
     """Compute smooth weight for descriptor elements."""
     if rmin >= rmax:
         raise ValueError("rmin should be less than rmax.")
@@ -40,7 +42,7 @@ def compute_exp_sw(
     distance: np.ndarray,
     rmin: float,
     rmax: float,
-):
+) -> np.ndarray:
     """Compute the exponential switch function for neighbor update."""
     if rmin >= rmax:
         raise ValueError("rmin should be less than rmax.")
@@ -54,14 +56,14 @@ def compute_exp_sw(
 
 
 def _make_env_mat(
-    nlist,
-    coord,
+    nlist: Any,
+    coord: Any,
     rcut: float,
     ruct_smth: float,
     radial_only: bool = False,
     protection: float = 0.0,
     use_exp_switch: bool = False,
-):
+) -> Tuple[Any, Any, Any]:
     """Make smooth environment matrix."""
     xp = array_api_compat.array_namespace(nlist)
     nf, nloc, nnei = nlist.shape
@@ -101,8 +103,8 @@ def _make_env_mat(
 class EnvMat(NativeOP):
     def __init__(
         self,
-        rcut,
-        rcut_smth,
+        rcut: float,
+        rcut_smth: float,
         protection: float = 0.0,
         use_exp_switch: bool = False,
     ) -> None:
@@ -159,7 +161,9 @@ class EnvMat(NativeOP):
             em /= xp.reshape(xp.take(dstd, xp.reshape(atype, (-1,)), axis=0), em.shape)
         return em, diff, sw
 
-    def _call(self, nlist, coord_ext, radial_only):
+    def _call(
+        self, nlist: Any, coord_ext: Any, radial_only: bool
+    ) -> Tuple[Any, Any, Any]:
         em, diff, ww = _make_env_mat(
             nlist,
             coord_ext,

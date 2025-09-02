@@ -59,7 +59,7 @@ DEFAULT_PRECISION = "float64"
 def get_xp_precision(
     xp: Any,
     precision: str,
-):
+) -> Any:
     """Get the precision from the API compatible namespace."""
     if precision == "float16" or precision == "half":
         return xp.float16
@@ -87,11 +87,11 @@ class NativeOP(ABC):
     """The unit operation of a native model."""
 
     @abstractmethod
-    def call(self, *args, **kwargs):
+    def call(self, *args: Any, **kwargs: Any) -> Any:
         """Forward pass in NumPy implementation."""
         pass
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Forward pass in NumPy implementation."""
         return self.call(*args, **kwargs)
 
@@ -158,7 +158,7 @@ def cast_precision(func: Callable[..., Any]) -> Callable[..., Any]:
     """
 
     @wraps(func)
-    def wrapper(self, *args, **kwargs):
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
         # only convert tensors
         returned_tensor = func(
             self,
