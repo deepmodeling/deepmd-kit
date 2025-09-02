@@ -88,6 +88,60 @@ from deepmd.utils.path import (
 log = logging.getLogger(__name__)
 
 
+def _warn_configuration_mismatch_during_finetune(
+    input_descriptor: dict,
+    pretrained_descriptor: dict,
+    model_branch: str = "Default",
+) -> None:
+    """
+    Warn about configuration mismatches between input descriptor and pretrained model
+    when fine-tuning without --use-pretrain-script option.
+
+    This function warns when configurations differ and state_dict initialization
+    will only pick relevant keys from the pretrained model (e.g., first 6 layers
+    from a 16-layer model).
+
+    Parameters
+    ----------
+    input_descriptor : dict
+        Descriptor configuration from input.json
+    pretrained_descriptor : dict
+        Descriptor configuration from pretrained model
+    model_branch : str
+        Model branch name for logging context
+    """
+    if input_descriptor == pretrained_descriptor:
+        return
+
+    # Collect differences
+    differences = []
+
+    # Check for keys that differ in values
+    for key in input_descriptor:
+        if key in pretrained_descriptor:
+            if input_descriptor[key] != pretrained_descriptor[key]:
+                differences.append(
+                    f"  {key}: {input_descriptor[key]} (input) vs {pretrained_descriptor[key]} (pretrained)"
+                )
+        else:
+            differences.append(f"  {key}: {input_descriptor[key]} (input only)")
+
+    # Check for keys only in pretrained model
+    for key in pretrained_descriptor:
+        if key not in input_descriptor:
+            differences.append(
+                f"  {key}: {pretrained_descriptor[key]} (pretrained only)"
+            )
+
+    if differences:
+        log.warning(
+            f"Descriptor configuration mismatch detected between input.json and pretrained model "
+            f"(branch '{model_branch}'). State dict initialization will only use compatible parameters "
+            f"from the pretrained model. Mismatched configuration:\n"
+            + "\n".join(differences)
+        )
+
+
 class Trainer:
     def __init__(
         self,
@@ -122,6 +176,8 @@ class Trainer:
         training_params = config["training"]
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
+        # Store model params for finetune warning comparisons
+        self.model_params = model_params
         self.finetune_update_stat = False
         self.model_keys = (
             list(model_params["model_dict"]) if self.multi_task else ["Default"]
@@ -541,6 +597,37 @@ class Trainer:
                                 )
 
                     # collect model params from the pretrained model
+                    # First check for configuration mismatches and warn if needed
+                    pretrained_model_params = state_dict["_extra_state"]["model_params"]
+                    for model_key in self.model_keys:
+                        finetune_rule_single = self.finetune_links[model_key]
+                        _model_key_from = finetune_rule_single.get_model_branch()
+
+                        # Get current model descriptor config
+                        if self.multi_task:
+                            current_descriptor = self.model_params["model_dict"][
+                                model_key
+                            ].get("descriptor", {})
+                        else:
+                            current_descriptor = self.model_params.get("descriptor", {})
+
+                        # Get pretrained model descriptor config
+                        if "model_dict" in pretrained_model_params:
+                            pretrained_descriptor = pretrained_model_params[
+                                "model_dict"
+                            ][_model_key_from].get("descriptor", {})
+                        else:
+                            pretrained_descriptor = pretrained_model_params.get(
+                                "descriptor", {}
+                            )
+
+                        # Warn about configuration mismatches
+                        _warn_configuration_mismatch_during_finetune(
+                            current_descriptor,
+                            pretrained_descriptor,
+                            _model_key_from,
+                        )
+
                     for model_key in self.model_keys:
                         finetune_rule_single = self.finetune_links[model_key]
                         collect_single_finetune_params(
