@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    Any,
     Callable,
     Optional,
     Union,
@@ -93,7 +94,7 @@ class DipoleFittingNet(GeneralFitting):
         r_differentiable: bool = True,
         c_differentiable: bool = True,
         type_map: Optional[list[str]] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         self.embedding_width = embedding_width
         self.r_differentiable = r_differentiable
@@ -117,7 +118,7 @@ class DipoleFittingNet(GeneralFitting):
             **kwargs,
         )
 
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         return self.embedding_width
 
@@ -181,7 +182,7 @@ class DipoleFittingNet(GeneralFitting):
         h2: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
-    ):
+    ) -> dict[str, torch.Tensor]:
         nframes, nloc, _ = descriptor.shape
         assert gr is not None, "Must provide the rotation matrix for dipole fitting."
         # cast the input to internal precsion

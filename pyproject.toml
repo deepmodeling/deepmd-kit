@@ -391,7 +391,6 @@ ignore = [
     "D401", # TODO: first line should be in imperative mood
     "D404", # TODO: first word of the docstring should not be This
 ]
-ignore-init-module-imports = true
 
 exclude = [
     "source/3rdparty/**",
@@ -424,7 +423,7 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "backend/**" = ["ANN"]
 "data/**" = ["ANN"]
 "deepmd/tf/**" = ["TID253", "ANN"]
-"deepmd/pt/**" = ["TID253", "ANN"]
+"deepmd/pt/**" = ["TID253"]
 "deepmd/jax/**" = ["TID253", "ANN"]
 "deepmd/pd/**" = ["TID253", "ANN"]
 "deepmd/dpmodel/**" = ["ANN"]

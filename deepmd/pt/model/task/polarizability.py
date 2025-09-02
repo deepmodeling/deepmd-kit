@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    Any,
     Optional,
     Union,
 )
@@ -98,7 +99,7 @@ class PolarFittingNet(GeneralFitting):
         scale: Optional[Union[list[float], float]] = None,
         shift_diag: bool = True,
         type_map: Optional[list[str]] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         self.embedding_width = embedding_width
         self.fit_diag = fit_diag
@@ -142,7 +143,7 @@ class PolarFittingNet(GeneralFitting):
             **kwargs,
         )
 
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         return (
             self.embedding_width
@@ -150,20 +151,20 @@ class PolarFittingNet(GeneralFitting):
             else self.embedding_width * self.embedding_width
         )
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         if key in ["constant_matrix"]:
             self.constant_matrix = value
         else:
             super().__setitem__(key, value)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if key in ["constant_matrix"]:
             return self.constant_matrix
         else:
             return super().__getitem__(key)
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -232,7 +233,7 @@ class PolarFittingNet(GeneralFitting):
         h2: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
-    ):
+    ) -> dict[str, torch.Tensor]:
         nframes, nloc, _ = descriptor.shape
         assert gr is not None, (
             "Must provide the rotation matrix for polarizability fitting."

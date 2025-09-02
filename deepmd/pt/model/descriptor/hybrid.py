@@ -45,7 +45,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
     def __init__(
         self,
         list: list[Union[BaseDescriptor, dict[str, Any]]],
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         super().__init__()
         # warning: list is conflict with built-in list
@@ -140,7 +140,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         """Returns the output dimension."""
         return sum([descrpt.get_dim_emb() for descrpt in self.descrpt_list])
 
-    def mixed_types(self):
+    def mixed_types(self) -> bool:
         """Returns if the descriptor requires a neighbor list that distinguish different
         atomic types or not.
         """
@@ -164,7 +164,9 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
             )
         return all_protection[0]
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: "DescrptHybrid", shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -182,7 +184,9 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
             raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self,
+        type_map: list[str],
+        model_with_new_type_stat: Optional["DescrptHybrid"] = None,
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -265,7 +269,13 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
-    ):
+    ) -> tuple[
+        torch.Tensor,
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+    ]:
         """Compute the descriptor.
 
         Parameters

@@ -272,15 +272,15 @@ class DeepEval(DeepEvalBackend):
         """Get the number of spin atom types of this model. Only used in old implement."""
         return 0
 
-    def get_has_spin(self):
+    def get_has_spin(self) -> bool:
         """Check if the model has spin atom types."""
         return self._has_spin
 
-    def get_has_hessian(self):
+    def get_has_hessian(self) -> bool:
         """Check if the model has hessian."""
         return self._has_hessian
 
-    def get_model_branch(self):
+    def get_model_branch(self) -> tuple[dict[str, str], dict[str, dict[str, Any]]]:
         """Get the model branch information."""
         if "model_dict" in self.model_def_script:
             model_alias_dict, model_branch_dict = get_model_dict(
@@ -419,7 +419,7 @@ class DeepEval(DeepEvalBackend):
         """
         if self.auto_batch_size is not None:
 
-            def eval_func(*args, **kwargs):
+            def eval_func(*args: Any, **kwargs: Any) -> Any:
                 return self.auto_batch_size.execute_all(
                     inner_func, numb_test, natoms, *args, **kwargs
                 )
@@ -453,7 +453,7 @@ class DeepEval(DeepEvalBackend):
         fparam: Optional[np.ndarray],
         aparam: Optional[np.ndarray],
         request_defs: list[OutputVariableDef],
-    ):
+    ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
         prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
 
@@ -531,7 +531,7 @@ class DeepEval(DeepEvalBackend):
         fparam: Optional[np.ndarray],
         aparam: Optional[np.ndarray],
         request_defs: list[OutputVariableDef],
-    ):
+    ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
 
         nframes = coords.shape[0]
@@ -608,7 +608,9 @@ class DeepEval(DeepEvalBackend):
                 )  # this is kinda hacky
         return tuple(results)
 
-    def _get_output_shape(self, odef, nframes, natoms):
+    def _get_output_shape(
+        self, odef: OutputVariableDef, nframes: int, natoms: int
+    ) -> list[int]:
         if odef.category == OutputVariableCategory.DERV_C_REDU:
             # virial
             return [nframes, *odef.shape[:-1], 9]

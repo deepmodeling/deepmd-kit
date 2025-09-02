@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    Any,
     Optional,
     Union,
 )
@@ -103,7 +104,7 @@ class InvarFitting(GeneralFitting):
         atom_ener: Optional[list[Optional[torch.Tensor]]] = None,
         type_map: Optional[list[str]] = None,
         use_aparam_as_mask: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         self.dim_out = dim_out
         self.atom_ener = atom_ener
@@ -131,7 +132,7 @@ class InvarFitting(GeneralFitting):
             **kwargs,
         )
 
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         return self.dim_out
 
@@ -170,7 +171,7 @@ class InvarFitting(GeneralFitting):
         h2: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
-    ):
+    ) -> dict[str, torch.Tensor]:
         """Based on embedding net output, alculate total energy.
 
         Args:
