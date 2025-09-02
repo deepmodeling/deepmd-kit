@@ -75,6 +75,10 @@ from deepmd.utils.model_branch_dict import (
 if TYPE_CHECKING:
     import ase.neighborlist
 
+    from deepmd.pt.model.model.model import (
+        BaseModel,
+    )
+
 log = logging.getLogger(__name__)
 
 
@@ -707,6 +711,16 @@ class DeepEval(DeepEvalBackend):
             "type_num": len(observed_type_list),
             "observed_type": sort_element_type(observed_type_list),
         }
+
+    def get_model(self) -> "BaseModel":
+        """Get the PyTorch model.
+
+        Returns
+        -------
+        BaseModel
+            The PyTorch model instance.
+        """
+        return self.dp.model["Default"]
 
     def eval_descriptor(
         self,
