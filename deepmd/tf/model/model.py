@@ -826,19 +826,30 @@ class StandardModel(Model):
             # deepcopy is not used for performance reasons
             data["fitting"] = data["fitting"].copy()
             data["fitting"]["@variables"] = data["fitting"]["@variables"].copy()
-            if (
-                int(np.any(data["fitting"]["@variables"]["bias_atom_e"]))
-                + int(np.any(data["@variables"]["out_bias"]))
-                > 1
-            ):
-                raise ValueError(
-                    "fitting/@variables/bias_atom_e and @variables/out_bias should not be both non-zero"
+
+            # For dipole fitting, out_bias and bias_atom_e have different purposes and shapes
+            # out_bias: [1, ntypes, 3] for dipole output
+            # bias_atom_e: [ntypes, embedding_width] for internal fitting network
+            # They should not be added together for dipole models
+            fitting_type = data["fitting"].get("type", "energy")
+            if fitting_type == "dipole":
+                # For dipole models, keep out_bias separate - don't add to bias_atom_e
+                pass
+            else:
+                # For non-dipole models (e.g., energy), use the original logic
+                if (
+                    int(np.any(data["fitting"]["@variables"]["bias_atom_e"]))
+                    + int(np.any(data["@variables"]["out_bias"]))
+                    > 1
+                ):
+                    raise ValueError(
+                        "fitting/@variables/bias_atom_e and @variables/out_bias should not be both non-zero"
+                    )
+                data["fitting"]["@variables"]["bias_atom_e"] = data["fitting"][
+                    "@variables"
+                ]["bias_atom_e"] + data["@variables"]["out_bias"].reshape(
+                    data["fitting"]["@variables"]["bias_atom_e"].shape
                 )
-            data["fitting"]["@variables"]["bias_atom_e"] = data["fitting"][
-                "@variables"
-            ]["bias_atom_e"] + data["@variables"]["out_bias"].reshape(
-                data["fitting"]["@variables"]["bias_atom_e"].shape
-            )
         fitting = Fitting.deserialize(data.pop("fitting"), suffix=suffix)
         # pass descriptor type embedding to model
         if descriptor.explicit_ntypes:
