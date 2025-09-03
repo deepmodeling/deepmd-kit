@@ -290,7 +290,7 @@ class DeepEval(DeepEvalBackend):
         coords: Array,
         atom_types: Array,
         mixed_type: bool = False,
-    ) -> tuple[Array, Array]:
+    ) -> tuple[int, int]:
         if mixed_type:
             natoms = len(atom_types[0])
         else:
@@ -370,7 +370,7 @@ class DeepEval(DeepEvalBackend):
 
     def _get_output_shape(
         self, odef: OutputVariableDef, nframes: int, natoms: int
-    ) -> tuple[Array, Array]:
+    ) -> list[int]:
         if odef.category == OutputVariableCategory.DERV_C_REDU:
             # virial
             return [nframes, *odef.shape[:-1], 9]

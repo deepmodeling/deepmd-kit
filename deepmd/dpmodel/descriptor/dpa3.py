@@ -520,9 +520,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             descrpt.mean = mean[ii]
             descrpt.stddev = stddev[ii]
 
-    def get_stat_mean_and_stddev(
-        self,
-    ) -> tuple[tuple[Array, Array], list[Array]]:
+    ) -> tuple[list[Array], list[Array]]:
         """Get mean and stddev for descriptor."""
         mean_list = [self.repflows.mean]
         stddev_list = [self.repflows.stddev]
