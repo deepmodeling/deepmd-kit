@@ -92,16 +92,16 @@ class NativeOP(ABC):
     """The unit operation of a native model."""
 
     @abstractmethod
-    def call(self, *args: Any, **kwargs: Any) -> Array:
+    def call(self, *args: Any, **kwargs: Any) -> "Array":
         """Forward pass in NumPy implementation."""
         pass
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Array:
+    def __call__(self, *args: Any, **kwargs: Any) -> "Array":
         """Forward pass in NumPy implementation."""
         return self.call(*args, **kwargs)
 
 
-def to_numpy_array(x: Array) -> Optional[Array]:
+def to_numpy_array(x: Optional["Array"]) -> Optional[np.ndarray]:
     """Convert an array to a NumPy array.
 
     Parameters
@@ -163,7 +163,7 @@ def cast_precision(func: Callable[..., Any]) -> Callable[..., Any]:
     """
 
     @wraps(func)
-    def wrapper(self: Any, *args: Array, **kwargs: Any) -> Array:
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
         # only convert tensors
         returned_tensor = func(
             self,
@@ -189,12 +189,12 @@ def cast_precision(func: Callable[..., Any]) -> Callable[..., Any]:
 
 
 @overload
-def safe_cast_array(input: Array, from_precision: str, to_precision: str) -> Array: ...
+def safe_cast_array(input: "Array", from_precision: str, to_precision: str) -> "Array": ...
 @overload
 def safe_cast_array(input: None, from_precision: str, to_precision: str) -> None: ...
 def safe_cast_array(
-    input: Optional[Array], from_precision: str, to_precision: str
-) -> Optional[Array]:
+    input: Optional["Array"], from_precision: str, to_precision: str
+) -> Optional["Array"]:
     """Convert an array from a precision to another precision.
 
     If input is not an array or without the specific precision, the method will not
