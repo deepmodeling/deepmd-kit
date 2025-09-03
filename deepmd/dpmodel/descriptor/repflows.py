@@ -13,7 +13,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
     xp_take_along_axis,
 )
 from deepmd.dpmodel.common import (
@@ -372,7 +372,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         """Returns the embedding dimension e_dim."""
         return self.e_dim
 
-    def __setitem__(self, key: str, value: ArrayLike) -> None:
+    def __setitem__(self, key: str, value: Array) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -380,7 +380,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key: str) -> ArrayLike:
+    def __getitem__(self, key: str) -> Array:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -476,12 +476,12 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
     def call(
         self,
-        nlist: ArrayLike,
-        coord_ext: ArrayLike,
-        atype_ext: ArrayLike,
-        atype_embd_ext: Optional[ArrayLike] = None,
-        mapping: Optional[ArrayLike] = None,
-    ) -> tuple[ArrayLike, ArrayLike]:
+        nlist: Array,
+        coord_ext: Array,
+        atype_ext: Array,
+        atype_embd_ext: Optional[Array] = None,
+        mapping: Optional[Array] = None,
+    ) -> tuple[Array, Array]:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         nframes, nloc, nnei = nlist.shape
         nall = xp.reshape(coord_ext, (nframes, -1)).shape[1] // 3
@@ -735,15 +735,15 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
 
 def _cal_hg_dynamic(
-    flat_edge_ebd: ArrayLike,
-    flat_h2: ArrayLike,
-    flat_sw: ArrayLike,
-    owner: ArrayLike,
+    flat_edge_ebd: Array,
+    flat_h2: Array,
+    flat_sw: Array,
+    owner: Array,
     num_owner: int,
     nb: int,
     nloc: int,
     scale_factor: float,
-) -> ArrayLike:
+) -> Array:
     """
     Calculate the transposed rotation matrix.
 
@@ -790,16 +790,16 @@ def _cal_hg_dynamic(
 
 
 def symmetrization_op_dynamic(
-    flat_edge_ebd: ArrayLike,
-    flat_h2: ArrayLike,
-    flat_sw: ArrayLike,
-    owner: ArrayLike,
+    flat_edge_ebd: Array,
+    flat_h2: Array,
+    flat_sw: Array,
+    owner: Array,
     num_owner: int,
     nb: int,
     nloc: int,
     scale_factor: float,
     axis_neuron: int,
-) -> ArrayLike:
+) -> Array:
     """
     Symmetrization operator to obtain atomic invariant rep.
 
@@ -1109,11 +1109,11 @@ class RepFlowLayer(NativeOP):
 
     def optim_angle_update(
         self,
-        angle_ebd: ArrayLike,
-        node_ebd: ArrayLike,
-        edge_ebd: ArrayLike,
+        angle_ebd: Array,
+        node_ebd: Array,
+        edge_ebd: Array,
         feat: str = "edge",
-    ) -> ArrayLike:
+    ) -> Array:
         xp = array_api_compat.array_namespace(angle_ebd, node_ebd, edge_ebd)
 
         if feat == "edge":
@@ -1157,14 +1157,14 @@ class RepFlowLayer(NativeOP):
 
     def optim_angle_update_dynamic(
         self,
-        flat_angle_ebd: ArrayLike,
-        node_ebd: ArrayLike,
-        flat_edge_ebd: ArrayLike,
-        n2a_index: ArrayLike,
-        eij2a_index: ArrayLike,
-        eik2a_index: ArrayLike,
+        flat_angle_ebd: Array,
+        node_ebd: Array,
+        flat_edge_ebd: Array,
+        n2a_index: Array,
+        eij2a_index: Array,
+        eik2a_index: Array,
         feat: str = "edge",
-    ) -> ArrayLike:
+    ) -> Array:
         xp = array_api_compat.array_namespace(
             flat_angle_ebd, node_ebd, flat_edge_ebd, n2a_index, eij2a_index, eik2a_index
         )
@@ -1216,12 +1216,12 @@ class RepFlowLayer(NativeOP):
 
     def optim_edge_update(
         self,
-        node_ebd: ArrayLike,
-        node_ebd_ext: ArrayLike,
-        edge_ebd: ArrayLike,
-        nlist: ArrayLike,
+        node_ebd: Array,
+        node_ebd_ext: Array,
+        edge_ebd: Array,
+        nlist: Array,
         feat: str = "node",
-    ) -> ArrayLike:
+    ) -> Array:
         xp = array_api_compat.array_namespace(node_ebd, node_ebd_ext, edge_ebd, nlist)
 
         if feat == "node":
@@ -1259,13 +1259,13 @@ class RepFlowLayer(NativeOP):
 
     def optim_edge_update_dynamic(
         self,
-        node_ebd: ArrayLike,
-        node_ebd_ext: ArrayLike,
-        flat_edge_ebd: ArrayLike,
-        n2e_index: ArrayLike,
-        n_ext2e_index: ArrayLike,
+        node_ebd: Array,
+        node_ebd_ext: Array,
+        flat_edge_ebd: Array,
+        n2e_index: Array,
+        n_ext2e_index: Array,
         feat: str = "node",
-    ) -> ArrayLike:
+    ) -> Array:
         xp = array_api_compat.array_namespace(
             node_ebd, node_ebd_ext, flat_edge_ebd, n2e_index, n_ext2e_index
         )
@@ -1307,19 +1307,19 @@ class RepFlowLayer(NativeOP):
 
     def call(
         self,
-        node_ebd_ext: ArrayLike,  # nf x nall x n_dim
-        edge_ebd: ArrayLike,  # nf x nloc x nnei x e_dim
-        h2: ArrayLike,  # nf x nloc x nnei x 3
-        angle_ebd: ArrayLike,  # nf x nloc x a_nnei x a_nnei x a_dim
-        nlist: ArrayLike,  # nf x nloc x nnei
-        nlist_mask: ArrayLike,  # nf x nloc x nnei
-        sw: ArrayLike,  # switch func, nf x nloc x nnei
-        a_nlist: ArrayLike,  # nf x nloc x a_nnei
-        a_nlist_mask: ArrayLike,  # nf x nloc x a_nnei
-        a_sw: ArrayLike,  # switch func, nf x nloc x a_nnei
-        edge_index: ArrayLike,  # 2 x n_edge
-        angle_index: ArrayLike,  # 3 x n_angle
-    ) -> tuple[ArrayLike, ArrayLike]:
+        node_ebd_ext: Array,  # nf x nall x n_dim
+        edge_ebd: Array,  # nf x nloc x nnei x e_dim
+        h2: Array,  # nf x nloc x nnei x 3
+        angle_ebd: Array,  # nf x nloc x a_nnei x a_nnei x a_dim
+        nlist: Array,  # nf x nloc x nnei
+        nlist_mask: Array,  # nf x nloc x nnei
+        sw: Array,  # switch func, nf x nloc x nnei
+        a_nlist: Array,  # nf x nloc x a_nnei
+        a_nlist_mask: Array,  # nf x nloc x a_nnei
+        a_sw: Array,  # switch func, nf x nloc x a_nnei
+        edge_index: Array,  # 2 x n_edge
+        angle_index: Array,  # 3 x n_angle
+    ) -> tuple[Array, Array]:
         """
         Parameters
         ----------
@@ -1409,16 +1409,16 @@ class RepFlowLayer(NativeOP):
             )
         )
 
-        n_update_list: list[ArrayLike] = [node_ebd]
-        e_update_list: list[ArrayLike] = [edge_ebd]
-        a_update_list: list[ArrayLike] = [angle_ebd]
+        n_update_list: list[Array] = [node_ebd]
+        e_update_list: list[Array] = [edge_ebd]
+        a_update_list: list[Array] = [angle_ebd]
 
         # node self mlp
         node_self_mlp = self.act(self.node_self_mlp(node_ebd))
         n_update_list.append(node_self_mlp)
 
         # node sym (grrg + drrd)
-        node_sym_list: list[ArrayLike] = []
+        node_sym_list: list[Array] = []
         node_sym_list.append(
             symmetrization_op(
                 edge_ebd,
@@ -1788,15 +1788,15 @@ class RepFlowLayer(NativeOP):
 
     def list_update_res_avg(
         self,
-        update_list: list[ArrayLike],
-    ) -> ArrayLike:
+        update_list: list[Array],
+    ) -> Array:
         nitem = len(update_list)
         uu = update_list[0]
         for ii in range(1, nitem):
             uu = uu + update_list[ii]
         return uu / (float(nitem) ** 0.5)
 
-    def list_update_res_incr(self, update_list: list[ArrayLike]) -> ArrayLike:
+    def list_update_res_incr(self, update_list: list[Array]) -> Array:
         nitem = len(update_list)
         uu = update_list[0]
         scale = 1.0 / (float(nitem - 1) ** 0.5) if nitem > 1 else 0.0
@@ -1805,8 +1805,8 @@ class RepFlowLayer(NativeOP):
         return uu
 
     def list_update_res_residual(
-        self, update_list: list[ArrayLike], update_name: str = "node"
-    ) -> ArrayLike:
+        self, update_list: list[Array], update_name: str = "node"
+    ) -> Array:
         nitem = len(update_list)
         uu = update_list[0]
         if update_name == "node":
@@ -1822,9 +1822,7 @@ class RepFlowLayer(NativeOP):
             raise NotImplementedError
         return uu
 
-    def list_update(
-        self, update_list: list[ArrayLike], update_name: str = "node"
-    ) -> ArrayLike:
+    def list_update(self, update_list: list[Array], update_name: str = "node") -> Array:
         if self.update_style == "res_avg":
             return self.list_update_res_avg(update_list)
         elif self.update_style == "res_incr":

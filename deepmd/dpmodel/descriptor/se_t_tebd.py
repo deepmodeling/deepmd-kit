@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Any,
     Callable,
     NoReturn,
     Optional,
@@ -10,14 +9,12 @@ from typing import (
 import array_api_compat
 import numpy as np
 
-# Type alias for array_api compatible arrays
-ArrayLike = Union[np.ndarray, Any]  # Any to support JAX, PyTorch, etc. arrays
-
 from deepmd.dpmodel import (
     PRECISION_DICT,
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
+    Array,
     xp_take_along_axis,
 )
 from deepmd.dpmodel.common import (
@@ -284,14 +281,14 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: ArrayLike,
-        stddev: ArrayLike,
+        mean: Array,
+        stddev: Array,
     ) -> None:
         """Update mean and stddev for descriptor."""
         self.se_ttebd.mean = mean
         self.se_ttebd.stddev = stddev
 
-    def get_stat_mean_and_stddev(self) -> tuple[ArrayLike, ArrayLike]:
+    def get_stat_mean_and_stddev(self) -> tuple[Array, Array]:
         """Get mean and stddev for descriptor."""
         return self.se_ttebd.mean, self.se_ttebd.stddev
 
@@ -327,11 +324,11 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
     @cast_precision
     def call(
         self,
-        coord_ext: ArrayLike,
-        atype_ext: ArrayLike,
-        nlist: ArrayLike,
-        mapping: Optional[ArrayLike] = None,
-    ) -> tuple[ArrayLike, ArrayLike]:
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+        mapping: Optional[Array] = None,
+    ) -> tuple[Array, Array]:
         """Compute the descriptor.
 
         Parameters
@@ -461,7 +458,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         train_data: DeepmdDataSystem,
         type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> tuple[ArrayLike, ArrayLike]:
+    ) -> tuple[Array, Array]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -613,7 +610,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.filter_neuron[-1]
 
-    def __setitem__(self, key: str, value: ArrayLike) -> None:
+    def __setitem__(self, key: str, value: Array) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -621,7 +618,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key: str) -> ArrayLike:
+    def __getitem__(self, key: str) -> Array:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -717,18 +714,18 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
 
     def cal_g(
         self,
-        ss: ArrayLike,
+        ss: Array,
         embedding_idx: int,
-    ) -> ArrayLike:
+    ) -> Array:
         # nfnl x nt_i x nt_j x ng
         gg = self.embeddings[embedding_idx].call(ss)
         return gg
 
     def cal_g_strip(
         self,
-        ss: ArrayLike,
+        ss: Array,
         embedding_idx: int,
-    ) -> ArrayLike:
+    ) -> Array:
         assert self.embeddings_strip is not None
         # nfnl x nt_i x nt_j x ng
         gg = self.embeddings_strip[embedding_idx].call(ss)
@@ -736,13 +733,13 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
 
     def call(
         self,
-        nlist: ArrayLike,
-        coord_ext: ArrayLike,
-        atype_ext: ArrayLike,
-        atype_embd_ext: Optional[ArrayLike] = None,
-        mapping: Optional[ArrayLike] = None,
-        type_embedding: Optional[ArrayLike] = None,
-    ) -> tuple[ArrayLike, ArrayLike]:
+        nlist: Array,
+        coord_ext: Array,
+        atype_ext: Array,
+        atype_embd_ext: Optional[Array] = None,
+        mapping: Optional[Array] = None,
+        type_embedding: Optional[Array] = None,
+    ) -> tuple[Array, Array]:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         # nf x nloc x nnei x 4
         dmatrix, diff, sw = self.env_mat.call(

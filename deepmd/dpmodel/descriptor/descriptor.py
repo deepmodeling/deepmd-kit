@@ -15,7 +15,7 @@ from typing import (
 import numpy as np
 
 from deepmd.dpmodel.common import (
-    ArrayLike,
+    Array,
 )
 from deepmd.utils.env_mat_stat import (
     StatItem,
@@ -124,12 +124,12 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
     @abstractmethod
     def call(
         self,
-        nlist: ArrayLike,
-        extended_coord: ArrayLike,
-        extended_atype: ArrayLike,
-        extended_atype_embd: Optional[ArrayLike] = None,
-        mapping: Optional[ArrayLike] = None,
-        type_embedding: Optional[ArrayLike] = None,
+        nlist: Array,
+        extended_coord: Array,
+        extended_atype: Array,
+        extended_atype_embd: Optional[Array] = None,
+        mapping: Optional[Array] = None,
+        type_embedding: Optional[Array] = None,
     ) -> Any:
         """Calculate DescriptorBlock."""
         pass

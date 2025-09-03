@@ -10,7 +10,7 @@ import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
     xp_take_along_axis,
 )
 from deepmd.dpmodel.output_def import (
@@ -201,13 +201,13 @@ class PairTabAtomicModel(BaseAtomicModel):
 
     def forward_atomic(
         self,
-        extended_coord: ArrayLike,
-        extended_atype: ArrayLike,
-        nlist: ArrayLike,
-        mapping: Optional[ArrayLike] = None,
-        fparam: Optional[ArrayLike] = None,
-        aparam: Optional[ArrayLike] = None,
-    ) -> dict[str, ArrayLike]:
+        extended_coord: Array,
+        extended_atype: Array,
+        nlist: Array,
+        mapping: Optional[Array] = None,
+        fparam: Optional[Array] = None,
+        aparam: Optional[Array] = None,
+    ) -> dict[str, Array]:
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlist)
         nframes, nloc, nnei = nlist.shape
         extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
@@ -240,22 +240,22 @@ class PairTabAtomicModel(BaseAtomicModel):
 
     def _pair_tabulated_inter(
         self,
-        nlist: ArrayLike,
-        i_type: ArrayLike,
-        j_type: ArrayLike,
-        rr: ArrayLike,
-    ) -> ArrayLike:
+        nlist: Array,
+        i_type: Array,
+        j_type: Array,
+        rr: Array,
+    ) -> Array:
         """Pairwise tabulated energy.
 
         Parameters
         ----------
-        nlist : ArrayLike
+        nlist : Array
             The unmasked neighbour list. (nframes, nloc)
-        i_type : ArrayLike
+        i_type : Array
             The integer representation of atom type for all local atoms for all frames. (nframes, nloc)
-        j_type : ArrayLike
+        j_type : Array
             The integer representation of atom type for all neighbour atoms of all local atoms for all frames. (nframes, nloc, nnei)
-        rr : ArrayLike
+        rr : Array
             The salar distance vector between two atoms. (nframes, nloc, nnei)
 
         Returns
@@ -313,12 +313,12 @@ class PairTabAtomicModel(BaseAtomicModel):
         return ener
 
     @staticmethod
-    def _get_pairwise_dist(coords: ArrayLike, nlist: ArrayLike) -> ArrayLike:
+    def _get_pairwise_dist(coords: Array, nlist: Array) -> Array:
         """Get pairwise distance `dr`.
 
         Parameters
         ----------
-        coords : ArrayLike
+        coords : Array
             The coordinate of the atoms, shape of (nframes, nall, 3).
         nlist
             The masked nlist, shape of (nframes, nloc, nnei).
@@ -340,23 +340,23 @@ class PairTabAtomicModel(BaseAtomicModel):
 
     @staticmethod
     def _extract_spline_coefficient(
-        i_type: ArrayLike,
-        j_type: ArrayLike,
-        idx: ArrayLike,
-        tab_data: ArrayLike,
+        i_type: Array,
+        j_type: Array,
+        idx: Array,
+        tab_data: Array,
         nspline: np.int64,
-    ) -> ArrayLike:
+    ) -> Array:
         """Extract the spline coefficient from the table.
 
         Parameters
         ----------
-        i_type : ArrayLike
+        i_type : Array
             The integer representation of atom type for all local atoms for all frames. (nframes, nloc)
-        j_type : ArrayLike
+        j_type : Array
             The integer representation of atom type for all neighbour atoms of all local atoms for all frames. (nframes, nloc, nnei)
-        idx : ArrayLike
+        idx : Array
             The index of the spline coefficient. (nframes, nloc, nnei)
-        tab_data : ArrayLike
+        tab_data : Array
             The table storing all the spline coefficient. (ntype, ntype, nspline, 4)
         nspline : int
             The number of splines in the table.
@@ -394,14 +394,14 @@ class PairTabAtomicModel(BaseAtomicModel):
         return final_coef
 
     @staticmethod
-    def _calculate_ener(coef: ArrayLike, uu: ArrayLike) -> ArrayLike:
+    def _calculate_ener(coef: Array, uu: Array) -> Array:
         """Calculate energy using spline coeeficients.
 
         Parameters
         ----------
-        coef : ArrayLike
+        coef : Array
             The spline coefficients. (nframes, nloc, nnei, 4)
-        uu : ArrayLike
+        uu : Array
             The atom displancemnt used in interpolation and extrapolation (nframes, nloc, nnei)
 
         Returns

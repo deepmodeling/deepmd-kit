@@ -7,7 +7,7 @@ from typing import (
 import array_api_compat
 
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
 )
 from deepmd.dpmodel.loss.loss import (
     Loss,
@@ -20,9 +20,7 @@ from deepmd.utils.version import (
 )
 
 
-def custom_huber_loss(
-    predictions: ArrayLike, targets: ArrayLike, delta: float = 1.0
-) -> ArrayLike:
+def custom_huber_loss(predictions: Array, targets: Array, delta: float = 1.0) -> Array:
     xp = array_api_compat.array_namespace(predictions, targets)
     error = targets - predictions
     abs_error = xp.abs(error)
@@ -94,9 +92,9 @@ class EnergyLoss(Loss):
         self,
         learning_rate: float,
         natoms: int,
-        model_dict: dict[str, ArrayLike],
-        label_dict: dict[str, ArrayLike],
-    ) -> dict[str, ArrayLike]:
+        model_dict: dict[str, Array],
+        label_dict: dict[str, Array],
+    ) -> dict[str, Array]:
         """Calculate loss from model results and labeled results."""
         energy = model_dict["energy_redu"]
         force = model_dict["energy_derv_r"]

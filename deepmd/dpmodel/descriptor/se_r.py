@@ -16,7 +16,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -184,7 +184,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         self.sel_cumsum = [0, *np.cumsum(self.sel).tolist()]
         self.ndescrpt = self.nnei
 
-    def __setitem__(self, key: str, value: ArrayLike) -> None:
+    def __setitem__(self, key: str, value: Array) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.davg = value
         elif key in ("std", "data_std", "dstd"):
@@ -192,7 +192,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key: str) -> ArrayLike:
+    def __getitem__(self, key: str) -> Array:
         if key in ("avg", "data_avg", "davg"):
             return self.davg
         elif key in ("std", "data_std", "dstd"):
@@ -315,22 +315,22 @@ class DescrptSeR(NativeOP, BaseDescriptor):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: ArrayLike,
-        stddev: ArrayLike,
+        mean: Array,
+        stddev: Array,
     ) -> None:
         """Update mean and stddev for descriptor."""
         self.davg = mean
         self.dstd = stddev
 
-    def get_stat_mean_and_stddev(self) -> tuple[ArrayLike, ArrayLike]:
+    def get_stat_mean_and_stddev(self) -> tuple[Array, Array]:
         """Get mean and stddev for descriptor."""
         return self.davg, self.dstd
 
     def cal_g(
         self,
-        ss: ArrayLike,
+        ss: Array,
         ll: int,
-    ) -> ArrayLike:
+    ) -> Array:
         xp = array_api_compat.array_namespace(ss)
         nf, nloc, nnei = ss.shape[0:3]
         ss = xp.reshape(ss, (nf, nloc, nnei, 1))
@@ -341,11 +341,11 @@ class DescrptSeR(NativeOP, BaseDescriptor):
     @cast_precision
     def call(
         self,
-        coord_ext: ArrayLike,
-        atype_ext: ArrayLike,
-        nlist: ArrayLike,
-        mapping: Optional[ArrayLike] = None,
-    ) -> ArrayLike:
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+        mapping: Optional[Array] = None,
+    ) -> Array:
         """Compute the descriptor.
 
         Parameters
@@ -461,7 +461,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         train_data: DeepmdDataSystem,
         type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> tuple[ArrayLike, ArrayLike]:
+    ) -> tuple[Array, Array]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

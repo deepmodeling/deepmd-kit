@@ -11,7 +11,7 @@ import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
 )
 from deepmd.dpmodel.common import (
     NativeOP,
@@ -79,7 +79,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             )
         # if hybrid sel is larger than sub sel, the nlist needs to be cut for each type
         hybrid_sel = self.get_sel()
-        nlist_cut_idx: list[ArrayLike] = []
+        nlist_cut_idx: list[Array] = []
         if self.mixed_types() and not all(
             descrpt.mixed_types() for descrpt in self.descrpt_list
         ):
@@ -204,8 +204,8 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: list[Union[np.ndarray, list[ArrayLike]]],
-        stddev: list[Union[np.ndarray, list[ArrayLike]]],
+        mean: list[Union[np.ndarray, list[Array]]],
+        stddev: list[Union[np.ndarray, list[Array]]],
     ) -> None:
         """Update mean and stddev for descriptor."""
         for ii, descrpt in enumerate(self.descrpt_list):
@@ -214,8 +214,8 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
     def get_stat_mean_and_stddev(
         self,
     ) -> tuple[
-        list[tuple[ArrayLike, ArrayLike]],
-        list[Union[ArrayLike, list[ArrayLike]]],
+        list[tuple[Array, Array]],
+        list[Union[Array, list[Array]]],
     ]:
         """Get mean and stddev for descriptor."""
         mean_list = []
@@ -260,16 +260,16 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
 
     def call(
         self,
-        coord_ext: ArrayLike,
-        atype_ext: ArrayLike,
-        nlist: ArrayLike,
-        mapping: Optional[ArrayLike] = None,
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+        mapping: Optional[Array] = None,
     ) -> tuple[
-        ArrayLike,
-        Optional[ArrayLike],
-        Optional[ArrayLike],
-        Optional[ArrayLike],
-        Optional[ArrayLike],
+        Array,
+        Optional[Array],
+        Optional[Array],
+        Optional[Array],
+        Optional[Array],
     ]:
         """Compute the descriptor.
 
@@ -335,7 +335,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         train_data: DeepmdDataSystem,
         type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> tuple[ArrayLike, ArrayLike]:
+    ) -> tuple[Array, Array]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

@@ -21,7 +21,7 @@ from deepmd.common import (
     VALID_PRECISION,
 )
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
 )
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
@@ -90,16 +90,16 @@ class NativeOP(ABC):
     """The unit operation of a native model."""
 
     @abstractmethod
-    def call(self, *args: ArrayLike, **kwargs: Any) -> ArrayLike:
+    def call(self, *args: Array, **kwargs: Any) -> Array:
         """Forward pass in NumPy implementation."""
         pass
 
-    def __call__(self, *args: ArrayLike, **kwargs: Any) -> ArrayLike:
+    def __call__(self, *args: Array, **kwargs: Any) -> Array:
         """Forward pass in NumPy implementation."""
         return self.call(*args, **kwargs)
 
 
-def to_numpy_array(x: ArrayLike) -> Optional[ArrayLike]:
+def to_numpy_array(x: Array) -> Optional[Array]:
     """Convert an array to a NumPy array.
 
     Parameters
@@ -161,7 +161,7 @@ def cast_precision(func: Callable[..., Any]) -> Callable[..., Any]:
     """
 
     @wraps(func)
-    def wrapper(self: Any, *args: ArrayLike, **kwargs: Any) -> ArrayLike:
+    def wrapper(self: Any, *args: Array, **kwargs: Any) -> Array:
         # only convert tensors
         returned_tensor = func(
             self,
@@ -187,14 +187,12 @@ def cast_precision(func: Callable[..., Any]) -> Callable[..., Any]:
 
 
 @overload
-def safe_cast_array(
-    input: ArrayLike, from_precision: str, to_precision: str
-) -> ArrayLike: ...
+def safe_cast_array(input: Array, from_precision: str, to_precision: str) -> Array: ...
 @overload
 def safe_cast_array(input: None, from_precision: str, to_precision: str) -> None: ...
 def safe_cast_array(
-    input: Optional[ArrayLike], from_precision: str, to_precision: str
-) -> Optional[ArrayLike]:
+    input: Optional[Array], from_precision: str, to_precision: str
+) -> Optional[Array]:
     """Convert an array from a precision to another precision.
 
     If input is not an array or without the specific precision, the method will not
@@ -204,7 +202,7 @@ def safe_cast_array(
 
     Parameters
     ----------
-    input : ArrayLike or None
+    input : Array or None
         Input array
     from_precision : str
         Array data type that is casted from

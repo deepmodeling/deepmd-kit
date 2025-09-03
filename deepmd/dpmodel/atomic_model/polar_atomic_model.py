@@ -6,7 +6,7 @@ from typing import (
 import array_api_compat
 
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
 )
 from deepmd.dpmodel.fitting.polarizability_fitting import (
     PolarFitting,
@@ -29,9 +29,9 @@ class DPPolarAtomicModel(DPAtomicModel):
 
     def apply_out_stat(
         self,
-        ret: dict[str, ArrayLike],
-        atype: ArrayLike,
-    ) -> dict[str, ArrayLike]:
+        ret: dict[str, Array],
+        atype: Array,
+    ) -> dict[str, Array]:
         """Apply the stat to each atomic output.
 
         Parameters

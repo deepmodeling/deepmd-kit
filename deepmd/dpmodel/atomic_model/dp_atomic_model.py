@@ -5,7 +5,7 @@ from typing import (
 )
 
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
 )
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
@@ -43,8 +43,8 @@ class DPAtomicModel(BaseAtomicModel):
 
     def __init__(
         self,
-        descriptor: Any,
-        fitting: Any,
+        descriptor: BaseDescriptor,
+        fitting: BaseFitting,
         type_map: list[str],
         **kwargs: Any,
     ) -> None:
@@ -127,13 +127,13 @@ class DPAtomicModel(BaseAtomicModel):
 
     def forward_atomic(
         self,
-        extended_coord: ArrayLike,
-        extended_atype: ArrayLike,
-        nlist: ArrayLike,
-        mapping: Optional[ArrayLike] = None,
-        fparam: Optional[ArrayLike] = None,
-        aparam: Optional[ArrayLike] = None,
-    ) -> dict[str, ArrayLike]:
+        extended_coord: Array,
+        extended_atype: Array,
+        nlist: Array,
+        mapping: Optional[Array] = None,
+        fparam: Optional[Array] = None,
+        aparam: Optional[Array] = None,
+    ) -> dict[str, Array]:
         """Models' atomic predictions.
 
         Parameters

@@ -18,7 +18,7 @@ from deepmd.utils.plugin import (
 
 
 def make_base_atomic_model(
-    t_tensor: Any,
+    t_tensor: type,
     fwd_method_name: str = "forward_atomic",
 ) -> type:
     """Make the base class for the atomic model.

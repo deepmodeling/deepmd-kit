@@ -15,7 +15,7 @@ from deepmd.dpmodel import (
     DEFAULT_PRECISION,
 )
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -177,13 +177,13 @@ class PolarFitting(GeneralFitting):
             else self.embedding_width * self.embedding_width
         )
 
-    def __setitem__(self, key: str, value: ArrayLike) -> None:
+    def __setitem__(self, key: str, value: Array) -> None:
         if key in ["constant_matrix"]:
             self.constant_matrix = value
         else:
             super().__setitem__(key, value)
 
-    def __getitem__(self, key: str) -> ArrayLike:
+    def __getitem__(self, key: str) -> Array:
         if key in ["constant_matrix"]:
             return self.constant_matrix
         else:
@@ -250,14 +250,14 @@ class PolarFitting(GeneralFitting):
     @cast_precision
     def call(
         self,
-        descriptor: ArrayLike,
-        atype: ArrayLike,
-        gr: Optional[ArrayLike] = None,
-        g2: Optional[ArrayLike] = None,
-        h2: Optional[ArrayLike] = None,
-        fparam: Optional[ArrayLike] = None,
-        aparam: Optional[ArrayLike] = None,
-    ) -> dict[str, ArrayLike]:
+        descriptor: Array,
+        atype: Array,
+        gr: Optional[Array] = None,
+        g2: Optional[Array] = None,
+        h2: Optional[Array] = None,
+        fparam: Optional[Array] = None,
+        aparam: Optional[Array] = None,
+    ) -> dict[str, Array]:
         """Calculate the fitting.
 
         Parameters

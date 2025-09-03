@@ -4,7 +4,13 @@ from typing import (
 )
 
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
+)
+from deepmd.dpmodel.descriptor.base_descriptor import (
+    BaseDescriptor,
+)
+from deepmd.dpmodel.fitting.base_fitting import (
+    BaseFitting,
 )
 from deepmd.dpmodel.fitting.dipole_fitting import (
     DipoleFitting,
@@ -17,7 +23,11 @@ from .dp_atomic_model import (
 
 class DPDipoleAtomicModel(DPAtomicModel):
     def __init__(
-        self, descriptor: Any, fitting: Any, type_map: list[str], **kwargs: Any
+        self,
+        descriptor: BaseDescriptor,
+        fitting: BaseFitting,
+        type_map: list[str],
+        **kwargs: Any,
     ) -> None:
         if not isinstance(fitting, DipoleFitting):
             raise TypeError(
@@ -27,8 +37,8 @@ class DPDipoleAtomicModel(DPAtomicModel):
 
     def apply_out_stat(
         self,
-        ret: dict[str, ArrayLike],
-        atype: ArrayLike,
-    ) -> dict[str, ArrayLike]:
+        ret: dict[str, Array],
+        atype: Array,
+    ) -> dict[str, Array]:
         # dipole not applying bias
         return ret

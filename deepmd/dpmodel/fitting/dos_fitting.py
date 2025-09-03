@@ -8,7 +8,7 @@ from typing import (
 import numpy as np
 
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
 )
 from deepmd.dpmodel.common import (
     DEFAULT_PRECISION,
@@ -40,7 +40,7 @@ class DOSFittingNet(InvarFitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        bias_dos: Optional[ArrayLike] = None,
+        bias_dos: Optional[Array] = None,
         rcond: Optional[float] = None,
         trainable: Union[bool, list[bool]] = True,
         activation_function: str = "tanh",

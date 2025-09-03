@@ -2,12 +2,14 @@
 
 
 from typing import (
-    Any,
     Optional,
 )
 
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
+)
+from deepmd.dpmodel.fitting.base_fitting import (
+    BaseFitting,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -47,6 +49,6 @@ class DPModelCommon:
         )
         return local_jdata_cpy, min_nbor_dist
 
-    def get_fitting_net(self) -> Any:
+    def get_fitting_net(self) -> BaseFitting:
         """Get the fitting network."""
         return self.atomic_model.fitting

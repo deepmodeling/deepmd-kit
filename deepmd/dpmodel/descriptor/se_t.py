@@ -17,7 +17,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -165,7 +165,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         self.orig_sel = self.sel
         self.ndescrpt = self.nnei * 4
 
-    def __setitem__(self, key: str, value: ArrayLike) -> None:
+    def __setitem__(self, key: str, value: Array) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.davg = value
         elif key in ("std", "data_std", "dstd"):
@@ -173,7 +173,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key: str) -> ArrayLike:
+    def __getitem__(self, key: str) -> Array:
         if key in ("avg", "data_avg", "davg"):
             return self.davg
         elif key in ("std", "data_std", "dstd"):
@@ -296,14 +296,14 @@ class DescrptSeT(NativeOP, BaseDescriptor):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: ArrayLike,
-        stddev: ArrayLike,
+        mean: Array,
+        stddev: Array,
     ) -> None:
         """Update mean and stddev for descriptor."""
         self.davg = mean
         self.dstd = stddev
 
-    def get_stat_mean_and_stddev(self) -> tuple[ArrayLike, ArrayLike]:
+    def get_stat_mean_and_stddev(self) -> tuple[Array, Array]:
         """Get mean and stddev for descriptor."""
         return self.davg, self.dstd
 
@@ -317,11 +317,11 @@ class DescrptSeT(NativeOP, BaseDescriptor):
     @cast_precision
     def call(
         self,
-        coord_ext: ArrayLike,
-        atype_ext: ArrayLike,
-        nlist: ArrayLike,
-        mapping: Optional[ArrayLike] = None,
-    ) -> tuple[ArrayLike, ArrayLike]:
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+        mapping: Optional[Array] = None,
+    ) -> tuple[Array, Array]:
         """Compute the descriptor.
 
         Parameters
@@ -460,7 +460,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         train_data: DeepmdDataSystem,
         type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> tuple[ArrayLike, ArrayLike]:
+    ) -> tuple[Array, Array]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

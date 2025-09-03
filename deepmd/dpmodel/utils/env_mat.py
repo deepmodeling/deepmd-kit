@@ -10,7 +10,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
     support_array_api,
     xp_take_along_axis,
 )
@@ -21,10 +21,10 @@ from deepmd.dpmodel.utils.safe_gradient import (
 
 @support_array_api(version="2023.12")
 def compute_smooth_weight(
-    distance: ArrayLike,
+    distance: Array,
     rmin: float,
     rmax: float,
-) -> ArrayLike:
+) -> Array:
     """Compute smooth weight for descriptor elements."""
     if rmin >= rmax:
         raise ValueError("rmin should be less than rmax.")
@@ -38,10 +38,10 @@ def compute_smooth_weight(
 
 @support_array_api(version="2023.12")
 def compute_exp_sw(
-    distance: ArrayLike,
+    distance: Array,
     rmin: float,
     rmax: float,
-) -> ArrayLike:
+) -> Array:
     """Compute the exponential switch function for neighbor update."""
     if rmin >= rmax:
         raise ValueError("rmin should be less than rmax.")
@@ -114,13 +114,13 @@ class EnvMat(NativeOP):
 
     def call(
         self,
-        coord_ext: ArrayLike,
-        atype_ext: ArrayLike,
-        nlist: ArrayLike,
-        davg: Optional[ArrayLike] = None,
-        dstd: Optional[ArrayLike] = None,
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+        davg: Optional[Array] = None,
+        dstd: Optional[Array] = None,
         radial_only: bool = False,
-    ) -> tuple[ArrayLike, ArrayLike, ArrayLike]:
+    ) -> tuple[Array, Array, Array]:
         """Compute the environment matrix.
 
         Parameters

@@ -14,7 +14,7 @@ from deepmd.common import (
     get_hash,
 )
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
 )
 from deepmd.dpmodel.common import (
     get_xp_precision,
@@ -41,12 +41,12 @@ if TYPE_CHECKING:
 
 
 class EnvMatStat(BaseEnvMatStat):
-    def compute_stat(self, env_mat: dict[str, ArrayLike]) -> dict[str, StatItem]:
+    def compute_stat(self, env_mat: dict[str, Array]) -> dict[str, StatItem]:
         """Compute the statistics of the environment matrix for a single system.
 
         Parameters
         ----------
-        env_mat : ArrayLike
+        env_mat : Array
             The environment matrix.
 
         Returns
@@ -221,7 +221,7 @@ class EnvMatStatSe(EnvMatStat):
             }
         )
 
-    def __call__(self) -> tuple[ArrayLike, ArrayLike]:
+    def __call__(self) -> tuple[Array, Array]:
         avgs = self.get_avg()
         stds = self.get_std()
 

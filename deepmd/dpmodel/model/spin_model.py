@@ -7,7 +7,7 @@ from typing import (
 import numpy as np
 
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
 )
 from deepmd.dpmodel.atomic_model.dp_atomic_model import (
     DPAtomicModel,
@@ -42,8 +42,8 @@ class SpinModel(NativeOP):
         self.spin_mask = self.spin.get_spin_mask()
 
     def process_spin_input(
-        self, coord: ArrayLike, atype: ArrayLike, spin: ArrayLike
-    ) -> tuple[ArrayLike, ArrayLike]:
+        self, coord: Array, atype: Array, spin: Array
+    ) -> tuple[Array, Array]:
         """Generate virtual coordinates and types, concat into the input."""
         nframes, nloc = coord.shape[:-1]
         atype_spin = np.concatenate([atype, atype + self.ntypes_real], axis=-1)
@@ -55,12 +55,12 @@ class SpinModel(NativeOP):
 
     def process_spin_input_lower(
         self,
-        extended_coord: ArrayLike,
-        extended_atype: ArrayLike,
-        extended_spin: ArrayLike,
-        nlist: ArrayLike,
-        mapping: Optional[ArrayLike] = None,
-    ) -> tuple[ArrayLike, ArrayLike]:
+        extended_coord: Array,
+        extended_atype: Array,
+        extended_spin: Array,
+        nlist: Array,
+        mapping: Optional[Array] = None,
+    ) -> tuple[Array, Array]:
         """
         Add `extended_spin` into `extended_coord` to generate virtual atoms, and extend `nlist` and `mapping`.
         Note that the final `extended_coord_updated` with shape [nframes, nall + nall, 3] has the following order:
@@ -99,11 +99,11 @@ class SpinModel(NativeOP):
 
     def process_spin_output(
         self,
-        atype: ArrayLike,
-        out_tensor: ArrayLike,
+        atype: Array,
+        out_tensor: Array,
         add_mag: bool = True,
         virtual_scale: bool = True,
-    ) -> tuple[ArrayLike, ArrayLike]:
+    ) -> tuple[Array, Array]:
         """Split the output both real and virtual atoms, and scale the latter."""
         nframes, nloc_double = out_tensor.shape[:2]
         nloc = nloc_double // 2
@@ -122,12 +122,12 @@ class SpinModel(NativeOP):
 
     def process_spin_output_lower(
         self,
-        extended_atype: ArrayLike,
-        extended_out_tensor: ArrayLike,
+        extended_atype: Array,
+        extended_out_tensor: Array,
         nloc: int,
         add_mag: bool = True,
         virtual_scale: bool = True,
-    ) -> tuple[ArrayLike, ArrayLike]:
+    ) -> tuple[Array, Array]:
         """Split the extended output of both real and virtual atoms with switch, and scale the latter."""
         nframes, nall_double = extended_out_tensor.shape[:2]
         nall = nall_double // 2
@@ -158,7 +158,7 @@ class SpinModel(NativeOP):
         return extended_out_real, extended_out_mag, atomic_mask > 0.0
 
     @staticmethod
-    def extend_nlist(extended_atype: ArrayLike, nlist: ArrayLike) -> ArrayLike:
+    def extend_nlist(extended_atype: Array, nlist: Array) -> Array:
         nframes, nloc, nnei = nlist.shape
         nall = extended_atype.shape[1]
         nlist_mask = nlist != -1
@@ -189,8 +189,8 @@ class SpinModel(NativeOP):
 
     @staticmethod
     def concat_switch_virtual(
-        extended_tensor: ArrayLike, extended_tensor_virtual: ArrayLike, nloc: int
-    ) -> ArrayLike:
+        extended_tensor: Array, extended_tensor_virtual: Array, nloc: int
+    ) -> Array:
         nframes, nall = extended_tensor.shape[:2]
         out_shape = list(extended_tensor.shape)
         out_shape[1] *= 2
@@ -209,7 +209,7 @@ class SpinModel(NativeOP):
         return extended_tensor_updated.reshape(out_shape)
 
     @staticmethod
-    def expand_aparam(aparam: ArrayLike, nloc: int) -> ArrayLike:
+    def expand_aparam(aparam: Array, nloc: int) -> Array:
         """Expand the atom parameters for virtual atoms if necessary."""
         nframes, natom, numb_aparam = aparam.shape
         if natom == nloc:  # good
@@ -336,14 +336,14 @@ class SpinModel(NativeOP):
 
     def call(
         self,
-        coord: ArrayLike,
-        atype: ArrayLike,
-        spin: ArrayLike,
-        box: Optional[ArrayLike] = None,
-        fparam: Optional[ArrayLike] = None,
-        aparam: Optional[ArrayLike] = None,
+        coord: Array,
+        atype: Array,
+        spin: Array,
+        box: Optional[Array] = None,
+        fparam: Optional[Array] = None,
+        aparam: Optional[Array] = None,
         do_atomic_virial: bool = False,
-    ) -> dict[str, ArrayLike]:
+    ) -> dict[str, Array]:
         """Return model prediction.
 
         Parameters
@@ -398,15 +398,15 @@ class SpinModel(NativeOP):
 
     def call_lower(
         self,
-        extended_coord: ArrayLike,
-        extended_atype: ArrayLike,
-        extended_spin: ArrayLike,
-        nlist: ArrayLike,
-        mapping: Optional[ArrayLike] = None,
-        fparam: Optional[ArrayLike] = None,
-        aparam: Optional[ArrayLike] = None,
+        extended_coord: Array,
+        extended_atype: Array,
+        extended_spin: Array,
+        nlist: Array,
+        mapping: Optional[Array] = None,
+        fparam: Optional[Array] = None,
+        aparam: Optional[Array] = None,
         do_atomic_virial: bool = False,
-    ) -> dict[str, ArrayLike]:
+    ) -> dict[str, Array]:
         """Return model prediction. Lower interface that takes
         extended atomic coordinates, types and spins, nlist, and mapping
         as input, and returns the predictions on the extended region.

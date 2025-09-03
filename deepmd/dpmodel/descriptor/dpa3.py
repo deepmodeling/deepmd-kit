@@ -11,7 +11,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -511,8 +511,8 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: list[ArrayLike],
-        stddev: list[ArrayLike],
+        mean: list[Array],
+        stddev: list[Array],
     ) -> None:
         """Update mean and stddev for descriptor."""
         descrpt_list = [self.repflows]
@@ -522,7 +522,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
 
     def get_stat_mean_and_stddev(
         self,
-    ) -> tuple[tuple[ArrayLike, ArrayLike], list[ArrayLike]]:
+    ) -> tuple[tuple[Array, Array], list[Array]]:
         """Get mean and stddev for descriptor."""
         mean_list = [self.repflows.mean]
         stddev_list = [self.repflows.stddev]
@@ -531,11 +531,11 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
     @cast_precision
     def call(
         self,
-        coord_ext: ArrayLike,
-        atype_ext: ArrayLike,
-        nlist: ArrayLike,
-        mapping: Optional[ArrayLike] = None,
-    ) -> tuple[ArrayLike, ArrayLike]:
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+        mapping: Optional[Array] = None,
+    ) -> tuple[Array, Array]:
         """Compute the descriptor.
 
         Parameters
@@ -667,7 +667,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         train_data: DeepmdDataSystem,
         type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> tuple[ArrayLike, ArrayLike]:
+    ) -> tuple[Array, Array]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

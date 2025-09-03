@@ -15,7 +15,7 @@ from deepmd.common import (
     j_get_type,
 )
 from deepmd.dpmodel.common import (
-    ArrayLike,
+    Array,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -182,11 +182,11 @@ def make_base_descriptor(
         @abstractmethod
         def fwd(
             self,
-            extended_coord: ArrayLike,
-            extended_atype: ArrayLike,
-            nlist: ArrayLike,
-            mapping: Optional[ArrayLike] = None,
-        ) -> ArrayLike:
+            extended_coord: Array,
+            extended_atype: Array,
+            nlist: Array,
+            mapping: Optional[Array] = None,
+        ) -> Array:
             """Calculate descriptor."""
             pass
 

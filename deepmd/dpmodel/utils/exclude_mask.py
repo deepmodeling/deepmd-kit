@@ -1,16 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-    Union,
-)
 
 import array_api_compat
 import numpy as np
 
-# Type alias for array_api compatible arrays
-ArrayLike = Union[np.ndarray, Any]  # Any to support JAX, PyTorch, etc. arrays
-
 from deepmd.dpmodel.array_api import (
+    Array,
     xp_take_along_axis,
 )
 
@@ -35,13 +29,13 @@ class AtomExcludeMask:
     def get_exclude_types(self) -> list[int]:
         return self.exclude_types
 
-    def get_type_mask(self) -> ArrayLike:
+    def get_type_mask(self) -> Array:
         return self.type_mask
 
     def build_type_exclude_mask(
         self,
-        atype: ArrayLike,
-    ) -> ArrayLike:
+        atype: Array,
+    ) -> Array:
         """Compute type exclusion mask for atoms.
 
         Parameters
@@ -98,9 +92,9 @@ class PairExcludeMask:
 
     def build_type_exclude_mask(
         self,
-        nlist: ArrayLike,
-        atype_ext: ArrayLike,
-    ) -> ArrayLike:
+        nlist: Array,
+        atype_ext: Array,
+    ) -> Array:
         """Compute type exclusion mask for atom pairs.
 
         Parameters

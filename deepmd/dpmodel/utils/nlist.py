@@ -10,7 +10,7 @@ from deepmd.dpmodel.array_api import (
     xp_take_along_axis,
 )
 from deepmd.dpmodel.common import (
-    ArrayLike,
+    Array,
 )
 
 from .region import (
@@ -20,13 +20,13 @@ from .region import (
 
 
 def extend_input_and_build_neighbor_list(
-    coord: ArrayLike,
-    atype: ArrayLike,
+    coord: Array,
+    atype: Array,
     rcut: float,
     sel: list[int],
     mixed_types: bool = False,
-    box: Optional[ArrayLike] = None,
-) -> tuple[ArrayLike, ArrayLike]:
+    box: Optional[Array] = None,
+) -> tuple[Array, Array]:
     xp = array_api_compat.array_namespace(coord, atype)
     nframes, nloc = atype.shape[:2]
     if box is not None:
@@ -53,20 +53,20 @@ def extend_input_and_build_neighbor_list(
 
 ## translated from torch implementation by chatgpt
 def build_neighbor_list(
-    coord: ArrayLike,
-    atype: ArrayLike,
+    coord: Array,
+    atype: Array,
     nloc: int,
     rcut: float,
     sel: Union[int, list[int]],
     distinguish_types: bool = True,
-) -> ArrayLike:
+) -> Array:
     """Build neighbor list for a single frame. keeps nsel neighbors.
 
     Parameters
     ----------
-    coord : ArrayLike
+    coord : Array
         exptended coordinates of shape [batch_size, nall x 3]
-    atype : ArrayLike
+    atype : Array
         extended atomic types of shape [batch_size, nall]
         type < 0 the atom is treat as virtual atoms.
     nloc : int
@@ -83,7 +83,7 @@ def build_neighbor_list(
 
     Returns
     -------
-    neighbor_list : ArrayLike
+    neighbor_list : Array
         Neighbor list of shape [batch_size, nloc, nsel], the neighbors
         are stored in an ascending order. If the number of
         neighbors is less than nsel, the positions are masked
@@ -155,10 +155,10 @@ def build_neighbor_list(
 
 
 def nlist_distinguish_types(
-    nlist: ArrayLike,
-    atype: ArrayLike,
+    nlist: Array,
+    atype: Array,
     sel: list[int],
-) -> ArrayLike:
+) -> Array:
     """Given a nlist that does not distinguish atom types, return a nlist that
     distinguish atom types.
 
@@ -190,20 +190,20 @@ def get_multiple_nlist_key(rcut: float, nsel: int) -> str:
 
 ## translated from torch implementation by chatgpt
 def build_multiple_neighbor_list(
-    coord: ArrayLike,
-    nlist: ArrayLike,
+    coord: Array,
+    nlist: Array,
     rcuts: list[float],
     nsels: list[int],
-) -> dict[str, ArrayLike]:
+) -> dict[str, Array]:
     """Input one neighbor list, and produce multiple neighbor lists with
     different cutoff radius and numbers of selection out of it.  The
     required rcuts and nsels should be smaller or equal to the input nlist.
 
     Parameters
     ----------
-    coord : ArrayLike
+    coord : Array
         exptended coordinates of shape [batch_size, nall x 3]
-    nlist : ArrayLike
+    nlist : Array
         Neighbor list of shape [batch_size, nloc, nsel], the neighbors
         should be stored in an ascending order.
     rcuts : list[float]
@@ -213,7 +213,7 @@ def build_multiple_neighbor_list(
 
     Returns
     -------
-    nlist_dict : dict[str, ArrayLike]
+    nlist_dict : dict[str, Array]
         A dict of nlists, key given by get_multiple_nlist_key(rc, nsel)
         value being the corresponding nlist.
 
@@ -249,33 +249,33 @@ def build_multiple_neighbor_list(
 
 ## translated from torch implementation by chatgpt
 def extend_coord_with_ghosts(
-    coord: ArrayLike,
-    atype: ArrayLike,
-    cell: Optional[ArrayLike],
+    coord: Array,
+    atype: Array,
+    cell: Optional[Array],
     rcut: float,
-) -> tuple[ArrayLike, ArrayLike]:
+) -> tuple[Array, Array]:
     """Extend the coordinates of the atoms by appending peridoc images.
     The number of images is large enough to ensure all the neighbors
     within rcut are appended.
 
     Parameters
     ----------
-    coord : ArrayLike
+    coord : Array
         original coordinates of shape [-1, nloc*3].
-    atype : ArrayLike
+    atype : Array
         atom type of shape [-1, nloc].
-    cell : ArrayLike
+    cell : Array
         simulation cell tensor of shape [-1, 9].
     rcut : float
         the cutoff radius
 
     Returns
     -------
-    extended_coord: ArrayLike
+    extended_coord: Array
         extended coordinates of shape [-1, nall*3].
-    extended_atype: ArrayLike
+    extended_atype: Array
         extended atom type of shape [-1, nall].
-    index_mapping: ArrayLike
+    index_mapping: Array
         mapping extended index to the local index
 
     """

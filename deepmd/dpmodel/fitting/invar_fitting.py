@@ -10,7 +10,7 @@ from deepmd.dpmodel import (
     DEFAULT_PRECISION,
 )
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -125,7 +125,7 @@ class InvarFitting(GeneralFitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        bias_atom: Optional[ArrayLike] = None,
+        bias_atom: Optional[Array] = None,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[list[bool]] = None,
@@ -213,14 +213,14 @@ class InvarFitting(GeneralFitting):
     @cast_precision
     def call(
         self,
-        descriptor: ArrayLike,
-        atype: ArrayLike,
-        gr: Optional[ArrayLike] = None,
-        g2: Optional[ArrayLike] = None,
-        h2: Optional[ArrayLike] = None,
-        fparam: Optional[ArrayLike] = None,
-        aparam: Optional[ArrayLike] = None,
-    ) -> dict[str, ArrayLike]:
+        descriptor: Array,
+        atype: Array,
+        gr: Optional[Array] = None,
+        g2: Optional[Array] = None,
+        h2: Optional[Array] = None,
+        fparam: Optional[Array] = None,
+        aparam: Optional[Array] = None,
+    ) -> dict[str, Array]:
         """Calculate the fitting.
 
         Parameters

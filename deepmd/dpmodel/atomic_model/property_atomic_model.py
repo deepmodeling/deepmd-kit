@@ -4,7 +4,7 @@ from typing import (
 )
 
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
 )
 from deepmd.dpmodel.fitting.property_fitting import (
     PropertyFittingNet,
@@ -27,9 +27,9 @@ class DPPropertyAtomicModel(DPAtomicModel):
 
     def apply_out_stat(
         self,
-        ret: dict[str, ArrayLike],
-        atype: ArrayLike,
-    ) -> dict[str, ArrayLike]:
+        ret: dict[str, Array],
+        atype: Array,
+    ) -> dict[str, Array]:
         """Apply the stat to each atomic output.
 
         In property fitting, each output will be multiplied by label std and then plus the label average value.

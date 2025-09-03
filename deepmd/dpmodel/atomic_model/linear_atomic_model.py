@@ -9,7 +9,7 @@ import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.array_api import (
-    ArrayLike,
+    Array,
 )
 from deepmd.dpmodel.utils.nlist import (
     build_multiple_neighbor_list,
@@ -154,7 +154,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
-    def _sort_rcuts_sels(self) -> tuple[tuple[ArrayLike, ArrayLike], list[int]]:
+    def _sort_rcuts_sels(self) -> tuple[tuple[Array, Array], list[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = sorted(
             zip(self.get_model_rcuts(), self.get_model_nsels()),
@@ -196,13 +196,13 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def forward_atomic(
         self,
-        extended_coord: ArrayLike,
-        extended_atype: ArrayLike,
-        nlist: ArrayLike,
-        mapping: Optional[ArrayLike] = None,
-        fparam: Optional[ArrayLike] = None,
-        aparam: Optional[ArrayLike] = None,
-    ) -> dict[str, ArrayLike]:
+        extended_coord: Array,
+        extended_atype: Array,
+        nlist: Array,
+        mapping: Optional[Array] = None,
+        fparam: Optional[Array] = None,
+        aparam: Optional[Array] = None,
+    ) -> dict[str, Array]:
         """Return atomic prediction.
 
         Parameters
@@ -266,7 +266,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return fit_ret
 
     @staticmethod
-    def remap_atype(ori_map: list[str], new_map: list[str]) -> ArrayLike:
+    def remap_atype(ori_map: list[str], new_map: list[str]) -> Array:
         """
         This method is used to map the atype from the common type_map to the original type_map of
         indivial AtomicModels.
@@ -329,10 +329,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def _compute_weight(
         self,
-        extended_coord: ArrayLike,
-        extended_atype: ArrayLike,
-        nlists_: list[ArrayLike],
-    ) -> list[ArrayLike]:
+        extended_coord: Array,
+        extended_atype: Array,
+        nlists_: list[Array],
+    ) -> list[Array]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlists_)
         nmodels = len(self.models)
@@ -450,15 +450,15 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
 
     def _compute_weight(
         self,
-        extended_coord: ArrayLike,
-        extended_atype: ArrayLike,
-        nlists_: list[ArrayLike],
-    ) -> list[ArrayLike]:
+        extended_coord: Array,
+        extended_atype: Array,
+        nlists_: list[Array],
+    ) -> list[Array]:
         """ZBL weight.
 
         Returns
         -------
-        list[ArrayLike]
+        list[Array]
             the atomic ZBL weight for interpolation. (nframes, nloc, 1)
         """
         assert self.sw_rmax > self.sw_rmin, (
