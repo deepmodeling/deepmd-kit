@@ -17,6 +17,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.common import (
+    ArrayLike,
     cast_precision,
     to_numpy_array,
 )
@@ -222,7 +223,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.sel_cumsum = [0, *np.cumsum(self.sel).tolist()]
         self.ndescrpt = self.nnei * 4
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: ArrayLike) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.davg = value
         elif key in ("std", "data_std", "dstd"):
@@ -230,7 +231,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> ArrayLike:
         if key in ("avg", "data_avg", "davg"):
             return self.davg
         elif key in ("std", "data_std", "dstd"):
@@ -239,19 +240,19 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             raise KeyError(key)
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.get_dim_out()
 
-    def get_dim_out(self):
+    def get_dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.neuron[-1] * self.axis_neuron
 
-    def get_dim_emb(self):
+    def get_dim_emb(self) -> int:
         """Returns the embedding (g2) dimension of this descriptor."""
         return self.neuron[-1]
 
-    def get_rcut(self):
+    def get_rcut(self) -> float:
         """Returns cutoff radius."""
         return self.rcut
 
@@ -259,7 +260,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.rcut_smth
 
-    def get_sel(self):
+    def get_sel(self) -> list[int]:
         """Returns cutoff radius."""
         return self.sel
 
@@ -281,7 +282,9 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """Returns the protection of building environment matrix."""
         return self.env_protection
 
-    def share_params(self, base_class, shared_level, resume=False) -> NoReturn:
+    def share_params(
+        self, base_class: Any, shared_level: Any, resume: bool = False
+    ) -> NoReturn:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -290,7 +293,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -364,9 +367,9 @@ class DescrptSeA(NativeOP, BaseDescriptor):
 
     def cal_g(
         self,
-        ss,
-        embedding_idx,
-    ):
+        ss: ArrayLike,
+        embedding_idx: int,
+    ) -> ArrayLike:
         xp = array_api_compat.array_namespace(ss)
         nf_times_nloc, nnei = ss.shape[0:2]
         ss = xp.reshape(ss, (nf_times_nloc, nnei, 1))
@@ -384,11 +387,11 @@ class DescrptSeA(NativeOP, BaseDescriptor):
     @cast_precision
     def call(
         self,
-        coord_ext,
-        atype_ext,
-        nlist,
-        mapping: Optional[np.ndarray] = None,
-    ):
+        coord_ext: ArrayLike,
+        atype_ext: ArrayLike,
+        nlist: ArrayLike,
+        mapping: Optional[ArrayLike] = None,
+    ) -> ArrayLike:
         """Compute the descriptor.
 
         Parameters
@@ -549,11 +552,11 @@ class DescrptSeAArrayAPI(DescrptSeA):
     @cast_precision
     def call(
         self,
-        coord_ext,
-        atype_ext,
-        nlist,
-        mapping: Optional[np.ndarray] = None,
-    ):
+        coord_ext: ArrayLike,
+        atype_ext: ArrayLike,
+        nlist: ArrayLike,
+        mapping: Optional[ArrayLike] = None,
+    ) -> ArrayLike:
         """Compute the descriptor.
 
         Parameters

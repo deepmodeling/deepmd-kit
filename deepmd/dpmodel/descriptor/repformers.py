@@ -16,6 +16,7 @@ from deepmd.dpmodel.array_api import (
     xp_take_along_axis,
 )
 from deepmd.dpmodel.common import (
+    ArrayLike,
     to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
@@ -54,7 +55,7 @@ from .dpa1 import (
 )
 
 
-def xp_transpose_01423(x):
+def xp_transpose_01423(x: ArrayLike) -> ArrayLike:
     xp = array_api_compat.array_namespace(x)
     x_shape2 = x.shape[2]
     x_shape3 = x.shape[3]
@@ -65,7 +66,7 @@ def xp_transpose_01423(x):
     return x
 
 
-def xp_transpose_01342(x):
+def xp_transpose_01342(x: ArrayLike) -> ArrayLike:
     xp = array_api_compat.array_namespace(x)
     x_shape2 = x.shape[2]
     x_shape3 = x.shape[3]
@@ -170,13 +171,13 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
 
     def __init__(
         self,
-        rcut,
-        rcut_smth,
+        rcut: float,
+        rcut_smth: float,
         sel: int,
         ntypes: int,
         nlayers: int = 3,
-        g1_dim=128,
-        g2_dim=16,
+        g1_dim: int = 128,
+        g2_dim: int = 16,
         axis_neuron: int = 4,
         direct_dist: bool = False,
         update_g1_has_conv: bool = True,
@@ -336,7 +337,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         """Returns the embedding dimension g2."""
         return self.g2_dim
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: ArrayLike) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -344,7 +345,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> ArrayLike:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -365,17 +366,17 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         return True
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.g1_dim
 
     @property
-    def dim_in(self):
+    def dim_in(self) -> int:
         """Returns the atomic input dimension of this descriptor."""
         return self.g1_dim
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
@@ -436,13 +437,13 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
 
     def call(
         self,
-        nlist: np.ndarray,
-        coord_ext: np.ndarray,
-        atype_ext: np.ndarray,
-        atype_embd_ext: Optional[np.ndarray] = None,
-        mapping: Optional[np.ndarray] = None,
-        type_embedding: Optional[np.ndarray] = None,
-    ):
+        nlist: ArrayLike,
+        coord_ext: ArrayLike,
+        atype_ext: ArrayLike,
+        atype_embd_ext: Optional[ArrayLike] = None,
+        mapping: Optional[ArrayLike] = None,
+        type_embedding: Optional[ArrayLike] = None,
+    ) -> ArrayLike:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         exclude_mask = xp.astype(exclude_mask, xp.bool)
