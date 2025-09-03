@@ -4,12 +4,16 @@ from typing import (
     Any,
     NoReturn,
     Optional,
+    Tuple,
     Union,
 )
 
 import array_api_compat
 import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    ArrayLike,
+)
 from deepmd.dpmodel.common import (
     NativeOP,
 )
@@ -179,7 +183,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -257,11 +261,17 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
 
     def call(
         self,
-        coord_ext,
-        atype_ext,
-        nlist,
+        coord_ext: ArrayLike,
+        atype_ext: ArrayLike,
+        nlist: ArrayLike,
         mapping: Optional[np.ndarray] = None,
-    ):
+    ) -> Tuple[
+        ArrayLike,
+        Optional[ArrayLike],
+        Optional[ArrayLike],
+        Optional[ArrayLike],
+        Optional[ArrayLike],
+    ]:
         """Compute the descriptor.
 
         Parameters

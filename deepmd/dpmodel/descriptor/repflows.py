@@ -2,6 +2,7 @@
 from typing import (
     Callable,
     Optional,
+    Tuple,
     Union,
 )
 
@@ -13,6 +14,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
+    ArrayLike,
     xp_take_along_axis,
 )
 from deepmd.dpmodel.common import (
@@ -173,11 +175,11 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
     def __init__(
         self,
-        e_rcut,
-        e_rcut_smth,
+        e_rcut: float,
+        e_rcut_smth: float,
         e_sel: int,
-        a_rcut,
-        a_rcut_smth,
+        a_rcut: float,
+        a_rcut_smth: float,
         a_sel: int,
         ntypes: int,
         nlayers: int = 6,
@@ -371,7 +373,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         """Returns the embedding dimension e_dim."""
         return self.e_dim
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: ArrayLike) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -379,7 +381,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> ArrayLike:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -404,17 +406,17 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         return self.env_protection
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.n_dim
 
     @property
-    def dim_in(self):
+    def dim_in(self) -> int:
         """Returns the atomic input dimension of this descriptor."""
         return self.n_dim
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the embedding dimension e_dim."""
         return self.get_dim_emb()
 
@@ -480,7 +482,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         atype_ext: np.ndarray,
         atype_embd_ext: Optional[np.ndarray] = None,
         mapping: Optional[np.ndarray] = None,
-    ):
+    ) -> Tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike, ArrayLike]:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         nframes, nloc, nnei = nlist.shape
         nall = xp.reshape(coord_ext, (nframes, -1)).shape[1] // 3
@@ -663,7 +665,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         return True
 
     @classmethod
-    def deserialize(cls, data):
+    def deserialize(cls, data: dict) -> "DescrptBlockRepflows":
         """Deserialize the descriptor block."""
         data = data.copy()
         edge_embd = NativeLayer.deserialize(data.pop("edge_embd"))
@@ -684,7 +686,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         obj.stddev = dstd
         return obj
 
-    def serialize(self):
+    def serialize(self) -> dict:
         """Serialize the descriptor block."""
         return {
             "e_rcut": self.e_rcut,
@@ -1162,8 +1164,8 @@ class RepFlowLayer(NativeOP):
         n2a_index: np.ndarray,
         eij2a_index: np.ndarray,
         eik2a_index: np.ndarray,
-        feat="edge",
-    ):
+        feat: str = "edge",
+    ) -> ArrayLike:
         xp = array_api_compat.array_namespace(
             flat_angle_ebd, node_ebd, flat_edge_ebd, n2a_index, eij2a_index, eik2a_index
         )
@@ -1264,7 +1266,7 @@ class RepFlowLayer(NativeOP):
         n2e_index: np.ndarray,
         n_ext2e_index: np.ndarray,
         feat: str = "node",
-    ):
+    ) -> ArrayLike:
         xp = array_api_compat.array_namespace(
             node_ebd, node_ebd_ext, flat_edge_ebd, n2e_index, n_ext2e_index
         )
@@ -1318,7 +1320,7 @@ class RepFlowLayer(NativeOP):
         a_sw: np.ndarray,  # switch func, nf x nloc x a_nnei
         edge_index: np.ndarray,  # 2 x n_edge
         angle_index: np.ndarray,  # 3 x n_angle
-    ):
+    ) -> Tuple[ArrayLike, ArrayLike, ArrayLike]:
         """
         Parameters
         ----------

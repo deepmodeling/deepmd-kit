@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
 from typing import (
+    Any,
     Callable,
     NoReturn,
     Optional,
+    Tuple,
     Union,
 )
 
@@ -14,6 +16,9 @@ from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
     NativeOP,
+)
+from deepmd.dpmodel.array_api import (
+    ArrayLike,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -161,7 +166,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         self.orig_sel = self.sel
         self.ndescrpt = self.nnei * 4
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: ArrayLike) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.davg = value
         elif key in ("std", "data_std", "dstd"):
@@ -169,7 +174,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> ArrayLike:
         if key in ("avg", "data_avg", "davg"):
             return self.davg
         elif key in ("std", "data_std", "dstd"):
@@ -178,12 +183,12 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             raise KeyError(key)
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.get_dim_out()
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -194,15 +199,15 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             "We may consider adding this support in the future if there is a clear demand for it."
         )
 
-    def get_dim_out(self):
+    def get_dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.neuron[-1]
 
-    def get_dim_emb(self):
+    def get_dim_emb(self) -> int:
         """Returns the embedding (g2) dimension of this descriptor."""
         return self.neuron[-1]
 
-    def get_rcut(self):
+    def get_rcut(self) -> float:
         """Returns cutoff radius."""
         return self.rcut
 
@@ -210,7 +215,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.rcut_smth
 
-    def get_sel(self):
+    def get_sel(self) -> list:
         """Returns cutoff radius."""
         return self.sel
 
@@ -232,7 +237,9 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         """Returns the protection of building environment matrix."""
         return self.env_protection
 
-    def share_params(self, base_class, shared_level, resume=False) -> NoReturn:
+    def share_params(
+        self, base_class: Any, shared_level: int, resume: bool = False
+    ) -> NoReturn:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -311,11 +318,11 @@ class DescrptSeT(NativeOP, BaseDescriptor):
     @cast_precision
     def call(
         self,
-        coord_ext,
-        atype_ext,
-        nlist,
+        coord_ext: ArrayLike,
+        atype_ext: ArrayLike,
+        nlist: ArrayLike,
         mapping: Optional[np.ndarray] = None,
-    ):
+    ) -> Tuple[ArrayLike, None, None, None, ArrayLike]:
         """Compute the descriptor.
 
         Parameters

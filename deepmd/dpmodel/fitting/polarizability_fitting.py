@@ -14,6 +14,9 @@ from deepmd.common import (
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
 )
+from deepmd.dpmodel.array_api import (
+    ArrayLike,
+)
 from deepmd.dpmodel.common import (
     cast_precision,
     to_numpy_array,
@@ -166,7 +169,7 @@ class PolarFitting(GeneralFitting):
             seed=seed,
         )
 
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         return (
             self.embedding_width
@@ -174,13 +177,13 @@ class PolarFitting(GeneralFitting):
             else self.embedding_width * self.embedding_width
         )
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: ArrayLike) -> None:
         if key in ["constant_matrix"]:
             self.constant_matrix = value
         else:
             super().__setitem__(key, value)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> ArrayLike:
         if key in ["constant_matrix"]:
             return self.constant_matrix
         else:
@@ -205,7 +208,7 @@ class PolarFitting(GeneralFitting):
         assert var_name == "polar"
         return super().deserialize(data)
 
-    def output_def(self):
+    def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
                 OutputVariableDef(
@@ -219,7 +222,7 @@ class PolarFitting(GeneralFitting):
         )
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.

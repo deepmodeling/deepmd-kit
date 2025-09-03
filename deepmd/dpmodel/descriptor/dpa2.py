@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Callable,
     NoReturn,
     Optional,
+    Tuple,
     Union,
 )
 
@@ -13,6 +15,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
+    ArrayLike,
     xp_take_along_axis,
 )
 from deepmd.dpmodel.common import (
@@ -83,7 +86,7 @@ class RepinitArgs:
         tebd_dim: int = 8,
         tebd_input_mode: str = "concat",
         set_davg_zero: bool = True,
-        activation_function="tanh",
+        activation_function: str = "tanh",
         resnet_dt: bool = False,
         type_one_side: bool = False,
         use_three_body: bool = False,
@@ -151,7 +154,7 @@ class RepinitArgs:
         self.three_body_rcut = three_body_rcut
         self.three_body_rcut_smth = three_body_rcut_smth
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if hasattr(self, key):
             return getattr(self, key)
         else:
@@ -321,7 +324,7 @@ class RepformerArgs:
             ln_eps = 1e-5
         self.ln_eps = ln_eps
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if hasattr(self, key):
             return getattr(self, key)
         else:
@@ -442,7 +445,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
            Comput Mater 10, 293 (2024). https://doi.org/10.1038/s41524-024-01493-2
         """
 
-        def init_subclass_params(sub_data, sub_class):
+        def init_subclass_params(sub_data: Union[dict, Any], sub_class: type) -> Any:
             if isinstance(sub_data, dict):
                 return sub_class(**sub_data)
             elif isinstance(sub_data, sub_class):
@@ -671,7 +674,9 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """Returns the protection of building environment matrix."""
         return self.env_protection
 
-    def share_params(self, base_class, shared_level, resume=False) -> NoReturn:
+    def share_params(
+        self, base_class: Any, shared_level: int, resume: bool = False
+    ) -> NoReturn:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -680,7 +685,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -735,11 +740,11 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             repinit_three_body["dstd"] = repinit_three_body["dstd"][remap_index]
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         return self.get_dim_out()
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
@@ -747,7 +752,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -802,7 +807,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         atype_ext: np.ndarray,
         nlist: np.ndarray,
         mapping: Optional[np.ndarray] = None,
-    ):
+    ) -> Tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike, ArrayLike]:
         """Compute the descriptor.
 
         Parameters

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Callable,
     Optional,
 )
@@ -7,6 +8,9 @@ from typing import (
 import array_api_compat
 import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    ArrayLike,
+)
 from deepmd.dpmodel.atomic_model.base_atomic_model import (
     BaseAtomicModel,
 )
@@ -63,7 +67,7 @@ def model_call_from_call_lower(
     fparam: Optional[np.ndarray] = None,
     aparam: Optional[np.ndarray] = None,
     do_atomic_virial: bool = False,
-):
+) -> dict[str, ArrayLike]:
     """Return model prediction from lower interface.
 
     Parameters
@@ -131,7 +135,7 @@ def model_call_from_call_lower(
     return model_predict
 
 
-def make_model(T_AtomicModel: type[BaseAtomicModel]):
+def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
     """Make a model as a derived class of an atomic model.
 
     The model provide two interfaces.
@@ -157,10 +161,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
     class CM(NativeOP, BaseModel):
         def __init__(
             self,
-            *args,
+            *args: Any,
             # underscore to prevent conflict with normal inputs
             atomic_model_: Optional[T_AtomicModel] = None,
-            **kwargs,
+            **kwargs: Any,
         ) -> None:
             BaseModel.__init__(self)
             if atomic_model_ is not None:
@@ -173,7 +177,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             self.global_np_float_precision = GLOBAL_NP_FLOAT_PRECISION
             self.global_ener_float_precision = GLOBAL_ENER_FLOAT_PRECISION
 
-        def model_output_def(self):
+        def model_output_def(self) -> ModelOutputDef:
             """Get the output def for the model."""
             return ModelOutputDef(self.atomic_output_def())
 
@@ -218,8 +222,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def call(
             self,
-            coord,
-            atype,
+            coord: ArrayLike,
+            atype: ArrayLike,
             box: Optional[np.ndarray] = None,
             fparam: Optional[np.ndarray] = None,
             aparam: Optional[np.ndarray] = None,
@@ -279,7 +283,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             fparam: Optional[np.ndarray] = None,
             aparam: Optional[np.ndarray] = None,
             do_atomic_virial: bool = False,
-        ):
+        ) -> dict[str, ArrayLike]:
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
             as input, and returns the predictions on the extended region.
@@ -341,7 +345,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             fparam: Optional[np.ndarray] = None,
             aparam: Optional[np.ndarray] = None,
             do_atomic_virial: bool = False,
-        ):
+        ) -> dict[str, ArrayLike]:
             atomic_ret = self.atomic_model.forward_common_atomic(
                 extended_coord,
                 extended_atype,
@@ -428,7 +432,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             extended_atype: np.ndarray,
             nlist: np.ndarray,
             extra_nlist_sort: bool = False,
-        ):
+        ) -> np.ndarray:
             """Format the neighbor list.
 
             1. If the number of neighbors in the `nlist` is equal to sum(self.sel),
@@ -480,7 +484,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             nlist: np.ndarray,
             nnei: int,
             extra_nlist_sort: bool = False,
-        ):
+        ) -> ArrayLike:
             xp = array_api_compat.array_namespace(extended_coord, nlist)
             n_nf, n_nloc, n_nnei = nlist.shape
             extended_coord = extended_coord.reshape([n_nf, -1, 3])
@@ -539,7 +543,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             return self.atomic_model.do_grad_c(var_name)
 
         def change_type_map(
-            self, type_map: list[str], model_with_new_type_stat=None
+            self, type_map: list[str], model_with_new_type_stat: Any = None
         ) -> None:
             """Change the type related params to new ones, according to `type_map` and the original one in the model.
             If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -550,10 +554,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             return self.atomic_model.serialize()
 
         @classmethod
-        def deserialize(cls, data) -> "CM":
+        def deserialize(cls, data: dict) -> "CM":
             return cls(atomic_model_=T_AtomicModel.deserialize(data))
 
-        def set_case_embd(self, case_idx: int):
+        def set_case_embd(self, case_idx: int) -> None:
             self.atomic_model.set_case_embd(case_idx)
 
         def get_dim_fparam(self) -> int:
