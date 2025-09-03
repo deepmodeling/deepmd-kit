@@ -72,6 +72,9 @@ from deepmd.pd.utils.utils import (
     nvprof_context,
     to_numpy_array,
 )
+from deepmd.utils.argcheck import (
+    normalize,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -104,6 +107,42 @@ def _warn_configuration_mismatch_during_finetune(
     model_branch : str
         Model branch name for logging context
     """
+    # Normalize both configurations to ensure consistent comparison
+    # This avoids warnings for parameters that only differ due to default values
+    try:
+        # Create minimal configs for normalization with required fields
+        base_config = {
+            "model": {
+                "fitting_net": {"neuron": [240, 240, 240]},
+                "type_map": ["H", "O"],
+            },
+            "training": {"training_data": {"systems": ["fake"]}, "numb_steps": 100},
+        }
+
+        input_config = base_config.copy()
+        input_config["model"]["descriptor"] = input_descriptor.copy()
+
+        pretrained_config = base_config.copy()
+        pretrained_config["model"]["descriptor"] = pretrained_descriptor.copy()
+
+        # Normalize both configurations
+        normalized_input = normalize(input_config, multi_task=False)["model"][
+            "descriptor"
+        ]
+        normalized_pretrained = normalize(pretrained_config, multi_task=False)["model"][
+            "descriptor"
+        ]
+
+        if normalized_input == normalized_pretrained:
+            return
+
+        # Use normalized configs for comparison to show only meaningful differences
+        input_descriptor = normalized_input
+        pretrained_descriptor = normalized_pretrained
+    except Exception:
+        # If normalization fails, fall back to original comparison
+        pass
+
     if input_descriptor == pretrained_descriptor:
         return
 
