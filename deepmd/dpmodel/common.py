@@ -11,6 +11,7 @@ from typing import (
     Callable,
     Optional,
     overload,
+    TYPE_CHECKING,
 )
 
 import array_api_compat
@@ -20,9 +21,8 @@ import numpy as np
 from deepmd.common import (
     VALID_PRECISION,
 )
-from deepmd.dpmodel.array_api import (
-    Array,
-)
+if TYPE_CHECKING:
+    from deepmd.dpmodel.array_api import Array
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
