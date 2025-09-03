@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
-from collections.abc import (
-    KeysView,
-)
 from enum import (
     IntEnum,
 )
@@ -270,7 +267,7 @@ class FittingOutputDef:
     def get_data(self) -> dict[str, OutputVariableDef]:
         return self.var_defs
 
-    def keys(self) -> KeysView[str]:
+    def keys(self):  # noqa: ANN201
         return self.var_defs.keys()
 
 
@@ -322,25 +319,25 @@ class ModelOutputDef:
     ) -> dict[str, OutputVariableDef]:
         return self.var_defs
 
-    def keys(self) -> KeysView[str]:
+    def keys(self):  # noqa: ANN201
         return self.var_defs.keys()
 
-    def keys_outp(self) -> KeysView[str]:
+    def keys_outp(self):  # noqa: ANN201
         return self.def_outp.keys()
 
-    def keys_redu(self) -> KeysView[str]:
+    def keys_redu(self):  # noqa: ANN201
         return self.def_redu.keys()
 
-    def keys_derv_r(self) -> KeysView[str]:
+    def keys_derv_r(self):  # noqa: ANN201
         return self.def_derv_r.keys()
 
-    def keys_hess_r(self) -> KeysView[str]:
+    def keys_hess_r(self):  # noqa: ANN201
         return self.def_hess_r.keys()
 
-    def keys_derv_c(self) -> KeysView[str]:
+    def keys_derv_c(self):  # noqa: ANN201
         return self.def_derv_c.keys()
 
-    def keys_derv_c_redu(self) -> KeysView[str]:
+    def keys_derv_c_redu(self):  # noqa: ANN201
         return self.def_derv_c_redu.keys()
 
 
