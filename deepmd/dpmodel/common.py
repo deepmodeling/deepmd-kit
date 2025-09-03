@@ -94,7 +94,7 @@ class NativeOP(ABC):
         """Forward pass in NumPy implementation."""
         pass
 
-    def __call__(self, *args: Array, **kwargs: Any) -> Array:
+    def __call__(self, *args: Any, **kwargs: Any) -> Array:
         """Forward pass in NumPy implementation."""
         return self.call(*args, **kwargs)
 
