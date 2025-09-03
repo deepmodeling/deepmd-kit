@@ -154,9 +154,13 @@ class EnvMat(NativeOP):
         nf, nloc, nnei = nlist.shape
         atype = atype_ext[:, :nloc]
         if davg is not None:
-            em -= xp.reshape(xp.take(davg, xp.reshape(atype, (-1,)), axis=0), em.shape)
+            em -= xp.reshape(
+                xp.take(davg, xp.reshape(atype, (-1,)), axis=0, mode="clip"), em.shape
+            )
         if dstd is not None:
-            em /= xp.reshape(xp.take(dstd, xp.reshape(atype, (-1,)), axis=0), em.shape)
+            em /= xp.reshape(
+                xp.take(dstd, xp.reshape(atype, (-1,)), axis=0, mode="clip"), em.shape
+            )
         return em, diff, sw
 
     def _call(self, nlist, coord_ext, radial_only):
