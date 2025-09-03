@@ -14,6 +14,7 @@ from collections import (
     defaultdict,
 )
 from typing import (
+    Any,
     Optional,
 )
 
@@ -63,19 +64,31 @@ BACKEND_TABLE: dict[str, str] = {kk: vv.name.lower() for kk, vv in BACKENDS.item
 class BackendOption(argparse.Action):
     """Map backend alias to unique name."""
 
-    def __call__(self, parser, namespace, values, option_string=None):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: Optional[str] = None,
+    ) -> None:
         setattr(namespace, self.dest, BACKEND_TABLE[values])
 
 
 class DeprecateAction(argparse.Action):
     # See https://stackoverflow.com/a/69052677/9567349 by Ibolit under CC BY-SA 4.0
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.call_count = 0
         if "help" in kwargs:
             kwargs["help"] = f"[DEPRECATED] {kwargs['help']}"
         super().__init__(*args, **kwargs)
 
-    def __call__(self, parser, namespace, values, option_string=None):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: Optional[str] = None,
+    ) -> None:
         if self.call_count == 0:
             warnings.warn(
                 f"The option `{option_string}` is deprecated. It will be ignored.",
@@ -370,6 +383,24 @@ def main_parser() -> argparse.ArgumentParser:
         default=None,
         type=str,
         help="The path to the datafile, each line of which is a path to one data system.",
+    )
+    parser_tst_subgroup.add_argument(
+        "--train-data",
+        dest="train_json",
+        default=None,
+        type=str,
+        help=(
+            "The input json file. Training data in the file will be used for testing."
+        ),
+    )
+    parser_tst_subgroup.add_argument(
+        "--valid-data",
+        dest="valid_json",
+        default=None,
+        type=str,
+        help=(
+            "The input json file. Validation data in the file will be used for testing."
+        ),
     )
     parser_tst.add_argument(
         "-S",
@@ -721,12 +752,13 @@ def main_parser() -> argparse.ArgumentParser:
     parser_change_bias = subparsers.add_parser(
         "change-bias",
         parents=[parser_log],
-        help="(Supported backend: PyTorch) Change model out bias according to the input data.",
+        help="Change model out bias according to the input data.",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
         epilog=textwrap.dedent(
             """\
         examples:
-            dp change-bias model.pt -s data -n 10 -m change
+            dp --pt change-bias model.pt -s data -n 10 -m change
+            dp --tf change-bias model.ckpt -s data -n 10 -m change
         """
         ),
     )

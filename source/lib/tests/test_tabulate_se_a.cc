@@ -777,7 +777,7 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_gpu) {
     EXPECT_LT(fabs(xyz_scatter[jj] - expected_xyz_scatter[jj]), 1e-5);
   }
 
-  double *two_embed_dev = nullptr;
+  double* two_embed_dev = nullptr;
   deepmd::malloc_device_memory_sync(two_embed_dev, two_embed);
   deepmd::malloc_device_memory_sync(xyz_scatter_dev, xyz_scatter);
   deepmd::tabulate_fusion_se_a_gpu<double>(xyz_scatter_dev, table_dev, &info[0],
@@ -831,7 +831,7 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu) {
     EXPECT_LT(fabs(dy_dem[jj] - expected_dy_dem[jj]), 1e-5);
   }
 
-  double *two_embed_dev = nullptr;
+  double* two_embed_dev = nullptr;
   deepmd::malloc_device_memory_sync(two_embed_dev, two_embed);
   deepmd::malloc_device_memory_sync(dy_dem_x_dev, dy_dem_x);
   deepmd::malloc_device_memory_sync(dy_dem_dev, dy_dem);

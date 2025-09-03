@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Optional,
     overload,
 )
@@ -186,7 +187,7 @@ def calc_model_devi_v(
 
 def write_model_devi_out(
     devi: np.ndarray, fname: str, header: str = "", atomic: bool = False
-):
+) -> np.ndarray:
     """Write output of model deviation.
 
     Parameters
@@ -225,7 +226,7 @@ def write_model_devi_out(
     return devi
 
 
-def _check_tmaps(tmaps, ref_tmap=None):
+def _check_tmaps(tmaps: list[list[str]], ref_tmap: Optional[list[str]] = None) -> bool:
     """Check whether type maps are identical."""
     assert isinstance(tmaps, list)
     if ref_tmap is None:
@@ -241,20 +242,20 @@ def _check_tmaps(tmaps, ref_tmap=None):
 
 
 def calc_model_devi(
-    coord,
-    box,
-    atype,
-    models,
-    fname=None,
-    frequency=1,
-    mixed_type=False,
+    coord: np.ndarray,
+    box: Optional[np.ndarray],
+    atype: np.ndarray,
+    models: list[DeepPot],
+    fname: Optional[str] = None,
+    frequency: int = 1,
+    mixed_type: bool = False,
     fparam: Optional[np.ndarray] = None,
     aparam: Optional[np.ndarray] = None,
     real_data: Optional[dict] = None,
     atomic: bool = False,
     relative: Optional[float] = None,
     relative_v: Optional[float] = None,
-):
+) -> np.ndarray:
     """Python interface to calculate model deviation.
 
     Parameters
@@ -363,8 +364,8 @@ def make_model_devi(
     atomic: bool = False,
     relative: Optional[float] = None,
     relative_v: Optional[float] = None,
-    **kwargs,
-):
+    **kwargs: Any,
+) -> None:
     """Make model deviation calculation.
 
     Parameters

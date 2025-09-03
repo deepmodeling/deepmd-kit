@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    Any,
     Optional,
     Union,
 )
@@ -57,7 +58,7 @@ class EnergyFittingNet(InvarFitting):
         seed: Optional[Union[int, list[int]]] = None,
         type_map: Optional[list[str]] = None,
         default_fparam: Optional[list] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         super().__init__(
             "energy",
@@ -104,15 +105,15 @@ class EnergyFittingNet(InvarFitting):
 class EnergyFittingNetDirect(Fitting):
     def __init__(
         self,
-        ntypes,
-        dim_descrpt,
-        neuron,
-        bias_atom_e=None,
-        out_dim=1,
-        resnet_dt=True,
-        use_tebd=True,
-        return_energy=False,
-        **kwargs,
+        ntypes: int,
+        dim_descrpt: int,
+        neuron: list[int],
+        bias_atom_e: Optional[torch.Tensor] = None,
+        out_dim: int = 1,
+        resnet_dt: bool = True,
+        use_tebd: bool = True,
+        return_energy: bool = False,
+        **kwargs: Any,
     ) -> None:
         """Construct a fitting net for energy.
 
@@ -162,7 +163,7 @@ class EnergyFittingNetDirect(Fitting):
                 filter_layers.append(one)
         self.filter_layers = torch.nn.ModuleList(filter_layers)
 
-    def output_def(self):
+    def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
                 OutputVariableDef(
@@ -189,7 +190,7 @@ class EnergyFittingNetDirect(Fitting):
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
     ) -> None:
         raise NotImplementedError
 

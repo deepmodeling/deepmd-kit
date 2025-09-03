@@ -5,6 +5,10 @@ name: "Copilot Setup Steps"
 on:
   workflow_dispatch:
   push:
+    branches-ignore:
+      - "copilot/**"
+      - "dependabot/**"
+      - "pre-commit-ci-update-config"
     paths:
       - .github/workflows/copilot-setup-steps.yml
   pull_request:

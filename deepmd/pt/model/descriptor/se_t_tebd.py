@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Callable,
     Optional,
     Union,
@@ -140,7 +141,7 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
         type_map: Optional[list[str]] = None,
         concat_output_tebd: bool = True,
         use_econf_tebd: bool = False,
-        use_tebd_bias=False,
+        use_tebd_bias: bool = False,
         smooth: bool = True,
     ) -> None:
         super().__init__()
@@ -242,7 +243,9 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
         """Returns the protection of building environment matrix."""
         return self.se_ttebd.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: Any, shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -266,18 +269,18 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
             raise NotImplementedError
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         return self.get_dim_out()
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         return self.get_dim_emb()
 
     def compute_input_stats(
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -310,7 +313,7 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
         return self.se_ttebd.mean, self.se_ttebd.stddev
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -390,7 +393,7 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
             embeddings_strip = None
         obj = cls(**data)
 
-        def t_cvt(xx):
+        def t_cvt(xx: Any) -> torch.Tensor:
             return torch.tensor(xx, dtype=obj.se_ttebd.prec, device=env.DEVICE)
 
         obj.type_embedding.embedding = TypeEmbedNetConsistent.deserialize(
@@ -412,7 +415,13 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
-    ):
+    ) -> tuple[
+        torch.Tensor,
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+    ]:
         """Compute the descriptor.
 
         Parameters
@@ -472,7 +481,7 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
             None,
             None,
             None,
-            sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION) if sw is not None else None,
         )
 
     @classmethod
@@ -520,7 +529,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         tebd_dim: int = 8,
         tebd_input_mode: str = "concat",
         set_davg_zero: bool = True,
-        activation_function="tanh",
+        activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
         exclude_types: list[tuple[int, int]] = [],
@@ -631,7 +640,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.filter_neuron[-1]
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -639,7 +648,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -664,17 +673,17 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         return self.env_protection
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.filter_neuron[-1]
 
     @property
-    def dim_in(self):
+    def dim_in(self) -> int:
         """Returns the atomic input dimension of this descriptor."""
         return self.tebd_dim
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the output dimension of embedding."""
         return self.get_dim_emb()
 
@@ -744,7 +753,13 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
         type_embedding: Optional[torch.Tensor] = None,
-    ):
+    ) -> tuple[
+        torch.Tensor,
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+    ]:
         """Compute the descriptor.
 
         Parameters

@@ -244,7 +244,9 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
             else:
                 raise ValueError(f"Invalid ndim: {fittings.ndim}")
             network = fittings[net_idx]
-            assert network is not None
+            if network is None:
+                # Skip types that are not selected (when sel_type is used)
+                continue
             for layer_idx, layer in enumerate(network.layers):
                 if layer_idx == len(network.layers) - 1:
                     layer_name = "final_layer"

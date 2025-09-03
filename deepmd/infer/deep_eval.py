@@ -90,7 +90,9 @@ class DeepEvalBackend(ABC):
     ) -> None:
         pass
 
-    def __new__(cls, model_file: str, *args, **kwargs):
+    def __new__(
+        cls, model_file: str, *args: object, **kwargs: object
+    ) -> "DeepEvalBackend":
         if cls is DeepEvalBackend:
             backend = Backend.detect_backend_by_model(model_file)
             return super().__new__(backend().deep_eval)
@@ -321,7 +323,7 @@ class DeepEvalBackend(ABC):
         """Check if the model has spin atom types."""
         return False
 
-    def get_has_hessian(self):
+    def get_has_hessian(self) -> bool:
         """Check if the model has hessian."""
         return False
 
@@ -344,6 +346,20 @@ class DeepEvalBackend(ABC):
     def get_observed_types(self) -> dict:
         """Get observed types (elements) of the model during data statistics."""
         raise NotImplementedError("Not implemented in this backend.")
+
+    @abstractmethod
+    def get_model(self) -> Any:
+        """Get the model module implemented by the deep learning framework.
+
+        For PyTorch, this returns the nn.Module. For Paddle, this returns
+        the paddle.nn.Layer. For TensorFlow, this returns the graph.
+        For dpmodel, this returns the BaseModel.
+
+        Returns
+        -------
+        model
+            The model module implemented by the deep learning framework.
+        """
 
 
 class DeepEval(ABC):
@@ -369,7 +385,7 @@ class DeepEval(ABC):
         Keyword arguments.
     """
 
-    def __new__(cls, model_file: str, *args, **kwargs):
+    def __new__(cls, model_file: str, *args: object, **kwargs: object) -> "DeepEval":
         if cls is DeepEval:
             deep_eval = DeepEvalBackend(
                 model_file,
@@ -445,7 +461,9 @@ class DeepEval(ABC):
         nframes = coords.shape[0]
         return natoms, nframes
 
-    def _expande_atype(self, atype: np.ndarray, nframes: int, mixed_type: bool):
+    def _expande_atype(
+        self, atype: np.ndarray, nframes: int, mixed_type: bool
+    ) -> np.ndarray:
         if not mixed_type:
             atype = np.tile(atype.reshape(1, -1), (nframes, 1))
         return atype
@@ -613,7 +631,21 @@ class DeepEval(ABC):
         """
         return self.deep_eval.eval_typeebd()
 
-    def _standard_input(self, coords, cells, atom_types, fparam, aparam, mixed_type):
+    def _standard_input(
+        self,
+        coords: Union[np.ndarray, list],
+        cells: Optional[Union[np.ndarray, list]],
+        atom_types: Union[np.ndarray, list],
+        fparam: Optional[Union[np.ndarray, list]],
+        aparam: Optional[Union[np.ndarray, list]],
+        mixed_type: bool,
+    ) -> tuple[
+        np.ndarray,
+        Optional[np.ndarray],
+        np.ndarray,
+        Optional[np.ndarray],
+        Optional[np.ndarray],
+    ]:
         coords = np.array(coords)
         if cells is not None:
             cells = np.array(cells)
@@ -660,7 +692,7 @@ class DeepEval(ABC):
         """
         return self.deep_eval.get_sel_type()
 
-    def _get_sel_natoms(self, atype) -> int:
+    def _get_sel_natoms(self, atype: np.ndarray) -> int:
         return np.sum(np.isin(atype, self.get_sel_type()).astype(int))
 
     @property
@@ -693,3 +725,17 @@ class DeepEval(ABC):
     def get_observed_types(self) -> dict:
         """Get observed types (elements) of the model during data statistics."""
         return self.deep_eval.get_observed_types()
+
+    def get_model(self) -> Any:
+        """Get the model module implemented by the deep learning framework.
+
+        For PyTorch, this returns the nn.Module. For Paddle, this returns
+        the paddle.nn.Layer. For TensorFlow, this returns the graph.
+        For dpmodel, this returns the BaseModel.
+
+        Returns
+        -------
+        model
+            The model module implemented by the deep learning framework.
+        """
+        return self.deep_eval.get_model()

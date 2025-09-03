@@ -56,7 +56,7 @@ class SummaryPrinter(ABC):
         "build variant": GLOBAL_CONFIG["dp_variant"],
     }
 
-    def __call__(self):
+    def __call__(self) -> None:
         """Print build and current running cluster configuration summary."""
         nodename, nodelist = get_host_names()
         build_info = self.BUILD.copy()
