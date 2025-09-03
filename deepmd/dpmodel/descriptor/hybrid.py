@@ -214,7 +214,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
     def get_stat_mean_and_stddev(
         self,
     ) -> tuple[
-        list[tuple[Array, Array]],
+        list[Union[Array, list[Array]]],
         list[Union[Array, list[Array]]],
     ]:
         """Get mean and stddev for descriptor."""
