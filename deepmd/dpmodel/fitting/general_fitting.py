@@ -328,7 +328,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
-            "@version": 3,
+            "@version": 4,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,

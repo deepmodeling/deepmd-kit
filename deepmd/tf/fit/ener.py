@@ -890,7 +890,7 @@ class EnerFitting(Fitting):
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
             data["nets"],
@@ -916,7 +916,7 @@ class EnerFitting(Fitting):
         data = {
             "@class": "Fitting",
             "type": "ener",
-            "@version": 3,
+            "@version": 4,
             "var_name": "energy",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt + self.tebd_dim,
