@@ -441,19 +441,34 @@ class Trainer:
         optimizer_state_dict = None
         if resuming:
             log.info(f"Resuming from {resume_model}.")
-            state_dict = torch.load(
-                resume_model, map_location=DEVICE, weights_only=True
-            )
-            if "model" in state_dict:
-                optimizer_state_dict = (
-                    state_dict["optimizer"] if finetune_model is None else None
+            # Load model parameters based on file extension
+            if resume_model.endswith(".pt"):
+                # Load checkpoint file (.pt)
+                state_dict = torch.load(
+                    resume_model, map_location=DEVICE, weights_only=True
                 )
-                state_dict = state_dict["model"]
-            self.start_step = (
-                state_dict["_extra_state"]["train_infos"]["step"]
-                if self.restart_training
-                else 0
-            )
+                if "model" in state_dict:
+                    optimizer_state_dict = (
+                        state_dict["optimizer"] if finetune_model is None else None
+                    )
+                    state_dict = state_dict["model"]
+                self.start_step = (
+                    state_dict["_extra_state"]["train_infos"]["step"]
+                    if self.restart_training
+                    else 0
+                )
+            elif resume_model.endswith(".pth"):
+                # Load frozen model (.pth) - no optimizer state or step info available
+                jit_model = torch.jit.load(resume_model, map_location=DEVICE)
+                state_dict = jit_model.state_dict()
+                # For .pth files, we cannot load optimizer state or step info
+                optimizer_state_dict = None
+                self.start_step = 0
+            else:
+                raise RuntimeError(
+                    "The resume model provided must be a checkpoint file with a .pt extension "
+                    "or a frozen model with a .pth extension"
+                )
             if self.rank == 0:
                 if force_load:
                     input_keys = list(state_dict.keys())
@@ -483,11 +498,27 @@ class Trainer:
                     new_state_dict = {}
                     target_state_dict = self.wrapper.state_dict()
                     # pretrained_model
-                    pretrained_model = get_model_for_wrapper(
-                        state_dict["_extra_state"]["model_params"]
-                    )
+                    if resume_model.endswith(".pt"):
+                        # For .pt files, get model params from _extra_state
+                        pretrained_model_params = state_dict["_extra_state"][
+                            "model_params"
+                        ]
+                    elif resume_model.endswith(".pth"):
+                        # For .pth files, the model params were already extracted in get_finetune_rules
+                        # We can reconstruct them from the current wrapper's model_params
+                        pretrained_model_params = self.wrapper.get_extra_state()[
+                            "model_params"
+                        ]
+                    else:
+                        raise RuntimeError(
+                            "Unsupported finetune model format. Expected .pt or .pth file."
+                        )
+
+                    pretrained_model = get_model_for_wrapper(pretrained_model_params)
                     pretrained_model_wrapper = ModelWrapper(pretrained_model)
-                    pretrained_model_wrapper.load_state_dict(state_dict)
+                    pretrained_model_wrapper.load_state_dict(
+                        state_dict, strict=not resume_model.endswith(".pth")
+                    )
                     # update type related params
                     for model_key in self.model_keys:
                         finetune_rule_single = self.finetune_links[model_key]
@@ -571,7 +602,9 @@ class Trainer:
                         "_extra_state"
                     ]
 
-                self.wrapper.load_state_dict(state_dict)
+                self.wrapper.load_state_dict(
+                    state_dict, strict=not resume_model.endswith(".pth")
+                )
 
                 # change bias for fine-tuning
                 if finetune_model is not None:
