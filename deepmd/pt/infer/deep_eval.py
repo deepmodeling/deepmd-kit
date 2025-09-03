@@ -220,7 +220,11 @@ class DeepEval(DeepEvalBackend):
 
     def has_default_fparam(self) -> bool:
         """Check if the model has default frame parameters."""
-        return self.dp.model["Default"].has_default_fparam()
+        try:
+            return self.dp.model["Default"].has_default_fparam()
+        except AttributeError:
+            # for compatibility with old models
+            return False
 
     def get_intensive(self) -> bool:
         return self.dp.model["Default"].get_intensive()
