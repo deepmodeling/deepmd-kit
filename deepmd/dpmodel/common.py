@@ -90,7 +90,7 @@ class NativeOP(ABC):
     """The unit operation of a native model."""
 
     @abstractmethod
-    def call(self, *args: Array, **kwargs: Any) -> Array:
+    def call(self, *args: Any, **kwargs: Any) -> Array:
         """Forward pass in NumPy implementation."""
         pass
 
