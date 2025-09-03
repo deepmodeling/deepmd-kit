@@ -505,22 +505,18 @@ def change_bias(
 
             # Save only the selected branch with single-head structure
             if "model" in old_state_dict:
-                torch.save(
-                    {
-                        "model": wrapper.state_dict(),
-                        "optimizer": old_state_dict.get("optimizer", {}),
-                    },
-                    output_path,
-                )
-                # Update the saved model's extra state to reflect single-head parameters
-                saved_state = torch.load(output_path, weights_only=True)
-                saved_state["model"]["_extra_state"] = {
+                # For multi-task models, don't include optimizer state to reduce file size
+                state_to_save = {
+                    "model": wrapper.state_dict(),
+                }
+                # Update the model's extra state to reflect single-head parameters
+                state_to_save["model"]["_extra_state"] = {
                     "model_params": single_head_params,
                     "train_infos": model_state_dict["_extra_state"].get(
                         "train_infos", {"lr": 0.001, "step": 0}
                     ),
                 }
-                torch.save(saved_state, output_path)
+                torch.save(state_to_save, output_path)
             else:
                 state_to_save = wrapper.state_dict()
                 state_to_save["_extra_state"] = {
