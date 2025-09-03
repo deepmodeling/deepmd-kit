@@ -7,10 +7,8 @@ from typing import (
 import array_api_compat
 
 from deepmd.dpmodel.array_api import (
-    xp_take_along_axis,
-)
-from deepmd.dpmodel.common import (
     Array,
+    xp_take_along_axis,
 )
 
 from .region import (

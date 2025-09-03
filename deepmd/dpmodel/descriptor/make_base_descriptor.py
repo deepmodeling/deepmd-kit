@@ -14,7 +14,7 @@ from typing import (
 from deepmd.common import (
     j_get_type,
 )
-from deepmd.dpmodel.common import (
+from deepmd.dpmodel.array_api import (
     Array,
 )
 from deepmd.utils.data_system import (

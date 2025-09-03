@@ -14,7 +14,7 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.common import (
+from deepmd.dpmodel.array_api import (
     Array,
 )
 from deepmd.utils.env_mat_stat import (

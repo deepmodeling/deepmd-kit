@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import array_api_compat
 
-from deepmd.dpmodel.common import (
+from deepmd.dpmodel.array_api import (
     Array,
 )
 

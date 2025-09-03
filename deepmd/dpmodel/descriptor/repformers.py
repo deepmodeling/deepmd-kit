@@ -14,10 +14,10 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
+    Array,
     xp_take_along_axis,
 )
 from deepmd.dpmodel.common import (
-    Array,
     to_numpy_array,
 )
 from deepmd.dpmodel.utils import (

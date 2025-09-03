@@ -8,11 +8,11 @@ import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.array_api import (
+    Array,
     xp_scatter_sum,
 )
 from deepmd.dpmodel.common import (
     GLOBAL_ENER_FLOAT_PRECISION,
-    Array,
 )
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
