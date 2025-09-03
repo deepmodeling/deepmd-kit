@@ -23,8 +23,6 @@ from .make_model import (
     make_model,
 )
 
-)
-
 DPEnergyModel_ = make_model(DPEnergyAtomicModel)
 
 

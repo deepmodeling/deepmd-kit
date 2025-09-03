@@ -10,6 +10,9 @@ import numpy as np
 from deepmd.dpmodel.array_api import (
     xp_take_along_axis,
 )
+from deepmd.dpmodel.common import (
+    ArrayLike,
+)
 
 from .region import (
     normalize_coord,
@@ -18,13 +21,13 @@ from .region import (
 
 
 def extend_input_and_build_neighbor_list(
-    coord,
-    atype,
+    coord: ArrayLike,
+    atype: ArrayLike,
     rcut: float,
     sel: list[int],
     mixed_types: bool = False,
     box: Optional[np.ndarray] = None,
-):
+) -> tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike]:
     xp = array_api_compat.array_namespace(coord, atype)
     nframes, nloc = atype.shape[:2]
     if box is not None:
@@ -156,7 +159,7 @@ def nlist_distinguish_types(
     nlist: np.ndarray,
     atype: np.ndarray,
     sel: list[int],
-):
+) -> ArrayLike:
     """Given a nlist that does not distinguish atom types, return a nlist that
     distinguish atom types.
 
@@ -251,7 +254,7 @@ def extend_coord_with_ghosts(
     atype: np.ndarray,
     cell: Optional[np.ndarray],
     rcut: float,
-):
+) -> tuple[ArrayLike, ArrayLike, ArrayLike]:
     """Extend the coordinates of the atoms by appending peridoc images.
     The number of images is large enough to ensure all the neighbors
     within rcut are appended.

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Callable,
     Optional,
     Union,
@@ -518,7 +519,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         return False
 
     @classmethod
-    def deserialize(cls, data):
+    def deserialize(cls, data: dict[str, Any]) -> "DescrptBlockRepformers":
         """Deserialize the descriptor block."""
         data = data.copy()
         g2_embd = NativeLayer.deserialize(data.pop("g2_embd"))
@@ -535,7 +536,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         obj.stddev = dstd
         return obj
 
-    def serialize(self):
+    def serialize(self) -> dict[str, Any]:
         """Serialize the descriptor block."""
         return {
             "rcut": self.rcut,
@@ -1287,12 +1288,12 @@ class LocalAtten(NativeOP):
 class RepformerLayer(NativeOP):
     def __init__(
         self,
-        rcut,
-        rcut_smth,
+        rcut: float,
+        rcut_smth: float,
         sel: int,
         ntypes: int,
-        g1_dim=128,
-        g2_dim=16,
+        g1_dim: int = 128,
+        g2_dim: int = 16,
         axis_neuron: int = 4,
         update_chnnl_2: bool = True,
         update_g1_has_conv: bool = True,
@@ -1699,7 +1700,7 @@ class RepformerLayer(NativeOP):
         nlist: np.ndarray,  # nf x nloc x nnei
         nlist_mask: np.ndarray,  # nf x nloc x nnei
         sw: np.ndarray,  # switch func, nf x nloc x nnei
-    ):
+    ) -> tuple[ArrayLike, ArrayLike, ArrayLike]:
         """
         Parameters
         ----------

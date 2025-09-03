@@ -143,7 +143,9 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
         """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
 
 
-def extend_descrpt_stat(des, type_map, des_with_stat=None) -> None:
+def extend_descrpt_stat(
+    des: Any, type_map: list[str], des_with_stat: Any = None
+) -> None:
     r"""
     Extend the statistics of a descriptor block with types from newly provided `type_map`.
 
