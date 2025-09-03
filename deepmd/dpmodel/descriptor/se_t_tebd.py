@@ -284,14 +284,14 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: np.ndarray,
-        stddev: np.ndarray,
+        mean: ArrayLike,
+        stddev: ArrayLike,
     ) -> None:
         """Update mean and stddev for descriptor."""
         self.se_ttebd.mean = mean
         self.se_ttebd.stddev = stddev
 
-    def get_stat_mean_and_stddev(self) -> tuple[np.ndarray, np.ndarray]:
+    def get_stat_mean_and_stddev(self) -> tuple[ArrayLike, ArrayLike]:
         """Get mean and stddev for descriptor."""
         return self.se_ttebd.mean, self.se_ttebd.stddev
 
@@ -330,8 +330,8 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         coord_ext: ArrayLike,
         atype_ext: ArrayLike,
         nlist: ArrayLike,
-        mapping: Optional[np.ndarray] = None,
-    ) -> tuple[ArrayLike, ArrayLike, None, None, ArrayLike]:
+        mapping: Optional[ArrayLike] = None,
+    ) -> tuple[ArrayLike, ArrayLike]:
         """Compute the descriptor.
 
         Parameters
@@ -461,7 +461,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         train_data: DeepmdDataSystem,
         type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[ArrayLike, ArrayLike]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -736,13 +736,13 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
 
     def call(
         self,
-        nlist: np.ndarray,
-        coord_ext: np.ndarray,
-        atype_ext: np.ndarray,
-        atype_embd_ext: Optional[np.ndarray] = None,
-        mapping: Optional[np.ndarray] = None,
-        type_embedding: Optional[np.ndarray] = None,
-    ) -> tuple[ArrayLike, None, None, None, ArrayLike]:
+        nlist: ArrayLike,
+        coord_ext: ArrayLike,
+        atype_ext: ArrayLike,
+        atype_embd_ext: Optional[ArrayLike] = None,
+        mapping: Optional[ArrayLike] = None,
+        type_embedding: Optional[ArrayLike] = None,
+    ) -> tuple[ArrayLike, ArrayLike]:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         # nf x nloc x nnei x 4
         dmatrix, diff, sw = self.env_mat.call(

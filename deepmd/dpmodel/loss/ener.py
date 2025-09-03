@@ -12,6 +12,12 @@ import numpy as np
 ArrayLike = Union[np.ndarray, Any]  # Any to support JAX, PyTorch, etc. arrays
 
 from deepmd.dpmodel.loss.loss import (
+    ArrayLike,
+    deepmd.dpmodel.array_api,
+    from,
+    import,
+)
+
     Loss,
 )
 from deepmd.utils.data import (
@@ -96,9 +102,9 @@ class EnergyLoss(Loss):
         self,
         learning_rate: float,
         natoms: int,
-        model_dict: dict[str, np.ndarray],
-        label_dict: dict[str, np.ndarray],
-    ) -> dict[str, np.ndarray]:
+        model_dict: dict[str, ArrayLike],
+        label_dict: dict[str, ArrayLike],
+    ) -> dict[str, ArrayLike]:
         """Calculate loss from model results and labeled results."""
         energy = model_dict["energy_redu"]
         force = model_dict["energy_derv_r"]

@@ -8,6 +8,12 @@ from typing import (
 import numpy as np
 
 from deepmd.dpmodel.common import (
+    ArrayLike,
+    deepmd.dpmodel.array_api,
+    from,
+    import,
+)
+
     DEFAULT_PRECISION,
     to_numpy_array,
 )
@@ -37,7 +43,7 @@ class DOSFittingNet(InvarFitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        bias_dos: Optional[np.ndarray] = None,
+        bias_dos: Optional[ArrayLike] = None,
         rcond: Optional[float] = None,
         trainable: Union[bool, list[bool]] = True,
         activation_function: str = "tanh",

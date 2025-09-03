@@ -87,8 +87,8 @@ def xp_take_along_axis(arr: ArrayLike, indices: ArrayLike, axis: int) -> ArrayLi
 
 
 def xp_scatter_sum(
-    input: ArrayLike, dim: int, index: np.ndarray, src: np.ndarray
-) -> np.ndarray:
+    input: ArrayLike, dim: int, index: ArrayLike, src: ArrayLike
+) -> ArrayLike:
     """Reduces all values from the src tensor to the indices specified in the index tensor."""
     # jax only
     if array_api_compat.is_jax_array(input):

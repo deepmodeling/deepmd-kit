@@ -204,10 +204,10 @@ class PairTabAtomicModel(BaseAtomicModel):
         extended_coord: ArrayLike,
         extended_atype: ArrayLike,
         nlist: ArrayLike,
-        mapping: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        mapping: Optional[ArrayLike] = None,
+        fparam: Optional[ArrayLike] = None,
+        aparam: Optional[ArrayLike] = None,
+    ) -> dict[str, ArrayLike]:
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlist)
         nframes, nloc, nnei = nlist.shape
         extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
@@ -240,22 +240,22 @@ class PairTabAtomicModel(BaseAtomicModel):
 
     def _pair_tabulated_inter(
         self,
-        nlist: np.ndarray,
-        i_type: np.ndarray,
-        j_type: np.ndarray,
-        rr: np.ndarray,
-    ) -> np.ndarray:
+        nlist: ArrayLike,
+        i_type: ArrayLike,
+        j_type: ArrayLike,
+        rr: ArrayLike,
+    ) -> ArrayLike:
         """Pairwise tabulated energy.
 
         Parameters
         ----------
-        nlist : np.ndarray
+        nlist : ArrayLike
             The unmasked neighbour list. (nframes, nloc)
-        i_type : np.ndarray
+        i_type : ArrayLike
             The integer representation of atom type for all local atoms for all frames. (nframes, nloc)
-        j_type : np.ndarray
+        j_type : ArrayLike
             The integer representation of atom type for all neighbour atoms of all local atoms for all frames. (nframes, nloc, nnei)
-        rr : np.ndarray
+        rr : ArrayLike
             The salar distance vector between two atoms. (nframes, nloc, nnei)
 
         Returns
@@ -313,12 +313,12 @@ class PairTabAtomicModel(BaseAtomicModel):
         return ener
 
     @staticmethod
-    def _get_pairwise_dist(coords: np.ndarray, nlist: np.ndarray) -> np.ndarray:
+    def _get_pairwise_dist(coords: ArrayLike, nlist: ArrayLike) -> ArrayLike:
         """Get pairwise distance `dr`.
 
         Parameters
         ----------
-        coords : np.ndarray
+        coords : ArrayLike
             The coordinate of the atoms, shape of (nframes, nall, 3).
         nlist
             The masked nlist, shape of (nframes, nloc, nnei).
@@ -340,23 +340,23 @@ class PairTabAtomicModel(BaseAtomicModel):
 
     @staticmethod
     def _extract_spline_coefficient(
-        i_type: np.ndarray,
-        j_type: np.ndarray,
-        idx: np.ndarray,
-        tab_data: np.ndarray,
+        i_type: ArrayLike,
+        j_type: ArrayLike,
+        idx: ArrayLike,
+        tab_data: ArrayLike,
         nspline: np.int64,
-    ) -> np.ndarray:
+    ) -> ArrayLike:
         """Extract the spline coefficient from the table.
 
         Parameters
         ----------
-        i_type : np.ndarray
+        i_type : ArrayLike
             The integer representation of atom type for all local atoms for all frames. (nframes, nloc)
-        j_type : np.ndarray
+        j_type : ArrayLike
             The integer representation of atom type for all neighbour atoms of all local atoms for all frames. (nframes, nloc, nnei)
-        idx : np.ndarray
+        idx : ArrayLike
             The index of the spline coefficient. (nframes, nloc, nnei)
-        tab_data : np.ndarray
+        tab_data : ArrayLike
             The table storing all the spline coefficient. (ntype, ntype, nspline, 4)
         nspline : int
             The number of splines in the table.
@@ -394,14 +394,14 @@ class PairTabAtomicModel(BaseAtomicModel):
         return final_coef
 
     @staticmethod
-    def _calculate_ener(coef: np.ndarray, uu: np.ndarray) -> np.ndarray:
+    def _calculate_ener(coef: ArrayLike, uu: ArrayLike) -> ArrayLike:
         """Calculate energy using spline coeeficients.
 
         Parameters
         ----------
-        coef : np.ndarray
+        coef : ArrayLike
             The spline coefficients. (nframes, nloc, nnei, 4)
-        uu : np.ndarray
+        uu : ArrayLike
             The atom displancemnt used in interpolation and extrapolation (nframes, nloc, nnei)
 
         Returns

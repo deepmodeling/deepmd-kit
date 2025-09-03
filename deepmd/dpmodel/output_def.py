@@ -8,7 +8,6 @@ from enum import (
 )
 from typing import (
     Any,
-    Type,
 )
 
 
@@ -39,7 +38,7 @@ def check_var(var: Any, var_def: Any) -> None:
         check_shape(list(var.shape[1:]), var_def.shape)
 
 
-def model_check_output(cls: Type) -> Type:
+def model_check_output(cls: type) -> type:
     """Check if the output of the Model is consistent with the definition.
 
     Two methods are assumed to be provided by the Model:
@@ -81,7 +80,7 @@ def model_check_output(cls: Type) -> Type:
     return wrapper
 
 
-def fitting_check_output(cls: Type) -> Type:
+def fitting_check_output(cls: type) -> type:
     """Check if the output of the Fitting is consistent with the definition.
 
     Two methods are assumed to be provided by the Fitting:

@@ -4,7 +4,6 @@ from typing import (
     Any,
     NoReturn,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -80,7 +79,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             )
         # if hybrid sel is larger than sub sel, the nlist needs to be cut for each type
         hybrid_sel = self.get_sel()
-        nlist_cut_idx: list[np.ndarray] = []
+        nlist_cut_idx: list[ArrayLike] = []
         if self.mixed_types() and not all(
             descrpt.mixed_types() for descrpt in self.descrpt_list
         ):
@@ -205,8 +204,8 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: list[Union[np.ndarray, list[np.ndarray]]],
-        stddev: list[Union[np.ndarray, list[np.ndarray]]],
+        mean: list[Union[np.ndarray, list[ArrayLike]]],
+        stddev: list[Union[np.ndarray, list[ArrayLike]]],
     ) -> None:
         """Update mean and stddev for descriptor."""
         for ii, descrpt in enumerate(self.descrpt_list):
@@ -215,8 +214,8 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
     def get_stat_mean_and_stddev(
         self,
     ) -> tuple[
-        list[Union[np.ndarray, list[np.ndarray]]],
-        list[Union[np.ndarray, list[np.ndarray]]],
+        list[tuple[ArrayLike, ArrayLike]],
+        list[Union[ArrayLike, list[ArrayLike]]],
     ]:
         """Get mean and stddev for descriptor."""
         mean_list = []
@@ -264,8 +263,8 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         coord_ext: ArrayLike,
         atype_ext: ArrayLike,
         nlist: ArrayLike,
-        mapping: Optional[np.ndarray] = None,
-    ) -> Tuple[
+        mapping: Optional[ArrayLike] = None,
+    ) -> tuple[
         ArrayLike,
         Optional[ArrayLike],
         Optional[ArrayLike],
@@ -336,7 +335,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         train_data: DeepmdDataSystem,
         type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[ArrayLike, ArrayLike]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

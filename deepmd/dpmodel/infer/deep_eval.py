@@ -11,6 +11,12 @@ from typing import (
 import numpy as np
 
 from deepmd.dpmodel.model.base_model import (
+    ArrayLike,
+    deepmd.dpmodel.array_api,
+    from,
+    import,
+)
+
     BaseModel,
 )
 from deepmd.dpmodel.output_def import (
@@ -163,14 +169,14 @@ class DeepEval(DeepEvalBackend):
 
     def eval(
         self,
-        coords: np.ndarray,
-        cells: Optional[np.ndarray],
-        atom_types: np.ndarray,
+        coords: ArrayLike,
+        cells: Optional[ArrayLike],
+        atom_types: ArrayLike,
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: Optional[ArrayLike] = None,
+        aparam: Optional[ArrayLike] = None,
         **kwargs: Any,
-    ) -> dict[str, np.ndarray]:
+    ) -> dict[str, ArrayLike]:
         """Evaluate the energy, force and virial by using this DP.
 
         Parameters
@@ -287,10 +293,10 @@ class DeepEval(DeepEvalBackend):
 
     def _get_natoms_and_nframes(
         self,
-        coords: np.ndarray,
-        atom_types: np.ndarray,
+        coords: ArrayLike,
+        atom_types: ArrayLike,
         mixed_type: bool = False,
-    ) -> tuple[int, int]:
+    ) -> tuple[ArrayLike, ArrayLike]:
         if mixed_type:
             natoms = len(atom_types[0])
         else:
@@ -304,13 +310,13 @@ class DeepEval(DeepEvalBackend):
 
     def _eval_model(
         self,
-        coords: np.ndarray,
-        cells: Optional[np.ndarray],
-        atom_types: np.ndarray,
-        fparam: Optional[np.ndarray],
-        aparam: Optional[np.ndarray],
+        coords: ArrayLike,
+        cells: Optional[ArrayLike],
+        atom_types: ArrayLike,
+        fparam: Optional[ArrayLike],
+        aparam: Optional[ArrayLike],
         request_defs: list[OutputVariableDef],
-    ) -> dict[str, np.ndarray]:
+    ) -> dict[str, ArrayLike]:
         model = self.dp
 
         nframes = coords.shape[0]
@@ -370,7 +376,7 @@ class DeepEval(DeepEvalBackend):
 
     def _get_output_shape(
         self, odef: OutputVariableDef, nframes: int, natoms: int
-    ) -> tuple[int, ...]:
+    ) -> tuple[ArrayLike, ArrayLike]:
         if odef.category == OutputVariableCategory.DERV_C_REDU:
             # virial
             return [nframes, *odef.shape[:-1], 9]

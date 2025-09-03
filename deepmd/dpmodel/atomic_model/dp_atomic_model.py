@@ -7,6 +7,12 @@ from typing import (
 import numpy as np
 
 from deepmd.dpmodel.descriptor.base_descriptor import (
+    ArrayLike,
+    deepmd.dpmodel.array_api,
+    from,
+    import,
+)
+
     BaseDescriptor,
 )
 from deepmd.dpmodel.fitting.base_fitting import (
@@ -126,13 +132,13 @@ class DPAtomicModel(BaseAtomicModel):
 
     def forward_atomic(
         self,
-        extended_coord: np.ndarray,
-        extended_atype: np.ndarray,
-        nlist: np.ndarray,
-        mapping: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        extended_coord: ArrayLike,
+        extended_atype: ArrayLike,
+        nlist: ArrayLike,
+        mapping: Optional[ArrayLike] = None,
+        fparam: Optional[ArrayLike] = None,
+        aparam: Optional[ArrayLike] = None,
+    ) -> dict[str, ArrayLike]:
         """Models' atomic predictions.
 
         Parameters

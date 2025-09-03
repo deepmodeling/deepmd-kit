@@ -2,7 +2,6 @@
 from typing import (
     Callable,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -477,12 +476,12 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
     def call(
         self,
-        nlist: np.ndarray,
-        coord_ext: np.ndarray,
-        atype_ext: np.ndarray,
-        atype_embd_ext: Optional[np.ndarray] = None,
-        mapping: Optional[np.ndarray] = None,
-    ) -> Tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike, ArrayLike]:
+        nlist: ArrayLike,
+        coord_ext: ArrayLike,
+        atype_ext: ArrayLike,
+        atype_embd_ext: Optional[ArrayLike] = None,
+        mapping: Optional[ArrayLike] = None,
+    ) -> tuple[ArrayLike, ArrayLike]:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         nframes, nloc, nnei = nlist.shape
         nall = xp.reshape(coord_ext, (nframes, -1)).shape[1] // 3
@@ -736,15 +735,15 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
 
 def _cal_hg_dynamic(
-    flat_edge_ebd: np.ndarray,
-    flat_h2: np.ndarray,
-    flat_sw: np.ndarray,
-    owner: np.ndarray,
+    flat_edge_ebd: ArrayLike,
+    flat_h2: ArrayLike,
+    flat_sw: ArrayLike,
+    owner: ArrayLike,
     num_owner: int,
     nb: int,
     nloc: int,
     scale_factor: float,
-) -> np.ndarray:
+) -> ArrayLike:
     """
     Calculate the transposed rotation matrix.
 
@@ -791,16 +790,16 @@ def _cal_hg_dynamic(
 
 
 def symmetrization_op_dynamic(
-    flat_edge_ebd: np.ndarray,
-    flat_h2: np.ndarray,
-    flat_sw: np.ndarray,
-    owner: np.ndarray,
+    flat_edge_ebd: ArrayLike,
+    flat_h2: ArrayLike,
+    flat_sw: ArrayLike,
+    owner: ArrayLike,
     num_owner: int,
     nb: int,
     nloc: int,
     scale_factor: float,
     axis_neuron: int,
-) -> np.ndarray:
+) -> ArrayLike:
     """
     Symmetrization operator to obtain atomic invariant rep.
 
@@ -1110,11 +1109,11 @@ class RepFlowLayer(NativeOP):
 
     def optim_angle_update(
         self,
-        angle_ebd: np.ndarray,
-        node_ebd: np.ndarray,
-        edge_ebd: np.ndarray,
+        angle_ebd: ArrayLike,
+        node_ebd: ArrayLike,
+        edge_ebd: ArrayLike,
         feat: str = "edge",
-    ) -> np.ndarray:
+    ) -> ArrayLike:
         xp = array_api_compat.array_namespace(angle_ebd, node_ebd, edge_ebd)
 
         if feat == "edge":
@@ -1158,12 +1157,12 @@ class RepFlowLayer(NativeOP):
 
     def optim_angle_update_dynamic(
         self,
-        flat_angle_ebd: np.ndarray,
-        node_ebd: np.ndarray,
-        flat_edge_ebd: np.ndarray,
-        n2a_index: np.ndarray,
-        eij2a_index: np.ndarray,
-        eik2a_index: np.ndarray,
+        flat_angle_ebd: ArrayLike,
+        node_ebd: ArrayLike,
+        flat_edge_ebd: ArrayLike,
+        n2a_index: ArrayLike,
+        eij2a_index: ArrayLike,
+        eik2a_index: ArrayLike,
         feat: str = "edge",
     ) -> ArrayLike:
         xp = array_api_compat.array_namespace(
@@ -1217,12 +1216,12 @@ class RepFlowLayer(NativeOP):
 
     def optim_edge_update(
         self,
-        node_ebd: np.ndarray,
-        node_ebd_ext: np.ndarray,
-        edge_ebd: np.ndarray,
-        nlist: np.ndarray,
+        node_ebd: ArrayLike,
+        node_ebd_ext: ArrayLike,
+        edge_ebd: ArrayLike,
+        nlist: ArrayLike,
         feat: str = "node",
-    ) -> np.ndarray:
+    ) -> ArrayLike:
         xp = array_api_compat.array_namespace(node_ebd, node_ebd_ext, edge_ebd, nlist)
 
         if feat == "node":
@@ -1260,11 +1259,11 @@ class RepFlowLayer(NativeOP):
 
     def optim_edge_update_dynamic(
         self,
-        node_ebd: np.ndarray,
-        node_ebd_ext: np.ndarray,
-        flat_edge_ebd: np.ndarray,
-        n2e_index: np.ndarray,
-        n_ext2e_index: np.ndarray,
+        node_ebd: ArrayLike,
+        node_ebd_ext: ArrayLike,
+        flat_edge_ebd: ArrayLike,
+        n2e_index: ArrayLike,
+        n_ext2e_index: ArrayLike,
         feat: str = "node",
     ) -> ArrayLike:
         xp = array_api_compat.array_namespace(
@@ -1308,19 +1307,19 @@ class RepFlowLayer(NativeOP):
 
     def call(
         self,
-        node_ebd_ext: np.ndarray,  # nf x nall x n_dim
-        edge_ebd: np.ndarray,  # nf x nloc x nnei x e_dim
-        h2: np.ndarray,  # nf x nloc x nnei x 3
-        angle_ebd: np.ndarray,  # nf x nloc x a_nnei x a_nnei x a_dim
-        nlist: np.ndarray,  # nf x nloc x nnei
-        nlist_mask: np.ndarray,  # nf x nloc x nnei
-        sw: np.ndarray,  # switch func, nf x nloc x nnei
-        a_nlist: np.ndarray,  # nf x nloc x a_nnei
-        a_nlist_mask: np.ndarray,  # nf x nloc x a_nnei
-        a_sw: np.ndarray,  # switch func, nf x nloc x a_nnei
-        edge_index: np.ndarray,  # 2 x n_edge
-        angle_index: np.ndarray,  # 3 x n_angle
-    ) -> Tuple[ArrayLike, ArrayLike, ArrayLike]:
+        node_ebd_ext: ArrayLike,  # nf x nall x n_dim
+        edge_ebd: ArrayLike,  # nf x nloc x nnei x e_dim
+        h2: ArrayLike,  # nf x nloc x nnei x 3
+        angle_ebd: ArrayLike,  # nf x nloc x a_nnei x a_nnei x a_dim
+        nlist: ArrayLike,  # nf x nloc x nnei
+        nlist_mask: ArrayLike,  # nf x nloc x nnei
+        sw: ArrayLike,  # switch func, nf x nloc x nnei
+        a_nlist: ArrayLike,  # nf x nloc x a_nnei
+        a_nlist_mask: ArrayLike,  # nf x nloc x a_nnei
+        a_sw: ArrayLike,  # switch func, nf x nloc x a_nnei
+        edge_index: ArrayLike,  # 2 x n_edge
+        angle_index: ArrayLike,  # 3 x n_angle
+    ) -> tuple[ArrayLike, ArrayLike]:
         """
         Parameters
         ----------
@@ -1410,16 +1409,16 @@ class RepFlowLayer(NativeOP):
             )
         )
 
-        n_update_list: list[np.ndarray] = [node_ebd]
-        e_update_list: list[np.ndarray] = [edge_ebd]
-        a_update_list: list[np.ndarray] = [angle_ebd]
+        n_update_list: list[ArrayLike] = [node_ebd]
+        e_update_list: list[ArrayLike] = [edge_ebd]
+        a_update_list: list[ArrayLike] = [angle_ebd]
 
         # node self mlp
         node_self_mlp = self.act(self.node_self_mlp(node_ebd))
         n_update_list.append(node_self_mlp)
 
         # node sym (grrg + drrd)
-        node_sym_list: list[np.ndarray] = []
+        node_sym_list: list[ArrayLike] = []
         node_sym_list.append(
             symmetrization_op(
                 edge_ebd,
@@ -1789,15 +1788,15 @@ class RepFlowLayer(NativeOP):
 
     def list_update_res_avg(
         self,
-        update_list: list[np.ndarray],
-    ) -> np.ndarray:
+        update_list: list[ArrayLike],
+    ) -> ArrayLike:
         nitem = len(update_list)
         uu = update_list[0]
         for ii in range(1, nitem):
             uu = uu + update_list[ii]
         return uu / (float(nitem) ** 0.5)
 
-    def list_update_res_incr(self, update_list: list[np.ndarray]) -> np.ndarray:
+    def list_update_res_incr(self, update_list: list[ArrayLike]) -> ArrayLike:
         nitem = len(update_list)
         uu = update_list[0]
         scale = 1.0 / (float(nitem - 1) ** 0.5) if nitem > 1 else 0.0
@@ -1806,8 +1805,8 @@ class RepFlowLayer(NativeOP):
         return uu
 
     def list_update_res_residual(
-        self, update_list: list[np.ndarray], update_name: str = "node"
-    ) -> np.ndarray:
+        self, update_list: list[ArrayLike], update_name: str = "node"
+    ) -> ArrayLike:
         nitem = len(update_list)
         uu = update_list[0]
         if update_name == "node":
@@ -1824,8 +1823,8 @@ class RepFlowLayer(NativeOP):
         return uu
 
     def list_update(
-        self, update_list: list[np.ndarray], update_name: str = "node"
-    ) -> np.ndarray:
+        self, update_list: list[ArrayLike], update_name: str = "node"
+    ) -> ArrayLike:
         if self.update_style == "res_avg":
             return self.list_update_res_avg(update_list)
         elif self.update_style == "res_incr":

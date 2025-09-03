@@ -445,14 +445,14 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: np.ndarray,
-        stddev: np.ndarray,
+        mean: ArrayLike,
+        stddev: ArrayLike,
     ) -> None:
         """Update mean and stddev for descriptor."""
         self.se_atten.mean = mean
         self.se_atten.stddev = stddev
 
-    def get_stat_mean_and_stddev(self) -> tuple[np.ndarray, np.ndarray]:
+    def get_stat_mean_and_stddev(self) -> tuple[ArrayLike, ArrayLike]:
         """Get mean and stddev for descriptor."""
         return self.se_atten.mean, self.se_atten.stddev
 
@@ -488,11 +488,11 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     @cast_precision
     def call(
         self,
-        coord_ext: np.ndarray,
-        atype_ext: np.ndarray,
-        nlist: np.ndarray,
-        mapping: Optional[np.ndarray] = None,
-    ) -> np.ndarray:
+        coord_ext: ArrayLike,
+        atype_ext: ArrayLike,
+        nlist: ArrayLike,
+        mapping: Optional[ArrayLike] = None,
+    ) -> ArrayLike:
         """Compute the descriptor.
 
         Parameters
@@ -643,7 +643,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         train_data: DeepmdDataSystem,
         type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[ArrayLike, ArrayLike]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -954,13 +954,13 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
 
     def call(
         self,
-        nlist: np.ndarray,
-        coord_ext: np.ndarray,
-        atype_ext: np.ndarray,
-        atype_embd_ext: Optional[np.ndarray] = None,
-        mapping: Optional[np.ndarray] = None,
-        type_embedding: Optional[np.ndarray] = None,
-    ) -> tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike, ArrayLike]:
+        nlist: ArrayLike,
+        coord_ext: ArrayLike,
+        atype_ext: ArrayLike,
+        atype_embd_ext: Optional[ArrayLike] = None,
+        mapping: Optional[ArrayLike] = None,
+        type_embedding: Optional[ArrayLike] = None,
+    ) -> tuple[ArrayLike, ArrayLike]:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         # nf x nloc x nnei x 4
         dmatrix, diff, sw = self.env_mat.call(
@@ -1242,8 +1242,8 @@ class NeighborGatedAttention(NativeOP):
         self,
         input_G: ArrayLike,
         nei_mask: ArrayLike,
-        input_r: Optional[np.ndarray] = None,
-        sw: Optional[np.ndarray] = None,
+        input_r: Optional[ArrayLike] = None,
+        sw: Optional[ArrayLike] = None,
     ) -> ArrayLike:
         out = input_G
         for layer in self.attention_layers:
@@ -1372,8 +1372,8 @@ class NeighborGatedAttentionLayer(NativeOP):
         self,
         x: ArrayLike,
         nei_mask: ArrayLike,
-        input_r: Optional[np.ndarray] = None,
-        sw: Optional[np.ndarray] = None,
+        input_r: Optional[ArrayLike] = None,
+        sw: Optional[ArrayLike] = None,
     ) -> ArrayLike:
         residual = x
         x, _ = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)

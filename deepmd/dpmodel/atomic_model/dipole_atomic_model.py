@@ -3,8 +3,9 @@ from typing import (
     Any,
 )
 
-import numpy as np
-
+from deepmd.dpmodel.array_api import (
+    ArrayLike,
+)
 from deepmd.dpmodel.fitting.dipole_fitting import (
     DipoleFitting,
 )
@@ -26,8 +27,8 @@ class DPDipoleAtomicModel(DPAtomicModel):
 
     def apply_out_stat(
         self,
-        ret: dict[str, np.ndarray],
-        atype: np.ndarray,
-    ) -> dict[str, np.ndarray]:
+        ret: dict[str, ArrayLike],
+        atype: ArrayLike,
+    ) -> dict[str, ArrayLike]:
         # dipole not applying bias
         return ret

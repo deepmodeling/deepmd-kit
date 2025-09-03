@@ -9,6 +9,7 @@ import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.array_api import (
+    ArrayLike,
     support_array_api,
 )
 from deepmd.dpmodel.common import (
@@ -98,7 +99,7 @@ class TypeEmbedNet(NativeOP):
         )
 
     @support_array_api(version="2022.12")
-    def call(self) -> np.ndarray:
+    def call(self) -> ArrayLike:
         """Compute the type embedding network."""
         sample_array = self.embedding_net[0]["w"]
         xp = array_api_compat.array_namespace(sample_array)
@@ -222,7 +223,7 @@ class TypeEmbedNet(NativeOP):
 
 def get_econf_tebd(
     type_map: list[str], precision: str = "default"
-) -> tuple[np.ndarray, int]:
+) -> tuple[ArrayLike, int]:
     from deepmd.utils.econf_embd import (
         ECONF_DIM,
     )

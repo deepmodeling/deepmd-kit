@@ -8,6 +8,12 @@ import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.common import (
+    ArrayLike,
+    deepmd.dpmodel.array_api,
+    from,
+    import,
+)
+
     NativeOP,
 )
 from deepmd.utils.data import (
@@ -24,9 +30,9 @@ class Loss(NativeOP, ABC, make_plugin_registry("loss")):
         self,
         learning_rate: float,
         natoms: int,
-        model_dict: dict[str, np.ndarray],
-        label_dict: dict[str, np.ndarray],
-    ) -> dict[str, np.ndarray]:
+        model_dict: dict[str, ArrayLike],
+        label_dict: dict[str, ArrayLike],
+    ) -> dict[str, ArrayLike]:
         """Calculate loss from model results and labeled results."""
 
     @property
@@ -35,12 +41,12 @@ class Loss(NativeOP, ABC, make_plugin_registry("loss")):
         """Return data label requirements needed for this loss calculation."""
 
     @staticmethod
-    def display_if_exist(loss: np.ndarray, find_property: float) -> np.ndarray:
+    def display_if_exist(loss: ArrayLike, find_property: float) -> ArrayLike:
         """Display NaN if labeled property is not found.
 
         Parameters
         ----------
-        loss : np.ndarray
+        loss : ArrayLike
             the loss scalar
         find_property : float
             whether the property is found

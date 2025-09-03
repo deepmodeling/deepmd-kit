@@ -9,6 +9,12 @@ import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.utils.nlist import (
+    ArrayLike,
+    deepmd.dpmodel.array_api,
+    from,
+    import,
+)
+
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
     nlist_distinguish_types,
@@ -154,7 +160,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
-    def _sort_rcuts_sels(self) -> tuple[list[float], list[int]]:
+    def _sort_rcuts_sels(self) -> tuple[ArrayLike, ArrayLike], list[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = sorted(
             zip(self.get_model_rcuts(), self.get_model_nsels()),
@@ -266,7 +272,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return fit_ret
 
     @staticmethod
-    def remap_atype(ori_map: list[str], new_map: list[str]) -> np.ndarray:
+    def remap_atype(ori_map: list[str], new_map: list[str]) -> ArrayLike:
         """
         This method is used to map the atype from the common type_map to the original type_map of
         indivial AtomicModels.
@@ -329,10 +335,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def _compute_weight(
         self,
-        extended_coord: np.ndarray,
-        extended_atype: np.ndarray,
-        nlists_: list[np.ndarray],
-    ) -> list[np.ndarray]:
+        extended_coord: ArrayLike,
+        extended_atype: ArrayLike,
+        nlists_: list[ArrayLike],
+    ) -> list[ArrayLike]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlists_)
         nmodels = len(self.models)
@@ -450,15 +456,15 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
 
     def _compute_weight(
         self,
-        extended_coord: np.ndarray,
-        extended_atype: np.ndarray,
-        nlists_: list[np.ndarray],
-    ) -> list[np.ndarray]:
+        extended_coord: ArrayLike,
+        extended_atype: ArrayLike,
+        nlists_: list[ArrayLike],
+    ) -> list[ArrayLike]:
         """ZBL weight.
 
         Returns
         -------
-        list[np.ndarray]
+        list[ArrayLike]
             the atomic ZBL weight for interpolation. (nframes, nloc, 1)
         """
         assert self.sw_rmax > self.sw_rmin, (

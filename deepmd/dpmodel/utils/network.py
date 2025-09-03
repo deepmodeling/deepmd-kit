@@ -40,7 +40,7 @@ from deepmd.utils.version import (
 )
 
 
-def sigmoid_t(x: np.ndarray) -> np.ndarray:
+def sigmoid_t(x: ArrayLike) -> ArrayLike:
     """Sigmoid."""
     if array_api_compat.is_jax_array(x):
         from deepmd.jax.env import (
@@ -57,7 +57,7 @@ class Identity(NativeOP):
     def __init__(self) -> None:
         super().__init__()
 
-    def call(self, x: np.ndarray) -> np.ndarray:
+    def call(self, x: ArrayLike) -> ArrayLike:
         """The Identity operation layer."""
         return x
 
@@ -77,11 +77,11 @@ class NativeLayer(NativeOP):
 
     Parameters
     ----------
-    w : np.ndarray, optional
+    w : ArrayLike, optional
         The weights of the layer.
-    b : np.ndarray, optional
+    b : ArrayLike, optional
         The biases of the layer.
-    idt : np.ndarray, optional
+    idt : ArrayLike, optional
         The identity matrix of the layer.
     activation_function : str, optional
         The activation function of the layer.
@@ -209,7 +209,7 @@ class NativeLayer(NativeOP):
     def check_type_consistency(self) -> None:
         precision = self.precision
 
-        def check_var(var: Optional[np.ndarray]) -> None:
+        def check_var(var: Optional[ArrayLike]) -> None:
             if var is not None:
                 # array api standard doesn't provide a API to get the dtype name
                 # this is really hacked
@@ -262,12 +262,12 @@ class NativeLayer(NativeOP):
         return self.w.shape[1]
 
     @support_array_api(version="2022.12")
-    def call(self, x: np.ndarray) -> np.ndarray:
+    def call(self, x: ArrayLike) -> ArrayLike:
         """Forward pass.
 
         Parameters
         ----------
-        x : np.ndarray
+        x : ArrayLike
             The input.
 
         Returns
@@ -537,12 +537,12 @@ class LayerNorm(NativeLayer):
     def dim_out(self) -> int:
         return self.w.shape[0]
 
-    def call(self, x: np.ndarray) -> np.ndarray:
+    def call(self, x: ArrayLike) -> ArrayLike:
         """Forward pass.
 
         Parameters
         ----------
-        x : np.ndarray
+        x : ArrayLike
             The input.
 
         Returns
@@ -640,7 +640,7 @@ def make_multilayer_network(T_NetworkLayer: type, ModuleBase: type) -> type:
 
             Parameters
             ----------
-            x : np.ndarray
+            x : ArrayLike
                 The input.
 
             Returns
@@ -657,7 +657,7 @@ def make_multilayer_network(T_NetworkLayer: type, ModuleBase: type) -> type:
 
             Parameters
             ----------
-            x : np.ndarray
+            x : ArrayLike
                 The input.
 
             Returns
@@ -1028,11 +1028,11 @@ class NetworkCollection:
 
 
 def aggregate(
-    data: np.ndarray,
-    owners: np.ndarray,
+    data: ArrayLike,
+    owners: ArrayLike,
     average: bool = True,
     num_owner: Optional[int] = None,
-) -> np.ndarray:
+) -> ArrayLike:
     """
     Aggregate rows in data by specifying the owners.
 
@@ -1068,12 +1068,12 @@ def aggregate(
 
 
 def get_graph_index(
-    nlist: np.ndarray,
-    nlist_mask: np.ndarray,
-    a_nlist_mask: np.ndarray,
+    nlist: ArrayLike,
+    nlist_mask: ArrayLike,
+    a_nlist_mask: ArrayLike,
     nall: int,
     use_loc_mapping: bool = True,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[ArrayLike, ArrayLike]:
     """
     Get the index mapping for edge graph and angle graph, ready in `aggregate` or `index_select`.
 

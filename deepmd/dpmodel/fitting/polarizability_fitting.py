@@ -250,14 +250,14 @@ class PolarFitting(GeneralFitting):
     @cast_precision
     def call(
         self,
-        descriptor: np.ndarray,
-        atype: np.ndarray,
-        gr: Optional[np.ndarray] = None,
-        g2: Optional[np.ndarray] = None,
-        h2: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        descriptor: ArrayLike,
+        atype: ArrayLike,
+        gr: Optional[ArrayLike] = None,
+        g2: Optional[ArrayLike] = None,
+        h2: Optional[ArrayLike] = None,
+        fparam: Optional[ArrayLike] = None,
+        aparam: Optional[ArrayLike] = None,
+    ) -> dict[str, ArrayLike]:
         """Calculate the fitting.
 
         Parameters

@@ -12,6 +12,12 @@ import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel import (
+    ArrayLike,
+    deepmd.dpmodel.array_api,
+    from,
+    import,
+)
+
     DEFAULT_PRECISION,
     PRECISION_DICT,
     NativeOP,
@@ -106,7 +112,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        bias_atom_e: Optional[np.ndarray] = None,
+        bias_atom_e: Optional[ArrayLike] = None,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[list[bool]] = None,
@@ -353,14 +359,14 @@ class GeneralFitting(NativeOP, BaseFitting):
 
     def _call_common(
         self,
-        descriptor: np.ndarray,
-        atype: np.ndarray,
-        gr: Optional[np.ndarray] = None,
-        g2: Optional[np.ndarray] = None,
-        h2: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        descriptor: ArrayLike,
+        atype: ArrayLike,
+        gr: Optional[ArrayLike] = None,
+        g2: Optional[ArrayLike] = None,
+        h2: Optional[ArrayLike] = None,
+        fparam: Optional[ArrayLike] = None,
+        aparam: Optional[ArrayLike] = None,
+    ) -> dict[str, ArrayLike]:
         """Calculate the fitting.
 
         Parameters

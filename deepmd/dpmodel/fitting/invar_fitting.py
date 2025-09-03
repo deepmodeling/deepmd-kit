@@ -6,10 +6,11 @@ from typing import (
     Union,
 )
 
-import numpy as np
-
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
+)
+from deepmd.dpmodel.array_api import (
+    ArrayLike,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -124,7 +125,7 @@ class InvarFitting(GeneralFitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        bias_atom: Optional[np.ndarray] = None,
+        bias_atom: Optional[ArrayLike] = None,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[list[bool]] = None,
@@ -212,14 +213,14 @@ class InvarFitting(GeneralFitting):
     @cast_precision
     def call(
         self,
-        descriptor: np.ndarray,
-        atype: np.ndarray,
-        gr: Optional[np.ndarray] = None,
-        g2: Optional[np.ndarray] = None,
-        h2: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        descriptor: ArrayLike,
+        atype: ArrayLike,
+        gr: Optional[ArrayLike] = None,
+        g2: Optional[ArrayLike] = None,
+        h2: Optional[ArrayLike] = None,
+        fparam: Optional[ArrayLike] = None,
+        aparam: Optional[ArrayLike] = None,
+    ) -> dict[str, ArrayLike]:
         """Calculate the fitting.
 
         Parameters

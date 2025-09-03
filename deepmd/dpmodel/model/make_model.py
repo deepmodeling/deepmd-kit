@@ -55,17 +55,17 @@ def model_call_from_call_lower(
             Optional[np.ndarray],
             bool,
         ],
-        dict[str, np.ndarray],
+        dict[str, ArrayLike],
     ],
     rcut: float,
     sel: list[int],
     mixed_types: bool,
     model_output_def: ModelOutputDef,
-    coord: np.ndarray,
-    atype: np.ndarray,
-    box: Optional[np.ndarray] = None,
-    fparam: Optional[np.ndarray] = None,
-    aparam: Optional[np.ndarray] = None,
+    coord: ArrayLike,
+    atype: ArrayLike,
+    box: Optional[ArrayLike] = None,
+    fparam: Optional[ArrayLike] = None,
+    aparam: Optional[ArrayLike] = None,
     do_atomic_virial: bool = False,
 ) -> dict[str, ArrayLike]:
     """Return model prediction from lower interface.
@@ -224,11 +224,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             self,
             coord: ArrayLike,
             atype: ArrayLike,
-            box: Optional[np.ndarray] = None,
-            fparam: Optional[np.ndarray] = None,
-            aparam: Optional[np.ndarray] = None,
+            box: Optional[ArrayLike] = None,
+            fparam: Optional[ArrayLike] = None,
+            aparam: Optional[ArrayLike] = None,
             do_atomic_virial: bool = False,
-        ) -> dict[str, np.ndarray]:
+        ) -> dict[str, ArrayLike]:
             """Return model prediction.
 
             Parameters
@@ -276,12 +276,12 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
 
         def call_lower(
             self,
-            extended_coord: np.ndarray,
-            extended_atype: np.ndarray,
-            nlist: np.ndarray,
-            mapping: Optional[np.ndarray] = None,
-            fparam: Optional[np.ndarray] = None,
-            aparam: Optional[np.ndarray] = None,
+            extended_coord: ArrayLike,
+            extended_atype: ArrayLike,
+            nlist: ArrayLike,
+            mapping: Optional[ArrayLike] = None,
+            fparam: Optional[ArrayLike] = None,
+            aparam: Optional[ArrayLike] = None,
             do_atomic_virial: bool = False,
         ) -> dict[str, ArrayLike]:
             """Return model prediction. Lower interface that takes
@@ -338,12 +338,12 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
 
         def forward_common_atomic(
             self,
-            extended_coord: np.ndarray,
-            extended_atype: np.ndarray,
-            nlist: np.ndarray,
-            mapping: Optional[np.ndarray] = None,
-            fparam: Optional[np.ndarray] = None,
-            aparam: Optional[np.ndarray] = None,
+            extended_coord: ArrayLike,
+            extended_atype: ArrayLike,
+            nlist: ArrayLike,
+            mapping: Optional[ArrayLike] = None,
+            fparam: Optional[ArrayLike] = None,
+            aparam: Optional[ArrayLike] = None,
             do_atomic_virial: bool = False,
         ) -> dict[str, ArrayLike]:
             atomic_ret = self.atomic_model.forward_common_atomic(
@@ -366,13 +366,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
 
         def input_type_cast(
             self,
-            coord: np.ndarray,
-            box: Optional[np.ndarray] = None,
-            fparam: Optional[np.ndarray] = None,
-            aparam: Optional[np.ndarray] = None,
-        ) -> tuple[
-            np.ndarray,
-            Optional[np.ndarray],
+            coord: ArrayLike,
+            box: Optional[ArrayLike] = None,
+            fparam: Optional[ArrayLike] = None,
+            aparam: Optional[ArrayLike] = None,
+        ) -> tuple[ArrayLike, ArrayLike],
             Optional[np.ndarray],
             Optional[np.ndarray],
             str,
@@ -401,9 +399,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
 
         def output_type_cast(
             self,
-            model_ret: dict[str, np.ndarray],
+            model_ret: dict[str, ArrayLike],
             input_prec: str,
-        ) -> dict[str, np.ndarray]:
+        ) -> dict[str, ArrayLike]:
             """Convert the model output to the input prec."""
             do_cast = (
                 input_prec != RESERVED_PRECISION_DICT[self.global_np_float_precision]
@@ -428,11 +426,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
 
         def format_nlist(
             self,
-            extended_coord: np.ndarray,
-            extended_atype: np.ndarray,
-            nlist: np.ndarray,
+            extended_coord: ArrayLike,
+            extended_atype: ArrayLike,
+            nlist: ArrayLike,
             extra_nlist_sort: bool = False,
-        ) -> np.ndarray:
+        ) -> ArrayLike:
             """Format the neighbor list.
 
             1. If the number of neighbors in the `nlist` is equal to sum(self.sel),
@@ -480,8 +478,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
 
         def _format_nlist(
             self,
-            extended_coord: np.ndarray,
-            nlist: np.ndarray,
+            extended_coord: ArrayLike,
+            nlist: ArrayLike,
             nnei: int,
             extra_nlist_sort: bool = False,
         ) -> ArrayLike:

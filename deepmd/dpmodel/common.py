@@ -21,6 +21,9 @@ import numpy as np
 from deepmd.common import (
     VALID_PRECISION,
 )
+from deepmd.dpmodel.array_api import (
+    ArrayLike,
+)
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
@@ -100,7 +103,7 @@ class NativeOP(ABC):
         return self.call(*args, **kwargs)
 
 
-def to_numpy_array(x: ArrayLike) -> Optional[np.ndarray]:
+def to_numpy_array(x: ArrayLike) -> Optional[ArrayLike]:
     """Convert an array to a NumPy array.
 
     Parameters
@@ -189,13 +192,13 @@ def cast_precision(func: Callable[..., Any]) -> Callable[..., Any]:
 
 @overload
 def safe_cast_array(
-    input: np.ndarray, from_precision: str, to_precision: str
-) -> np.ndarray: ...
+    input: ArrayLike, from_precision: str, to_precision: str
+) -> ArrayLike: ...
 @overload
 def safe_cast_array(input: None, from_precision: str, to_precision: str) -> None: ...
 def safe_cast_array(
-    input: Optional[np.ndarray], from_precision: str, to_precision: str
-) -> Optional[np.ndarray]:
+    input: Optional[ArrayLike], from_precision: str, to_precision: str
+) -> Optional[ArrayLike]:
     """Convert an array from a precision to another precision.
 
     If input is not an array or without the specific precision, the method will not
@@ -205,7 +208,7 @@ def safe_cast_array(
 
     Parameters
     ----------
-    input : np.ndarray or None
+    input : ArrayLike or None
         Input array
     from_precision : str
         Array data type that is casted from

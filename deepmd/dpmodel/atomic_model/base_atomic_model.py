@@ -9,6 +9,9 @@ from typing import (
 import array_api_compat
 import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    ArrayLike,
+)
 from deepmd.dpmodel.common import (
     NativeOP,
     to_numpy_array,
@@ -47,7 +50,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         atom_exclude_types: list[int] = [],
         pair_exclude_types: list[tuple[int, int]] = [],
         rcond: Optional[float] = None,
-        preset_out_bias: Optional[dict[str, np.ndarray]] = None,
+        preset_out_bias: Optional[dict[str, ArrayLike]] = None,
     ) -> None:
         super().__init__()
         self.type_map = type_map
@@ -148,13 +151,13 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
     def forward_common_atomic(
         self,
-        extended_coord: np.ndarray,
-        extended_atype: np.ndarray,
-        nlist: np.ndarray,
-        mapping: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        extended_coord: ArrayLike,
+        extended_atype: ArrayLike,
+        nlist: ArrayLike,
+        mapping: Optional[ArrayLike] = None,
+        fparam: Optional[ArrayLike] = None,
+        aparam: Optional[ArrayLike] = None,
+    ) -> dict[str, ArrayLike]:
         """Common interface for atomic inference.
 
         This method accept extended coordinates, extended atom typs, neighbor list,
@@ -224,13 +227,13 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
     def call(
         self,
-        extended_coord: np.ndarray,
-        extended_atype: np.ndarray,
-        nlist: np.ndarray,
-        mapping: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        extended_coord: ArrayLike,
+        extended_atype: ArrayLike,
+        nlist: ArrayLike,
+        mapping: Optional[ArrayLike] = None,
+        fparam: Optional[ArrayLike] = None,
+        aparam: Optional[ArrayLike] = None,
+    ) -> dict[str, ArrayLike]:
         return self.forward_common_atomic(
             extended_coord,
             extended_atype,
@@ -265,9 +268,9 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
     def apply_out_stat(
         self,
-        ret: dict[str, np.ndarray],
-        atype: np.ndarray,
-    ) -> dict[str, np.ndarray]:
+        ret: dict[str, ArrayLike],
+        atype: ArrayLike,
+    ) -> dict[str, ArrayLike]:
         """Apply the stat to each atomic output.
         The developer may override the method to define how the bias is applied
         to the atomic output of the model.
@@ -310,7 +313,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     def _fetch_out_stat(
         self,
         keys: list[str],
-    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+    ) -> tuple[dict[str, ArrayLike], dict[str, ArrayLike]]:
         ret_bias = {}
         ret_std = {}
         ntypes = self.get_ntypes()

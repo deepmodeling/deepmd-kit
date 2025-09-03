@@ -7,7 +7,6 @@ from typing import (
     Any,
     NoReturn,
     Optional,
-    Type,
 )
 
 from deepmd.common import (
@@ -25,7 +24,7 @@ from deepmd.utils.plugin import (
 def make_base_fitting(
     t_tensor: Any,
     fwd_method_name: str = "forward",
-) -> Type:
+) -> type:
     """Make the base class for the fitting.
 
     Parameters
@@ -41,7 +40,7 @@ def make_base_fitting(
     class BF(ABC, PluginVariant, make_plugin_registry("fitting")):
         """Base fitting provides the interfaces of fitting net."""
 
-        def __new__(cls: Type, *args: Any, **kwargs: Any) -> Any:
+        def __new__(cls: type, *args: Any, **kwargs: Any) -> Any:
             if cls is BF:
                 cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
             return super().__new__(cls)

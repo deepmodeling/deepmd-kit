@@ -9,6 +9,9 @@ from typing import (
 import array_api_compat
 import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    ArrayLike,
+)
 from deepmd.dpmodel.common import (
     NativeOP,
 )
@@ -46,10 +49,10 @@ class NeighborStatOP(NativeOP):
 
     def call(
         self,
-        coord: np.ndarray,
-        atype: np.ndarray,
-        cell: Optional[np.ndarray],
-    ) -> tuple[float, np.ndarray]:
+        coord: ArrayLike,
+        atype: ArrayLike,
+        cell: Optional[ArrayLike],
+    ) -> tuple[ArrayLike, ArrayLike]:
         """Calculate the neareest neighbor distance between atoms, maximum nbor size of
         atoms and the output data range of the environment matrix.
 

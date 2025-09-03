@@ -11,6 +11,12 @@ import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel import (
+    ArrayLike,
+    deepmd.dpmodel.array_api,
+    from,
+    import,
+)
+
     DEFAULT_PRECISION,
     PRECISION_DICT,
     NativeOP,
@@ -313,14 +319,14 @@ class DescrptSeR(NativeOP, BaseDescriptor):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: np.ndarray,
-        stddev: np.ndarray,
+        mean: ArrayLike,
+        stddev: ArrayLike,
     ) -> None:
         """Update mean and stddev for descriptor."""
         self.davg = mean
         self.dstd = stddev
 
-    def get_stat_mean_and_stddev(self) -> tuple[np.ndarray, np.ndarray]:
+    def get_stat_mean_and_stddev(self) -> tuple[ArrayLike, ArrayLike]:
         """Get mean and stddev for descriptor."""
         return self.davg, self.dstd
 
@@ -459,7 +465,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         train_data: DeepmdDataSystem,
         type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[ArrayLike, ArrayLike]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

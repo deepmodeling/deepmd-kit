@@ -5,7 +5,6 @@ from typing import (
     Callable,
     NoReturn,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -297,14 +296,14 @@ class DescrptSeT(NativeOP, BaseDescriptor):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: np.ndarray,
-        stddev: np.ndarray,
+        mean: ArrayLike,
+        stddev: ArrayLike,
     ) -> None:
         """Update mean and stddev for descriptor."""
         self.davg = mean
         self.dstd = stddev
 
-    def get_stat_mean_and_stddev(self) -> tuple[np.ndarray, np.ndarray]:
+    def get_stat_mean_and_stddev(self) -> tuple[ArrayLike, ArrayLike]:
         """Get mean and stddev for descriptor."""
         return self.davg, self.dstd
 
@@ -321,8 +320,8 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         coord_ext: ArrayLike,
         atype_ext: ArrayLike,
         nlist: ArrayLike,
-        mapping: Optional[np.ndarray] = None,
-    ) -> Tuple[ArrayLike, None, None, None, ArrayLike]:
+        mapping: Optional[ArrayLike] = None,
+    ) -> tuple[ArrayLike, ArrayLike]:
         """Compute the descriptor.
 
         Parameters
@@ -461,7 +460,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         train_data: DeepmdDataSystem,
         type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[ArrayLike, ArrayLike]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

@@ -35,13 +35,13 @@ class AtomExcludeMask:
     def get_exclude_types(self) -> list[int]:
         return self.exclude_types
 
-    def get_type_mask(self) -> np.ndarray:
+    def get_type_mask(self) -> ArrayLike:
         return self.type_mask
 
     def build_type_exclude_mask(
         self,
-        atype: np.ndarray,
-    ) -> np.ndarray:
+        atype: ArrayLike,
+    ) -> ArrayLike:
         """Compute type exclusion mask for atoms.
 
         Parameters
@@ -98,9 +98,9 @@ class PairExcludeMask:
 
     def build_type_exclude_mask(
         self,
-        nlist: np.ndarray,
-        atype_ext: np.ndarray,
-    ) -> np.ndarray:
+        nlist: ArrayLike,
+        atype_ext: ArrayLike,
+    ) -> ArrayLike:
         """Compute type exclusion mask for atom pairs.
 
         Parameters

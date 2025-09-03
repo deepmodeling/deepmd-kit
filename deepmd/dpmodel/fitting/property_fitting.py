@@ -7,6 +7,12 @@ from typing import (
 import numpy as np
 
 from deepmd.dpmodel.common import (
+    ArrayLike,
+    deepmd.dpmodel.array_api,
+    from,
+    import,
+)
+
     DEFAULT_PRECISION,
 )
 from deepmd.dpmodel.fitting.invar_fitting import (
@@ -73,7 +79,7 @@ class PropertyFittingNet(InvarFitting):
         dim_descrpt: int,
         task_dim: int = 1,
         neuron: list[int] = [128, 128, 128],
-        bias_atom_p: Optional[np.ndarray] = None,
+        bias_atom_p: Optional[ArrayLike] = None,
         rcond: Optional[float] = None,
         trainable: Union[bool, list[bool]] = True,
         intensive: bool = False,
