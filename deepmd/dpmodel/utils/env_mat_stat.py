@@ -218,7 +218,7 @@ class EnvMatStatSe(EnvMatStat):
             }
         )
 
-    def __call__(self):
+    def __call__(self) -> tuple[np.ndarray, np.ndarray]:
         avgs = self.get_avg()
         stds = self.get_std()
 

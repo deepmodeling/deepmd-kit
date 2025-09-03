@@ -1,10 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Optional,
+    Union,
 )
 
 import array_api_compat
 import numpy as np
+
+# Type alias for array_api compatible arrays
+ArrayLike = Union[np.ndarray, Any]  # Any to support JAX, PyTorch, etc. arrays
 
 from deepmd.dpmodel.loss.loss import (
     Loss,
@@ -17,7 +22,9 @@ from deepmd.utils.version import (
 )
 
 
-def custom_huber_loss(predictions, targets, delta=1.0):
+def custom_huber_loss(
+    predictions: ArrayLike, targets: ArrayLike, delta: float = 1.0
+) -> ArrayLike:
     xp = array_api_compat.array_namespace(predictions, targets)
     error = targets - predictions
     abs_error = xp.abs(error)
@@ -46,9 +53,9 @@ class EnergyLoss(Loss):
         start_pref_gf: float = 0.0,
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
-        use_huber=False,
-        huber_delta=0.01,
-        **kwargs,
+        use_huber: bool = False,
+        huber_delta: float = 0.01,
+        **kwargs: Any,
     ) -> None:
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e

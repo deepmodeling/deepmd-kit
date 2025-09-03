@@ -146,7 +146,7 @@ class DipoleFitting(GeneralFitting):
             seed=seed,
         )
 
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         return self.embedding_width
 
@@ -166,7 +166,7 @@ class DipoleFitting(GeneralFitting):
         assert var_name == "dipole"
         return super().deserialize(data)
 
-    def output_def(self):
+    def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
                 OutputVariableDef(

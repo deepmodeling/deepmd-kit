@@ -27,6 +27,9 @@ from deepmd.dpmodel.utils.serialization import (
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
+
+# Type alias for array_api compatible arrays
+ArrayLike = Union[np.ndarray, Any]  # Any to support JAX, PyTorch, etc. arrays
 from deepmd.infer.deep_dipole import (
     DeepDipole,
 )
@@ -273,7 +276,7 @@ class DeepEval(DeepEvalBackend):
         """
         if self.auto_batch_size is not None:
 
-            def eval_func(*args, **kwargs):
+            def eval_func(*args: Any, **kwargs: Any) -> Any:
                 return self.auto_batch_size.execute_all(
                     inner_func, numb_test, natoms, *args, **kwargs
                 )
@@ -307,7 +310,7 @@ class DeepEval(DeepEvalBackend):
         fparam: Optional[np.ndarray],
         aparam: Optional[np.ndarray],
         request_defs: list[OutputVariableDef],
-    ):
+    ) -> dict[str, np.ndarray]:
         model = self.dp
 
         nframes = coords.shape[0]
@@ -365,7 +368,9 @@ class DeepEval(DeepEvalBackend):
                 )  # this is kinda hacky
         return tuple(results)
 
-    def _get_output_shape(self, odef, nframes, natoms):
+    def _get_output_shape(
+        self, odef: OutputVariableDef, nframes: int, natoms: int
+    ) -> tuple[int, ...]:
         if odef.category == OutputVariableCategory.DERV_C_REDU:
             # virial
             return [nframes, *odef.shape[:-1], 9]

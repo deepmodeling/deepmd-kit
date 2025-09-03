@@ -144,7 +144,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """Returns the output dimension."""
         return np.sum([descrpt.get_dim_emb() for descrpt in self.descrpt_list]).item()
 
-    def mixed_types(self):
+    def mixed_types(self) -> bool:
         """Returns if the descriptor requires a neighbor list that distinguish different
         atomic types or not.
         """
@@ -168,7 +168,9 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             )
         return all_protection[0]
 
-    def share_params(self, base_class, shared_level, resume=False) -> NoReturn:
+    def share_params(
+        self, base_class: Any, shared_level: Any, resume: bool = False
+    ) -> NoReturn:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),

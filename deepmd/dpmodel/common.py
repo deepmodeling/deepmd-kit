@@ -10,6 +10,7 @@ from typing import (
     Any,
     Callable,
     Optional,
+    Union,
     overload,
 )
 
@@ -24,6 +25,9 @@ from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
 )
+
+# Type alias for array_api compatible arrays
+ArrayLike = Union[np.ndarray, Any]  # Any to support JAX, PyTorch, etc. arrays
 
 PRECISION_DICT = {
     "float16": np.float16,
@@ -57,9 +61,9 @@ DEFAULT_PRECISION = "float64"
 
 
 def get_xp_precision(
-    xp: Any,
+    xp: ArrayLike,
     precision: str,
-) -> Any:
+) -> ArrayLike:
     """Get the precision from the API compatible namespace."""
     if precision == "float16" or precision == "half":
         return xp.float16
@@ -87,16 +91,16 @@ class NativeOP(ABC):
     """The unit operation of a native model."""
 
     @abstractmethod
-    def call(self, *args: Any, **kwargs: Any) -> Any:
+    def call(self, *args: ArrayLike, **kwargs: ArrayLike) -> ArrayLike:
         """Forward pass in NumPy implementation."""
         pass
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+    def __call__(self, *args: ArrayLike, **kwargs: ArrayLike) -> ArrayLike:
         """Forward pass in NumPy implementation."""
         return self.call(*args, **kwargs)
 
 
-def to_numpy_array(x: Any) -> Optional[np.ndarray]:
+def to_numpy_array(x: ArrayLike) -> Optional[np.ndarray]:
     """Convert an array to a NumPy array.
 
     Parameters
@@ -158,7 +162,7 @@ def cast_precision(func: Callable[..., Any]) -> Callable[..., Any]:
     """
 
     @wraps(func)
-    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+    def wrapper(self: Any, *args: ArrayLike, **kwargs: ArrayLike) -> ArrayLike:
         # only convert tensors
         returned_tensor = func(
             self,

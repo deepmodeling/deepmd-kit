@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import math
 from typing import (
+    Any,
     Optional,
+    Union,
 )
 
 import array_api_compat
@@ -27,6 +29,9 @@ from deepmd.utils.finetune import (
     map_atom_exclude_types,
     map_pair_exclude_types,
 )
+
+# Type alias for array_api compatible arrays
+ArrayLike = Union[np.ndarray, Any]  # Any to support JAX, PyTorch, etc. arrays
 
 from .make_base_atomic_model import (
     make_base_atomic_model,
@@ -68,7 +73,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.out_bias = out_bias_data
         self.out_std = out_std_data
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: ArrayLike) -> None:
         if key in ["out_bias"]:
             self.out_bias = value
         elif key in ["out_std"]:
@@ -76,7 +81,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> ArrayLike:
         if key in ["out_bias"]:
             return self.out_bias
         elif key in ["out_std"]:
@@ -125,7 +130,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         )
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -262,7 +267,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self,
         ret: dict[str, np.ndarray],
         atype: np.ndarray,
-    ):
+    ) -> dict[str, np.ndarray]:
         """Apply the stat to each atomic output.
         The developer may override the method to define how the bias is applied
         to the atomic output of the model.

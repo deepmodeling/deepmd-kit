@@ -1,7 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+    Union,
+)
 
 import array_api_compat
 import numpy as np
+
+# Type alias for array_api compatible arrays
+ArrayLike = Union[np.ndarray, Any]  # Any to support JAX, PyTorch, etc. arrays
 
 from deepmd.dpmodel.array_api import (
     xp_take_along_axis,
@@ -25,16 +32,16 @@ class AtomExcludeMask:
         # (ntypes)
         self.type_mask = type_mask.reshape([-1])
 
-    def get_exclude_types(self):
+    def get_exclude_types(self) -> list[int]:
         return self.exclude_types
 
-    def get_type_mask(self):
+    def get_type_mask(self) -> np.ndarray:
         return self.type_mask
 
     def build_type_exclude_mask(
         self,
         atype: np.ndarray,
-    ):
+    ) -> np.ndarray:
         """Compute type exclusion mask for atoms.
 
         Parameters
@@ -86,14 +93,14 @@ class PairExcludeMask:
         # (ntypes+1 x ntypes+1)
         self.type_mask = type_mask.reshape([-1])
 
-    def get_exclude_types(self):
+    def get_exclude_types(self) -> list[tuple[int, int]]:
         return self.exclude_types
 
     def build_type_exclude_mask(
         self,
         nlist: np.ndarray,
         atype_ext: np.ndarray,
-    ):
+    ) -> np.ndarray:
         """Compute type exclusion mask for atom pairs.
 
         Parameters
@@ -137,5 +144,5 @@ class PairExcludeMask:
         )
         return mask
 
-    def __contains__(self, item) -> bool:
+    def __contains__(self, item: tuple[int, int]) -> bool:
         return item in self.exclude_types

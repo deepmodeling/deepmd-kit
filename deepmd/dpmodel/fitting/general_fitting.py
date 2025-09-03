@@ -205,7 +205,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         )
 
     @abstractmethod
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         pass
 
@@ -230,7 +230,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Get the name to each type of atoms."""
         return self.type_map
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this fitting net by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -238,7 +238,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.case_embd = np.eye(self.dim_case_embd, dtype=self.prec)[case_idx]
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -259,7 +259,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             )
         self.bias_atom_e = self.bias_atom_e[remap_index]
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         if key in ["bias_atom_e"]:
             self.bias_atom_e = value
         elif key in ["fparam_avg"]:
@@ -277,7 +277,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if key in ["bias_atom_e"]:
             return self.bias_atom_e
         elif key in ["fparam_avg"]:

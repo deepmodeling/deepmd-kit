@@ -2,6 +2,7 @@
 
 
 from typing import (
+    Any,
     Optional,
 )
 
@@ -46,6 +47,6 @@ class DPModelCommon:
         )
         return local_jdata_cpy, min_nbor_dist
 
-    def get_fitting_net(self):
+    def get_fitting_net(self) -> Any:
         """Get the fitting network."""
         return self.atomic_model.fitting

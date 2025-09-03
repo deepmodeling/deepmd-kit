@@ -188,15 +188,15 @@ class InvarFitting(GeneralFitting):
         check_version_compatibility(data.pop("@version", 1), 3, 1)
         return super().deserialize(data)
 
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         return self.dim_out
 
-    def compute_output_stats(self, merged) -> NoReturn:
+    def compute_output_stats(self, merged: Any) -> NoReturn:
         """Update the output bias for fitting net."""
         raise NotImplementedError
 
-    def output_def(self):
+    def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
                 OutputVariableDef(
