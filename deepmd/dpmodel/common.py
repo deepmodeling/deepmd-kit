@@ -10,7 +10,6 @@ from typing import (
     Any,
     Callable,
     Optional,
-    Union,
     overload,
 )
 
@@ -28,9 +27,6 @@ from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
 )
-
-# Type alias for array_api compatible arrays
-ArrayLike = Union[np.ndarray, Any]  # Any to support JAX, PyTorch, etc. arrays
 
 PRECISION_DICT = {
     "float16": np.float16,

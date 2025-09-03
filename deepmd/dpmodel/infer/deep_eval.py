@@ -10,13 +10,10 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.model.base_model import (
+from deepmd.dpmodel.array_api import (
     ArrayLike,
-    deepmd.dpmodel.array_api,
-    from,
-    import,
 )
-
+from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
 from deepmd.dpmodel.output_def import (
@@ -33,9 +30,6 @@ from deepmd.dpmodel.utils.serialization import (
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
-
-# Type alias for array_api compatible arrays
-ArrayLike = Union[np.ndarray, Any]  # Any to support JAX, PyTorch, etc. arrays
 from deepmd.infer.deep_dipole import (
     DeepDipole,
 )

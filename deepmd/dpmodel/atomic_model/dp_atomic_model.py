@@ -4,15 +4,10 @@ from typing import (
     Optional,
 )
 
-import numpy as np
-
-from deepmd.dpmodel.descriptor.base_descriptor import (
+from deepmd.dpmodel.array_api import (
     ArrayLike,
-    deepmd.dpmodel.array_api,
-    from,
-    import,
 )
-
+from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
 )
 from deepmd.dpmodel.fitting.base_fitting import (

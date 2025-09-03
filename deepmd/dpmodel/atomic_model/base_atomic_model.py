@@ -3,7 +3,6 @@ import math
 from typing import (
     Any,
     Optional,
-    Union,
 )
 
 import array_api_compat
@@ -32,9 +31,6 @@ from deepmd.utils.finetune import (
     map_atom_exclude_types,
     map_pair_exclude_types,
 )
-
-# Type alias for array_api compatible arrays
-ArrayLike = Union[np.ndarray, Any]  # Any to support JAX, PyTorch, etc. arrays
 
 from .make_base_atomic_model import (
     make_base_atomic_model,

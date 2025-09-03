@@ -370,10 +370,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             box: Optional[ArrayLike] = None,
             fparam: Optional[ArrayLike] = None,
             aparam: Optional[ArrayLike] = None,
-        ) -> tuple[ArrayLike, ArrayLike],
-            Optional[np.ndarray],
-            Optional[np.ndarray],
-            str,
+        ) -> tuple[
+            ArrayLike, ArrayLike, Optional[np.ndarray], Optional[np.ndarray], str
         ]:
             """Cast the input data to global float type."""
             input_prec = RESERVED_PRECISION_DICT[self.precision_dict[coord.dtype.name]]

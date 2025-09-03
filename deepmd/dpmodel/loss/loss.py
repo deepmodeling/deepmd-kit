@@ -5,15 +5,11 @@ from abc import (
 )
 
 import array_api_compat
-import numpy as np
 
-from deepmd.dpmodel.common import (
+from deepmd.dpmodel.array_api import (
     ArrayLike,
-    deepmd.dpmodel.array_api,
-    from,
-    import,
 )
-
+from deepmd.dpmodel.common import (
     NativeOP,
 )
 from deepmd.utils.data import (

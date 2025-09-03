@@ -4,15 +4,10 @@ from typing import (
     Union,
 )
 
-import numpy as np
-
-from deepmd.dpmodel.common import (
+from deepmd.dpmodel.array_api import (
     ArrayLike,
-    deepmd.dpmodel.array_api,
-    from,
-    import,
 )
-
+from deepmd.dpmodel.common import (
     DEFAULT_PRECISION,
 )
 from deepmd.dpmodel.fitting.invar_fitting import (

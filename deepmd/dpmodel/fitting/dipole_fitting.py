@@ -6,16 +6,12 @@ from typing import (
 )
 
 import array_api_compat
-import numpy as np
 
 from deepmd.dpmodel import (
-    ArrayLike,
-    deepmd.dpmodel.array_api,
-    from,
-    import,
-)
-
     DEFAULT_PRECISION,
+)
+from deepmd.dpmodel.array_api import (
+    ArrayLike,
 )
 from deepmd.dpmodel.common import (
     cast_precision,

@@ -3,15 +3,10 @@ from typing import (
     Any,
 )
 
-import numpy as np
-
-from deepmd.dpmodel.fitting.property_fitting import (
+from deepmd.dpmodel.array_api import (
     ArrayLike,
-    deepmd.dpmodel.array_api,
-    from,
-    import,
 )
-
+from deepmd.dpmodel.fitting.property_fitting import (
     PropertyFittingNet,
 )
 

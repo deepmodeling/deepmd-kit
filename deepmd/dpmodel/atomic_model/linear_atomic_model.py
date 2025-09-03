@@ -8,13 +8,10 @@ from typing import (
 import array_api_compat
 import numpy as np
 
-from deepmd.dpmodel.utils.nlist import (
+from deepmd.dpmodel.array_api import (
     ArrayLike,
-    deepmd.dpmodel.array_api,
-    from,
-    import,
 )
-
+from deepmd.dpmodel.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
     nlist_distinguish_types,
@@ -26,9 +23,6 @@ from deepmd.utils.version import (
     check_version_compatibility,
 )
 
-from ..common import (
-    ArrayLike,
-)
 from ..output_def import (
     FittingOutputDef,
     OutputVariableDef,
@@ -160,7 +154,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
-    def _sort_rcuts_sels(self) -> tuple[ArrayLike, ArrayLike], list[int]]:
+    def _sort_rcuts_sels(self) -> tuple[tuple[ArrayLike, ArrayLike], list[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = sorted(
             zip(self.get_model_rcuts(), self.get_model_nsels()),

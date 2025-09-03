@@ -4,15 +4,11 @@ from typing import (
 )
 
 import array_api_compat
-import numpy as np
 
-from deepmd.dpmodel.fitting.polarizability_fitting import (
+from deepmd.dpmodel.array_api import (
     ArrayLike,
-    deepmd.dpmodel.array_api,
-    from,
-    import,
 )
-
+from deepmd.dpmodel.fitting.polarizability_fitting import (
     PolarFitting,
 )
 
