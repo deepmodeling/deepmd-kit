@@ -14,6 +14,9 @@ from typing import (
 from deepmd.common import (
     j_get_type,
 )
+from deepmd.dpmodel.common import (
+    ArrayLike,
+)
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
@@ -27,7 +30,7 @@ from deepmd.utils.plugin import (
 
 
 def make_base_descriptor(
-    t_tensor: Any,
+    t_tensor: type,
     fwd_method_name: str = "forward",
 ) -> type:
     """Make the base class for the descriptor.
@@ -179,11 +182,11 @@ def make_base_descriptor(
         @abstractmethod
         def fwd(
             self,
-            extended_coord: Any,
-            extended_atype: Any,
-            nlist: Any,
-            mapping: Optional[Any] = None,
-        ) -> Any:
+            extended_coord: ArrayLike,
+            extended_atype: ArrayLike,
+            nlist: ArrayLike,
+            mapping: Optional[ArrayLike] = None,
+        ) -> ArrayLike:
             """Calculate descriptor."""
             pass
 
