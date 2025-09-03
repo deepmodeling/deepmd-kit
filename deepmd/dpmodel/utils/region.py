@@ -1,24 +1,27 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import array_api_compat
-import numpy as np
+
+from deepmd.dpmodel.common import (
+    ArrayLike,
+)
 
 
 def phys2inter(
-    coord: np.ndarray,
-    cell: np.ndarray,
-) -> np.ndarray:
+    coord: ArrayLike,
+    cell: ArrayLike,
+) -> ArrayLike:
     """Convert physical coordinates to internal(direct) coordinates.
 
     Parameters
     ----------
-    coord : np.ndarray
+    coord : ArrayLike
         physical coordinates of shape [*, na, 3].
-    cell : np.ndarray
+    cell : ArrayLike
         simulation cell tensor of shape [*, 3, 3].
 
     Returns
     -------
-    inter_coord: np.ndarray
+    inter_coord: ArrayLike
         the internal coordinates
 
     """
@@ -28,21 +31,21 @@ def phys2inter(
 
 
 def inter2phys(
-    coord: np.ndarray,
-    cell: np.ndarray,
-) -> np.ndarray:
+    coord: ArrayLike,
+    cell: ArrayLike,
+) -> ArrayLike:
     """Convert internal(direct) coordinates to physical coordinates.
 
     Parameters
     ----------
-    coord : np.ndarray
+    coord : ArrayLike
         internal coordinates of shape [*, na, 3].
-    cell : np.ndarray
+    cell : ArrayLike
         simulation cell tensor of shape [*, 3, 3].
 
     Returns
     -------
-    phys_coord: np.ndarray
+    phys_coord: ArrayLike
         the physical coordinates
 
     """
@@ -51,21 +54,21 @@ def inter2phys(
 
 
 def normalize_coord(
-    coord: np.ndarray,
-    cell: np.ndarray,
-) -> np.ndarray:
+    coord: ArrayLike,
+    cell: ArrayLike,
+) -> ArrayLike:
     """Apply PBC according to the atomic coordinates.
 
     Parameters
     ----------
-    coord : np.ndarray
+    coord : ArrayLike
         original coordinates of shape [*, na, 3].
-    cell : np.ndarray
+    cell : ArrayLike
         simulation cell shape [*, 3, 3].
 
     Returns
     -------
-    wrapped_coord: np.ndarray
+    wrapped_coord: ArrayLike
         wrapped coordinates of shape [*, na, 3].
 
     """
@@ -76,18 +79,18 @@ def normalize_coord(
 
 
 def to_face_distance(
-    cell: np.ndarray,
-) -> np.ndarray:
+    cell: ArrayLike,
+) -> ArrayLike:
     """Compute the to-face-distance of the simulation cell.
 
     Parameters
     ----------
-    cell : np.ndarray
+    cell : ArrayLike
         simulation cell tensor of shape [*, 3, 3].
 
     Returns
     -------
-    dist: np.ndarray
+    dist: ArrayLike
         the to face distances of shape [*, 3]
 
     """
@@ -97,7 +100,7 @@ def to_face_distance(
     return xp.reshape(dist, tuple(list(cshape[:-2]) + [3]))  # noqa:RUF005
 
 
-def b_to_face_distance(cell):
+def b_to_face_distance(cell: ArrayLike) -> ArrayLike:
     xp = array_api_compat.array_namespace(cell)
     volume = xp.linalg.det(cell)
     c_yz = xp.linalg.cross(cell[:, 1, ...], cell[:, 2, ...], axis=-1)

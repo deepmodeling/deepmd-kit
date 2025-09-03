@@ -5,6 +5,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Any,
     Callable,
     NoReturn,
     Optional,
@@ -13,6 +14,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.common import (
+    ArrayLike,
+)
 from deepmd.utils.env_mat_stat import (
     StatItem,
 )
@@ -34,7 +38,7 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
 
     local_cluster = False
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
         if cls is DescriptorBlock:
             try:
                 descrpt_type = kwargs["type"]
@@ -107,7 +111,9 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
         """Get the statistics of the descriptor."""
         raise NotImplementedError
 
-    def share_params(self, base_class, shared_level, resume=False) -> NoReturn:
+    def share_params(
+        self, base_class: Any, shared_level: Any, resume: bool = False
+    ) -> NoReturn:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -118,13 +124,13 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
     @abstractmethod
     def call(
         self,
-        nlist: np.ndarray,
-        extended_coord: np.ndarray,
-        extended_atype: np.ndarray,
-        extended_atype_embd: Optional[np.ndarray] = None,
-        mapping: Optional[np.ndarray] = None,
-        type_embedding: Optional[np.ndarray] = None,
-    ):
+        nlist: ArrayLike,
+        extended_coord: ArrayLike,
+        extended_atype: ArrayLike,
+        extended_atype_embd: Optional[ArrayLike] = None,
+        mapping: Optional[ArrayLike] = None,
+        type_embedding: Optional[ArrayLike] = None,
+    ) -> Any:
         """Calculate DescriptorBlock."""
         pass
 

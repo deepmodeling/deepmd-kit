@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Optional,
     Union,
 )
@@ -19,6 +20,9 @@ from deepmd.utils.version import (
     check_version_compatibility,
 )
 
+from ..common import (
+    ArrayLike,
+)
 from ..output_def import (
     FittingOutputDef,
     OutputVariableDef,
@@ -51,7 +55,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self,
         models: list[BaseAtomicModel],
         type_map: list[str],
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
         super().init_out_stat()
@@ -111,7 +115,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return self.type_map
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -134,7 +138,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     def get_sel(self) -> list[int]:
         return [max([model.get_nsel() for model in self.models])]
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -192,13 +196,13 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def forward_atomic(
         self,
-        extended_coord,
-        extended_atype,
-        nlist,
-        mapping: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        extended_coord: ArrayLike,
+        extended_atype: ArrayLike,
+        nlist: ArrayLike,
+        mapping: Optional[ArrayLike] = None,
+        fparam: Optional[ArrayLike] = None,
+        aparam: Optional[ArrayLike] = None,
+    ) -> dict[str, ArrayLike]:
         """Return atomic prediction.
 
         Parameters
@@ -398,7 +402,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         sw_rmax: float,
         type_map: list[str],
         smin_alpha: Optional[float] = 0.1,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         models = [dp_model, zbl_model]
         kwargs["models"] = models
@@ -424,7 +428,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         return dd
 
     @classmethod
-    def deserialize(cls, data) -> "DPZBLLinearEnergyAtomicModel":
+    def deserialize(cls, data: Any) -> "DPZBLLinearEnergyAtomicModel":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 2)
         models = [
@@ -436,7 +440,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         data.pop("type", None)
         return super().deserialize(data)
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
