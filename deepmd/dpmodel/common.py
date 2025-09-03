@@ -189,7 +189,9 @@ def cast_precision(func: Callable[..., Any]) -> Callable[..., Any]:
 
 
 @overload
-def safe_cast_array(input: "Array", from_precision: str, to_precision: str) -> "Array": ...
+def safe_cast_array(
+    input: "Array", from_precision: str, to_precision: str
+) -> "Array": ...
 @overload
 def safe_cast_array(input: None, from_precision: str, to_precision: str) -> None: ...
 def safe_cast_array(
