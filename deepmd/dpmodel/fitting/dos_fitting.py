@@ -77,7 +77,7 @@ class DOSFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         data["numb_dos"] = data.pop("dim_out")
         data.pop("tot_ener_zero", None)
         data.pop("var_name", None)
