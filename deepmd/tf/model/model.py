@@ -827,16 +827,19 @@ class StandardModel(Model):
             data["fitting"] = data["fitting"].copy()
             data["fitting"]["@variables"] = data["fitting"]["@variables"].copy()
 
-            # For dipole fitting, out_bias and bias_atom_e have different purposes and shapes
-            # out_bias: [1, ntypes, 3] for dipole output
-            # bias_atom_e: [ntypes, embedding_width] for internal fitting network
-            # They should not be added together for dipole models
+            # For InvarFitting types (ener, dos, property), out_bias can be reshaped and added to bias_atom_e
+            # For GeneralFitting types (dipole, polar), out_bias and bias_atom_e have different purposes and shapes
+            # and should not be added together
             fitting_type = data["fitting"].get("type", "energy")
-            if fitting_type == "dipole":
-                # For dipole models, keep out_bias separate - don't add to bias_atom_e
-                pass
-            else:
-                # For non-dipole models (e.g., energy), use the original logic
+            if fitting_type in [
+                "ener",
+                "energy",
+                "dos",
+                "property",
+                "direct_force",
+                "direct_force_ener",
+            ]:
+                # For InvarFitting types, use the original logic to reshape and add out_bias to bias_atom_e
                 if (
                     int(np.any(data["fitting"]["@variables"]["bias_atom_e"]))
                     + int(np.any(data["@variables"]["out_bias"]))
@@ -850,6 +853,10 @@ class StandardModel(Model):
                 ]["bias_atom_e"] + data["@variables"]["out_bias"].reshape(
                     data["fitting"]["@variables"]["bias_atom_e"].shape
                 )
+            else:
+                # For GeneralFitting types (dipole, polar), keep out_bias separate - don't add to bias_atom_e
+                # These fitting types have different bias structures that are incompatible
+                pass
         fitting = Fitting.deserialize(data.pop("fitting"), suffix=suffix)
         # pass descriptor type embedding to model
         if descriptor.explicit_ntypes:
