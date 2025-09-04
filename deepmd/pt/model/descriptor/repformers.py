@@ -394,7 +394,6 @@ class DescrptBlockRepformers(DescriptorBlock):
     ):
         if comm_dict is None:
             assert mapping is not None
-            assert extended_atype_embd is not None
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         atype = extended_atype[:, :nloc]
@@ -418,13 +417,9 @@ class DescrptBlockRepformers(DescriptorBlock):
         sw = sw.masked_fill(~nlist_mask, 0.0)
 
         # [nframes, nloc, tebd_dim]
-        if comm_dict is None:
-            assert isinstance(extended_atype_embd, torch.Tensor)  # for jit
-            atype_embd = extended_atype_embd[:, :nloc, :]
-            assert list(atype_embd.shape) == [nframes, nloc, self.g1_dim]
-        else:
-            atype_embd = extended_atype_embd
-        assert isinstance(atype_embd, torch.Tensor)  # for jit
+        assert extended_atype_embd is not None
+        atype_embd = extended_atype_embd[:, :nloc, :]
+        assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
         g1 = self.act(atype_embd)
         ng1 = g1.shape[-1]
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
