@@ -81,6 +81,9 @@ class InvarFitting(GeneralFitting):
         A list of strings. Give the name to each type of atoms.
     use_aparam_as_mask: bool
         If True, the aparam will not be used in fitting net for embedding.
+    default_fparam: list[float], optional
+        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+        this value will be used as the default value for the frame parameter in the fitting net.
     """
 
     def __init__(
@@ -104,6 +107,7 @@ class InvarFitting(GeneralFitting):
         atom_ener: Optional[list[Optional[torch.Tensor]]] = None,
         type_map: Optional[list[str]] = None,
         use_aparam_as_mask: bool = False,
+        default_fparam: Optional[list[float]] = None,
         **kwargs: Any,
     ) -> None:
         self.dim_out = dim_out
@@ -129,6 +133,7 @@ class InvarFitting(GeneralFitting):
             else [x is not None for x in atom_ener],
             type_map=type_map,
             use_aparam_as_mask=use_aparam_as_mask,
+            default_fparam=default_fparam,
             **kwargs,
         )
 
@@ -146,7 +151,7 @@ class InvarFitting(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         return super().deserialize(data)
 
     def output_def(self) -> FittingOutputDef:

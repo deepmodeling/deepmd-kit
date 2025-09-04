@@ -135,6 +135,10 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         """Whether the fitting property is intensive."""
         return False
 
+    def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
+        return False
+
     def reinit_atom_exclude(
         self,
         exclude_types: list[int] = [],

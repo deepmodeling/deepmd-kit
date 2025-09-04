@@ -57,6 +57,7 @@ class EnergyFittingNet(InvarFitting):
         mixed_types: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
         type_map: Optional[list[str]] = None,
+        default_fparam: Optional[list] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -75,13 +76,14 @@ class EnergyFittingNet(InvarFitting):
             mixed_types=mixed_types,
             seed=seed,
             type_map=type_map,
+            default_fparam=default_fparam,
             **kwargs,
         )
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         data.pop("var_name")
         data.pop("dim_out")
         return super().deserialize(data)

@@ -110,6 +110,9 @@ class InvarFitting(GeneralFitting):
             Atomic contributions of the excluded atom types are set zero.
     type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
+    default_fparam: list[float], optional
+        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+        this value will be used as the default value for the frame parameter in the fitting net.
 
     """
 
@@ -138,6 +141,7 @@ class InvarFitting(GeneralFitting):
         exclude_types: list[int] = [],
         type_map: Optional[list[str]] = None,
         seed: Optional[Union[int, list[int]]] = None,
+        default_fparam: Optional[list[float]] = None,
     ) -> None:
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
@@ -173,6 +177,7 @@ class InvarFitting(GeneralFitting):
             else [x is not None for x in atom_ener],
             type_map=type_map,
             seed=seed,
+            default_fparam=default_fparam,
         )
 
     def serialize(self) -> dict:
@@ -185,7 +190,7 @@ class InvarFitting(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         return super().deserialize(data)
 
     def _net_out_dim(self):
