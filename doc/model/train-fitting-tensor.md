@@ -174,7 +174,7 @@ The loss section should be provided like
 In tensor mode, the identification of the label's type (global or atomic) is derived from the file name. The global label should be named `dipole.npy/raw` or `polarizability.npy/raw`, while the atomic label should be named `atomic_dipole.npy/raw` or `atomic_polarizability.npy/raw`. If wrongly named, DP will report an error
 
 ```bash
-ValueError: cannot reshape array of size xxx into shape (xx,xx). This error may occur when your label mismatch it's name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`.
+ValueError: cannot reshape array of size xxx into shape (xx,xx). This error may occur when your label mismatches its name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`.
 ```
 
 In this case, please check the file name of the label.

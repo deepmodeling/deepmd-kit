@@ -39,7 +39,7 @@ class Fio:
     def get_file_list(self, path) -> list:
         if self.is_file(path):
             return []
-        if self.is_path:
+        if self.is_path(path):
             listdir = os.listdir(path)
             file_lst = []
             for name in listdir:
@@ -53,8 +53,9 @@ class Fio:
 
 
 class FioDic:
-    r"""Input and output for dict class data
-    the file can be .json or .npy file containing a dictionary.
+    r"""Input and output for dictionary data.
+
+    The file can be a `.json` or `.npy` file containing a dictionary.
     """
 
     def __init__(self) -> None:
@@ -83,7 +84,7 @@ class FioDic:
             return default_value
 
     def update(self, jdata, jdata_o):
-        r"""Update key-value pair is key in jdata_o.keys().
+        r"""Update key-value pairs if the key exists in ``jdata_o``.
 
         Parameters
         ----------
@@ -186,8 +187,10 @@ class FioTxt:
     def __init__(self) -> None:
         pass
 
-    def load(self, file_name="", default_value=[]):
-        r"""Load .txt file into string list."""
+    def load(self, file_name="", default_value=None):
+        r"""Load a text file into a list of strings."""
+        if default_value is None:
+            default_value = []
         if Fio().exits(file_name):
             log.info(f"load {file_name}")
             with open(file_name, encoding="utf-8") as fr:
@@ -198,11 +201,13 @@ class FioTxt:
             log.info(f"can not find {file_name}")
             return default_value
 
-    def save(self, file_name: str = "", data: list = []) -> None:
-        r"""Save string list into .txt file."""
+    def save(self, file_name: str = "", data: list | str | None = None) -> None:
+        r"""Save a list of strings into a text file."""
         log.info(f"write string to txt file {file_name}")
         Fio().create_file_path(file_name)
 
+        if data is None:
+            data = []
         if isinstance(data, str):
             data = [data]
         data = [d + "\n" for d in data]
