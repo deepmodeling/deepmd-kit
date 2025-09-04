@@ -161,6 +161,7 @@ class DeepEvalBackend(ABC):
         """Get the number (dimension) of frame parameters of this DP."""
 
     def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
         return False
 
     @abstractmethod
@@ -374,6 +375,7 @@ class DeepEval(ABC):
         return self.deep_eval.get_dim_fparam()
 
     def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
         return self.deep_eval.has_default_fparam()
 
     def get_dim_aparam(self) -> int:

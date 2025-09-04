@@ -343,6 +343,7 @@ class DPAtomicModel(BaseAtomicModel):
         return self.fitting_net.get_dim_fparam()
 
     def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
         return self.fitting_net.has_default_fparam()
 
     def get_default_fparam(self) -> Optional[torch.Tensor]:

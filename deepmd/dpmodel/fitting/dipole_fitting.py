@@ -84,6 +84,9 @@ class DipoleFitting(GeneralFitting):
             Only reducible variable are differentiable.
     type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
+    default_fparam: list[float], optional
+            The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+            this value will be used as the default value for the frame parameter in the fitting net.
     """
 
     def __init__(
@@ -110,6 +113,7 @@ class DipoleFitting(GeneralFitting):
         c_differentiable: bool = True,
         type_map: Optional[list[str]] = None,
         seed: Optional[Union[int, list[int]]] = None,
+        default_fparam: Optional[list[float]] = None,
     ) -> None:
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
@@ -144,6 +148,7 @@ class DipoleFitting(GeneralFitting):
             exclude_types=exclude_types,
             type_map=type_map,
             seed=seed,
+            default_fparam=default_fparam,
         )
 
     def _net_out_dim(self):
@@ -161,7 +166,7 @@ class DipoleFitting(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         var_name = data.pop("var_name", None)
         assert var_name == "dipole"
         return super().deserialize(data)

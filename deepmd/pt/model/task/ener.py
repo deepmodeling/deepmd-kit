@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    Any,
     Optional,
     Union,
 )
@@ -67,7 +68,7 @@ class EnergyFittingNet(InvarFitting):
         seed: Optional[Union[int, list[int]]] = None,
         type_map: Optional[list[str]] = None,
         default_fparam: Optional[list] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         super().__init__(
             "energy",
@@ -92,7 +93,7 @@ class EnergyFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         data.pop("var_name")
         data.pop("dim_out")
         return super().deserialize(data)
@@ -270,7 +271,7 @@ class EnergyFittingNetDirect(Fitting):
             "dforce": vec_out,
         }
 
-        
+
 @Fitting.register("ener_readout")
 @fitting_check_output
 class EnergyFittingNetReadout(InvarFitting):

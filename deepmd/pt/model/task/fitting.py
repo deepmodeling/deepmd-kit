@@ -4,10 +4,10 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Any,
     Callable,
     Optional,
     Union,
-    List,
 )
 
 import numpy as np
@@ -37,15 +37,15 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
 )
+from deepmd.utils.env_mat_stat import (
+    StatItem,
+)
 from deepmd.utils.finetune import (
     get_index_between_two_maps,
     map_atom_exclude_types,
 )
 from deepmd.utils.path import (
     DPPath,
-)
-from deepmd.utils.env_mat_stat import (
-    StatItem,
 )
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
@@ -62,7 +62,9 @@ class Fitting(torch.nn.Module, BaseFitting):
             return BaseFitting.__new__(BaseFitting, *args, **kwargs)
         return super().__new__(cls)
 
-    def share_params(self, base_class, shared_level, model_prob=1.0, protection=1e-2, resume=False) -> None:
+    def share_params(
+        self, base_class, shared_level, model_prob=1.0, protection=1e-2, resume=False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -81,16 +83,22 @@ class Fitting(torch.nn.Module, BaseFitting):
                     for ii in range(self.numb_fparam):
                         base_fparam[ii] += self.get_stats()["fparam"][ii] * model_prob
                     fparam_avg = np.array([ii.compute_avg() for ii in base_fparam])
-                    fparam_std = np.array([ii.compute_std(protection=protection) for ii in base_fparam])
+                    fparam_std = np.array(
+                        [ii.compute_std(protection=protection) for ii in base_fparam]
+                    )
                     fparam_inv_std = 1.0 / fparam_std
                     base_class.fparam_avg.copy_(
                         torch.tensor(
-                            fparam_avg, device=env.DEVICE, dtype=base_class.fparam_avg.dtype
+                            fparam_avg,
+                            device=env.DEVICE,
+                            dtype=base_class.fparam_avg.dtype,
                         )
                     )
                     base_class.fparam_inv_std.copy_(
                         torch.tensor(
-                            fparam_inv_std, device=env.DEVICE, dtype=base_class.fparam_inv_std.dtype
+                            fparam_inv_std,
+                            device=env.DEVICE,
+                            dtype=base_class.fparam_inv_std.dtype,
                         )
                     )
                 self.fparam_avg = base_class.fparam_avg
@@ -104,18 +112,24 @@ class Fitting(torch.nn.Module, BaseFitting):
                     for ii in range(self.numb_aparam):
                         base_aparam[ii] += self.get_stats()["aparam"][ii] * model_prob
                     aparam_avg = np.array([ii.compute_avg() for ii in base_aparam])
-                    aparam_std = np.array([ii.compute_std(protection=protection) for ii in base_aparam])
+                    aparam_std = np.array(
+                        [ii.compute_std(protection=protection) for ii in base_aparam]
+                    )
                     aparam_inv_std = 1.0 / aparam_std
                     base_class.aparam_avg.copy_(
                         torch.tensor(
-                            aparam_avg, device=env.DEVICE, dtype=base_class.aparam_avg.dtype
+                            aparam_avg,
+                            device=env.DEVICE,
+                            dtype=base_class.aparam_avg.dtype,
                         )
                     )
                     base_class.aparam_inv_std.copy_(
                         torch.tensor(
-                            aparam_inv_std, device=env.DEVICE, dtype=base_class.aparam_inv_std.dtype
+                            aparam_inv_std,
+                            device=env.DEVICE,
+                            dtype=base_class.aparam_inv_std.dtype,
                         )
-                    )     
+                    )
                 self.aparam_avg = base_class.aparam_avg
                 self.aparam_inv_std = base_class.aparam_inv_std
 
@@ -133,7 +147,7 @@ class Fitting(torch.nn.Module, BaseFitting):
 
         Parameters
         ----------
-        path : DPPath
+        stat_file_path : DPPath
             The path to save the statistics of fparam.
         """
         assert stat_file_path is not None
@@ -144,7 +158,9 @@ class Fitting(torch.nn.Module, BaseFitting):
         _fparam_stat = []
         for ii in range(self.numb_fparam):
             _tmp_stat = self.stats["fparam"][ii]
-            _fparam_stat.append([_tmp_stat.number, _tmp_stat.sum, _tmp_stat.squared_sum])
+            _fparam_stat.append(
+                [_tmp_stat.number, _tmp_stat.sum, _tmp_stat.squared_sum]
+            )
         _fparam_stat = np.array(_fparam_stat)
         fp.save_numpy(_fparam_stat)
         log.info(f"Save fparam stats to {fp}.")
@@ -157,7 +173,7 @@ class Fitting(torch.nn.Module, BaseFitting):
 
         Parameters
         ----------
-        path : DPPath
+        stat_file_path : DPPath
             The path to save the statistics of aparam.
         """
         assert stat_file_path is not None
@@ -168,7 +184,9 @@ class Fitting(torch.nn.Module, BaseFitting):
         _aparam_stat = []
         for ii in range(self.numb_aparam):
             _tmp_stat = self.stats["aparam"][ii]
-            _aparam_stat.append([_tmp_stat.number, _tmp_stat.sum, _tmp_stat.squared_sum])
+            _aparam_stat.append(
+                [_tmp_stat.number, _tmp_stat.sum, _tmp_stat.squared_sum]
+            )
         _aparam_stat = np.array(_aparam_stat)
         fp.save_numpy(_aparam_stat)
         log.info(f"Save aparam stats to {fp}.")
@@ -178,7 +196,7 @@ class Fitting(torch.nn.Module, BaseFitting):
 
         Parameters
         ----------
-        path : DPPath
+        stat_file_path : DPPath
             The path to load the statistics of fparam.
         """
         fp = stat_file_path / "fparam"
@@ -186,7 +204,9 @@ class Fitting(torch.nn.Module, BaseFitting):
         assert arr.shape == (self.numb_fparam, 3)
         _fparam_stat = []
         for ii in range(self.numb_fparam):
-            _fparam_stat.append(StatItem(number=arr[ii][0], sum=arr[ii][1], squared_sum=arr[ii][2]))
+            _fparam_stat.append(
+                StatItem(number=arr[ii][0], sum=arr[ii][1], squared_sum=arr[ii][2])
+            )
         self.stats["fparam"] = _fparam_stat
         log.info(f"Load fparam stats from {fp}.")
 
@@ -195,7 +215,7 @@ class Fitting(torch.nn.Module, BaseFitting):
 
         Parameters
         ----------
-        path : DPPath
+        stat_file_path : DPPath
             The path to load the statistics of aparam.
         """
         fp = stat_file_path / "aparam"
@@ -203,7 +223,9 @@ class Fitting(torch.nn.Module, BaseFitting):
         assert arr.shape == (self.numb_aparam, 3)
         _aparam_stat = []
         for ii in range(self.numb_aparam):
-            _aparam_stat.append(StatItem(number=arr[ii][0], sum=arr[ii][1], squared_sum=arr[ii][2]))
+            _aparam_stat.append(
+                StatItem(number=arr[ii][0], sum=arr[ii][1], squared_sum=arr[ii][2])
+            )
         self.stats["aparam"] = _aparam_stat
         log.info(f"Load aparam stats from {fp}.")
 
@@ -244,7 +266,9 @@ class Fitting(torch.nn.Module, BaseFitting):
             else:
                 sampled = merged() if callable(merged) else merged
                 self.stats["fparam"] = []
-                cat_data = to_numpy_array(torch.cat([frame["fparam"] for frame in sampled], dim=0))
+                cat_data = to_numpy_array(
+                    torch.cat([frame["fparam"] for frame in sampled], dim=0)
+                )
                 cat_data = np.reshape(cat_data, [-1, self.numb_fparam])
                 sumv = np.sum(cat_data, axis=0)
                 sumv2 = np.sum(cat_data * cat_data, axis=0)
@@ -261,7 +285,9 @@ class Fitting(torch.nn.Module, BaseFitting):
                     self.save_to_file_fparam(stat_file_path)
 
             fparam_avg = np.array([ii.compute_avg() for ii in self.stats["fparam"]])
-            fparam_std = np.array([ii.compute_std(protection=protection) for ii in self.stats["fparam"]])
+            fparam_std = np.array(
+                [ii.compute_std(protection=protection) for ii in self.stats["fparam"]]
+            )
             fparam_inv_std = 1.0 / fparam_std
             log.info(f"fparam_avg is {fparam_avg}, fparam_inv_std is {fparam_inv_std}")
             self.fparam_avg.copy_(to_torch_tensor(fparam_avg))
@@ -297,18 +323,18 @@ class Fitting(torch.nn.Module, BaseFitting):
                     self.save_to_file_aparam(stat_file_path)
 
             aparam_avg = np.array([ii.compute_avg() for ii in self.stats["aparam"]])
-            aparam_std = np.array([ii.compute_std(protection=protection) for ii in self.stats["aparam"]])
+            aparam_std = np.array(
+                [ii.compute_std(protection=protection) for ii in self.stats["aparam"]]
+            )
             aparam_inv_std = 1.0 / aparam_std
             log.info(f"aparam_avg is {aparam_avg}, aparam_inv_std is {aparam_inv_std}")
             self.aparam_avg.copy_(to_torch_tensor(aparam_avg))
             self.aparam_inv_std.copy_(to_torch_tensor(aparam_inv_std))
 
-    def get_stats(self) -> dict[str, List[StatItem]]:
+    def get_stats(self) -> dict[str, list[StatItem]]:
         """Get the statistics of the fitting_net."""
         if self.stats is None:
-            raise RuntimeError(
-                "The statistics of fitting net has not been computed."
-            )
+            raise RuntimeError("The statistics of fitting net has not been computed.")
         return self.stats
 
 
@@ -362,6 +388,9 @@ class GeneralFitting(Fitting):
         A list of strings. Give the name to each type of atoms.
     use_aparam_as_mask: bool
         If True, the aparam will not be used in fitting net for embedding.
+    default_fparam: list[float], optional
+        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+        this value will be used as the default value for the frame parameter in the fitting net.
     """
 
     def __init__(
@@ -385,8 +414,8 @@ class GeneralFitting(Fitting):
         remove_vaccum_contribution: Optional[list[bool]] = None,
         type_map: Optional[list[str]] = None,
         use_aparam_as_mask: bool = False,
-        default_fparam: Optional[list] = None,
-        **kwargs,
+        default_fparam: Optional[list[float]] = None,
+        **kwargs: Any,
     ) -> None:
         super().__init__()
         self.var_name = var_name
@@ -461,9 +490,9 @@ class GeneralFitting(Fitting):
 
         if self.default_fparam is not None:
             if self.numb_fparam > 0:
-                assert (
-                    len(self.default_fparam) == self.numb_fparam
-                ), "default_fparam length mismatch!"
+                assert len(self.default_fparam) == self.numb_fparam, (
+                    "default_fparam length mismatch!"
+                )
             self.register_buffer(
                 "default_fparam_tensor",
                 torch.tensor(
@@ -537,7 +566,7 @@ class GeneralFitting(Fitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
-            "@version": 3,
+            "@version": 4,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -546,6 +575,7 @@ class GeneralFitting(Fitting):
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
             "dim_case_embd": self.dim_case_embd,
+            "default_fparam": self.default_fparam,
             "activation_function": self.activation_function,
             "precision": self.precision,
             "mixed_types": self.mixed_types,
@@ -590,6 +620,7 @@ class GeneralFitting(Fitting):
         return self.numb_fparam
 
     def has_default_fparam(self) -> bool:
+        """Check if the fitting has default frame parameters."""
         return self.default_fparam is not None
 
     def get_default_fparam(self) -> Optional[torch.Tensor]:
@@ -653,6 +684,8 @@ class GeneralFitting(Fitting):
             self.case_embd = value
         elif key in ["scale"]:
             self.scale = value
+        elif key in ["default_fparam_tensor"]:
+            self.default_fparam_tensor = value
         else:
             raise KeyError(key)
 
@@ -671,6 +704,8 @@ class GeneralFitting(Fitting):
             return self.case_embd
         elif key in ["scale"]:
             return self.scale
+        elif key in ["default_fparam_tensor"]:
+            return self.default_fparam_tensor
         else:
             raise KeyError(key)
 
