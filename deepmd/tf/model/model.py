@@ -830,14 +830,11 @@ class StandardModel(Model):
             # For InvarFitting types (ener, dos, property), out_bias can be reshaped and added to bias_atom_e
             # For GeneralFitting types (dipole, polar), out_bias and bias_atom_e have different purposes and shapes
             # and should not be added together
-            fitting_type = data["fitting"].get("type", "energy")
+            fitting_type = data["fitting"].get("type", "ener")
             if fitting_type in [
                 "ener",
-                "energy",
                 "dos",
                 "property",
-                "direct_force",
-                "direct_force_ener",
             ]:
                 # For InvarFitting types, use the original logic to reshape and add out_bias to bias_atom_e
                 if (
@@ -853,10 +850,8 @@ class StandardModel(Model):
                 ]["bias_atom_e"] + data["@variables"]["out_bias"].reshape(
                     data["fitting"]["@variables"]["bias_atom_e"].shape
                 )
-            else:
-                # For GeneralFitting types (dipole, polar), keep out_bias separate - don't add to bias_atom_e
-                # These fitting types have different bias structures that are incompatible
-                pass
+            # For GeneralFitting types (dipole, polar), keep out_bias separate - don't add to bias_atom_e
+            # These fitting types have different bias structures that are incompatible
         fitting = Fitting.deserialize(data.pop("fitting"), suffix=suffix)
         # pass descriptor type embedding to model
         if descriptor.explicit_ntypes:
