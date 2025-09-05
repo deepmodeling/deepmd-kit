@@ -72,107 +72,17 @@ from deepmd.pd.utils.utils import (
     nvprof_context,
     to_numpy_array,
 )
-from deepmd.utils.argcheck import (
-    normalize,
-)
 from deepmd.utils.data import (
     DataRequirementItem,
+)
+from deepmd.utils.finetune import (
+    warn_configuration_mismatch_during_finetune,
 )
 from deepmd.utils.path import (
     DPH5Path,
 )
 
 log = logging.getLogger(__name__)
-
-
-def _warn_configuration_mismatch_during_finetune(
-    input_descriptor: dict,
-    pretrained_descriptor: dict,
-    model_branch: str = "Default",
-) -> None:
-    """
-    Warn about configuration mismatches between input descriptor and pretrained model
-    when fine-tuning without --use-pretrain-script option.
-
-    This function warns when configurations differ and state_dict initialization
-    will only pick relevant keys from the pretrained model (e.g., first 6 layers
-    from a 16-layer model).
-
-    Parameters
-    ----------
-    input_descriptor : dict
-        Descriptor configuration from input.json
-    pretrained_descriptor : dict
-        Descriptor configuration from pretrained model
-    model_branch : str
-        Model branch name for logging context
-    """
-    # Normalize both configurations to ensure consistent comparison
-    # This avoids warnings for parameters that only differ due to default values
-    try:
-        # Create minimal configs for normalization with required fields
-        base_config = {
-            "model": {
-                "fitting_net": {"neuron": [240, 240, 240]},
-                "type_map": ["H", "O"],
-            },
-            "training": {"training_data": {"systems": ["fake"]}, "numb_steps": 100},
-        }
-
-        input_config = base_config.copy()
-        input_config["model"]["descriptor"] = input_descriptor.copy()
-
-        pretrained_config = base_config.copy()
-        pretrained_config["model"]["descriptor"] = pretrained_descriptor.copy()
-
-        # Normalize both configurations
-        normalized_input = normalize(input_config, multi_task=False)["model"][
-            "descriptor"
-        ]
-        normalized_pretrained = normalize(pretrained_config, multi_task=False)["model"][
-            "descriptor"
-        ]
-
-        if normalized_input == normalized_pretrained:
-            return
-
-        # Use normalized configs for comparison to show only meaningful differences
-        input_descriptor = normalized_input
-        pretrained_descriptor = normalized_pretrained
-    except Exception:
-        # If normalization fails, fall back to original comparison
-        pass
-
-    if input_descriptor == pretrained_descriptor:
-        return
-
-    # Collect differences
-    differences = []
-
-    # Check for keys that differ in values
-    for key in input_descriptor:
-        if key in pretrained_descriptor:
-            if input_descriptor[key] != pretrained_descriptor[key]:
-                differences.append(
-                    f"  {key}: {input_descriptor[key]} (input) vs {pretrained_descriptor[key]} (pretrained)"
-                )
-        else:
-            differences.append(f"  {key}: {input_descriptor[key]} (input only)")
-
-    # Check for keys only in pretrained model
-    for key in pretrained_descriptor:
-        if key not in input_descriptor:
-            differences.append(
-                f"  {key}: {pretrained_descriptor[key]} (pretrained only)"
-            )
-
-    if differences:
-        log.warning(
-            f"Descriptor configuration mismatch detected between input.json and pretrained model "
-            f"(branch '{model_branch}'). State dict initialization will only use compatible parameters "
-            f"from the pretrained model. Mismatched configuration:\n"
-            + "\n".join(differences)
-        )
 
 
 class Trainer:
@@ -632,7 +542,7 @@ class Trainer:
                             )
 
                         # Warn about configuration mismatches
-                        _warn_configuration_mismatch_during_finetune(
+                        warn_configuration_mismatch_during_finetune(
                             current_descriptor,
                             pretrained_descriptor,
                             _model_key_from,

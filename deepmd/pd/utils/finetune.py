@@ -6,96 +6,12 @@ from copy import (
 
 import paddle
 
-from deepmd.utils.argcheck import (
-    normalize,
-)
 from deepmd.utils.finetune import (
     FinetuneRuleItem,
+    warn_descriptor_config_differences,
 )
 
 log = logging.getLogger(__name__)
-
-
-def _warn_descriptor_config_differences(
-    input_descriptor: dict,
-    pretrained_descriptor: dict,
-    model_branch: str = "Default",
-) -> None:
-    """
-    Warn about differences between input descriptor config and pretrained model's descriptor config.
-
-    Parameters
-    ----------
-    input_descriptor : dict
-        Descriptor configuration from input.json
-    pretrained_descriptor : dict
-        Descriptor configuration from pretrained model
-    model_branch : str
-        Model branch name for logging context
-    """
-    # Normalize both configurations to ensure consistent comparison
-    # This avoids warnings for parameters that only differ due to default values
-    try:
-        # Create minimal configs for normalization with required fields
-        base_config = {
-            "model": {
-                "fitting_net": {"neuron": [240, 240, 240]},
-                "type_map": ["H", "O"],
-            },
-            "training": {"training_data": {"systems": ["fake"]}, "numb_steps": 100},
-        }
-
-        input_config = base_config.copy()
-        input_config["model"]["descriptor"] = input_descriptor.copy()
-
-        pretrained_config = base_config.copy()
-        pretrained_config["model"]["descriptor"] = pretrained_descriptor.copy()
-
-        # Normalize both configurations
-        normalized_input = normalize(input_config, multi_task=False)["model"][
-            "descriptor"
-        ]
-        normalized_pretrained = normalize(pretrained_config, multi_task=False)["model"][
-            "descriptor"
-        ]
-
-        if normalized_input == normalized_pretrained:
-            return
-
-        # Use normalized configs for comparison to show only meaningful differences
-        input_descriptor = normalized_input
-        pretrained_descriptor = normalized_pretrained
-    except Exception:
-        # If normalization fails, fall back to original comparison
-        pass
-
-    if input_descriptor == pretrained_descriptor:
-        return
-
-    # Collect differences
-    differences = []
-
-    # Check for keys that differ in values
-    for key in input_descriptor:
-        if key in pretrained_descriptor:
-            if input_descriptor[key] != pretrained_descriptor[key]:
-                differences.append(
-                    f"  {key}: {input_descriptor[key]} -> {pretrained_descriptor[key]}"
-                )
-        else:
-            differences.append(f"  {key}: {input_descriptor[key]} -> (removed)")
-
-    # Check for keys only in pretrained model
-    for key in pretrained_descriptor:
-        if key not in input_descriptor:
-            differences.append(f"  {key}: (added) -> {pretrained_descriptor[key]}")
-
-    if differences:
-        log.warning(
-            f"Descriptor configuration in input.json differs from pretrained model "
-            f"(branch '{model_branch}'). The input configuration will be overwritten "
-            f"with the pretrained model's configuration:\n" + "\n".join(differences)
-        )
 
 
 def get_finetune_rule_single(
@@ -149,7 +65,7 @@ def get_finetune_rule_single(
 
         # Warn about descriptor configuration differences before overwriting
         if "descriptor" in single_config and "descriptor" in single_config_chosen:
-            _warn_descriptor_config_differences(
+            warn_descriptor_config_differences(
                 single_config["descriptor"],
                 single_config_chosen["descriptor"],
                 model_branch_chosen,
