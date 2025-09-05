@@ -900,7 +900,10 @@ class StandardModel(Model):
 
         ntypes = len(self.get_type_map())
         dict_fit = self.fitting.serialize(suffix=suffix)
-        if dict_fit.get("@variables", {}).get("bias_atom_e") is not None:
+        if (
+            dict_fit.get("@variables", {}).get("bias_atom_e") is not None
+            and dict_fit["dim_out"] == dict_fit["embedding_width"]
+        ):
             out_bias = dict_fit["@variables"]["bias_atom_e"].reshape(
                 [1, ntypes, dict_fit["dim_out"]]
             )
