@@ -909,13 +909,13 @@ class StandardModel(Model):
         else:
             # For energy and DOS models with all atoms
             nloc = natoms[0]
+            # Get output dimension
+            nout = self._get_dim_out()
             if self.model_type == "dos":
                 # DOS model: output shape [nframes * nloc * numb_dos]
-                nout = self.numb_dos
                 output_reshaped = tf.reshape(output, [nframes, nloc, nout])
             else:
                 # Energy model: output shape [nframes * nloc]
-                nout = 1
                 output_reshaped = tf.reshape(output, [nframes, nloc, 1])
             atype_for_gather = tf.reshape(atype, [nframes, nloc])
 
@@ -1045,28 +1045,26 @@ class StandardModel(Model):
 
         ntypes = len(self.get_type_map())
 
+        # Get output dimension
+        dim_out = self._get_dim_out()
+
         # Try to serialize fitting, with fallback for uninitialized variables
         try:
             dict_fit = self.fitting.serialize(suffix=suffix)
         except (AttributeError, TypeError):
-            # Fallback: create a minimal dict_fit with just dim_out
-            dim_out = self._get_dim_out()
-            dict_fit = {"dim_out": dim_out, "@variables": {}}
+            # Fallback: create a minimal dict_fit
+            dict_fit = {"@variables": {}}
 
         # Use the actual out_bias and out_std if they exist, otherwise create defaults
         if self.out_bias is not None:
             out_bias = self.out_bias.copy()
         else:
-            out_bias = np.zeros(
-                [1, ntypes, dict_fit["dim_out"]], dtype=GLOBAL_NP_FLOAT_PRECISION
-            )
+            out_bias = np.zeros([1, ntypes, dim_out], dtype=GLOBAL_NP_FLOAT_PRECISION)
 
         if self.out_std is not None:
             out_std = self.out_std.copy()
         else:
-            out_std = np.ones(
-                [1, ntypes, dict_fit["dim_out"]], dtype=GLOBAL_NP_FLOAT_PRECISION
-            )
+            out_std = np.ones([1, ntypes, dim_out], dtype=GLOBAL_NP_FLOAT_PRECISION)
         return {
             "@class": "Model",
             "type": "standard",
