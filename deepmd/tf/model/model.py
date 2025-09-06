@@ -829,8 +829,10 @@ class StandardModel(Model):
         """
         if self.model_type == "ener":
             return 1
-        elif self.model_type in ["dipole", "polar"]:
+        elif self.model_type == "dipole":
             return 3
+        elif self.model_type == "polar":
+            return 9
         elif self.model_type == "dos":
             return self.numb_dos
         else:
@@ -900,17 +902,17 @@ class StandardModel(Model):
         """
         nframes = tf.shape(coord)[0]
 
+        # Get output dimension consistently
+        nout = self._get_dim_out()
+
         if selected_atype is not None:
             # For tensor models (dipole, polar) with selected atoms
             natomsel = tf.shape(selected_atype)[1]
-            nout = self.get_out_size()  # Use the model's output size method
             output_reshaped = tf.reshape(output, [nframes, natomsel, nout])
             atype_for_gather = selected_atype
         else:
             # For energy and DOS models with all atoms
             nloc = natoms[0]
-            # Get output dimension
-            nout = self._get_dim_out()
             if self.model_type == "dos":
                 # DOS model: output shape [nframes * nloc * numb_dos]
                 output_reshaped = tf.reshape(output, [nframes, nloc, nout])
@@ -1048,12 +1050,8 @@ class StandardModel(Model):
         # Get output dimension
         dim_out = self._get_dim_out()
 
-        # Try to serialize fitting, with fallback for uninitialized variables
-        try:
-            dict_fit = self.fitting.serialize(suffix=suffix)
-        except (AttributeError, TypeError):
-            # Fallback: create a minimal dict_fit
-            dict_fit = {"@variables": {}}
+        # Serialize fitting
+        dict_fit = self.fitting.serialize(suffix=suffix)
 
         # Use the actual out_bias and out_std if they exist, otherwise create defaults
         if self.out_bias is not None:
