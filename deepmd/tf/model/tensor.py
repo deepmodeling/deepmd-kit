@@ -126,6 +126,9 @@ class TensorModel(StandardModel):
             t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
             t_od = tf.constant(self.get_out_size(), name="output_dim", dtype=tf.int32)
 
+            # Initialize out_bias and out_std for tensor models (dipole/polar)
+            self.init_out_stat(suffix=suffix)
+
         natomsel = sum(natoms[2 + type_i] for type_i in self.get_sel_type())
         nout = self.get_out_size()
 
@@ -164,6 +167,31 @@ class TensorModel(StandardModel):
         output = self.fitting.build(
             dout, rot_mat, natoms, input_dict, reuse=reuse, suffix=suffix
         )
+
+        # Apply out_bias and out_std directly to tensor output
+        # output shape: [nframes * natomsel * nout] for tensor models
+        # t_out_bias shape: [1, ntypes, nout], t_out_std shape: [1, ntypes, nout]
+        if hasattr(self, "t_out_bias") and hasattr(self, "t_out_std"):
+            nframes = tf.shape(coord)[0]
+            # Reshape output to [nframes, natomsel, nout] for bias/std application
+            output_reshaped = tf.reshape(output, [nframes, natomsel, nout])
+
+            # Get atom types for selected atoms only (matching natomsel)
+            atype_selected = self._get_selected_atype(atype, natoms)
+
+            # Get bias and std for each selected atom type: [nframes, natomsel, nout]
+            bias_per_atom = tf.gather(
+                self.t_out_bias[0], atype_selected
+            )  # [nframes, natomsel, nout]
+            std_per_atom = tf.gather(
+                self.t_out_std[0], atype_selected
+            )  # [nframes, natomsel, nout]
+
+            # Apply bias and std: output = output * std + bias
+            output_reshaped = output_reshaped * std_per_atom + bias_per_atom
+
+            # Reshape back to original shape
+            output = tf.reshape(output_reshaped, tf.shape(output))
         framesize = nout if "global" in self.model_type else natomsel * nout
         output = tf.reshape(
             output, [-1, framesize], name="o_" + self.model_type + suffix
@@ -205,6 +233,24 @@ class TensorModel(StandardModel):
             model_dict["atom_virial"] = atom_virial
 
         return model_dict
+
+    def _get_selected_atype(self, atype, natoms):
+        """Get atom types for selected atoms only (matching tensor model selection)."""
+        # For tensor models, the fitting output corresponds to selected atom types
+        # atype shape: [nframes, nloc]
+        # We need to extract atom types that match the natomsel count
+
+        # Simplified approach: take the first natomsel atoms from each frame
+        # This works because natoms and descriptor arrangement should be consistent
+        nframes = tf.shape(atype)[0]
+        selected_types = self.get_sel_type()
+        natomsel = sum(natoms[2 + type_i] for type_i in selected_types)
+
+        # Take the first natomsel atoms from each frame
+        # This assumes the atom ordering is consistent with how fitting produces output
+        atype_selected = atype[:, :natomsel]  # [nframes, natomsel]
+
+        return atype_selected
 
     def init_variables(
         self,

@@ -851,9 +851,20 @@ class StandardModel(Model):
             else:
                 dim_out = 1
 
-        # Initialize out_bias and out_std as numpy arrays first
-        out_bias_data = np.zeros([1, ntypes, dim_out], dtype=GLOBAL_NP_FLOAT_PRECISION)
-        out_std_data = np.ones([1, ntypes, dim_out], dtype=GLOBAL_NP_FLOAT_PRECISION)
+        # Initialize out_bias and out_std as numpy arrays, preserving existing values if set
+        if hasattr(self, "out_bias") and self.out_bias is not None:
+            out_bias_data = self.out_bias.copy()
+        else:
+            out_bias_data = np.zeros(
+                [1, ntypes, dim_out], dtype=GLOBAL_NP_FLOAT_PRECISION
+            )
+
+        if hasattr(self, "out_std") and self.out_std is not None:
+            out_std_data = self.out_std.copy()
+        else:
+            out_std_data = np.ones(
+                [1, ntypes, dim_out], dtype=GLOBAL_NP_FLOAT_PRECISION
+            )
 
         # Create TensorFlow variables
         with tf.variable_scope("model_attr" + suffix, reuse=tf.AUTO_REUSE):
@@ -960,43 +971,7 @@ class StandardModel(Model):
         data = data.copy()
         check_version_compatibility(data.pop("@version", 2), 2, 1)
         descriptor = Descriptor.deserialize(data.pop("descriptor"), suffix=suffix)
-        if data["fitting"].get("@variables", {}).get("bias_atom_e") is not None:
-            # careful: copy each level and don't modify the input array,
-            # otherwise it will affect the original data
-            # deepcopy is not used for performance reasons
-            data["fitting"] = data["fitting"].copy()
-            data["fitting"]["@variables"] = data["fitting"]["@variables"].copy()
-            if (
-                int(np.any(data["fitting"]["@variables"]["bias_atom_e"]))
-                + int(np.any(data["@variables"]["out_bias"]))
-                > 1
-            ):
-                raise ValueError(
-                    "fitting/@variables/bias_atom_e and @variables/out_bias should not be both non-zero"
-                )
-            # Improved handling for different shapes (dipole/polar vs energy)
-            bias_atom_e_shape = data["fitting"]["@variables"]["bias_atom_e"].shape
-            out_bias_data = data["@variables"]["out_bias"]
-
-            # For dipole/polar models, out_bias has shape [1, ntypes, 3]
-            # but bias_atom_e has shape [ntypes] where embedding_width might != 3
-            if len(bias_atom_e_shape) == 1 and len(out_bias_data.shape) == 3:
-                # Convert out_bias to bias_atom_e shape safely
-                # We sum over the output dimensions for energy-like models
-                if out_bias_data.shape[2] == 1:
-                    # Energy case: out_bias [1, ntypes, 1] -> bias_atom_e [ntypes]
-                    bias_increment = out_bias_data[0, :, 0]
-                else:
-                    # Dipole/Polar case: take norm or sum for compatibility
-                    # This is still a workaround, but safer than reshape
-                    bias_increment = np.linalg.norm(out_bias_data[0], axis=-1)
-            else:
-                # Fallback to original reshape if shapes are compatible
-                bias_increment = out_bias_data.reshape(bias_atom_e_shape)
-
-            data["fitting"]["@variables"]["bias_atom_e"] = (
-                data["fitting"]["@variables"]["bias_atom_e"] + bias_increment
-            )
+        # bias_atom_e and out_bias are now completely independent - no conversion needed
         fitting = Fitting.deserialize(data.pop("fitting"), suffix=suffix)
         # pass descriptor type embedding to model
         if descriptor.explicit_ntypes:
@@ -1028,57 +1003,6 @@ class StandardModel(Model):
         if out_std is not None:
             model.out_std = out_std
         return model
-
-    def apply_out_stat(
-        self,
-        ret: dict[str, np.ndarray],
-        atype: np.ndarray,
-    ) -> dict[str, np.ndarray]:
-        """Apply the bias and std to the atomic output.
-
-        Parameters
-        ----------
-        ret : dict[str, np.ndarray]
-            The returned dict by the forward_atomic method
-        atype : np.ndarray
-            The atom types. nf x nloc
-
-        Returns
-        -------
-        dict[str, np.ndarray]
-            The output with bias and std applied
-        """
-        if self.out_bias is None:
-            return ret
-
-        # Get the output keys that need bias/std applied
-        fitting_output_def = (
-            self.fitting.fitting_output_def()
-            if hasattr(self.fitting, "fitting_output_def")
-            else {}
-        )
-
-        # Apply bias for each output
-        for kk in ret.keys():
-            if kk in ["mask"]:  # Skip mask
-                continue
-
-            # Get the corresponding bias and std
-            # For now, we assume single output (idx=0), which works for most cases
-            bias_idx = 0
-            ntypes = self.get_ntypes()
-
-            if self.out_bias.shape[0] > bias_idx:
-                # Extract bias for this output: shape [ntypes, output_dim]
-                out_bias_kk = self.out_bias[bias_idx]  # [ntypes, output_dim]
-
-                # Apply bias: ret[kk] shape is [nframes, nloc, output_dim]
-                # atype shape is [nframes, nloc]
-                # We need to index out_bias_kk with atype to get [nframes, nloc, output_dim]
-                bias_for_atoms = out_bias_kk[atype]  # [nframes, nloc, output_dim]
-                ret[kk] = ret[kk] + bias_for_atoms
-
-        return ret
 
     def serialize(self, suffix: str = "") -> dict:
         """Serialize the model.

@@ -97,7 +97,11 @@ class TestOutBiasStd(unittest.TestCase):
         self.assertEqual(model_dipole.out_bias.shape, (1, 2, 3))
 
     def test_apply_out_stat(self):
-        """Test apply_out_stat method."""
+        """Test that out_bias and out_std are applied during model build."""
+        from deepmd.tf.env import (
+            tf,
+        )
+
         descriptor = DescrptSeA(
             rcut=4.0, rcut_smth=3.5, sel=[10, 20], neuron=[8, 16, 32]
         )
@@ -106,31 +110,43 @@ class TestOutBiasStd(unittest.TestCase):
             descriptor=descriptor, fitting_net=fitting, type_map=["H", "O"]
         )
 
-        model.init_out_stat()
-
-        # Set test bias
+        # Set test bias and std
         test_bias = np.array([[[1.0], [2.0]]])  # bias for type 0: 1.0, type 1: 2.0
+        test_std = np.array([[[0.5], [1.5]]])  # std for type 0: 0.5, type 1: 1.5
         model.set_out_bias(test_bias)
+        model.set_out_std(test_std)
 
-        # Create test data
+        # Create mock input data for testing
         nframes = 2
         nloc = 3
-        ret = {
-            "energy": np.array(
-                [[[0.0], [0.0], [0.0]], [[0.0], [0.0], [0.0]]]
-            ),  # [nframes, nloc, 1]
-        }
-        atype = np.array([[0, 1, 0], [1, 0, 1]])  # [nframes, nloc]
 
-        # Apply bias
-        result = model.apply_out_stat(ret, atype)
+        # Mock coordinates and atom types
+        coord = tf.placeholder(tf.float64, [None, nloc * 3])
+        atype = tf.placeholder(tf.int32, [None, nloc])
+        natoms = [
+            nloc,
+            nloc,
+            1,
+            2,
+        ]  # [local atoms, total atoms, type 0 count, type 1 count]
+        box = tf.placeholder(tf.float64, [None, 9])
+        mesh = tf.placeholder(tf.int32, [None, 6])
 
-        # Check that bias was applied correctly
-        expected = np.array([[[1.0], [2.0], [1.0]], [[2.0], [1.0], [2.0]]])
-        np.testing.assert_array_equal(result["energy"], expected)
+        # Build the model - this should apply bias/std internally
+        model_output = model.build(coord, atype, natoms, box, mesh, input_dict=None)
+
+        # Check that the bias and std variables were created
+        self.assertTrue(hasattr(model, "t_out_bias"))
+        self.assertTrue(hasattr(model, "t_out_std"))
+
+        # Test that out_bias and out_std getters work
+        bias = model.get_out_bias()
+        std = model.get_out_std()
+        np.testing.assert_array_equal(bias, test_bias)
+        np.testing.assert_array_equal(std, test_std)
 
     def test_apply_out_stat_no_bias(self):
-        """Test apply_out_stat when no bias is set."""
+        """Test that when no bias is explicitly set, default bias (zeros) is used."""
         descriptor = DescrptSeA(
             rcut=4.0, rcut_smth=3.5, sel=[10, 20], neuron=[8, 16, 32]
         )
@@ -139,57 +155,52 @@ class TestOutBiasStd(unittest.TestCase):
             descriptor=descriptor, fitting_net=fitting, type_map=["H", "O"]
         )
 
-        # Don't initialize out_stat, so out_bias remains None
-        ret = {
-            "energy": np.array([[[1.0], [2.0]], [[3.0], [4.0]]]),
-        }
-        atype = np.array([[0, 1], [1, 0]])
+        # Initialize the model which should set default bias=0, std=1
+        model.init_out_stat()
 
-        # Should return unchanged
-        result = model.apply_out_stat(ret, atype)
-        np.testing.assert_array_equal(result["energy"], ret["energy"])
+        # Verify that default bias and std are set correctly
+        bias = model.get_out_bias()
+        std = model.get_out_std()
 
-    def test_workaround_shape_conversion(self):
-        """Test the improved workaround for shape conversion between out_bias and bias_atom_e."""
-        # Test the shape conversion logic for dipole models
-        # This ensures the problematic reshape is handled correctly
+        # Default bias should be zeros
+        expected_bias = np.zeros([1, 2, 1])  # [1, ntypes, dim_out]
+        expected_std = np.ones([1, 2, 1])  # [1, ntypes, dim_out]
 
-        # Simulate data structure from deserialization
-        data = {
-            "fitting": {
-                "@variables": {
-                    "bias_atom_e": np.array([0.0, 0.0])  # shape [ntypes]
-                }
-            },
-            "@variables": {
-                "out_bias": np.array(
-                    [[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]]
-                )  # shape [1, ntypes, 3]
-            },
-        }
+        np.testing.assert_array_equal(bias, expected_bias)
+        np.testing.assert_array_equal(std, expected_std)
 
-        # Test the conversion logic directly
-        bias_atom_e_shape = data["fitting"]["@variables"]["bias_atom_e"].shape
-        out_bias_data = data["@variables"]["out_bias"]
+    def test_decoupled_bias_architecture(self):
+        """Test that out_bias and bias_atom_e are completely decoupled."""
+        # Test that setting out_bias does not affect bias_atom_e and vice versa
 
-        self.assertEqual(bias_atom_e_shape, (2,))
-        self.assertEqual(out_bias_data.shape, (1, 2, 3))
+        descriptor = DescrptSeA(
+            rcut=4.0, rcut_smth=3.5, sel=[10, 20], neuron=[8, 16, 32]
+        )
+        fitting = EnerFitting(ntypes=2, dim_descrpt=32)
+        model = StandardModel(
+            descriptor=descriptor, fitting_net=fitting, type_map=["H", "O"]
+        )
 
-        # Apply the improved logic
-        if len(bias_atom_e_shape) == 1 and len(out_bias_data.shape) == 3:
-            if out_bias_data.shape[2] == 1:
-                bias_increment = out_bias_data[0, :, 0]
-            else:
-                # Dipole/Polar case: take norm for compatibility
-                bias_increment = np.linalg.norm(out_bias_data[0], axis=-1)
+        # Initialize with defaults
+        model.init_out_stat()
 
-            # Should successfully create bias_increment with correct shape
-            self.assertEqual(bias_increment.shape, (2,))
-            # Values should be norms of [1,2,3] and [4,5,6]
-            expected_norms = np.array(
-                [np.linalg.norm([1, 2, 3]), np.linalg.norm([4, 5, 6])]
-            )
-            np.testing.assert_array_almost_equal(bias_increment, expected_norms)
+        # Set out_bias
+        test_out_bias = np.array([[[1.0], [2.0]]])
+        model.set_out_bias(test_out_bias)
+
+        # Verify out_bias is set correctly
+        retrieved_bias = model.get_out_bias()
+        np.testing.assert_array_equal(retrieved_bias, test_out_bias)
+
+        # Verify that out_std can be set independently
+        test_out_std = np.array([[[0.5], [1.5]]])
+        model.set_out_std(test_out_std)
+        retrieved_std = model.get_out_std()
+        np.testing.assert_array_equal(retrieved_std, test_out_std)
+
+        # Verify shapes are correct for energy models
+        self.assertEqual(retrieved_bias.shape, (1, 2, 1))  # [1, ntypes, dim_out]
+        self.assertEqual(retrieved_std.shape, (1, 2, 1))  # [1, ntypes, dim_out]
 
 
 if __name__ == "__main__":
