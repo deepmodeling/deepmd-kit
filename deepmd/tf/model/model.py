@@ -819,35 +819,37 @@ class StandardModel(Model):
         """Get the number of types."""
         return self.ntypes
 
+    def _get_dim_out(self):
+        """Get output dimension based on model type.
+
+        Returns
+        -------
+        int
+            Output dimension
+        """
+        if self.model_type == "ener":
+            return 1
+        elif self.model_type in ["dipole", "polar"]:
+            return 3
+        elif self.model_type == "dos":
+            return self.numb_dos
+        else:
+            return 1
+
     def init_out_stat(self, suffix: str = "") -> None:
         """Initialize the output bias and std variables."""
         ntypes = self.get_ntypes()
-
-        # Determine output dimension based on model type instead of fitting type
-        if hasattr(self, "model_type"):
-            model_type = self.model_type
-        else:
-            # Fallback to fitting type for compatibility
-            model_type = getattr(self.fitting, "model_type", "ener")
-
-        if model_type == "ener":
-            dim_out = 1
-        elif model_type in ["dipole", "polar"]:
-            dim_out = 3
-        elif model_type == "dos":
-            dim_out = getattr(self.fitting, "numb_dos", 1)
-        else:
-            dim_out = 1
+        dim_out = self._get_dim_out()
 
         # Initialize out_bias and out_std as numpy arrays, preserving existing values if set
-        if hasattr(self, "out_bias") and self.out_bias is not None:
+        if self.out_bias is not None:
             out_bias_data = self.out_bias.copy()
         else:
             out_bias_data = np.zeros(
                 [1, ntypes, dim_out], dtype=GLOBAL_NP_FLOAT_PRECISION
             )
 
-        if hasattr(self, "out_std") and self.out_std is not None:
+        if self.out_std is not None:
             out_std_data = self.out_std.copy()
         else:
             out_std_data = np.ones(
@@ -907,7 +909,7 @@ class StandardModel(Model):
         else:
             # For energy and DOS models with all atoms
             nloc = natoms[0]
-            if hasattr(self, "numb_dos"):
+            if self.model_type == "dos":
                 # DOS model: output shape [nframes * nloc * numb_dos]
                 nout = self.numb_dos
                 output_reshaped = tf.reshape(output, [nframes, nloc, nout])
@@ -1048,41 +1050,12 @@ class StandardModel(Model):
             dict_fit = self.fitting.serialize(suffix=suffix)
         except (AttributeError, TypeError):
             # Fallback: create a minimal dict_fit with just dim_out
-            from deepmd.tf.fit.dipole import (
-                DipoleFittingSeA,
-            )
-            from deepmd.tf.fit.dos import (
-                DOSFitting,
-            )
-            from deepmd.tf.fit.ener import (
-                EnerFitting,
-            )
-            from deepmd.tf.fit.polar import (
-                PolarFittingSeA,
-            )
-
-            if isinstance(self.fitting, EnerFitting):
-                dim_out = 1
-            elif isinstance(self.fitting, (DipoleFittingSeA, PolarFittingSeA)):
-                dim_out = 3
-            elif isinstance(self.fitting, DOSFitting):
-                dim_out = getattr(self.fitting, "numb_dos", 1)
-            else:
-                dim_out = 1
-
+            dim_out = self._get_dim_out()
             dict_fit = {"dim_out": dim_out, "@variables": {}}
 
         # Use the actual out_bias and out_std if they exist, otherwise create defaults
         if self.out_bias is not None:
             out_bias = self.out_bias.copy()
-        elif dict_fit.get("@variables", {}).get("bias_atom_e") is not None:
-            # Fallback to converting bias_atom_e for backward compatibility
-            out_bias = dict_fit["@variables"]["bias_atom_e"].reshape(
-                [1, ntypes, dict_fit["dim_out"]]
-            )
-            dict_fit["@variables"]["bias_atom_e"] = np.zeros_like(
-                dict_fit["@variables"]["bias_atom_e"]
-            )
         else:
             out_bias = np.zeros(
                 [1, ntypes, dict_fit["dim_out"]], dtype=GLOBAL_NP_FLOAT_PRECISION
