@@ -823,33 +823,21 @@ class StandardModel(Model):
         """Initialize the output bias and std variables."""
         ntypes = self.get_ntypes()
 
-        # Get output dimension from fitting serialization, with fallback
-        try:
-            dict_fit = self.fitting.serialize(suffix=suffix)
-            dim_out = dict_fit.get("dim_out", 1)
-        except (AttributeError, TypeError):
-            # Fallback to default dimensions for different fitting types
-            from deepmd.tf.fit.dipole import (
-                DipoleFittingSeA,
-            )
-            from deepmd.tf.fit.dos import (
-                DOSFitting,
-            )
-            from deepmd.tf.fit.ener import (
-                EnerFitting,
-            )
-            from deepmd.tf.fit.polar import (
-                PolarFittingSeA,
-            )
+        # Determine output dimension based on model type instead of fitting type
+        if hasattr(self, "model_type"):
+            model_type = self.model_type
+        else:
+            # Fallback to fitting type for compatibility
+            model_type = getattr(self.fitting, "model_type", "ener")
 
-            if isinstance(self.fitting, EnerFitting):
-                dim_out = 1
-            elif isinstance(self.fitting, (DipoleFittingSeA, PolarFittingSeA)):
-                dim_out = 3
-            elif isinstance(self.fitting, DOSFitting):
-                dim_out = getattr(self.fitting, "numb_dos", 1)
-            else:
-                dim_out = 1
+        if model_type == "ener":
+            dim_out = 1
+        elif model_type in ["dipole", "polar"]:
+            dim_out = 3
+        elif model_type == "dos":
+            dim_out = getattr(self.fitting, "numb_dos", 1)
+        else:
+            dim_out = 1
 
         # Initialize out_bias and out_std as numpy arrays, preserving existing values if set
         if hasattr(self, "out_bias") and self.out_bias is not None:
@@ -887,31 +875,57 @@ class StandardModel(Model):
         self.out_bias = out_bias_data
         self.out_std = out_std_data
 
-    def get_out_bias(self) -> np.ndarray:
-        """Get the output bias."""
-        return self.out_bias
+    def _apply_out_bias_std(self, output, atype, natoms, coord, selected_atype=None):
+        """Apply output bias and standard deviation to the model output.
 
-    def get_out_std(self) -> np.ndarray:
-        """Get the output standard deviation."""
-        return self.out_std
+        Parameters
+        ----------
+        output : tf.Tensor
+            The model output tensor
+        atype : tf.Tensor
+            Atom types with shape [nframes, nloc]
+        natoms : list[int]
+            Number of atoms [nloc, ntypes, ...]
+        coord : tf.Tensor
+            Coordinates for getting nframes
+        selected_atype : tf.Tensor, optional
+            Selected atom types for tensor models. If None, uses all atoms.
 
-    def set_out_bias(self, out_bias: np.ndarray) -> None:
-        """Set the output bias."""
-        self.out_bias = out_bias
-        if hasattr(self, "t_out_bias"):
-            # Note: TensorFlow variable assignment would require a session context in TF 1.x
-            # For TF 2.x, the variable assignment happens differently
-            # Here we just update the numpy array, and TF variables are updated when rebuilt
-            pass
+        Returns
+        -------
+        tf.Tensor
+            Output with bias and std applied
+        """
+        nframes = tf.shape(coord)[0]
 
-    def set_out_std(self, out_std: np.ndarray) -> None:
-        """Set the output standard deviation."""
-        self.out_std = out_std
-        if hasattr(self, "t_out_std"):
-            # Note: TensorFlow variable assignment would require a session context in TF 1.x
-            # For TF 2.x, the variable assignment happens differently
-            # Here we just update the numpy array, and TF variables are updated when rebuilt
-            pass
+        if selected_atype is not None:
+            # For tensor models (dipole, polar) with selected atoms
+            natomsel = tf.shape(selected_atype)[1]
+            nout = self.get_out_size()  # Use the model's output size method
+            output_reshaped = tf.reshape(output, [nframes, natomsel, nout])
+            atype_for_gather = selected_atype
+        else:
+            # For energy and DOS models with all atoms
+            nloc = natoms[0]
+            if hasattr(self, "numb_dos"):
+                # DOS model: output shape [nframes * nloc * numb_dos]
+                nout = self.numb_dos
+                output_reshaped = tf.reshape(output, [nframes, nloc, nout])
+            else:
+                # Energy model: output shape [nframes * nloc]
+                nout = 1
+                output_reshaped = tf.reshape(output, [nframes, nloc, 1])
+            atype_for_gather = tf.reshape(atype, [nframes, nloc])
+
+        # Get bias and std for each atom type
+        bias_per_atom = tf.gather(self.t_out_bias[0], atype_for_gather)
+        std_per_atom = tf.gather(self.t_out_std[0], atype_for_gather)
+
+        # Apply bias and std: output = output * std + bias
+        output_reshaped = output_reshaped * std_per_atom + bias_per_atom
+
+        # Reshape back to original shape
+        return tf.reshape(output_reshaped, tf.shape(output))
 
     @classmethod
     def update_sel(

@@ -258,29 +258,7 @@ class EnerModel(StandardModel):
         )
 
         # Apply out_bias and out_std directly to atom energy
-        # atom_ener shape: [nframes * nloc] (for energy models, dim_out=1)
-        # t_out_bias shape: [1, ntypes, 1], t_out_std shape: [1, ntypes, 1]
-        # atype shape: [nframes, nloc]
-        if hasattr(self, "t_out_bias") and hasattr(self, "t_out_std"):
-            # Reshape atom_ener to [nframes, nloc, 1] to match bias/std application
-            nframes = tf.shape(coord)[0]
-            nloc = natoms[0]
-            atom_ener_reshaped = tf.reshape(atom_ener, [nframes, nloc, 1])
-
-            # Get bias and std for each atom type: [nframes, nloc, 1]
-            atype_flat = tf.reshape(atype, [nframes, nloc])
-            bias_per_atom = tf.gather(
-                self.t_out_bias[0], atype_flat
-            )  # [nframes, nloc, 1]
-            std_per_atom = tf.gather(
-                self.t_out_std[0], atype_flat
-            )  # [nframes, nloc, 1]
-
-            # Apply bias and std: energy = energy * std + bias
-            atom_ener_reshaped = atom_ener_reshaped * std_per_atom + bias_per_atom
-
-            # Reshape back to original shape
-            atom_ener = tf.reshape(atom_ener_reshaped, tf.shape(atom_ener))
+        atom_ener = self._apply_out_bias_std(atom_ener, atype, natoms, coord)
 
         self.atom_ener = atom_ener
 

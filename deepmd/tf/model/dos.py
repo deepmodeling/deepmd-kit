@@ -186,28 +186,7 @@ class DOSModel(StandardModel):
         )
 
         # Apply out_bias and out_std directly to DOS output
-        # atom_dos shape: [nframes * nloc * numb_dos] for DOS models
-        # t_out_bias shape: [1, ntypes, numb_dos], t_out_std shape: [1, ntypes, numb_dos]
-        if hasattr(self, "t_out_bias") and hasattr(self, "t_out_std"):
-            nframes = tf.shape(coord)[0]
-            nloc = natoms[0]
-            # Reshape atom_dos to [nframes, nloc, numb_dos] for bias/std application
-            atom_dos_reshaped = tf.reshape(atom_dos, [nframes, nloc, self.numb_dos])
-
-            # Get bias and std for each atom type: [nframes, nloc, numb_dos]
-            atype_flat = tf.reshape(atype, [nframes, nloc])
-            bias_per_atom = tf.gather(
-                self.t_out_bias[0], atype_flat
-            )  # [nframes, nloc, numb_dos]
-            std_per_atom = tf.gather(
-                self.t_out_std[0], atype_flat
-            )  # [nframes, nloc, numb_dos]
-
-            # Apply bias and std: dos = dos * std + bias
-            atom_dos_reshaped = atom_dos_reshaped * std_per_atom + bias_per_atom
-
-            # Reshape back to original shape
-            atom_dos = tf.reshape(atom_dos_reshaped, tf.shape(atom_dos))
+        atom_dos = self._apply_out_bias_std(atom_dos, atype, natoms, coord)
 
         self.atom_dos = atom_dos
 
