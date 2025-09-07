@@ -750,6 +750,11 @@ class DOSFitting(Fitting):
                 "case_embd": None,
             },
             "type_map": self.type_map,
+            "tot_ener_zero": False,
+            "layer_name": None,
+            "use_aparam_as_mask": False,
+            "spin": None,
+            "atom_ener": None,
         }
         return data
 

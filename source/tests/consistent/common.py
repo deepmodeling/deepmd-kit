@@ -354,7 +354,7 @@ class CommonTest(ABC):
         data1.pop("@version")
         data2.pop("@version")
 
-        if tf_obj.__class__.__name__.startswith("Polar"):
+        if tf_obj.__class__.__name__.startswith("PolarFitting"):
             data1["@variables"].pop("bias_atom_e")
 
         np.testing.assert_equal(data1, data2)
