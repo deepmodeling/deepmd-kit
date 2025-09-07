@@ -900,62 +900,44 @@ class StandardModel(Model):
         tf.Tensor
             Output with bias and std applied
         """
-        # Check if bias/std variables are initialized
-        if not hasattr(self, "t_out_bias") or not hasattr(self, "t_out_std"):
+        if self.spin is not None:
+            # spin is not supported yet; also, it's incompatible with dpmodel
             return output
-
         nframes = tf.shape(coord)[0]
 
         # Get output dimension consistently
         nout = self._get_dim_out()
 
         if selected_atype is not None:
-            # For tensor models (dipole, polar) with selected atoms
             natomsel = tf.shape(selected_atype)[1]
-            expected_size = nframes * natomsel * nout
+            output_reshaped = tf.reshape(output, [nframes, natomsel, nout])
+            atype_for_gather = selected_atype
         else:
-            # For energy and DOS models with all atoms
             nloc = natoms[0]
-            expected_size = nframes * nloc * nout
+            output_reshaped = tf.reshape(output, [nframes, nloc, nout])
+            atype_for_gather = tf.reshape(atype, [nframes, nloc])
 
-        # Check if the tensor size matches what we expect for reshape
-        actual_size = tf.size(output)
-
-        # Only apply bias/std if the tensor sizes match
-        def apply_bias_std():
-            if selected_atype is not None:
-                output_reshaped = tf.reshape(output, [nframes, natomsel, nout])
-                atype_for_gather = selected_atype
-            else:
-                output_reshaped = tf.reshape(output, [nframes, nloc, nout])
-                atype_for_gather = tf.reshape(atype, [nframes, nloc])
-
-            # Handle invalid atom types (e.g., -1 for padding/invalid atoms)
-            # Create a mask for valid atom types (>= 0)
-            valid_mask = tf.greater_equal(atype_for_gather, 0)
-            # Replace invalid types with 0 for gathering (will be masked out later)
-            safe_atype = tf.where(
-                valid_mask, atype_for_gather, tf.zeros_like(atype_for_gather)
-            )
-
-            # Get bias and std for each atom type
-            bias_per_atom = tf.gather(self.t_out_bias[0], safe_atype)
-            std_per_atom = tf.gather(self.t_out_std[0], safe_atype)
-
-            # Apply bias and std: output = output * std + bias
-            adjusted_output = output_reshaped * std_per_atom + bias_per_atom
-
-            # Only apply bias/std to valid atoms, keep original values for invalid atoms
-            output_reshaped = tf.where(
-                tf.expand_dims(valid_mask, -1), adjusted_output, output_reshaped
-            )
-
-            return tf.reshape(output_reshaped, tf.shape(output))
-
-        # Apply bias/std only if tensor sizes match, otherwise return original output
-        return tf.cond(
-            tf.equal(actual_size, expected_size), apply_bias_std, lambda: output
+        # Handle invalid atom types (e.g., -1 for padding/invalid atoms)
+        # Create a mask for valid atom types (>= 0)
+        valid_mask = tf.greater_equal(atype_for_gather, 0)
+        # Replace invalid types with 0 for gathering (will be masked out later)
+        safe_atype = tf.where(
+            valid_mask, atype_for_gather, tf.zeros_like(atype_for_gather)
         )
+
+        # Get bias and std for each atom type
+        bias_per_atom = tf.gather(self.t_out_bias[0], safe_atype)
+        std_per_atom = tf.gather(self.t_out_std[0], safe_atype)
+
+        # Apply bias and std: output = output * std + bias
+        adjusted_output = output_reshaped * std_per_atom + bias_per_atom
+
+        # Only apply bias/std to valid atoms, keep original values for invalid atoms
+        output_reshaped = tf.where(
+            tf.expand_dims(valid_mask, -1), adjusted_output, output_reshaped
+        )
+
+        return tf.reshape(output_reshaped, tf.shape(output))
 
     @classmethod
     def update_sel(
