@@ -255,7 +255,6 @@ class TensorModel(StandardModel):
 
         # Simplified approach: take the first natomsel atoms from each frame
         # This works because natoms and descriptor arrangement should be consistent
-        nframes = tf.shape(atype)[0]
         selected_types = self.get_sel_type()
         natomsel = sum(natoms[2 + type_i] for type_i in selected_types)
 

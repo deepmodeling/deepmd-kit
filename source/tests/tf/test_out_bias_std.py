@@ -117,7 +117,6 @@ class TestOutBiasStd(unittest.TestCase):
         model.set_out_std(test_std)
 
         # Create mock input data for testing
-        nframes = 2
         nloc = 3
 
         # Mock coordinates and atom types
