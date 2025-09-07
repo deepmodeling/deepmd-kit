@@ -174,6 +174,10 @@ class TensorModel(StandardModel):
             dout, rot_mat, natoms, input_dict, reuse=reuse, suffix=suffix
         )
 
+        # Apply out_bias and out_std for tensor models
+        selected_atype = self._get_selected_atype(atype, natoms)
+        output = self._apply_out_bias_std(output, atype, natoms, coord, selected_atype)
+
         # Apply out_bias and out_std directly to tensor output
         # dipole not applying bias but polar does, per dpmodel
         if self.model_type == "polar" and self.fitting.shift_diag:
