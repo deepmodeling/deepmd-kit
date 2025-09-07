@@ -836,7 +836,7 @@ class StandardModel(Model):
         elif self.model_type == "dos":
             return self.numb_dos
         else:
-            return 1
+            raise ValueError(f"Unknown model type '{self.model_type}' in _get_dim_out")
 
     def init_out_stat(self, suffix: str = "") -> None:
         """Initialize the output bias and std variables."""
@@ -913,12 +913,7 @@ class StandardModel(Model):
         else:
             # For energy and DOS models with all atoms
             nloc = natoms[0]
-            if self.model_type == "dos":
-                # DOS model: output shape [nframes * nloc * numb_dos]
-                output_reshaped = tf.reshape(output, [nframes, nloc, nout])
-            else:
-                # Energy model: output shape [nframes * nloc]
-                output_reshaped = tf.reshape(output, [nframes, nloc, 1])
+            output_reshaped = tf.reshape(output, [nframes, nloc, nout])
             atype_for_gather = tf.reshape(atype, [nframes, nloc])
 
         # Get bias and std for each atom type

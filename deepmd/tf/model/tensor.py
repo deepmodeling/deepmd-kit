@@ -176,13 +176,14 @@ class TensorModel(StandardModel):
 
         # Apply out_bias and out_std directly to tensor output
         # dipole not applying bias but polar does, per dpmodel
-        if self.model_type in {"polar"} and self.fitting.shift_diag:
+        if self.model_type == "polar" and self.fitting.shift_diag:
             v_constant_matrix = np.zeros(
                 self.ntypes,
                 dtype=GLOBAL_NP_FLOAT_PRECISION,
             )
-            for itype in range(len(self.get_sel_type())):
-                v_constant_matrix[self.get_sel_type()[itype]] = np.mean(
+            sel_type = self.get_sel_type()
+            for itype in range(len(sel_type)):
+                v_constant_matrix[sel_type[itype]] = np.mean(
                     np.diagonal(self.out_bias[0, itype].reshape((3, 3)))
                 )
             nframes = input_dict["nframes"]
