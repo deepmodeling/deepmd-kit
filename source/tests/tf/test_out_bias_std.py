@@ -133,7 +133,7 @@ class TestOutBiasStd(unittest.TestCase):
         mesh = tf.placeholder(tf.int32, [None, 6])
 
         # Build the model - this should apply bias/std internally
-        model_output = model.build(coord, atype, natoms, box, mesh, input_dict=None)
+        model.build(coord, atype, natoms, box, mesh, input_dict=None)
 
         # Check that the bias and std variables were created
         self.assertTrue(hasattr(model, "t_out_bias"))
