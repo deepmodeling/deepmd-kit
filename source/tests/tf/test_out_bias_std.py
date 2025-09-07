@@ -46,34 +46,6 @@ class TestOutBiasStd(unittest.TestCase):
         np.testing.assert_array_equal(model.out_bias, np.zeros((1, 2, 1)))
         np.testing.assert_array_equal(model.out_std, np.ones((1, 2, 1)))
 
-    def test_get_set_methods(self):
-        """Test get/set methods for out_bias and out_std."""
-        descriptor = DescrptSeA(
-            rcut=4.0, rcut_smth=3.5, sel=[10, 20], neuron=[8, 16, 32]
-        )
-        fitting = EnerFitting(ntypes=2, dim_descrpt=32)
-        model = StandardModel(
-            descriptor=descriptor, fitting_net=fitting, type_map=["H", "O"]
-        )
-
-        model.init_out_stat()
-
-        # Test get methods
-        original_bias = model.get_out_bias()
-        original_std = model.get_out_std()
-        self.assertEqual(original_bias.shape, (1, 2, 1))
-        self.assertEqual(original_std.shape, (1, 2, 1))
-
-        # Test set methods
-        test_bias = np.array([[[1.0], [2.0]]])
-        test_std = np.array([[[0.5], [0.8]]])
-
-        model.set_out_bias(test_bias)
-        model.set_out_std(test_std)
-
-        np.testing.assert_array_equal(model.get_out_bias(), test_bias)
-        np.testing.assert_array_equal(model.get_out_std(), test_std)
-
     def test_different_fitting_dimensions(self):
         """Test that different fitting types have correct dimensions."""
         descriptor = DescrptSeA(
@@ -110,11 +82,11 @@ class TestOutBiasStd(unittest.TestCase):
             descriptor=descriptor, fitting_net=fitting, type_map=["H", "O"]
         )
 
-        # Set test bias and std
+        # Set test bias and std directly
         test_bias = np.array([[[1.0], [2.0]]])  # bias for type 0: 1.0, type 1: 2.0
         test_std = np.array([[[0.5], [1.5]]])  # std for type 0: 0.5, type 1: 1.5
-        model.set_out_bias(test_bias)
-        model.set_out_std(test_std)
+        model.out_bias = test_bias
+        model.out_std = test_std
 
         # Create mock input data for testing
         nloc = 3
@@ -138,11 +110,9 @@ class TestOutBiasStd(unittest.TestCase):
         self.assertTrue(hasattr(model, "t_out_bias"))
         self.assertTrue(hasattr(model, "t_out_std"))
 
-        # Test that out_bias and out_std getters work
-        bias = model.get_out_bias()
-        std = model.get_out_std()
-        np.testing.assert_array_equal(bias, test_bias)
-        np.testing.assert_array_equal(std, test_std)
+        # Test that out_bias and out_std are preserved
+        np.testing.assert_array_equal(model.out_bias, test_bias)
+        np.testing.assert_array_equal(model.out_std, test_std)
 
     def test_apply_out_stat_no_bias(self):
         """Test that when no bias is explicitly set, default bias (zeros) is used."""
@@ -158,8 +128,8 @@ class TestOutBiasStd(unittest.TestCase):
         model.init_out_stat()
 
         # Verify that default bias and std are set correctly
-        bias = model.get_out_bias()
-        std = model.get_out_std()
+        bias = model.out_bias
+        std = model.out_std
 
         # Default bias should be zeros
         expected_bias = np.zeros([1, 2, 1])  # [1, ntypes, dim_out]
@@ -183,18 +153,18 @@ class TestOutBiasStd(unittest.TestCase):
         # Initialize with defaults
         model.init_out_stat()
 
-        # Set out_bias
+        # Set out_bias directly
         test_out_bias = np.array([[[1.0], [2.0]]])
-        model.set_out_bias(test_out_bias)
+        model.out_bias = test_out_bias
 
         # Verify out_bias is set correctly
-        retrieved_bias = model.get_out_bias()
+        retrieved_bias = model.out_bias
         np.testing.assert_array_equal(retrieved_bias, test_out_bias)
 
         # Verify that out_std can be set independently
         test_out_std = np.array([[[0.5], [1.5]]])
-        model.set_out_std(test_out_std)
-        retrieved_std = model.get_out_std()
+        model.out_std = test_out_std
+        retrieved_std = model.out_std
         np.testing.assert_array_equal(retrieved_std, test_out_std)
 
         # Verify shapes are correct for energy models

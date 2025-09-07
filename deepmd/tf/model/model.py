@@ -957,46 +957,6 @@ class StandardModel(Model):
             tf.equal(actual_size, expected_size), apply_bias_std, lambda: output
         )
 
-    def get_out_bias(self) -> np.ndarray:
-        """Get the output bias.
-
-        Returns
-        -------
-        np.ndarray
-            The output bias array
-        """
-        return self.out_bias
-
-    def set_out_bias(self, out_bias: np.ndarray) -> None:
-        """Set the output bias.
-
-        Parameters
-        ----------
-        out_bias : np.ndarray
-            The output bias array
-        """
-        self.out_bias = out_bias
-
-    def get_out_std(self) -> np.ndarray:
-        """Get the output standard deviation.
-
-        Returns
-        -------
-        np.ndarray
-            The output standard deviation array
-        """
-        return self.out_std
-
-    def set_out_std(self, out_std: np.ndarray) -> None:
-        """Set the output standard deviation.
-
-        Parameters
-        ----------
-        out_std : np.ndarray
-            The output standard deviation array
-        """
-        self.out_std = out_std
-
     @classmethod
     def update_sel(
         cls,
