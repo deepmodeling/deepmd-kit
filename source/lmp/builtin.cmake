@@ -57,6 +57,7 @@ configure_file("${CMAKE_CURRENT_LIST_DIR}/deepmd_version.h.in"
 
 file(GLOB DEEPMD_LMP_SRC ${CMAKE_CURRENT_LIST_DIR}/*.cpp)
 
+find_package(Torch REQUIRED)
 find_package(DeePMD REQUIRED)
 target_sources(
   lammps

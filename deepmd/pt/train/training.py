@@ -20,6 +20,9 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.common import (
     symlink_prefix_files,
 )
@@ -836,7 +839,7 @@ class Trainer:
                         self.gradient_max_norm,
                         error_if_nonfinite=True,
                     )
-                with torch.device("cpu"):
+                with torch.device(env.DEVICE):
                     self.optimizer.step()
                 self.scheduler.step()
             elif self.opt_type == "LKF":
