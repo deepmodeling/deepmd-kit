@@ -932,10 +932,11 @@ class StandardModel(Model):
         # Apply bias and std: output = output * std + bias
         adjusted_output = output_reshaped * std_per_atom + bias_per_atom
 
+        # expand axis 2 of valid_mask to nout
+        valid_mask = tf.tile(tf.expand_dims(valid_mask, -1), [1, 1, nout])
+
         # Only apply bias/std to valid atoms, keep original values for invalid atoms
-        output_reshaped = tf.where(
-            tf.expand_dims(valid_mask, -1), adjusted_output, output_reshaped
-        )
+        output_reshaped = tf.where(valid_mask, adjusted_output, output_reshaped)
 
         return tf.reshape(output_reshaped, tf.shape(output))
 
