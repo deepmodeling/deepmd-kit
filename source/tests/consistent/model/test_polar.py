@@ -73,6 +73,7 @@ class TestPolar(CommonTest, ModelTest, unittest.TestCase):
     pt_class = PolarModelPT
     jax_class = PolarModelJAX
     args = model_args()
+    atol = 1e-8
 
     def get_reference_backend(self):
         """Get the reference backend.

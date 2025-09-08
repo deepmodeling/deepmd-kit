@@ -914,8 +914,11 @@ class StandardModel(Model):
             atype_for_gather = selected_atype
         else:
             nloc = natoms[0]
+            nall = natoms[1]
             output_reshaped = tf.reshape(output, [nframes, nloc, nout])
-            atype_for_gather = tf.reshape(atype, [nframes, nloc])
+            atype_for_gather = tf.reshape(atype, [nframes, nall])
+            # slice to local atoms
+            atype_for_gather = atype_for_gather[:, :nloc]
 
         # Handle invalid atom types (e.g., -1 for padding/invalid atoms)
         # Create a mask for valid atom types (>= 0)
