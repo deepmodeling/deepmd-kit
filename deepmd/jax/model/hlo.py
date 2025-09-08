@@ -44,10 +44,10 @@ OUTPUT_DEFS = {
 class HLO(BaseModel):
     def __init__(
         self,
-        stablehlo: Any,
-        stablehlo_atomic_virial: Any,
-        stablehlo_no_ghost: Any,
-        stablehlo_atomic_virial_no_ghost: Any,
+        stablehlo: bytearray,
+        stablehlo_atomic_virial: bytearray,
+        stablehlo_no_ghost: bytearray,
+        stablehlo_atomic_virial_no_ghost: bytearray,
         model_def_script: str,
         type_map: list[str],
         rcut: float,

@@ -115,7 +115,7 @@ class TFModelWrapper(tf.Module):
         fparam: Optional[jnp.ndarray] = None,
         aparam: Optional[jnp.ndarray] = None,
         do_atomic_virial: bool = False,
-    ) -> Any:
+    ) -> dict[str, jnp.ndarray]:
         """Return model prediction.
 
         Parameters
@@ -179,7 +179,7 @@ class TFModelWrapper(tf.Module):
         fparam: Optional[jnp.ndarray] = None,
         aparam: Optional[jnp.ndarray] = None,
         do_atomic_virial: bool = False,
-    ) -> Any:
+    ) -> dict[str, jnp.ndarray]:
         if do_atomic_virial:
             call_lower = self._call_lower_atomic_virial
         else:
