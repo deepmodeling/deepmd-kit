@@ -10,6 +10,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    Array,
+)
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
@@ -164,14 +167,14 @@ class DeepEval(DeepEvalBackend):
 
     def eval(
         self,
-        coords: np.ndarray,
-        cells: Optional[np.ndarray],
-        atom_types: np.ndarray,
+        coords: Array,
+        cells: Optional[Array],
+        atom_types: Array,
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: Optional[Array] = None,
+        aparam: Optional[Array] = None,
         **kwargs: Any,
-    ) -> dict[str, np.ndarray]:
+    ) -> dict[str, Array]:
         """Evaluate the energy, force and virial by using this DP.
 
         Parameters
@@ -277,7 +280,7 @@ class DeepEval(DeepEvalBackend):
         """
         if self.auto_batch_size is not None:
 
-            def eval_func(*args, **kwargs):
+            def eval_func(*args: Any, **kwargs: Any) -> Any:
                 return self.auto_batch_size.execute_all(
                     inner_func, numb_test, natoms, *args, **kwargs
                 )
@@ -288,8 +291,8 @@ class DeepEval(DeepEvalBackend):
 
     def _get_natoms_and_nframes(
         self,
-        coords: np.ndarray,
-        atom_types: np.ndarray,
+        coords: Array,
+        atom_types: Array,
         mixed_type: bool = False,
     ) -> tuple[int, int]:
         if mixed_type:
@@ -305,13 +308,13 @@ class DeepEval(DeepEvalBackend):
 
     def _eval_model(
         self,
-        coords: np.ndarray,
-        cells: Optional[np.ndarray],
-        atom_types: np.ndarray,
-        fparam: Optional[np.ndarray],
-        aparam: Optional[np.ndarray],
+        coords: Array,
+        cells: Optional[Array],
+        atom_types: Array,
+        fparam: Optional[Array],
+        aparam: Optional[Array],
         request_defs: list[OutputVariableDef],
-    ):
+    ) -> dict[str, Array]:
         model = self.dp
 
         nframes = coords.shape[0]
@@ -369,7 +372,9 @@ class DeepEval(DeepEvalBackend):
                 )  # this is kinda hacky
         return tuple(results)
 
-    def _get_output_shape(self, odef, nframes, natoms):
+    def _get_output_shape(
+        self, odef: OutputVariableDef, nframes: int, natoms: int
+    ) -> list[int]:
         if odef.category == OutputVariableCategory.DERV_C_REDU:
             # virial
             return [nframes, *odef.shape[:-1], 9]

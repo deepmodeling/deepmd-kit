@@ -16,6 +16,9 @@ from deepmd.dpmodel import (
     PRECISION_DICT,
     NativeOP,
 )
+from deepmd.dpmodel.array_api import (
+    Array,
+)
 from deepmd.dpmodel.common import (
     get_xp_precision,
     to_numpy_array,
@@ -109,7 +112,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        bias_atom_e: Optional[np.ndarray] = None,
+        bias_atom_e: Optional[Array] = None,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[list[bool]] = None,
@@ -219,7 +222,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         )
 
     @abstractmethod
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         pass
 
@@ -248,7 +251,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Get the name to each type of atoms."""
         return self.type_map
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this fitting net by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -256,7 +259,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.case_embd = np.eye(self.dim_case_embd, dtype=self.prec)[case_idx]
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -277,7 +280,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             )
         self.bias_atom_e = self.bias_atom_e[remap_index]
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         if key in ["bias_atom_e"]:
             self.bias_atom_e = value
         elif key in ["fparam_avg"]:
@@ -297,7 +300,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if key in ["bias_atom_e"]:
             return self.bias_atom_e
         elif key in ["fparam_avg"]:
@@ -376,14 +379,14 @@ class GeneralFitting(NativeOP, BaseFitting):
 
     def _call_common(
         self,
-        descriptor: np.ndarray,
-        atype: np.ndarray,
-        gr: Optional[np.ndarray] = None,
-        g2: Optional[np.ndarray] = None,
-        h2: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        descriptor: Array,
+        atype: Array,
+        gr: Optional[Array] = None,
+        g2: Optional[Array] = None,
+        h2: Optional[Array] = None,
+        fparam: Optional[Array] = None,
+        aparam: Optional[Array] = None,
+    ) -> dict[str, Array]:
         """Calculate the fitting.
 
         Parameters

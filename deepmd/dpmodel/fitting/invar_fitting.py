@@ -6,10 +6,11 @@ from typing import (
     Union,
 )
 
-import numpy as np
-
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
+)
+from deepmd.dpmodel.array_api import (
+    Array,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -127,7 +128,7 @@ class InvarFitting(GeneralFitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        bias_atom: Optional[np.ndarray] = None,
+        bias_atom: Optional[Array] = None,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[list[bool]] = None,
@@ -193,15 +194,15 @@ class InvarFitting(GeneralFitting):
         check_version_compatibility(data.pop("@version", 1), 4, 1)
         return super().deserialize(data)
 
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         return self.dim_out
 
-    def compute_output_stats(self, merged) -> NoReturn:
+    def compute_output_stats(self, merged: Any) -> NoReturn:
         """Update the output bias for fitting net."""
         raise NotImplementedError
 
-    def output_def(self):
+    def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
                 OutputVariableDef(
@@ -217,14 +218,14 @@ class InvarFitting(GeneralFitting):
     @cast_precision
     def call(
         self,
-        descriptor: np.ndarray,
-        atype: np.ndarray,
-        gr: Optional[np.ndarray] = None,
-        g2: Optional[np.ndarray] = None,
-        h2: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        descriptor: Array,
+        atype: Array,
+        gr: Optional[Array] = None,
+        g2: Optional[Array] = None,
+        h2: Optional[Array] = None,
+        fparam: Optional[Array] = None,
+        aparam: Optional[Array] = None,
+    ) -> dict[str, Array]:
         """Calculate the fitting.
 
         Parameters

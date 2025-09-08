@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Optional,
     Union,
 )
@@ -7,6 +8,9 @@ from typing import (
 import array_api_compat
 import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    Array,
+)
 from deepmd.dpmodel.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
@@ -51,7 +55,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self,
         models: list[BaseAtomicModel],
         type_map: list[str],
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
         super().init_out_stat()
@@ -111,7 +115,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return self.type_map
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -134,7 +138,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     def get_sel(self) -> list[int]:
         return [max([model.get_nsel() for model in self.models])]
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -150,7 +154,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
-    def _sort_rcuts_sels(self) -> tuple[list[float], list[int]]:
+    def _sort_rcuts_sels(self) -> tuple[tuple[Array, Array], list[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = sorted(
             zip(self.get_model_rcuts(), self.get_model_nsels()),
@@ -192,13 +196,13 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def forward_atomic(
         self,
-        extended_coord,
-        extended_atype,
-        nlist,
-        mapping: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        extended_coord: Array,
+        extended_atype: Array,
+        nlist: Array,
+        mapping: Optional[Array] = None,
+        fparam: Optional[Array] = None,
+        aparam: Optional[Array] = None,
+    ) -> dict[str, Array]:
         """Return atomic prediction.
 
         Parameters
@@ -262,7 +266,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return fit_ret
 
     @staticmethod
-    def remap_atype(ori_map: list[str], new_map: list[str]) -> np.ndarray:
+    def remap_atype(ori_map: list[str], new_map: list[str]) -> Array:
         """
         This method is used to map the atype from the common type_map to the original type_map of
         indivial AtomicModels.
@@ -325,10 +329,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def _compute_weight(
         self,
-        extended_coord: np.ndarray,
-        extended_atype: np.ndarray,
-        nlists_: list[np.ndarray],
-    ) -> list[np.ndarray]:
+        extended_coord: Array,
+        extended_atype: Array,
+        nlists_: list[Array],
+    ) -> list[Array]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlists_)
         nmodels = len(self.models)
@@ -398,7 +402,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         sw_rmax: float,
         type_map: list[str],
         smin_alpha: Optional[float] = 0.1,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         models = [dp_model, zbl_model]
         kwargs["models"] = models
@@ -424,7 +428,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         return dd
 
     @classmethod
-    def deserialize(cls, data) -> "DPZBLLinearEnergyAtomicModel":
+    def deserialize(cls, data: Any) -> "DPZBLLinearEnergyAtomicModel":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 2)
         models = [
@@ -436,7 +440,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         data.pop("type", None)
         return super().deserialize(data)
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -446,15 +450,15 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
 
     def _compute_weight(
         self,
-        extended_coord: np.ndarray,
-        extended_atype: np.ndarray,
-        nlists_: list[np.ndarray],
-    ) -> list[np.ndarray]:
+        extended_coord: Array,
+        extended_atype: Array,
+        nlists_: list[Array],
+    ) -> list[Array]:
         """ZBL weight.
 
         Returns
         -------
-        list[np.ndarray]
+        list[Array]
             the atomic ZBL weight for interpolation. (nframes, nloc, 1)
         """
         assert self.sw_rmax > self.sw_rmin, (

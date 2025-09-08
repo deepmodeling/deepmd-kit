@@ -1,6 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import numpy as np
+from typing import (
+    Any,
+)
 
+from deepmd.dpmodel.array_api import (
+    Array,
+)
+from deepmd.dpmodel.descriptor.base_descriptor import (
+    BaseDescriptor,
+)
+from deepmd.dpmodel.fitting.base_fitting import (
+    BaseFitting,
+)
 from deepmd.dpmodel.fitting.dipole_fitting import (
     DipoleFitting,
 )
@@ -11,7 +22,13 @@ from .dp_atomic_model import (
 
 
 class DPDipoleAtomicModel(DPAtomicModel):
-    def __init__(self, descriptor, fitting, type_map, **kwargs):
+    def __init__(
+        self,
+        descriptor: BaseDescriptor,
+        fitting: BaseFitting,
+        type_map: list[str],
+        **kwargs: Any,
+    ) -> None:
         if not isinstance(fitting, DipoleFitting):
             raise TypeError(
                 "fitting must be an instance of DipoleFitting for DPDipoleAtomicModel"
@@ -20,8 +37,8 @@ class DPDipoleAtomicModel(DPAtomicModel):
 
     def apply_out_stat(
         self,
-        ret: dict[str, np.ndarray],
-        atype: np.ndarray,
-    ):
+        ret: dict[str, Array],
+        atype: Array,
+    ) -> dict[str, Array]:
         # dipole not applying bias
         return ret

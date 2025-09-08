@@ -6,10 +6,12 @@ from typing import (
 )
 
 import array_api_compat
-import numpy as np
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
+)
+from deepmd.dpmodel.array_api import (
+    Array,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -151,7 +153,7 @@ class DipoleFitting(GeneralFitting):
             default_fparam=default_fparam,
         )
 
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         return self.embedding_width
 
@@ -171,7 +173,7 @@ class DipoleFitting(GeneralFitting):
         assert var_name == "dipole"
         return super().deserialize(data)
 
-    def output_def(self):
+    def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
                 OutputVariableDef(
@@ -187,14 +189,14 @@ class DipoleFitting(GeneralFitting):
     @cast_precision
     def call(
         self,
-        descriptor: np.ndarray,
-        atype: np.ndarray,
-        gr: Optional[np.ndarray] = None,
-        g2: Optional[np.ndarray] = None,
-        h2: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        descriptor: Array,
+        atype: Array,
+        gr: Optional[Array] = None,
+        g2: Optional[Array] = None,
+        h2: Optional[Array] = None,
+        fparam: Optional[Array] = None,
+        aparam: Optional[Array] = None,
+    ) -> dict[str, Array]:
         """Calculate the fitting.
 
         Parameters
