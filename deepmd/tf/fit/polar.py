@@ -687,6 +687,8 @@ class PolarFittingSeA(Fitting):
             "layer_name": None,
             "use_aparam_as_mask": False,
             "spin": None,
+            "r_differentiable": False,
+            "c_differentiable": False,
         }
         return data
 
