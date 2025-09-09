@@ -3,6 +3,7 @@
 #include "DeepPotPT.h"
 
 #include <torch/csrc/jit/runtime/jit_exception.h>
+#include <torch/csrc/autograd/profiler.h>
 
 #include <cstdint>
 
@@ -69,13 +70,9 @@ void DeepPotPT::init(const std::string& model,
   }
   deepmd::load_op_library();
   int gpu_num = torch::cuda::device_count();
-  if (gpu_num > 0) {
-    gpu_id = gpu_rank % gpu_num;
-  } else {
-    gpu_id = 0;
-  }
-  torch::Device device(torch::kCUDA, gpu_id);
+  gpu_id = (gpu_num > 0) ? (gpu_rank % gpu_num) : 0;
   gpu_enabled = torch::cuda::is_available();
+  torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
     std::cout << "load model from: " << model << " to cpu " << std::endl;
@@ -85,6 +82,37 @@ void DeepPotPT::init(const std::string& model,
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     std::cout << "load model from: " << model << " to gpu " << gpu_id
               << std::endl;
+  }
+
+  // Configure PyTorch profiler
+  const char* env_profiler = std::getenv("DP_PROFILER");
+  if (env_profiler && *env_profiler) {
+    using torch::profiler::impl::ActivityType;
+    using torch::profiler::impl::ProfilerConfig;
+    using torch::profiler::impl::ProfilerState;
+    using torch::profiler::impl::ExperimentalConfig;
+    std::set<ActivityType> activities{ActivityType::CPU};
+    if (gpu_enabled) activities.insert(ActivityType::CUDA);
+    profiler_file = std::string(env_profiler);
+    if (gpu_enabled) {
+      profiler_file += "_gpu" + std::to_string(gpu_id);
+    }
+    profiler_file += ".json";
+    ExperimentalConfig exp_cfg;
+    ProfilerConfig cfg(
+        ProfilerState::KINETO,
+        false,  // report_input_shapes,
+        false,  // profile_memory,
+        true,  // with_stack,
+        false,  // with_flops,
+        true,  // with_modules,
+        exp_cfg,
+        std::string()  // trace_id
+    );
+    torch::autograd::profiler::prepareProfiler(cfg, activities);
+    torch::autograd::profiler::enableProfiler(cfg, activities);
+    std::cout << "PyTorch profiler enabled, output file: " << profiler_file << std::endl;
+    profiler_enabled = true;
   }
   std::unordered_map<std::string, std::string> metadata = {{"type", ""}};
   module = torch::jit::load(model, device, metadata);
@@ -119,7 +147,14 @@ void DeepPotPT::init(const std::string& model,
   aparam_nall = module.run_method("is_aparam_nall").toBool();
   inited = true;
 }
-DeepPotPT::~DeepPotPT() {}
+
+DeepPotPT::~DeepPotPT() {
+  if (profiler_enabled) {
+    auto result = torch::autograd::profiler::disableProfiler();
+    if (result) result->save(profiler_file);
+    std::cout << "PyTorch profiler result saved to " << profiler_file << std::endl;
+  }
+}
 
 template <typename VALUETYPE, typename ENERGYVTYPE>
 void DeepPotPT::compute(ENERGYVTYPE& ener,
