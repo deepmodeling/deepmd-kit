@@ -2,8 +2,8 @@
 #ifdef BUILD_PYTORCH
 #include "DeepPotPT.h"
 
-#include <torch/csrc/jit/runtime/jit_exception.h>
 #include <torch/csrc/autograd/profiler.h>
+#include <torch/csrc/jit/runtime/jit_exception.h>
 
 #include <cstdint>
 
@@ -88,30 +88,32 @@ void DeepPotPT::init(const std::string& model,
   const char* env_profiler = std::getenv("DP_PROFILER");
   if (env_profiler && *env_profiler) {
     using torch::profiler::impl::ActivityType;
+    using torch::profiler::impl::ExperimentalConfig;
     using torch::profiler::impl::ProfilerConfig;
     using torch::profiler::impl::ProfilerState;
-    using torch::profiler::impl::ExperimentalConfig;
     std::set<ActivityType> activities{ActivityType::CPU};
-    if (gpu_enabled) activities.insert(ActivityType::CUDA);
+    if (gpu_enabled) {
+      activities.insert(ActivityType::CUDA);
+    }
     profiler_file = std::string(env_profiler);
     if (gpu_enabled) {
       profiler_file += "_gpu" + std::to_string(gpu_id);
     }
     profiler_file += ".json";
     ExperimentalConfig exp_cfg;
-    ProfilerConfig cfg(
-        ProfilerState::KINETO,
-        false,  // report_input_shapes,
-        false,  // profile_memory,
-        true,  // with_stack,
-        false,  // with_flops,
-        true,  // with_modules,
-        exp_cfg,
-        std::string()  // trace_id
+    ProfilerConfig cfg(ProfilerState::KINETO,
+                       false,  // report_input_shapes,
+                       false,  // profile_memory,
+                       true,   // with_stack,
+                       false,  // with_flops,
+                       true,   // with_modules,
+                       exp_cfg,
+                       std::string()  // trace_id
     );
     torch::autograd::profiler::prepareProfiler(cfg, activities);
     torch::autograd::profiler::enableProfiler(cfg, activities);
-    std::cout << "PyTorch profiler enabled, output file: " << profiler_file << std::endl;
+    std::cout << "PyTorch profiler enabled, output file: " << profiler_file
+              << std::endl;
     profiler_enabled = true;
   }
   std::unordered_map<std::string, std::string> metadata = {{"type", ""}};
@@ -151,8 +153,11 @@ void DeepPotPT::init(const std::string& model,
 DeepPotPT::~DeepPotPT() {
   if (profiler_enabled) {
     auto result = torch::autograd::profiler::disableProfiler();
-    if (result) result->save(profiler_file);
-    std::cout << "PyTorch profiler result saved to " << profiler_file << std::endl;
+    if (result) {
+      result->save(profiler_file);
+    }
+    std::cout << "PyTorch profiler result saved to " << profiler_file
+              << std::endl;
   }
 }
 
