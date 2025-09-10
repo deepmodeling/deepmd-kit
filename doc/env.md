@@ -89,4 +89,33 @@ These environment variables also apply to third-party programs using the C++ int
 
 List of customized OP plugin libraries to load, such as `/path/to/plugin1.so:/path/to/plugin2.so` on Linux and `/path/to/plugin1.dll;/path/to/plugin2.dll` on Windows.
 
+:::{envvar} DP_PROFILER
+
+Enable the built-in PyTorch Kineto profiler for the PyTorch C++ (inference) backend.
+
+**Type**: string (output file stem)
+**Default**: unset (disabled)
+
+When set to a non-empty value, profiling is enabled for the lifetime of the loaded PyTorch model (e.g. during LAMMPS runs). A JSON trace file is written on finish. The final file name is constructed as:
+
+- `<ENV_VALUE>_gpu<ID>.json` if running on GPU (multi-GPU safe: the CUDA device id is appended)
+- `<ENV_VALUE>.json` if running on CPU
+
+The trace is compatible with [Chrome trace viewer](https://ui.perfetto.dev/) (alternatively chrome://tracing) and PyTorch profiler tooling. It includes:
+
+- CPU operator activities (always)
+- CUDA activities (if GPU available)
+
+Example:
+
+```bash
+export DP_PROFILER=result
+mpirun -np 4 lmp -in in.lammps
+# Produces result_gpuX.json, where X is the GPU id used by each MPI rank.
+```
+
+Tips:
+
+- Large runs can generate sizable JSON files; consider limiting numbers of MD steps, like 20.
+- Currently this feature only supports single process, or multi-process runs where each process uses a distinct GPU on the same node.
 :::
