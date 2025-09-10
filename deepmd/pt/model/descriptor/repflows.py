@@ -217,6 +217,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
         use_loc_mapping: bool = True,
+        update_use_layernorm: bool = False,
         optim_update: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
@@ -283,6 +284,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.precision = precision
         self.epsilon = 1e-4
         self.seed = seed
+        self.update_use_layernorm = update_use_layernorm
 
         self.edge_embd = MLPLayer(
             1, self.e_dim, precision=precision, seed=child_seed(seed, 0)
@@ -319,6 +321,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                     use_dynamic_sel=self.use_dynamic_sel,
                     sel_reduce_factor=self.sel_reduce_factor,
                     smooth_edge_update=self.smooth_edge_update,
+                    update_use_layernorm=self.update_use_layernorm,
                     seed=child_seed(child_seed(seed, 1), ii),
                 )
             )

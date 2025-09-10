@@ -58,6 +58,7 @@ class RepFlowLayer(torch.nn.Module):
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
         smooth_edge_update: bool = False,
+        update_use_layernorm: bool = False,
         activation_function: str = "silu",
         update_style: str = "res_residual",
         update_residual: float = 0.1,
@@ -96,6 +97,7 @@ class RepFlowLayer(torch.nn.Module):
         self.update_style = update_style
         self.update_residual = update_residual
         self.update_residual_init = update_residual_init
+        self.update_use_layernorm = update_use_layernorm
         self.a_compress_e_rate = a_compress_e_rate
         self.a_compress_use_split = a_compress_use_split
         self.precision = precision
@@ -193,6 +195,17 @@ class RepFlowLayer(torch.nn.Module):
                     seed=child_seed(seed, 7),
                 )
             )
+
+        if self.update_use_layernorm:
+            self.node_layernorm = torch.nn.LayerNorm(self.n_dim)
+            self.edge_layernorm = torch.nn.LayerNorm(self.e_dim)
+            self.angle_layernorm = (
+                torch.nn.LayerNorm(self.a_dim) if self.update_angle else None
+            )
+        else:
+            self.node_layernorm = None
+            self.edge_layernorm = None
+            self.angle_layernorm = None
 
         if self.update_angle:
             self.angle_dim = self.a_dim
@@ -1117,6 +1130,14 @@ class RepFlowLayer(torch.nn.Module):
 
         # update angle_ebd
         a_updated = self.list_update(a_update_list, "angle")
+        if self.update_use_layernorm:
+            assert self.node_layernorm is not None
+            n_updated = self.node_layernorm(n_updated)
+            assert self.edge_layernorm is not None
+            e_updated = self.edge_layernorm(e_updated)
+            if self.update_angle:
+                assert self.angle_layernorm is not None
+                a_updated = self.angle_layernorm(a_updated)
         return n_updated, e_updated, a_updated
 
     @torch.jit.export

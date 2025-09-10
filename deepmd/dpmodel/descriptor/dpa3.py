@@ -177,6 +177,7 @@ class RepFlowArgs:
         use_exp_switch: bool = False,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
+        update_use_layernorm: bool = False,
     ) -> None:
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -207,6 +208,7 @@ class RepFlowArgs:
         self.use_exp_switch = use_exp_switch
         self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
+        self.update_use_layernorm = update_use_layernorm
 
     def __getitem__(self, key):
         if hasattr(self, key):

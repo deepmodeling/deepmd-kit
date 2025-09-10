@@ -1671,6 +1671,12 @@ def dpa3_repflow_args():
             default=10.0,
             doc=doc_sel_reduce_factor,
         ),
+        Argument(
+            "update_use_layernorm",
+            bool,
+            optional=True,
+            default=False,
+        ),
     ]
 
 
