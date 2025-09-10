@@ -1677,6 +1677,18 @@ def dpa3_repflow_args():
             optional=True,
             default=False,
         ),
+        Argument(
+            "use_gated_mlp",
+            bool,
+            optional=True,
+            default=False,
+        ),
+        Argument(
+            "gated_mlp_norm",
+            str,
+            optional=True,
+            default="none",
+        ),
     ]
 
 

@@ -275,6 +275,89 @@ class MLPLayer(nn.Module):
         return obj
 
 
+class GatedMLP(nn.Module):
+    """Gated MLP
+    similar model structure is used in CGCNN and M3GNet.
+    """
+
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        *,
+        activation_function: Optional[str] = None,
+        norm: str = "batch",
+        bias: bool = True,
+        precision: str = DEFAULT_PRECISION,
+        seed: Optional[Union[int, list[int]]] = None,
+    ) -> None:
+        """Initialize a gated MLP.
+
+        Args:
+            input_dim (int): the input dimension
+            output_dim (int): the output dimension
+            activation_function (str, optional): The name of the activation function to use in
+                the gated MLP. Must be one of "relu", "silu", "tanh", or "gelu".
+                Default = "silu"
+            norm (str, optional): The name of the normalization layer to use on the
+                updated atom features. Must be one of "batch", "layer", or None.
+                Default = "batch"
+            bias (bool): whether to use bias in each Linear layers.
+                Default = True
+        """
+        super().__init__()
+        self.mlp_core = MLPLayer(
+            input_dim,
+            output_dim,
+            bias=bias,
+            precision=precision,
+            seed=seed,
+        )
+        self.mlp_gate = MLPLayer(
+            input_dim,
+            output_dim,
+            bias=bias,
+            precision=precision,
+            seed=seed,
+        )
+        # for jit
+        self.matrix = self.mlp_core.matrix
+        self.bias = self.mlp_core.bias
+        self.act = ActivationFn(activation_function)
+        self.sigmoid = nn.Sigmoid()
+        self.norm1 = find_normalization(name=norm, dim=output_dim)
+        self.norm2 = find_normalization(name=norm, dim=output_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Performs a forward pass through the MLP.
+
+        Args:
+            x (Tensor): a tensor of shape (batch_size, input_dim)
+
+        Returns
+        -------
+        Tensor: a tensor of shape (batch_size, output_dim)
+        """
+        if self.norm1 is None:
+            core = self.act(self.mlp_core(x))
+            gate = self.sigmoid(self.mlp_gate(x))
+        else:
+            core = self.act(self.norm1(self.mlp_core(x)))
+            gate = self.sigmoid(self.norm2(self.mlp_gate(x)))
+        return core * gate
+
+
+def find_normalization(name: str, dim: int | None = None) -> nn.Module | None:
+    """Return an normalization function using name."""
+    if name is None:
+        return None
+    return {
+        "batch": nn.BatchNorm1d(dim),
+        "layer": nn.LayerNorm(dim),
+        "none": None,
+    }.get(name.lower(), None)
+
+
 MLP_ = make_multilayer_network(MLPLayer, nn.Module)
 
 

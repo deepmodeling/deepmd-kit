@@ -218,6 +218,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         sel_reduce_factor: float = 10.0,
         use_loc_mapping: bool = True,
         update_use_layernorm: bool = False,
+        use_gated_mlp: bool = False,
+        gated_mlp_norm: str = "none",
         optim_update: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
@@ -285,6 +287,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.epsilon = 1e-4
         self.seed = seed
         self.update_use_layernorm = update_use_layernorm
+        self.use_gated_mlp = use_gated_mlp
+        self.gated_mlp_norm = gated_mlp_norm
 
         self.edge_embd = MLPLayer(
             1, self.e_dim, precision=precision, seed=child_seed(seed, 0)
@@ -322,6 +326,8 @@ class DescrptBlockRepflows(DescriptorBlock):
                     sel_reduce_factor=self.sel_reduce_factor,
                     smooth_edge_update=self.smooth_edge_update,
                     update_use_layernorm=self.update_use_layernorm,
+                    use_gated_mlp=self.use_gated_mlp,
+                    gated_mlp_norm=self.gated_mlp_norm,
                     seed=child_seed(child_seed(seed, 1), ii),
                 )
             )
@@ -336,7 +342,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
         self.stats = None
-    
+
     additional_output_for_fitting: dict[str, Optional[torch.Tensor]]
 
     def get_rcut(self) -> float:
@@ -370,7 +376,7 @@ class DescrptBlockRepflows(DescriptorBlock):
     def get_dim_emb(self) -> int:
         """Returns the embedding dimension e_dim."""
         return self.e_dim
-    
+
     def get_additional_output_for_fitting(self):
         return self.additional_output_for_fitting
 
@@ -380,7 +386,6 @@ class DescrptBlockRepflows(DescriptorBlock):
             float(self.dynamic_e_sel if self.use_dynamic_sel else self.nnei),
             # float(self.dynamic_a_sel if self.use_dynamic_sel else self.a_sel),
         ]
-
 
     def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):

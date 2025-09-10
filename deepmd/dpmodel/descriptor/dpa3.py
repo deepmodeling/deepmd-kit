@@ -178,6 +178,8 @@ class RepFlowArgs:
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
         update_use_layernorm: bool = False,
+        use_gated_mlp: bool = False,
+        gated_mlp_norm: str = "none",
     ) -> None:
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -209,6 +211,8 @@ class RepFlowArgs:
         self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
         self.update_use_layernorm = update_use_layernorm
+        self.use_gated_mlp = use_gated_mlp
+        self.gated_mlp_norm = gated_mlp_norm
 
     def __getitem__(self, key):
         if hasattr(self, key):

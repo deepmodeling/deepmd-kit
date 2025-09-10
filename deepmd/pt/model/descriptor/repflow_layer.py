@@ -17,6 +17,7 @@ from deepmd.pt.model.descriptor.repformer_layer import (
     get_residual,
 )
 from deepmd.pt.model.network.mlp import (
+    GatedMLP,
     MLPLayer,
 )
 from deepmd.pt.model.network.utils import (
@@ -59,6 +60,8 @@ class RepFlowLayer(torch.nn.Module):
         sel_reduce_factor: float = 10.0,
         smooth_edge_update: bool = False,
         update_use_layernorm: bool = False,
+        use_gated_mlp: bool = False,
+        gated_mlp_norm: str = "none",
         activation_function: str = "silu",
         update_style: str = "res_residual",
         update_residual: float = 0.1,
@@ -98,6 +101,10 @@ class RepFlowLayer(torch.nn.Module):
         self.update_residual = update_residual
         self.update_residual_init = update_residual_init
         self.update_use_layernorm = update_use_layernorm
+        self.use_gated_mlp = use_gated_mlp
+        if self.use_gated_mlp:
+            assert not optim_update, "Gated MLP does not support optim update!"
+        self.gated_mlp_norm = gated_mlp_norm
         self.a_compress_e_rate = a_compress_e_rate
         self.a_compress_use_split = a_compress_use_split
         self.precision = precision
@@ -160,12 +167,22 @@ class RepFlowLayer(torch.nn.Module):
             )
 
         # node edge message
-        self.node_edge_linear = MLPLayer(
-            self.edge_info_dim,
-            self.n_multi_edge_message * n_dim,
-            precision=precision,
-            seed=child_seed(seed, 4),
-        )
+        if not self.use_gated_mlp:
+            self.node_edge_linear = MLPLayer(
+                self.edge_info_dim,
+                self.n_multi_edge_message * n_dim,
+                precision=precision,
+                seed=child_seed(seed, 4),
+            )
+        else:
+            self.node_edge_linear = GatedMLP(
+                self.edge_info_dim,
+                self.n_multi_edge_message * n_dim,
+                activation_function=self.activation_function,
+                norm=self.gated_mlp_norm,
+                precision=precision,
+                seed=child_seed(seed, 4),
+            )
         if self.update_style == "res_residual":
             for head_index in range(self.n_multi_edge_message):
                 self.n_residual.append(
@@ -245,12 +262,22 @@ class RepFlowLayer(torch.nn.Module):
                     self.a_compress_e_linear = None
 
             # edge angle message
-            self.edge_angle_linear1 = MLPLayer(
-                self.angle_dim,
-                self.e_dim,
-                precision=precision,
-                seed=child_seed(seed, 10),
-            )
+            if not self.use_gated_mlp:
+                self.edge_angle_linear1 = MLPLayer(
+                    self.angle_dim,
+                    self.e_dim,
+                    precision=precision,
+                    seed=child_seed(seed, 10),
+                )
+            else:
+                self.edge_angle_linear1 = GatedMLP(
+                    self.angle_dim,
+                    self.e_dim,
+                    activation_function=self.activation_function,
+                    norm=self.gated_mlp_norm,
+                    precision=precision,
+                    seed=child_seed(seed, 10),
+                )
             self.edge_angle_linear2 = MLPLayer(
                 self.e_dim,
                 self.e_dim,
