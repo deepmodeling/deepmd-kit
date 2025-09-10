@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
 from abc import (
     ABC,
     abstractmethod,
@@ -755,6 +756,7 @@ class StandardModel(Model):
             )
         except GraphWithoutTensorError:
             # For compatibility, create default out_bias if not found
+            logging.debug("out_bias not found in graph, falling back to default value")
             pass
 
         try:
@@ -763,6 +765,7 @@ class StandardModel(Model):
             )
         except GraphWithoutTensorError:
             # For compatibility, create default out_std if not found
+            logging.debug("out_std not found in graph, falling back to default value")
             pass
 
     def enable_mixed_precision(self, mixed_prec: dict) -> None:
