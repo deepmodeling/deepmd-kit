@@ -71,6 +71,8 @@ from deepmd.utils.version import (
     check_version_compatibility,
 )
 
+log = logging.getLogger(__name__)
+
 
 class Model(ABC, make_plugin_registry("model")):
     """Abstract base model.
@@ -756,8 +758,7 @@ class StandardModel(Model):
             )
         except GraphWithoutTensorError:
             # For compatibility, create default out_bias if not found
-            logging.debug("out_bias not found in graph, falling back to default value")
-            pass
+            log.debug("out_bias not found in graph, falling back to default value")
 
         try:
             self.out_std = get_tensor_by_name_from_graph(
@@ -765,8 +766,7 @@ class StandardModel(Model):
             )
         except GraphWithoutTensorError:
             # For compatibility, create default out_std if not found
-            logging.debug("out_std not found in graph, falling back to default value")
-            pass
+            log.debug("out_std not found in graph, falling back to default value")
 
     def enable_mixed_precision(self, mixed_prec: dict) -> None:
         """Enable mixed precision for the model.
