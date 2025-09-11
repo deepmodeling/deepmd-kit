@@ -102,13 +102,12 @@ void DeepPotPT::init(const std::string& model,
     profiler_file += ".json";
     ExperimentalConfig exp_cfg;
     ProfilerConfig cfg(ProfilerState::KINETO,
-                       false,  // report_input_shapes,
-                       false,  // profile_memory,
-                       true,   // with_stack,
-                       false,  // with_flops,
-                       true,   // with_modules,
-                       exp_cfg,
-                       std::string()  // trace_id
+                       false,  // report_input_shapes
+                       false,  // profile_memory
+                       true,   // with_stack
+                       false,  // with_flops
+                       true,   // with_modules
+                       exp_cfg
     );
     torch::autograd::profiler::prepareProfiler(cfg, activities);
     torch::autograd::profiler::enableProfiler(cfg, activities);
