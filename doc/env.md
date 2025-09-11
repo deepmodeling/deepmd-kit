@@ -91,7 +91,7 @@ List of customized OP plugin libraries to load, such as `/path/to/plugin1.so:/pa
 
 :::{envvar} DP_PROFILER
 
-Enable the built-in PyTorch Kineto profiler for the PyTorch C++ (inference) backend.
+{{ pytorch_icon }} Enable the built-in PyTorch Kineto profiler for the PyTorch C++ (inference) backend.
 
 **Type**: string (output file stem)
 **Default**: unset (disabled)
