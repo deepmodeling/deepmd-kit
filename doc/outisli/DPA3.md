@@ -323,20 +323,285 @@ DpLoaderSet (系统级 DataLoader 集合)
 3. **设备转移**: 数据移动到 GPU/CPU
 4. **输入分离**: 模型输入与标签分离
 
-### 2.4 DPAtomicModel 层次结构
+### 2.4 DeePMD-kit 模型架构完整层次结构
 
-DPAtomicModel 是 DeePMD-kit PyTorch 后端的核心原子模型基类，它继承自 BaseAtomicModel 并为各种物理性质的预测提供了统一的接口。
+#### 2.4.1 模型架构的设计理念
 
-#### 2.4.1 类继承层次
+DeePMD-kit 采用分层次、模块化的设计，从底层的原子级计算到顶层的完整模型，每一层都有明确的职责和功能分工。理解这个层次结构对于掌握 DeePMD-kit 的工作原理至关重要。
+
+#### 2.4.2 完整的模型层次结构
+
+##### 2.4.2.1 原子模型层次 (AtomicModel)
+
+**最基础的计算单元** - 负责原子级别的物理量计算：
 
 ```python
-# 基础层次结构
-BaseAtomicModel (base_atomic_model.py:52)
+# 抽象基类层
+ABC + PluginVariant + make_plugin_registry("atomic model")
     ↓
-DPAtomicModel (dp_atomic_model.py:34) - 注册为 "standard"
+BaseAtomicModel_ (由 make_base_atomic_model() 动态生成)
+    ↓  
+BaseAtomicModel (deepmd/dpmodel/atomic_model/base_atomic_model.py:42)
     ↓
-具体预测模型 (Energy, Dipole, Polar, DOS, Property)
+DPAtomicModel (deepmd/dpmodel/atomic_model/dp_atomic_model.py:29) - 注册为 "standard"
+    ↓
+具体的物理属性原子模型:
+├── DPEnergyAtomicModel (能量模型)
+├── DPDipoleAtomicModel (偶极子模型) 
+├── DPPolarAtomicModel (极化率模型)
+├── DPDOSAtomicModel (态密度模型)
+└── DPPropertyAtomicModel (通用属性模型)
 ```
+
+**作用和用途**:
+- **核心计算单元**: 包含描述器(Descriptor) + 拟合网络(Fitting)
+- **原子级预测**: 负责单个原子的能量/力等物理量预测
+- **不直接用于训练**: 作为组件被更高层模型调用
+- **物理计算核心**: 所有物理计算都在这里发生
+
+##### 2.4.2.2 完整模型层次 (Model)
+
+**真正用于训练和推理的完整模型**：
+
+```python
+# 抽象基类层
+ABC + PluginVariant + make_plugin_registry("model")
+    ↓
+BaseBaseModel (由 make_base_model() 动态生成)
+    ↓
+BaseModel (deepmd/dpmodel/model/base_model.py:175)
+    ↓
+DPModelCommon (提供公共方法如 update_sel 等)
+    ↓
+通过 make_model(T_AtomicModel) 动态生成的模型类
+    ↓
+具体的完整模型实现:
+├── EnergyModel (deepmd/pt/model/model/ener_model.py:30) - 注册为 "ener" 
+├── DipoleModel - 注册为 "dipole"
+├── PolarModel - 注册为 "polar" 
+├── DOSModel - 注册为 "dos"
+└── PropertyModel - 注册为 "property"
+```
+
+**作用和用途**:
+- **训练和推理接口**: `dp train input.json` 时创建的就是这个模型
+- **系统级功能**: 封装原子模型，添加邻居列表构建、坐标变换、批处理等
+- **梯度计算**: 自动计算力和应力
+- **输出格式转换**: 将原子级输出转换为标准格式
+
+##### 2.4.2.3 特殊模型层次 (LinearModel/ZBLModel)
+
+**线性组合和特殊模型**：
+
+```python
+BaseAtomicModel
+    ↓
+LinearEnergyAtomicModel (deepmd/dpmodel/atomic_model/linear_atomic_model.py:42) - 注册为 "linear"
+    ↓
+DPZBLLinearEnergyAtomicModel (线性组合DP和ZBL模型)
+    ↓
+通过 make_model(DPZBLLinearEnergyAtomicModel) 生成完整模型
+    ↓
+DPZBLModel (deepmd/dpmodel/model/dp_zbl_model.py:28) - 注册为 "zbl"
+```
+
+**作用和用途**:
+- **模型组合**: 线性组合多个原子模型
+- **物理修正**: DPZBLModel 结合深度势能和 ZBL 势函数
+- **特殊应用**: 处理短程排斥等特殊物理场景
+
+#### 2.4.3 模型创建和使用流程
+
+##### 2.4.3.1 训练时的模型创建流程
+
+```python
+# 1. 用户配置
+"model": {"type": "ener"}  # input.json 中
+
+# 2. 训练脚本执行
+dp train input.json
+  ↓
+# 3. 模型工厂创建 (deepmd/pt/entrypoints/main.py:248)
+model = get_model(model_params)  # 返回 EnergyModel 实例
+  ↓  
+# 4. EnergyModel 初始化流程
+# 4a. 创建 DPEnergyAtomicModel 实例（原子级计算核心）
+# 4b. 通过 make_model() 包装成完整模型（添加系统级功能）
+# 4c. 继承 DPModelCommon（添加公共方法）
+  ↓
+# 5. 训练循环中的调用
+loss = model.forward(coord, atype, box, ...)  # EnergyModel.forward()
+  ↓
+# 6. 内部调用链
+# forward() -> forward_common() -> forward_common_lower() -> forward_atomic()
+```
+
+##### 2.4.3.2 推理时的模型加载流程
+
+```python
+# 1. 模型加载
+model = torch.jit.load("frozen_model.pth")  # 实际是 EnergyModel 的实例
+  ↓
+# 2. 推理调用
+output = model(coord, atype, box)  # EnergyModel.forward()
+  ↓  
+# 3. 返回标准格式
+{"energy": ..., "force": ..., "virial": ...}
+```
+
+#### 2.4.4 设计模式和架构优势
+
+##### 2.4.4.1 核心设计模式
+
+**1. 工厂模式**
+- `make_base_atomic_model()`: 动态生成原子模型基类
+- `make_base_model()`: 动态生成最终模型基类  
+- `make_model(T_AtomicModel)`: 将原子模型包装成完整模型
+
+**2. 注册机制**
+- 使用 `@BaseAtomicModel.register()` 和 `@BaseModel.register()` 注册不同类型的模型
+- 支持通过字符串名称动态创建模型实例
+
+**3. 组合模式**
+- **DPAtomicModel**: 由描述器(Descriptor) + 拟合网络(Fitting) 组成
+- **LinearEnergyAtomicModel**: 线性组合多个原子模型
+- **DPZBLLinearEnergyAtomicModel**: 特殊的线性组合，结合DP模型和ZBL势函数
+
+**4. 多后端支持**
+每个后端(PyTorch/TensorFlow/JAX/Paddle)都有相应的实现，遵循相同的接口但针对特定框架优化。
+
+##### 2.4.4.2 架构优势
+
+**模块化**:
+- 描述器和拟合网络可以独立开发和组合
+- 不同物理量的预测可以共享相同的框架
+
+**可扩展性**: 
+- 容易添加新的物理属性或模型类型
+- 支持自定义描述器和拟合网络
+
+**多后端支持**: 
+- 同一套接口支持不同的深度学习框架
+- 代码复用和维护效率高
+
+**类型安全**: 
+- 通过注册机制确保模型类型的正确性
+- 编译时类型检查和运行时验证
+
+#### 2.4.7 模型压缩功能 (enable_compression)
+
+模型压缩是DeePMD-kit中一个重要的性能优化功能，通过表格化(tabulation)的方式来加速模型推理，特别适用于生产环境的部署。
+
+##### 2.4.7.1 压缩功能调用链
+
+**压缩入口点** (`deepmd/pt/entrypoints/compress.py:75`):
+```python
+model.enable_compression(
+    extrapolate,    # 外推尺度
+    stride,         # 步长1
+    stride * 10,    # 步长2
+)
+```
+
+**压缩方法层次**:
+```
+顶层模型压缩 (make_model.py:246-266)
+    ↓
+model.enable_compression()
+    ↓
+self.atomic_model.enable_compression(
+    self.get_min_nbor_dist(),  # 获取最小邻居距离
+    table_extrapolate,
+    table_stride_1,
+    table_stride_2, 
+    check_frequency,
+)
+    ↓
+原子模型和描述符的具体压缩实现
+```
+
+##### 2.4.7.2 压缩参数说明
+
+**关键参数**:
+- `table_extrapolate`: 模型外推的尺度参数，控制表格的外推范围
+- `table_stride_1`: 第一个表格的均匀步长，影响近程精度
+- `table_stride_2`: 第二个表格的均匀步长，影响远程精度
+- `check_frequency`: 溢出检查频率，用于数值稳定性监控
+- `get_min_nbor_dist()`: 动态获取训练数据中的最小邻居距离
+
+##### 2.4.7.3 压缩机制的实现原理
+
+**表格化加速**:
+1. **距离离散化**: 将连续的原子间距离离散化为表格索引
+2. **预计算存储**: 预先计算并存储常用距离范围内的描述符值
+3. **插值查表**: 推理时通过插值查表替代复杂的神经网络计算
+4. **内存换时间**: 牺牲一定内存空间换取显著的计算速度提升
+
+**多级表格策略**:
+- **近程高精度**: `table_stride_1` 控制近程的高精度表格
+- **远程适中精度**: `table_stride_2` 控制远程的适中精度表格
+- **平滑过渡**: 两个表格之间实现平滑过渡，避免不连续性
+
+##### 2.4.7.4 压缩的应用场景和优势
+
+**适用场景**:
+- **生产环境部署**: MD模拟中需要高频调用模型推理
+- **大规模系统**: 原子数量庞大，计算资源有限
+- **实时仿真**: 对推理速度有严格要求的应用
+
+**性能优势**:
+- **推理加速**: 可实现数倍到数十倍的推理速度提升
+- **内存可控**: 表格大小可通过步长参数灵活控制
+- **精度平衡**: 在速度和精度之间找到最优平衡点
+
+##### 2.4.7.5 压缩功能的使用建议
+
+**参数调优策略**:
+```python
+# 高精度场景 - 较小的步长，更高的精度
+model.enable_compression(
+    extrapolate=5.0,
+    stride_1=0.005,    # 更小的近程步长
+    stride_2=0.05,     # 更小的远程步长
+)
+
+# 高性能场景 - 较大的步长，更快的速度  
+model.enable_compression(
+    extrapolate=3.0,
+    stride_1=0.02,     # 较大的近程步长
+    stride_2=0.2,      # 较大的远程步长
+)
+```
+
+**最佳实践**:
+1. **测试验证**: 压缩后务必验证模型精度是否满足要求
+2. **参数调优**: 根据具体应用场景调整步长参数
+3. **内存监控**: 关注压缩后的内存使用情况
+4. **性能测试**: 定量测试压缩带来的性能提升效果
+
+#### 2.4.8 在实际使用中的角色分工
+
+**对用户而言**:
+- **只需关心最终模型**: EnergyModel、DipoleModel 等
+- **配置简单**: 通过 JSON 配置文件指定模型类型
+- **接口统一**: 所有模型都使用相同的训练和推理接口
+
+**对开发者而言**:
+- **清晰的层次**: 每一层都有明确的职责
+- **易于扩展**: 在正确的层级添加新功能
+- **代码复用**: 通过工厂模式避免重复代码
+
+#### 2.4.9 模型架构总结
+
+**对用户而言**:
+- **只需关心最终模型**: EnergyModel、DipoleModel 等
+- **配置简单**: 通过 JSON 配置文件指定模型类型
+- **接口统一**: 所有模型都使用相同的训练和推理接口
+
+**对开发者而言**:
+- **清晰的层次**: 每一层都有明确的职责
+- **易于扩展**: 在正确的层级添加新功能
+- **代码复用**: 通过工厂模式避免重复代码
 
 **核心基类定义** (`deepmd/pt/model/atomic_model/dp_atomic_model.py:34`):
 
@@ -355,6 +620,149 @@ class DPAtomicModel(BaseAtomicModel):
             Mapping atom type to the name (str) of the type.
     """
 ```
+
+#### 2.4.6 Forward 方法的多层次架构
+
+DeePMD-kit 中存在多个不同的 forward 方法，每个都有特定的用途和调用层级。理解这些 forward 方法的分工和调用关系对于理解模型的执行流程至关重要。
+
+##### 2.4.6.1 Forward 方法层级结构
+
+**1. 用户接口层** - `forward()`
+```python
+# deepmd/pt/model/model/ener_model.py:94
+def forward(self, coord, atype, box=None, fparam=None, aparam=None, do_atomic_virial=False)
+```
+**用途**: 
+- **最高级的用户接口**，训练和推理时直接调用的方法
+- 接收原始的坐标、原子类型、盒子信息
+- 返回标准的物理量格式 `{"energy": ..., "force": ..., "virial": ...}`
+
+**什么时候使用**:
+- 训练时的损失函数计算
+- 推理时的预测
+- LAMMPS等MD引擎调用的接口
+
+**2. 坐标处理层** - `forward_common()`
+```python
+# deepmd/pt/model/model/make_model.py:152
+def forward_common(self, coord, atype, box=None, fparam=None, aparam=None, do_atomic_virial=False)
+```
+**用途**:
+- **处理坐标变换和邻居列表构建**
+- 将原始坐标转换为扩展坐标(包含ghost原子)
+- 构建邻居列表
+- 调用底层的`forward_common_lower()`
+
+**内部工作流程**:
+```python
+# 1. 坐标标准化和扩展
+extended_coord, extended_atype, mapping = extend_coord_with_ghosts(...)
+# 2. 构建邻居列表  
+nlist = build_neighbor_list(...)
+# 3. 调用底层计算
+model_ret = self.forward_common_lower(extended_coord, extended_atype, nlist, ...)
+```
+
+**3. 底层计算层** - `forward_common_lower()`
+```python
+# deepmd/pt/model/model/make_model.py:278
+def forward_common_lower(self, extended_coord, extended_atype, nlist, mapping=None, ...)
+```
+**用途**:
+- **真正的模型计算逻辑**
+- 接收已处理好的扩展坐标和邻居列表
+- 调用原子模型进行实际计算
+- 处理输出的格式转换和reduction操作
+
+**4. 外部接口层** - `forward_lower()`
+```python  
+# deepmd/pt/model/model/ener_model.py:135
+def forward_lower(self, extended_coord, extended_atype, nlist, mapping=None, ...)
+```
+**用途**:
+- **提供给外部程序的底层接口** (如LAMMPS插件)
+- 外部程序已经准备好了邻居列表，不需要DeePMD重新构建
+- 直接调用`forward_common_lower()`
+- 返回扩展区域的结果(不做reduction)
+
+**5. 原子级计算层** - `forward_atomic()`
+```python
+# deepmd/pt/model/atomic_model/dp_atomic_model.py:273  
+def forward_atomic(self, extended_coord, extended_atype, nlist, mapping=None, ...)
+```
+**用途**:
+- **最底层的原子级计算**
+- 描述器(Descriptor)计算原子环境表示
+- 拟合网络(Fitting)预测原子能量/力等
+- 返回原子级的预测结果
+
+##### 2.4.6.2 Forward 方法调用关系链
+
+**训练/推理时的完整调用链:**
+```python
+# 用户调用
+model.forward(coord, atype, box)
+  ↓
+# 坐标处理 
+model.forward_common(coord, atype, box)
+  ↓  
+# 坐标扩展 + 邻居列表构建
+extended_coord, nlist = preprocess(...)
+  ↓
+# 底层计算
+model.forward_common_lower(extended_coord, extended_atype, nlist)
+  ↓
+# 原子模型计算  
+atomic_ret = self.atomic_model.forward_atomic(extended_coord, extended_atype, nlist)
+  ↓
+# 输出转换和reduction
+return transform_output(atomic_ret)
+```
+
+**LAMMPS等外部程序调用:**
+```python
+# 外部程序已经有邻居列表
+model.forward_lower(extended_coord, extended_atype, nlist, mapping)
+  ↓
+# 直接底层计算
+model.forward_common_lower(extended_coord, extended_atype, nlist, mapping)  
+  ↓
+# 原子模型计算
+atomic_ret = self.atomic_model.forward_atomic(...)
+```
+
+##### 2.4.6.3 设计多层次 Forward 的原因
+
+**1. 性能优化**
+- `forward_lower()`: 外部程序可以复用邻居列表，避免重复计算
+- `forward_common_lower()`: 批处理时可以直接使用预构建的数据
+
+**2. 接口灵活性** 
+- `forward()`: 简单易用的高级接口
+- `forward_lower()`: 高性能的底层接口
+
+**3. 代码复用**
+- `forward_common()`: 坐标处理逻辑可以被多种模型复用
+- `forward_atomic()`: 原子级计算与系统级处理分离
+
+**4. 调试和测试**
+- 可以单独测试每个层级的功能
+- 便于定位性能瓶颈
+
+##### 2.4.6.4 实际使用建议
+
+**对于普通用户**:
+- **只需关心 `forward()`**: 训练和推理的标准接口
+- **偶尔使用 `forward_lower()`**: 如果你要写MD插件或需要高性能推理
+
+**对于开发者**:
+- **`forward_common` 系列**: 理解内部实现和优化的关键
+- **`forward_atomic()`**: 自定义原子模型时需要实现的核心方法
+
+**性能优化场景**:
+- **外部邻居列表**: 使用 `forward_lower()` 避免重复计算
+- **批处理优化**: 直接调用 `forward_common_lower()` 处理预处理好的数据
+- **调试分析**: 单独调用 `forward_atomic()` 分析原子级计算
 
 #### 2.4.2 具体派生模型
 
