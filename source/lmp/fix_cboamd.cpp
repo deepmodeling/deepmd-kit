@@ -40,7 +40,6 @@ using namespace FixConst;
 
 FixCBOAMD::FixCBOAMD(LAMMPS* lmp, int narg, char** arg)
     : Fix(lmp, narg, arg),
-      model_potential(nullptr),
       model_dipole(nullptr),
       model_polar(nullptr),
       deepmd_dipole(nullptr),
@@ -207,9 +206,6 @@ FixCBOAMD::FixCBOAMD(LAMMPS* lmp, int narg, char** arg)
 FixCBOAMD::~FixCBOAMD() {
   cleanup_deepmd_models();
 
-  if (model_potential) {
-    delete[] model_potential;
-  }
   if (model_dipole) {
     delete[] model_dipole;
   }
@@ -487,7 +483,6 @@ void FixCBOAMD::init_deepmd_models() {
 
     if (comm->me == 0) {
       utils::logmesg(lmp, "DeepMD models initialized successfully:\n");
-      // utils::logmesg(lmp, "  Potential: {}\n", model_potential);
       utils::logmesg(lmp, "  Dipole: {}\n", model_dipole);
       if (model_polar) {
         utils::logmesg(lmp, "  Polarizability: {}\n", model_polar);

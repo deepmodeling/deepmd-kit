@@ -71,7 +71,6 @@ class FixCBOAMD : public Fix {
 
  private:
   // DeepMD model paths
-  char* model_potential;
   char* model_dipole;
   char* model_polar;
 
