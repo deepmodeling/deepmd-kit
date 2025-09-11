@@ -107,8 +107,7 @@ void DeepPotPT::init(const std::string& model,
                        true,   // with_stack
                        false,  // with_flops
                        true,   // with_modules
-                       exp_cfg
-    );
+                       exp_cfg);
     torch::autograd::profiler::prepareProfiler(cfg, activities);
     torch::autograd::profiler::enableProfiler(cfg, activities);
     std::cout << "PyTorch profiler enabled, output file: " << profiler_file
