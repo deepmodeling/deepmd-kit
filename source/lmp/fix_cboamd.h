@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
    https://www.lammps.org/, Sandia National Laboratories
@@ -45,7 +46,7 @@ namespace LAMMPS_NS {
 
 class FixCBOAMD : public Fix {
  public:
-  FixCBOAMD(class LAMMPS *, int, char **);
+  FixCBOAMD(class LAMMPS*, int, char**);
   ~FixCBOAMD() override;
   int setmask() override;
   void init() override;
@@ -56,37 +57,37 @@ class FixCBOAMD : public Fix {
   double compute_scalar() override;
   double compute_vector(int) override;
   double compute_array(int, int) override;
-  void write_restart(FILE *) override;
-  void restart(char *) override;
+  void write_restart(FILE*) override;
+  void restart(char*) override;
   void grow_arrays(int) override;
   void copy_arrays(int, int, int) override;
   void set_arrays(int) override;
-  int pack_exchange(int, double *) override;
-  int unpack_exchange(int, double *) override;
-  int pack_restart(int, double *) override;
+  int pack_exchange(int, double*) override;
+  int unpack_exchange(int, double*) override;
+  int pack_restart(int, double*) override;
   void unpack_restart(int, int) override;
   int size_restart(int) override;
   int maxsize_restart() override;
 
  private:
   // DeepMD model paths
-  char *model_potential;
-  char *model_dipole;
-  char *model_polar;
-  
+  char* model_potential;
+  char* model_dipole;
+  char* model_polar;
+
   // DeepMD model objects using C++ interface
-  deepmd_compat::DeepTensor *deepmd_dipole;
-  deepmd_compat::DeepTensor *deepmd_polar;
-  
+  deepmd_compat::DeepTensor* deepmd_dipole;
+  deepmd_compat::DeepTensor* deepmd_polar;
+
   // Type mapping for atoms
-  int *type_map;
+  int* type_map;
   int ntypes;
-  
+
   // Output arrays
-  double *dipole;
-  double *polarizability;
-  double *forces_deepmd;
-  
+  double* dipole;
+  double* polarizability;
+  double* forces_deepmd;
+
   // DeepMD computation arrays
   std::vector<double> coords_deepmd;
   std::vector<int> atom_types_deepmd;
@@ -105,22 +106,22 @@ class FixCBOAMD : public Fix {
   // Cavity Born-Oppenheimer parameters
   bool photons_enabled;
   int nphoton;
-  double *omega_photon;
-  double *lambda_photon;
-  double **lambda_vector;
-  
+  double* omega_photon;
+  double* lambda_photon;
+  double** lambda_vector;
+
   // Photon coordinates and momenta
   double *qa, *pa, *fa, *ea;
-  
+
   // Time step
   double dt;
-  
+
   // Current step
   int current_step;
-  
+
   // Output file
-  FILE *output_file;
-  
+  FILE* output_file;
+
   // Helper functions
   void init_deepmd_models();
   void cleanup_deepmd_models();
@@ -129,19 +130,21 @@ class FixCBOAMD : public Fix {
   void update_photon_coordinates();
   void compute_cboa_forces();
   void write_output();
-  
+
   // DeepMD computation helpers
   void convert_coordinates_to_deepmd_format();
-  
+
   // Unit conversion constants
   static constexpr double EV_TO_HARTREE = 0.0367493;
   static constexpr double ANGSTROM_TO_BOHR = 1.88973;
   static constexpr double EV_PER_ANGSTROM_TO_HARTREE_PER_BOHR = 0.0194467;
-  static constexpr double PS_TO_AU = 41.3413745758e3; // 1 fs = 41.3413745758 a.u. of time
-  static constexpr double HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM = 51.42208619083232; // 1 Hartree/Bohr = 51.42208619083232 eV/Angstrom
+  static constexpr double PS_TO_AU =
+      41.3413745758e3;  // 1 fs = 41.3413745758 a.u. of time
+  static constexpr double HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM =
+      51.42208619083232;  // 1 Hartree/Bohr = 51.42208619083232 eV/Angstrom
 };
 
-}
+}  // namespace LAMMPS_NS
 
 #endif
 #endif

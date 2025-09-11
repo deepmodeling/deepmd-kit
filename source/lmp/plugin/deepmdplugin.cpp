@@ -27,7 +27,7 @@ static Fix* fixdplr(LAMMPS* lmp, int narg, char** arg) {
   return new FixDPLR(lmp, narg, arg);
 }
 
-static Fix *fixcboamd(LAMMPS *lmp, int narg, char **arg) {
+static Fix* fixcboamd(LAMMPS* lmp, int narg, char** arg) {
   return new FixCBOAMD(lmp, narg, arg);
 }
 
@@ -75,7 +75,7 @@ extern "C" void lammpsplugin_init(void* lmp, void* handle, void* regfunc) {
   plugin.name = "cboamd";
   plugin.info = "fix cboamd " STR_GIT_SUMM;
   plugin.author = "DeePMD-kit";
-  plugin.creator.v2 = (lammpsplugin_factory2 *)&fixcboamd;
+  plugin.creator.v2 = (lammpsplugin_factory2*)&fixcboamd;
   (*register_plugin)(&plugin, lmp);
 
 #if LAMMPS_VERSION_NUMBER >= 20220328
