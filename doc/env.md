@@ -95,17 +95,18 @@ List of customized OP plugin libraries to load, such as `/path/to/plugin1.so:/pa
 {{ pytorch_icon }} Enable the built-in PyTorch Kineto profiler for the PyTorch C++ (inference) backend.
 
 **Type**: string (output file stem)
+
 **Default**: unset (disabled)
 
-When set to a non-empty value, profiling is enabled for the lifetime of the loaded PyTorch model (e.g. during LAMMPS runs). A JSON trace file is written on finish. The final file name is constructed as:
+When set to a non-empty value, profiling is enabled for the lifetime of the loaded PyTorch model (e.g. during LAMMPS runs). A JSON trace file is created on finish. The final file name is constructed as:
 
-- `<ENV_VALUE>_gpu<ID>.json` if running on GPU (multi-GPU safe: the CUDA device id is appended)
+- `<ENV_VALUE>_gpu<ID>.json` if running on GPU
 - `<ENV_VALUE>.json` if running on CPU
 
-The trace is compatible with [Chrome trace viewer](https://ui.perfetto.dev/) (alternatively chrome://tracing) and PyTorch profiler tooling. It includes:
+The trace can be examined with [Chrome trace viewer](https://ui.perfetto.dev/) (alternatively chrome://tracing). It includes:
 
-- CPU operator activities (always)
-- CUDA activities (if GPU available)
+- CPU operator activities
+- CUDA activities (if available)
 
 Example:
 
@@ -119,4 +120,5 @@ Tips:
 
 - Large runs can generate sizable JSON files; consider limiting numbers of MD steps, like 20.
 - Currently this feature only supports single process, or multi-process runs where each process uses a distinct GPU on the same node.
-  :::
+
+:::
