@@ -182,8 +182,7 @@ class DpLoaderSet(Dataset):
             system_batch_sampler = BatchSampler(
                 system,
                 shuffle=(
-                    (not (dist.is_available() and dist.is_initialized()))
-                    and shuffle
+                    (not (dist.is_available() and dist.is_initialized())) and shuffle
                 ),
                 batch_size=int(batch_size),
             )

@@ -23,9 +23,6 @@ from paddle.distributed.fleet.utils import hybrid_parallel_util as hpu
 from paddle.framework import (
     core,
 )
-from paddle.io import (
-    DataLoader,
-)
 
 from deepmd.common import (
     symlink_prefix_files,
@@ -58,7 +55,6 @@ from deepmd.pd.utils.env import (
     DEFAULT_PRECISION,
     DEVICE,
     JIT,
-    NUM_WORKERS,
     SAMPLER_RECORD,
     enable_prim,
 )
@@ -180,8 +176,12 @@ class Trainer:
                 # )
                 # _data_buffered = BufferedIterator(iter(_dataloader))
                 # return _dataloader, _data_buffered
-                
-                from itertools import chain, cycle
+
+                from itertools import (
+                    chain,
+                    cycle,
+                )
+
                 all_dataloaders = []
                 self.all_dlen = 0
                 for dataloader in _data.dataloaders:
@@ -192,7 +192,9 @@ class Trainer:
                     self.all_dlen += dlen
                     all_dataloaders.append(shard_dataloader)
                 _shard_dataloader = cycle(chain(*all_dataloaders))
-                _data_buffered = BufferedIterator(iter(_shard_dataloader),self.all_dlen)
+                _data_buffered = BufferedIterator(
+                    iter(_shard_dataloader), self.all_dlen
+                )
                 return _shard_dataloader, _data_buffered
 
             training_dataloader, training_data_buffered = get_dataloader_and_buffer(
