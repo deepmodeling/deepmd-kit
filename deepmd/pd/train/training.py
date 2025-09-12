@@ -147,6 +147,7 @@ class Trainer:
             "change_bias_after_training", False
         )
         self.lcurve_should_print_header = True
+        self.all_dlen = 0
 
         def get_opt_param(params):
             opt_type = params.get("opt_type", "Adam")
@@ -166,19 +167,33 @@ class Trainer:
                     log.warning(
                         "Sampler not specified!"
                     )  # None sampler will lead to a premature stop iteration. Replacement should be True in attribute of the sampler to produce expected number of items in one iteration.
-                _dataloader = DataLoader(
-                    _data,
-                    batch_sampler=paddle.io.BatchSampler(
-                        sampler=_sampler,
-                        drop_last=False,
-                    ),
-                    num_workers=NUM_WORKERS
-                    if dist.is_available()
-                    else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
-                    collate_fn=lambda batch: batch[0],  # prevent extra conversion
-                )
-                _data_buffered = BufferedIterator(iter(_dataloader))
-                return _dataloader, _data_buffered
+                # _dataloader = DataLoader(
+                #     _data,
+                #     batch_sampler=paddle.io.BatchSampler(
+                #         sampler=_sampler,
+                #         drop_last=False,
+                #     ),
+                #     num_workers=NUM_WORKERS
+                #     if dist.is_available()
+                #     else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
+                #     collate_fn=lambda batch: batch[0],  # prevent extra conversion
+                # )
+                # _data_buffered = BufferedIterator(iter(_dataloader))
+                # return _dataloader, _data_buffered
+                
+                from itertools import chain, cycle
+                all_dataloaders = []
+                self.all_dlen = 0
+                for dataloader in _data.dataloaders:
+                    shard_dataloader = paddle.distributed.shard_dataloader(
+                        dataloader, dist.get_mesh(), shard_dims="dp"
+                    )
+                    dlen = len(shard_dataloader)
+                    self.all_dlen += dlen
+                    all_dataloaders.append(shard_dataloader)
+                _shard_dataloader = cycle(chain(*all_dataloaders))
+                _data_buffered = BufferedIterator(iter(_shard_dataloader),self.all_dlen)
+                return _shard_dataloader, _data_buffered
 
             training_dataloader, training_data_buffered = get_dataloader_and_buffer(
                 _training_data, _training_params["training_data"]
@@ -1087,7 +1102,7 @@ class Trainer:
                 except StopIteration:
                     # Refresh the status of the dataloader to start from a new epoch
                     self.training_data = BufferedIterator(
-                        iter(self.training_dataloader)
+                        iter(self.training_dataloader), self.all_dlen
                     )
                     batch_data = next(iter(self.training_data))
             else:
@@ -1153,6 +1168,7 @@ class Trainer:
         if "fid" in batch_data:
             log_dict["fid"] = batch_data["fid"]
         log_dict["sid"] = batch_data["sid"]
+        log_dict["sid"] = 0
         return input_dict, label_dict, log_dict
 
     def print_header(self, fout, train_results, valid_results) -> None:

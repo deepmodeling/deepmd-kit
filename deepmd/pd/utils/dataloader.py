@@ -168,26 +168,26 @@ class DpLoaderSet(Dataset):
             self.batch_sizes = batch_size * np.ones(len(systems), dtype=int)
         assert len(self.systems) == len(self.batch_sizes)
         for system, batch_size in zip(self.systems, self.batch_sizes):
-            if dist.is_available() and dist.is_initialized():
-                system_batch_sampler = DistributedBatchSampler(
-                    system,
-                    shuffle=(
-                        (not (dist.is_available() and dist.is_initialized()))
-                        and shuffle
-                    ),
-                    batch_size=int(batch_size),
-                )
-                self.sampler_list.append(system_batch_sampler)
-            else:
-                system_batch_sampler = BatchSampler(
-                    system,
-                    shuffle=(
-                        (not (dist.is_available() and dist.is_initialized()))
-                        and shuffle
-                    ),
-                    batch_size=int(batch_size),
-                )
-                self.sampler_list.append(system_batch_sampler)
+            # if dist.is_available() and dist.is_initialized():
+            #     system_batch_sampler = DistributedBatchSampler(
+            #         system,
+            #         shuffle=(
+            #             (not (dist.is_available() and dist.is_initialized()))
+            #             and shuffle
+            #         ),
+            #         batch_size=int(batch_size),
+            #     )
+            #     self.sampler_list.append(system_batch_sampler)
+            # else:
+            system_batch_sampler = BatchSampler(
+                system,
+                shuffle=(
+                    (not (dist.is_available() and dist.is_initialized()))
+                    and shuffle
+                ),
+                batch_size=int(batch_size),
+            )
+            self.sampler_list.append(system_batch_sampler)
             system_dataloader = DataLoader(
                 dataset=system,
                 num_workers=0,  # Should be 0 to avoid too many threads forked
@@ -291,14 +291,15 @@ class BackgroundConsumer(Thread):
 
 
 class BufferedIterator:
-    def __init__(self, iterable) -> None:
+    def __init__(self, iterable, alldlen) -> None:
         self._queue = queue.Queue(QUEUESIZE)
         self._iterable = iterable
+        self._iterator = iter(iterable)
         self._consumer = None
 
         self.start_time = time.time()
         self.warning_time = None
-        self.total = len(iterable)
+        self.total = alldlen
 
     def _create_consumer(self) -> None:
         self._consumer = BackgroundConsumer(self._queue, self._iterable, self.total)
@@ -328,7 +329,6 @@ class BufferedIterator:
                         "number of workers (--num-workers) may help."
                     )
                     self.warning_time = time.time()
-
         # Get next example
         item = self._queue.get()
         if isinstance(item, Exception):
