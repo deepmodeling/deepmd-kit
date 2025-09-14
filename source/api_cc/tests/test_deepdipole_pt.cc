@@ -105,7 +105,7 @@ TYPED_TEST(TestInferDeepTensorPt, cpu_lmp_nlist) {
   int& natoms = this->natoms;
   int& output_dim = this->output_dim;
   deepmd::DeepTensor& dt = this->dt;
-  double ener_tol = 1e-10;
+  double ener_tol = 1e-6;
 
   float rc = dt.cutoff();
   int nloc = coord.size() / 3;
@@ -126,7 +126,7 @@ TYPED_TEST(TestInferDeepTensorPt, cpu_lmp_nlist) {
              atype_cpy, box, nall - nloc, inlist);
 
   EXPECT_EQ(global_tensor.size(), output_dim);
-  EXPECT_EQ(atom_tensor.size(), natoms * output_dim);
+  EXPECT_EQ(atom_tensor.size(), nall * output_dim);
 
   for (int ii = 0; ii < output_dim; ++ii) {
     EXPECT_LT(fabs(global_tensor[ii] - expected_global_tensor[ii]), ener_tol);

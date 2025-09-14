@@ -345,7 +345,10 @@ void DeepTensorPT::compute(std::vector<VALUETYPE>& global_tensor,
     throw deepmd::deepmd_exception(
         "Cannot find global tensor output in model results");
   }
-  torch::Tensor flat_global_ = global_dipole_.toTensor().view({-1});
+  // in Python, here used double; however, in TF C++, float is used
+  // for consistency, we use float
+  torch::Tensor flat_global_ =
+      global_dipole_.toTensor().view({-1}).to(floatType);
   torch::Tensor cpu_global_ = flat_global_.to(torch::kCPU);
   global_tensor.assign(cpu_global_.data_ptr<VALUETYPE>(),
                        cpu_global_.data_ptr<VALUETYPE>() + cpu_global_.numel());
