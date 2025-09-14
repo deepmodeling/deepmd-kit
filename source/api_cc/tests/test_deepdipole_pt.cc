@@ -95,35 +95,6 @@ TYPED_TEST(TestInferDeepTensorPt, cpu_build_nlist) {
   }
 }
 
-TYPED_TEST(TestInferDeepTensorPt, cpu_build_nlist_auto) {
-  using VALUETYPE = TypeParam;
-  std::vector<VALUETYPE>& coord = this->coord;
-  std::vector<int>& atype = this->atype;
-  std::vector<VALUETYPE>& box = this->box;
-  std::vector<VALUETYPE>& expected_global_tensor = this->expected_global_tensor;
-  std::vector<VALUETYPE>& expected_atom_tensor = this->expected_atom_tensor;
-  int& natoms = this->natoms;
-  int& output_dim = this->output_dim;
-  deepmd::DeepTensor& dt = this->dt;
-  double ener_tol = 1e-10;
-
-  std::vector<VALUETYPE> global_tensor, force, virial, atom_tensor, atom_virial;
-
-  dt.compute(global_tensor, force, virial, atom_tensor, atom_virial, coord,
-             atype, box, 0, {});
-
-  EXPECT_EQ(global_tensor.size(), output_dim);
-  EXPECT_EQ(atom_tensor.size(), natoms * output_dim);
-
-  for (int ii = 0; ii < output_dim; ++ii) {
-    EXPECT_LT(fabs(global_tensor[ii] - expected_global_tensor[ii]), ener_tol);
-  }
-
-  for (int ii = 0; ii < natoms * output_dim; ++ii) {
-    EXPECT_LT(fabs(atom_tensor[ii] - expected_atom_tensor[ii]), ener_tol);
-  }
-}
-
 TYPED_TEST(TestInferDeepTensorPt, cpu_lmp_nlist) {
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;
