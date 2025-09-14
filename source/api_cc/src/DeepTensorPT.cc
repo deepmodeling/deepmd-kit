@@ -367,13 +367,11 @@ void DeepTensorPT::compute(std::vector<VALUETYPE>& global_tensor,
                 cpu_virial_.data_ptr<VALUETYPE>() + cpu_virial_.numel());
 
   // bkw map for forces
-  // Force tensor has shape [nframes, natoms, coord, dipole_components] = [1, 6,
-  // 3, 3] We need to map it as [nframes, natoms, total_force_components]
-  int force_components_per_atom = dforce.size() / nall_real;
-  force.resize(static_cast<size_t>(nframes) * fwd_map.size() *
-               force_components_per_atom);
-  select_map<VALUETYPE>(force, dforce, bkw_map, force_components_per_atom,
-                        nframes, fwd_map.size(), nall_real);
+  force.resize(static_cast<size_t>(nframes) * odim * fwd_map.size() * 3);
+  for (int kk = 0; kk < odim; ++kk) {
+    select_map<VALUETYPE>(force.begin() + kk * fwd_map.size() * 3,
+                          dforce.begin() + kk * bkw_map.size() * 3, bkw_map, 3);
+  }
 
   // Extract atomic dipoles/polars if available
   if (outputs.contains("dipole")) {
@@ -415,14 +413,13 @@ void DeepTensorPT::compute(std::vector<VALUETYPE>& global_tensor,
     datom_virial.assign(
         cpu_atom_virial_.data_ptr<VALUETYPE>(),
         cpu_atom_virial_.data_ptr<VALUETYPE>() + cpu_atom_virial_.numel());
-    // extended_virial shape is [nframes, natoms, task_dim, 9] so total
-    // components is task_dim * 9
-    int total_virial_components = datom_virial.size() / nall_real;
-    atom_virial.resize(static_cast<size_t>(nframes) * fwd_map.size() *
-                       total_virial_components);
-    select_map<VALUETYPE>(atom_virial, datom_virial, bkw_map,
-                          total_virial_components, nframes, fwd_map.size(),
-                          nall_real);
+    atom_virial.resize(static_cast<size_t>(nframes) * odim * fwd_map.size() *
+                       9);
+    for (int kk = 0; kk < odim; ++kk) {
+      select_map<VALUETYPE>(atom_virial.begin() + kk * fwd_map.size() * 9,
+                            datom_virial.begin() + kk * bkw_map.size() * 9,
+                            bkw_map, 9);
+    }
   }
 }
 
