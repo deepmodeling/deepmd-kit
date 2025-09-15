@@ -247,23 +247,6 @@ class TensorModel(StandardModel):
 
         return model_dict
 
-    def _get_selected_atype(self, atype, natoms):
-        """Get atom types for selected atoms only (matching tensor model selection)."""
-        # For tensor models, the fitting output corresponds to selected atom types
-        # atype shape: [nframes, nloc]
-        # We need to extract atom types that match the natomsel count
-
-        # Simplified approach: take the first natomsel atoms from each frame
-        # This works because natoms and descriptor arrangement should be consistent
-        selected_types = self.get_sel_type()
-        natomsel = sum(natoms[2 + type_i] for type_i in selected_types)
-
-        # Take the first natomsel atoms from each frame
-        # This assumes the atom ordering is consistent with how fitting produces output
-        atype_selected = atype[:, :natomsel]  # [nframes, natomsel]
-
-        return atype_selected
-
     def init_variables(
         self,
         graph: tf.Graph,
