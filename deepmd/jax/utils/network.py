@@ -4,6 +4,8 @@ from typing import (
     ClassVar,
 )
 
+import numpy as np
+
 from deepmd.dpmodel.common import (
     NativeOP,
 )
@@ -26,16 +28,16 @@ from deepmd.jax.env import (
 
 
 class ArrayAPIParam(nnx.Param):
-    def __array__(self, *args, **kwargs):
+    def __array__(self, *args: Any, **kwargs: Any) -> np.ndarray:
         return self.value.__array__(*args, **kwargs)
 
-    def __array_namespace__(self, *args, **kwargs):
+    def __array_namespace__(self, *args: Any, **kwargs: Any) -> Any:
         return self.value.__array_namespace__(*args, **kwargs)
 
-    def __dlpack__(self, *args, **kwargs):
+    def __dlpack__(self, *args: Any, **kwargs: Any) -> Any:
         return self.value.__dlpack__(*args, **kwargs)
 
-    def __dlpack_device__(self, *args, **kwargs):
+    def __dlpack_device__(self, *args: Any, **kwargs: Any) -> Any:
         return self.value.__dlpack_device__(*args, **kwargs)
 
 
