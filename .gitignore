@@ -50,6 +50,8 @@ uv.lock
 buildcxx/
 node_modules/
 *.bib.original
+.claude
+*.hdf5
 
 # Coverage files
 .coverage
@@ -71,3 +73,7 @@ frozen_model.*
 
 # Test system directories
 system/
+
+# clangd
+compile_commands.json
+source/.cache

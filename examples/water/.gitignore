@@ -5,6 +5,7 @@ tab.xvg
 # for training dirs
 *.out
 *.pb
+*.hdf5
 out.json
 model.ckpt*
 checkpoint
