@@ -69,7 +69,7 @@ The loss section is provided as follows
     },
 ```
 
-so that the atomic dipole is trained as labels. Note that the NumPy compressed file `atomic_dipole.npy` should be provided in each dataset.
+so that the atomic dipole is trained as labels. Note that the NumPy compressed file `atomic_dipole.npy` should be provided in each dataset. For detailed instructions on how to create the `atomic_dipole.npy` file, see the [data preparation section](train-fitting-tensor.md#creating-atomic-dipole-data) in the tensor fitting documentation.
 
 The training and freezing can be started from the example directory by
 
