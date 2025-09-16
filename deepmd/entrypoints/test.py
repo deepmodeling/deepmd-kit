@@ -212,8 +212,12 @@ def test(
         elif isinstance(dp, DeepPolar):
             err = test_polar(dp, data, numb_test, detail_file, atomic=atomic)
         elif isinstance(dp, DeepGlobalPolar):  # should not appear in this new version
-            log.warning("Global polar model is not currently supported. Please directly use the polar mode and change loss parameters.")
-            err = test_polar(dp, data, numb_test, detail_file, atomic=False)  # YWolfeee: downward compatibility
+            log.warning(
+                "Global polar model is not currently supported. Please directly use the polar mode and change loss parameters."
+            )
+            err = test_polar(
+                dp, data, numb_test, detail_file, atomic=False
+            )  # YWolfeee: downward compatibility
         log.info("# ----------------------------------------------- ")
         err_coll.append(err)
 
@@ -273,7 +277,9 @@ def rmse(diff: np.ndarray) -> float:
     return np.sqrt(np.average(diff * diff))
 
 
-def save_txt_file(fname: Path, data: np.ndarray, header: str = "", append: bool = False) -> None:
+def save_txt_file(
+    fname: Path, data: np.ndarray, header: str = "", append: bool = False
+) -> None:
     """Save numpy array to test file.
 
     Parameters
@@ -428,9 +434,15 @@ def test_ener(
         if dp.get_ntypes_spin() != 0:  # old tf support for spin
             ntypes_real = dp.get_ntypes() - dp.get_ntypes_spin()
             nloc = natoms
-            nloc_real = sum([np.count_nonzero(atype == ii) for ii in range(ntypes_real)])
-            force_r = np.split(force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1)[0]
-            force_m = np.split(force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1)[1]
+            nloc_real = sum(
+                [np.count_nonzero(atype == ii) for ii in range(ntypes_real)]
+            )
+            force_r = np.split(
+                force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
+            )[0]
+            force_m = np.split(
+                force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
+            )[1]
             test_force_r = np.split(
                 test_data["force"][:numb_test],
                 indices_or_sections=[nloc_real * 3, nloc * 3],
@@ -447,7 +459,9 @@ def test_ener(
             # The shape of force_m and test_force_m are [-1, 3],
             # which is designed for mixed_type cases
             force_m = force_m.reshape(-1, 3)[mask_mag.reshape(-1)]
-            test_force_m = test_data["force_mag"][:numb_test].reshape(-1, 3)[mask_mag.reshape(-1)]
+            test_force_m = test_data["force_mag"][:numb_test].reshape(-1, 3)[
+                mask_mag.reshape(-1)
+            ]
 
     diff_e = energy - test_data["energy"][:numb_test].reshape([-1, 1])
     mae_e = mae(diff_e)
@@ -707,7 +721,9 @@ def test_dos(
         data.add("atom_dos", dp.numb_dos, atomic=True, must=False, high_prec=True)
 
     if dp.get_dim_fparam() > 0:
-        data.add("fparam", dp.get_dim_fparam(), atomic=False, must=True, high_prec=False)
+        data.add(
+            "fparam", dp.get_dim_fparam(), atomic=False, must=True, high_prec=False
+        )
     if dp.get_dim_aparam() > 0:
         data.add("aparam", dp.get_dim_aparam(), atomic=True, must=True, high_prec=False)
 
@@ -873,7 +889,9 @@ def test_property(
         )
 
     if dp.get_dim_fparam() > 0:
-        data.add("fparam", dp.get_dim_fparam(), atomic=False, must=True, high_prec=False)
+        data.add(
+            "fparam", dp.get_dim_fparam(), atomic=False, must=True, high_prec=False
+        )
     if dp.get_dim_aparam() > 0:
         data.add("aparam", dp.get_dim_aparam(), atomic=True, must=True, high_prec=False)
 
@@ -985,7 +1003,9 @@ def print_property_sys_avg(avg: dict[str, float]) -> None:
     log.info(f"PROPERTY RMSE           : {avg['rmse_property']:e} units")
 
 
-def run_test(dp: "DeepTensor", test_data: dict, numb_test: int, test_sys: DeepmdData) -> dict:
+def run_test(
+    dp: "DeepTensor", test_data: dict, numb_test: int, test_sys: DeepmdData
+) -> dict:
     """Run tests.
 
     Parameters
@@ -1042,7 +1062,9 @@ def test_wfc(
     tuple[list[np.ndarray], list[int]]
         arrays with results and their shapes
     """
-    data.add("wfc", 12, atomic=True, must=True, high_prec=False, type_sel=dp.get_sel_type())
+    data.add(
+        "wfc", 12, atomic=True, must=True, high_prec=False, type_sel=dp.get_sel_type()
+    )
     test_data = data.get_test()
     wfc, numb_test, _ = run_test(dp, test_data, numb_test, data)
     rmse_f = rmse(wfc - test_data["wfc"][:numb_test])
@@ -1131,7 +1153,9 @@ def test_polar(
         rmse_fa = rmse_f / sel_natoms
     else:
         sel_mask = np.isin(atype, sel_type)
-        polar = polar.reshape((polar.shape[0], -1, 9))[:, sel_mask, :].reshape((polar.shape[0], -1))
+        polar = polar.reshape((polar.shape[0], -1, 9))[:, sel_mask, :].reshape(
+            (polar.shape[0], -1)
+        )
         rmse_f = rmse(polar - test_data["atom_polarizability"][:numb_test])
 
     log.info(f"# number of test data : {numb_test:d} ")
@@ -1269,7 +1293,9 @@ def test_dipole(
         rmse_fa = rmse_f / sel_natoms
     else:
         sel_mask = np.isin(atype, sel_type)
-        dipole = dipole.reshape((dipole.shape[0], -1, 3))[:, sel_mask, :].reshape((dipole.shape[0], -1))
+        dipole = dipole.reshape((dipole.shape[0], -1, 3))[:, sel_mask, :].reshape(
+            (dipole.shape[0], -1)
+        )
         rmse_f = rmse(dipole - test_data["atom_dipole"][:numb_test])
 
     log.info(f"# number of test data : {numb_test:d}")
@@ -1293,13 +1319,21 @@ def test_dipole(
         else:
             pe = np.concatenate(
                 (
-                    np.reshape(test_data["atom_dipole"][:numb_test], [-1, 3 * sel_natoms]),
+                    np.reshape(
+                        test_data["atom_dipole"][:numb_test], [-1, 3 * sel_natoms]
+                    ),
                     np.reshape(dipole, [-1, 3 * sel_natoms]),
                 ),
                 axis=1,
             )
-            header_text = [f"{letter}{number}" for number in range(1, sel_natoms + 1) for letter in ["data_x", "data_y", "data_z"]] + [
-                f"{letter}{number}" for number in range(1, sel_natoms + 1) for letter in ["pred_x", "pred_y", "pred_z"]
+            header_text = [
+                f"{letter}{number}"
+                for number in range(1, sel_natoms + 1)
+                for letter in ["data_x", "data_y", "data_z"]
+            ] + [
+                f"{letter}{number}"
+                for number in range(1, sel_natoms + 1)
+                for letter in ["pred_x", "pred_y", "pred_z"]
             ]
             header_text = " ".join(header_text)
 
