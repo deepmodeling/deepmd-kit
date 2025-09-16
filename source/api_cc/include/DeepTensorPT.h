@@ -121,19 +121,6 @@ class DeepTensorPT : public DeepTensorBase {
    **/
   int output_dim() const {
     assert(inited);
-    if (odim == -1) {
-      // Check if model has get_task_dim method by trying to call it
-      try {
-        auto task_dim_result = module.run_method("get_task_dim");
-        odim = task_dim_result.toInt();
-      } catch (const std::exception&) {
-        throw deepmd::deepmd_exception(
-            "PyTorch tensor model does not implement get_task_dim() method. "
-            "Please re-freeze the model with DeePMD-kit v3.2 or above that "
-            "includes this "
-            "method.");
-      }
-    }
     return odim;
   };
   /**

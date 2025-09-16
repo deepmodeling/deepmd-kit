@@ -228,11 +228,8 @@ void DeepTensorPT::compute(std::vector<VALUETYPE>& global_tensor,
   } else if (outputs.contains("polar")) {
     atom_out = outputs.at("polar");
   } else {
-    // If no atomic tensor output, create zeros based on global tensor size
-    int task_dim = global_tensor.size();
-    atom_tensor.assign(static_cast<size_t>(natoms) * task_dim,
-                       static_cast<VALUETYPE>(0.0));
-    atom_out = torch::zeros({1, natoms, task_dim}, options);
+    throw deepmd::deepmd_exception(
+        "Cannot find atomic tensor output in model results");
   }
   torch::Tensor flat_atom_ = atom_out.toTensor().view({-1}).to(floatType);
   torch::Tensor cpu_atom_ = flat_atom_.to(torch::kCPU);
@@ -374,35 +371,29 @@ void DeepTensorPT::compute(std::vector<VALUETYPE>& global_tensor,
   }
 
   // Extract atomic dipoles/polars if available
+  c10::IValue atom_tensor_output;
+  int task_dim;
   if (outputs.contains("dipole")) {
-    c10::IValue atom_dipole_ = outputs.at("dipole");
-    torch::Tensor flat_atom_dipole_ =
-        atom_dipole_.toTensor().view({-1}).to(floatType);
-    torch::Tensor cpu_atom_dipole_ = flat_atom_dipole_.to(torch::kCPU);
-    std::vector<VALUETYPE> datom_tensor;
-    datom_tensor.assign(
-        cpu_atom_dipole_.data_ptr<VALUETYPE>(),
-        cpu_atom_dipole_.data_ptr<VALUETYPE>() + cpu_atom_dipole_.numel());
-    int task_dim = 3;  // dipole has 3 components
-    atom_tensor.resize(static_cast<size_t>(nframes) * fwd_map.size() *
-                       task_dim);
-    select_map<VALUETYPE>(atom_tensor, datom_tensor, bkw_map, task_dim, nframes,
-                          fwd_map.size(), nall_real);
+    atom_tensor_output = outputs.at("dipole");
+    task_dim = 3;  // dipole has 3 components
   } else if (outputs.contains("polar")) {
-    c10::IValue atom_polar_ = outputs.at("polar");
-    torch::Tensor flat_atom_polar_ =
-        atom_polar_.toTensor().view({-1}).to(floatType);
-    torch::Tensor cpu_atom_polar_ = flat_atom_polar_.to(torch::kCPU);
-    std::vector<VALUETYPE> datom_tensor;
-    datom_tensor.assign(
-        cpu_atom_polar_.data_ptr<VALUETYPE>(),
-        cpu_atom_polar_.data_ptr<VALUETYPE>() + cpu_atom_polar_.numel());
-    int task_dim = 9;  // polarizability has 9 components typically
-    atom_tensor.resize(static_cast<size_t>(nframes) * fwd_map.size() *
-                       task_dim);
-    select_map<VALUETYPE>(atom_tensor, datom_tensor, bkw_map, task_dim, nframes,
-                          fwd_map.size(), nall_real);
+    atom_tensor_output = outputs.at("polar");
+    task_dim = 9;  // polarizability has 9 components typically
+  } else {
+    throw deepmd::deepmd_exception(
+        "Cannot find atomic tensor output in model results");
   }
+
+  torch::Tensor flat_atom_tensor_ =
+      atom_tensor_output.toTensor().view({-1}).to(floatType);
+  torch::Tensor cpu_atom_tensor_ = flat_atom_tensor_.to(torch::kCPU);
+  std::vector<VALUETYPE> datom_tensor;
+  datom_tensor.assign(
+      cpu_atom_tensor_.data_ptr<VALUETYPE>(),
+      cpu_atom_tensor_.data_ptr<VALUETYPE>() + cpu_atom_tensor_.numel());
+  atom_tensor.resize(static_cast<size_t>(nframes) * fwd_map.size() * task_dim);
+  select_map<VALUETYPE>(atom_tensor, datom_tensor, bkw_map, task_dim, nframes,
+                        fwd_map.size(), nall_real);
 
   if (request_deriv) {
     c10::IValue atom_virial_ = outputs.at("extended_virial");
