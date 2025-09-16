@@ -212,12 +212,8 @@ def test(
         elif isinstance(dp, DeepPolar):
             err = test_polar(dp, data, numb_test, detail_file, atomic=atomic)
         elif isinstance(dp, DeepGlobalPolar):  # should not appear in this new version
-            log.warning(
-                "Global polar model is not currently supported. Please directly use the polar mode and change loss parameters."
-            )
-            err = test_polar(
-                dp, data, numb_test, detail_file, atomic=False
-            )  # YWolfeee: downward compatibility
+            log.warning("Global polar model is not currently supported. Please directly use the polar mode and change loss parameters.")
+            err = test_polar(dp, data, numb_test, detail_file, atomic=False)  # YWolfeee: downward compatibility
         log.info("# ----------------------------------------------- ")
         err_coll.append(err)
 
@@ -277,9 +273,7 @@ def rmse(diff: np.ndarray) -> float:
     return np.sqrt(np.average(diff * diff))
 
 
-def save_txt_file(
-    fname: Path, data: np.ndarray, header: str = "", append: bool = False
-) -> None:
+def save_txt_file(fname: Path, data: np.ndarray, header: str = "", append: bool = False) -> None:
     """Save numpy array to test file.
 
     Parameters
@@ -434,15 +428,9 @@ def test_ener(
         if dp.get_ntypes_spin() != 0:  # old tf support for spin
             ntypes_real = dp.get_ntypes() - dp.get_ntypes_spin()
             nloc = natoms
-            nloc_real = sum(
-                [np.count_nonzero(atype == ii) for ii in range(ntypes_real)]
-            )
-            force_r = np.split(
-                force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
-            )[0]
-            force_m = np.split(
-                force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
-            )[1]
+            nloc_real = sum([np.count_nonzero(atype == ii) for ii in range(ntypes_real)])
+            force_r = np.split(force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1)[0]
+            force_m = np.split(force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1)[1]
             test_force_r = np.split(
                 test_data["force"][:numb_test],
                 indices_or_sections=[nloc_real * 3, nloc * 3],
@@ -459,9 +447,7 @@ def test_ener(
             # The shape of force_m and test_force_m are [-1, 3],
             # which is designed for mixed_type cases
             force_m = force_m.reshape(-1, 3)[mask_mag.reshape(-1)]
-            test_force_m = test_data["force_mag"][:numb_test].reshape(-1, 3)[
-                mask_mag.reshape(-1)
-            ]
+            test_force_m = test_data["force_mag"][:numb_test].reshape(-1, 3)[mask_mag.reshape(-1)]
 
     diff_e = energy - test_data["energy"][:numb_test].reshape([-1, 1])
     mae_e = mae(diff_e)
@@ -511,18 +497,18 @@ def test_ener(
         dict_to_return["rmse_e"] = (rmse_e, energy.size)
         dict_to_return["rmse_ea"] = (rmse_ea, energy.size)
     if not out_put_spin and find_force == 1:
-        log.info(f"Force  MAE         : {mae_f:e} eV/A")
-        log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
+        log.info(f"Force  MAE         : {mae_f:e} eV/Å")
+        log.info(f"Force  RMSE        : {rmse_f:e} eV/Å")
         dict_to_return["mae_f"] = (mae_f, size_f)
         dict_to_return["rmse_f"] = (rmse_f, size_f)
         if find_atom_pref == 1:
-            log.info(f"Force weighted MAE : {mae_fw:e} eV/A")
-            log.info(f"Force weighted RMSE: {rmse_fw:e} eV/A")
+            log.info(f"Force weighted MAE : {mae_fw:e} eV/Å")
+            log.info(f"Force weighted RMSE: {rmse_fw:e} eV/Å")
             dict_to_return["mae_fw"] = (mae_fw, weight_sum)
             dict_to_return["rmse_fw"] = (rmse_fw, weight_sum)
     if out_put_spin and find_force == 1:
-        log.info(f"Force atom MAE      : {mae_fr:e} eV/A")
-        log.info(f"Force atom RMSE     : {rmse_fr:e} eV/A")
+        log.info(f"Force atom MAE      : {mae_fr:e} eV/Å")
+        log.info(f"Force atom RMSE     : {rmse_fr:e} eV/Å")
         dict_to_return["mae_fr"] = (mae_fr, force_r.size)
         dict_to_return["rmse_fr"] = (rmse_fr, force_r.size)
     if out_put_spin and find_force_mag == 1:
@@ -543,8 +529,8 @@ def test_ener(
         log.info(f"Atomic ener MAE    : {mae_ae:e} eV")
         log.info(f"Atomic ener RMSE   : {rmse_ae:e} eV")
     if dp.has_hessian:
-        log.info(f"Hessian MAE        : {mae_h:e} eV/A^2")
-        log.info(f"Hessian RMSE       : {rmse_h:e} eV/A^2")
+        log.info(f"Hessian MAE        : {mae_h:e} eV/Å^2")
+        log.info(f"Hessian RMSE       : {rmse_h:e} eV/Å^2")
         dict_to_return["mae_h"] = (mae_h, hessian.size)
         dict_to_return["rmse_h"] = (rmse_h, hessian.size)
 
@@ -663,15 +649,15 @@ def print_ener_sys_avg(avg: dict[str, float]) -> None:
     log.info(f"Energy MAE/Natoms  : {avg['mae_ea']:e} eV")
     log.info(f"Energy RMSE/Natoms : {avg['rmse_ea']:e} eV")
     if "rmse_f" in avg:
-        log.info(f"Force  MAE         : {avg['mae_f']:e} eV/A")
-        log.info(f"Force  RMSE        : {avg['rmse_f']:e} eV/A")
+        log.info(f"Force  MAE         : {avg['mae_f']:e} eV/Å")
+        log.info(f"Force  RMSE        : {avg['rmse_f']:e} eV/Å")
         if "rmse_fw" in avg:
-            log.info(f"Force weighted MAE : {avg['mae_fw']:e} eV/A")
-            log.info(f"Force weighted RMSE: {avg['rmse_fw']:e} eV/A")
+            log.info(f"Force weighted MAE : {avg['mae_fw']:e} eV/Å")
+            log.info(f"Force weighted RMSE: {avg['rmse_fw']:e} eV/Å")
     else:
-        log.info(f"Force atom MAE      : {avg['mae_fr']:e} eV/A")
+        log.info(f"Force atom MAE      : {avg['mae_fr']:e} eV/Å")
         log.info(f"Force spin MAE      : {avg['mae_fm']:e} eV/uB")
-        log.info(f"Force atom RMSE     : {avg['rmse_fr']:e} eV/A")
+        log.info(f"Force atom RMSE     : {avg['rmse_fr']:e} eV/Å")
         log.info(f"Force spin RMSE     : {avg['rmse_fm']:e} eV/uB")
     if "rmse_v" in avg:
         log.info(f"Virial MAE         : {avg['mae_v']:e} eV")
@@ -679,8 +665,8 @@ def print_ener_sys_avg(avg: dict[str, float]) -> None:
         log.info(f"Virial MAE/Natoms  : {avg['mae_va']:e} eV")
         log.info(f"Virial RMSE/Natoms : {avg['rmse_va']:e} eV")
     if "rmse_h" in avg:
-        log.info(f"Hessian MAE         : {avg['mae_h']:e} eV/A^2")
-        log.info(f"Hessian RMSE        : {avg['rmse_h']:e} eV/A^2")
+        log.info(f"Hessian MAE         : {avg['mae_h']:e} eV/Å^2")
+        log.info(f"Hessian RMSE        : {avg['rmse_h']:e} eV/Å^2")
 
 
 def test_dos(
@@ -721,9 +707,7 @@ def test_dos(
         data.add("atom_dos", dp.numb_dos, atomic=True, must=False, high_prec=True)
 
     if dp.get_dim_fparam() > 0:
-        data.add(
-            "fparam", dp.get_dim_fparam(), atomic=False, must=True, high_prec=False
-        )
+        data.add("fparam", dp.get_dim_fparam(), atomic=False, must=True, high_prec=False)
     if dp.get_dim_aparam() > 0:
         data.add("aparam", dp.get_dim_aparam(), atomic=True, must=True, high_prec=False)
 
@@ -889,9 +873,7 @@ def test_property(
         )
 
     if dp.get_dim_fparam() > 0:
-        data.add(
-            "fparam", dp.get_dim_fparam(), atomic=False, must=True, high_prec=False
-        )
+        data.add("fparam", dp.get_dim_fparam(), atomic=False, must=True, high_prec=False)
     if dp.get_dim_aparam() > 0:
         data.add("aparam", dp.get_dim_aparam(), atomic=True, must=True, high_prec=False)
 
@@ -1003,9 +985,7 @@ def print_property_sys_avg(avg: dict[str, float]) -> None:
     log.info(f"PROPERTY RMSE           : {avg['rmse_property']:e} units")
 
 
-def run_test(
-    dp: "DeepTensor", test_data: dict, numb_test: int, test_sys: DeepmdData
-) -> dict:
+def run_test(dp: "DeepTensor", test_data: dict, numb_test: int, test_sys: DeepmdData) -> dict:
     """Run tests.
 
     Parameters
@@ -1062,15 +1042,13 @@ def test_wfc(
     tuple[list[np.ndarray], list[int]]
         arrays with results and their shapes
     """
-    data.add(
-        "wfc", 12, atomic=True, must=True, high_prec=False, type_sel=dp.get_sel_type()
-    )
+    data.add("wfc", 12, atomic=True, must=True, high_prec=False, type_sel=dp.get_sel_type())
     test_data = data.get_test()
     wfc, numb_test, _ = run_test(dp, test_data, numb_test, data)
     rmse_f = rmse(wfc - test_data["wfc"][:numb_test])
 
     log.info("# number of test data : {numb_test:d} ")
-    log.info("WFC  RMSE : {rmse_f:e} eV/A")
+    log.info("WFC  RMSE : {rmse_f:e} eV/Å")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -1097,7 +1075,7 @@ def print_wfc_sys_avg(avg: dict) -> None:
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"WFC  RMSE : {avg['rmse']:e} eV/A")
+    log.info(f"WFC  RMSE : {avg['rmse']:e} eV/Å")
 
 
 def test_polar(
@@ -1153,9 +1131,7 @@ def test_polar(
         rmse_fa = rmse_f / sel_natoms
     else:
         sel_mask = np.isin(atype, sel_type)
-        polar = polar.reshape((polar.shape[0], -1, 9))[:, sel_mask, :].reshape(
-            (polar.shape[0], -1)
-        )
+        polar = polar.reshape((polar.shape[0], -1, 9))[:, sel_mask, :].reshape((polar.shape[0], -1))
         rmse_f = rmse(polar - test_data["atom_polarizability"][:numb_test])
 
     log.info(f"# number of test data : {numb_test:d} ")
@@ -1239,7 +1215,7 @@ def print_polar_sys_avg(avg: dict) -> None:
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Polarizability  RMSE : {avg['rmse']:e} eV/A")
+    log.info(f"Polarizability  RMSE : {avg['rmse']:e} eV/Å")
 
 
 def test_dipole(
@@ -1293,9 +1269,7 @@ def test_dipole(
         rmse_fa = rmse_f / sel_natoms
     else:
         sel_mask = np.isin(atype, sel_type)
-        dipole = dipole.reshape((dipole.shape[0], -1, 3))[:, sel_mask, :].reshape(
-            (dipole.shape[0], -1)
-        )
+        dipole = dipole.reshape((dipole.shape[0], -1, 3))[:, sel_mask, :].reshape((dipole.shape[0], -1))
         rmse_f = rmse(dipole - test_data["atom_dipole"][:numb_test])
 
     log.info(f"# number of test data : {numb_test:d}")
@@ -1319,21 +1293,13 @@ def test_dipole(
         else:
             pe = np.concatenate(
                 (
-                    np.reshape(
-                        test_data["atom_dipole"][:numb_test], [-1, 3 * sel_natoms]
-                    ),
+                    np.reshape(test_data["atom_dipole"][:numb_test], [-1, 3 * sel_natoms]),
                     np.reshape(dipole, [-1, 3 * sel_natoms]),
                 ),
                 axis=1,
             )
-            header_text = [
-                f"{letter}{number}"
-                for number in range(1, sel_natoms + 1)
-                for letter in ["data_x", "data_y", "data_z"]
-            ] + [
-                f"{letter}{number}"
-                for number in range(1, sel_natoms + 1)
-                for letter in ["pred_x", "pred_y", "pred_z"]
+            header_text = [f"{letter}{number}" for number in range(1, sel_natoms + 1) for letter in ["data_x", "data_y", "data_z"]] + [
+                f"{letter}{number}" for number in range(1, sel_natoms + 1) for letter in ["pred_x", "pred_y", "pred_z"]
             ]
             header_text = " ".join(header_text)
 
@@ -1353,4 +1319,4 @@ def print_dipole_sys_avg(avg: dict) -> None:
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Dipole  RMSE         : {avg['rmse']:e} eV/A")
+    log.info(f"Dipole  RMSE         : {avg['rmse']:e} eV/Å")
