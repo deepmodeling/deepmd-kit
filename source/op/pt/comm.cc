@@ -185,7 +185,6 @@ class Border : public torch::autograd::Function<Border> {
   static torch::autograd::variable_list backward_t(
       torch::autograd::AutogradContext* ctx,
       torch::autograd::variable_list grad_output) {
-
     torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
     torch::Tensor sendlist_tensor = saved_variables[0];
     torch::Tensor sendproc_tensor = saved_variables[1];
