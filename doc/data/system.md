@@ -22,18 +22,18 @@ The input frame properties contain the following property, the first axis of whi
 
 The labeled frame properties are listed as follows, all of which will be used for training if and only if the loss function contains such property:
 
-| ID                    | Property                                                                         | Raw file                  | Unit   | Shape                                 | Description                                                           |
-| --------------------- | -------------------------------------------------------------------------------- | ------------------------- | ------ | ------------------------------------- | --------------------------------------------------------------------- |
+| ID                    | Property                                                                         | Raw file                  | Unit   | Shape                                 | Description                               |
+| --------------------- | -------------------------------------------------------------------------------- | ------------------------- | ------ | ------------------------------------- | ----------------------------------------- |
 | energy                | Frame energies                                                                   | energy.raw                | eV     | Nframes                               |
 | force                 | Atomic forces                                                                    | force.raw                 | eV/Å   | Nframes \* Natoms \* 3                |
-| virial                | Frame virial                                                                     | virial.raw                | eV     | Nframes \* 9                          | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`                             |
-| hessian               | Frame energy Hessian matrices                                                    | hessian.raw               | eV/Å^2 | Nframes \* Natoms \* 3 \* Natoms \* 3 | full Hessian matrices                                                 |
+| virial                | Frame virial                                                                     | virial.raw                | eV     | Nframes \* 9                          | in the order `XX XY XZ YX YY YZ ZX ZY ZZ` |
+| hessian               | Frame energy Hessian matrices                                                    | hessian.raw               | eV/Å^2 | Nframes \* Natoms \* 3 \* Natoms \* 3 | full Hessian matrices                     |
 | atom_ener             | Atomic energies                                                                  | atom_ener.raw             | eV     | Nframes \* Natoms                     |
 | atom_pref             | Weights of atomic forces                                                         | atom_pref.raw             | 1      | Nframes \* Natoms                     |
 | dipole                | Frame dipole                                                                     | dipole.raw                | Any    | Nframes \* 3                          |
-| atomic_dipole         | Atomic dipole                                                                    | atomic_dipole.raw         | Any    | Nframes \* Natoms \* 3                | Vector from atom to its Wannier centroid or electronic density center |
-| polarizability        | Frame polarizability                                                             | polarizability.raw        | Any    | Nframes \* 9                          | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`                             |
-| atomic_polarizability | Atomic polarizability                                                            | atomic_polarizability.raw | Any    | Nframes \* Natoms \* 9                | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`                             |
+| atomic_dipole         | Atomic dipole                                                                    | atomic_dipole.raw         | Any    | Nframes \* Natoms \* 3                |
+| polarizability        | Frame polarizability                                                             | polarizability.raw        | Any    | Nframes \* 9                          | in the order `XX XY XZ YX YY YZ ZX ZY ZZ` |
+| atomic_polarizability | Atomic polarizability                                                            | atomic_polarizability.raw | Any    | Nframes \* Natoms \* 9                | in the order `XX XY XZ YX YY YZ ZX ZY ZZ` |
 | drdq                  | Partial derivative of atomic coordinates with respect to generalized coordinates | drdq.raw                  | 1      | Nframes \* Natoms \* 3 \* Ngen_coords |
 
 In general, we always use the following convention of units:
