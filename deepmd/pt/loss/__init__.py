@@ -8,6 +8,7 @@ from .dos import (
 from .ener import (
     EnergyHessianStdLoss,
     EnergyStdLoss,
+    EnergyStdLossMAD,
 )
 from .ener_spin import (
     EnergySpinLoss,
@@ -28,6 +29,7 @@ __all__ = [
     "EnergyHessianStdLoss",
     "EnergySpinLoss",
     "EnergyStdLoss",
+    "EnergyStdLossMAD",
     "PropertyLoss",
     "TaskLoss",
     "TensorLoss",

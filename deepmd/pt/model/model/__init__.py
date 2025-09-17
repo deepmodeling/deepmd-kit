@@ -83,9 +83,9 @@ def _get_standard_model_components(model_params, ntypes):
     # descriptor
     model_params["descriptor"]["ntypes"] = ntypes
     model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
-    descriptor = BaseDescriptor(**model_params["descriptor"])
+    descriptor = BaseDescriptor(**model_params["descriptor"]) # here is descriptor_dpa3 return node_ebd 等
     # fitting
-    fitting_net = model_params.get("fitting_net", {})
+    fitting_net = model_params.get("fitting_net", {}) # read it directly from config
     fitting_net["type"] = fitting_net.get("type", "ener")
     fitting_net["ntypes"] = descriptor.get_ntypes()
     fitting_net["type_map"] = copy.deepcopy(model_params["type_map"])
@@ -98,8 +98,8 @@ def _get_standard_model_components(model_params, ntypes):
         fitting_net["out_dim"] = descriptor.get_dim_emb()
         if "ener" in fitting_net["type"]:
             fitting_net["return_energy"] = True
-    fitting = BaseFitting(**fitting_net)
-    return descriptor, fitting, fitting_net["type"]
+    fitting = BaseFitting(**fitting_net) # here is fitting_dpa3
+    return descriptor, fitting, fitting_net["type"] # return the descriptor, fitting, fitting_net["type"]
 
 
 def get_spin_model(model_params):

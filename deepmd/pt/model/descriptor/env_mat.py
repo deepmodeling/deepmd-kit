@@ -29,7 +29,7 @@ def _make_env_mat(
     coord_pad = torch.concat([coord, coord[:, -1:, :] + rcut], dim=1)
     coord_r = torch.gather(coord_pad, 1, index)
     coord_r = coord_r.view(bsz, natoms, nnei, 3)
-    diff = coord_r - coord_l
+    diff = coord_r - coord_l # 相对位移
     length = torch.linalg.norm(diff, dim=-1, keepdim=True)
     # for index 0 nloc atom
     length = length + ~mask.unsqueeze(-1)
@@ -39,8 +39,8 @@ def _make_env_mat(
         compute_smooth_weight(length, ruct_smth, rcut)
         if not use_exp_switch
         else compute_exp_sw(length, ruct_smth, rcut)
-    )
-    weight = weight * mask.unsqueeze(-1)
+    ) # 权重计算
+    weight = weight * mask.unsqueeze(-1) # 权重应用
     if radial_only:
         env_mat = t0 * weight
     else:

@@ -31,6 +31,7 @@ from deepmd.pt.loss import (
     EnergyHessianStdLoss,
     EnergySpinLoss,
     EnergyStdLoss,
+    EnergyStdLossMAD, # new added
     PropertyLoss,
     TaskLoss,
     TensorLoss,
@@ -1178,7 +1179,12 @@ class Trainer:
             if valid_results:
                 prop_fmt = "   %11.2e %11.2e"
                 for k in train_keys:
-                    print_str += prop_fmt % (valid_results[k], train_results[k])
+                    if k in valid_results:  # 只打印验证结果中也存在的键
+                        print_str += prop_fmt % (valid_results[k], train_results[k])
+                    else:
+                        # 如果验证结果中没有该键，只打印训练结果
+                        prop_fmt_single = "   %11.2e %11s"
+                        print_str += prop_fmt_single % (train_results[k], "N/A")
             else:
                 prop_fmt = "   %11.2e"
                 for k in train_keys:
@@ -1241,6 +1247,9 @@ def get_loss(loss_params, start_lr, _ntypes, _model):
     elif loss_type == "ener":
         loss_params["starter_learning_rate"] = start_lr
         return EnergyStdLoss(**loss_params)
+    elif loss_type == "ener_mad":
+        loss_params["starter_learning_rate"] = start_lr
+        return EnergyStdLossMAD(**loss_params)
     elif loss_type == "dos":
         loss_params["starter_learning_rate"] = start_lr
         loss_params["numb_dos"] = _model.model_output_def()["dos"].output_size

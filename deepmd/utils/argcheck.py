@@ -1355,7 +1355,7 @@ def dpa2_repformer_args():
         ),
     ]
 
-
+# modified it here
 @descrpt_args_plugin.register("dpa3", doc=doc_only_pt_supported)
 def descrpt_dpa3_args():
     # repflow args
@@ -1376,6 +1376,8 @@ def descrpt_dpa3_args():
         "Whether to use local atom index mapping in training or non-parallel inference. "
         "When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation."
     )
+    doc_enable_mad = "Whether to enable MADGap computation. Set to True to compute MADGap values for regularization use."
+    doc_mad_cutoff_ratio = "The ratio to distinguish neighbor and remote nodes for MADGap calculation."
     return [
         # doc_repflow args
         Argument("repflow", dict, dpa3_repflow_args(), doc=doc_repflow),
@@ -1431,6 +1433,21 @@ def descrpt_dpa3_args():
             optional=True,
             default=True,
             doc=doc_use_loc_mapping,
+        ),
+        # MADGap计算参数
+        Argument(
+            "enable_mad",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_enable_mad,
+        ),
+        Argument(
+            "mad_cutoff_ratio", 
+            float,
+            optional=True,
+            default=0.5,
+            doc=doc_mad_cutoff_ratio,
         ),
     ]
 
@@ -2649,6 +2666,174 @@ def loss_ener():
             optional=True,
             default=0.01,
             doc=doc_huber_delta,
+        ),
+    ]
+
+
+@loss_args_plugin.register("ener_mad")
+def loss_ener_mad():
+    doc_start_pref_e = start_pref("energy", abbr="e")
+    doc_limit_pref_e = limit_pref("energy")
+    doc_start_pref_f = start_pref("force", abbr="f")
+    doc_limit_pref_f = limit_pref("force")
+    doc_start_pref_v = start_pref("virial", abbr="v")
+    doc_limit_pref_v = limit_pref("virial")
+    doc_start_pref_h = start_pref("hessian", abbr="h")  # prefactor of hessian
+    doc_limit_pref_h = limit_pref("hessian")
+    doc_start_pref_ae = start_pref("atomic energy", label="atom_ener", abbr="ae")
+    doc_limit_pref_ae = limit_pref("atomic energy")
+    doc_start_pref_pf = start_pref(
+        "atomic prefactor force", label="atom_pref", abbr="pf"
+    )
+    doc_limit_pref_pf = limit_pref("atomic prefactor force")
+    doc_start_pref_gf = start_pref("generalized force", label="drdq", abbr="gf")
+    doc_limit_pref_gf = limit_pref("generalized force")
+    doc_numb_generalized_coord = "The dimension of generalized coordinates. Required when generalized force loss is used."
+    doc_relative_f = "If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label."
+    doc_enable_atom_ener_coeff = "If true, the energy will be computed as \\sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
+    doc_use_huber = (
+        "Enables Huber loss calculation for energy/force/virial terms with user-defined threshold delta (D). "
+        "The loss function smoothly transitions between L2 and L1 loss: \n\n"
+        "- For absolute prediction errors within D: quadratic loss 0.5 * (error**2) \n\n"
+        "- For absolute errors exceeding D: linear loss D * (\\|error\\| - 0.5 * D) \n\n"
+        "Formula: loss = 0.5 * (error**2) if \\|error\\| <= D else D * (\\|error\\| - 0.5 * D). "
+    )
+    doc_huber_delta = "The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss."
+    doc_mad_reg_coeff = "The coefficient for MADGap regularization. Set to 0.0 to disable MADGap. MADGap is a regularization method that helps improve the representation learning by encouraging the model to distinguish between neighbor and remote atoms in the embedding space."
+    return [
+        Argument(
+            "start_pref_e",
+            [float, int],
+            optional=True,
+            default=0.02,
+            doc=doc_start_pref_e,
+        ),
+        Argument(
+            "limit_pref_e",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_limit_pref_e,
+        ),
+        Argument(
+            "start_pref_f",
+            [float, int],
+            optional=True,
+            default=1000,
+            doc=doc_start_pref_f,
+        ),
+        Argument(
+            "limit_pref_f",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_limit_pref_f,
+        ),
+        Argument(
+            "start_pref_v",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_start_pref_v,
+        ),
+        Argument(
+            "limit_pref_v",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_limit_pref_v,
+        ),
+        Argument(
+            "start_pref_h",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_start_pref_h,
+        ),
+        Argument(
+            "limit_pref_h",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_limit_pref_h,
+        ),
+        Argument(
+            "start_pref_ae",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_start_pref_ae,
+        ),
+        Argument(
+            "limit_pref_ae",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_limit_pref_ae,
+        ),
+        Argument(
+            "start_pref_pf",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_start_pref_pf,
+        ),
+        Argument(
+            "limit_pref_pf",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_limit_pref_pf,
+        ),
+        Argument("relative_f", [float, None], optional=True, doc=doc_relative_f),
+        Argument(
+            "enable_atom_ener_coeff",
+            [bool],
+            optional=True,
+            default=False,
+            doc=doc_enable_atom_ener_coeff,
+        ),
+        Argument(
+            "start_pref_gf",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_start_pref_gf,
+        ),
+        Argument(
+            "limit_pref_gf",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_limit_pref_gf,
+        ),
+        Argument(
+            "numb_generalized_coord",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_numb_generalized_coord,
+        ),
+        Argument(
+            "use_huber",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_huber,
+        ),
+        Argument(
+            "huber_delta",
+            float,
+            optional=True,
+            default=0.01,
+            doc=doc_huber_delta,
+        ),
+        Argument(
+            "mad_reg_coeff",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_mad_reg_coeff,
         ),
     ]
 

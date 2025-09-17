@@ -595,3 +595,155 @@ class EnergyHessianStdLoss(EnergyStdLoss):
                 )
             )
         return label_requirement
+
+# new added
+class EnergyStdLossMAD(EnergyStdLoss):
+    def __init__(
+        self,
+        starter_learning_rate=1.0,
+        start_pref_e=0.0,
+        limit_pref_e=0.0,
+        start_pref_f=0.0,
+        limit_pref_f=0.0,
+        start_pref_v=0.0,
+        limit_pref_v=0.0,
+        start_pref_ae: float = 0.0,
+        limit_pref_ae: float = 0.0,
+        start_pref_pf: float = 0.0,
+        limit_pref_pf: float = 0.0,
+        relative_f: Optional[float] = None,
+        enable_atom_ener_coeff: bool = False,
+        start_pref_gf: float = 0.0,
+        limit_pref_gf: float = 0.0,
+        numb_generalized_coord: int = 0,
+        use_l1_all: bool = False,
+        inference=False,
+        use_huber=False,
+        huber_delta=0.01,
+        mad_reg_coeff: float = 0.0, # new added
+        **kwargs,
+    ) -> None:
+        r"""Construct a layer to compute loss on energy, force and virial with MAD regularization.
+
+        Parameters
+        ----------
+        mad_reg_coeff : float
+            The coefficient for MAD (Mean Average Distance) regularization. Set to 0.0 to disable MAD regularization.
+        **kwargs
+            Other keyword arguments passed to EnergyStdLoss.
+        """
+        super().__init__(
+            starter_learning_rate=starter_learning_rate,
+            start_pref_e=start_pref_e,
+            limit_pref_e=limit_pref_e,
+            start_pref_f=start_pref_f,
+            limit_pref_f=limit_pref_f,
+            start_pref_v=start_pref_v,
+            limit_pref_v=limit_pref_v,
+            start_pref_ae=start_pref_ae,
+            limit_pref_ae=limit_pref_ae,
+            start_pref_pf=start_pref_pf,
+            limit_pref_pf=limit_pref_pf,
+            relative_f=relative_f,
+            enable_atom_ener_coeff=enable_atom_ener_coeff,
+            start_pref_gf=start_pref_gf,
+            limit_pref_gf=limit_pref_gf,
+            numb_generalized_coord=numb_generalized_coord,
+            use_l1_all=use_l1_all,
+            inference=inference,
+            use_huber=use_huber,
+            huber_delta=huber_delta,
+            **kwargs,
+        )
+        self.mad_reg_coeff = mad_reg_coeff
+
+    def forward(self, input_dict, model, label, natoms, learning_rate, mae=False):
+        """Return loss on energy and force with MAD regularization.
+
+        Parameters
+        ----------
+        input_dict : dict[str, torch.Tensor]
+            Model inputs.
+        model : torch.nn.Module
+            Model to be used to output the predictions.
+        label : dict[str, torch.Tensor]
+            Labels.
+        natoms : int
+            The local atom number.
+
+        Returns
+        -------
+        model_pred: dict[str, torch.Tensor]
+            Model predictions.
+        loss: torch.Tensor
+            Loss for model to minimize.
+        more_loss: dict[str, torch.Tensor]
+            Other losses for display.
+        """
+        # 调用父类方法获取基础损失
+        model_pred, loss, more_loss = super().forward(
+            input_dict, model, label, natoms, learning_rate, mae=mae
+        )
+        # 获取基础损失后，添加MAD正则化
+        # 添加MAD正则化项
+        if self.mad_reg_coeff > 0:
+            descriptor = None
+            descriptor = model.get_descriptor()
+            mad_value = descriptor.last_mad_gap  # 虽然变量名还是mad_gap，但现在存储的是MAD值
+            #print("MAD value in loss:", mad_value.item() if mad_value is not None else "None")
+            
+            # 设置目标MAD值 - 余弦距离为1表示正交，是比较理想的状态
+            target_mad = 1.0
+            
+            # 方案1: 目标MAD正则化（推荐）- 鼓励MAD接近目标值
+            mad_reg_loss = self.mad_reg_coeff * torch.abs(mad_value - target_mad)
+            
+            # 方案2: 防止over-smoothing - 只惩罚过小的MAD（可选）
+            # min_mad = 0.5
+            # mad_reg_loss = self.mad_reg_coeff * torch.relu(min_mad - mad_value)
+            
+            loss += mad_reg_loss
+            
+            # 总是添加MAD相关的损失信息（训练和验证时都需要）
+            more_loss["mad_reg_loss"] = self.display_if_exist(
+                mad_reg_loss.detach(), 1.0
+            )
+            more_loss["mad_value"] = self.display_if_exist(
+                mad_value.detach(), 1.0
+            )
+        
+        return model_pred, loss, more_loss
+
+    def serialize(self) -> dict:
+        """Serialize the loss module.
+
+        Returns
+        -------
+        dict
+            The serialized loss module
+        """
+        data = super().serialize()
+        data.update({
+            "@class": "EnergyLossMAD",
+            "mad_reg_coeff": self.mad_reg_coeff,
+        })
+        return data
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "TaskLoss":
+        """Deserialize the loss module.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized loss module
+
+        Returns
+        -------
+        Loss
+            The deserialized loss module
+        """
+        data = data.copy()
+        check_version_compatibility(data.pop("@version"), 2, 1)
+        data.pop("@class")
+        return cls(**data)

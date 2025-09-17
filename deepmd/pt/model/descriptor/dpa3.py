@@ -94,6 +94,10 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.
     type_map : list[str], Optional
         A list of strings. Give the name to each type of atoms.
+    enable_mad : bool, Optional
+        Whether to enable MAD (Mean Average Distance) computation. Set to True to compute MAD values for regularization use.
+    mad_cutoff_ratio : float, Optional
+        The ratio to distinguish neighbor and remote nodes for MAD calculation. (Reserved for future extensions)
 
     References
     ----------
@@ -119,6 +123,8 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         use_tebd_bias: bool = False,
         use_loc_mapping: bool = True,
         type_map: Optional[list[str]] = None,
+        enable_mad: bool = False, # new added
+        mad_cutoff_ratio: float = 0.5, # new added (保留以便后续扩展)
     ) -> None:
         super().__init__()
 
@@ -134,7 +140,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
 
         self.repflow_args = init_subclass_params(repflow, RepFlowArgs)
         self.activation_function = activation_function
-
+# here defined the repflows
         self.repflows = DescrptBlockRepflows(
             self.repflow_args.e_rcut,
             self.repflow_args.e_rcut_smth,
@@ -210,6 +216,12 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         for param in self.parameters():
             param.requires_grad = trainable
         self.compress = False
+
+        # MAD相关参数存储
+        self.enable_mad = enable_mad
+        self.mad_cutoff_ratio = mad_cutoff_ratio
+        # 存储MAD值供损失函数使用 (变量名保持last_mad_gap以兼容损失函数)
+        self.last_mad_gap = None
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -392,6 +404,8 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             "use_loc_mapping": self.use_loc_mapping,
             "type_map": self.type_map,
             "type_embedding": self.type_embedding.embedding.serialize(),
+            "enable_mad": self.enable_mad, # new added
+            "mad_cutoff_ratio": self.mad_cutoff_ratio,
         }
         repflow_variable = {
             "edge_embd": repflows.edge_embd.serialize(),
@@ -492,8 +506,8 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         if not parallel_mode and self.use_loc_mapping:
             node_ebd_ext = self.type_embedding(extended_atype[:, :nloc])
         else:
-            node_ebd_ext = self.type_embedding(extended_atype)
-        node_ebd_inp = node_ebd_ext[:, :nloc, :]
+            node_ebd_ext = self.type_embedding(extended_atype) # 节点嵌入表征   [nf, nall, tebd_dim] 
+        node_ebd_inp = node_ebd_ext[:, :nloc, :] # 初始类型嵌入 [nframes, nloc, n_dim] (n_dim=128)
         # repflows
         node_ebd, edge_ebd, h2, rot_mat, sw = self.repflows(
             nlist,
@@ -503,15 +517,66 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             mapping,
             comm_dict=comm_dict,
         )
-        if self.concat_output_tebd:
-            node_ebd = torch.cat([node_ebd, node_ebd_inp], dim=-1)
+        if self.concat_output_tebd: # 控制是否在输出时拼接初始类型嵌入
+            node_ebd = torch.cat([node_ebd, node_ebd_inp], dim=-1) # 保留原始信息：确保初始的原子类型信息不会在多层RepFlow处理中完全丢失
+        # 同时提供原始类型特征和经过环境学习的特征，这是一种残差连接的思想，类似于ResNet中跳跃连接，防止深层网络丢失重要的基础信息。
+
+        # MAD计算（在启用时总是计算，不仅仅是训练时）
+        if self.enable_mad:
+            #print("Computing MAD for node_ebd shape:", node_ebd.shape)
+            self.last_mad_gap = self._compute_mad(node_ebd)
+            #print("MAD value:", self.last_mad_gap.item())
+        else:
+            self.last_mad_gap = None
         return (
-            node_ebd.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            rot_mat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            edge_ebd.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            h2.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            node_ebd.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION), # # 1. 节点嵌入表征 [nframes, nloc, n_dim] (n_dim=128)
+            rot_mat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION), # 2. 旋转等变矩阵 [nframes, nloc, e_dim, 3] (e_dim=128)
+            edge_ebd.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),  # 3. 边嵌入表征 [nframes, nloc, nnei, e_dim] (e_dim=128)
+            h2.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),  # 4. 方向向量 [nframes, nloc, nnei, 3] (3=xyz)
+            sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),  # 5. 平滑开关函数 [nframes, nloc, nnei]
         )
+
+    # 2. 添加简化的 _compute_mad 方法
+    def _compute_mad(self, node_ebd: torch.Tensor) -> torch.Tensor:
+        """计算基础MAD (Mean Average Distance) 用于正则化
+        
+        MAD使用余弦距离衡量节点嵌入表征之间的平均距离:
+        余弦距离 = 1 - 余弦相似度 = 1 - (Hi · Hj) / (|Hi| · |Hj|)
+        
+        Parameters
+        ---------- 
+        node_ebd : torch.Tensor
+            节点嵌入表征，形状 [nframes, nloc, embed_dim]
+            
+        Returns
+        -------
+        torch.Tensor
+            所有节点对之间的平均余弦距离
+        """
+        import torch.nn.functional as F
+        nframes, nloc, embed_dim = node_ebd.shape
+        device = node_ebd.device
+        if nloc <= 1:
+            return torch.tensor(0.0, device=node_ebd.device)
+        node_ebd_norm = F.normalize(node_ebd, p=2, dim=-1)  # [nf, nloc, embed_dim]
+        
+        # 计算余弦相似度矩阵
+        cosine_sim = torch.bmm(node_ebd_norm, node_ebd_norm.transpose(-1, -2))
+        
+        # 余弦距离 = 1 - 余弦相似度
+        cosine_dist = 1.0 - cosine_sim
+        # 不相似 --> cosin_sim --> 0
+        # Global MAD
+        #global_mad = cosine_dist.mean()        
+        # 排除对角线（自己与自己的距离为0）
+        #eye_mask = torch.eye(nloc, dtype=torch.bool, device=device).unsqueeze(0).expand(nframes, -1, -1)
+        #valid_mask = ~eye_mask
+        
+        # 计算所有有效节点对的平均距离
+        #valid_distances = cosine_dist[valid_mask]
+        mad_global = cosine_dist.sum() / (nframes * nloc * (nloc - 1))
+        
+        return mad_global
 
     @classmethod
     def update_sel(
