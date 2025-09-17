@@ -379,6 +379,7 @@ ignore = [
     "ANN401", # Allow Any due to too many violations
     "E501", # line too long
     "F841", # local variable is assigned to but never used
+    "RUF059", # unused-unpacked-variable
     "E741", # ambiguous variable name
     "E402", # module level import not at top of file
     "D100", # TODO: missing docstring in public module
