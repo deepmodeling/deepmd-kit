@@ -1070,7 +1070,7 @@ def test_wfc(
     rmse_f = rmse(wfc - test_data["wfc"][:numb_test])
 
     log.info("# number of test data : {numb_test:d} ")
-    log.info("WFC  RMSE : {rmse_f:e} eV/Å")
+    log.info("WFC  RMSE : {rmse_f:e}")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -1097,7 +1097,7 @@ def print_wfc_sys_avg(avg: dict) -> None:
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"WFC  RMSE : {avg['rmse']:e} eV/Å")
+    log.info(f"WFC  RMSE : {avg['rmse']:e}")
 
 
 def test_polar(
@@ -1239,7 +1239,7 @@ def print_polar_sys_avg(avg: dict) -> None:
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Polarizability  RMSE : {avg['rmse']:e} eV/Å")
+    log.info(f"Polarizability  RMSE : {avg['rmse']:e}")
 
 
 def test_dipole(
@@ -1353,4 +1353,4 @@ def print_dipole_sys_avg(avg: dict) -> None:
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Dipole  RMSE         : {avg['rmse']:e} eV/Å")
+    log.info(f"Dipole  RMSE         : {avg['rmse']:e}")
