@@ -3,6 +3,9 @@ import logging
 from functools import (
     cached_property,
 )
+from typing import (
+    Any,
+)
 
 import numpy as np
 import torch
@@ -48,7 +51,7 @@ class DPTabulate(BaseTabulate):
 
     def __init__(
         self,
-        descrpt,
+        descrpt: Any,
         neuron: list[int],
         type_one_side: bool = False,
         exclude_types: list[list[int]] = [],
@@ -113,7 +116,7 @@ class DPTabulate(BaseTabulate):
         self.data_type = self._get_data_type()
         self.last_layer_size = self._get_last_layer_size()
 
-    def _make_data(self, xx, idx):
+    def _make_data(self, xx: np.ndarray, idx: int) -> Any:
         """Generate tabulation data for the given input.
 
         Parameters
@@ -282,12 +285,12 @@ class DPTabulate(BaseTabulate):
         d2 = dy2.detach().cpu().numpy().astype(self.data_type)
         return vv, dd, d2
 
-    def _layer_0(self, x, w, b):
+    def _layer_0(self, x: torch.Tensor, w: np.ndarray, b: np.ndarray) -> torch.Tensor:
         w = torch.from_numpy(w).to(env.DEVICE)
         b = torch.from_numpy(b).to(env.DEVICE)
         return self.activation_fn(torch.matmul(x, w) + b)
 
-    def _layer_1(self, x, w, b):
+    def _layer_1(self, x: torch.Tensor, w: np.ndarray, b: np.ndarray) -> torch.Tensor:
         w = torch.from_numpy(w).to(env.DEVICE)
         b = torch.from_numpy(b).to(env.DEVICE)
         t = torch.cat([x, x], dim=1)
@@ -310,7 +313,7 @@ class DPTabulate(BaseTabulate):
             return "T"
         raise RuntimeError(f"Unsupported descriptor {self.descrpt}")
 
-    def _get_layer_size(self):
+    def _get_layer_size(self) -> int:
         # get the number of layers in EmbeddingNet
         layer_size = 0
         basic_size = 0
@@ -417,10 +420,10 @@ class DPTabulate(BaseTabulate):
                 raise RuntimeError("Unsupported descriptor")
         return result
 
-    def _get_bias(self):
+    def _get_bias(self) -> Any:
         return self._get_network_variable("b")
 
-    def _get_matrix(self):
+    def _get_matrix(self) -> Any:
         return self._get_network_variable("w")
 
     def _convert_numpy_to_tensor(self) -> None:
@@ -435,7 +438,7 @@ class DPTabulate(BaseTabulate):
 
 
 # customized op
-def grad(xbar: torch.Tensor, y: torch.Tensor, functype: int):
+def grad(xbar: torch.Tensor, y: torch.Tensor, functype: int) -> torch.Tensor:
     if functype == 1:
         return 1 - y * y
 
@@ -465,7 +468,7 @@ def grad(xbar: torch.Tensor, y: torch.Tensor, functype: int):
         raise ValueError(f"Unsupported function type: {functype}")
 
 
-def grad_grad(xbar: torch.Tensor, y: torch.Tensor, functype: int):
+def grad_grad(xbar: torch.Tensor, y: torch.Tensor, functype: int) -> torch.Tensor:
     if functype == 1:
         return -2 * y * (1 - y * y)
 
@@ -494,7 +497,7 @@ def grad_grad(xbar: torch.Tensor, y: torch.Tensor, functype: int):
 
 def unaggregated_dy_dx_s(
     y: torch.Tensor, w_np: np.ndarray, xbar: torch.Tensor, functype: int
-):
+) -> torch.Tensor:
     w = torch.from_numpy(w_np).to(env.DEVICE)
     y = y.to(env.DEVICE)
     xbar = xbar.to(env.DEVICE)
@@ -520,7 +523,7 @@ def unaggregated_dy2_dx_s(
     w_np: np.ndarray,
     xbar: torch.Tensor,
     functype: int,
-):
+) -> torch.Tensor:
     w = torch.from_numpy(w_np).to(env.DEVICE)
     y = y.to(env.DEVICE)
     dy = dy.to(env.DEVICE)
@@ -549,7 +552,7 @@ def unaggregated_dy_dx(
     dy_dx: torch.Tensor,
     ybar: torch.Tensor,
     functype: int,
-):
+) -> torch.Tensor:
     w = torch.from_numpy(w_np).to(env.DEVICE)
     if z.dim() != 2:
         raise ValueError("z tensor must have 2 dimensions")
@@ -587,7 +590,7 @@ def unaggregated_dy2_dx(
     dy2_dx: torch.Tensor,
     ybar: torch.Tensor,
     functype: int,
-):
+) -> torch.Tensor:
     w = torch.from_numpy(w_np).to(env.DEVICE)
     if z.dim() != 2:
         raise ValueError("z tensor must have 2 dimensions")

@@ -17,23 +17,23 @@ using CPUDevice = Eigen::ThreadPoolDevice;
 template <typename Device, typename FPTYPE>
 class ProdForceSeAMaskOp : public OpKernel {
  public:
-  explicit ProdForceSeAMaskOp(OpKernelConstruction *context)
+  explicit ProdForceSeAMaskOp(OpKernelConstruction* context)
       : OpKernel(context) {
     OP_REQUIRES_OK(context,
                    context->GetAttr("total_atom_num", &total_atom_num));
   }
 
-  void Compute(OpKernelContext *context) override {
+  void Compute(OpKernelContext* context) override {
     deepmd::safe_compute(
-        context, [this](OpKernelContext *context) { this->_Compute(context); });
+        context, [this](OpKernelContext* context) { this->_Compute(context); });
   }
 
-  void _Compute(OpKernelContext *context) {
+  void _Compute(OpKernelContext* context) {
     // Grab the input tensor
-    const Tensor &net_deriv_tensor = context->input(0);
-    const Tensor &in_deriv_tensor = context->input(1);
-    const Tensor &mask_tensor = context->input(2);
-    const Tensor &nlist_tensor = context->input(3);
+    const Tensor& net_deriv_tensor = context->input(0);
+    const Tensor& in_deriv_tensor = context->input(1);
+    const Tensor& mask_tensor = context->input(2);
+    const Tensor& nlist_tensor = context->input(3);
 
     // set size of the sample
     OP_REQUIRES(context, (net_deriv_tensor.shape().dims() == 2),
@@ -67,7 +67,7 @@ class ProdForceSeAMaskOp : public OpKernel {
     force_shape.AddDim(3 * static_cast<int64_t>(nall));
     // std::cout << "forcesahpe " << force_shape.dim_size(0) << " " <<
     // force_shape.dim_size(1) << std::endl;
-    Tensor *force_tensor = NULL;
+    Tensor* force_tensor = NULL;
     OP_REQUIRES_OK(context,
                    context->allocate_output(0, force_shape, &force_tensor));
 

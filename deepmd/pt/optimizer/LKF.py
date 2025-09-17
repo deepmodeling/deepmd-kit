@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 import math
+from typing import (
+    Any,
+    Optional,
+)
 
 import torch
 import torch.distributed as dist
@@ -9,7 +13,7 @@ from torch.optim.optimizer import (
 )
 
 
-def distribute_indices(total_length, num_workers):
+def distribute_indices(total_length: int, num_workers: int) -> list[tuple[int, int]]:
     indices_per_worker = total_length // num_workers
     remainder = total_length % num_workers
 
@@ -27,10 +31,10 @@ def distribute_indices(total_length, num_workers):
 class LKFOptimizer(Optimizer):
     def __init__(
         self,
-        params,
-        kalman_lambda=0.98,
-        kalman_nue=0.9987,
-        block_size=5120,
+        params: Any,
+        kalman_lambda: float = 0.98,
+        kalman_nue: float = 0.9987,
+        block_size: int = 5120,
     ) -> None:
         defaults = {"lr": 0.1, "kalman_nue": kalman_nue, "block_size": block_size}
 
@@ -158,13 +162,13 @@ class LKFOptimizer(Optimizer):
         self._state.setdefault("weights_num", len(P))
         self._state.setdefault("params_packed_index", params_packed_index)
 
-    def __get_blocksize(self):
+    def __get_blocksize(self) -> int:
         return self.param_groups[0]["block_size"]
 
-    def __get_nue(self):
+    def __get_nue(self) -> float:
         return self.param_groups[0]["kalman_nue"]
 
-    def __split_weights(self, weight):
+    def __split_weights(self, weight: torch.Tensor) -> list[torch.Tensor]:
         block_size = self.__get_blocksize()
         param_num = weight.nelement()
         res = []
@@ -179,7 +183,9 @@ class LKFOptimizer(Optimizer):
                     res.append(weight[i * block_size :])
         return res
 
-    def __update(self, H, error, weights) -> None:
+    def __update(
+        self, H: torch.Tensor, error: torch.Tensor, weights: torch.Tensor
+    ) -> None:
         P = self._state.get("P")
         kalman_lambda = self._state.get("kalman_lambda")
         weights_num = self._state.get("weights_num")
@@ -253,10 +259,10 @@ class LKFOptimizer(Optimizer):
                         i += 1
                     param.data = tmp_weight.reshape(param.data.T.shape).T.contiguous()
 
-    def set_grad_prefactor(self, grad_prefactor) -> None:
+    def set_grad_prefactor(self, grad_prefactor: float) -> None:
         self.grad_prefactor = grad_prefactor
 
-    def step(self, error) -> None:
+    def step(self, error: torch.Tensor) -> None:
         params_packed_index = self._state.get("params_packed_index")
 
         weights = []
@@ -313,7 +319,7 @@ class LKFOptimizer(Optimizer):
 
         self.__update(H, error, weights)
 
-    def get_device_id(self, index):
+    def get_device_id(self, index: int) -> Optional[int]:
         for i, (start, end) in enumerate(self.dindex):
             if start <= index < end:
                 return i

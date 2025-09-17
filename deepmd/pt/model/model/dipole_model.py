@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Optional,
 )
 
@@ -28,13 +29,13 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
 
     def __init__(
         self,
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         DPModelCommon.__init__(self)
         DPDipoleModel_.__init__(self, *args, **kwargs)
 
-    def translated_output_def(self):
+    def translated_output_def(self) -> dict[str, Any]:
         out_def_data = self.model_output_def().get_data()
         output_def = {
             "dipole": out_def_data["dipole"],
@@ -54,8 +55,8 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
 
     def forward(
         self,
-        coord,
-        atype,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
         box: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
@@ -91,15 +92,15 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
     @torch.jit.export
     def forward_lower(
         self,
-        extended_coord,
-        extended_atype,
-        nlist,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
-    ):
+    ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,
