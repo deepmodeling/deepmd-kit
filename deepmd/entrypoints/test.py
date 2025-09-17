@@ -1069,8 +1069,8 @@ def test_wfc(
     wfc, numb_test, _ = run_test(dp, test_data, numb_test, data)
     rmse_f = rmse(wfc - test_data["wfc"][:numb_test])
 
-    log.info("# number of test data : {numb_test:d} ")
-    log.info("WFC  RMSE : {rmse_f:e}")
+    log.info(f"# number of test data : {numb_test:d} ")
+    log.info(f"WFC  RMSE : {rmse_f:e}")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
