@@ -69,23 +69,7 @@ The loss section is provided as follows
     },
 ```
 
-so that the atomic dipole is trained as labels. Note that the NumPy compressed file `atomic_dipole.npy` should be provided in each dataset.
-
-### What is atomic_dipole in DPLR models?
-
-For DPLR models, the `atomic_dipole` data represents the displacement vector from each atom to its associated Wannier centroid (WC). The Wannier centroid represents the center of the electronic density associated with that atom, as computed from maximally localized Wannier functions.
-
-The atomic dipole vectors can be obtained from first-principles calculations:
-
-1. **DFT + Wannier90**: Run DFT calculations (e.g., with VASP, Quantum ESPRESSO) and use Wannier90 to compute maximally localized Wannier functions
-2. **Extract Wannier centroids**: The positions of the Wannier centroids are provided by Wannier90
-3. **Calculate dipole vectors**: `atomic_dipole = wannier_centroid_position - atom_position`
-
-The data format should be:
-
-- **Shape**: `(n_frames, n_atoms * 3)` where each row contains all atomic dipole components for one frame
-- **Units**: Consistent with your coordinate system (typically Ångström)
-- **File format**: `.npy` (NumPy binary) or `.raw` (text format)
+so that the atomic dipole is trained as labels. Note that the NumPy compressed file `atomic_dipole.npy` should be provided in each dataset. In the context of DPLR models, the atomic dipole data represents the displacement vector from each atom to its associated Wannier centroid (WC), which can be calculated as `atomic_dipole = wannier_centroid_position - atom_position` from DFT calculations using tools such as VASP with Wannier90.
 
 The training and freezing can be started from the example directory by
 
