@@ -6,6 +6,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 from deepmd.tf.common import (
     cast_precision,
     get_activation_func,
@@ -641,7 +644,6 @@ class PolarFittingSeA(Fitting):
             "dim_descrpt": self.dim_descrpt,
             "embedding_width": self.dim_rot_mat_1,
             "mixed_types": self.mixed_types,
-            "dim_out": 3,
             "neuron": self.n_neuron,
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
@@ -652,7 +654,6 @@ class PolarFittingSeA(Fitting):
             "precision": self.fitting_precision.name,
             "exclude_types": [],
             "fit_diag": self.fit_diag,
-            "scale": list(self.scale),
             "shift_diag": self.shift_diag,
             "nets": self.serialize_network(
                 ntypes=self.ntypes,
@@ -674,8 +675,18 @@ class PolarFittingSeA(Fitting):
                 "case_embd": None,
                 "scale": self.scale.reshape(-1, 1),
                 "constant_matrix": self.constant_matrix.reshape(-1),
+                "bias_atom_e": np.zeros(
+                    (self.ntypes, self.dim_rot_mat_1), dtype=GLOBAL_NP_FLOAT_PRECISION
+                ),
             },
             "type_map": self.type_map,
+            "var_name": "polar",
+            "rcond": None,
+            "tot_ener_zero": False,
+            "trainable": self.trainable,
+            "layer_name": None,
+            "use_aparam_as_mask": False,
+            "spin": None,
         }
         return data
 

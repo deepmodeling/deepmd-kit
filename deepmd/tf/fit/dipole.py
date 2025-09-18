@@ -423,7 +423,6 @@ class DipoleFittingSeA(Fitting):
             "dim_descrpt": self.dim_descrpt,
             "embedding_width": self.dim_rot_mat_1,
             "mixed_types": self.mixed_types,
-            "dim_out": 3,
             "neuron": self.n_neuron,
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
@@ -458,6 +457,15 @@ class DipoleFittingSeA(Fitting):
                 ),
             },
             "type_map": self.type_map,
+            "var_name": "dipole",
+            "rcond": None,
+            "tot_ener_zero": False,
+            "trainable": self.trainable,
+            "layer_name": None,
+            "use_aparam_as_mask": False,
+            "spin": None,
+            "r_differentiable": True,
+            "c_differentiable": True,
         }
         return data
 
