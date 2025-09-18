@@ -51,7 +51,6 @@ buildcxx/
 node_modules/
 *.bib.original
 .claude
-*.hdf5
 
 # Coverage files
 .coverage
