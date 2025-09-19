@@ -6,6 +6,9 @@ import unittest
 import h5py
 
 from deepmd.utils.data_system import (
+    _is_hdf5_file,
+    _is_hdf5_format,
+    _is_hdf5_multisystem,
     process_systems,
 )
 
@@ -183,6 +186,152 @@ class TestProcessSystems(unittest.TestCase):
         regular_list = [regular_dir]
         result = process_systems(regular_list)
         self.assertEqual(result, regular_list)
+
+    def test_is_hdf5_file_edge_cases(self) -> None:
+        """Test edge cases for _is_hdf5_file function."""
+        # Test non-existent file
+        self.assertFalse(_is_hdf5_file("/non/existent/file.h5"))
+
+        # Test file with .h5 extension but not HDF5 format
+        fake_h5 = os.path.join(self.temp_dir, "fake.h5")
+        with open(fake_h5, "w") as f:
+            f.write("This is not an HDF5 file")
+        self.assertTrue(_is_hdf5_file(fake_h5))  # True due to .h5 extension
+
+        # Test file without extension but HDF5 format
+        real_h5_no_ext = os.path.join(self.temp_dir, "no_extension")
+        with h5py.File(real_h5_no_ext, "w") as f:
+            f.create_dataset("test", data=[1, 2, 3])
+        self.assertTrue(_is_hdf5_file(real_h5_no_ext))
+
+        # Test with HDF5 path containing #
+        h5_file = self._create_hdf5_file("test.h5", ["sys1"])
+        self.assertTrue(_is_hdf5_file(f"{h5_file}#sys1"))
+
+    def test_is_hdf5_format_edge_cases(self) -> None:
+        """Test edge cases for _is_hdf5_format function."""
+        # Test non-existent file
+        self.assertFalse(_is_hdf5_format("/non/existent/file"))
+
+        # Test non-HDF5 file
+        text_file = os.path.join(self.temp_dir, "text.txt")
+        with open(text_file, "w") as f:
+            f.write("plain text")
+        self.assertFalse(_is_hdf5_format(text_file))
+
+        # Test valid HDF5 file
+        h5_file = os.path.join(self.temp_dir, "valid.h5")
+        with h5py.File(h5_file, "w") as f:
+            f.create_dataset("data", data=[1, 2, 3])
+        self.assertTrue(_is_hdf5_format(h5_file))
+
+    def test_is_hdf5_multisystem_edge_cases(self) -> None:
+        """Test edge cases for _is_hdf5_multisystem function."""
+        # Test non-existent file
+        self.assertFalse(_is_hdf5_multisystem("/non/existent/file.h5"))
+
+        # Test non-HDF5 file
+        fake_h5 = os.path.join(self.temp_dir, "fake.h5")
+        with open(fake_h5, "w") as f:
+            f.write("not hdf5")
+        self.assertFalse(_is_hdf5_multisystem(fake_h5))
+
+        # Test empty HDF5 file
+        empty_h5 = os.path.join(self.temp_dir, "empty.h5")
+        with h5py.File(empty_h5, "w") as f:
+            pass
+        self.assertFalse(_is_hdf5_multisystem(empty_h5))
+
+        # Test file with single system-like group (should be False)
+        single_group = os.path.join(self.temp_dir, "single_group.h5")
+        with h5py.File(single_group, "w") as f:
+            grp = f.create_group("system1")
+            grp.create_dataset("type.raw", data=[0, 1])
+            grp.create_group("set.000")
+        self.assertFalse(_is_hdf5_multisystem(single_group))
+
+        # Test file with multiple system-like groups (should be True)
+        multi_group = os.path.join(self.temp_dir, "multi_group.h5")
+        with h5py.File(multi_group, "w") as f:
+            for i in range(2):
+                grp = f.create_group(f"system{i}")
+                grp.create_dataset("type.raw", data=[0, 1])
+                grp.create_group("set.000")
+        self.assertTrue(_is_hdf5_multisystem(multi_group))
+
+        # Test file with groups that don't look like systems
+        non_system_groups = os.path.join(self.temp_dir, "non_system.h5")
+        with h5py.File(non_system_groups, "w") as f:
+            grp1 = f.create_group("group1")
+            grp1.create_dataset("random_data", data=[1, 2, 3])
+            grp2 = f.create_group("group2")
+            grp2.create_dataset("other_data", data=[4, 5, 6])
+        self.assertFalse(_is_hdf5_multisystem(non_system_groups))
+
+    def test_hdf5_file_read_error_handling(self) -> None:
+        """Test error handling when HDF5 files cannot be read."""
+        # Create a corrupted file with .h5 extension
+        corrupted_h5 = os.path.join(self.temp_dir, "corrupted.h5")
+        with open(corrupted_h5, "wb") as f:
+            f.write(b"corrupted\x00\x01\x02data")
+
+        # Should handle gracefully and treat as regular system
+        input_systems = [corrupted_h5]
+        result = process_systems(input_systems)
+        self.assertEqual(result, [corrupted_h5])
+
+    def test_empty_systems_list(self) -> None:
+        """Test with empty systems list."""
+        result = process_systems([])
+        self.assertEqual(result, [])
+
+    def test_non_hdf5_files_with_hdf5_extensions(self) -> None:
+        """Test files with .hdf5 extension that aren't valid HDF5."""
+        fake_hdf5 = os.path.join(self.temp_dir, "fake.hdf5")
+        with open(fake_hdf5, "w") as f:
+            f.write("not an hdf5 file")
+
+        input_systems = [fake_hdf5]
+        result = process_systems(input_systems)
+        self.assertEqual(result, [fake_hdf5])
+
+    def test_hdf5_with_mixed_group_types(self) -> None:
+        """Test HDF5 file with mix of system and non-system groups."""
+        mixed_h5 = os.path.join(self.temp_dir, "mixed.h5")
+        with h5py.File(mixed_h5, "w") as f:
+            # Valid system group
+            sys_grp = f.create_group("water_system")
+            sys_grp.create_dataset("type.raw", data=[0, 1])
+            sys_grp.create_dataset("type_map.raw", data=[b"H", b"O"])
+            sys_grp.create_group("set.000")
+
+            # Invalid group (no type.raw)
+            invalid_grp = f.create_group("metadata")
+            invalid_grp.create_dataset("info", data=[1, 2, 3])
+
+            # Another valid system group
+            sys_grp2 = f.create_group("ice_system")
+            sys_grp2.create_dataset("type.raw", data=[0, 1])
+            sys_grp2.create_dataset("type_map.raw", data=[b"H", b"O"])
+            sys_grp2.create_group("set.000")
+
+        input_systems = [mixed_h5]
+        result = process_systems(input_systems)
+
+        # Should expand to include only valid systems
+        expected = [f"{mixed_h5}#water_system", f"{mixed_h5}#ice_system"]
+        self.assertEqual(len(result), 2)
+        for expected_sys in expected:
+            self.assertIn(expected_sys, result)
+
+    def test_patterns_parameter(self) -> None:
+        """Test process_systems with patterns parameter."""
+        # Test that patterns parameter still works for single string input
+        regular_dir = self._create_regular_system("pattern_test")
+        result = process_systems(regular_dir, patterns=["*"])
+        # This should call rglob_sys_str instead of expand_sys_str
+        # The exact behavior depends on the directory structure, but it should not crash
+        self.assertIsInstance(result, list)
 
 
 if __name__ == "__main__":

@@ -910,26 +910,6 @@ def _is_hdf5_multisystem(file_path: str) -> bool:
         return False
 
 
-def _is_hdf5_file(path: str) -> bool:
-    """Check if a path points to an HDF5 file.
-
-    Parameters
-    ----------
-    path : str
-        Path to check
-
-    Returns
-    -------
-    bool
-        True if the path is an HDF5 file
-    """
-    # Extract the actual file path (before any # separator for HDF5 internal paths)
-    file_path = path.split("#")[0]
-    return os.path.isfile(file_path) and (
-        file_path.endswith((".h5", ".hdf5")) or _is_hdf5_format(file_path)
-    )
-
-
 def _is_hdf5_format(file_path: str) -> bool:
     """Check if a file is in HDF5 format by trying to open it.
 
