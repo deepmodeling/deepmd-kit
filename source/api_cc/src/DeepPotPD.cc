@@ -165,7 +165,7 @@ inline void enableTimestamp(bool enable = true) {
 }  // namespace logg
 
 void fillNlistTensor(const std::vector<std::vector<int>>& data,
-                     std::unique_ptr<paddle_infer::Tensor> flat_tensor) {
+                     std::unique_ptr<paddle_infer::Tensor>& flat_tensor) {
   size_t total_size = 0;
   for (const auto& row : data) {
     total_size += row.size();
@@ -179,7 +179,7 @@ void fillNlistTensor(const std::vector<std::vector<int>>& data,
   int nloc = data.size();
   int nnei = nloc > 0 ? total_size / nloc : 0;
   flat_tensor->Reshape({1, nloc, nnei});
-  flat_tensor->CopyFromCpu(flag_data.data());
+  flat_tensor->CopyFromCpu(flat_data.data());
 }
 DeepPotPD::DeepPotPD() : inited(false) {}
 DeepPotPD::DeepPotPD(const std::string& model,
@@ -460,15 +460,14 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   std::unique_ptr<paddle_infer::Tensor> fparam_tensor;
   if (!fparam.empty()) {
     fparam_tensor = predictor_fl->GetInputHandle("fparam");
-    fparam_tensor->Reshape({1, static_cast<std::int64_t>(fparam.size())});
+    fparam_tensor->Reshape({1, static_cast<int>(fparam.size())});
     fparam_tensor->CopyFromCpu(fparam.data());
   }
   std::unique_ptr<paddle_infer::Tensor> aparam_tensor;
   if (!aparam_.empty()) {
     aparam_tensor = predictor_fl->GetInputHandle("aparam");
     aparam_tensor->Reshape(
-        {1, lmp_list.inum,
-         static_cast<std::int64_t>(aparam_.size()) / lmp_list.inum});
+        {1, lmp_list.inum, static_cast<int>(aparam_.size()) / lmp_list.inum});
     aparam_tensor->CopyFromCpu((aparam_.data()));
   }
 
@@ -580,14 +579,14 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   std::unique_ptr<paddle_infer::Tensor> fparam_tensor;
   if (!fparam.empty()) {
     fparam_tensor = predictor->GetInputHandle("fparam");
-    fparam_tensor->Reshape({1, static_cast<std::int64_t>(fparam.size())});
+    fparam_tensor->Reshape({1, static_cast<int>(fparam.size())});
     fparam_tensor->CopyFromCpu((fparam.data()));
   }
   std::unique_ptr<paddle_infer::Tensor> aparam_tensor;
   if (!aparam.empty()) {
     aparam_tensor = predictor->GetInputHandle("aparam");
     aparam_tensor->Reshape(
-        {1, natoms, static_cast<std::int64_t>(aparam.size()) / natoms});
+        {1, natoms, static_cast<int>(aparam.size()) / natoms});
     aparam_tensor->CopyFromCpu((aparam.data()));
   }
 
