@@ -35,6 +35,7 @@ from deepmd.pd.utils.auto_batch_size import (
 from deepmd.pd.utils.env import (
     DEVICE,
     GLOBAL_PD_FLOAT_PRECISION,
+    JIT,
     RESERVED_PRECISION_DICT,
     enable_prim,
 )
@@ -114,12 +115,38 @@ class DeepEval(DeepEvalBackend):
             # model = paddle.jit.to_static(model)
             self.dp = ModelWrapper(model)
             self.dp.set_state_dict(state_dict)
+            self.rcut = self.dp.model["Default"].get_rcut()
+            self.type_map = self.dp.model["Default"].get_type_map()
         else:
-            # self.dp = paddle.jit.load(self.model_path.split(".json")[0])
-            raise ValueError(f"Unknown model file format: {self.model_path}!")
+            self.dp = paddle.jit.load(self.model_path.split(".json")[0])
+            self.rcut = self.dp.get_rcut().item()
+            self.type_map = [chr(i) for i in self.dp.get_type_map().numpy()]
+            if JIT:
+                from paddle import inference as paddle_inference
+
+                pdmodel_path = self.model_path
+                pdiparams_path = self.model_path.replace(".json", ".pdiparams")
+                config = paddle_inference.Config(pdmodel_path, pdiparams_path)
+                config.enable_custom_passes(
+                    ["add_shadow_output_after_dead_parameter_pass"], True
+                )
+                config.enable_use_gpu(4096, 0)
+
+                self.predictor = paddle_inference.create_predictor(config)
+                self.coord_handle = self.predictor.get_input_handle("coord")
+                self.atype_handle = self.predictor.get_input_handle("atype")
+                self.box_handle = self.predictor.get_input_handle("box")
+
+                self.atom_energy_handle = self.predictor.get_output_handle(
+                    "fetch_name_0"
+                )
+                # self.atom_virial_handle = self.predictor.get_output_handle("fetch_name_1")
+                self.energy_handle = self.predictor.get_output_handle("fetch_name_2")
+                self.force_handle = self.predictor.get_output_handle("fetch_name_3")
+                self.mask_handle = self.predictor.get_output_handle("fetch_name_4")
+                self.virial_handle = self.predictor.get_output_handle("fetch_name_5")
+
         self.dp.eval()
-        self.rcut = self.dp.model["Default"].get_rcut()
-        self.type_map = self.dp.model["Default"].get_type_map()
         if isinstance(auto_batch_size, bool):
             if auto_batch_size:
                 self.auto_batch_size = AutoBatchSize()
@@ -131,7 +158,11 @@ class DeepEval(DeepEvalBackend):
             self.auto_batch_size = auto_batch_size
         else:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
-        self._has_spin = getattr(self.dp.model["Default"], "has_spin", False)
+        self._has_spin = (
+            getattr(self.dp.model["Default"], "has_spin", False)
+            if isinstance(self.dp, ModelWrapper)
+            else False
+        )
         if callable(self._has_spin):
             self._has_spin = self._has_spin()
 
@@ -368,23 +399,39 @@ class DeepEval(DeepEvalBackend):
         else:
             natoms = len(atom_types[0])
 
-        coord_input = paddle.to_tensor(
-            coords.reshape([nframes, natoms, 3]).astype(prec),
-            dtype=GLOBAL_PD_FLOAT_PRECISION,
-            place=DEVICE,
-        )
-        type_input = paddle.to_tensor(
-            atom_types.astype(NP_PRECISION_DICT[RESERVED_PRECISION_DICT[paddle.int64]]),
-            dtype=paddle.int64,
-            place=DEVICE,
-        )
-        if cells is not None:
-            box_input = paddle.to_tensor(
-                cells.reshape([nframes, 3, 3]),
+        if not JIT:
+            coord_input = paddle.to_tensor(
+                coords.reshape([nframes, natoms, 3]).astype(prec),
                 dtype=GLOBAL_PD_FLOAT_PRECISION,
                 place=DEVICE,
             )
+            type_input = paddle.to_tensor(
+                atom_types.astype(
+                    NP_PRECISION_DICT[RESERVED_PRECISION_DICT[paddle.int64]]
+                ),
+                dtype=paddle.int64,
+                place=DEVICE,
+            )
         else:
+            self.coord_handle.copy_from_cpu(
+                coords.reshape([nframes, natoms, 3]).astype(prec)
+            )
+            self.atype_handle.copy_from_cpu(
+                atom_types.astype(
+                    NP_PRECISION_DICT[RESERVED_PRECISION_DICT[paddle.int64]]
+                )
+            )
+        if cells is not None:
+            if not JIT:
+                box_input = paddle.to_tensor(
+                    cells.reshape([nframes, 3, 3]),
+                    dtype=GLOBAL_PD_FLOAT_PRECISION,
+                    place=DEVICE,
+                )
+            else:
+                self.box_handle.copy_from_cpu(cells.reshape([nframes, 3, 3]))
+        else:
+            box_t = None
             box_input = None
         if fparam is not None:
             fparam_input = to_paddle_tensor(
@@ -401,29 +448,71 @@ class DeepEval(DeepEvalBackend):
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C for x in request_defs
         )
-        batch_output = model(
-            coord_input,
-            type_input,
-            box=box_input,
-            do_atomic_virial=do_atomic_virial,
-            fparam=fparam_input,
-            aparam=aparam_input,
-        )
+        if not JIT:
+            batch_output = model(
+                coord_input,
+                type_input,
+                box_input,
+                # fparam=fparam_input,
+                # aparam=aparam_input,
+                # do_atomic_virial=do_atomic_virial,
+            )
+        else:
+            self.predictor.run()
+            batch_output = {
+                "atom_energy": self.atom_energy_handle.copy_to_cpu(),
+                # "atom_virial": self.atom_virial_handle.copy_to_cpu(),
+                "energy": self.energy_handle.copy_to_cpu(),
+                "force": self.force_handle.copy_to_cpu(),
+                "mask": self.mask_handle.copy_to_cpu(),
+                "virial": self.virial_handle.copy_to_cpu(),
+            }
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
+        # for k, v in batch_output.items():
+        #     print(k, v.shape)
+        # raise
+        if not isinstance(batch_output, dict):
+            """
+            atom_energy [1, 24, 1]
+            energy [1, 1]
+            force [1, 24, 3]
+            virial [1, 9]
+            atom_virial [1, 1, 9]
+            mask [1, 24]
+            """
+            batch_output = {
+                "atom_energy": batch_output[0],
+                # "atom_virial": batch_output[1],
+                "energy": batch_output[2],
+                "force": batch_output[3],
+                "mask": batch_output[4],
+                "virial": batch_output[5],
+            }
 
         results = []
         for odef in request_defs:
             pd_name = self._OUTDEF_DP2BACKEND[odef.name]
-            if pd_name in batch_output:
-                shape = self._get_output_shape(odef, nframes, natoms)
-                out = batch_output[pd_name].reshape(shape).numpy()
-                results.append(out)
+            if JIT:
+                if pd_name in batch_output:
+                    shape = self._get_output_shape(odef, nframes, natoms)
+                    out = batch_output[pd_name].reshape(shape)
+                    results.append(out)
+                else:
+                    shape = self._get_output_shape(odef, nframes, natoms)
+                    results.append(
+                        np.full(np.abs(shape), np.nan, dtype=prec)
+                    )  # this is kinda hacky
             else:
-                shape = self._get_output_shape(odef, nframes, natoms)
-                results.append(
-                    np.full(np.abs(shape), np.nan, dtype=prec)
-                )  # this is kinda hacky
+                if pd_name in batch_output:
+                    shape = self._get_output_shape(odef, nframes, natoms)
+                    out = batch_output[pd_name].reshape(shape).numpy()
+                    results.append(out)
+                else:
+                    shape = self._get_output_shape(odef, nframes, natoms)
+                    results.append(
+                        np.full(np.abs(shape), np.nan, dtype=prec)
+                    )  # this is kinda hacky
         return tuple(results)
 
     def _eval_model_spin(
@@ -560,7 +649,9 @@ class DeepEval(DeepEvalBackend):
         descriptor
             Descriptors.
         """
-        model = self.dp.model["Default"]
+        model = (
+            self.dp.model["Default"] if isinstance(self.dp, ModelWrapper) else self.dp
+        )
         model.set_eval_descriptor_hook(True)
         self.eval(
             coords,

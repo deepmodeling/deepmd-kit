@@ -176,6 +176,10 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         self.use_loc_mapping = use_loc_mapping
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
+        self.register_buffer(
+            "buffer_type_map",
+            paddle.to_tensor([ord(c) for c in self.type_map if c != " "]),
+        )
         self.tebd_dim = self.repflow_args.n_dim
         self.type_embedding = TypeEmbedNet(
             ntypes,
@@ -215,11 +219,15 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
-        return self.rcut
+        if paddle.in_dynamic_mode():
+            return self.rcut
+        return self.repflows.get_rcut()
 
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
-        return self.rcut_smth
+        if paddle.in_dynamic_mode():
+            return self.rcut_smth
+        return self.repflows.get_rcut_smth()
 
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
@@ -227,7 +235,9 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
 
     def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
-        return self.sel
+        if paddle.in_dynamic_mode():
+            return self.sel
+        return self.repflows.get_sel()
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
@@ -235,7 +245,9 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
 
     def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
-        return self.type_map
+        if paddle.in_dynamic_mode():
+            return self.type_map
+        return self.buffer_type_map
 
     def get_dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""

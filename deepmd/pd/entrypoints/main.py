@@ -409,6 +409,26 @@ def freeze(
             ],
             full_graph=True,
         )
+    for method_name in [
+        "get_rcut",
+        "get_type_map",
+        "get_dim_fparam",
+        "get_dim_aparam",
+        "get_intensive",
+        "get_sel_type",
+        "get_numb_dos",
+        "get_task_dim",
+    ]:
+        if hasattr(model, method_name):
+            setattr(
+                model,
+                method_name,
+                paddle.jit.to_static(
+                    getattr(model, method_name),
+                    input_spec=[],
+                    full_graph=True,
+                ),
+            )
     if output.endswith(".json"):
         output = output[:-5]
     paddle.jit.save(

@@ -251,6 +251,10 @@ class GeneralFitting(Fitting):
         self.rcond = rcond
         self.seed = seed
         self.type_map = type_map
+        self.register_buffer(
+            "buffer_type_map",
+            paddle.to_tensor([ord(c) for c in self.type_map if c != " "]),
+        )
         self.use_aparam_as_mask = use_aparam_as_mask
         # order matters, should be place after the assignment of ntypes
         self.reinit_exclude(exclude_types)
@@ -447,7 +451,9 @@ class GeneralFitting(Fitting):
 
     def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
-        return self.type_map
+        if paddle.in_dynamic_mode():
+            return self.type_map
+        return self.buffer_type_map
 
     def set_case_embd(self, case_idx: int):
         """

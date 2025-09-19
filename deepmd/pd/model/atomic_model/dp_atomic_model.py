@@ -68,7 +68,7 @@ class DPAtomicModel(BaseAtomicModel):
 
         # register 'type_map' as buffer
         def _string_to_array(s: str) -> list[int]:
-            return [ord(c) for c in s]
+            return [ord(c) for c in s if c != " "]
 
         self.register_buffer(
             "buffer_type_map",
@@ -147,11 +147,15 @@ class DPAtomicModel(BaseAtomicModel):
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
-        return self.rcut
+        if paddle.in_dynamic_mode():
+            return self.rcut
+        return self.descriptor.get_rcut()
 
     def get_sel(self) -> list[int]:
         """Get the neighbor selection."""
-        return self.sel
+        if paddle.in_dynamic_mode():
+            return self.sel
+        return self.descriptor.get_sel()
 
     def set_case_embd(self, case_idx: int):
         """

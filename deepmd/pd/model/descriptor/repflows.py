@@ -245,7 +245,9 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.ndescrpt = self.nnei * 4  # use full descriptor.
         assert len(sel) == 1
         self.sel = sel
+        self.register_buffer("buffer_sel", paddle.to_tensor(sel))
         self.rcut = e_rcut
+        self.register_buffer("buffer_rcut", paddle.to_tensor(self.e_rcut))
         self.rcut_smth = e_rcut_smth
         self.sec = self.sel
         self.split_sel = self.sel
@@ -353,7 +355,9 @@ class DescrptBlockRepflows(DescriptorBlock):
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
-        return self.e_rcut
+        if paddle.in_dynamic_mode():
+            return self.e_rcut
+        return self.buffer_rcut
 
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
@@ -365,7 +369,9 @@ class DescrptBlockRepflows(DescriptorBlock):
 
     def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
-        return self.sel
+        if paddle.in_dynamic_mode():
+            return self.sel
+        return self.buffer_sel
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
