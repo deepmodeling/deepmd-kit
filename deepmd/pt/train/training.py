@@ -1252,7 +1252,8 @@ class Trainer:
         label_dict = {}
         for item_key in batch_data:
             if item_key in input_keys:
-                input_dict[item_key] = batch_data[item_key]
+                if item_key != "fparam" or batch_data["find_fparam"] != 0.0:
+                    input_dict[item_key] = batch_data[item_key]
             else:
                 if item_key not in ["sid", "fid"]:
                     label_dict[item_key] = batch_data[item_key]
@@ -1338,7 +1339,10 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
     if _model.get_dim_fparam() > 0:
         fparam_requirement_items = [
             DataRequirementItem(
-                "fparam", _model.get_dim_fparam(), atomic=False, must=True
+                "fparam",
+                _model.get_dim_fparam(),
+                atomic=False,
+                must=not _model.has_default_fparam(),
             )
         ]
         additional_data_requirement += fparam_requirement_items

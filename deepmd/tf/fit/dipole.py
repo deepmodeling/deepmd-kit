@@ -78,6 +78,9 @@ class DipoleFittingSeA(Fitting):
         different fitting nets for different atom types.
     type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
+    default_fparam: list[float], optional
+        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+        this value will be used as the default value for the frame parameter in the fitting net.
     trainable : list[bool], Optional
         If the weights of fitting net are trainable.
         Suppose that we have :math:`N_l` hidden layers in the fitting net,
@@ -101,6 +104,7 @@ class DipoleFittingSeA(Fitting):
         uniform_seed: bool = False,
         mixed_types: bool = False,
         type_map: Optional[list[str]] = None,  # to be compat with input
+        default_fparam: Optional[list[float]] = None,  # to be compat with input
         trainable: Optional[list[bool]] = None,
         **kwargs,
     ) -> None:
@@ -131,12 +135,15 @@ class DipoleFittingSeA(Fitting):
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
         self.dim_case_embd = dim_case_embd
+        self.default_fparam = default_fparam
         if numb_fparam > 0:
             raise ValueError("numb_fparam is not supported in the dipole fitting")
         if numb_aparam > 0:
             raise ValueError("numb_aparam is not supported in the dipole fitting")
         if dim_case_embd > 0:
             raise ValueError("dim_case_embd is not supported in TensorFlow.")
+        if default_fparam is not None:
+            raise ValueError("default_fparam is not supported in TensorFlow.")
         self.fparam_avg = None
         self.fparam_std = None
         self.fparam_inv_std = None
@@ -411,17 +418,17 @@ class DipoleFittingSeA(Fitting):
         data = {
             "@class": "Fitting",
             "type": "dipole",
-            "@version": 3,
+            "@version": 4,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
             "embedding_width": self.dim_rot_mat_1,
             "mixed_types": self.mixed_types,
-            "dim_out": 3,
             "neuron": self.n_neuron,
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
             "dim_case_embd": self.dim_case_embd,
+            "default_fparam": self.default_fparam,
             "activation_function": self.activation_function_name,
             "precision": self.fitting_precision.name,
             "exclude_types": []
@@ -450,6 +457,15 @@ class DipoleFittingSeA(Fitting):
                 ),
             },
             "type_map": self.type_map,
+            "var_name": "dipole",
+            "rcond": None,
+            "tot_ener_zero": False,
+            "trainable": self.trainable,
+            "layer_name": None,
+            "use_aparam_as_mask": False,
+            "spin": None,
+            "r_differentiable": True,
+            "c_differentiable": True,
         }
         return data
 
@@ -468,7 +484,7 @@ class DipoleFittingSeA(Fitting):
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         exclude_types = data.pop("exclude_types", [])
         if len(exclude_types) > 0:
             data["sel_type"] = [

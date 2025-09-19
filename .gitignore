@@ -68,3 +68,6 @@ lcurve.out
 out.json
 input_v2_compat.json
 frozen_model.*
+
+# Test system directories
+system/

@@ -76,7 +76,9 @@ class PolarFittingNet(GeneralFitting):
         Whether to shift the diagonal part of the polarizability matrix. The shift operation is carried out after scale.
     type_map: list[str], Optional
         A list of strings. Give the name to each type of atoms.
-
+    default_fparam: list[float], optional
+        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+        this value will be used as the default value for the frame parameter in the fitting net.
     """
 
     def __init__(
@@ -99,6 +101,7 @@ class PolarFittingNet(GeneralFitting):
         scale: Optional[Union[list[float], float]] = None,
         shift_diag: bool = True,
         type_map: Optional[list[str]] = None,
+        default_fparam: Optional[list] = None,
         **kwargs: Any,
     ) -> None:
         self.embedding_width = embedding_width
@@ -140,6 +143,7 @@ class PolarFittingNet(GeneralFitting):
             seed=seed,
             exclude_types=exclude_types,
             type_map=type_map,
+            default_fparam=default_fparam,
             **kwargs,
         )
 
@@ -196,7 +200,7 @@ class PolarFittingNet(GeneralFitting):
     def serialize(self) -> dict:
         data = super().serialize()
         data["type"] = "polar"
-        data["@version"] = 4
+        data["@version"] = 5
         data["embedding_width"] = self.embedding_width
         data["fit_diag"] = self.fit_diag
         data["shift_diag"] = self.shift_diag
@@ -207,7 +211,7 @@ class PolarFittingNet(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 5, 1)
         data.pop("var_name", None)
         return super().deserialize(data)
 

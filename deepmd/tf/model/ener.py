@@ -193,6 +193,9 @@ class EnerModel(StandardModel):
             t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
             t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
 
+            # Initialize out_bias and out_std for energy models
+            self.init_out_stat(suffix=suffix)
+
             if self.srtab is not None:
                 tab_info, tab_data = self.srtab.get()
                 self.tab_info = tf.get_variable(
@@ -253,6 +256,10 @@ class EnerModel(StandardModel):
         atom_ener = self.fitting.build(
             dout, natoms, input_dict, reuse=reuse, suffix=suffix
         )
+
+        # Apply out_bias and out_std directly to atom energy
+        atom_ener = self._apply_out_bias_std(atom_ener, atype, natoms, coord)
+
         self.atom_ener = atom_ener
 
         if self.srtab is not None:
