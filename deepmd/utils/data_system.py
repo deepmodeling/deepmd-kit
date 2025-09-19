@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import collections
 import logging
+import os
 import warnings
 from functools import (
     cached_property,
@@ -11,6 +12,7 @@ from typing import (
     Union,
 )
 
+import h5py
 import numpy as np
 
 import deepmd.utils.random as dp_random
@@ -790,6 +792,7 @@ def process_systems(
     """Process the user-input systems.
 
     If it is a single directory, search for all the systems in the directory.
+    If it's a list, handle HDF5 files by expanding their internal systems.
     Check if the systems are valid.
 
     Parameters
@@ -810,8 +813,141 @@ def process_systems(
         else:
             systems = rglob_sys_str(systems, patterns)
     elif isinstance(systems, list):
-        systems = systems.copy()
+        expanded_systems = []
+        for system in systems:
+            # Check if this is an HDF5 file without explicit system specification
+            if _is_hdf5_file(system) and "#" not in system:
+                # Only expand if it's a multisystem HDF5 file
+                if _is_hdf5_multisystem(system):
+                    # Expand HDF5 file to include all systems within it
+                    try:
+                        with h5py.File(system, "r") as file:
+                            for key in file.keys():
+                                if isinstance(file[key], h5py.Group):
+                                    # Check if this group looks like a system
+                                    group = file[key]
+                                    group_has_type = "type.raw" in group
+                                    group_has_sets = any(
+                                        subkey.startswith("set.")
+                                        for subkey in group.keys()
+                                    )
+                                    if group_has_type and group_has_sets:
+                                        expanded_systems.append(f"{system}#{key}")
+                    except OSError as e:
+                        log.warning(f"Could not read HDF5 file {system}: {e}")
+                        # If we can't read as HDF5, treat as regular system
+                        expanded_systems.append(system)
+                else:
+                    # Single system HDF5 file, don't expand
+                    expanded_systems.append(system)
+            else:
+                # Regular system or HDF5 with explicit system specification
+                expanded_systems.append(system)
+        systems = expanded_systems
     return systems
+
+
+def _is_hdf5_file(path: str) -> bool:
+    """Check if a path points to an HDF5 file.
+
+    Parameters
+    ----------
+    path : str
+        Path to check
+
+    Returns
+    -------
+    bool
+        True if the path is an HDF5 file
+    """
+    # Extract the actual file path (before any # separator for HDF5 internal paths)
+    file_path = path.split("#")[0]
+    return os.path.isfile(file_path) and (
+        file_path.endswith((".h5", ".hdf5")) or _is_hdf5_format(file_path)
+    )
+
+
+def _is_hdf5_multisystem(file_path: str) -> bool:
+    """Check if an HDF5 file contains multiple systems vs being a single system.
+
+    Parameters
+    ----------
+    file_path : str
+        Path to the HDF5 file
+
+    Returns
+    -------
+    bool
+        True if the file contains multiple systems, False if it's a single system
+    """
+    try:
+        with h5py.File(file_path, "r") as f:
+            # Check if this looks like a single system (has type.raw and set.* groups)
+            has_type_raw = "type.raw" in f
+            has_sets = any(key.startswith("set.") for key in f.keys())
+
+            if has_type_raw and has_sets:
+                # This looks like a single system
+                return False
+
+            # Check if it contains multiple groups that could be systems
+            system_groups = []
+            for key in f.keys():
+                if isinstance(f[key], h5py.Group):
+                    group = f[key]
+                    # Check if this group looks like a system (has type.raw and sets)
+                    group_has_type = "type.raw" in group
+                    group_has_sets = any(
+                        subkey.startswith("set.") for subkey in group.keys()
+                    )
+                    if group_has_type and group_has_sets:
+                        system_groups.append(key)
+
+            # If we found multiple system-like groups, it's a multisystem file
+            return len(system_groups) > 1
+
+    except OSError:
+        return False
+
+
+def _is_hdf5_file(path: str) -> bool:
+    """Check if a path points to an HDF5 file.
+
+    Parameters
+    ----------
+    path : str
+        Path to check
+
+    Returns
+    -------
+    bool
+        True if the path is an HDF5 file
+    """
+    # Extract the actual file path (before any # separator for HDF5 internal paths)
+    file_path = path.split("#")[0]
+    return os.path.isfile(file_path) and (
+        file_path.endswith((".h5", ".hdf5")) or _is_hdf5_format(file_path)
+    )
+
+
+def _is_hdf5_format(file_path: str) -> bool:
+    """Check if a file is in HDF5 format by trying to open it.
+
+    Parameters
+    ----------
+    file_path : str
+        Path to the file
+
+    Returns
+    -------
+    bool
+        True if the file is in HDF5 format
+    """
+    try:
+        with h5py.File(file_path, "r"):
+            return True
+    except OSError:
+        return False
 
 
 def get_data(

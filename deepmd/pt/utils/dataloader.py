@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-import os
 from multiprocessing.dummy import (
     Pool,
 )
@@ -89,8 +88,22 @@ class DpLoaderSet(Dataset):
         if seed is not None:
             setup_seed(seed)
         if isinstance(systems, str):
-            with h5py.File(systems) as file:
-                systems = [os.path.join(systems, item) for item in file.keys()]
+            # Check if this is a multisystem HDF5 file that should be expanded
+            try:
+                with h5py.File(systems, "r") as file:
+                    # Check if this looks like a single system (has type.raw and set.* groups)
+                    has_type_raw = "type.raw" in file
+                    has_sets = any(key.startswith("set.") for key in file.keys())
+
+                    if has_type_raw and has_sets:
+                        # This is a single system HDF5 file, don't expand
+                        systems = [systems]
+                    else:
+                        # This might be a multisystem file, expand it
+                        systems = [f"{systems}#{item}" for item in file.keys()]
+            except OSError:
+                # If we can't read as HDF5, treat as regular path
+                systems = [systems]
 
         def construct_dataset(system: str) -> DeepmdDataSetForLoader:
             return DeepmdDataSetForLoader(
