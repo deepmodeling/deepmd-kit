@@ -436,10 +436,12 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "deepmd/pd/utils/update_sel.py" = ["TID253"]  # ✅ Fully typed
 "deepmd/pd/utils/preprocess.py" = ["TID253"]  # ✅ Fully typed
 "deepmd/pd/utils/spin.py" = ["TID253"]        # ✅ Fully typed
+"deepmd/pd/loss/__init__.py" = ["TID253"]     # ✅ Fully typed
+"deepmd/pd/loss/loss.py" = ["TID253"]         # ✅ Fully typed
 # TODO: Complete type hints and remove ANN exclusion for remaining files:
 "deepmd/pd/train/**" = ["TID253", "ANN"]     # 🚧 Partial progress - training.py still needs work
 "deepmd/pd/utils/**" = ["TID253", "ANN"]     # 🚧 Partial progress - utils.py partially done
-"deepmd/pd/loss/**" = ["TID253", "ANN"]      # ❌ Not started
+"deepmd/pd/loss/**" = ["TID253", "ANN"]      # 🚧 Partial progress - ener.py still needs work
 "deepmd/pd/model/**" = ["TID253", "ANN"]     # ❌ Not started
 "deepmd/pd/infer/**" = ["TID253", "ANN"]     # ❌ Not started
 "deepmd/pd/cxx_op.py" = ["ANN"]              # ❌ Not started
