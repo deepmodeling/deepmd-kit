@@ -24,8 +24,8 @@ class ModelWrapper(paddle.nn.Layer):
         self,
         model: paddle.nn.Layer | dict,
         loss: paddle.nn.Layer | dict = None,
-        model_params=None,
-        shared_links=None,
+        model_params: dict[str, Any] | None = None,
+        shared_links: dict[str, Any] | None = None,
     ) -> None:
         """Construct a DeePMD model wrapper.
 
@@ -64,7 +64,7 @@ class ModelWrapper(paddle.nn.Layer):
                     self.loss[task_key] = loss[task_key]
         self.inference_only = self.loss is None
 
-    def share_params(self, shared_links, resume=False) -> None:
+    def share_params(self, shared_links: dict[str, Any], resume: bool = False) -> None:
         """
         Share the parameters of classes following rules defined in shared_links during multitask training.
         If not start from checkpoint (resume is False),
@@ -137,18 +137,18 @@ class ModelWrapper(paddle.nn.Layer):
 
     def forward(
         self,
-        coord,
-        atype,
+        coord: paddle.Tensor,
+        atype: paddle.Tensor,
         spin: paddle.Tensor | None = None,
         box: paddle.Tensor | None = None,
         cur_lr: paddle.Tensor | None = None,
         label: paddle.Tensor | None = None,
         task_key: paddle.Tensor | None = None,
-        inference_only=False,
-        do_atomic_virial=False,
+        inference_only: bool = False,
+        do_atomic_virial: bool = False,
         fparam: paddle.Tensor | None = None,
         aparam: paddle.Tensor | None = None,
-    ):
+    ) -> dict[str, paddle.Tensor]:
         if not self.multi_task:
             task_key = "Default"
         else:
@@ -196,13 +196,13 @@ class ModelWrapper(paddle.nn.Layer):
     ) -> tuple[list[str], list[str]]:
         return self.load_state_dict(state_dict)
 
-    def state_dict(self):
+    def state_dict(self) -> dict[str, Any]:
         state_dict = super().state_dict()
         extra_state = self.get_extra_state()
         state_dict.update({"_extra_state": extra_state})
         return state_dict
 
-    def set_extra_state(self, extra_state: dict):
+    def set_extra_state(self, extra_state: dict[str, Any]) -> None:
         self.model_params = extra_state["model_params"]
         self.train_infos = extra_state["train_infos"]
         return None

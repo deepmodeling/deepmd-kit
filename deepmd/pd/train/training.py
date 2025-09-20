@@ -150,7 +150,7 @@ class Trainer:
         )
         self.lcurve_should_print_header = True
 
-        def get_opt_param(params):
+        def get_opt_param(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
             opt_type = params.get("opt_type", "Adam")
             opt_param = {
                 "kf_blocksize": params.get("kf_blocksize", 5120),
@@ -161,8 +161,12 @@ class Trainer:
             }
             return opt_type, opt_param
 
-        def get_data_loader(_training_data, _validation_data, _training_params):
-            def get_dataloader_and_buffer(_data, _params):
+        def get_data_loader(
+            _training_data: Any, _validation_data: Any, _training_params: dict[str, Any]
+        ) -> tuple[Any, Any, Any, Any]:
+            def get_dataloader_and_buffer(
+                _data: Any, _params: dict[str, Any]
+            ) -> tuple[Any, Any]:
                 _sampler = get_sampler_from_params(_data, _params)
                 if _sampler is None:
                     log.warning(
@@ -209,14 +213,14 @@ class Trainer:
             )
 
         def single_model_stat(
-            _model,
-            _data_stat_nbatch,
-            _training_data,
-            _validation_data,
-            _stat_file_path,
-            _data_requirement,
-            finetune_has_new_type=False,
-        ):
+            _model: Any,
+            _data_stat_nbatch: int,
+            _training_data: Any,
+            _validation_data: Optional[Any],
+            _stat_file_path: Optional[Union[str, Path]],
+            _data_requirement: list[DataRequirementItem],
+            finetune_has_new_type: bool = False,
+        ) -> Any:
             _data_requirement += get_additional_data_requirement(_model)
             _training_data.add_data_requirement(_data_requirement)
             if _validation_data is not None:
@@ -1230,7 +1234,7 @@ class Trainer:
         fout.flush()
 
 
-def get_additional_data_requirement(_model):
+def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
     additional_data_requirement = []
     if _model.get_dim_fparam() > 0:
         fparam_requirement_items = [
@@ -1257,12 +1261,14 @@ def get_additional_data_requirement(_model):
     return additional_data_requirement
 
 
-def whether_hessian(loss_params):
+def whether_hessian(loss_params: dict[str, Any]) -> bool:
     loss_type = loss_params.get("type", "ener")
     return loss_type == "ener" and loss_params.get("start_pref_h", 0.0) > 0.0
 
 
-def get_loss(loss_params, start_lr, _ntypes, _model):
+def get_loss(
+    loss_params: dict[str, Any], start_lr: float, _ntypes: int, _model: Any
+) -> TaskLoss:
     loss_type = loss_params.get("type", "ener")
     if whether_hessian(loss_params):
         loss_params["starter_learning_rate"] = start_lr
@@ -1276,17 +1282,17 @@ def get_loss(loss_params, start_lr, _ntypes, _model):
 
 
 def get_single_model(
-    _model_params,
-):
+    _model_params: dict[str, Any],
+) -> Any:
     model = get_model(deepcopy(_model_params)).to(DEVICE)
     return model
 
 
 def get_model_for_wrapper(
-    _model_params,
-    resuming=False,
-    _loss_params=None,
-):
+    _model_params: dict[str, Any],
+    resuming: bool = False,
+    _loss_params: Optional[dict[str, Any]] = None,
+) -> Any:
     if "model_dict" not in _model_params:
         if _loss_params is not None and whether_hessian(_loss_params):
             _model_params["hessian_mode"] = True
@@ -1309,7 +1315,7 @@ def get_model_for_wrapper(
     return _model
 
 
-def get_case_embd_config(_model_params):
+def get_case_embd_config(_model_params: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
     assert "model_dict" in _model_params, (
         "Only support setting case embedding for multi-task model!"
     )
@@ -1334,10 +1340,10 @@ def get_case_embd_config(_model_params):
 
 
 def model_change_out_bias(
-    _model,
-    _sample_func,
-    _bias_adjust_mode="change-by-statistic",
-):
+    _model: Any,
+    _sample_func: Any,
+    _bias_adjust_mode: str = "change-by-statistic",
+) -> None:
     old_bias = deepcopy(_model.get_out_bias())
     _model.change_out_bias(
         _sample_func,
