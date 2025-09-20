@@ -764,8 +764,6 @@ class Trainer:
                 model_pred, loss, more_loss = self.wrapper(
                     **input_dict, cur_lr=pref_lr, label=label_dict, task_key=task_key
                 )
-                # Check for NaN in total loss before backward pass to prevent corrupted training
-                check_total_loss_nan(_step_id + 1, loss.item())
                 loss.backward()
                 if self.gradient_max_norm > 0.0:
                     torch.nn.utils.clip_grad_norm_(
@@ -817,8 +815,6 @@ class Trainer:
                         int(input_dict["atype"].shape[-1]),
                         learning_rate=pref_lr,
                     )
-                    # Check for NaN in total loss before continuing training
-                    check_total_loss_nan(_step_id + 1, loss.item())
                 elif isinstance(self.loss, DenoiseLoss):
                     KFOptWrapper = KFOptimizerWrapper(
                         self.wrapper,
@@ -845,8 +841,6 @@ class Trainer:
                         input_dict["natoms"],
                         learning_rate=pref_lr,
                     )
-                    # Check for NaN in total loss before continuing training
-                    check_total_loss_nan(_step_id + 1, loss.item())
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
@@ -958,6 +952,9 @@ class Trainer:
 
                 if not self.multi_task:
                     train_results = log_loss_train(loss, more_loss)
+                    # Check for NaN in total loss using CPU values from lcurve computation
+                    if self.rank == 0 and "rmse_e" in train_results:
+                        check_total_loss_nan(display_step_id, train_results["rmse_e"])
                     valid_results = log_loss_valid()
                     if self.rank == 0:
                         log.info(
@@ -1006,6 +1003,11 @@ class Trainer:
                                     loss, more_loss, _task_key=_key
                                 )
                         valid_results[_key] = log_loss_valid(_task_key=_key)
+                        # Check for NaN in total loss using CPU values from lcurve computation
+                        if self.rank == 0 and "rmse_e" in train_results[_key]:
+                            check_total_loss_nan(
+                                display_step_id, train_results[_key]["rmse_e"]
+                            )
                         if self.rank == 0:
                             log.info(
                                 format_training_message_per_task(

@@ -689,18 +689,8 @@ class DPTrainer:
         current_lr = run_sess(self.sess, self.learning_rate)
 
         # Check for NaN in total loss before writing to file and saving checkpoint
-        # We check the main loss component that represents total training loss
-        if train_results:
-            # Look for the main loss key (typically the first loss component)
-            main_loss_key = next(iter(train_results.keys())) if train_results else None
-            if main_loss_key and main_loss_key in train_results:
-                check_total_loss_nan(cur_batch, train_results[main_loss_key])
-
-        if valid_results:
-            # Check validation loss as well for consistency
-            main_loss_key = next(iter(valid_results.keys())) if valid_results else None
-            if main_loss_key and main_loss_key in valid_results:
-                check_total_loss_nan(cur_batch, valid_results[main_loss_key])
+        # We check the main energy loss component that represents total training loss
+        check_total_loss_nan(cur_batch, train_results["rmse_e"])
 
         if print_header:
             self.print_header(fp, train_results, valid_results)

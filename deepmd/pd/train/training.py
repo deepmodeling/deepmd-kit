@@ -781,8 +781,6 @@ class Trainer:
                             label=label_dict,
                             task_key=task_key,
                         )
-                        # Check for NaN in total loss before backward pass to prevent corrupted training
-                        check_total_loss_nan(_step_id + 1, loss.item())
 
                     with nvprof_context(enable_profiling, "Backward pass"):
                         loss.backward()
@@ -864,6 +862,9 @@ class Trainer:
 
                 if not self.multi_task:
                     train_results = log_loss_train(loss, more_loss)
+                    # Check for NaN in total loss using CPU values from lcurve computation
+                    if self.rank == 0 and "rmse_e" in train_results:
+                        check_total_loss_nan(display_step_id, train_results["rmse_e"])
                     valid_results = log_loss_valid()
                     if self.rank == 0:
                         log.info(
@@ -905,6 +906,11 @@ class Trainer:
                                 loss, more_loss, _task_key=_key
                             )
                         valid_results[_key] = log_loss_valid(_task_key=_key)
+                        # Check for NaN in total loss using CPU values from lcurve computation
+                        if self.rank == 0 and "rmse_e" in train_results[_key]:
+                            check_total_loss_nan(
+                                display_step_id, train_results[_key]["rmse_e"]
+                            )
                         if self.rank == 0:
                             log.info(
                                 format_training_message_per_task(
