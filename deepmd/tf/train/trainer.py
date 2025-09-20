@@ -61,7 +61,7 @@ from deepmd.utils.data import (
     DataRequirementItem,
 )
 from deepmd.utils.nan_detector import (
-    check_loss_nan,
+    check_total_loss_nan,
 )
 
 log = logging.getLogger(__name__)
@@ -688,11 +688,19 @@ class DPTrainer:
         cur_batch = self.cur_batch
         current_lr = run_sess(self.sess, self.learning_rate)
 
-        # Check for NaN in loss values before writing to file and saving checkpoint
-        # Loss values are already on CPU at this point
-        check_loss_nan(cur_batch, train_results)
-        if valid_results is not None:
-            check_loss_nan(cur_batch, valid_results)
+        # Check for NaN in total loss before writing to file and saving checkpoint
+        # We check the main loss component that represents total training loss
+        if train_results:
+            # Look for the main loss key (typically the first loss component)
+            main_loss_key = next(iter(train_results.keys())) if train_results else None
+            if main_loss_key and main_loss_key in train_results:
+                check_total_loss_nan(cur_batch, train_results[main_loss_key])
+
+        if valid_results:
+            # Check validation loss as well for consistency
+            main_loss_key = next(iter(valid_results.keys())) if valid_results else None
+            if main_loss_key and main_loss_key in valid_results:
+                check_total_loss_nan(cur_batch, valid_results[main_loss_key])
 
         if print_header:
             self.print_header(fp, train_results, valid_results)

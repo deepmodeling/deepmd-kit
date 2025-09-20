@@ -76,7 +76,7 @@ from deepmd.utils.data import (
     DataRequirementItem,
 )
 from deepmd.utils.nan_detector import (
-    check_loss_nan,
+    check_total_loss_nan,
 )
 
 if torch.__version__.startswith("2"):
@@ -764,6 +764,8 @@ class Trainer:
                 model_pred, loss, more_loss = self.wrapper(
                     **input_dict, cur_lr=pref_lr, label=label_dict, task_key=task_key
                 )
+                # Check for NaN in total loss before backward pass to prevent corrupted training
+                check_total_loss_nan(_step_id + 1, loss.item())
                 loss.backward()
                 if self.gradient_max_norm > 0.0:
                     torch.nn.utils.clip_grad_norm_(
@@ -815,6 +817,8 @@ class Trainer:
                         int(input_dict["atype"].shape[-1]),
                         learning_rate=pref_lr,
                     )
+                    # Check for NaN in total loss before continuing training
+                    check_total_loss_nan(_step_id + 1, loss.item())
                 elif isinstance(self.loss, DenoiseLoss):
                     KFOptWrapper = KFOptimizerWrapper(
                         self.wrapper,
@@ -841,6 +845,8 @@ class Trainer:
                         input_dict["natoms"],
                         learning_rate=pref_lr,
                     )
+                    # Check for NaN in total loss before continuing training
+                    check_total_loss_nan(_step_id + 1, loss.item())
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
@@ -1072,20 +1078,6 @@ class Trainer:
                     self.print_on_training(
                         fout, display_step_id, cur_lr, train_results, valid_results
                     )
-
-                # Check for NaN in loss values before saving checkpoint
-                # Loss values are already on CPU at this point for display/logging
-                if self.rank == 0:
-                    if not self.multi_task:
-                        check_loss_nan(display_step_id, train_results)
-                        if valid_results:
-                            check_loss_nan(display_step_id, valid_results)
-                    else:
-                        for task_key in train_results:
-                            if train_results[task_key]:
-                                check_loss_nan(display_step_id, train_results[task_key])
-                            if valid_results[task_key]:
-                                check_loss_nan(display_step_id, valid_results[task_key])
 
             if (
                 (
