@@ -8,7 +8,6 @@ import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.array_api import (
-    Array,
     xp_scatter_sum,
 )
 from deepmd.dpmodel.common import (
@@ -25,12 +24,12 @@ from deepmd.dpmodel.output_def import (
 
 
 def fit_output_to_model_output(
-    fit_ret: dict[str, Array],
+    fit_ret: dict[str, np.ndarray],
     fit_output_def: FittingOutputDef,
-    coord_ext: Array,
+    coord_ext: np.ndarray,
     do_atomic_virial: bool = False,
-    mask: Optional[Array] = None,
-) -> dict[str, Array]:
+    mask: Optional[np.ndarray] = None,
+) -> dict[str, np.ndarray]:
     """Transform the output of the fitting network to
     the model output.
 
@@ -69,14 +68,14 @@ def fit_output_to_model_output(
 
 
 def get_leading_dims(
-    vv: Array,
+    vv: np.ndarray,
     vdef: OutputVariableDef,
-) -> list[int]:
+):
     """Get the dimensions of nf x nloc.
 
     Parameters
     ----------
-    vv : Array
+    vv : np.ndarray
         The input array from which to compute the leading dimensions.
     vdef : OutputVariableDef
         The output variable definition containing the shape to exclude from `vv`.
@@ -91,11 +90,11 @@ def get_leading_dims(
 
 
 def communicate_extended_output(
-    model_ret: dict[str, Array],
+    model_ret: dict[str, np.ndarray],
     model_output_def: ModelOutputDef,
-    mapping: Array,  # nf x nloc
+    mapping: np.ndarray,  # nf x nloc
     do_atomic_virial: bool = False,
-) -> dict[str, Array]:
+) -> dict[str, np.ndarray]:
     """Transform the output of the model network defined on
     local and ghost (extended) atoms to local atoms.
 

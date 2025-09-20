@@ -35,9 +35,9 @@
 using namespace LAMMPS_NS;
 using namespace std;
 
-static int stringCmp(const void* a, const void* b) {
-  char* m = (char*)a;
-  char* n = (char*)b;
+static int stringCmp(const void *a, const void *b) {
+  char *m = (char *)a;
+  char *n = (char *)b;
   int i, sum = 0;
 
   for (i = 0; i < MPI_MAX_PROCESSOR_NAME; i++) {
@@ -98,7 +98,7 @@ int PairDeepBaseModel::get_node_rank() {
   return looprank;
 }
 
-std::string PairDeepBaseModel::get_file_content(const std::string& model) {
+std::string PairDeepBaseModel::get_file_content(const std::string &model) {
   int myrank = 0, root = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
   int nchar = 0;
@@ -108,7 +108,7 @@ std::string PairDeepBaseModel::get_file_content(const std::string& model) {
     nchar = file_content.size();
   }
   MPI_Bcast(&nchar, 1, MPI_INT, root, MPI_COMM_WORLD);
-  char* buff = (char*)malloc(sizeof(char) * nchar);
+  char *buff = (char *)malloc(sizeof(char) * nchar);
   if (myrank == root) {
     memcpy(buff, file_content.c_str(), sizeof(char) * nchar);
   }
@@ -122,7 +122,7 @@ std::string PairDeepBaseModel::get_file_content(const std::string& model) {
 }
 
 std::vector<std::string> PairDeepBaseModel::get_file_content(
-    const std::vector<std::string>& models) {
+    const std::vector<std::string> &models) {
   std::vector<std::string> file_contents(models.size());
   for (unsigned ii = 0; ii < models.size(); ++ii) {
     file_contents[ii] = get_file_content(models[ii]);
@@ -130,11 +130,11 @@ std::vector<std::string> PairDeepBaseModel::get_file_content(
   return file_contents;
 }
 
-void PairDeepBaseModel::make_fparam_from_compute(vector<double>& fparam) {
+void PairDeepBaseModel::make_fparam_from_compute(vector<double> &fparam) {
   assert(do_compute_fparam);
 
   int icompute = modify->find_compute(compute_fparam_id);
-  Compute* compute = modify->compute[icompute];
+  Compute *compute = modify->compute[icompute];
 
   if (!compute) {
     error->all(FLERR, "compute id is not found: " + compute_fparam_id);
@@ -152,18 +152,18 @@ void PairDeepBaseModel::make_fparam_from_compute(vector<double>& fparam) {
       compute->compute_vector();
       compute->invoked_flag |= Compute::INVOKED_VECTOR;
     }
-    double* cvector = compute->vector;
+    double *cvector = compute->vector;
     for (int jj = 0; jj < dim_fparam; ++jj) {
       fparam[jj] = cvector[jj];
     }
   }
 }
 
-void PairDeepBaseModel::make_aparam_from_compute(vector<double>& aparam) {
+void PairDeepBaseModel::make_aparam_from_compute(vector<double> &aparam) {
   assert(do_compute_aparam);
 
   int icompute = modify->find_compute(compute_aparam_id);
-  Compute* compute = modify->compute[icompute];
+  Compute *compute = modify->compute[icompute];
 
   if (!compute) {
     error->all(FLERR, "compute id is not found: " + compute_aparam_id);
@@ -176,10 +176,10 @@ void PairDeepBaseModel::make_aparam_from_compute(vector<double>& aparam) {
     compute->invoked_flag |= Compute::INVOKED_PERATOM;
   }
   if (dim_aparam == 1) {
-    double* cvector = compute->vector_atom;
+    double *cvector = compute->vector_atom;
     aparam.assign(cvector, cvector + nlocal);
   } else if (dim_aparam > 1) {
-    double** carray = compute->array_atom;
+    double **carray = compute->array_atom;
     for (int ii = 0; ii < nlocal; ++ii) {
       for (int jj = 0; jj < dim_aparam; ++jj) {
         aparam[ii * dim_aparam + jj] = carray[ii][jj];
@@ -189,13 +189,13 @@ void PairDeepBaseModel::make_aparam_from_compute(vector<double>& aparam) {
 }
 
 #ifdef USE_TTM
-void PairDeepBaseModel::make_ttm_fparam(vector<double>& fparam) {
+void PairDeepBaseModel::make_ttm_fparam(vector<double> &fparam) {
   assert(do_ttm);
   // get ttm_fix
-  const FixTTMDP* ttm_fix = NULL;
+  const FixTTMDP *ttm_fix = NULL;
   for (int ii = 0; ii < modify->nfix; ii++) {
     if (string(modify->fix[ii]->id) == ttm_fix_id) {
-      ttm_fix = dynamic_cast<FixTTMDP*>(modify->fix[ii]);
+      ttm_fix = dynamic_cast<FixTTMDP *>(modify->fix[ii]);
     }
   }
   if (!ttm_fix) {
@@ -208,7 +208,7 @@ void PairDeepBaseModel::make_ttm_fparam(vector<double>& fparam) {
   int nxnodes = nnodes[0];
   int nynodes = nnodes[1];
   int nznodes = nnodes[2];
-  double*** const T_electron = ttm_fix->get_T_electron();
+  double ***const T_electron = ttm_fix->get_T_electron();
 
   int numb_effective_nodes = 0;
   double total_Te = 0;
@@ -230,27 +230,27 @@ void PairDeepBaseModel::make_ttm_fparam(vector<double>& fparam) {
 #endif
 
 #ifdef USE_TTM
-void PairDeepBaseModel::make_ttm_aparam(vector<double>& daparam) {
+void PairDeepBaseModel::make_ttm_aparam(vector<double> &daparam) {
   assert(do_ttm);
   // get ttm_fix
-  const FixTTMDP* ttm_fix = NULL;
+  const FixTTMDP *ttm_fix = NULL;
   for (int ii = 0; ii < modify->nfix; ii++) {
     if (string(modify->fix[ii]->id) == ttm_fix_id) {
-      ttm_fix = dynamic_cast<FixTTMDP*>(modify->fix[ii]);
+      ttm_fix = dynamic_cast<FixTTMDP *>(modify->fix[ii]);
     }
   }
   if (!ttm_fix) {
     error->all(FLERR, "fix ttm id is not found: " + ttm_fix_id);
   }
   // modify
-  double** x = atom->x;
-  int* mask = atom->mask;
+  double **x = atom->x;
+  int *mask = atom->mask;
   int nlocal = atom->nlocal;
   vector<int> nnodes = ttm_fix->get_nodes();
   int nxnodes = nnodes[0];
   int nynodes = nnodes[1];
   int nznodes = nnodes[2];
-  double*** const T_electron = ttm_fix->get_T_electron();
+  double ***const T_electron = ttm_fix->get_T_electron();
   double dx = domain->xprd / nxnodes;
   double dy = domain->yprd / nynodes;
   double dz = domain->zprd / nynodes;
@@ -275,8 +275,8 @@ void PairDeepBaseModel::make_ttm_aparam(vector<double>& daparam) {
 }
 #endif
 
-void PairDeepBaseModel::cum_sum(std::map<int, int>& sum,
-                                std::map<int, int>& vec) {
+void PairDeepBaseModel::cum_sum(std::map<int, int> &sum,
+                                std::map<int, int> &vec) {
   sum[0] = 0;
   for (int ii = 1; ii < vec.size(); ++ii) {
     sum[ii] = sum[ii - 1] + vec[ii - 1];
@@ -284,10 +284,10 @@ void PairDeepBaseModel::cum_sum(std::map<int, int>& sum,
 }
 
 PairDeepBaseModel::PairDeepBaseModel(
-    LAMMPS* lmp,
-    const char* cite_user_package,
-    deepmd_compat::DeepBaseModel& deep_model,
-    deepmd_compat::DeepBaseModelDevi& deep_model_devi)
+    LAMMPS *lmp,
+    const char *cite_user_package,
+    deepmd_compat::DeepBaseModel &deep_model,
+    deepmd_compat::DeepBaseModelDevi &deep_model_devi)
     : Pair(lmp),
       deep_base(deep_model),
       deep_base_model_devi(deep_model_devi)
@@ -349,7 +349,7 @@ void PairDeepBaseModel::print_summary(const string pre) const {
     // capture cout to a string, then call LAMMPS's utils::logmesg
     // https://stackoverflow.com/a/4043813/9567349
     std::stringstream buffer;
-    std::streambuf* sbuf = std::cout.rdbuf();
+    std::streambuf *sbuf = std::cout.rdbuf();
     std::cout.rdbuf(buffer.rdbuf());
 
     cout << "Summary of lammps deepmd module ..." << endl;
@@ -405,9 +405,9 @@ void PairDeepBaseModel::allocate() {
   }
 }
 
-void PairDeepBaseModel::read_restart(FILE*) { is_restart = true; }
+void PairDeepBaseModel::read_restart(FILE *) { is_restart = true; }
 
-void PairDeepBaseModel::write_restart(FILE*) {
+void PairDeepBaseModel::write_restart(FILE *) {
   // pass
 }
 
@@ -454,23 +454,23 @@ double PairDeepBaseModel::init_one(int i, int j) {
   return cutoff;
 }
 
-void* PairDeepBaseModel::extract(const char* str, int& dim) {
+void *PairDeepBaseModel::extract(const char *str, int &dim) {
   if (strcmp(str, "cut_coul") == 0) {
     dim = 0;
-    return (void*)&cutoff;
+    return (void *)&cutoff;
   }
   if (strcmp(str, "scale") == 0) {
     dim = 2;
-    return (void*)scale;
+    return (void *)scale;
   }
   return NULL;
 }
 
-void ana_st(double& max,
-            double& min,
-            double& sum,
-            const vector<double>& vec,
-            const int& nloc) {
+void ana_st(double &max,
+            double &min,
+            double &sum,
+            const vector<double> &vec,
+            const int &nloc) {
   if (nloc == 0) {
     return;
   }
@@ -488,9 +488,9 @@ void ana_st(double& max,
   }
 }
 
-void make_uniform_aparam(vector<double>& daparam,
-                         const vector<double>& aparam,
-                         const int& nlocal) {
+void make_uniform_aparam(vector<double> &daparam,
+                         const vector<double> &aparam,
+                         const int &nlocal) {
   unsigned dim_aparam = aparam.size();
   daparam.resize(static_cast<size_t>(dim_aparam) * nlocal);
   for (int ii = 0; ii < nlocal; ++ii) {

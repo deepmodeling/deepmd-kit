@@ -47,12 +47,11 @@ class DPModelCommon:
         )
         return local_jdata_cpy, min_nbor_dist
 
-    # sadly, use -> BaseFitting here will not make torchscript happy
-    def get_fitting_net(self):  # noqa: ANN201
+    def get_fitting_net(self):
         """Get the fitting network."""
         return self.atomic_model.fitting_net
 
-    def get_descriptor(self):  # noqa: ANN201
+    def get_descriptor(self):
         """Get the descriptor."""
         return self.atomic_model.descriptor
 

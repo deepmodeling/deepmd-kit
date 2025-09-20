@@ -2,9 +2,6 @@
 from copy import (
     deepcopy,
 )
-from typing import (
-    Any,
-)
 
 from deepmd.dpmodel.atomic_model import (
     DPEnergyAtomicModel,
@@ -30,15 +27,15 @@ DPEnergyModel_ = make_model(DPEnergyAtomicModel)
 class EnergyModel(DPModelCommon, DPEnergyModel_):
     def __init__(
         self,
-        *args: Any,
-        **kwargs: Any,
+        *args,
+        **kwargs,
     ) -> None:
         DPModelCommon.__init__(self)
         DPEnergyModel_.__init__(self, *args, **kwargs)
         self._enable_hessian = False
         self.hess_fitting_def = None
 
-    def enable_hessian(self) -> None:
+    def enable_hessian(self):
         self.hess_fitting_def = deepcopy(self.atomic_output_def())
         self.hess_fitting_def["energy"].r_hessian = True
         self._enable_hessian = True

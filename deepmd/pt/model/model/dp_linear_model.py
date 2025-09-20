@@ -1,14 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Any,
     Optional,
 )
 
 import torch
 
-from deepmd.dpmodel.output_def import (
-    OutputVariableDef,
-)
 from deepmd.pt.model.atomic_model import (
     LinearEnergyAtomicModel,
 )
@@ -35,12 +31,12 @@ class LinearEnergyModel(DPLinearModel_):
 
     def __init__(
         self,
-        *args: Any,
-        **kwargs: Any,
+        *args,
+        **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
 
-    def translated_output_def(self) -> dict[str, OutputVariableDef]:
+    def translated_output_def(self):
         out_def_data = self.model_output_def().get_data()
         output_def = {
             "atom_energy": out_def_data["energy"],
@@ -60,8 +56,8 @@ class LinearEnergyModel(DPLinearModel_):
 
     def forward(
         self,
-        coord: torch.Tensor,
-        atype: torch.Tensor,
+        coord,
+        atype,
         box: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
@@ -94,15 +90,15 @@ class LinearEnergyModel(DPLinearModel_):
     @torch.jit.export
     def forward_lower(
         self,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
-        nlist: torch.Tensor,
+        extended_coord,
+        extended_atype,
+        nlist,
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
-    ) -> dict[str, torch.Tensor]:
+    ):
         model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,

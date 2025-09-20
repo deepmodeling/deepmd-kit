@@ -30,14 +30,14 @@ from deepmd.pt.utils.utils import (
 device = env.DEVICE
 
 
-def empty_t(shape: tuple[int, ...], precision: torch.dtype) -> torch.Tensor:
+def empty_t(shape, precision):
     return torch.empty(shape, dtype=precision, device=device)
 
 
 class LayerNorm(nn.Module):
     def __init__(
         self,
-        num_in: int,
+        num_in,
         eps: float = 1e-5,
         uni_init: bool = True,
         bavg: float = 0.0,
@@ -141,7 +141,7 @@ class LayerNorm(nn.Module):
         )
         prec = PRECISION_DICT[obj.precision]
 
-        def check_load_param(ss: str) -> Optional[nn.Parameter]:
+        def check_load_param(ss):
             return (
                 nn.Parameter(data=to_torch_tensor(nl[ss]))
                 if nl[ss] is not None

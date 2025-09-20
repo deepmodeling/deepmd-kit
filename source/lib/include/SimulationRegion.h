@@ -13,82 +13,82 @@ class SimulationRegion {
   const static int SPACENDIM = MOASPNDIM;
 
  public:
-  void reinitBox(const double* boxv);
-  void affineTransform(const double* affine_map);
-  void reinitOrigin(const double* orig);
-  void reinitOrigin(const std::vector<double>& orig);
+  void reinitBox(const double *boxv);
+  void affineTransform(const double *affine_map);
+  void reinitOrigin(const double *orig);
+  void reinitOrigin(const std::vector<double> &orig);
   void backup();
   void recover();
 
  public:
   SimulationRegion();
   ~SimulationRegion();
-  double* getBoxTensor() { return boxt; };
-  const double* getBoxTensor() const { return boxt; };
-  double* getRecBoxTensor() { return rec_boxt; }
-  const double* getRecBoxTensor() const { return rec_boxt; }
-  double* getBoxOrigin() { return origin; }
-  const double* getBoxOrigin() const { return origin; }
+  double *getBoxTensor() { return boxt; };
+  const double *getBoxTensor() const { return boxt; };
+  double *getRecBoxTensor() { return rec_boxt; }
+  const double *getRecBoxTensor() const { return rec_boxt; }
+  double *getBoxOrigin() { return origin; }
+  const double *getBoxOrigin() const { return origin; }
   double getVolume() const { return volume; }
 
  public:
-  void toFaceDistance(double* dd) const;
+  void toFaceDistance(double *dd) const;
 
  public:
-  void phys2Inter(double* i_v, const VALUETYPE* p_v) const;
-  void inter2Phys(VALUETYPE* p_v, const double* i_v) const;
+  void phys2Inter(double *i_v, const VALUETYPE *p_v) const;
+  void inter2Phys(VALUETYPE *p_v, const double *i_v) const;
 
  public:
   bool isPeriodic(const int dim) const { return is_periodic[dim]; }
-  static int compactIndex(const int* idx);
-  double* getShiftVec(const int index = 0);
-  const double* getShiftVec(const int index = 0) const;
-  int getShiftIndex(const int* idx) const;
+  static int compactIndex(const int *idx);
+  double *getShiftVec(const int index = 0);
+  const double *getShiftVec(const int index = 0) const;
+  int getShiftIndex(const int *idx) const;
   int getNullShiftIndex() const;
-  void shiftCoord(const int* idx,
-                  VALUETYPE& x,
-                  VALUETYPE& y,
-                  VALUETYPE& z) const;
+  void shiftCoord(const int *idx,
+                  VALUETYPE &x,
+                  VALUETYPE &y,
+                  VALUETYPE &z) const;
   static int getNumbShiftVec() { return shift_info_size; }
   static int getShiftVecTotalSize() { return shift_vec_size; }
 
  public:
-  void diffNearestNeighbor(const VALUETYPE* r0,
-                           const VALUETYPE* r1,
-                           VALUETYPE* phys) const;
+  void diffNearestNeighbor(const VALUETYPE *r0,
+                           const VALUETYPE *r1,
+                           VALUETYPE *phys) const;
   virtual void diffNearestNeighbor(const VALUETYPE x0,
                                    const VALUETYPE y0,
                                    const VALUETYPE z0,
                                    const VALUETYPE x1,
                                    const VALUETYPE y1,
                                    const VALUETYPE z1,
-                                   VALUETYPE& dx,
-                                   VALUETYPE& dy,
-                                   VALUETYPE& dz) const;
+                                   VALUETYPE &dx,
+                                   VALUETYPE &dy,
+                                   VALUETYPE &dz) const;
   virtual void diffNearestNeighbor(const VALUETYPE x0,
                                    const VALUETYPE y0,
                                    const VALUETYPE z0,
                                    const VALUETYPE x1,
                                    const VALUETYPE y1,
                                    const VALUETYPE z1,
-                                   VALUETYPE& dx,
-                                   VALUETYPE& dy,
-                                   VALUETYPE& dz,
-                                   int& shift_x,
-                                   int& shift_y,
-                                   int& shift_z) const;
+                                   VALUETYPE &dx,
+                                   VALUETYPE &dy,
+                                   VALUETYPE &dz,
+                                   int &shift_x,
+                                   int &shift_y,
+                                   int &shift_z) const;
   virtual void diffNearestNeighbor(const VALUETYPE x0,
                                    const VALUETYPE y0,
                                    const VALUETYPE z0,
                                    const VALUETYPE x1,
                                    const VALUETYPE y1,
                                    const VALUETYPE z1,
-                                   VALUETYPE& dx,
-                                   VALUETYPE& dy,
-                                   VALUETYPE& dz,
-                                   VALUETYPE& shift_x,
-                                   VALUETYPE& shift_y,
-                                   VALUETYPE& shift_z) const;
+                                   VALUETYPE &dx,
+                                   VALUETYPE &dy,
+                                   VALUETYPE &dz,
+                                   VALUETYPE &shift_x,
+                                   VALUETYPE &shift_y,
+                                   VALUETYPE &shift_z) const;
 
  private:
   void computeVolume();
@@ -118,25 +118,25 @@ class SimulationRegion {
   static int index3to1(const int tx, const int ty, const int tz) {
     return (NBOX_ZZ * (NBOX_YY * (tx + DBOX_XX) + ty + DBOX_YY) + tz + DBOX_ZZ);
   }
-  double* getInterShiftVec(const int index = 0);
-  const double* getInterShiftVec(const int index = 0) const;
+  double *getInterShiftVec(const int index = 0);
+  const double *getInterShiftVec(const int index = 0) const;
 
  private:
-  void copy(double* o_v, const double* i_v) const;
-  void naiveTensorDotVector(double* out,
-                            const double* i_t,
-                            const double* i_v) const;
-  void naiveTensorTransDotVector(double* out,
-                                 const double* i_t,
-                                 const double* i_v) const;
-  void tensorDotVector(double* out, const double* i_t, const double* i_v) const;
-  void tensorTransDotVector(double* out,
-                            const double* i_t,
-                            const double* i_v) const;
-  void getFromRestart(double* my_boxv, double* my_orig, bool* period) const;
-  void defaultInitBox(double* my_boxv, double* my_orig, bool* period) const;
-  void apply_periodic(int dim, double* dd) const;
-  void apply_periodic(int dim, double* dd, int& shift) const;
+  void copy(double *o_v, const double *i_v) const;
+  void naiveTensorDotVector(double *out,
+                            const double *i_t,
+                            const double *i_v) const;
+  void naiveTensorTransDotVector(double *out,
+                                 const double *i_t,
+                                 const double *i_v) const;
+  void tensorDotVector(double *out, const double *i_t, const double *i_v) const;
+  void tensorTransDotVector(double *out,
+                            const double *i_t,
+                            const double *i_v) const;
+  void getFromRestart(double *my_boxv, double *my_orig, bool *period) const;
+  void defaultInitBox(double *my_boxv, double *my_orig, bool *period) const;
+  void apply_periodic(int dim, double *dd) const;
+  void apply_periodic(int dim, double *dd, int &shift) const;
 
  private:
   std::fstream fp;

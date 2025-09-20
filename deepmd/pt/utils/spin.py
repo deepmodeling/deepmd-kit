@@ -4,10 +4,10 @@ import torch
 
 
 def concat_switch_virtual(
-    extended_tensor: torch.Tensor,
-    extended_tensor_virtual: torch.Tensor,
+    extended_tensor,
+    extended_tensor_virtual,
     nloc: int,
-) -> torch.Tensor:
+):
     """
     Concat real and virtual extended tensors, and switch all the local ones to the first nloc * 2 atoms.
     - [:, :nloc]: original nloc real atoms.

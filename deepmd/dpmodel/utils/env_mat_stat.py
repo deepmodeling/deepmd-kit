@@ -13,9 +13,6 @@ import numpy as np
 from deepmd.common import (
     get_hash,
 )
-from deepmd.dpmodel.array_api import (
-    Array,
-)
 from deepmd.dpmodel.common import (
     get_xp_precision,
 )
@@ -41,12 +38,12 @@ if TYPE_CHECKING:
 
 
 class EnvMatStat(BaseEnvMatStat):
-    def compute_stat(self, env_mat: dict[str, Array]) -> dict[str, StatItem]:
+    def compute_stat(self, env_mat: dict[str, np.ndarray]) -> dict[str, StatItem]:
         """Compute the statistics of the environment matrix for a single system.
 
         Parameters
         ----------
-        env_mat : Array
+        env_mat : np.ndarray
             The environment matrix.
 
         Returns
@@ -221,7 +218,7 @@ class EnvMatStatSe(EnvMatStat):
             }
         )
 
-    def __call__(self) -> tuple[Array, Array]:
+    def __call__(self):
         avgs = self.get_avg()
         stds = self.get_std()
 

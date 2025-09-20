@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    Any,
     Optional,
     Union,
 )
@@ -20,8 +19,8 @@ class ModelWrapper(torch.nn.Module):
         self,
         model: Union[torch.nn.Module, dict],
         loss: Union[torch.nn.Module, dict] = None,
-        model_params: Optional[dict[str, Any]] = None,
-        shared_links: Optional[dict[str, Any]] = None,
+        model_params=None,
+        shared_links=None,
     ) -> None:
         """Construct a DeePMD model wrapper.
 
@@ -60,7 +59,7 @@ class ModelWrapper(torch.nn.Module):
                     self.loss[task_key] = loss[task_key]
         self.inference_only = self.loss is None
 
-    def share_params(self, shared_links: dict[str, Any], resume: bool = False) -> None:
+    def share_params(self, shared_links, resume=False) -> None:
         """
         Share the parameters of classes following rules defined in shared_links during multitask training.
         If not start from checkpoint (resume is False),
@@ -139,18 +138,18 @@ class ModelWrapper(torch.nn.Module):
 
     def forward(
         self,
-        coord: torch.Tensor,
-        atype: torch.Tensor,
+        coord,
+        atype,
         spin: Optional[torch.Tensor] = None,
         box: Optional[torch.Tensor] = None,
         cur_lr: Optional[torch.Tensor] = None,
         label: Optional[torch.Tensor] = None,
         task_key: Optional[torch.Tensor] = None,
-        inference_only: bool = False,
-        do_atomic_virial: bool = False,
+        inference_only=False,
+        do_atomic_virial=False,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
-    ) -> tuple[Any, Any, Any]:
+    ):
         if not self.multi_task:
             task_key = "Default"
         else:

@@ -13,7 +13,6 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
-    Array,
     xp_take_along_axis,
 )
 from deepmd.dpmodel.common import (
@@ -174,11 +173,11 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
     def __init__(
         self,
-        e_rcut: float,
-        e_rcut_smth: float,
+        e_rcut,
+        e_rcut_smth,
         e_sel: int,
-        a_rcut: float,
-        a_rcut_smth: float,
+        a_rcut,
+        a_rcut_smth,
         a_sel: int,
         ntypes: int,
         nlayers: int = 6,
@@ -372,7 +371,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         """Returns the embedding dimension e_dim."""
         return self.e_dim
 
-    def __setitem__(self, key: str, value: Array) -> None:
+    def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -380,7 +379,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key: str) -> Array:
+    def __getitem__(self, key):
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -405,17 +404,17 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         return self.env_protection
 
     @property
-    def dim_out(self) -> int:
+    def dim_out(self):
         """Returns the output dimension of this descriptor."""
         return self.n_dim
 
     @property
-    def dim_in(self) -> int:
+    def dim_in(self):
         """Returns the atomic input dimension of this descriptor."""
         return self.n_dim
 
     @property
-    def dim_emb(self) -> int:
+    def dim_emb(self):
         """Returns the embedding dimension e_dim."""
         return self.get_dim_emb()
 
@@ -476,12 +475,12 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
     def call(
         self,
-        nlist: Array,
-        coord_ext: Array,
-        atype_ext: Array,
-        atype_embd_ext: Optional[Array] = None,
-        mapping: Optional[Array] = None,
-    ) -> tuple[Array, Array]:
+        nlist: np.ndarray,
+        coord_ext: np.ndarray,
+        atype_ext: np.ndarray,
+        atype_embd_ext: Optional[np.ndarray] = None,
+        mapping: Optional[np.ndarray] = None,
+    ):
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         nframes, nloc, nnei = nlist.shape
         nall = xp.reshape(coord_ext, (nframes, -1)).shape[1] // 3
@@ -664,7 +663,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         return True
 
     @classmethod
-    def deserialize(cls, data: dict) -> "DescrptBlockRepflows":
+    def deserialize(cls, data):
         """Deserialize the descriptor block."""
         data = data.copy()
         edge_embd = NativeLayer.deserialize(data.pop("edge_embd"))
@@ -685,7 +684,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         obj.stddev = dstd
         return obj
 
-    def serialize(self) -> dict:
+    def serialize(self):
         """Serialize the descriptor block."""
         return {
             "e_rcut": self.e_rcut,
@@ -735,15 +734,15 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
 
 def _cal_hg_dynamic(
-    flat_edge_ebd: Array,
-    flat_h2: Array,
-    flat_sw: Array,
-    owner: Array,
+    flat_edge_ebd: np.ndarray,
+    flat_h2: np.ndarray,
+    flat_sw: np.ndarray,
+    owner: np.ndarray,
     num_owner: int,
     nb: int,
     nloc: int,
     scale_factor: float,
-) -> Array:
+) -> np.ndarray:
     """
     Calculate the transposed rotation matrix.
 
@@ -790,16 +789,16 @@ def _cal_hg_dynamic(
 
 
 def symmetrization_op_dynamic(
-    flat_edge_ebd: Array,
-    flat_h2: Array,
-    flat_sw: Array,
-    owner: Array,
+    flat_edge_ebd: np.ndarray,
+    flat_h2: np.ndarray,
+    flat_sw: np.ndarray,
+    owner: np.ndarray,
     num_owner: int,
     nb: int,
     nloc: int,
     scale_factor: float,
     axis_neuron: int,
-) -> Array:
+) -> np.ndarray:
     """
     Symmetrization operator to obtain atomic invariant rep.
 
@@ -1109,11 +1108,11 @@ class RepFlowLayer(NativeOP):
 
     def optim_angle_update(
         self,
-        angle_ebd: Array,
-        node_ebd: Array,
-        edge_ebd: Array,
+        angle_ebd: np.ndarray,
+        node_ebd: np.ndarray,
+        edge_ebd: np.ndarray,
         feat: str = "edge",
-    ) -> Array:
+    ) -> np.ndarray:
         xp = array_api_compat.array_namespace(angle_ebd, node_ebd, edge_ebd)
 
         if feat == "edge":
@@ -1157,14 +1156,14 @@ class RepFlowLayer(NativeOP):
 
     def optim_angle_update_dynamic(
         self,
-        flat_angle_ebd: Array,
-        node_ebd: Array,
-        flat_edge_ebd: Array,
-        n2a_index: Array,
-        eij2a_index: Array,
-        eik2a_index: Array,
-        feat: str = "edge",
-    ) -> Array:
+        flat_angle_ebd: np.ndarray,
+        node_ebd: np.ndarray,
+        flat_edge_ebd: np.ndarray,
+        n2a_index: np.ndarray,
+        eij2a_index: np.ndarray,
+        eik2a_index: np.ndarray,
+        feat="edge",
+    ):
         xp = array_api_compat.array_namespace(
             flat_angle_ebd, node_ebd, flat_edge_ebd, n2a_index, eij2a_index, eik2a_index
         )
@@ -1216,12 +1215,12 @@ class RepFlowLayer(NativeOP):
 
     def optim_edge_update(
         self,
-        node_ebd: Array,
-        node_ebd_ext: Array,
-        edge_ebd: Array,
-        nlist: Array,
+        node_ebd: np.ndarray,
+        node_ebd_ext: np.ndarray,
+        edge_ebd: np.ndarray,
+        nlist: np.ndarray,
         feat: str = "node",
-    ) -> Array:
+    ) -> np.ndarray:
         xp = array_api_compat.array_namespace(node_ebd, node_ebd_ext, edge_ebd, nlist)
 
         if feat == "node":
@@ -1259,13 +1258,13 @@ class RepFlowLayer(NativeOP):
 
     def optim_edge_update_dynamic(
         self,
-        node_ebd: Array,
-        node_ebd_ext: Array,
-        flat_edge_ebd: Array,
-        n2e_index: Array,
-        n_ext2e_index: Array,
+        node_ebd: np.ndarray,
+        node_ebd_ext: np.ndarray,
+        flat_edge_ebd: np.ndarray,
+        n2e_index: np.ndarray,
+        n_ext2e_index: np.ndarray,
         feat: str = "node",
-    ) -> Array:
+    ):
         xp = array_api_compat.array_namespace(
             node_ebd, node_ebd_ext, flat_edge_ebd, n2e_index, n_ext2e_index
         )
@@ -1307,19 +1306,19 @@ class RepFlowLayer(NativeOP):
 
     def call(
         self,
-        node_ebd_ext: Array,  # nf x nall x n_dim
-        edge_ebd: Array,  # nf x nloc x nnei x e_dim
-        h2: Array,  # nf x nloc x nnei x 3
-        angle_ebd: Array,  # nf x nloc x a_nnei x a_nnei x a_dim
-        nlist: Array,  # nf x nloc x nnei
-        nlist_mask: Array,  # nf x nloc x nnei
-        sw: Array,  # switch func, nf x nloc x nnei
-        a_nlist: Array,  # nf x nloc x a_nnei
-        a_nlist_mask: Array,  # nf x nloc x a_nnei
-        a_sw: Array,  # switch func, nf x nloc x a_nnei
-        edge_index: Array,  # 2 x n_edge
-        angle_index: Array,  # 3 x n_angle
-    ) -> tuple[Array, Array]:
+        node_ebd_ext: np.ndarray,  # nf x nall x n_dim
+        edge_ebd: np.ndarray,  # nf x nloc x nnei x e_dim
+        h2: np.ndarray,  # nf x nloc x nnei x 3
+        angle_ebd: np.ndarray,  # nf x nloc x a_nnei x a_nnei x a_dim
+        nlist: np.ndarray,  # nf x nloc x nnei
+        nlist_mask: np.ndarray,  # nf x nloc x nnei
+        sw: np.ndarray,  # switch func, nf x nloc x nnei
+        a_nlist: np.ndarray,  # nf x nloc x a_nnei
+        a_nlist_mask: np.ndarray,  # nf x nloc x a_nnei
+        a_sw: np.ndarray,  # switch func, nf x nloc x a_nnei
+        edge_index: np.ndarray,  # 2 x n_edge
+        angle_index: np.ndarray,  # 3 x n_angle
+    ):
         """
         Parameters
         ----------
@@ -1409,16 +1408,16 @@ class RepFlowLayer(NativeOP):
             )
         )
 
-        n_update_list: list[Array] = [node_ebd]
-        e_update_list: list[Array] = [edge_ebd]
-        a_update_list: list[Array] = [angle_ebd]
+        n_update_list: list[np.ndarray] = [node_ebd]
+        e_update_list: list[np.ndarray] = [edge_ebd]
+        a_update_list: list[np.ndarray] = [angle_ebd]
 
         # node self mlp
         node_self_mlp = self.act(self.node_self_mlp(node_ebd))
         n_update_list.append(node_self_mlp)
 
         # node sym (grrg + drrd)
-        node_sym_list: list[Array] = []
+        node_sym_list: list[np.ndarray] = []
         node_sym_list.append(
             symmetrization_op(
                 edge_ebd,
@@ -1788,15 +1787,15 @@ class RepFlowLayer(NativeOP):
 
     def list_update_res_avg(
         self,
-        update_list: list[Array],
-    ) -> Array:
+        update_list: list[np.ndarray],
+    ) -> np.ndarray:
         nitem = len(update_list)
         uu = update_list[0]
         for ii in range(1, nitem):
             uu = uu + update_list[ii]
         return uu / (float(nitem) ** 0.5)
 
-    def list_update_res_incr(self, update_list: list[Array]) -> Array:
+    def list_update_res_incr(self, update_list: list[np.ndarray]) -> np.ndarray:
         nitem = len(update_list)
         uu = update_list[0]
         scale = 1.0 / (float(nitem - 1) ** 0.5) if nitem > 1 else 0.0
@@ -1805,8 +1804,8 @@ class RepFlowLayer(NativeOP):
         return uu
 
     def list_update_res_residual(
-        self, update_list: list[Array], update_name: str = "node"
-    ) -> Array:
+        self, update_list: list[np.ndarray], update_name: str = "node"
+    ) -> np.ndarray:
         nitem = len(update_list)
         uu = update_list[0]
         if update_name == "node":
@@ -1822,7 +1821,9 @@ class RepFlowLayer(NativeOP):
             raise NotImplementedError
         return uu
 
-    def list_update(self, update_list: list[Array], update_name: str = "node") -> Array:
+    def list_update(
+        self, update_list: list[np.ndarray], update_name: str = "node"
+    ) -> np.ndarray:
         if self.update_style == "res_avg":
             return self.list_update_res_avg(update_list)
         elif self.update_style == "res_incr":

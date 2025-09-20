@@ -10,9 +10,6 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.array_api import (
-    Array,
-)
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
@@ -123,10 +120,6 @@ class DeepEval(DeepEvalBackend):
         """Get the number (dimension) of atomic parameters of this DP."""
         return self.dp.get_dim_aparam()
 
-    def has_default_fparam(self) -> bool:
-        """Check if the model has default frame parameters."""
-        return self.dp.has_default_fparam()
-
     @property
     def model_type(self) -> type["DeepEvalWrapper"]:
         """The the evaluator of the model type."""
@@ -167,14 +160,14 @@ class DeepEval(DeepEvalBackend):
 
     def eval(
         self,
-        coords: Array,
-        cells: Optional[Array],
-        atom_types: Array,
+        coords: np.ndarray,
+        cells: Optional[np.ndarray],
+        atom_types: np.ndarray,
         atomic: bool = False,
-        fparam: Optional[Array] = None,
-        aparam: Optional[Array] = None,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
         **kwargs: Any,
-    ) -> dict[str, Array]:
+    ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
 
         Parameters
@@ -280,7 +273,7 @@ class DeepEval(DeepEvalBackend):
         """
         if self.auto_batch_size is not None:
 
-            def eval_func(*args: Any, **kwargs: Any) -> Any:
+            def eval_func(*args, **kwargs):
                 return self.auto_batch_size.execute_all(
                     inner_func, numb_test, natoms, *args, **kwargs
                 )
@@ -291,8 +284,8 @@ class DeepEval(DeepEvalBackend):
 
     def _get_natoms_and_nframes(
         self,
-        coords: Array,
-        atom_types: Array,
+        coords: np.ndarray,
+        atom_types: np.ndarray,
         mixed_type: bool = False,
     ) -> tuple[int, int]:
         if mixed_type:
@@ -308,13 +301,13 @@ class DeepEval(DeepEvalBackend):
 
     def _eval_model(
         self,
-        coords: Array,
-        cells: Optional[Array],
-        atom_types: Array,
-        fparam: Optional[Array],
-        aparam: Optional[Array],
+        coords: np.ndarray,
+        cells: Optional[np.ndarray],
+        atom_types: np.ndarray,
+        fparam: Optional[np.ndarray],
+        aparam: Optional[np.ndarray],
         request_defs: list[OutputVariableDef],
-    ) -> dict[str, Array]:
+    ):
         model = self.dp
 
         nframes = coords.shape[0]
@@ -372,9 +365,7 @@ class DeepEval(DeepEvalBackend):
                 )  # this is kinda hacky
         return tuple(results)
 
-    def _get_output_shape(
-        self, odef: OutputVariableDef, nframes: int, natoms: int
-    ) -> list[int]:
+    def _get_output_shape(self, odef, nframes, natoms):
         if odef.category == OutputVariableCategory.DERV_C_REDU:
             # virial
             return [nframes, *odef.shape[:-1], 9]
@@ -400,14 +391,4 @@ class DeepEval(DeepEvalBackend):
 
     def get_model_def_script(self) -> dict:
         """Get model definition script."""
-        return json.loads(self.dp.get_model_def_script())
-
-    def get_model(self) -> "BaseModel":
-        """Get the dpmodel BaseModel.
-
-        Returns
-        -------
-        BaseModel
-            The dpmodel BaseModel.
-        """
-        return self.dp
+        return json.loads(self.model.get_model_def_script())

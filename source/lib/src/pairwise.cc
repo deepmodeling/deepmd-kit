@@ -8,7 +8,7 @@
 #include "errors.h"
 
 template <typename T>
-std::vector<size_t> sort_indexes(const std::vector<T>& v) {
+std::vector<size_t> sort_indexes(const std::vector<T> &v) {
   // https://stackoverflow.com/a/12399290/9567349
   // by Lukasz Wiklendt under CC BY-SA 4.0
   std::vector<size_t> idx(v.size());
@@ -18,8 +18,8 @@ std::vector<size_t> sort_indexes(const std::vector<T>& v) {
   return idx;
 }
 
-void deepmd::group_atoms_cpu(std::vector<std::vector<int>>& fragments,
-                             const std::vector<int>& idxs) {
+void deepmd::group_atoms_cpu(std::vector<std::vector<int>> &fragments,
+                             const std::vector<int> &idxs) {
   int natoms = idxs.size();
   // sort idxs
   std::vector<size_t> idxs_idx = sort_indexes(idxs);
@@ -41,15 +41,15 @@ void deepmd::group_atoms_cpu(std::vector<std::vector<int>>& fragments,
 }
 
 void deepmd::dprc_pairwise_map_cpu(
-    std::vector<int>& forward_qm_map,
-    std::vector<int>& backward_qm_map,
-    std::vector<int>& forward_qmmm_map,
-    std::vector<int>& backward_qmmm_map,
-    int& nloc_qm,
-    int& nloc_qmmm,
-    int& nall_qm,
-    int& nall_qmmm,
-    const std::vector<std::vector<int>>& fragments,
+    std::vector<int> &forward_qm_map,
+    std::vector<int> &backward_qm_map,
+    std::vector<int> &forward_qmmm_map,
+    std::vector<int> &backward_qmmm_map,
+    int &nloc_qm,
+    int &nloc_qmmm,
+    int &nall_qm,
+    int &nall_qmmm,
+    const std::vector<std::vector<int>> &fragments,
     const int nloc,
     const int nall) {
   int nfragments = fragments.size();

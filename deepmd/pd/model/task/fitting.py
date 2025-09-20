@@ -183,10 +183,6 @@ class GeneralFitting(Fitting):
         Number of frame parameters.
     numb_aparam : int
         Number of atomic parameters.
-    default_fparam: list[float], optional
-        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
-        this value will be used as the default value for the frame parameter in the fitting net.
-        This parameter is not supported in PaddlePaddle.
     dim_case_embd : int
         Dimension of case specific embedding.
     activation_function : str
@@ -237,7 +233,6 @@ class GeneralFitting(Fitting):
         remove_vaccum_contribution: Optional[list[bool]] = None,
         type_map: Optional[list[str]] = None,
         use_aparam_as_mask: bool = False,
-        default_fparam: Optional[list[float]] = None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -250,7 +245,6 @@ class GeneralFitting(Fitting):
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
         self.dim_case_embd = dim_case_embd
-        self.default_fparam = default_fparam
         self.activation_function = activation_function
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
@@ -378,7 +372,7 @@ class GeneralFitting(Fitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
-            "@version": 4,
+            "@version": 3,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -387,7 +381,6 @@ class GeneralFitting(Fitting):
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
             "dim_case_embd": self.dim_case_embd,
-            "default_fparam": self.default_fparam,
             "activation_function": self.activation_function,
             "precision": self.precision,
             "mixed_types": self.mixed_types,

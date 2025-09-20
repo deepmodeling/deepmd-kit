@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Any,
     Optional,
 )
 
-from deepmd.dpmodel.array_api import (
-    Array,
-)
+import numpy as np
+
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
 )
@@ -43,10 +41,10 @@ class DPAtomicModel(BaseAtomicModel):
 
     def __init__(
         self,
-        descriptor: BaseDescriptor,
-        fitting: BaseFitting,
+        descriptor,
+        fitting,
         type_map: list[str],
-        **kwargs: Any,
+        **kwargs,
     ) -> None:
         super().__init__(type_map, **kwargs)
         self.type_map = type_map
@@ -67,7 +65,7 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the neighbor selection."""
         return self.descriptor.get_sel()
 
-    def set_case_embd(self, case_idx: int) -> None:
+    def set_case_embd(self, case_idx: int):
         """
         Set the case embedding of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -127,13 +125,13 @@ class DPAtomicModel(BaseAtomicModel):
 
     def forward_atomic(
         self,
-        extended_coord: Array,
-        extended_atype: Array,
-        nlist: Array,
-        mapping: Optional[Array] = None,
-        fparam: Optional[Array] = None,
-        aparam: Optional[Array] = None,
-    ) -> dict[str, Array]:
+        extended_coord: np.ndarray,
+        extended_atype: np.ndarray,
+        nlist: np.ndarray,
+        mapping: Optional[np.ndarray] = None,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+    ) -> dict[str, np.ndarray]:
         """Models' atomic predictions.
 
         Parameters
@@ -177,7 +175,7 @@ class DPAtomicModel(BaseAtomicModel):
         return ret
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -215,7 +213,7 @@ class DPAtomicModel(BaseAtomicModel):
     """The base fitting class."""
 
     @classmethod
-    def deserialize(cls, data: dict[str, Any]) -> "DPAtomicModel":
+    def deserialize(cls, data) -> "DPAtomicModel":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 2)
         data.pop("@class")
@@ -234,10 +232,6 @@ class DPAtomicModel(BaseAtomicModel):
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.fitting.get_dim_aparam()
-
-    def has_default_fparam(self) -> bool:
-        """Check if the model has default frame parameters."""
-        return self.fitting.has_default_fparam()
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.

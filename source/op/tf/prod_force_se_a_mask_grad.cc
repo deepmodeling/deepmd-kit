@@ -16,24 +16,24 @@ using CPUDevice = Eigen::ThreadPoolDevice;
 template <typename Device, typename FPTYPE>
 class ProdForceSeAMaskGradOp : public OpKernel {
  public:
-  explicit ProdForceSeAMaskGradOp(OpKernelConstruction* context)
+  explicit ProdForceSeAMaskGradOp(OpKernelConstruction *context)
       : OpKernel(context) {
     OP_REQUIRES_OK(context,
                    context->GetAttr("total_atom_num", &total_atom_num));
   }
 
-  void Compute(OpKernelContext* context) override {
+  void Compute(OpKernelContext *context) override {
     deepmd::safe_compute(
-        context, [this](OpKernelContext* context) { this->_Compute(context); });
+        context, [this](OpKernelContext *context) { this->_Compute(context); });
   }
 
-  void _Compute(OpKernelContext* context) {
+  void _Compute(OpKernelContext *context) {
     // Grab the input tensor
-    const Tensor& grad_tensor = context->input(0);
-    const Tensor& net_deriv_tensor = context->input(1);
-    const Tensor& in_deriv_tensor = context->input(2);
-    const Tensor& mask_tensor = context->input(3);
-    const Tensor& nlist_tensor = context->input(4);
+    const Tensor &grad_tensor = context->input(0);
+    const Tensor &net_deriv_tensor = context->input(1);
+    const Tensor &in_deriv_tensor = context->input(2);
+    const Tensor &mask_tensor = context->input(3);
+    const Tensor &nlist_tensor = context->input(4);
 
     // set size of the sample
     TensorShape grad_shape = grad_tensor.shape();
@@ -82,7 +82,7 @@ class ProdForceSeAMaskGradOp : public OpKernel {
     grad_net_shape.AddDim(static_cast<int64_t>(nloc) * ndescrpt);
 
     // allocate the output tensor
-    Tensor* grad_net_tensor = NULL;
+    Tensor *grad_net_tensor = NULL;
     OP_REQUIRES_OK(
         context, context->allocate_output(0, grad_net_shape, &grad_net_tensor));
 

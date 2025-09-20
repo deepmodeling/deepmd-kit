@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    Any,
     Callable,
     Optional,
     Union,
@@ -73,9 +72,6 @@ class DipoleFittingNet(GeneralFitting):
         Only reducible variable are differentiable.
     type_map: list[str], Optional
         A list of strings. Give the name to each type of atoms.
-    default_fparam: list[float], optional
-        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
-        this value will be used as the default value for the frame parameter in the fitting net.
     """
 
     def __init__(
@@ -97,8 +93,7 @@ class DipoleFittingNet(GeneralFitting):
         r_differentiable: bool = True,
         c_differentiable: bool = True,
         type_map: Optional[list[str]] = None,
-        default_fparam: Optional[list] = None,
-        **kwargs: Any,
+        **kwargs,
     ) -> None:
         self.embedding_width = embedding_width
         self.r_differentiable = r_differentiable
@@ -119,11 +114,10 @@ class DipoleFittingNet(GeneralFitting):
             seed=seed,
             exclude_types=exclude_types,
             type_map=type_map,
-            default_fparam=default_fparam,
             **kwargs,
         )
 
-    def _net_out_dim(self) -> int:
+    def _net_out_dim(self):
         """Set the FittingNet output dim."""
         return self.embedding_width
 
@@ -138,7 +132,7 @@ class DipoleFittingNet(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("var_name", None)
         return super().deserialize(data)
 
@@ -187,7 +181,7 @@ class DipoleFittingNet(GeneralFitting):
         h2: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
-    ) -> dict[str, torch.Tensor]:
+    ):
         nframes, nloc, _ = descriptor.shape
         assert gr is not None, "Must provide the rotation matrix for dipole fitting."
         # cast the input to internal precsion

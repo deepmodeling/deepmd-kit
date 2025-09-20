@@ -36,7 +36,7 @@ def make_base_model() -> type[object]:
             BaseModel class for DPModel backend.
         """
 
-        def __new__(cls, *args: Any, **kwargs: Any) -> "BaseModel":
+        def __new__(cls, *args, **kwargs):
             if inspect.isabstract(cls):
                 # getting model type based on fitting type
                 model_type = kwargs.get("type", "standard")
@@ -68,15 +68,15 @@ def make_base_model() -> type[object]:
             """Get the type map."""
 
         @abstractmethod
-        def get_rcut(self) -> float:
+        def get_rcut(self):
             """Get the cut-off radius."""
 
         @abstractmethod
-        def get_dim_fparam(self) -> int:
+        def get_dim_fparam(self):
             """Get the number (dimension) of frame parameters of this atomic model."""
 
         @abstractmethod
-        def get_dim_aparam(self) -> int:
+        def get_dim_aparam(self):
             """Get the number (dimension) of atomic parameters of this atomic model."""
 
         @abstractmethod

@@ -10,8 +10,8 @@ namespace deepmd {
  * @param[in] idxs The indexes of the fragment that each atom belongs to. -1
  * will be ignored.
  */
-void group_atoms_cpu(std::vector<std::vector<int>>& fragments,
-                     const std::vector<int>& idxs);
+void group_atoms_cpu(std::vector<std::vector<int>> &fragments,
+                     const std::vector<int> &idxs);
 /**
  * DPRc pairwise map.
  *
@@ -30,15 +30,15 @@ void group_atoms_cpu(std::vector<std::vector<int>>& fragments,
  * @param[in] nloc The number of local atoms.
  * @param[in] nall The number of all atoms, including local and ghost atoms.
  */
-void dprc_pairwise_map_cpu(std::vector<int>& forward_qm_map,
-                           std::vector<int>& backward_qm_map,
-                           std::vector<int>& forward_qmmm_map,
-                           std::vector<int>& backward_qmmm_map,
-                           int& nloc_qm,
-                           int& nloc_qmmm,
-                           int& nall_qm,
-                           int& nall_qmmm,
-                           const std::vector<std::vector<int>>& fragments,
+void dprc_pairwise_map_cpu(std::vector<int> &forward_qm_map,
+                           std::vector<int> &backward_qm_map,
+                           std::vector<int> &forward_qmmm_map,
+                           std::vector<int> &backward_qmmm_map,
+                           int &nloc_qm,
+                           int &nloc_qmmm,
+                           int &nall_qm,
+                           int &nall_qmmm,
+                           const std::vector<std::vector<int>> &fragments,
                            const int nloc,
                            const int nall);
 }  // namespace deepmd

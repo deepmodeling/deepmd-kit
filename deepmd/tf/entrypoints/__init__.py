@@ -4,9 +4,6 @@
 from ..infer.model_devi import (
     make_model_devi,
 )
-from .change_bias import (
-    change_bias,
-)
 from .compress import (
     compress,
 )
@@ -37,7 +34,6 @@ from .transfer import (
 )
 
 __all__ = [
-    "change_bias",
     "compress",
     "convert",
     "doc_train_input",

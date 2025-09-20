@@ -9,7 +9,7 @@ def format_nlist(
     nlist: tnp.ndarray,
     nsel: int,
     rcut: float,
-) -> tnp.ndarray:
+):
     """Format neighbor list.
 
     If nnei == nsel, do nothing;

@@ -13,6 +13,6 @@ class FixTTMDP : public FixTTM {
     tmp[2] = nzgrid;
     return tmp;
   };
-  double*** const get_T_electron() const { return T_electron; };
+  double ***const get_T_electron() const { return T_electron; };
 };
 }  // namespace LAMMPS_NS

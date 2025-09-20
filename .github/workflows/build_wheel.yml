@@ -170,7 +170,7 @@ jobs:
           path: dist/packages
           pattern: cibw-*
           merge-multiple: true
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v5
         name: Install Python
         with:
           python-version: '3.11'

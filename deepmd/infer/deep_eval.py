@@ -162,10 +162,6 @@ class DeepEvalBackend(ABC):
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this DP."""
 
-    def has_default_fparam(self) -> bool:
-        """Check if the model has default frame parameters."""
-        return False
-
     @abstractmethod
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
@@ -347,20 +343,6 @@ class DeepEvalBackend(ABC):
         """Get observed types (elements) of the model during data statistics."""
         raise NotImplementedError("Not implemented in this backend.")
 
-    @abstractmethod
-    def get_model(self) -> Any:
-        """Get the model module implemented by the deep learning framework.
-
-        For PyTorch, this returns the nn.Module. For Paddle, this returns
-        the paddle.nn.Layer. For TensorFlow, this returns the graph.
-        For dpmodel, this returns the BaseModel.
-
-        Returns
-        -------
-        model
-            The model module implemented by the deep learning framework.
-        """
-
 
 class DeepEval(ABC):
     """High-level Deep Evaluator interface.
@@ -435,10 +417,6 @@ class DeepEval(ABC):
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this DP."""
         return self.deep_eval.get_dim_fparam()
-
-    def has_default_fparam(self) -> bool:
-        """Check if the model has default frame parameters."""
-        return self.deep_eval.has_default_fparam()
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
@@ -725,17 +703,3 @@ class DeepEval(ABC):
     def get_observed_types(self) -> dict:
         """Get observed types (elements) of the model during data statistics."""
         return self.deep_eval.get_observed_types()
-
-    def get_model(self) -> Any:
-        """Get the model module implemented by the deep learning framework.
-
-        For PyTorch, this returns the nn.Module. For Paddle, this returns
-        the paddle.nn.Layer. For TensorFlow, this returns the graph.
-        For dpmodel, this returns the BaseModel.
-
-        Returns
-        -------
-        model
-            The model module implemented by the deep learning framework.
-        """
-        return self.deep_eval.get_model()

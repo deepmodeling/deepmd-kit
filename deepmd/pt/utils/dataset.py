@@ -2,7 +2,6 @@
 
 
 from typing import (
-    Any,
     Optional,
 )
 
@@ -35,7 +34,7 @@ class DeepmdDataSetForLoader(Dataset):
     def __len__(self) -> int:
         return self._data_system.nframes
 
-    def __getitem__(self, index: int) -> dict[str, Any]:
+    def __getitem__(self, index):
         """Get a frame from the selected system."""
         b_data = self._data_system.get_item_torch(index)
         b_data["natoms"] = self._natoms_vec

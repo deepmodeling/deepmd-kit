@@ -1,16 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import math
 from typing import (
-    Any,
     Optional,
 )
 
 import array_api_compat
 import numpy as np
 
-from deepmd.dpmodel.array_api import (
-    Array,
-)
 from deepmd.dpmodel.common import (
     NativeOP,
     to_numpy_array,
@@ -46,7 +42,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         atom_exclude_types: list[int] = [],
         pair_exclude_types: list[tuple[int, int]] = [],
         rcond: Optional[float] = None,
-        preset_out_bias: Optional[dict[str, Array]] = None,
+        preset_out_bias: Optional[dict[str, np.ndarray]] = None,
     ) -> None:
         super().__init__()
         self.type_map = type_map
@@ -72,7 +68,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.out_bias = out_bias_data
         self.out_std = out_std_data
 
-    def __setitem__(self, key: str, value: Array) -> None:
+    def __setitem__(self, key, value) -> None:
         if key in ["out_bias"]:
             self.out_bias = value
         elif key in ["out_std"]:
@@ -80,7 +76,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key: str) -> Array:
+    def __getitem__(self, key):
         if key in ["out_bias"]:
             return self.out_bias
         elif key in ["out_std"]:
@@ -91,10 +87,6 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
-
-    def has_default_fparam(self) -> bool:
-        """Check if the model has default frame parameters."""
-        return False
 
     def reinit_atom_exclude(
         self,
@@ -133,7 +125,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         )
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -151,13 +143,13 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
     def forward_common_atomic(
         self,
-        extended_coord: Array,
-        extended_atype: Array,
-        nlist: Array,
-        mapping: Optional[Array] = None,
-        fparam: Optional[Array] = None,
-        aparam: Optional[Array] = None,
-    ) -> dict[str, Array]:
+        extended_coord: np.ndarray,
+        extended_atype: np.ndarray,
+        nlist: np.ndarray,
+        mapping: Optional[np.ndarray] = None,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+    ) -> dict[str, np.ndarray]:
         """Common interface for atomic inference.
 
         This method accept extended coordinates, extended atom typs, neighbor list,
@@ -227,13 +219,13 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
     def call(
         self,
-        extended_coord: Array,
-        extended_atype: Array,
-        nlist: Array,
-        mapping: Optional[Array] = None,
-        fparam: Optional[Array] = None,
-        aparam: Optional[Array] = None,
-    ) -> dict[str, Array]:
+        extended_coord: np.ndarray,
+        extended_atype: np.ndarray,
+        nlist: np.ndarray,
+        mapping: Optional[np.ndarray] = None,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+    ) -> dict[str, np.ndarray]:
         return self.forward_common_atomic(
             extended_coord,
             extended_atype,
@@ -268,9 +260,9 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
     def apply_out_stat(
         self,
-        ret: dict[str, Array],
-        atype: Array,
-    ) -> dict[str, Array]:
+        ret: dict[str, np.ndarray],
+        atype: np.ndarray,
+    ):
         """Apply the stat to each atomic output.
         The developer may override the method to define how the bias is applied
         to the atomic output of the model.
@@ -313,7 +305,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     def _fetch_out_stat(
         self,
         keys: list[str],
-    ) -> tuple[dict[str, Array], dict[str, Array]]:
+    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
         ret_bias = {}
         ret_std = {}
         ntypes = self.get_ntypes()

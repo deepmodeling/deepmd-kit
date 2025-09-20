@@ -5,7 +5,6 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    Any,
     Callable,
     NoReturn,
     Optional,
@@ -44,7 +43,7 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
 
     local_cluster = False
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> "DescriptorBlock":
+    def __new__(cls, *args, **kwargs):
         if cls is DescriptorBlock:
             try:
                 descrpt_type = kwargs["type"]
@@ -127,9 +126,7 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         """Get the statistics of the descriptor."""
         raise NotImplementedError
 
-    def share_params(
-        self, base_class: "DescriptorBlock", shared_level: int, resume: bool = False
-    ) -> None:
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -181,13 +178,7 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
         type_embedding: Optional[torch.Tensor] = None,
-    ) -> tuple[
-        torch.Tensor,
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-    ]:
+    ):
         """Calculate DescriptorBlock."""
         pass
 
@@ -201,18 +192,14 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
 
 
 def make_default_type_embedding(
-    ntypes: int,
-) -> tuple[TypeEmbedNet, dict[str, Any]]:
+    ntypes,
+):
     aux = {}
     aux["tebd_dim"] = 8
     return TypeEmbedNet(ntypes, aux["tebd_dim"]), aux
 
 
-def extend_descrpt_stat(
-    des: DescriptorBlock,
-    type_map: list[str],
-    des_with_stat: Optional[DescriptorBlock] = None,
-) -> None:
+def extend_descrpt_stat(des, type_map, des_with_stat=None) -> None:
     r"""
     Extend the statistics of a descriptor block with types from newly provided `type_map`.
 

@@ -51,20 +51,7 @@ buildcxx/
 node_modules/
 *.bib.original
 
-# Coverage files
-.coverage
-.coverage.*
-
 # Test output files (temporary)
 test_dp_test/
 test_dp_test_*.out
 *_detail.out
-
-# Training and model output files
-*.pth
-*.ckpt*
-checkpoint
-lcurve.out
-out.json
-input_v2_compat.json
-frozen_model.*

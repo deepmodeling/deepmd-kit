@@ -86,7 +86,7 @@ class Border : public torch::autograd::Function<Border> {
 #ifdef USE_MPI
     int mpi_init = 0;
     MPI_Initialized(&mpi_init);
-    int cuda_aware = 0;
+    int cuda_aware = 1;
     int me = 0;
     MPI_Comm world;
     int world_size = 0;
@@ -99,9 +99,17 @@ class Border : public torch::autograd::Function<Border> {
     MPI_Request request;
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     if (world_size >= 1) {
-#ifndef NO_CUDA_AWARE
-      cuda_aware = MPIX_Query_cuda_support();
+      int version, subversion;
+      MPI_Get_version(&version, &subversion);
+      if (version >= 4) {
+#ifdef NO_CUDA_AWARE
+        cuda_aware = 0;
+#else
+        cuda_aware = MPIX_Query_cuda_support();
 #endif
+      } else {
+        cuda_aware = 0;
+      }
       if (cuda_aware == 0) {
         recv_g1_tensor = torch::empty_like(g1).to(torch::kCPU);
         recv_g1_tensor.copy_(g1);
@@ -185,6 +193,10 @@ class Border : public torch::autograd::Function<Border> {
   static torch::autograd::variable_list backward_t(
       torch::autograd::AutogradContext* ctx,
       torch::autograd::variable_list grad_output) {
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+    gpuDeviceSynchronize();
+#endif
+
     torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
     torch::Tensor sendlist_tensor = saved_variables[0];
     torch::Tensor sendproc_tensor = saved_variables[1];
@@ -200,7 +212,7 @@ class Border : public torch::autograd::Function<Border> {
     int mpi_init = 0;
     MPI_Initialized(&mpi_init);
     int world_size = 0;
-    int cuda_aware = 0;
+    int cuda_aware = 1;
     int me = 0;
     MPI_Comm world;
     if (mpi_init) {
@@ -212,9 +224,17 @@ class Border : public torch::autograd::Function<Border> {
     MPI_Request request;
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     if (world_size >= 1) {
-#ifndef NO_CUDA_AWARE
-      cuda_aware = MPIX_Query_cuda_support();
+      int version, subversion;
+      MPI_Get_version(&version, &subversion);
+      if (version >= 4) {
+#ifdef NO_CUDA_AWARE
+        cuda_aware = 0;
+#else
+        cuda_aware = MPIX_Query_cuda_support();
 #endif
+      } else {
+        cuda_aware = 0;
+      }
       if (cuda_aware == 0) {
         d_local_g1_tensor = torch::empty_like(grad_output[0]).to(torch::kCPU);
         d_local_g1_tensor.copy_(grad_output[0]);
@@ -309,6 +329,9 @@ class Border : public torch::autograd::Function<Border> {
                                      recv_g1_tensor.slice(0, 0, nrecv));
       }
     }
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+    gpuDeviceSynchronize();
+#endif
 #ifdef USE_MPI
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     if (cuda_aware == 0) {

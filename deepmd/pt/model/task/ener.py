@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    Any,
     Optional,
     Union,
 )
@@ -57,8 +56,7 @@ class EnergyFittingNet(InvarFitting):
         mixed_types: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
         type_map: Optional[list[str]] = None,
-        default_fparam: Optional[list] = None,
-        **kwargs: Any,
+        **kwargs,
     ) -> None:
         super().__init__(
             "energy",
@@ -76,14 +74,13 @@ class EnergyFittingNet(InvarFitting):
             mixed_types=mixed_types,
             seed=seed,
             type_map=type_map,
-            default_fparam=default_fparam,
             **kwargs,
         )
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("var_name")
         data.pop("dim_out")
         return super().deserialize(data)
@@ -105,15 +102,15 @@ class EnergyFittingNet(InvarFitting):
 class EnergyFittingNetDirect(Fitting):
     def __init__(
         self,
-        ntypes: int,
-        dim_descrpt: int,
-        neuron: list[int],
-        bias_atom_e: Optional[torch.Tensor] = None,
-        out_dim: int = 1,
-        resnet_dt: bool = True,
-        use_tebd: bool = True,
-        return_energy: bool = False,
-        **kwargs: Any,
+        ntypes,
+        dim_descrpt,
+        neuron,
+        bias_atom_e=None,
+        out_dim=1,
+        resnet_dt=True,
+        use_tebd=True,
+        return_energy=False,
+        **kwargs,
     ) -> None:
         """Construct a fitting net for energy.
 
@@ -163,7 +160,7 @@ class EnergyFittingNetDirect(Fitting):
                 filter_layers.append(one)
         self.filter_layers = torch.nn.ModuleList(filter_layers)
 
-    def output_def(self) -> FittingOutputDef:
+    def output_def(self):
         return FittingOutputDef(
             [
                 OutputVariableDef(
@@ -190,7 +187,7 @@ class EnergyFittingNetDirect(Fitting):
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         raise NotImplementedError
 

@@ -6,9 +6,7 @@ import torch
 log = logging.getLogger(__name__)
 
 
-def compute_smooth_weight(
-    distance: torch.Tensor, rmin: float, rmax: float
-) -> torch.Tensor:
+def compute_smooth_weight(distance, rmin: float, rmax: float):
     """Compute smooth weight for descriptor elements."""
     if rmin >= rmax:
         raise ValueError("rmin should be less than rmax.")
@@ -19,7 +17,7 @@ def compute_smooth_weight(
     return vv
 
 
-def compute_exp_sw(distance: torch.Tensor, rmin: float, rmax: float) -> torch.Tensor:
+def compute_exp_sw(distance, rmin: float, rmax: float):
     """Compute the exponential switch function for neighbor update."""
     if rmin >= rmax:
         raise ValueError("rmin should be less than rmax.")

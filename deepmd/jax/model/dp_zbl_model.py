@@ -38,7 +38,7 @@ class DPZBLModel(DPZBLModelDP):
         fparam: Optional[jnp.ndarray] = None,
         aparam: Optional[jnp.ndarray] = None,
         do_atomic_virial: bool = False,
-    ) -> dict[str, jnp.ndarray]:
+    ):
         return forward_common_atomic(
             self,
             extended_coord,
@@ -56,7 +56,7 @@ class DPZBLModel(DPZBLModelDP):
         extended_atype: jnp.ndarray,
         nlist: jnp.ndarray,
         extra_nlist_sort: bool = False,
-    ) -> jnp.ndarray:
+    ):
         return DPZBLModelDP.format_nlist(
             self,
             jax.lax.stop_gradient(extended_coord),

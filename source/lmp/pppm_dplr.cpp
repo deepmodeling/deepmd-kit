@@ -36,10 +36,10 @@ enum { FORWARD_IK, FORWARD_AD, FORWARD_IK_PERATOM, FORWARD_AD_PERATOM };
 
 #if LAMMPS_VERSION_NUMBER < 20181109
 // See lammps/lammps#1165
-PPPMDPLR::PPPMDPLR(LAMMPS* lmp, int narg, char** arg)
+PPPMDPLR::PPPMDPLR(LAMMPS *lmp, int narg, char **arg)
     : PPPM(lmp, narg, arg)
 #else
-PPPMDPLR::PPPMDPLR(LAMMPS* lmp)
+PPPMDPLR::PPPMDPLR(LAMMPS *lmp)
     : PPPM(lmp)
 #endif
 {
@@ -232,7 +232,7 @@ void PPPMDPLR::compute(int eflag, int vflag) {
   // ntotal accounts for TIP4P tallying eatom/vatom for ghost atoms
 
   if (evflag_atom) {
-    double* q = atom->q;
+    double *q = atom->q;
     int nlocal = atom->nlocal;
     int ntotal = nlocal;
     if (tip4pflag) {
@@ -288,8 +288,8 @@ void PPPMDPLR::fieldforce_ik() {
   // (mx,my,mz) = global coords of moving stencil pt
   // ek = 3 components of E-field on particle
 
-  double* q = atom->q;
-  double** x = atom->x;
+  double *q = atom->q;
+  double **x = atom->x;
   // double **f = atom->f;
 
   int nlocal = atom->nlocal;
@@ -347,7 +347,7 @@ void PPPMDPLR::fieldforce_ad() {
   FFT_SCALAR ekx, eky, ekz;
   double s1, s2, s3;
   double sf = 0.0;
-  double* prd;
+  double *prd;
 
   prd = domain->prd;
   double xprd = prd[0];
@@ -364,8 +364,8 @@ void PPPMDPLR::fieldforce_ad() {
   // (mx,my,mz) = global coords of moving stencil pt
   // ek = 3 components of E-field on particle
 
-  double* q = atom->q;
-  double** x = atom->x;
+  double *q = atom->q;
+  double **x = atom->x;
   // double **f = atom->f;
 
   int nlocal = atom->nlocal;

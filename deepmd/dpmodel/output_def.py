@@ -3,9 +3,6 @@ import functools
 from enum import (
     IntEnum,
 )
-from typing import (
-    Any,
-)
 
 
 def check_shape(
@@ -22,7 +19,7 @@ def check_shape(
             raise ValueError(f"{shape} shape not matching def {def_shape}")
 
 
-def check_var(var: Any, var_def: Any) -> None:
+def check_var(var, var_def) -> None:
     if var_def.atomic:
         # var.shape == [nf, nloc, *var_def.shape]
         if len(var.shape) != len(var_def.shape) + 2:
@@ -35,7 +32,7 @@ def check_var(var: Any, var_def: Any) -> None:
         check_shape(list(var.shape[1:]), var_def.shape)
 
 
-def model_check_output(cls: type) -> type:
+def model_check_output(cls):
     """Check if the output of the Model is consistent with the definition.
 
     Two methods are assumed to be provided by the Model:
@@ -48,17 +45,17 @@ def model_check_output(cls: type) -> type:
     class wrapper(cls):
         def __init__(
             self,
-            *args: Any,
-            **kwargs: Any,
+            *args,
+            **kwargs,
         ) -> None:
             super().__init__(*args, **kwargs)
             self.md = self.output_def()
 
         def __call__(
             self,
-            *args: Any,
-            **kwargs: Any,
-        ) -> Any:
+            *args,
+            **kwargs,
+        ):
             ret = cls.__call__(self, *args, **kwargs)
             for kk in self.md.keys_outp():
                 dd = self.md[kk]
@@ -77,7 +74,7 @@ def model_check_output(cls: type) -> type:
     return wrapper
 
 
-def fitting_check_output(cls: type) -> type:
+def fitting_check_output(cls):
     """Check if the output of the Fitting is consistent with the definition.
 
     Two methods are assumed to be provided by the Fitting:
@@ -90,17 +87,17 @@ def fitting_check_output(cls: type) -> type:
     class wrapper(cls):
         def __init__(
             self,
-            *args: Any,
-            **kwargs: Any,
+            *args,
+            **kwargs,
         ) -> None:
             super().__init__(*args, **kwargs)
             self.md = self.output_def()
 
         def __call__(
             self,
-            *args: Any,
-            **kwargs: Any,
-        ) -> Any:
+            *args,
+            **kwargs,
+        ):
             ret = cls.__call__(self, *args, **kwargs)
             for kk in self.md.keys():
                 dd = self.md[kk]
@@ -230,10 +227,10 @@ class OutputVariableDef:
                 raise ValueError("only r_differentiable variable can calculate hessian")
 
     @property
-    def size(self) -> int:
+    def size(self):
         return self.output_size
 
-    def squeeze(self, dim: int) -> None:
+    def squeeze(self, dim) -> None:
         # squeeze the shape on given dimension
         if -len(self.shape) <= dim < len(self.shape) and self.shape[dim] == 1:
             self.shape.pop(dim)
@@ -267,7 +264,7 @@ class FittingOutputDef:
     def get_data(self) -> dict[str, OutputVariableDef]:
         return self.var_defs
 
-    def keys(self):  # noqa: ANN201
+    def keys(self):
         return self.var_defs.keys()
 
 
@@ -319,25 +316,25 @@ class ModelOutputDef:
     ) -> dict[str, OutputVariableDef]:
         return self.var_defs
 
-    def keys(self):  # noqa: ANN201
+    def keys(self):
         return self.var_defs.keys()
 
-    def keys_outp(self):  # noqa: ANN201
+    def keys_outp(self):
         return self.def_outp.keys()
 
-    def keys_redu(self):  # noqa: ANN201
+    def keys_redu(self):
         return self.def_redu.keys()
 
-    def keys_derv_r(self):  # noqa: ANN201
+    def keys_derv_r(self):
         return self.def_derv_r.keys()
 
-    def keys_hess_r(self):  # noqa: ANN201
+    def keys_hess_r(self):
         return self.def_hess_r.keys()
 
-    def keys_derv_c(self):  # noqa: ANN201
+    def keys_derv_c(self):
         return self.def_derv_c.keys()
 
-    def keys_derv_c_redu(self):  # noqa: ANN201
+    def keys_derv_c_redu(self):
         return self.def_derv_c_redu.keys()
 
 

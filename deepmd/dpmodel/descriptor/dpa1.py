@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import math
 from typing import (
+    Any,
     Callable,
     NoReturn,
     Optional,
@@ -16,7 +17,6 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
-    Array,
     xp_take_along_axis,
 )
 from deepmd.dpmodel.common import (
@@ -74,7 +74,7 @@ from .descriptor import (
 )
 
 
-def np_softmax(x: Array, axis: int = -1) -> Array:
+def np_softmax(x, axis=-1):
     xp = array_api_compat.array_namespace(x)
     # x = xp.nan_to_num(x)  # to avoid value warning
     x = xp.where(xp.isnan(x), xp.zeros_like(x), x)
@@ -82,7 +82,7 @@ def np_softmax(x: Array, axis: int = -1) -> Array:
     return e_x / xp.sum(e_x, axis=axis, keepdims=True)
 
 
-def np_normalize(x: Array, axis: int = -1) -> Array:
+def np_normalize(x, axis=-1):
     xp = array_api_compat.array_namespace(x)
     return x / xp.linalg.vector_norm(x, axis=axis, keepdims=True)
 
@@ -262,14 +262,14 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        scaling_factor: float = 1.0,
+        scaling_factor=1.0,
         normalize: bool = True,
         temperature: Optional[float] = None,
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
         smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
-        spin: None = None,
+        spin: Optional[Any] = None,
         stripped_type_embedding: Optional[bool] = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
@@ -399,9 +399,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """Returns the protection of building environment matrix."""
         return self.se_atten.get_env_protection()
 
-    def share_params(
-        self, base_class: "DescrptDPA1", shared_level: int, resume: bool = False
-    ) -> NoReturn:
+    def share_params(self, base_class, shared_level, resume=False) -> NoReturn:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -410,18 +408,18 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         raise NotImplementedError
 
     @property
-    def dim_out(self) -> int:
+    def dim_out(self):
         return self.get_dim_out()
 
     @property
-    def dim_emb(self) -> int:
+    def dim_emb(self):
         return self.get_dim_emb()
 
     def compute_input_stats(
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ) -> None:
+    ):
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -442,21 +440,19 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: Array,
-        stddev: Array,
+        mean: np.ndarray,
+        stddev: np.ndarray,
     ) -> None:
         """Update mean and stddev for descriptor."""
         self.se_atten.mean = mean
         self.se_atten.stddev = stddev
 
-    def get_stat_mean_and_stddev(self) -> tuple[Array, Array]:
+    def get_stat_mean_and_stddev(self) -> tuple[np.ndarray, np.ndarray]:
         """Get mean and stddev for descriptor."""
         return self.se_atten.mean, self.se_atten.stddev
 
     def change_type_map(
-        self,
-        type_map: list[str],
-        model_with_new_type_stat: Optional["DescrptDPA1"] = None,
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -485,11 +481,11 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     @cast_precision
     def call(
         self,
-        coord_ext: Array,
-        atype_ext: Array,
-        nlist: Array,
-        mapping: Optional[Array] = None,
-    ) -> Array:
+        coord_ext,
+        atype_ext,
+        nlist,
+        mapping: Optional[np.ndarray] = None,
+    ):
         """Compute the descriptor.
 
         Parameters
@@ -640,7 +636,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         train_data: DeepmdDataSystem,
         type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> tuple[Array, Array]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -690,7 +686,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        scaling_factor: float = 1.0,
+        scaling_factor=1.0,
         normalize: bool = True,
         temperature: Optional[float] = None,
         trainable_ln: bool = True,
@@ -824,7 +820,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.filter_neuron[-1]
 
-    def __setitem__(self, key: str, value: Array) -> None:
+    def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -832,7 +828,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key: str) -> Array:
+    def __getitem__(self, key):
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -857,17 +853,17 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         return self.env_protection
 
     @property
-    def dim_out(self) -> int:
+    def dim_out(self):
         """Returns the output dimension of this descriptor."""
         return self.filter_neuron[-1] * self.axis_neuron
 
     @property
-    def dim_in(self) -> int:
+    def dim_in(self):
         """Returns the atomic input dimension of this descriptor."""
         return self.tebd_dim
 
     @property
-    def dim_emb(self) -> int:
+    def dim_emb(self):
         """Returns the output dimension of embedding."""
         return self.get_dim_emb()
 
@@ -928,9 +924,9 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
 
     def cal_g(
         self,
-        ss: Array,
-        embedding_idx: int,
-    ) -> Array:
+        ss,
+        embedding_idx,
+    ):
         xp = array_api_compat.array_namespace(ss)
         nfnl, nnei = ss.shape[0:2]
         shape2 = math.prod(ss.shape[2:])
@@ -941,9 +937,9 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
 
     def cal_g_strip(
         self,
-        ss: Array,
-        embedding_idx: int,
-    ) -> Array:
+        ss,
+        embedding_idx,
+    ):
         assert self.embeddings_strip is not None
         # nfnl x nnei x ng
         gg = self.embeddings_strip[embedding_idx].call(ss)
@@ -951,13 +947,13 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
 
     def call(
         self,
-        nlist: Array,
-        coord_ext: Array,
-        atype_ext: Array,
-        atype_embd_ext: Optional[Array] = None,
-        mapping: Optional[Array] = None,
-        type_embedding: Optional[Array] = None,
-    ) -> tuple[Array, Array]:
+        nlist: np.ndarray,
+        coord_ext: np.ndarray,
+        atype_ext: np.ndarray,
+        atype_embd_ext: Optional[np.ndarray] = None,
+        mapping: Optional[np.ndarray] = None,
+        type_embedding: Optional[np.ndarray] = None,
+    ):
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         # nf x nloc x nnei x 4
         dmatrix, diff, sw = self.env_mat.call(
@@ -1237,25 +1233,23 @@ class NeighborGatedAttention(NativeOP):
 
     def call(
         self,
-        input_G: Array,
-        nei_mask: Array,
-        input_r: Optional[Array] = None,
-        sw: Optional[Array] = None,
-    ) -> Array:
+        input_G,
+        nei_mask,
+        input_r: Optional[np.ndarray] = None,
+        sw: Optional[np.ndarray] = None,
+    ):
         out = input_G
         for layer in self.attention_layers:
             out = layer(out, nei_mask, input_r=input_r, sw=sw)
         return out
 
-    def __getitem__(self, key: int) -> "NeighborGatedAttentionLayer":
+    def __getitem__(self, key):
         if isinstance(key, int):
             return self.attention_layers[key]
         else:
             raise TypeError(key)
 
-    def __setitem__(
-        self, key: int, value: Union["NeighborGatedAttentionLayer", dict]
-    ) -> None:
+    def __setitem__(self, key, value) -> None:
         if not isinstance(key, int):
             raise TypeError(key)
         if isinstance(value, self.network_type):
@@ -1266,7 +1260,7 @@ class NeighborGatedAttention(NativeOP):
             raise TypeError(value)
         self.attention_layers[key] = value
 
-    def serialize(self) -> dict:
+    def serialize(self):
         """Serialize the networks to a dict.
 
         Returns
@@ -1367,11 +1361,11 @@ class NeighborGatedAttentionLayer(NativeOP):
 
     def call(
         self,
-        x: Array,
-        nei_mask: Array,
-        input_r: Optional[Array] = None,
-        sw: Optional[Array] = None,
-    ) -> Array:
+        x,
+        nei_mask,
+        input_r: Optional[np.ndarray] = None,
+        sw: Optional[np.ndarray] = None,
+    ):
         residual = x
         x, _ = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)
         x = residual + x
@@ -1403,7 +1397,7 @@ class NeighborGatedAttentionLayer(NativeOP):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "NeighborGatedAttentionLayer":
+    def deserialize(cls, data) -> "NeighborGatedAttentionLayer":
         """Deserialize the networks from a dict.
 
         Parameters
@@ -1478,14 +1472,7 @@ class GatedAttentionLayer(NativeOP):
             trainable=trainable,
         )
 
-    def call(
-        self,
-        query: Array,
-        nei_mask: Array,
-        input_r: Optional[Array] = None,
-        sw: Optional[Array] = None,
-        attnw_shift: float = 20.0,
-    ) -> tuple[Array, Array]:
+    def call(self, query, nei_mask, input_r=None, sw=None, attnw_shift=20.0):
         xp = array_api_compat.array_namespace(query, nei_mask)
         # Linear projection
         # q, k, v = xp.split(self.in_proj(query), 3, axis=-1)
@@ -1546,7 +1533,7 @@ class GatedAttentionLayer(NativeOP):
         output = self.out_proj(o)
         return output, attn_weights
 
-    def serialize(self) -> dict:
+    def serialize(self):
         return {
             "nnei": self.nnei,
             "embed_dim": self.embed_dim,
@@ -1565,7 +1552,7 @@ class GatedAttentionLayer(NativeOP):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "GatedAttentionLayer":
+    def deserialize(cls, data):
         data = data.copy()
         in_proj = data.pop("in_proj")
         out_proj = data.pop("out_proj")

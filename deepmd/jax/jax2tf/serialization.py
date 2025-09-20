@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 from typing import (
-    Callable,
     Optional,
 )
 
@@ -39,17 +38,10 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
 
         tf_model = tf.Module()
 
-        def exported_whether_do_atomic_virial(
-            do_atomic_virial: bool, has_ghost_atoms: bool
-        ) -> Callable:
+        def exported_whether_do_atomic_virial(do_atomic_virial, has_ghost_atoms):
             def call_lower_with_fixed_do_atomic_virial(
-                coord: tnp.ndarray,
-                atype: tnp.ndarray,
-                nlist: tnp.ndarray,
-                mapping: tnp.ndarray,
-                fparam: tnp.ndarray,
-                aparam: tnp.ndarray,
-            ) -> dict[str, tnp.ndarray]:
+                coord, atype, nlist, mapping, fparam, aparam
+            ):
                 return call_lower(
                     coord,
                     atype,
@@ -94,13 +86,8 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             ],
         )
         def call_lower_without_atomic_virial(
-            coord: tnp.ndarray,
-            atype: tnp.ndarray,
-            nlist: tnp.ndarray,
-            mapping: tnp.ndarray,
-            fparam: tnp.ndarray,
-            aparam: tnp.ndarray,
-        ) -> dict[str, tnp.ndarray]:
+            coord, atype, nlist, mapping, fparam, aparam
+        ):
             nlist = format_nlist(coord, nlist, model.get_nnei(), model.get_rcut())
             return tf.cond(
                 tf.shape(coord)[1] == tf.shape(nlist)[1],
@@ -125,14 +112,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                 tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
             ],
         )
-        def call_lower_with_atomic_virial(
-            coord: tnp.ndarray,
-            atype: tnp.ndarray,
-            nlist: tnp.ndarray,
-            mapping: tnp.ndarray,
-            fparam: tnp.ndarray,
-            aparam: tnp.ndarray,
-        ) -> dict[str, tnp.ndarray]:
+        def call_lower_with_atomic_virial(coord, atype, nlist, mapping, fparam, aparam):
             nlist = format_nlist(coord, nlist, model.get_nnei(), model.get_rcut())
             return tf.cond(
                 tf.shape(coord)[1] == tf.shape(nlist)[1],
@@ -146,7 +126,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
 
         tf_model.call_lower_atomic_virial = call_lower_with_atomic_virial
 
-        def make_call_whether_do_atomic_virial(do_atomic_virial: bool) -> Callable:
+        def make_call_whether_do_atomic_virial(do_atomic_virial: bool):
             if do_atomic_virial:
                 call_lower = call_lower_with_atomic_virial
             else:
@@ -158,7 +138,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                 box: Optional[tnp.ndarray] = None,
                 fparam: Optional[tnp.ndarray] = None,
                 aparam: Optional[tnp.ndarray] = None,
-            ) -> dict[str, tnp.ndarray]:
+            ):
                 """Return model prediction.
 
                 Parameters
@@ -214,7 +194,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             box: tnp.ndarray,
             fparam: tnp.ndarray,
             aparam: tnp.ndarray,
-        ) -> dict[str, tnp.ndarray]:
+        ):
             return make_call_whether_do_atomic_virial(do_atomic_virial=True)(
                 coord, atype, box, fparam, aparam
             )
@@ -237,7 +217,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             box: tnp.ndarray,
             fparam: tnp.ndarray,
             aparam: tnp.ndarray,
-        ) -> dict[str, tnp.ndarray]:
+        ):
             return make_call_whether_do_atomic_virial(do_atomic_virial=False)(
                 coord, atype, box, fparam, aparam
             )
@@ -246,49 +226,49 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
 
         # set functions to export other attributes
         @tf.function
-        def get_type_map() -> tf.Tensor:
+        def get_type_map():
             return tf.constant(model.get_type_map(), dtype=tf.string)
 
         tf_model.get_type_map = get_type_map
 
         @tf.function
-        def get_rcut() -> tf.Tensor:
+        def get_rcut():
             return tf.constant(model.get_rcut(), dtype=tf.double)
 
         tf_model.get_rcut = get_rcut
 
         @tf.function
-        def get_dim_fparam() -> tf.Tensor:
+        def get_dim_fparam():
             return tf.constant(model.get_dim_fparam(), dtype=tf.int64)
 
         tf_model.get_dim_fparam = get_dim_fparam
 
         @tf.function
-        def get_dim_aparam() -> tf.Tensor:
+        def get_dim_aparam():
             return tf.constant(model.get_dim_aparam(), dtype=tf.int64)
 
         tf_model.get_dim_aparam = get_dim_aparam
 
         @tf.function
-        def get_sel_type() -> tf.Tensor:
+        def get_sel_type():
             return tf.constant(model.get_sel_type(), dtype=tf.int64)
 
         tf_model.get_sel_type = get_sel_type
 
         @tf.function
-        def is_aparam_nall() -> tf.Tensor:
+        def is_aparam_nall():
             return tf.constant(model.is_aparam_nall(), dtype=tf.bool)
 
         tf_model.is_aparam_nall = is_aparam_nall
 
         @tf.function
-        def model_output_type() -> tf.Tensor:
+        def model_output_type():
             return tf.constant(model.model_output_type(), dtype=tf.string)
 
         tf_model.model_output_type = model_output_type
 
         @tf.function
-        def mixed_types() -> tf.Tensor:
+        def mixed_types():
             return tf.constant(model.mixed_types(), dtype=tf.bool)
 
         tf_model.mixed_types = mixed_types
@@ -296,19 +276,19 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         if model.get_min_nbor_dist() is not None:
 
             @tf.function
-            def get_min_nbor_dist() -> tf.Tensor:
+            def get_min_nbor_dist():
                 return tf.constant(model.get_min_nbor_dist(), dtype=tf.double)
 
             tf_model.get_min_nbor_dist = get_min_nbor_dist
 
         @tf.function
-        def get_sel() -> tf.Tensor:
+        def get_sel():
             return tf.constant(model.get_sel(), dtype=tf.int64)
 
         tf_model.get_sel = get_sel
 
         @tf.function
-        def get_model_def_script() -> tf.Tensor:
+        def get_model_def_script():
             return tf.constant(
                 json.dumps(model_def_script, separators=(",", ":")), dtype=tf.string
             )

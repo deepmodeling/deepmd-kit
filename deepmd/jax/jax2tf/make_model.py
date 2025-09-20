@@ -44,7 +44,7 @@ def model_call_from_call_lower(
     fparam: tnp.ndarray,
     aparam: tnp.ndarray,
     do_atomic_virial: bool = False,
-) -> dict[str, tnp.ndarray]:
+):
     """Return model prediction from lower interface.
 
     Parameters

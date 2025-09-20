@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-)
 
 import torch
 
@@ -29,8 +26,8 @@ class DOSLoss(TaskLoss):
         limit_pref_ados: float = 0.0,
         start_pref_acdf: float = 0.0,
         limit_pref_acdf: float = 0.0,
-        inference: bool = False,
-        **kwargs: Any,
+        inference=False,
+        **kwargs,
     ) -> None:
         r"""Construct a loss for local and global tensors.
 
@@ -88,15 +85,7 @@ class DOSLoss(TaskLoss):
             )
         )
 
-    def forward(
-        self,
-        input_dict: dict[str, torch.Tensor],
-        model: torch.nn.Module,
-        label: dict[str, torch.Tensor],
-        natoms: int,
-        learning_rate: float = 0.0,
-        mae: bool = False,
-    ) -> tuple[dict[str, torch.Tensor], torch.Tensor, dict[str, torch.Tensor]]:
+    def forward(self, input_dict, model, label, natoms, learning_rate=0.0, mae=False):
         """Return loss on local and global tensors.
 
         Parameters

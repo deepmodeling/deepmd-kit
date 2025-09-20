@@ -14,7 +14,6 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
-    Array,
     xp_take_along_axis,
 )
 from deepmd.dpmodel.common import (
@@ -139,7 +138,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         type_map: Optional[list[str]] = None,
         concat_output_tebd: bool = True,
         use_econf_tebd: bool = False,
-        use_tebd_bias: bool = False,
+        use_tebd_bias=False,
         smooth: bool = True,
     ) -> None:
         self.se_ttebd = DescrptBlockSeTTebd(
@@ -238,9 +237,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         """Returns the protection of building environment matrix."""
         return self.se_ttebd.get_env_protection()
 
-    def share_params(
-        self, base_class: "DescrptSeTTebd", shared_level: int, resume: bool = False
-    ) -> NoReturn:
+    def share_params(self, base_class, shared_level, resume=False) -> NoReturn:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -249,18 +246,18 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         raise NotImplementedError
 
     @property
-    def dim_out(self) -> int:
+    def dim_out(self):
         return self.get_dim_out()
 
     @property
-    def dim_emb(self) -> int:
+    def dim_emb(self):
         return self.get_dim_emb()
 
     def compute_input_stats(
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ) -> None:
+    ):
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -281,21 +278,19 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: Array,
-        stddev: Array,
+        mean: np.ndarray,
+        stddev: np.ndarray,
     ) -> None:
         """Update mean and stddev for descriptor."""
         self.se_ttebd.mean = mean
         self.se_ttebd.stddev = stddev
 
-    def get_stat_mean_and_stddev(self) -> tuple[Array, Array]:
+    def get_stat_mean_and_stddev(self) -> tuple[np.ndarray, np.ndarray]:
         """Get mean and stddev for descriptor."""
         return self.se_ttebd.mean, self.se_ttebd.stddev
 
     def change_type_map(
-        self,
-        type_map: list[str],
-        model_with_new_type_stat: Optional["DescrptSeTTebd"] = None,
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -324,11 +319,11 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
     @cast_precision
     def call(
         self,
-        coord_ext: Array,
-        atype_ext: Array,
-        nlist: Array,
-        mapping: Optional[Array] = None,
-    ) -> tuple[Array, Array]:
+        coord_ext,
+        atype_ext,
+        nlist,
+        mapping: Optional[np.ndarray] = None,
+    ):
         """Compute the descriptor.
 
         Parameters
@@ -458,7 +453,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         train_data: DeepmdDataSystem,
         type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> tuple[Array, Array]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -497,7 +492,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         tebd_dim: int = 8,
         tebd_input_mode: str = "concat",
         set_davg_zero: bool = True,
-        activation_function: str = "tanh",
+        activation_function="tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
         exclude_types: list[tuple[int, int]] = [],
@@ -610,7 +605,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.filter_neuron[-1]
 
-    def __setitem__(self, key: str, value: Array) -> None:
+    def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -618,7 +613,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key: str) -> Array:
+    def __getitem__(self, key):
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -643,17 +638,17 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         return self.env_protection
 
     @property
-    def dim_out(self) -> int:
+    def dim_out(self):
         """Returns the output dimension of this descriptor."""
         return self.filter_neuron[-1]
 
     @property
-    def dim_in(self) -> int:
+    def dim_in(self):
         """Returns the atomic input dimension of this descriptor."""
         return self.tebd_dim
 
     @property
-    def dim_emb(self) -> int:
+    def dim_emb(self):
         """Returns the output dimension of embedding."""
         return self.get_dim_emb()
 
@@ -714,18 +709,18 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
 
     def cal_g(
         self,
-        ss: Array,
-        embedding_idx: int,
-    ) -> Array:
+        ss,
+        embedding_idx,
+    ):
         # nfnl x nt_i x nt_j x ng
         gg = self.embeddings[embedding_idx].call(ss)
         return gg
 
     def cal_g_strip(
         self,
-        ss: Array,
-        embedding_idx: int,
-    ) -> Array:
+        ss,
+        embedding_idx,
+    ):
         assert self.embeddings_strip is not None
         # nfnl x nt_i x nt_j x ng
         gg = self.embeddings_strip[embedding_idx].call(ss)
@@ -733,13 +728,13 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
 
     def call(
         self,
-        nlist: Array,
-        coord_ext: Array,
-        atype_ext: Array,
-        atype_embd_ext: Optional[Array] = None,
-        mapping: Optional[Array] = None,
-        type_embedding: Optional[Array] = None,
-    ) -> tuple[Array, Array]:
+        nlist: np.ndarray,
+        coord_ext: np.ndarray,
+        atype_ext: np.ndarray,
+        atype_embd_ext: Optional[np.ndarray] = None,
+        mapping: Optional[np.ndarray] = None,
+        type_embedding: Optional[np.ndarray] = None,
+    ):
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         # nf x nloc x nnei x 4
         dmatrix, diff, sw = self.env_mat.call(

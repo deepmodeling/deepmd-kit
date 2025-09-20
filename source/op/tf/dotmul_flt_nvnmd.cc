@@ -37,15 +37,15 @@ modw = 1: normalize w[hh, : , kk]
 using namespace tensorflow;
 
 template <class T>
-void split_flt(T x, int64_t& sign, int64_t& expo, int64_t& mant);
+void split_flt(T x, int64_t &sign, int64_t &expo, int64_t &mant);
 
 // read matmul_flt_nvnmd.cc
 template <class T>  // float and double
-void find_max_expo(int64_t& max_expo, T* x, int64_t M);
+void find_max_expo(int64_t &max_expo, T *x, int64_t M);
 
 // read matmul_flt_nvnmd.cc
 template <class T>  // float and double
-void find_max_expo(int64_t& max_expo, T* x, int64_t N, int64_t M);
+void find_max_expo(int64_t &max_expo, T *x, int64_t N, int64_t M);
 
 //- register the operator
 REGISTER_OP("DotmulFltNvnmd")
@@ -60,19 +60,19 @@ template <typename Device, typename FPTYPE>
 class DotmulFltNvnmdOp : public OpKernel {
  public:
   /// Constructor.
-  explicit DotmulFltNvnmdOp(OpKernelConstruction* context)
+  explicit DotmulFltNvnmdOp(OpKernelConstruction *context)
       : OpKernel(context) {};
 
   /// Compute the descriptor
   /// param: context
-  void Compute(OpKernelContext* context) override {
+  void Compute(OpKernelContext *context) override {
     // check
     DCHECK_EQ(2, context->num_inputs());
-    const Tensor& X = context->input(0);
-    const Tensor& W = context->input(1);
+    const Tensor &X = context->input(0);
+    const Tensor &W = context->input(1);
 
-    const TensorShape& shX = X.shape();
-    const TensorShape& shW = W.shape();
+    const TensorShape &shX = X.shape();
+    const TensorShape &shW = W.shape();
     TensorShape shY;
     DCHECK_EQ(shW.dims(), shX.dims());
 
@@ -104,7 +104,7 @@ class DotmulFltNvnmdOp : public OpKernel {
     }
 
     // create output
-    Tensor* Y = NULL;
+    Tensor *Y = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(0, shY, &Y));
 
     // compute
@@ -131,8 +131,8 @@ class DotmulFltNvnmdOp : public OpKernel {
 
     for (ii = 0; ii < H * N; ii++) {
       // find x max exponnet
-      find_max_expo(expo_max1, (FPTYPE*)&x[ii * M], M);
-      find_max_expo(expo_max2, (FPTYPE*)&w[ii * M], M);
+      find_max_expo(expo_max1, (FPTYPE *)&x[ii * M], M);
+      find_max_expo(expo_max2, (FPTYPE *)&w[ii * M], M);
       //
       s = 0;
       for (jj = 0; jj < M; jj++) {

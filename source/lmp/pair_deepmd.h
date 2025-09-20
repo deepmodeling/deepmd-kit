@@ -42,20 +42,20 @@ class CommBrickDeepMD : public CommBrick {
 };
 class PairDeepMD : public PairDeepBaseModel {
  public:
-  PairDeepMD(class LAMMPS*);
+  PairDeepMD(class LAMMPS *);
   ~PairDeepMD() override;
-  void settings(int, char**) override;
-  void coeff(int, char**) override;
+  void settings(int, char **) override;
+  void coeff(int, char **) override;
   void compute(int, int) override;
-  int pack_reverse_comm(int, int, double*) override;
-  void unpack_reverse_comm(int, int*, double*) override;
+  int pack_reverse_comm(int, int, double *) override;
+  void unpack_reverse_comm(int, int *, double *) override;
 
  protected:
   deepmd_compat::DeepPot deep_pot;
   deepmd_compat::DeepPotModelDevi deep_pot_model_devi;
 
  private:
-  CommBrickDeepMD* commdata_;
+  CommBrickDeepMD *commdata_;
 };
 
 }  // namespace LAMMPS_NS

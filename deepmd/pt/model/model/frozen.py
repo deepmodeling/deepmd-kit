@@ -2,7 +2,6 @@
 import json
 import tempfile
 from typing import (
-    Any,
     NoReturn,
     Optional,
 )
@@ -33,7 +32,7 @@ class FrozenModel(BaseModel):
         The path to the frozen model
     """
 
-    def __init__(self, model_file: str, **kwargs: Any) -> None:
+    def __init__(self, model_file: str, **kwargs) -> None:
         super().__init__(**kwargs)
         self.model_file = model_file
         if model_file.endswith(".pth"):
@@ -117,8 +116,8 @@ class FrozenModel(BaseModel):
     @torch.jit.export
     def forward(
         self,
-        coord: torch.Tensor,
-        atype: torch.Tensor,
+        coord,
+        atype,
         box: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,

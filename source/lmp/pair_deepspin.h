@@ -42,13 +42,13 @@ class CommBrickDeepSpin : public CommBrick {
 };
 class PairDeepSpin : public PairDeepBaseModel {
  public:
-  PairDeepSpin(class LAMMPS*);
+  PairDeepSpin(class LAMMPS *);
   ~PairDeepSpin() override;
-  void settings(int, char**) override;
-  void coeff(int, char**) override;
+  void settings(int, char **) override;
+  void coeff(int, char **) override;
   void compute(int, int) override;
-  int pack_reverse_comm(int, int, double*) override;
-  void unpack_reverse_comm(int, int*, double*) override;
+  int pack_reverse_comm(int, int, double *) override;
+  void unpack_reverse_comm(int, int *, double *) override;
 
  protected:
   deepmd_compat::DeepSpin deep_spin;
@@ -56,7 +56,7 @@ class PairDeepSpin : public PairDeepBaseModel {
   std::vector<std::vector<double> > all_force_mag;
 
  private:
-  CommBrickDeepSpin* commdata_;
+  CommBrickDeepSpin *commdata_;
 };
 
 }  // namespace LAMMPS_NS

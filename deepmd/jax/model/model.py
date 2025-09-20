@@ -26,7 +26,7 @@ from deepmd.jax.model.dp_zbl_model import (
 )
 
 
-def get_standard_model(data: dict) -> BaseModel:
+def get_standard_model(data: dict):
     """Get a Model from a dictionary.
 
     Parameters
@@ -103,7 +103,7 @@ def get_zbl_model(data: dict) -> DPZBLModel:
     )
 
 
-def get_model(data: dict) -> BaseModel:
+def get_model(data: dict):
     """Get a model from a dictionary.
 
     Parameters

@@ -7,7 +7,6 @@ from functools import (
     wraps,
 )
 from typing import (
-    TYPE_CHECKING,
     Any,
     Callable,
     Optional,
@@ -21,10 +20,6 @@ import numpy as np
 from deepmd.common import (
     VALID_PRECISION,
 )
-
-if TYPE_CHECKING:
-    from deepmd.dpmodel.array_api import Array
-
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
@@ -64,7 +59,7 @@ DEFAULT_PRECISION = "float64"
 def get_xp_precision(
     xp: Any,
     precision: str,
-) -> Any:
+):
     """Get the precision from the API compatible namespace."""
     if precision == "float16" or precision == "half":
         return xp.float16
@@ -92,16 +87,16 @@ class NativeOP(ABC):
     """The unit operation of a native model."""
 
     @abstractmethod
-    def call(self, *args: Any, **kwargs: Any) -> "Array":
+    def call(self, *args, **kwargs):
         """Forward pass in NumPy implementation."""
         pass
 
-    def __call__(self, *args: Any, **kwargs: Any) -> "Array":
+    def __call__(self, *args, **kwargs):
         """Forward pass in NumPy implementation."""
         return self.call(*args, **kwargs)
 
 
-def to_numpy_array(x: Optional["Array"]) -> Optional[np.ndarray]:
+def to_numpy_array(x: Any) -> Optional[np.ndarray]:
     """Convert an array to a NumPy array.
 
     Parameters
@@ -163,7 +158,7 @@ def cast_precision(func: Callable[..., Any]) -> Callable[..., Any]:
     """
 
     @wraps(func)
-    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+    def wrapper(self, *args, **kwargs):
         # only convert tensors
         returned_tensor = func(
             self,
@@ -190,13 +185,13 @@ def cast_precision(func: Callable[..., Any]) -> Callable[..., Any]:
 
 @overload
 def safe_cast_array(
-    input: "Array", from_precision: str, to_precision: str
-) -> "Array": ...
+    input: np.ndarray, from_precision: str, to_precision: str
+) -> np.ndarray: ...
 @overload
 def safe_cast_array(input: None, from_precision: str, to_precision: str) -> None: ...
 def safe_cast_array(
-    input: Optional["Array"], from_precision: str, to_precision: str
-) -> Optional["Array"]:
+    input: Optional[np.ndarray], from_precision: str, to_precision: str
+) -> Optional[np.ndarray]:
     """Convert an array from a precision to another precision.
 
     If input is not an array or without the specific precision, the method will not
@@ -206,7 +201,7 @@ def safe_cast_array(
 
     Parameters
     ----------
-    input : Array or None
+    input : np.ndarray or None
         Input array
     from_precision : str
         Array data type that is casted from

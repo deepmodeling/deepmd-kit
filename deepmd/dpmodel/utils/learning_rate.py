@@ -1,21 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-    Optional,
-)
-
 import numpy as np
 
 
 class LearningRateExp:
     def __init__(
         self,
-        start_lr: float,
-        stop_lr: float,
-        decay_steps: int,
-        stop_steps: int,
-        decay_rate: Optional[float] = None,
-        **kwargs: Any,
+        start_lr,
+        stop_lr,
+        decay_steps,
+        stop_steps,
+        decay_rate=None,
+        **kwargs,
     ) -> None:
         """
         Construct an exponential-decayed learning rate.
@@ -50,7 +45,7 @@ class LearningRateExp:
             self.decay_rate = decay_rate
         self.min_lr = stop_lr
 
-    def value(self, step: int) -> np.float64:
+    def value(self, step) -> np.float64:
         """Get the learning rate at the given step."""
         step_lr = self.start_lr * np.power(self.decay_rate, step // self.decay_steps)
         if step_lr < self.min_lr:

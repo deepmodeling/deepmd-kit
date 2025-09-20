@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Any,
     Optional,
 )
 
@@ -29,13 +28,13 @@ class DOSModel(DPModelCommon, DPDOSModel_):
 
     def __init__(
         self,
-        *args: Any,
-        **kwargs: Any,
+        *args,
+        **kwargs,
     ) -> None:
         DPModelCommon.__init__(self)
         DPDOSModel_.__init__(self, *args, **kwargs)
 
-    def translated_output_def(self) -> dict[str, Any]:
+    def translated_output_def(self):
         out_def_data = self.model_output_def().get_data()
         output_def = {
             "atom_dos": out_def_data["dos"],
@@ -47,8 +46,8 @@ class DOSModel(DPModelCommon, DPDOSModel_):
 
     def forward(
         self,
-        coord: torch.Tensor,
-        atype: torch.Tensor,
+        coord,
+        atype,
         box: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
@@ -82,15 +81,15 @@ class DOSModel(DPModelCommon, DPDOSModel_):
     @torch.jit.export
     def forward_lower(
         self,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
-        nlist: torch.Tensor,
+        extended_coord,
+        extended_atype,
+        nlist,
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
-    ) -> dict[str, torch.Tensor]:
+    ):
         model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,

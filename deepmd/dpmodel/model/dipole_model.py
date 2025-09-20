@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-)
+
 
 from deepmd.dpmodel.atomic_model import (
     DPDipoleAtomicModel,
@@ -26,8 +24,8 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
 
     def __init__(
         self,
-        *args: Any,
-        **kwargs: Any,
-    ) -> None:
+        *args,
+        **kwargs,
+    ):
         DPModelCommon.__init__(self)
         DPDipoleModel_.__init__(self, *args, **kwargs)

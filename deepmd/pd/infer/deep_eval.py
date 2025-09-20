@@ -46,10 +46,6 @@ from deepmd.pd.utils.utils import (
 if TYPE_CHECKING:
     import ase.neighborlist
 
-    from deepmd.pd.model.model.model import (
-        BaseModel,
-    )
-
 
 class DeepEval(DeepEvalBackend):
     """Paddle backend implementation of DeepEval.
@@ -509,16 +505,6 @@ class DeepEval(DeepEvalBackend):
             "fitting-net": sum_param_fit,
             "total": sum_param_des + sum_param_fit,
         }
-
-    def get_model(self) -> "BaseModel":
-        """Get the Paddle model.
-
-        Returns
-        -------
-        BaseModel
-            The Paddle model instance.
-        """
-        return self.dp.model["Default"]
 
     def eval_descriptor(
         self,

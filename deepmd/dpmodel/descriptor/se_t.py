@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
 from typing import (
-    Any,
     Callable,
     NoReturn,
     Optional,
@@ -15,9 +14,6 @@ from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
     NativeOP,
-)
-from deepmd.dpmodel.array_api import (
-    Array,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -165,7 +161,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         self.orig_sel = self.sel
         self.ndescrpt = self.nnei * 4
 
-    def __setitem__(self, key: str, value: Array) -> None:
+    def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.davg = value
         elif key in ("std", "data_std", "dstd"):
@@ -173,7 +169,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key: str) -> Array:
+    def __getitem__(self, key):
         if key in ("avg", "data_avg", "davg"):
             return self.davg
         elif key in ("std", "data_std", "dstd"):
@@ -182,12 +178,12 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             raise KeyError(key)
 
     @property
-    def dim_out(self) -> int:
+    def dim_out(self):
         """Returns the output dimension of this descriptor."""
         return self.get_dim_out()
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Any = None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -198,15 +194,15 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             "We may consider adding this support in the future if there is a clear demand for it."
         )
 
-    def get_dim_out(self) -> int:
+    def get_dim_out(self):
         """Returns the output dimension of this descriptor."""
         return self.neuron[-1]
 
-    def get_dim_emb(self) -> int:
+    def get_dim_emb(self):
         """Returns the embedding (g2) dimension of this descriptor."""
         return self.neuron[-1]
 
-    def get_rcut(self) -> float:
+    def get_rcut(self):
         """Returns cutoff radius."""
         return self.rcut
 
@@ -214,7 +210,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.rcut_smth
 
-    def get_sel(self) -> list:
+    def get_sel(self):
         """Returns cutoff radius."""
         return self.sel
 
@@ -236,9 +232,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         """Returns the protection of building environment matrix."""
         return self.env_protection
 
-    def share_params(
-        self, base_class: Any, shared_level: int, resume: bool = False
-    ) -> NoReturn:
+    def share_params(self, base_class, shared_level, resume=False) -> NoReturn:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -296,14 +290,14 @@ class DescrptSeT(NativeOP, BaseDescriptor):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: Array,
-        stddev: Array,
+        mean: np.ndarray,
+        stddev: np.ndarray,
     ) -> None:
         """Update mean and stddev for descriptor."""
         self.davg = mean
         self.dstd = stddev
 
-    def get_stat_mean_and_stddev(self) -> tuple[Array, Array]:
+    def get_stat_mean_and_stddev(self) -> tuple[np.ndarray, np.ndarray]:
         """Get mean and stddev for descriptor."""
         return self.davg, self.dstd
 
@@ -317,11 +311,11 @@ class DescrptSeT(NativeOP, BaseDescriptor):
     @cast_precision
     def call(
         self,
-        coord_ext: Array,
-        atype_ext: Array,
-        nlist: Array,
-        mapping: Optional[Array] = None,
-    ) -> tuple[Array, Array]:
+        coord_ext,
+        atype_ext,
+        nlist,
+        mapping: Optional[np.ndarray] = None,
+    ):
         """Compute the descriptor.
 
         Parameters
@@ -460,7 +454,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         train_data: DeepmdDataSystem,
         type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> tuple[Array, Array]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

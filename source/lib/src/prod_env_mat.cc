@@ -12,22 +12,22 @@
 using namespace deepmd;
 
 template <typename FPTYPE>
-void deepmd::prod_env_mat_a_cpu(FPTYPE* em,
-                                FPTYPE* em_deriv,
-                                FPTYPE* rij,
-                                int* nlist,
-                                const FPTYPE* coord,
-                                const int* type,
-                                const InputNlist& inlist,
+void deepmd::prod_env_mat_a_cpu(FPTYPE *em,
+                                FPTYPE *em_deriv,
+                                FPTYPE *rij,
+                                int *nlist,
+                                const FPTYPE *coord,
+                                const int *type,
+                                const InputNlist &inlist,
                                 const int max_nbor_size,
-                                const FPTYPE* avg,
-                                const FPTYPE* std,
+                                const FPTYPE *avg,
+                                const FPTYPE *std,
                                 const int nloc,
                                 const int nall,
                                 const float rcut,
                                 const float rcut_smth,
                                 const std::vector<int> sec,
-                                const int* f_type) {
+                                const int *f_type) {
   if (f_type == NULL) {
     f_type = type;
   }
@@ -108,16 +108,16 @@ void deepmd::prod_env_mat_a_cpu(FPTYPE* em,
 }
 
 template <typename FPTYPE>
-void deepmd::prod_env_mat_r_cpu(FPTYPE* em,
-                                FPTYPE* em_deriv,
-                                FPTYPE* rij,
-                                int* nlist,
-                                const FPTYPE* coord,
-                                const int* type,
-                                const InputNlist& inlist,
+void deepmd::prod_env_mat_r_cpu(FPTYPE *em,
+                                FPTYPE *em_deriv,
+                                FPTYPE *rij,
+                                int *nlist,
+                                const FPTYPE *coord,
+                                const int *type,
+                                const InputNlist &inlist,
                                 const int max_nbor_size,
-                                const FPTYPE* avg,
-                                const FPTYPE* std,
+                                const FPTYPE *avg,
+                                const FPTYPE *std,
                                 const int nloc,
                                 const int nall,
                                 const float rcut,
@@ -191,66 +191,66 @@ void deepmd::prod_env_mat_r_cpu(FPTYPE* em,
   }
 }
 
-template void deepmd::prod_env_mat_a_cpu<double>(double* em,
-                                                 double* em_deriv,
-                                                 double* rij,
-                                                 int* nlist,
-                                                 const double* coord,
-                                                 const int* type,
-                                                 const InputNlist& inlist,
+template void deepmd::prod_env_mat_a_cpu<double>(double *em,
+                                                 double *em_deriv,
+                                                 double *rij,
+                                                 int *nlist,
+                                                 const double *coord,
+                                                 const int *type,
+                                                 const InputNlist &inlist,
                                                  const int max_nbor_size,
-                                                 const double* avg,
-                                                 const double* std,
+                                                 const double *avg,
+                                                 const double *std,
                                                  const int nloc,
                                                  const int nall,
                                                  const float rcut,
                                                  const float rcut_smth,
                                                  const std::vector<int> sec,
-                                                 const int* f_type);
+                                                 const int *f_type);
 
-template void deepmd::prod_env_mat_a_cpu<float>(float* em,
-                                                float* em_deriv,
-                                                float* rij,
-                                                int* nlist,
-                                                const float* coord,
-                                                const int* type,
-                                                const InputNlist& inlist,
+template void deepmd::prod_env_mat_a_cpu<float>(float *em,
+                                                float *em_deriv,
+                                                float *rij,
+                                                int *nlist,
+                                                const float *coord,
+                                                const int *type,
+                                                const InputNlist &inlist,
                                                 const int max_nbor_size,
-                                                const float* avg,
-                                                const float* std,
+                                                const float *avg,
+                                                const float *std,
                                                 const int nloc,
                                                 const int nall,
                                                 const float rcut,
                                                 const float rcut_smth,
                                                 const std::vector<int> sec,
-                                                const int* f_type);
+                                                const int *f_type);
 
-template void deepmd::prod_env_mat_r_cpu<double>(double* em,
-                                                 double* em_deriv,
-                                                 double* rij,
-                                                 int* nlist,
-                                                 const double* coord,
-                                                 const int* type,
-                                                 const InputNlist& inlist,
+template void deepmd::prod_env_mat_r_cpu<double>(double *em,
+                                                 double *em_deriv,
+                                                 double *rij,
+                                                 int *nlist,
+                                                 const double *coord,
+                                                 const int *type,
+                                                 const InputNlist &inlist,
                                                  const int max_nbor_size,
-                                                 const double* avg,
-                                                 const double* std,
+                                                 const double *avg,
+                                                 const double *std,
                                                  const int nloc,
                                                  const int nall,
                                                  const float rcut,
                                                  const float rcut_smth,
                                                  const std::vector<int> sec);
 
-template void deepmd::prod_env_mat_r_cpu<float>(float* em,
-                                                float* em_deriv,
-                                                float* rij,
-                                                int* nlist,
-                                                const float* coord,
-                                                const int* type,
-                                                const InputNlist& inlist,
+template void deepmd::prod_env_mat_r_cpu<float>(float *em,
+                                                float *em_deriv,
+                                                float *rij,
+                                                int *nlist,
+                                                const float *coord,
+                                                const int *type,
+                                                const InputNlist &inlist,
                                                 const int max_nbor_size,
-                                                const float* avg,
-                                                const float* std,
+                                                const float *avg,
+                                                const float *std,
                                                 const int nloc,
                                                 const int nall,
                                                 const float rcut,
@@ -258,17 +258,17 @@ template void deepmd::prod_env_mat_r_cpu<float>(float* em,
                                                 const std::vector<int> sec);
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-void deepmd::env_mat_nbor_update(InputNlist& inlist,
-                                 InputNlist& gpu_inlist,
-                                 int& max_nbor_size,
-                                 int*& nbor_list_dev,
-                                 const int* mesh,
+void deepmd::env_mat_nbor_update(InputNlist &inlist,
+                                 InputNlist &gpu_inlist,
+                                 int &max_nbor_size,
+                                 int *&nbor_list_dev,
+                                 const int *mesh,
                                  const int size) {
-  int* mesh_host = new int[size];
+  int *mesh_host = new int[size];
   memcpy_device_to_host(mesh, mesh_host, size);
-  memcpy(&inlist.ilist, 4 + mesh_host, sizeof(int*));
-  memcpy(&inlist.numneigh, 8 + mesh_host, sizeof(int*));
-  memcpy(&inlist.firstneigh, 12 + mesh_host, sizeof(int**));
+  memcpy(&inlist.ilist, 4 + mesh_host, sizeof(int *));
+  memcpy(&inlist.numneigh, 8 + mesh_host, sizeof(int *));
+  memcpy(&inlist.firstneigh, 12 + mesh_host, sizeof(int **));
   const int ago = mesh_host[0];
   if (ago == 0 || gpu_inlist.inum < inlist.inum) {
     const int inum = inlist.inum;
@@ -306,7 +306,7 @@ void deepmd::env_mat_nbor_update(InputNlist& inlist,
     // copy nbor list from host to the device
     std::vector<int> nbor_list_host(static_cast<size_t>(inum) * max_nbor_size,
                                     0);
-    int** _firstneigh = (int**)malloc(sizeof(int*) * inum);
+    int **_firstneigh = (int **)malloc(sizeof(int *) * inum);
     for (int ii = 0; ii < inum; ii++) {
       _firstneigh[ii] = nbor_list_dev + ii * max_nbor_size;
       for (int jj = 0; jj < inlist.numneigh[ii]; jj++) {

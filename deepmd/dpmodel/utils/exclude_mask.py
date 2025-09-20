@@ -4,7 +4,6 @@ import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.array_api import (
-    Array,
     xp_take_along_axis,
 )
 
@@ -26,16 +25,16 @@ class AtomExcludeMask:
         # (ntypes)
         self.type_mask = type_mask.reshape([-1])
 
-    def get_exclude_types(self) -> list[int]:
+    def get_exclude_types(self):
         return self.exclude_types
 
-    def get_type_mask(self) -> Array:
+    def get_type_mask(self):
         return self.type_mask
 
     def build_type_exclude_mask(
         self,
-        atype: Array,
-    ) -> Array:
+        atype: np.ndarray,
+    ):
         """Compute type exclusion mask for atoms.
 
         Parameters
@@ -87,14 +86,14 @@ class PairExcludeMask:
         # (ntypes+1 x ntypes+1)
         self.type_mask = type_mask.reshape([-1])
 
-    def get_exclude_types(self) -> list[tuple[int, int]]:
+    def get_exclude_types(self):
         return self.exclude_types
 
     def build_type_exclude_mask(
         self,
-        nlist: Array,
-        atype_ext: Array,
-    ) -> Array:
+        nlist: np.ndarray,
+        atype_ext: np.ndarray,
+    ):
         """Compute type exclusion mask for atom pairs.
 
         Parameters
@@ -138,5 +137,5 @@ class PairExcludeMask:
         )
         return mask
 
-    def __contains__(self, item: tuple[int, int]) -> bool:
+    def __contains__(self, item) -> bool:
         return item in self.exclude_types

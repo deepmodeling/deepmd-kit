@@ -1,14 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Any,
     Optional,
 )
 
 import torch
 
-from deepmd.dpmodel.output_def import (
-    OutputVariableDef,
-)
 from deepmd.pt.model.atomic_model import (
     DPPropertyAtomicModel,
 )
@@ -32,13 +28,13 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
 
     def __init__(
         self,
-        *args: Any,
-        **kwargs: Any,
+        *args,
+        **kwargs,
     ) -> None:
         DPModelCommon.__init__(self)
         DPPropertyModel_.__init__(self, *args, **kwargs)
 
-    def translated_output_def(self) -> dict[str, OutputVariableDef]:
+    def translated_output_def(self):
         out_def_data = self.model_output_def().get_data()
         output_def = {
             f"atom_{self.get_var_name()}": out_def_data[self.get_var_name()],
@@ -50,8 +46,8 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
 
     def forward(
         self,
-        coord: torch.Tensor,
-        atype: torch.Tensor,
+        coord,
+        atype,
         box: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
@@ -90,15 +86,15 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
     @torch.jit.export
     def forward_lower(
         self,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
-        nlist: torch.Tensor,
+        extended_coord,
+        extended_atype,
+        nlist,
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
-    ) -> dict[str, torch.Tensor]:
+    ):
         model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,

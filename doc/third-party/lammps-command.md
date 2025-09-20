@@ -319,6 +319,6 @@ For example, when `water.pb` is trained against the PBE0 functional, the simulat
 
 ```lammps
 pair_style hybrid/overlay deepmd water.pb dispersion/d3 original pbe0 30.0 20.0
-pair_coeff * * deepmd O H
-pair_coeff * * dispersion/d3 O H
+pair_coeff * * O H
+pair_coeff * * O H
 ```

@@ -37,7 +37,7 @@ namespace deepmd_compat = deepmd::hpp;
 namespace LAMMPS_NS {
 class FixDPLR : public Fix {
  public:
-  FixDPLR(class LAMMPS*, int, char**);
+  FixDPLR(class LAMMPS *, int, char **);
   ~FixDPLR() override;
   int setmask() override;
   void init() override;
@@ -52,14 +52,14 @@ class FixDPLR : public Fix {
   void min_pre_exchange() override;
   void min_pre_force(int) override;
   void min_post_force(int) override;
-  int pack_reverse_comm(int, int, double*) override;
-  void unpack_reverse_comm(int, int*, double*) override;
+  int pack_reverse_comm(int, int, double *) override;
+  void unpack_reverse_comm(int, int *, double *) override;
   double compute_scalar(void) override;
   double compute_vector(int) override;
   double ener_unit_cvt_factor, dist_unit_cvt_factor, force_unit_cvt_factor;
 
  private:
-  PairDeepMD* pair_deepmd;
+  PairDeepMD *pair_deepmd;
   deepmd_compat::DeepTensor dpt;
   deepmd_compat::DipoleChargeModifier dtm;
   std::string model;
@@ -74,7 +74,7 @@ class FixDPLR : public Fix {
   std::vector<double> efield;
   std::vector<double> efield_fsum, efield_fsum_all;
   int efield_force_flag;
-  void get_valid_pairs(std::vector<std::pair<int, int> >& pairs, bool is_setup);
+  void get_valid_pairs(std::vector<std::pair<int, int> > &pairs, bool is_setup);
   int varflag;
   char *xstr, *ystr, *zstr;
   int xvar, yvar, zvar, xstyle, ystyle, zstyle;

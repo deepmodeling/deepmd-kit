@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Any,
     Final,
     Optional,
     Union,
@@ -33,7 +32,7 @@ from deepmd.utils.version import (
 )
 
 
-def Tensor(*shape: int) -> torch.Tensor:
+def Tensor(*shape):
     return torch.empty(shape, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
 
 
@@ -42,12 +41,12 @@ class SimpleLinear(nn.Module):
 
     def __init__(
         self,
-        num_in: int,
-        num_out: int,
-        bavg: float = 0.0,
-        stddev: float = 1.0,
-        use_timestep: bool = False,
-        activate: Optional[str] = None,
+        num_in,
+        num_out,
+        bavg=0.0,
+        stddev=1.0,
+        use_timestep=False,
+        activate=None,
         bias: bool = True,
     ) -> None:
         """Construct a linear layer.
@@ -75,7 +74,7 @@ class SimpleLinear(nn.Module):
             self.idt = nn.Parameter(data=Tensor(1, num_out))
             nn.init.normal_(self.idt.data, mean=0.1, std=0.001)
 
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+    def forward(self, inputs):
         """Return X*W+b."""
         xw = torch.matmul(inputs, self.matrix)
         hidden = xw + self.bias if self.bias is not None else xw
@@ -122,7 +121,7 @@ class Linear(nn.Linear):
         else:
             raise ValueError("Invalid init method.")
 
-    def _trunc_normal_init(self, scale: float = 1.0) -> None:
+    def _trunc_normal_init(self, scale=1.0) -> None:
         # Constant from scipy.stats.truncnorm.std(a=-2, b=2, loc=0., scale=1.)
         TRUNCATED_NORMAL_STDDEV_FACTOR = 0.87962566103423978
         _, fan_in = self.weight.shape
@@ -133,7 +132,7 @@ class Linear(nn.Linear):
     def _glorot_uniform_init(self) -> None:
         nn.init.xavier_uniform_(self.weight, gain=1)
 
-    def _zero_init(self, use_bias: bool = True) -> None:
+    def _zero_init(self, use_bias=True) -> None:
         with torch.no_grad():
             self.weight.fill_(0.0)
             if use_bias:
@@ -145,19 +144,13 @@ class Linear(nn.Linear):
 
 
 class NonLinearHead(nn.Module):
-    def __init__(
-        self,
-        input_dim: int,
-        out_dim: int,
-        activation_fn: str,
-        hidden: Optional[int] = None,
-    ) -> None:
+    def __init__(self, input_dim, out_dim, activation_fn, hidden=None) -> None:
         super().__init__()
         hidden = input_dim if not hidden else hidden
         self.linear1 = SimpleLinear(input_dim, hidden, activate=activation_fn)
         self.linear2 = SimpleLinear(hidden, out_dim)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x):
         x = self.linear1(x)
         x = self.linear2(x)
         return x
@@ -166,13 +159,7 @@ class NonLinearHead(nn.Module):
 class MaskLMHead(nn.Module):
     """Head for masked language modeling."""
 
-    def __init__(
-        self,
-        embed_dim: int,
-        output_dim: int,
-        activation_fn: str,
-        weight: Optional[torch.Tensor] = None,
-    ) -> None:
+    def __init__(self, embed_dim, output_dim, activation_fn, weight=None) -> None:
         super().__init__()
         self.dense = SimpleLinear(embed_dim, embed_dim)
         self.activation_fn = ActivationFn(activation_fn)
@@ -187,12 +174,7 @@ class MaskLMHead(nn.Module):
             torch.zeros(output_dim, dtype=env.GLOBAL_PT_FLOAT_PRECISION)  # pylint: disable=no-explicit-dtype,no-explicit-device
         )
 
-    def forward(
-        self,
-        features: torch.Tensor,
-        masked_tokens: Optional[torch.Tensor] = None,
-        **kwargs: Any,
-    ) -> torch.Tensor:
+    def forward(self, features, masked_tokens: Optional[torch.Tensor] = None, **kwargs):
         # Only project the masked tokens while training,
         # saves both memory and computation
         if masked_tokens is not None:
@@ -208,13 +190,7 @@ class MaskLMHead(nn.Module):
 
 class ResidualDeep(nn.Module):
     def __init__(
-        self,
-        type_id: int,
-        embedding_width: int,
-        neuron: list[int],
-        bias_atom_e: float,
-        out_dim: int = 1,
-        resnet_dt: bool = False,
+        self, type_id, embedding_width, neuron, bias_atom_e, out_dim=1, resnet_dt=False
     ) -> None:
         """Construct a filter on the given element as neighbor.
 
@@ -245,7 +221,7 @@ class ResidualDeep(nn.Module):
             bias_atom_e = 0
         self.final_layer = SimpleLinear(self.neuron[-1], self.out_dim, bias_atom_e)
 
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+    def forward(self, inputs):
         """Calculate decoded embedding for each atom.
 
         Args:
@@ -268,15 +244,15 @@ class ResidualDeep(nn.Module):
 class TypeEmbedNet(nn.Module):
     def __init__(
         self,
-        type_nums: int,
-        embed_dim: int,
-        bavg: float = 0.0,
-        stddev: float = 1.0,
-        precision: str = "default",
+        type_nums,
+        embed_dim,
+        bavg=0.0,
+        stddev=1.0,
+        precision="default",
         seed: Optional[Union[int, list[int]]] = None,
-        use_econf_tebd: bool = False,
+        use_econf_tebd=False,
         use_tebd_bias: bool = False,
-        type_map: Optional[list[str]] = None,
+        type_map=None,
         trainable: bool = True,
     ) -> None:
         """Construct a type embedding net."""
@@ -302,7 +278,7 @@ class TypeEmbedNet(nn.Module):
         )
         # nn.init.normal_(self.embedding.weight[:-1], mean=bavg, std=stddev)
 
-    def forward(self, atype: torch.Tensor) -> torch.Tensor:
+    def forward(self, atype):
         """
         Args:
             atype: Type of each input, [nframes, nloc] or [nframes, nloc, nnei].
@@ -314,7 +290,7 @@ class TypeEmbedNet(nn.Module):
         """
         return torch.embedding(self.embedding(atype.device), atype)
 
-    def get_full_embedding(self, device: torch.device) -> torch.Tensor:
+    def get_full_embedding(self, device: torch.device):
         """
         Get the type embeddings of all types.
 
@@ -331,9 +307,7 @@ class TypeEmbedNet(nn.Module):
         """
         return self.embedding(device)
 
-    def share_params(
-        self, base_class: Any, shared_level: int, resume: bool = False
-    ) -> None:
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -350,7 +324,7 @@ class TypeEmbedNet(nn.Module):
             raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -435,7 +409,7 @@ class TypeEmbedNetConsistent(nn.Module):
         for param in self.parameters():
             param.requires_grad = trainable
 
-    def forward(self, device: torch.device) -> torch.Tensor:
+    def forward(self, device: torch.device):
         """Caulate type embedding network.
 
         Returns
@@ -457,7 +431,7 @@ class TypeEmbedNetConsistent(nn.Module):
         return embed
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -519,7 +493,7 @@ class TypeEmbedNetConsistent(nn.Module):
         self.ntypes = len(type_map)
 
     @classmethod
-    def deserialize(cls, data: dict) -> "TypeEmbedNetConsistent":
+    def deserialize(cls, data: dict):
         """Deserialize the model.
 
         Parameters

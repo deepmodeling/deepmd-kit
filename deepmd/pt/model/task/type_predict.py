@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Any,
     Optional,
 )
 
@@ -16,11 +15,7 @@ from deepmd.pt.model.task import (
 
 class TypePredictNet(Fitting):
     def __init__(
-        self,
-        feature_dim: int,
-        ntypes: int,
-        activation_function: str = "gelu",
-        **kwargs: Any,
+        self, feature_dim, ntypes, activation_function="gelu", **kwargs
     ) -> None:
         """Construct a type predict net.
 
@@ -39,9 +34,7 @@ class TypePredictNet(Fitting):
             weight=None,
         )
 
-    def forward(
-        self, features: torch.Tensor, masked_tokens: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
+    def forward(self, features, masked_tokens: Optional[torch.Tensor] = None):
         """Calculate the predicted logits.
         Args:
         - features: Input features with shape [nframes, nloc, feature_dim].

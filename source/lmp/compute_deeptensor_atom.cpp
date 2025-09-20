@@ -24,7 +24,7 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-ComputeDeeptensorAtom::ComputeDeeptensorAtom(LAMMPS* lmp, int narg, char** arg)
+ComputeDeeptensorAtom::ComputeDeeptensorAtom(LAMMPS *lmp, int narg, char **arg)
     : Compute(lmp, narg, arg), dp(lmp), tensor(nullptr) {
   if (strcmp(update->unit_style, "lj") == 0) {
     error->all(FLERR,
@@ -45,7 +45,7 @@ ComputeDeeptensorAtom::ComputeDeeptensorAtom(LAMMPS* lmp, int narg, char** arg)
   int gpu_rank = dp.get_node_rank();
   try {
     dt.init(model_file, gpu_rank);
-  } catch (deepmd_compat::deepmd_exception& e) {
+  } catch (deepmd_compat::deepmd_exception &e) {
     error->one(FLERR, e.what());
   }
   sel_types = dt.sel_types();
@@ -83,7 +83,7 @@ void ComputeDeeptensorAtom::init() {
 #endif
 }
 
-void ComputeDeeptensorAtom::init_list(int /*id*/, NeighList* ptr) {
+void ComputeDeeptensorAtom::init_list(int /*id*/, NeighList *ptr) {
   list = ptr;
 }
 
@@ -101,10 +101,10 @@ void ComputeDeeptensorAtom::compute_peratom() {
     array_atom = tensor;
   }
 
-  double** x = atom->x;
-  double** f = atom->f;
-  int* type = atom->type;
-  int* mask = atom->mask;
+  double **x = atom->x;
+  double **f = atom->f;
+  int *type = atom->type;
+  int *mask = atom->mask;
   int nlocal = atom->nlocal;
   int nghost = atom->nghost;
   int nall = nlocal + nghost;
@@ -145,7 +145,7 @@ void ComputeDeeptensorAtom::compute_peratom() {
   try {
     dt.compute(gtensor, force, virial, atensor, avirial, dcoord, dtype, dbox,
                nghost, lmp_list);
-  } catch (deepmd_compat::deepmd_exception& e) {
+  } catch (deepmd_compat::deepmd_exception &e) {
     error->one(FLERR, e.what());
   }
 

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    Any,
     Optional,
     Union,
 )
@@ -92,8 +91,7 @@ class PropertyFittingNet(InvarFitting):
         mixed_types: bool = True,
         trainable: Union[bool, list[bool]] = True,
         seed: Optional[int] = None,
-        default_fparam: Optional[list] = None,
-        **kwargs: Any,
+        **kwargs,
     ) -> None:
         self.task_dim = task_dim
         self.intensive = intensive
@@ -113,7 +111,6 @@ class PropertyFittingNet(InvarFitting):
             mixed_types=mixed_types,
             trainable=trainable,
             seed=seed,
-            default_fparam=default_fparam,
             **kwargs,
         )
 
@@ -138,7 +135,7 @@ class PropertyFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "PropertyFittingNet":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 5, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         data.pop("dim_out")
         data["property_name"] = data.pop("var_name")
         obj = super().deserialize(data)
@@ -153,7 +150,7 @@ class PropertyFittingNet(InvarFitting):
             "task_dim": self.task_dim,
             "intensive": self.intensive,
         }
-        dd["@version"] = 5
+        dd["@version"] = 4
 
         return dd
 

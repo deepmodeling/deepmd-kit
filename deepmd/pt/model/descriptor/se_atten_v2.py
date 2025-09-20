@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Any,
     Optional,
     Union,
 )
@@ -57,8 +56,8 @@ class DescrptSeAttenV2(DescrptDPA1):
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         scaling_factor: int = 1.0,
-        normalize: bool = True,
-        temperature: Optional[float] = None,
+        normalize=True,
+        temperature=None,
         concat_output_tebd: bool = True,
         trainable: bool = True,
         trainable_ln: bool = True,
@@ -70,7 +69,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
         # not implemented
-        spin: Optional[Any] = None,
+        spin=None,
         type: Optional[str] = None,
     ) -> None:
         r"""Construct smooth version of embedding net of type `se_atten_v2`.
@@ -258,7 +257,7 @@ class DescrptSeAttenV2(DescrptDPA1):
             data["use_tebd_bias"] = True
         obj = cls(**data)
 
-        def t_cvt(xx: Any) -> torch.Tensor:
+        def t_cvt(xx):
             return torch.tensor(xx, dtype=obj.se_atten.prec, device=env.DEVICE)
 
         obj.type_embedding.embedding = TypeEmbedNetConsistent.deserialize(

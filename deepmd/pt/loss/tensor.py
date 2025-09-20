@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-)
 
 import torch
 
@@ -24,9 +21,9 @@ class TensorLoss(TaskLoss):
         label_name: str,
         pref_atomic: float = 0.0,
         pref: float = 0.0,
-        inference: bool = False,
+        inference=False,
         enable_atomic_weight: bool = False,
-        **kwargs: Any,
+        **kwargs,
     ) -> None:
         r"""Construct a loss for local and global tensors.
 
@@ -67,15 +64,7 @@ class TensorLoss(TaskLoss):
             "Can not assian zero weight both to `pref` and `pref_atomic`"
         )
 
-    def forward(
-        self,
-        input_dict: dict[str, torch.Tensor],
-        model: torch.nn.Module,
-        label: dict[str, torch.Tensor],
-        natoms: int,
-        learning_rate: float = 0.0,
-        mae: bool = False,
-    ) -> tuple[dict[str, torch.Tensor], torch.Tensor, dict[str, torch.Tensor]]:
+    def forward(self, input_dict, model, label, natoms, learning_rate=0.0, mae=False):
         """Return loss on local and global tensors.
 
         Parameters

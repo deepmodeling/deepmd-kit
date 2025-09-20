@@ -340,8 +340,6 @@ class DeepPotPT : public DeepPotBackend {
   at::Tensor firstneigh_tensor;
   c10::optional<torch::Tensor> mapping_tensor;
   torch::Dict<std::string, torch::Tensor> comm_dict;
-  bool profiler_enabled{false};
-  std::string profiler_file;
   /**
    * @brief Translate PyTorch exceptions to the DeePMD-kit exception.
    * @param[in] f The function to run.

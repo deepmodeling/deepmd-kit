@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-)
 
 from deepmd.dpmodel.atomic_model import (
     DPPolarAtomicModel,
@@ -26,8 +23,8 @@ class PolarModel(DPModelCommon, DPPolarModel_):
 
     def __init__(
         self,
-        *args: Any,
-        **kwargs: Any,
-    ) -> None:
+        *args,
+        **kwargs,
+    ):
         DPModelCommon.__init__(self)
         DPPolarModel_.__init__(self, *args, **kwargs)

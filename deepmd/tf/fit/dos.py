@@ -101,9 +101,6 @@ class DOSFitting(Fitting):
     mixed_types : bool
         If true, use a uniform fitting net for all atom types, otherwise use
         different fitting nets for different atom types.
-    default_fparam: list[float], optional
-        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
-        this value will be used as the default value for the frame parameter in the fitting net.
     type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     """
@@ -128,7 +125,6 @@ class DOSFitting(Fitting):
         use_aparam_as_mask: bool = False,
         mixed_types: bool = False,
         type_map: Optional[list[str]] = None,  # to be compat with input
-        default_fparam: Optional[list[float]] = None,  # to be compat with input
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -140,11 +136,8 @@ class DOSFitting(Fitting):
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
         self.dim_case_embd = dim_case_embd
-        self.default_fparam = default_fparam
         if dim_case_embd > 0:
             raise ValueError("dim_case_embd is not supported in TensorFlow.")
-        if default_fparam is not None:
-            raise ValueError("default_fparam is not supported in TensorFlow.")
 
         self.numb_dos = numb_dos
 
@@ -685,7 +678,7 @@ class DOSFitting(Fitting):
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data["numb_dos"] = data.pop("dim_out")
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
@@ -712,7 +705,7 @@ class DOSFitting(Fitting):
         data = {
             "@class": "Fitting",
             "type": "dos",
-            "@version": 4,
+            "@version": 3,
             "var_name": "dos",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -723,7 +716,6 @@ class DOSFitting(Fitting):
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
             "dim_case_embd": self.dim_case_embd,
-            "default_fparam": self.default_fparam,
             "rcond": self.rcond,
             "trainable": self.trainable,
             "activation_function": self.activation_function,

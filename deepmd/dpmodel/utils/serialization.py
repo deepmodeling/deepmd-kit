@@ -5,7 +5,6 @@ from pathlib import (
     Path,
 )
 from typing import (
-    Any,
     Callable,
 )
 
@@ -19,9 +18,7 @@ except ImportError:
     __version__ = "unknown"
 
 
-def traverse_model_dict(
-    model_obj: Any, callback: Callable, is_variable: bool = False
-) -> Any:
+def traverse_model_dict(model_obj, callback: Callable, is_variable: bool = False):
     """Traverse a model dict and call callback on each variable.
 
     Parameters
@@ -70,7 +67,7 @@ class Counter:
     def __init__(self) -> None:
         self.count = -1
 
-    def __call__(self) -> int:
+    def __call__(self):
         self.count += 1
         return self.count
 
@@ -152,7 +149,7 @@ def load_dp_model(filename: str) -> dict:
             model_dict = traverse_model_dict(model_dict, lambda x: f[x][()].copy())
     elif filename_extension in {".yaml", ".yml"}:
 
-        def convert_numpy_ndarray(x: Any) -> Any:
+        def convert_numpy_ndarray(x):
             if isinstance(x, dict) and x.get("@class") == "np.ndarray":
                 dtype = np.dtype(x["dtype"])
                 value = np.asarray(x["value"], dtype=dtype)

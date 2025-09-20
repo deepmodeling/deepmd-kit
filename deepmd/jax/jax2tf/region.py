@@ -93,7 +93,7 @@ def to_face_distance(
     return tnp.reshape(dist, tf.concat([cshape[:-2], [3]], axis=0))
 
 
-def b_to_face_distance(cell: tnp.ndarray) -> tnp.ndarray:
+def b_to_face_distance(cell):
     volume = tf.linalg.det(cell)
     c_yz = tf.linalg.cross(cell[:, 1, ...], cell[:, 2, ...])
     _h2yz = volume / tf.linalg.norm(c_yz, axis=-1)

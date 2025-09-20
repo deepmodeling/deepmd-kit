@@ -32,7 +32,7 @@ struct NeighborInfo {
   int index;
   NeighborInfo() : type(0), dist(0), index(0) {}
   NeighborInfo(int tt, FPTYPE dd, int ii) : type(tt), dist(dd), index(ii) {}
-  bool operator<(const NeighborInfo& b) const {
+  bool operator<(const NeighborInfo &b) const {
     return (type < b.type ||
             (type == b.type &&
              (dist < b.dist || (dist == b.dist && index < b.index))));
@@ -42,24 +42,24 @@ struct NeighborInfo {
 template <typename Device, typename FPTYPE>
 class DescrptSeAMaskOp : public OpKernel {
  public:
-  explicit DescrptSeAMaskOp(OpKernelConstruction* context) : OpKernel(context) {
+  explicit DescrptSeAMaskOp(OpKernelConstruction *context) : OpKernel(context) {
     // OP_REQUIRES_OK(context);
   }
 
-  void Compute(OpKernelContext* context) override {
+  void Compute(OpKernelContext *context) override {
     deepmd::safe_compute(
-        context, [this](OpKernelContext* context) { this->_Compute(context); });
+        context, [this](OpKernelContext *context) { this->_Compute(context); });
   }
 
-  void _Compute(OpKernelContext* context) {
+  void _Compute(OpKernelContext *context) {
     // Grab the input tensor
     int context_input_index = 0;
-    const Tensor& coord_tensor = context->input(context_input_index++);
-    const Tensor& type_tensor = context->input(context_input_index++);
-    const Tensor& mask_matrix_tensor = context->input(context_input_index++);
-    const Tensor& box_tensor = context->input(context_input_index++);
-    const Tensor& natoms_tensor = context->input(context_input_index++);
-    const Tensor& mesh_tensor = context->input(context_input_index++);
+    const Tensor &coord_tensor = context->input(context_input_index++);
+    const Tensor &type_tensor = context->input(context_input_index++);
+    const Tensor &mask_matrix_tensor = context->input(context_input_index++);
+    const Tensor &box_tensor = context->input(context_input_index++);
+    const Tensor &natoms_tensor = context->input(context_input_index++);
+    const Tensor &mesh_tensor = context->input(context_input_index++);
 
     // set size of the sample
     OP_REQUIRES(context, (coord_tensor.shape().dims() == 2),
@@ -109,18 +109,18 @@ class DescrptSeAMaskOp : public OpKernel {
     nlist_shape.AddDim(static_cast<int64_t>(total_atom_num) * total_atom_num);
 
     int context_output_index = 0;
-    Tensor* descrpt_tensor = NULL;
+    Tensor *descrpt_tensor = NULL;
     OP_REQUIRES_OK(
         context, context->allocate_output(context_output_index++, descrpt_shape,
                                           &descrpt_tensor));
-    Tensor* descrpt_deriv_tensor = NULL;
+    Tensor *descrpt_deriv_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
                                                      descrpt_deriv_shape,
                                                      &descrpt_deriv_tensor));
-    Tensor* rij_tensor = NULL;
+    Tensor *rij_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
                                                      rij_shape, &rij_tensor));
-    Tensor* nlist_tensor = NULL;
+    Tensor *nlist_tensor = NULL;
     OP_REQUIRES_OK(context,
                    context->allocate_output(context_output_index++, nlist_shape,
                                             &nlist_tensor));
@@ -317,9 +317,9 @@ class DescrptSeAMaskOp : public OpKernel {
   compute_t max_distance = 10000.0;
   void buildAndSortNeighborList(int i_idx,
                                 const std::vector<compute_t> d_coord3,
-                                std::vector<int>& d_type,
-                                std::vector<int>& d_mask,
-                                std::vector<int>& sorted_nlist,
+                                std::vector<int> &d_type,
+                                std::vector<int> &d_mask,
+                                std::vector<int> &sorted_nlist,
                                 int total_atom_num) {
     // sorted_nlist.resize(total_atom_num);
     std::vector<NeighborInfo<double>> sel_nei;

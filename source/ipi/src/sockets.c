@@ -45,14 +45,14 @@ Functions:
 #include <sys/un.h>
 #include <unistd.h>
 
-void error(const char* msg)
+void error(const char *msg)
 // Prints an error message and then exits.
 {
   perror(msg);
   exit(-1);
 }
 
-void open_socket_(int* psockfd, int* inet, int* port, const char* host)
+void open_socket_(int *psockfd, int *inet, int *port, const char *host)
 /* Opens a socket.
 
 Note that fortran passes an extra argument for the string length, but this is
@@ -70,14 +70,14 @@ Args:
 
 {
   int sockfd, portno, n;
-  struct hostent* server;
+  struct hostent *server;
 
-  struct sockaddr* psock;
+  struct sockaddr *psock;
   int ssock;
 
   if (*inet > 0) {  // creates an internet socket
     struct sockaddr_in serv_addr;
-    psock = (struct sockaddr*)&serv_addr;
+    psock = (struct sockaddr *)&serv_addr;
     ssock = sizeof(serv_addr);
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
@@ -90,9 +90,9 @@ Args:
       exit(-1);
     }
 
-    bzero((char*)&serv_addr, sizeof(serv_addr));
+    bzero((char *)&serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
-    bcopy((char*)server->h_addr, (char*)&serv_addr.sin_addr.s_addr,
+    bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr,
           server->h_length);
     serv_addr.sin_port = htons(*port);
     if (connect(sockfd, psock, ssock) < 0) {
@@ -100,10 +100,10 @@ Args:
     }
   } else {  // creates a unix socket
     struct sockaddr_un serv_addr;
-    psock = (struct sockaddr*)&serv_addr;
+    psock = (struct sockaddr *)&serv_addr;
     ssock = sizeof(serv_addr);
     sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
-    bzero((char*)&serv_addr, sizeof(serv_addr));
+    bzero((char *)&serv_addr, sizeof(serv_addr));
     serv_addr.sun_family = AF_UNIX;
     strcpy(serv_addr.sun_path, "/tmp/ipi_");
     strcpy(serv_addr.sun_path + 9, host);
@@ -115,7 +115,7 @@ Args:
   *psockfd = sockfd;
 }
 
-void writebuffer_(int* psockfd, char* data, int len)
+void writebuffer_(int *psockfd, char *data, int len)
 /* Writes to a socket.
 
 Args:
@@ -134,7 +134,7 @@ Args:
   }
 }
 
-void readbuffer_(int* psockfd, char* data, int len)
+void readbuffer_(int *psockfd, char *data, int len)
 /* Reads from a socket.
 
 Args:

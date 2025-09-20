@@ -18,36 +18,19 @@ from torch import (
 # functions that use `with torch.no_grad()`. The JIT doesn't support context
 # managers, so these need to be implemented as builtins. Using these wrappers
 # lets us keep those builtins small and reusable.
-def _no_grad_uniform_(
-    tensor: torch.Tensor,
-    a: float,
-    b: float,
-    generator: _Optional[torch.Generator] = None,
-) -> torch.Tensor:
+def _no_grad_uniform_(tensor, a, b, generator=None):
     with torch.no_grad():
         return tensor.uniform_(a, b, generator=generator)
 
 
-def _no_grad_normal_(
-    tensor: torch.Tensor,
-    mean: float,
-    std: float,
-    generator: _Optional[torch.Generator] = None,
-) -> torch.Tensor:
+def _no_grad_normal_(tensor, mean, std, generator=None):
     with torch.no_grad():
         return tensor.normal_(mean, std, generator=generator)
 
 
-def _no_grad_trunc_normal_(
-    tensor: torch.Tensor,
-    mean: float,
-    std: float,
-    a: float,
-    b: float,
-    generator: _Optional[torch.Generator] = None,
-) -> torch.Tensor:
+def _no_grad_trunc_normal_(tensor, mean, std, a, b, generator=None):
     # Method based on https://people.sc.fsu.edu/~jburkardt/presentations/truncated_normal.pdf
-    def norm_cdf(x: float) -> float:
+    def norm_cdf(x):
         # Computes standard normal cumulative distribution function
         return (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
 
@@ -82,17 +65,17 @@ def _no_grad_trunc_normal_(
         return tensor
 
 
-def _no_grad_zero_(tensor: torch.Tensor) -> torch.Tensor:
+def _no_grad_zero_(tensor):
     with torch.no_grad():
         return tensor.zero_()
 
 
-def _no_grad_fill_(tensor: torch.Tensor, val: float) -> torch.Tensor:
+def _no_grad_fill_(tensor, val):
     with torch.no_grad():
         return tensor.fill_(val)
 
 
-def calculate_gain(nonlinearity: str, param: _Optional[float] = None) -> float:
+def calculate_gain(nonlinearity, param=None):
     r"""Return the recommended gain value for the given nonlinearity function.
 
     The values are as follows:
@@ -163,7 +146,7 @@ def calculate_gain(nonlinearity: str, param: _Optional[float] = None) -> float:
         raise ValueError(f"Unsupported nonlinearity {nonlinearity}")
 
 
-def _calculate_fan_in_and_fan_out(tensor: torch.Tensor) -> tuple[int, int]:
+def _calculate_fan_in_and_fan_out(tensor):
     dimensions = tensor.dim()
     if dimensions < 2:
         raise ValueError(
@@ -184,7 +167,7 @@ def _calculate_fan_in_and_fan_out(tensor: torch.Tensor) -> tuple[int, int]:
     return fan_in, fan_out
 
 
-def _calculate_correct_fan(tensor: torch.Tensor, mode: str) -> int:
+def _calculate_correct_fan(tensor, mode):
     mode = mode.lower()
     valid_modes = ["fan_in", "fan_out"]
     if mode not in valid_modes:
@@ -307,7 +290,7 @@ def kaiming_uniform_(
     mode: str = "fan_in",
     nonlinearity: str = "leaky_relu",
     generator: _Optional[torch.Generator] = None,
-) -> Tensor:
+):
     r"""Fill the input `Tensor` with values using a Kaiming uniform distribution.
 
     The method is described in `Delving deep into rectifiers: Surpassing
@@ -365,7 +348,7 @@ def kaiming_normal_(
     mode: str = "fan_in",
     nonlinearity: str = "leaky_relu",
     generator: _Optional[torch.Generator] = None,
-) -> Tensor:
+):
     r"""Fill the input `Tensor` with values using a Kaiming normal distribution.
 
     The method is described in `Delving deep into rectifiers: Surpassing

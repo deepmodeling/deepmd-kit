@@ -57,7 +57,6 @@ class DOSFittingNet(InvarFitting):
         exclude_types: list[int] = [],
         mixed_types: bool = True,
         type_map: Optional[list[str]] = None,
-        default_fparam: Optional[list] = None,
     ) -> None:
         if bias_dos is not None:
             self.bias_dos = bias_dos
@@ -84,7 +83,6 @@ class DOSFittingNet(InvarFitting):
             exclude_types=exclude_types,
             trainable=trainable,
             type_map=type_map,
-            default_fparam=default_fparam,
         )
 
     def output_def(self) -> FittingOutputDef:
@@ -103,7 +101,7 @@ class DOSFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "DOSFittingNet":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("@class", None)
         data.pop("var_name", None)
         data.pop("tot_ener_zero", None)

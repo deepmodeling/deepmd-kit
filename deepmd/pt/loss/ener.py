@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Any,
     Optional,
 )
 
@@ -24,9 +23,7 @@ from deepmd.utils.version import (
 )
 
 
-def custom_huber_loss(
-    predictions: torch.Tensor, targets: torch.Tensor, delta: float = 1.0
-) -> torch.Tensor:
+def custom_huber_loss(predictions, targets, delta=1.0):
     error = targets - predictions
     abs_error = torch.abs(error)
     quadratic_loss = 0.5 * torch.pow(error, 2)
@@ -38,13 +35,13 @@ def custom_huber_loss(
 class EnergyStdLoss(TaskLoss):
     def __init__(
         self,
-        starter_learning_rate: float = 1.0,
-        start_pref_e: float = 0.0,
-        limit_pref_e: float = 0.0,
-        start_pref_f: float = 0.0,
-        limit_pref_f: float = 0.0,
-        start_pref_v: float = 0.0,
-        limit_pref_v: float = 0.0,
+        starter_learning_rate=1.0,
+        start_pref_e=0.0,
+        limit_pref_e=0.0,
+        start_pref_f=0.0,
+        limit_pref_f=0.0,
+        start_pref_v=0.0,
+        limit_pref_v=0.0,
         start_pref_ae: float = 0.0,
         limit_pref_ae: float = 0.0,
         start_pref_pf: float = 0.0,
@@ -55,10 +52,10 @@ class EnergyStdLoss(TaskLoss):
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
         use_l1_all: bool = False,
-        inference: bool = False,
-        use_huber: bool = False,
-        huber_delta: float = 0.01,
-        **kwargs: Any,
+        inference=False,
+        use_huber=False,
+        huber_delta=0.01,
+        **kwargs,
     ) -> None:
         r"""Construct a layer to compute loss on energy, force and virial.
 
@@ -152,15 +149,7 @@ class EnergyStdLoss(TaskLoss):
                 "Huber loss is not implemented for force with atom_pref, generalized force and relative force. "
             )
 
-    def forward(
-        self,
-        input_dict: dict[str, torch.Tensor],
-        model: torch.nn.Module,
-        label: dict[str, torch.Tensor],
-        natoms: int,
-        learning_rate: float,
-        mae: bool = False,
-    ) -> tuple[dict[str, torch.Tensor], torch.Tensor, dict[str, torch.Tensor]]:
+    def forward(self, input_dict, model, label, natoms, learning_rate, mae=False):
         """Return loss on energy and force.
 
         Parameters
@@ -539,10 +528,10 @@ class EnergyStdLoss(TaskLoss):
 class EnergyHessianStdLoss(EnergyStdLoss):
     def __init__(
         self,
-        start_pref_h: float = 0.0,
-        limit_pref_h: float = 0.0,
-        **kwargs: Any,
-    ) -> None:
+        start_pref_h=0.0,
+        limit_pref_h=0.0,
+        **kwargs,
+    ):
         r"""Enable the layer to compute loss on hessian.
 
         Parameters
@@ -560,15 +549,7 @@ class EnergyHessianStdLoss(EnergyStdLoss):
         self.start_pref_h = start_pref_h
         self.limit_pref_h = limit_pref_h
 
-    def forward(
-        self,
-        input_dict: dict[str, torch.Tensor],
-        model: torch.nn.Module,
-        label: dict[str, torch.Tensor],
-        natoms: int,
-        learning_rate: float,
-        mae: bool = False,
-    ) -> tuple[dict[str, torch.Tensor], torch.Tensor, dict[str, torch.Tensor]]:
+    def forward(self, input_dict, model, label, natoms, learning_rate, mae=False):
         model_pred, loss, more_loss = super().forward(
             input_dict, model, label, natoms, learning_rate, mae=mae
         )

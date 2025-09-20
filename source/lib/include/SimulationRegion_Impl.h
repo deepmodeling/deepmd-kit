@@ -23,9 +23,9 @@ SimulationRegion<VALUETYPE>::SimulationRegion() {
 }
 
 template <typename VALUETYPE>
-void SimulationRegion<VALUETYPE>::defaultInitBox(double* my_boxv,
-                                                 double* my_orig,
-                                                 bool* period) const {
+void SimulationRegion<VALUETYPE>::defaultInitBox(double *my_boxv,
+                                                 double *my_orig,
+                                                 bool *period) const {
   // by default is a 1,1,1 logical box
   for (int ii = 0; ii < SPACENDIM; ++ii) {
     for (int jj = 0; jj < SPACENDIM; ++jj) {
@@ -55,7 +55,7 @@ void SimulationRegion<VALUETYPE>::recover() {
 }
 
 template <typename VALUETYPE>
-inline void SimulationRegion<VALUETYPE>::reinitBox(const double* boxv_) {
+inline void SimulationRegion<VALUETYPE>::reinitBox(const double *boxv_) {
   for (int ii = 0; ii < SPACENDIM * SPACENDIM; ++ii) {
     boxt[ii] = boxv_[ii];
   }
@@ -66,7 +66,7 @@ inline void SimulationRegion<VALUETYPE>::reinitBox(const double* boxv_) {
 
 template <typename VALUETYPE>
 inline void SimulationRegion<VALUETYPE>::affineTransform(
-    const double* affine_map) {
+    const double *affine_map) {
   tensorDotVector(boxt + SPACENDIM * 0, affine_map, boxt + SPACENDIM * 0);
   tensorDotVector(boxt + SPACENDIM * 1, affine_map, boxt + SPACENDIM * 1);
   tensorDotVector(boxt + SPACENDIM * 2, affine_map, boxt + SPACENDIM * 2);
@@ -76,7 +76,7 @@ inline void SimulationRegion<VALUETYPE>::affineTransform(
 }
 
 template <typename VALUETYPE>
-inline void SimulationRegion<VALUETYPE>::reinitOrigin(const double* orig) {
+inline void SimulationRegion<VALUETYPE>::reinitOrigin(const double *orig) {
   for (int ii = 0; ii < SPACENDIM; ++ii) {
     origin[ii] = orig[ii];
   }
@@ -84,7 +84,7 @@ inline void SimulationRegion<VALUETYPE>::reinitOrigin(const double* orig) {
 
 template <typename VALUETYPE>
 inline void SimulationRegion<VALUETYPE>::reinitOrigin(
-    const std::vector<double>& orig) {
+    const std::vector<double> &orig) {
   for (int ii = 0; ii < SPACENDIM; ++ii) {
     origin[ii] = orig[ii];
   }
@@ -93,14 +93,14 @@ inline void SimulationRegion<VALUETYPE>::reinitOrigin(
 template <typename VALUETYPE>
 void SimulationRegion<VALUETYPE>::computeShiftVec() {
   int tmp_idx[3];
-  int& ii(tmp_idx[0]);
-  int& jj(tmp_idx[1]);
-  int& kk(tmp_idx[2]);
+  int &ii(tmp_idx[0]);
+  int &jj(tmp_idx[1]);
+  int &kk(tmp_idx[2]);
   for (ii = -DBOX_XX; ii <= DBOX_XX; ++ii) {
     for (jj = -DBOX_YY; jj <= DBOX_YY; ++jj) {
       for (kk = -DBOX_ZZ; kk <= DBOX_ZZ; ++kk) {
-        double* posi = getShiftVec(getShiftIndex(tmp_idx));
-        double* inter_posi = getInterShiftVec(getShiftIndex(tmp_idx));
+        double *posi = getShiftVec(getShiftIndex(tmp_idx));
+        double *inter_posi = getInterShiftVec(getShiftIndex(tmp_idx));
         inter_posi[0] = ii;
         inter_posi[1] = jj;
         inter_posi[2] = kk;
@@ -112,29 +112,29 @@ void SimulationRegion<VALUETYPE>::computeShiftVec() {
 }
 
 template <typename VALUETYPE>
-inline double* SimulationRegion<VALUETYPE>::getShiftVec(const int index) {
+inline double *SimulationRegion<VALUETYPE>::getShiftVec(const int index) {
   return shift_vec + SPACENDIM * index;
 }
 
 template <typename VALUETYPE>
-inline const double* SimulationRegion<VALUETYPE>::getShiftVec(
+inline const double *SimulationRegion<VALUETYPE>::getShiftVec(
     const int index) const {
   return shift_vec + SPACENDIM * index;
 }
 
 template <typename VALUETYPE>
-inline double* SimulationRegion<VALUETYPE>::getInterShiftVec(const int index) {
+inline double *SimulationRegion<VALUETYPE>::getInterShiftVec(const int index) {
   return inter_shift_vec + SPACENDIM * index;
 }
 
 template <typename VALUETYPE>
-inline const double* SimulationRegion<VALUETYPE>::getInterShiftVec(
+inline const double *SimulationRegion<VALUETYPE>::getInterShiftVec(
     const int index) const {
   return inter_shift_vec + SPACENDIM * index;
 }
 
 template <typename VALUETYPE>
-inline int SimulationRegion<VALUETYPE>::getShiftIndex(const int* idx) const {
+inline int SimulationRegion<VALUETYPE>::getShiftIndex(const int *idx) const {
   return index3to1(idx[0], idx[1], idx[2]);
 }
 
@@ -144,16 +144,16 @@ inline int SimulationRegion<VALUETYPE>::getNullShiftIndex() const {
 }
 
 template <typename VALUETYPE>
-inline int SimulationRegion<VALUETYPE>::compactIndex(const int* idx) {
+inline int SimulationRegion<VALUETYPE>::compactIndex(const int *idx) {
   return index3to1(idx[0], idx[1], idx[2]);
 }
 
 template <typename VALUETYPE>
-inline void SimulationRegion<VALUETYPE>::shiftCoord(const int* idx,
-                                                    VALUETYPE& x,
-                                                    VALUETYPE& y,
-                                                    VALUETYPE& z) const {
-  const double* shift = getShiftVec(getShiftIndex(idx));
+inline void SimulationRegion<VALUETYPE>::shiftCoord(const int *idx,
+                                                    VALUETYPE &x,
+                                                    VALUETYPE &y,
+                                                    VALUETYPE &z) const {
+  const double *shift = getShiftVec(getShiftIndex(idx));
   x += shift[0];
   y += shift[1];
   z += shift[2];
@@ -199,7 +199,7 @@ inline void SimulationRegion<VALUETYPE>::shiftCoord(const int* idx,
 
 template <typename VALUETYPE>
 inline void SimulationRegion<VALUETYPE>::apply_periodic(int dim,
-                                                        double* dd) const {
+                                                        double *dd) const {
   if (!is_periodic[dim]) {
     return;
   }
@@ -212,8 +212,8 @@ inline void SimulationRegion<VALUETYPE>::apply_periodic(int dim,
 
 template <typename VALUETYPE>
 inline void SimulationRegion<VALUETYPE>::apply_periodic(int dim,
-                                                        double* dd,
-                                                        int& shift) const {
+                                                        double *dd,
+                                                        int &shift) const {
   shift = 0;
   if (!is_periodic[dim]) {
     return;
@@ -229,7 +229,7 @@ inline void SimulationRegion<VALUETYPE>::apply_periodic(int dim,
 
 template <typename VALUETYPE>
 inline void SimulationRegion<VALUETYPE>::diffNearestNeighbor(
-    const VALUETYPE* r0, const VALUETYPE* r1, VALUETYPE* phys) const {
+    const VALUETYPE *r0, const VALUETYPE *r1, VALUETYPE *phys) const {
   double inter[3];
   for (int dd = 0; dd < 3; ++dd) {
     phys[dd] = r0[dd] - r1[dd];
@@ -249,9 +249,9 @@ inline void SimulationRegion<VALUETYPE>::diffNearestNeighbor(
     const VALUETYPE x1,
     const VALUETYPE y1,
     const VALUETYPE z1,
-    VALUETYPE& dx,
-    VALUETYPE& dy,
-    VALUETYPE& dz) const {
+    VALUETYPE &dx,
+    VALUETYPE &dy,
+    VALUETYPE &dz) const {
   // diffNearestNeighbor (0, x0, x1, dx);
   // diffNearestNeighbor (1, y0, y1, dy);
   // diffNearestNeighbor (2, z0, z1, dz);
@@ -278,12 +278,12 @@ inline void SimulationRegion<VALUETYPE>::diffNearestNeighbor(
     const VALUETYPE x1,
     const VALUETYPE y1,
     const VALUETYPE z1,
-    VALUETYPE& dx,
-    VALUETYPE& dy,
-    VALUETYPE& dz,
-    int& shift_x,
-    int& shift_y,
-    int& shift_z) const {
+    VALUETYPE &dx,
+    VALUETYPE &dy,
+    VALUETYPE &dz,
+    int &shift_x,
+    int &shift_y,
+    int &shift_z) const {
   // diffNearestNeighbor (0, x0, x1, dx, shift_x);
   // diffNearestNeighbor (1, y0, y1, dy, shift_y);
   // diffNearestNeighbor (2, z0, z1, dz, shift_z);
@@ -310,12 +310,12 @@ inline void SimulationRegion<VALUETYPE>::diffNearestNeighbor(
     const VALUETYPE x1,
     const VALUETYPE y1,
     const VALUETYPE z1,
-    VALUETYPE& dx,
-    VALUETYPE& dy,
-    VALUETYPE& dz,
-    VALUETYPE& shift_x,
-    VALUETYPE& shift_y,
-    VALUETYPE& shift_z) const {
+    VALUETYPE &dx,
+    VALUETYPE &dy,
+    VALUETYPE &dz,
+    VALUETYPE &shift_x,
+    VALUETYPE &shift_y,
+    VALUETYPE &shift_z) const {
   // diffNearestNeighbor (0, x0, x1, dx, shift_x);
   // diffNearestNeighbor (1, y0, y1, dy, shift_y);
   // diffNearestNeighbor (2, z0, z1, dz, shift_z);
@@ -333,7 +333,7 @@ inline void SimulationRegion<VALUETYPE>::diffNearestNeighbor(
   dx = phys[0];
   dy = phys[1];
   dz = phys[2];
-  const double* tmp_shift(
+  const double *tmp_shift(
       getShiftVec(index3to1(i_shift_x, i_shift_y, i_shift_z)));
   shift_x = tmp_shift[0];
   shift_y = tmp_shift[1];
@@ -342,7 +342,7 @@ inline void SimulationRegion<VALUETYPE>::diffNearestNeighbor(
 
 template <typename VALUETYPE>
 inline void SimulationRegion<VALUETYPE>::phys2Inter(
-    double* i_v, const VALUETYPE* p_v_) const {
+    double *i_v, const VALUETYPE *p_v_) const {
   double p_v[3];
   for (int dd = 0; dd < 3; ++dd) {
     p_v[dd] = p_v_[dd];
@@ -351,8 +351,8 @@ inline void SimulationRegion<VALUETYPE>::phys2Inter(
 }
 
 template <typename VALUETYPE>
-inline void SimulationRegion<VALUETYPE>::inter2Phys(VALUETYPE* p_v_,
-                                                    const double* i_v) const {
+inline void SimulationRegion<VALUETYPE>::inter2Phys(VALUETYPE *p_v_,
+                                                    const double *i_v) const {
   double p_v[3];
   tensorTransDotVector(p_v, boxt, i_v);
   for (int dd = 0; dd < 3; ++dd) {
@@ -361,7 +361,7 @@ inline void SimulationRegion<VALUETYPE>::inter2Phys(VALUETYPE* p_v_,
 }
 
 template <typename VALUETYPE>
-inline void SimulationRegion<VALUETYPE>::toFaceDistance(double* dd) const {
+inline void SimulationRegion<VALUETYPE>::toFaceDistance(double *dd) const {
   double tmp[3];
   deepmd::cprod(boxt + 3, boxt + 6, tmp);
   dd[0] = volume * deepmd::invsqrt(deepmd::dot3(tmp, tmp));
@@ -374,8 +374,8 @@ inline void SimulationRegion<VALUETYPE>::toFaceDistance(double* dd) const {
 // static int tmp_count = 0;
 
 template <typename VALUETYPE>
-inline void SimulationRegion<VALUETYPE>::copy(double* o_v,
-                                              const double* i_v) const {
+inline void SimulationRegion<VALUETYPE>::copy(double *o_v,
+                                              const double *i_v) const {
 #ifdef DEBUG_CHECK_ASSERTIONS
   assert(o_v != i_v);
 #endif
@@ -386,7 +386,7 @@ inline void SimulationRegion<VALUETYPE>::copy(double* o_v,
 
 template <typename VALUETYPE>
 inline void SimulationRegion<VALUETYPE>::naiveTensorDotVector(
-    double* o_v, const double* i_t, const double* i_v) const {
+    double *o_v, const double *i_t, const double *i_v) const {
   o_v[0] = i_v[0] * i_t[0 * 3 + 0] + i_v[1] * i_t[0 * 3 + 1] +
            i_v[2] * i_t[0 * 3 + 2];
   o_v[1] = i_v[0] * i_t[1 * 3 + 0] + i_v[1] * i_t[1 * 3 + 1] +
@@ -397,7 +397,7 @@ inline void SimulationRegion<VALUETYPE>::naiveTensorDotVector(
 
 template <typename VALUETYPE>
 inline void SimulationRegion<VALUETYPE>::naiveTensorTransDotVector(
-    double* o_v, const double* i_t, const double* i_v) const {
+    double *o_v, const double *i_t, const double *i_v) const {
   o_v[0] = i_v[0] * i_t[0 * 3 + 0] + i_v[1] * i_t[1 * 3 + 0] +
            i_v[2] * i_t[2 * 3 + 0];
   o_v[1] = i_v[0] * i_t[0 * 3 + 1] + i_v[1] * i_t[1 * 3 + 1] +
@@ -408,7 +408,7 @@ inline void SimulationRegion<VALUETYPE>::naiveTensorTransDotVector(
 
 template <typename VALUETYPE>
 inline void SimulationRegion<VALUETYPE>::tensorDotVector(
-    double* o_v, const double* i_t, const double* i_v) const {
+    double *o_v, const double *i_t, const double *i_v) const {
   // the compiler will auto-matically optimize the following code away...
   // const double * tmp_v (i_v);
   // if (o_v == i_v){
@@ -421,7 +421,7 @@ inline void SimulationRegion<VALUETYPE>::tensorDotVector(
 
 template <typename VALUETYPE>
 inline void SimulationRegion<VALUETYPE>::tensorTransDotVector(
-    double* o_v, const double* i_t, const double* i_v) const {
+    double *o_v, const double *i_t, const double *i_v) const {
   naiveTensorTransDotVector(o_v, i_t, i_v);
 }
 

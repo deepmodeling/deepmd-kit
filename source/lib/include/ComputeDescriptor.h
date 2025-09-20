@@ -9,100 +9,100 @@
 #include "switcher.h"
 #include "utilities.h"
 
-inline void compute_descriptor(std::vector<double>& descrpt_a,
-                               std::vector<double>& descrpt_r,
-                               std::vector<double>& rot_mat,
-                               const std::vector<double>& posi,
-                               const int& ntypes,
-                               const std::vector<int>& type,
-                               const SimulationRegion<double>& region,
-                               const bool& b_pbc,
-                               const int& i_idx,
-                               const std::vector<int>& fmt_nlist_a,
-                               const std::vector<int>& fmt_nlist_r,
-                               const std::vector<int>& sec_a,
-                               const std::vector<int>& sec_r,
+inline void compute_descriptor(std::vector<double> &descrpt_a,
+                               std::vector<double> &descrpt_r,
+                               std::vector<double> &rot_mat,
+                               const std::vector<double> &posi,
+                               const int &ntypes,
+                               const std::vector<int> &type,
+                               const SimulationRegion<double> &region,
+                               const bool &b_pbc,
+                               const int &i_idx,
+                               const std::vector<int> &fmt_nlist_a,
+                               const std::vector<int> &fmt_nlist_r,
+                               const std::vector<int> &sec_a,
+                               const std::vector<int> &sec_r,
                                const int axis0_type,
                                const int axis0_idx,
                                const int axis1_type,
                                const int axis1_idx);
 
-inline void compute_descriptor(std::vector<double>& descrpt_a,
-                               std::vector<double>& descrpt_a_deriv,
-                               std::vector<double>& descrpt_r,
-                               std::vector<double>& descrpt_r_deriv,
-                               std::vector<double>& rij_a,
-                               std::vector<double>& rij_r,
-                               std::vector<double>& rot_mat,
-                               const std::vector<double>& posi,
-                               const int& ntypes,
-                               const std::vector<int>& type,
-                               const SimulationRegion<double>& region,
-                               const bool& b_pbc,
-                               const int& i_idx,
-                               const std::vector<int>& fmt_nlist_a,
-                               const std::vector<int>& fmt_nlist_r,
-                               const std::vector<int>& sec_a,
-                               const std::vector<int>& sec_r,
+inline void compute_descriptor(std::vector<double> &descrpt_a,
+                               std::vector<double> &descrpt_a_deriv,
+                               std::vector<double> &descrpt_r,
+                               std::vector<double> &descrpt_r_deriv,
+                               std::vector<double> &rij_a,
+                               std::vector<double> &rij_r,
+                               std::vector<double> &rot_mat,
+                               const std::vector<double> &posi,
+                               const int &ntypes,
+                               const std::vector<int> &type,
+                               const SimulationRegion<double> &region,
+                               const bool &b_pbc,
+                               const int &i_idx,
+                               const std::vector<int> &fmt_nlist_a,
+                               const std::vector<int> &fmt_nlist_r,
+                               const std::vector<int> &sec_a,
+                               const std::vector<int> &sec_r,
                                const int axis0_type,
                                const int axis0_idx,
                                const int axis1_type,
                                const int axis1_idx);
 
-inline void compute_descriptor_se_a_extf(std::vector<double>& descrpt_a,
-                                         std::vector<double>& descrpt_a_deriv,
-                                         std::vector<double>& rij_a,
-                                         const std::vector<double>& posi,
-                                         const int& ntypes,
-                                         const std::vector<int>& type,
-                                         const SimulationRegion<double>& region,
-                                         const bool& b_pbc,
-                                         const std::vector<double>& efield,
-                                         const int& i_idx,
-                                         const std::vector<int>& fmt_nlist_a,
-                                         const std::vector<int>& sec_a,
-                                         const double& rmin,
-                                         const double& rmax);
+inline void compute_descriptor_se_a_extf(std::vector<double> &descrpt_a,
+                                         std::vector<double> &descrpt_a_deriv,
+                                         std::vector<double> &rij_a,
+                                         const std::vector<double> &posi,
+                                         const int &ntypes,
+                                         const std::vector<int> &type,
+                                         const SimulationRegion<double> &region,
+                                         const bool &b_pbc,
+                                         const std::vector<double> &efield,
+                                         const int &i_idx,
+                                         const std::vector<int> &fmt_nlist_a,
+                                         const std::vector<int> &sec_a,
+                                         const double &rmin,
+                                         const double &rmax);
 inline void compute_descriptor_se_a_ef_para(
-    std::vector<double>& descrpt_a,
-    std::vector<double>& descrpt_a_deriv,
-    std::vector<double>& rij_a,
-    const std::vector<double>& posi,
-    const int& ntypes,
-    const std::vector<int>& type,
-    const SimulationRegion<double>& region,
-    const bool& b_pbc,
-    const std::vector<double>& efield,
-    const int& i_idx,
-    const std::vector<int>& fmt_nlist_a,
-    const std::vector<int>& sec_a,
-    const double& rmin,
-    const double& rmax);
+    std::vector<double> &descrpt_a,
+    std::vector<double> &descrpt_a_deriv,
+    std::vector<double> &rij_a,
+    const std::vector<double> &posi,
+    const int &ntypes,
+    const std::vector<int> &type,
+    const SimulationRegion<double> &region,
+    const bool &b_pbc,
+    const std::vector<double> &efield,
+    const int &i_idx,
+    const std::vector<int> &fmt_nlist_a,
+    const std::vector<int> &sec_a,
+    const double &rmin,
+    const double &rmax);
 inline void compute_descriptor_se_a_ef_vert(
-    std::vector<double>& descrpt_a,
-    std::vector<double>& descrpt_a_deriv,
-    std::vector<double>& rij_a,
-    const std::vector<double>& posi,
-    const int& ntypes,
-    const std::vector<int>& type,
-    const SimulationRegion<double>& region,
-    const bool& b_pbc,
-    const std::vector<double>& efield,
-    const int& i_idx,
-    const std::vector<int>& fmt_nlist_a,
-    const std::vector<int>& sec_a,
-    const double& rmin,
-    const double& rmax);
+    std::vector<double> &descrpt_a,
+    std::vector<double> &descrpt_a_deriv,
+    std::vector<double> &rij_a,
+    const std::vector<double> &posi,
+    const int &ntypes,
+    const std::vector<int> &type,
+    const SimulationRegion<double> &region,
+    const bool &b_pbc,
+    const std::vector<double> &efield,
+    const int &i_idx,
+    const std::vector<int> &fmt_nlist_a,
+    const std::vector<int> &sec_a,
+    const double &rmin,
+    const double &rmax);
 
 static void compute_dRdT(double (*dRdT)[9],
-                         const double* r1,
-                         const double* r2,
-                         const double* rot) {
-  double* dRdT0 = dRdT[0];
-  double* dRdT1 = dRdT[1];
-  double* dRdT2 = dRdT[2];
-  const double* xx = rot;
-  const double* yy = rot + 3;
+                         const double *r1,
+                         const double *r2,
+                         const double *rot) {
+  double *dRdT0 = dRdT[0];
+  double *dRdT1 = dRdT[1];
+  double *dRdT2 = dRdT[2];
+  const double *xx = rot;
+  const double *yy = rot + 3;
 
   double nr1 = sqrt(deepmd::dot3(r1, r1));
   double nr12 = nr1 * nr1;
@@ -160,14 +160,14 @@ static void compute_dRdT(double (*dRdT)[9],
 }
 
 static void compute_dRdT_1(double (*dRdT)[9],
-                           const double* r1,
-                           const double* r2,
-                           const double* rot) {
-  double* dRdT0 = dRdT[0];
-  double* dRdT1 = dRdT[1];
-  double* dRdT2 = dRdT[2];
-  const double* xx = rot;
-  const double* yy = rot + 3;
+                           const double *r1,
+                           const double *r2,
+                           const double *rot) {
+  double *dRdT0 = dRdT[0];
+  double *dRdT1 = dRdT[1];
+  double *dRdT2 = dRdT[2];
+  const double *xx = rot;
+  const double *yy = rot + 3;
 
   double nr1 = sqrt(deepmd::dot3(r1, r1));
   double nr12 = nr1 * nr1;
@@ -225,14 +225,14 @@ static void compute_dRdT_1(double (*dRdT)[9],
 }
 
 static void compute_dRdT_2(double (*dRdT)[9],
-                           const double* r1,
-                           const double* r2,
-                           const double* rot) {
-  double* dRdT0 = dRdT[0];
-  double* dRdT1 = dRdT[1];
-  double* dRdT2 = dRdT[2];
-  const double* xx = rot;
-  const double* yy = rot + 3;
+                           const double *r1,
+                           const double *r2,
+                           const double *rot) {
+  double *dRdT0 = dRdT[0];
+  double *dRdT1 = dRdT[1];
+  double *dRdT2 = dRdT[2];
+  const double *xx = rot;
+  const double *yy = rot + 3;
 
   double nr1 = sqrt(deepmd::dot3(r1, r1));
   double nr12 = nr1 * nr1;
@@ -287,23 +287,23 @@ static void compute_dRdT_2(double (*dRdT)[9],
 // n_sel_r_nei x 12
 //		      (1./rr, cos_theta, cos_phi, sin_phi)  x 4 x (x, y, z) +
 //(1./rr) x 4 x (x, y, z)
-void compute_descriptor(std::vector<double>& descrpt_a,
-                        std::vector<double>& descrpt_a_deriv,
-                        std::vector<double>& descrpt_r,
-                        std::vector<double>& descrpt_r_deriv,
-                        std::vector<double>& rij_a,
-                        std::vector<double>& rij_r,
-                        std::vector<double>& rot_mat,
-                        const std::vector<double>& posi,
-                        const int& ntypes,
-                        const std::vector<int>& type,
-                        const SimulationRegion<double>& region,
-                        const bool& b_pbc,
-                        const int& i_idx,
-                        const std::vector<int>& fmt_nlist_a,
-                        const std::vector<int>& fmt_nlist_r,
-                        const std::vector<int>& sec_a,
-                        const std::vector<int>& sec_r,
+void compute_descriptor(std::vector<double> &descrpt_a,
+                        std::vector<double> &descrpt_a_deriv,
+                        std::vector<double> &descrpt_r,
+                        std::vector<double> &descrpt_r_deriv,
+                        std::vector<double> &rij_a,
+                        std::vector<double> &rij_r,
+                        std::vector<double> &rot_mat,
+                        const std::vector<double> &posi,
+                        const int &ntypes,
+                        const std::vector<int> &type,
+                        const SimulationRegion<double> &region,
+                        const bool &b_pbc,
+                        const int &i_idx,
+                        const std::vector<int> &fmt_nlist_a,
+                        const std::vector<int> &fmt_nlist_r,
+                        const std::vector<int> &sec_a,
+                        const std::vector<int> &sec_r,
                         const int axis0_type,
                         const int axis0_idx,
                         const int axis1_type,
@@ -318,7 +318,7 @@ void compute_descriptor(std::vector<double>& descrpt_a,
         break;
       }
       sel_a_diff[jj].resize(3);
-      const int& j_idx = fmt_nlist_a[jj];
+      const int &j_idx = fmt_nlist_a[jj];
       if (b_pbc) {
         region.diffNearestNeighbor(
             posi[j_idx * 3 + 0], posi[j_idx * 3 + 1], posi[j_idx * 3 + 2],
@@ -344,7 +344,7 @@ void compute_descriptor(std::vector<double>& descrpt_a,
         break;
       }
       sel_r_diff[jj].resize(3);
-      const int& j_idx = fmt_nlist_r[jj];
+      const int &j_idx = fmt_nlist_r[jj];
       if (b_pbc) {
         region.diffNearestNeighbor(
             posi[j_idx * 3 + 0], posi[j_idx * 3 + 1], posi[j_idx * 3 + 2],
@@ -411,9 +411,9 @@ void compute_descriptor(std::vector<double>& descrpt_a,
 
   // rotation matrix
   double rot[9];
-  double* xx = rot;
-  double* yy = rot + 3;
-  double* zz = rot + 6;
+  double *xx = rot;
+  double *yy = rot + 3;
+  double *zz = rot + 6;
   for (unsigned dd = 0; dd < 3; ++dd) {
     xx[dd] = r1[dd];
     yy[dd] = r2[dd];
@@ -472,7 +472,7 @@ void compute_descriptor(std::vector<double>& descrpt_a,
       if (fmt_nlist_r[jj] < 0) {
         break;
       }
-      const double* rdiff = &sel_r_diff[jj][0];
+      const double *rdiff = &sel_r_diff[jj][0];
       double rr = sqrt(deepmd::dot3(rdiff, rdiff));
       descrpt_r[jj] = 1. / rr;
     }
@@ -503,7 +503,7 @@ void compute_descriptor(std::vector<double>& descrpt_a,
       }
       // drdS, stored in transposed form
       double dtrdST[4][3];
-      double* rr = &sel_a_diff[nei_iter][0];
+      double *rr = &sel_a_diff[nei_iter][0];
       double tr[3];
       deepmd::dotmv3(tr, rot, rr);
       double nr2 = deepmd::dot3(tr, tr);
@@ -638,7 +638,7 @@ void compute_descriptor(std::vector<double>& descrpt_a,
         break;
       }
 
-      const double* rr = &sel_r_diff[nei_iter][0];
+      const double *rr = &sel_r_diff[nei_iter][0];
       double nr = sqrt(deepmd::dot3(rr, rr));
       double nr3 = nr * nr * nr;
       int idx = nei_iter * 12;
@@ -658,19 +658,19 @@ void compute_descriptor(std::vector<double>& descrpt_a,
   }
 }
 
-void compute_descriptor(std::vector<double>& descrpt_a,
-                        std::vector<double>& descrpt_r,
-                        std::vector<double>& rot_mat,
-                        const std::vector<double>& posi,
-                        const int& ntypes,
-                        const std::vector<int>& type,
-                        const SimulationRegion<double>& region,
-                        const bool& b_pbc,
-                        const int& i_idx,
-                        const std::vector<int>& fmt_nlist_a,
-                        const std::vector<int>& fmt_nlist_r,
-                        const std::vector<int>& sec_a,
-                        const std::vector<int>& sec_r,
+void compute_descriptor(std::vector<double> &descrpt_a,
+                        std::vector<double> &descrpt_r,
+                        std::vector<double> &rot_mat,
+                        const std::vector<double> &posi,
+                        const int &ntypes,
+                        const std::vector<int> &type,
+                        const SimulationRegion<double> &region,
+                        const bool &b_pbc,
+                        const int &i_idx,
+                        const std::vector<int> &fmt_nlist_a,
+                        const std::vector<int> &fmt_nlist_r,
+                        const std::vector<int> &sec_a,
+                        const std::vector<int> &sec_r,
                         const int axis0_type,
                         const int axis0_idx,
                         const int axis1_type,
@@ -683,7 +683,7 @@ void compute_descriptor(std::vector<double>& descrpt_a,
         break;
       }
       sel_a_diff[jj].resize(3);
-      const int& j_idx = fmt_nlist_a[jj];
+      const int &j_idx = fmt_nlist_a[jj];
       if (b_pbc) {
         region.diffNearestNeighbor(
             posi[j_idx * 3 + 0], posi[j_idx * 3 + 1], posi[j_idx * 3 + 2],
@@ -703,7 +703,7 @@ void compute_descriptor(std::vector<double>& descrpt_a,
         break;
       }
       sel_r_diff[jj].resize(3);
-      const int& j_idx = fmt_nlist_r[jj];
+      const int &j_idx = fmt_nlist_r[jj];
       if (b_pbc) {
         region.diffNearestNeighbor(
             posi[j_idx * 3 + 0], posi[j_idx * 3 + 1], posi[j_idx * 3 + 2],
@@ -734,9 +734,9 @@ void compute_descriptor(std::vector<double>& descrpt_a,
 
   // rotation matrix
   double rot[9];
-  double* xx = rot;
-  double* yy = rot + 3;
-  double* zz = rot + 6;
+  double *xx = rot;
+  double *yy = rot + 3;
+  double *zz = rot + 6;
   for (unsigned dd = 0; dd < 3; ++dd) {
     xx[dd] = r1[dd];
     yy[dd] = r2[dd];
@@ -805,21 +805,21 @@ void compute_descriptor(std::vector<double>& descrpt_a,
 
 // output deriv size: n_sel_a_nei x 4 x 12
 //		      (1./rr, cos_theta, cos_phi, sin_phi)  x 4 x (x, y, z)
-void compute_descriptor_se_a_extf(std::vector<double>& descrpt_a,
-                                  std::vector<double>& descrpt_a_deriv,
-                                  std::vector<double>& rij_a,
-                                  const std::vector<double>& posi,
-                                  const int& ntypes,
-                                  const std::vector<int>& type,
-                                  const SimulationRegion<double>& region,
-                                  const bool& b_pbc,
-                                  const std::vector<double>& efield,
-                                  const int& i_idx,
-                                  const std::vector<int>& fmt_nlist_a,
-                                  const std::vector<int>& sec_a,
-                                  const double& rmin,
-                                  const double& rmax) {
-  const double* ef_ = &efield[i_idx * 3 + 0];
+void compute_descriptor_se_a_extf(std::vector<double> &descrpt_a,
+                                  std::vector<double> &descrpt_a_deriv,
+                                  std::vector<double> &rij_a,
+                                  const std::vector<double> &posi,
+                                  const int &ntypes,
+                                  const std::vector<int> &type,
+                                  const SimulationRegion<double> &region,
+                                  const bool &b_pbc,
+                                  const std::vector<double> &efield,
+                                  const int &i_idx,
+                                  const std::vector<int> &fmt_nlist_a,
+                                  const std::vector<int> &sec_a,
+                                  const double &rmin,
+                                  const double &rmax) {
+  const double *ef_ = &efield[i_idx * 3 + 0];
   double ef[3] = {0.};
   if (std::isnan(ef_[0]) || std::isnan(ef_[1]) || std::isnan(ef_[2])) {
     ef[0] = 1.;
@@ -842,7 +842,7 @@ void compute_descriptor_se_a_extf(std::vector<double>& descrpt_a,
         break;
       }
       sel_a_diff[jj].resize(3);
-      const int& j_idx = fmt_nlist_a[jj];
+      const int &j_idx = fmt_nlist_a[jj];
       if (b_pbc) {
         region.diffNearestNeighbor(
             posi[j_idx * 3 + 0], posi[j_idx * 3 + 1], posi[j_idx * 3 + 2],
@@ -872,7 +872,7 @@ void compute_descriptor_se_a_extf(std::vector<double>& descrpt_a,
       if (fmt_nlist_a[nei_iter] < 0) {
         break;
       }
-      const double* rr = &sel_a_diff[nei_iter][0];
+      const double *rr = &sel_a_diff[nei_iter][0];
       // check validity of ef
       double nr2 = deepmd::dot3(rr, rr);
       double inr = 1. / sqrt(nr2);
@@ -946,21 +946,21 @@ void compute_descriptor_se_a_extf(std::vector<double>& descrpt_a,
 
 // output deriv size: n_sel_a_nei x 4 x 12
 //		      (1./rr, cos_theta, cos_phi, sin_phi)  x 4 x (x, y, z)
-void compute_descriptor_se_a_ef_para(std::vector<double>& descrpt_a,
-                                     std::vector<double>& descrpt_a_deriv,
-                                     std::vector<double>& rij_a,
-                                     const std::vector<double>& posi,
-                                     const int& ntypes,
-                                     const std::vector<int>& type,
-                                     const SimulationRegion<double>& region,
-                                     const bool& b_pbc,
-                                     const std::vector<double>& efield,
-                                     const int& i_idx,
-                                     const std::vector<int>& fmt_nlist_a,
-                                     const std::vector<int>& sec_a,
-                                     const double& rmin,
-                                     const double& rmax) {
-  const double* ef_ = &efield[i_idx * 3 + 0];
+void compute_descriptor_se_a_ef_para(std::vector<double> &descrpt_a,
+                                     std::vector<double> &descrpt_a_deriv,
+                                     std::vector<double> &rij_a,
+                                     const std::vector<double> &posi,
+                                     const int &ntypes,
+                                     const std::vector<int> &type,
+                                     const SimulationRegion<double> &region,
+                                     const bool &b_pbc,
+                                     const std::vector<double> &efield,
+                                     const int &i_idx,
+                                     const std::vector<int> &fmt_nlist_a,
+                                     const std::vector<int> &sec_a,
+                                     const double &rmin,
+                                     const double &rmax) {
+  const double *ef_ = &efield[i_idx * 3 + 0];
   double ef[3] = {0.};
   if (std::isnan(ef_[0]) || std::isnan(ef_[1]) || std::isnan(ef_[2])) {
     ef[0] = 1.;
@@ -983,7 +983,7 @@ void compute_descriptor_se_a_ef_para(std::vector<double>& descrpt_a,
         break;
       }
       sel_a_diff[jj].resize(3);
-      const int& j_idx = fmt_nlist_a[jj];
+      const int &j_idx = fmt_nlist_a[jj];
       if (b_pbc) {
         region.diffNearestNeighbor(
             posi[j_idx * 3 + 0], posi[j_idx * 3 + 1], posi[j_idx * 3 + 2],
@@ -1013,7 +1013,7 @@ void compute_descriptor_se_a_ef_para(std::vector<double>& descrpt_a,
       if (fmt_nlist_a[nei_iter] < 0) {
         break;
       }
-      const double* rr = &sel_a_diff[nei_iter][0];
+      const double *rr = &sel_a_diff[nei_iter][0];
       // check validity of ef
       double nr2 = deepmd::dot3(rr, rr);
       double inr = 1. / sqrt(nr2);
@@ -1083,21 +1083,21 @@ void compute_descriptor_se_a_ef_para(std::vector<double>& descrpt_a,
 
 // output deriv size: n_sel_a_nei x 4 x 12
 //		      (1./rr, cos_theta, cos_phi, sin_phi)  x 4 x (x, y, z)
-void compute_descriptor_se_a_ef_vert(std::vector<double>& descrpt_a,
-                                     std::vector<double>& descrpt_a_deriv,
-                                     std::vector<double>& rij_a,
-                                     const std::vector<double>& posi,
-                                     const int& ntypes,
-                                     const std::vector<int>& type,
-                                     const SimulationRegion<double>& region,
-                                     const bool& b_pbc,
-                                     const std::vector<double>& efield,
-                                     const int& i_idx,
-                                     const std::vector<int>& fmt_nlist_a,
-                                     const std::vector<int>& sec_a,
-                                     const double& rmin,
-                                     const double& rmax) {
-  const double* ef_ = &efield[i_idx * 3 + 0];
+void compute_descriptor_se_a_ef_vert(std::vector<double> &descrpt_a,
+                                     std::vector<double> &descrpt_a_deriv,
+                                     std::vector<double> &rij_a,
+                                     const std::vector<double> &posi,
+                                     const int &ntypes,
+                                     const std::vector<int> &type,
+                                     const SimulationRegion<double> &region,
+                                     const bool &b_pbc,
+                                     const std::vector<double> &efield,
+                                     const int &i_idx,
+                                     const std::vector<int> &fmt_nlist_a,
+                                     const std::vector<int> &sec_a,
+                                     const double &rmin,
+                                     const double &rmax) {
+  const double *ef_ = &efield[i_idx * 3 + 0];
   double ef[3] = {0.};
   if (std::isnan(ef_[0]) || std::isnan(ef_[1]) || std::isnan(ef_[2])) {
     ef[0] = 1.;
@@ -1120,7 +1120,7 @@ void compute_descriptor_se_a_ef_vert(std::vector<double>& descrpt_a,
         break;
       }
       sel_a_diff[jj].resize(3);
-      const int& j_idx = fmt_nlist_a[jj];
+      const int &j_idx = fmt_nlist_a[jj];
       if (b_pbc) {
         region.diffNearestNeighbor(
             posi[j_idx * 3 + 0], posi[j_idx * 3 + 1], posi[j_idx * 3 + 2],
@@ -1150,7 +1150,7 @@ void compute_descriptor_se_a_ef_vert(std::vector<double>& descrpt_a,
       if (fmt_nlist_a[nei_iter] < 0) {
         break;
       }
-      const double* rr = &sel_a_diff[nei_iter][0];
+      const double *rr = &sel_a_diff[nei_iter][0];
       // check validity of ef
       double nr2 = deepmd::dot3(rr, rr);
       double inr = 1. / sqrt(nr2);

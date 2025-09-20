@@ -2,8 +2,6 @@
 import functools
 import logging
 from typing import (
-    Any,
-    Callable,
     Optional,
 )
 
@@ -49,10 +47,10 @@ class DPAtomicModel(BaseAtomicModel):
 
     def __init__(
         self,
-        descriptor: BaseDescriptor,
-        fitting: BaseFitting,
+        descriptor,
+        fitting,
         type_map: list[str],
-        **kwargs: Any,
+        **kwargs,
     ) -> None:
         super().__init__(type_map, **kwargs)
         ntypes = len(type_map)
@@ -110,7 +108,7 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the neighbor selection."""
         return self.sel
 
-    def set_case_embd(self, case_idx: int) -> None:
+    def set_case_embd(self, case_idx: int):
         """
         Set the case embedding of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -130,9 +128,7 @@ class DPAtomicModel(BaseAtomicModel):
         return self.descriptor.mixed_types()
 
     def change_type_map(
-        self,
-        type_map: list[str],
-        model_with_new_type_stat: Optional["DPAtomicModel"] = None,
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -173,7 +169,7 @@ class DPAtomicModel(BaseAtomicModel):
         return dd
 
     @classmethod
-    def deserialize(cls, data: dict) -> "DPAtomicModel":
+    def deserialize(cls, data) -> "DPAtomicModel":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
@@ -218,9 +214,9 @@ class DPAtomicModel(BaseAtomicModel):
 
     def forward_atomic(
         self,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
-        nlist: torch.Tensor,
+        extended_coord,
+        extended_atype,
+        nlist,
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
@@ -287,7 +283,7 @@ class DPAtomicModel(BaseAtomicModel):
 
     def compute_or_load_stat(
         self,
-        sampled_func: Callable[[], list[dict]],
+        sampled_func,
         stat_file_path: Optional[DPPath] = None,
         compute_or_load_out_stat: bool = True,
     ) -> None:
@@ -315,7 +311,7 @@ class DPAtomicModel(BaseAtomicModel):
             stat_file_path /= " ".join(self.type_map)
 
         @functools.lru_cache
-        def wrapped_sampler() -> list[dict]:
+        def wrapped_sampler():
             sampled = sampled_func()
             if self.pair_excl is not None:
                 pair_exclude_types = self.pair_excl.get_exclude_types()
@@ -337,10 +333,6 @@ class DPAtomicModel(BaseAtomicModel):
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
         return self.fitting_net.get_dim_fparam()
-
-    def has_default_fparam(self) -> bool:
-        """Check if the model has default frame parameters."""
-        return self.fitting_net.has_default_fparam()
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""

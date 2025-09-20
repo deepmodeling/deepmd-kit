@@ -5,9 +5,9 @@ from typing import (
 )
 
 import array_api_compat
+import numpy as np
 
 from deepmd.dpmodel.array_api import (
-    Array,
     xp_take_along_axis,
 )
 
@@ -18,13 +18,13 @@ from .region import (
 
 
 def extend_input_and_build_neighbor_list(
-    coord: Array,
-    atype: Array,
+    coord,
+    atype,
     rcut: float,
     sel: list[int],
     mixed_types: bool = False,
-    box: Optional[Array] = None,
-) -> tuple[Array, Array]:
+    box: Optional[np.ndarray] = None,
+):
     xp = array_api_compat.array_namespace(coord, atype)
     nframes, nloc = atype.shape[:2]
     if box is not None:
@@ -51,20 +51,20 @@ def extend_input_and_build_neighbor_list(
 
 ## translated from torch implementation by chatgpt
 def build_neighbor_list(
-    coord: Array,
-    atype: Array,
+    coord: np.ndarray,
+    atype: np.ndarray,
     nloc: int,
     rcut: float,
     sel: Union[int, list[int]],
     distinguish_types: bool = True,
-) -> Array:
+) -> np.ndarray:
     """Build neighbor list for a single frame. keeps nsel neighbors.
 
     Parameters
     ----------
-    coord : Array
+    coord : np.ndarray
         exptended coordinates of shape [batch_size, nall x 3]
-    atype : Array
+    atype : np.ndarray
         extended atomic types of shape [batch_size, nall]
         type < 0 the atom is treat as virtual atoms.
     nloc : int
@@ -81,7 +81,7 @@ def build_neighbor_list(
 
     Returns
     -------
-    neighbor_list : Array
+    neighbor_list : np.ndarray
         Neighbor list of shape [batch_size, nloc, nsel], the neighbors
         are stored in an ascending order. If the number of
         neighbors is less than nsel, the positions are masked
@@ -153,10 +153,10 @@ def build_neighbor_list(
 
 
 def nlist_distinguish_types(
-    nlist: Array,
-    atype: Array,
+    nlist: np.ndarray,
+    atype: np.ndarray,
     sel: list[int],
-) -> Array:
+):
     """Given a nlist that does not distinguish atom types, return a nlist that
     distinguish atom types.
 
@@ -188,20 +188,20 @@ def get_multiple_nlist_key(rcut: float, nsel: int) -> str:
 
 ## translated from torch implementation by chatgpt
 def build_multiple_neighbor_list(
-    coord: Array,
-    nlist: Array,
+    coord: np.ndarray,
+    nlist: np.ndarray,
     rcuts: list[float],
     nsels: list[int],
-) -> dict[str, Array]:
+) -> dict[str, np.ndarray]:
     """Input one neighbor list, and produce multiple neighbor lists with
     different cutoff radius and numbers of selection out of it.  The
     required rcuts and nsels should be smaller or equal to the input nlist.
 
     Parameters
     ----------
-    coord : Array
+    coord : np.ndarray
         exptended coordinates of shape [batch_size, nall x 3]
-    nlist : Array
+    nlist : np.ndarray
         Neighbor list of shape [batch_size, nloc, nsel], the neighbors
         should be stored in an ascending order.
     rcuts : list[float]
@@ -211,7 +211,7 @@ def build_multiple_neighbor_list(
 
     Returns
     -------
-    nlist_dict : dict[str, Array]
+    nlist_dict : dict[str, np.ndarray]
         A dict of nlists, key given by get_multiple_nlist_key(rc, nsel)
         value being the corresponding nlist.
 
@@ -247,33 +247,33 @@ def build_multiple_neighbor_list(
 
 ## translated from torch implementation by chatgpt
 def extend_coord_with_ghosts(
-    coord: Array,
-    atype: Array,
-    cell: Optional[Array],
+    coord: np.ndarray,
+    atype: np.ndarray,
+    cell: Optional[np.ndarray],
     rcut: float,
-) -> tuple[Array, Array]:
+):
     """Extend the coordinates of the atoms by appending peridoc images.
     The number of images is large enough to ensure all the neighbors
     within rcut are appended.
 
     Parameters
     ----------
-    coord : Array
+    coord : np.ndarray
         original coordinates of shape [-1, nloc*3].
-    atype : Array
+    atype : np.ndarray
         atom type of shape [-1, nloc].
-    cell : Array
+    cell : np.ndarray
         simulation cell tensor of shape [-1, 9].
     rcut : float
         the cutoff radius
 
     Returns
     -------
-    extended_coord: Array
+    extended_coord: np.ndarray
         extended coordinates of shape [-1, nall*3].
-    extended_atype: Array
+    extended_atype: np.ndarray
         extended atom type of shape [-1, nall].
-    index_mapping: Array
+    index_mapping: np.ndarray
         mapping extended index to the local index
 
     """

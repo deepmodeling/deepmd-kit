@@ -29,8 +29,8 @@ const double icvt_ener = 1. / cvt_ener;
 const double cvt_f = cvt_ener / cvt_len;
 const double icvt_f = 1. / cvt_f;
 
-char* trimwhitespace(char* str) {
-  char* end;
+char *trimwhitespace(char *str) {
+  char *end;
   // Trim leading space
   while (isspace((unsigned char)*str)) {
     str++;
@@ -48,7 +48,7 @@ char* trimwhitespace(char* str) {
   return str;
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
   if (argc == 1) {
     std::cerr << "usage " << std::endl;
     std::cerr << argv[0] << " input_script " << std::endl;
@@ -68,7 +68,7 @@ int main(int argc, char* argv[]) {
   }
   int port = jdata["port"];
   std::string host_str = jdata["host"];
-  const char* host = host_str.c_str();
+  const char *host = host_str.c_str();
   std::string graph_file = jdata["graph_file"];
   std::string coord_file = jdata["coord_file"];
   std::map<std::string, int> name_type_map = jdata["atom_type"];
@@ -102,7 +102,7 @@ int main(int argc, char* argv[]) {
   std::vector<double> dcoord_tmp;
   std::vector<int> dtype = cvt.get_type();
   std::vector<double> dbox(9, 0);
-  double* msg_buff = NULL;
+  double *msg_buff = NULL;
   double ener;
   double virial[9];
   char msg_needinit[] = "NEEDINIT    ";
@@ -144,7 +144,7 @@ int main(int argc, char* argv[]) {
       }
     } else if (header_str == "INIT") {
       assert(4 == sizeof(int32_t));
-      readbuffer_(&socket, (char*)(&cbuf), sizeof(int32_t));
+      readbuffer_(&socket, (char *)(&cbuf), sizeof(int32_t));
       readbuffer_(&socket, initbuffer, cbuf);
       if (b_verb) {
         std::cout << "Init sys from wrapper, using " << initbuffer << std::endl;
@@ -153,14 +153,14 @@ int main(int argc, char* argv[]) {
       assert(8 == sizeof(double));
 
       // get box
-      readbuffer_(&socket, (char*)(cell_h), 9 * sizeof(double));
-      readbuffer_(&socket, (char*)(cell_ih), 9 * sizeof(double));
+      readbuffer_(&socket, (char *)(cell_h), 9 * sizeof(double));
+      readbuffer_(&socket, (char *)(cell_ih), 9 * sizeof(double));
       for (int dd = 0; dd < 9; ++dd) {
         dbox[dd] = cell_h[(dd % 3) * 3 + (dd / 3)] * cvt_len;
       }
 
       // get number of atoms
-      readbuffer_(&socket, (char*)(&cbuf), sizeof(int32_t));
+      readbuffer_(&socket, (char *)(&cbuf), sizeof(int32_t));
       if (natoms < 0) {
         natoms = cbuf;
         if (b_verb) {
@@ -176,7 +176,7 @@ int main(int argc, char* argv[]) {
       }
 
       // get coord
-      readbuffer_(&socket, (char*)(msg_buff), natoms * 3 * sizeof(double));
+      readbuffer_(&socket, (char *)(msg_buff), natoms * 3 * sizeof(double));
       for (int ii = 0; ii < natoms * 3; ++ii) {
         dcoord_tmp[ii] = msg_buff[ii] * cvt_len;
       }
@@ -199,12 +199,12 @@ int main(int argc, char* argv[]) {
                   << std::setprecision(10) << dener << std::endl;
       }
       writebuffer_(&socket, msg_forceready, MSGLEN);
-      writebuffer_(&socket, (char*)(&ener), sizeof(double));
-      writebuffer_(&socket, (char*)(&natoms), sizeof(int32_t));
-      writebuffer_(&socket, (char*)(msg_buff), 3 * natoms * sizeof(double));
-      writebuffer_(&socket, (char*)(virial), 9 * sizeof(double));
+      writebuffer_(&socket, (char *)(&ener), sizeof(double));
+      writebuffer_(&socket, (char *)(&natoms), sizeof(int32_t));
+      writebuffer_(&socket, (char *)(msg_buff), 3 * natoms * sizeof(double));
+      writebuffer_(&socket, (char *)(virial), 9 * sizeof(double));
       cbuf = 7;
-      writebuffer_(&socket, (char*)(&cbuf), sizeof(int32_t));
+      writebuffer_(&socket, (char *)(&cbuf), sizeof(int32_t));
       writebuffer_(&socket, msg_nothing, 7);
       hasdata = false;
     } else {

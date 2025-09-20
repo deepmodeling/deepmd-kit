@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Any,
     Optional,
     Union,
     overload,
@@ -70,7 +69,7 @@ def silut_double_backward(
 
 
 class SiLUTScript(torch.nn.Module):
-    def __init__(self, threshold: float = 3.0) -> None:
+    def __init__(self, threshold: float = 3.0):
         super().__init__()
         self.threshold = threshold
 
@@ -82,20 +81,14 @@ class SiLUTScript(torch.nn.Module):
         self.const_val = float(threshold * sigmoid_threshold)
         self.get_script_code()
 
-    def get_script_code(self) -> None:
+    def get_script_code(self):
         silut_forward_script = torch.jit.script(silut_forward)
         silut_backward_script = torch.jit.script(silut_backward)
         silut_double_backward_script = torch.jit.script(silut_double_backward)
 
         class SiLUTFunction(torch.autograd.Function):
             @staticmethod
-            def forward(
-                ctx: Any,
-                x: torch.Tensor,
-                threshold: float,
-                slope: float,
-                const_val: float,
-            ) -> torch.Tensor:
+            def forward(ctx, x, threshold, slope, const_val):
                 ctx.save_for_backward(x)
                 ctx.threshold = threshold
                 ctx.slope = slope
@@ -103,9 +96,7 @@ class SiLUTScript(torch.nn.Module):
                 return silut_forward_script(x, threshold, slope, const_val)
 
             @staticmethod
-            def backward(
-                ctx: Any, grad_output: torch.Tensor
-            ) -> tuple[torch.Tensor, None, None, None]:
+            def backward(ctx, grad_output):
                 (x,) = ctx.saved_tensors
                 threshold = ctx.threshold
                 slope = ctx.slope
@@ -115,13 +106,7 @@ class SiLUTScript(torch.nn.Module):
 
         class SiLUTGradFunction(torch.autograd.Function):
             @staticmethod
-            def forward(
-                ctx: Any,
-                x: torch.Tensor,
-                grad_output: torch.Tensor,
-                threshold: float,
-                slope: float,
-            ) -> torch.Tensor:
+            def forward(ctx, x, grad_output, threshold, slope):
                 ctx.threshold = threshold
                 ctx.slope = slope
                 grad_input = silut_backward_script(x, grad_output, threshold, slope)
@@ -129,9 +114,7 @@ class SiLUTScript(torch.nn.Module):
                 return grad_input
 
             @staticmethod
-            def backward(
-                ctx: Any, grad_grad_output: torch.Tensor
-            ) -> tuple[torch.Tensor, torch.Tensor]:
+            def backward(ctx, grad_grad_output):
                 (x, grad_output) = ctx.saved_tensors
                 threshold = ctx.threshold
                 slope = ctx.slope
@@ -143,21 +126,21 @@ class SiLUTScript(torch.nn.Module):
 
         self.SiLUTFunction = SiLUTFunction
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x):
         return self.SiLUTFunction.apply(x, self.threshold, self.slope, self.const_val)
 
 
 class SiLUT(torch.nn.Module):
-    def __init__(self, threshold: float = 3.0) -> None:
+    def __init__(self, threshold=3.0):
         super().__init__()
 
-        def sigmoid(x: float) -> float:
+        def sigmoid(x):
             return 1 / (1 + np.exp(-x))
 
-        def silu(x: float) -> float:
+        def silu(x):
             return x * sigmoid(x)
 
-        def silu_grad(x: float) -> float:
+        def silu_grad(x):
             sig = sigmoid(x)
             return sig + x * sig * (1 - sig)
 
@@ -229,8 +212,8 @@ def to_numpy_array(xx: None) -> None: ...
 
 
 def to_numpy_array(
-    xx: Optional[torch.Tensor],
-) -> Optional[np.ndarray]:
+    xx,
+):
     if xx is None:
         return None
     assert xx is not None
@@ -256,8 +239,8 @@ def to_torch_tensor(xx: None) -> None: ...
 
 
 def to_torch_tensor(
-    xx: Optional[np.ndarray],
-) -> Optional[torch.Tensor]:
+    xx,
+):
     if xx is None:
         return None
     assert xx is not None
@@ -276,7 +259,7 @@ def to_torch_tensor(
     return torch.tensor(xx, dtype=prec, device=DEVICE)
 
 
-def dict_to_device(sample_dict: dict[str, Any]) -> None:
+def dict_to_device(sample_dict) -> None:
     for key in sample_dict:
         if isinstance(sample_dict[key], list):
             sample_dict[key] = [item.to(DEVICE) for item in sample_dict[key]]
@@ -297,7 +280,7 @@ MIX_MULT_R = 0x4973F715
 XSHIFT = 16
 
 
-def hashmix(value: int, hash_const: list[int]) -> int:
+def hashmix(value: int, hash_const: list[int]):
     value ^= INIT_A
     hash_const[0] *= MULT_A
     value *= INIT_A
@@ -308,7 +291,7 @@ def hashmix(value: int, hash_const: list[int]) -> int:
     return value
 
 
-def mix(x: int, y: int) -> int:
+def mix(x: int, y: int):
     result = MIX_MULT_L * x - MIX_MULT_R * y
     # prevent overflow
     result &= 0xFFFF_FFFF_FFFF_FFFF

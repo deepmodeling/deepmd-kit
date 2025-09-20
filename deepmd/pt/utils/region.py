@@ -68,7 +68,7 @@ def to_face_distance(
     return dist.view(list(cshape[:-2]) + [3])  # noqa:RUF005
 
 
-def b_to_face_distance(cell: torch.Tensor) -> torch.Tensor:
+def b_to_face_distance(cell):
     volume = torch.linalg.det(cell)
     c_yz = torch.cross(cell[:, 1], cell[:, 2], dim=-1)
     _h2yz = volume / torch.linalg.norm(c_yz, dim=-1)

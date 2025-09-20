@@ -5,7 +5,6 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    Any,
     Callable,
     NoReturn,
     Optional,
@@ -14,9 +13,6 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.array_api import (
-    Array,
-)
 from deepmd.utils.env_mat_stat import (
     StatItem,
 )
@@ -38,7 +34,7 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
 
     local_cluster = False
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
+    def __new__(cls, *args, **kwargs):
         if cls is DescriptorBlock:
             try:
                 descrpt_type = kwargs["type"]
@@ -111,9 +107,7 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
         """Get the statistics of the descriptor."""
         raise NotImplementedError
 
-    def share_params(
-        self, base_class: Any, shared_level: Any, resume: bool = False
-    ) -> NoReturn:
+    def share_params(self, base_class, shared_level, resume=False) -> NoReturn:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -124,13 +118,13 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
     @abstractmethod
     def call(
         self,
-        nlist: Array,
-        extended_coord: Array,
-        extended_atype: Array,
-        extended_atype_embd: Optional[Array] = None,
-        mapping: Optional[Array] = None,
-        type_embedding: Optional[Array] = None,
-    ) -> Any:
+        nlist: np.ndarray,
+        extended_coord: np.ndarray,
+        extended_atype: np.ndarray,
+        extended_atype_embd: Optional[np.ndarray] = None,
+        mapping: Optional[np.ndarray] = None,
+        type_embedding: Optional[np.ndarray] = None,
+    ):
         """Calculate DescriptorBlock."""
         pass
 
@@ -143,9 +137,7 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
         """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
 
 
-def extend_descrpt_stat(
-    des: Any, type_map: list[str], des_with_stat: Any = None
-) -> None:
+def extend_descrpt_stat(des, type_map, des_with_stat=None) -> None:
     r"""
     Extend the statistics of a descriptor block with types from newly provided `type_map`.
 

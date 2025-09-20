@@ -15,7 +15,7 @@
 extern "C" {
 #endif
 
-void error(const char* msg);
+void error(const char *msg);
 
 /* Opens a socket.
    Note that fortran passes an extra argument for the string length, but this is
@@ -29,7 +29,7 @@ void error(const char* msg);
       recommended.
    host: The name of the host server.
 */
-void open_socket_(int* psockfd, int* inet, int* port, const char* host);
+void open_socket_(int *psockfd, int *inet, int *port, const char *host);
 
 /* Writes to a socket.
    Args:
@@ -37,7 +37,7 @@ void open_socket_(int* psockfd, int* inet, int* port, const char* host);
    data: The data to be written to the socket.
    plen: The length of the data in bytes.
 */
-void writebuffer_(int* psockfd, char* data, int len);
+void writebuffer_(int *psockfd, char *data, int len);
 
 /* Reads from a socket.
    Args:
@@ -45,7 +45,7 @@ void writebuffer_(int* psockfd, char* data, int len);
    data: The storage array for data read from the socket.
    plen: The length of the data in bytes.
 */
-void readbuffer_(int* psockfd, char* data, int len);
+void readbuffer_(int *psockfd, char *data, int len);
 
 #ifdef __cplusplus
 }

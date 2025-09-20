@@ -301,7 +301,7 @@ class DeepEval(DeepEvalBackend):
         """
         if self.auto_batch_size is not None:
 
-            def eval_func(*args: Any, **kwargs: Any) -> Any:
+            def eval_func(*args, **kwargs):
                 return self.auto_batch_size.execute_all(
                     inner_func, numb_test, natoms, *args, **kwargs
                 )
@@ -335,7 +335,7 @@ class DeepEval(DeepEvalBackend):
         fparam: Optional[np.ndarray],
         aparam: Optional[np.ndarray],
         request_defs: list[OutputVariableDef],
-    ) -> tuple[np.ndarray, ...]:
+    ):
         model = self.dp
 
         nframes = coords.shape[0]
@@ -395,9 +395,7 @@ class DeepEval(DeepEvalBackend):
                 )  # this is kinda hacky
         return tuple(results)
 
-    def _get_output_shape(
-        self, odef: OutputVariableDef, nframes: int, natoms: int
-    ) -> list[int]:
+    def _get_output_shape(self, odef, nframes, natoms):
         if odef.category == OutputVariableCategory.DERV_C_REDU:
             # virial
             return [nframes, *odef.shape[:-1], 9]
@@ -422,13 +420,3 @@ class DeepEval(DeepEvalBackend):
     def get_model_def_script(self) -> dict:
         """Get model definition script."""
         return json.loads(self.dp.get_model_def_script())
-
-    def get_model(self) -> Any:
-        """Get the JAX model as BaseModel.
-
-        Returns
-        -------
-        BaseModel
-            The JAX model as BaseModel instance.
-        """
-        return self.dp

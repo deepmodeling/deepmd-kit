@@ -1,11 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-)
+import numpy as np
 
-from deepmd.dpmodel.array_api import (
-    Array,
-)
 from deepmd.dpmodel.fitting.property_fitting import (
     PropertyFittingNet,
 )
@@ -16,9 +11,7 @@ from .dp_atomic_model import (
 
 
 class DPPropertyAtomicModel(DPAtomicModel):
-    def __init__(
-        self, descriptor: Any, fitting: Any, type_map: list[str], **kwargs: Any
-    ) -> None:
+    def __init__(self, descriptor, fitting, type_map, **kwargs):
         if not isinstance(fitting, PropertyFittingNet):
             raise TypeError(
                 "fitting must be an instance of PropertyFittingNet for DPPropertyAtomicModel"
@@ -27,9 +20,9 @@ class DPPropertyAtomicModel(DPAtomicModel):
 
     def apply_out_stat(
         self,
-        ret: dict[str, Array],
-        atype: Array,
-    ) -> dict[str, Array]:
+        ret: dict[str, np.ndarray],
+        atype: np.ndarray,
+    ):
         """Apply the stat to each atomic output.
 
         In property fitting, each output will be multiplied by label std and then plus the label average value.

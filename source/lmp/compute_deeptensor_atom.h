@@ -30,19 +30,19 @@ namespace LAMMPS_NS {
 
 class ComputeDeeptensorAtom : public Compute {
  public:
-  ComputeDeeptensorAtom(class LAMMPS*, int, char**);
+  ComputeDeeptensorAtom(class LAMMPS *, int, char **);
   ~ComputeDeeptensorAtom() override;
   void init() override;
   void compute_peratom() override;
   double memory_usage() override;
-  void init_list(int, class NeighList*) override;
+  void init_list(int, class NeighList *) override;
   double dist_unit_cvt_factor;
 
  private:
   int nmax;
-  double** tensor;
+  double **tensor;
   PairDeepMD dp;
-  class NeighList* list;
+  class NeighList *list;
   deepmd_compat::DeepTensor dt;
   std::vector<int> sel_types;
 };

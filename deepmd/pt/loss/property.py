@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    Any,
     Union,
 )
 
@@ -24,15 +23,15 @@ log = logging.getLogger(__name__)
 class PropertyLoss(TaskLoss):
     def __init__(
         self,
-        task_dim: int,
+        task_dim,
         var_name: str,
         loss_func: str = "smooth_mae",
-        metric: list[str] = ["mae"],
+        metric: list = ["mae"],
         beta: float = 1.00,
         out_bias: Union[list, None] = None,
         out_std: Union[list, None] = None,
         intensive: bool = False,
-        **kwargs: Any,
+        **kwargs,
     ) -> None:
         r"""Construct a layer to compute loss on property.
 
@@ -67,15 +66,7 @@ class PropertyLoss(TaskLoss):
         self.intensive = intensive
         self.var_name = var_name
 
-    def forward(
-        self,
-        input_dict: dict[str, torch.Tensor],
-        model: torch.nn.Module,
-        label: dict[str, torch.Tensor],
-        natoms: int,
-        learning_rate: float = 0.0,
-        mae: bool = False,
-    ) -> tuple[dict[str, torch.Tensor], torch.Tensor, dict[str, torch.Tensor]]:
+    def forward(self, input_dict, model, label, natoms, learning_rate=0.0, mae=False):
         """Return loss on properties .
 
         Parameters
