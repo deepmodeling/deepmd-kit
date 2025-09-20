@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    Any,
     Optional,
     Union,
 )
@@ -75,7 +76,9 @@ class PolarFittingNet(GeneralFitting):
         Whether to shift the diagonal part of the polarizability matrix. The shift operation is carried out after scale.
     type_map: list[str], Optional
         A list of strings. Give the name to each type of atoms.
-
+    default_fparam: list[float], optional
+        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+        this value will be used as the default value for the frame parameter in the fitting net.
     """
 
     def __init__(
@@ -98,7 +101,8 @@ class PolarFittingNet(GeneralFitting):
         scale: Optional[Union[list[float], float]] = None,
         shift_diag: bool = True,
         type_map: Optional[list[str]] = None,
-        **kwargs,
+        default_fparam: Optional[list] = None,
+        **kwargs: Any,
     ) -> None:
         self.embedding_width = embedding_width
         self.fit_diag = fit_diag
@@ -139,10 +143,11 @@ class PolarFittingNet(GeneralFitting):
             seed=seed,
             exclude_types=exclude_types,
             type_map=type_map,
+            default_fparam=default_fparam,
             **kwargs,
         )
 
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         return (
             self.embedding_width
@@ -150,20 +155,20 @@ class PolarFittingNet(GeneralFitting):
             else self.embedding_width * self.embedding_width
         )
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         if key in ["constant_matrix"]:
             self.constant_matrix = value
         else:
             super().__setitem__(key, value)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if key in ["constant_matrix"]:
             return self.constant_matrix
         else:
             return super().__getitem__(key)
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -195,7 +200,7 @@ class PolarFittingNet(GeneralFitting):
     def serialize(self) -> dict:
         data = super().serialize()
         data["type"] = "polar"
-        data["@version"] = 4
+        data["@version"] = 5
         data["embedding_width"] = self.embedding_width
         data["fit_diag"] = self.fit_diag
         data["shift_diag"] = self.shift_diag
@@ -206,7 +211,7 @@ class PolarFittingNet(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 5, 1)
         data.pop("var_name", None)
         return super().deserialize(data)
 
@@ -232,7 +237,7 @@ class PolarFittingNet(GeneralFitting):
         h2: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
-    ):
+    ) -> dict[str, torch.Tensor]:
         nframes, nloc, _ = descriptor.shape
         assert gr is not None, (
             "Must provide the rotation matrix for polarizability fitting."

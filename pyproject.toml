@@ -108,7 +108,7 @@ docs = [
     "sphinx-remove-toctrees",
 ]
 lmp = [
-    "lammps[mpi]~=2025.7.22.0.2",
+    "lammps[mpi]~=2025.7.22.1.0",
 ]
 ipi = [
     "ipi",
@@ -242,7 +242,7 @@ repair-wheel-command = """delocate-wheel --require-archs {delocate_archs} -w {de
 
 [tool.cibuildwheel.macos.environment]
 PIP_PREFER_BINARY = "1"
-DP_LAMMPS_VERSION = "stable_22Jul2025"
+DP_LAMMPS_VERSION = "stable_22Jul2025_update1"
 DP_ENABLE_IPI = "1"
 DP_ENABLE_PYTORCH = "1"
 DP_ENABLE_PADDLE = "1"
@@ -278,7 +278,7 @@ before-build = [
 ]
 [tool.cibuildwheel.linux.environment]
 PIP_PREFER_BINARY = "1"
-DP_LAMMPS_VERSION = "stable_22Jul2025"
+DP_LAMMPS_VERSION = "stable_22Jul2025_update1"
 DP_ENABLE_IPI = "1"
 DP_ENABLE_PYTORCH = "1"
 DP_ENABLE_PADDLE = "1"
@@ -379,6 +379,7 @@ ignore = [
     "ANN401", # Allow Any due to too many violations
     "E501", # line too long
     "F841", # local variable is assigned to but never used
+    "RUF059", # unused-unpacked-variable
     "E741", # ambiguous variable name
     "E402", # module level import not at top of file
     "D100", # TODO: missing docstring in public module
@@ -391,7 +392,6 @@ ignore = [
     "D401", # TODO: first line should be in imperative mood
     "D404", # TODO: first word of the docstring should not be This
 ]
-ignore-init-module-imports = true
 
 exclude = [
     "source/3rdparty/**",
@@ -424,8 +424,9 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "backend/**" = ["ANN"]
 "data/**" = ["ANN"]
 "deepmd/tf/**" = ["TID253", "ANN"]
-"deepmd/pt/**" = ["TID253", "ANN"]
-"deepmd/jax/**" = ["TID253", "ANN"]
+"deepmd/pt/**" = ["TID253"]
+"deepmd/jax/**" = ["TID253"]
+"deepmd/pd/**" = ["TID253", "ANN"]
 # Paddle backend: Gradually enabling ANN rule
 # Completed files with full type annotations:
 "deepmd/pd/entrypoints/main.py" = ["TID253"]  # ✅ Fully typed

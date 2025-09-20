@@ -4,6 +4,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Any,
     Callable,
     Optional,
     Union,
@@ -50,12 +51,14 @@ log = logging.getLogger(__name__)
 class Fitting(torch.nn.Module, BaseFitting):
     # plugin moved to BaseFitting
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> "Fitting":
         if cls is Fitting:
             return BaseFitting.__new__(BaseFitting, *args, **kwargs)
         return super().__new__(cls)
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: "Fitting", shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -204,6 +207,9 @@ class GeneralFitting(Fitting):
         A list of strings. Give the name to each type of atoms.
     use_aparam_as_mask: bool
         If True, the aparam will not be used in fitting net for embedding.
+    default_fparam: list[float], optional
+        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+        this value will be used as the default value for the frame parameter in the fitting net.
     """
 
     def __init__(
@@ -227,7 +233,8 @@ class GeneralFitting(Fitting):
         remove_vaccum_contribution: Optional[list[bool]] = None,
         type_map: Optional[list[str]] = None,
         use_aparam_as_mask: bool = False,
-        **kwargs,
+        default_fparam: Optional[list[float]] = None,
+        **kwargs: Any,
     ) -> None:
         super().__init__()
         self.var_name = var_name
@@ -238,6 +245,7 @@ class GeneralFitting(Fitting):
         self.resnet_dt = resnet_dt
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
+        self.default_fparam = default_fparam
         self.dim_case_embd = dim_case_embd
         self.activation_function = activation_function
         self.precision = precision
@@ -299,6 +307,20 @@ class GeneralFitting(Fitting):
         else:
             self.case_embd = None
 
+        if self.default_fparam is not None:
+            if self.numb_fparam > 0:
+                assert len(self.default_fparam) == self.numb_fparam, (
+                    "default_fparam length mismatch!"
+                )
+            self.register_buffer(
+                "default_fparam_tensor",
+                torch.tensor(
+                    np.array(self.default_fparam), dtype=self.prec, device=device
+                ),
+            )
+        else:
+            self.default_fparam_tensor = None
+
         in_dim = (
             self.dim_descrpt
             + self.numb_fparam
@@ -339,7 +361,9 @@ class GeneralFitting(Fitting):
         self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self,
+        type_map: list[str],
+        model_with_new_type_stat: Optional["GeneralFitting"] = None,
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -366,7 +390,7 @@ class GeneralFitting(Fitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
-            "@version": 3,
+            "@version": 4,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -375,6 +399,7 @@ class GeneralFitting(Fitting):
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
             "dim_case_embd": self.dim_case_embd,
+            "default_fparam": self.default_fparam,
             "activation_function": self.activation_function,
             "precision": self.precision,
             "mixed_types": self.mixed_types,
@@ -418,6 +443,10 @@ class GeneralFitting(Fitting):
         """Get the number (dimension) of frame parameters of this atomic model."""
         return self.numb_fparam
 
+    def has_default_fparam(self) -> bool:
+        """Check if the fitting has default frame parameters."""
+        return self.default_fparam is not None
+
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.numb_aparam
@@ -443,7 +472,7 @@ class GeneralFitting(Fitting):
         """Get the name to each type of atoms."""
         return self.type_map
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this fitting net by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -455,7 +484,7 @@ class GeneralFitting(Fitting):
     def set_return_middle_output(self, return_middle_output: bool = True) -> None:
         self.eval_return_middle_output = return_middle_output
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: torch.Tensor) -> None:
         if key in ["bias_atom_e"]:
             value = value.view([self.ntypes, self._net_out_dim()])
             self.bias_atom_e = value
@@ -471,10 +500,12 @@ class GeneralFitting(Fitting):
             self.case_embd = value
         elif key in ["scale"]:
             self.scale = value
+        elif key in ["default_fparam_tensor"]:
+            self.default_fparam_tensor = value
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> torch.Tensor:
         if key in ["bias_atom_e"]:
             return self.bias_atom_e
         elif key in ["fparam_avg"]:
@@ -489,11 +520,13 @@ class GeneralFitting(Fitting):
             return self.case_embd
         elif key in ["scale"]:
             return self.scale
+        elif key in ["default_fparam_tensor"]:
+            return self.default_fparam_tensor
         else:
             raise KeyError(key)
 
     @abstractmethod
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         pass
 
@@ -512,9 +545,16 @@ class GeneralFitting(Fitting):
         h2: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
-    ):
+    ) -> dict[str, torch.Tensor]:
         # cast the input to internal precsion
         xx = descriptor.to(self.prec)
+        nf, nloc, nd = xx.shape
+
+        if self.numb_fparam > 0 and fparam is None:
+            # use default fparam
+            assert self.default_fparam_tensor is not None
+            fparam = torch.tile(self.default_fparam_tensor.unsqueeze(0), [nf, 1])
+
         fparam = fparam.to(self.prec) if fparam is not None else None
         aparam = aparam.to(self.prec) if aparam is not None else None
 
@@ -527,7 +567,6 @@ class GeneralFitting(Fitting):
             xx_zeros = torch.zeros_like(xx)
         else:
             xx_zeros = None
-        nf, nloc, nd = xx.shape
         net_dim_out = self._net_out_dim()
 
         if nd != self.dim_descrpt:

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     ClassVar,
     Optional,
     Union,
@@ -43,7 +44,7 @@ from deepmd.pt.utils.utils import (
 )
 
 
-def empty_t(shape, precision):
+def empty_t(shape: tuple[int, ...], precision: torch.dtype) -> torch.Tensor:
     return torch.empty(shape, dtype=precision, device=device)
 
 
@@ -72,8 +73,8 @@ class Identity(nn.Module):
 class MLPLayer(nn.Module):
     def __init__(
         self,
-        num_in,
-        num_out,
+        num_in: int,
+        num_out: int,
         bias: bool = True,
         use_timestep: bool = False,
         activation_function: Optional[str] = None,
@@ -132,7 +133,7 @@ class MLPLayer(nn.Module):
     def check_type_consistency(self) -> None:
         precision = self.precision
 
-        def check_var(var) -> None:
+        def check_var(var: Optional[torch.Tensor]) -> None:
             if var is not None:
                 # assertion "float64" == "double" would fail
                 assert PRECISION_DICT[var.dtype.name] is PRECISION_DICT[precision]
@@ -164,7 +165,7 @@ class MLPLayer(nn.Module):
             normal_(self.idt.data, mean=0.1, std=0.001, generator=generator)
 
     def _trunc_normal_init(
-        self, scale=1.0, generator: Optional[torch.Generator] = None
+        self, scale: float = 1.0, generator: Optional[torch.Generator] = None
     ) -> None:
         # Constant from scipy.stats.truncnorm.std(a=-2, b=2, loc=0., scale=1.)
         TRUNCATED_NORMAL_STDDEV_FACTOR = 0.87962566103423978
@@ -176,7 +177,7 @@ class MLPLayer(nn.Module):
     def _glorot_uniform_init(self, generator: Optional[torch.Generator] = None) -> None:
         xavier_uniform_(self.matrix, gain=1, generator=generator)
 
-    def _zero_init(self, use_bias=True) -> None:
+    def _zero_init(self, use_bias: bool = True) -> None:
         with torch.no_grad():
             self.matrix.fill_(0.0)
             if use_bias and self.bias is not None:
@@ -266,7 +267,7 @@ class MLPLayer(nn.Module):
         )
         prec = PRECISION_DICT[obj.precision]
 
-        def check_load_param(ss):
+        def check_load_param(ss: str) -> Optional[nn.Parameter]:
             return (
                 nn.Parameter(data=to_torch_tensor(nl[ss]))
                 if nl[ss] is not None
@@ -283,7 +284,7 @@ MLP_ = make_multilayer_network(MLPLayer, nn.Module)
 
 
 class MLP(MLP_):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.layers = torch.nn.ModuleList(self.layers)
 
@@ -304,7 +305,7 @@ class NetworkCollection(DPNetworkCollection, nn.Module):
         "fitting_network": FittingNet,
     }
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         # init both two base classes
         DPNetworkCollection.__init__(self, *args, **kwargs)
         nn.Module.__init__(self)

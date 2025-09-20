@@ -44,21 +44,21 @@ OUTPUT_DEFS = {
 class HLO(BaseModel):
     def __init__(
         self,
-        stablehlo,
-        stablehlo_atomic_virial,
-        stablehlo_no_ghost,
-        stablehlo_atomic_virial_no_ghost,
-        model_def_script,
-        type_map,
-        rcut,
-        dim_fparam,
-        dim_aparam,
-        sel_type,
-        is_aparam_nall,
-        model_output_type,
-        mixed_types,
-        min_nbor_dist,
-        sel,
+        stablehlo: bytearray,
+        stablehlo_atomic_virial: bytearray,
+        stablehlo_no_ghost: bytearray,
+        stablehlo_atomic_virial_no_ghost: bytearray,
+        model_def_script: str,
+        type_map: list[str],
+        rcut: float,
+        dim_fparam: int,
+        dim_aparam: int,
+        sel_type: list[int],
+        is_aparam_nall: bool,
+        model_output_type: str,
+        mixed_types: bool,
+        min_nbor_dist: Optional[float],
+        sel: list[int],
     ) -> None:
         self._call_lower = jax_export.deserialize(stablehlo).call
         self._call_lower_atomic_virial = jax_export.deserialize(
@@ -125,7 +125,7 @@ class HLO(BaseModel):
         fparam: Optional[jnp.ndarray] = None,
         aparam: Optional[jnp.ndarray] = None,
         do_atomic_virial: bool = False,
-    ):
+    ) -> dict[str, jnp.ndarray]:
         """Return model prediction.
 
         Parameters
@@ -165,7 +165,7 @@ class HLO(BaseModel):
             do_atomic_virial=do_atomic_virial,
         )
 
-    def model_output_def(self):
+    def model_output_def(self) -> ModelOutputDef:
         return ModelOutputDef(
             FittingOutputDef([OUTPUT_DEFS[tt] for tt in self.model_output_type()])
         )
@@ -179,7 +179,7 @@ class HLO(BaseModel):
         fparam: Optional[jnp.ndarray] = None,
         aparam: Optional[jnp.ndarray] = None,
         do_atomic_virial: bool = False,
-    ):
+    ) -> dict[str, jnp.ndarray]:
         if extended_coord.shape[1] > nlist.shape[1]:
             if do_atomic_virial:
                 call_lower = self._call_lower_atomic_virial
@@ -203,15 +203,15 @@ class HLO(BaseModel):
         """Get the type map."""
         return self.type_map
 
-    def get_rcut(self):
+    def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return self.rcut
 
-    def get_dim_fparam(self):
+    def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
         return self.dim_fparam
 
-    def get_dim_aparam(self):
+    def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.dim_aparam
 
