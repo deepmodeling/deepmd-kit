@@ -60,6 +60,9 @@ from deepmd.tf.utils.sess import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.nan_detector import (
+    check_loss_nan,
+)
 
 log = logging.getLogger(__name__)
 
@@ -684,6 +687,13 @@ class DPTrainer:
 
         cur_batch = self.cur_batch
         current_lr = run_sess(self.sess, self.learning_rate)
+
+        # Check for NaN in loss values before writing to file and saving checkpoint
+        # Loss values are already on CPU at this point
+        check_loss_nan(cur_batch, train_results)
+        if valid_results is not None:
+            check_loss_nan(cur_batch, valid_results)
+
         if print_header:
             self.print_header(fp, train_results, valid_results)
         self.print_on_training(

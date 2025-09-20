@@ -75,6 +75,9 @@ from deepmd.pd.utils.utils import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.nan_detector import (
+    check_loss_nan,
+)
 from deepmd.utils.path import (
     DPH5Path,
 )
@@ -950,6 +953,20 @@ class Trainer:
                     self.print_on_training(
                         fout, display_step_id, cur_lr, train_results, valid_results
                     )
+
+                # Check for NaN in loss values before saving checkpoint
+                # Loss values are already on CPU at this point for display/logging
+                if self.rank == 0:
+                    if not self.multi_task:
+                        check_loss_nan(display_step_id, train_results)
+                        if valid_results:
+                            check_loss_nan(display_step_id, valid_results)
+                    else:
+                        for task_key in train_results:
+                            if train_results[task_key]:
+                                check_loss_nan(display_step_id, train_results[task_key])
+                            if valid_results[task_key]:
+                                check_loss_nan(display_step_id, valid_results[task_key])
 
             if (
                 ((_step_id + 1) % self.save_freq == 0 and _step_id != self.start_step)
