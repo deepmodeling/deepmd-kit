@@ -863,8 +863,8 @@ class Trainer:
                 if not self.multi_task:
                     train_results = log_loss_train(loss, more_loss)
                     # Check for NaN in total loss using CPU values from lcurve computation
-                    if self.rank == 0 and "rmse_e" in train_results:
-                        check_total_loss_nan(display_step_id, train_results["rmse_e"])
+                    if self.rank == 0 and "rmse" in train_results:
+                        check_total_loss_nan(display_step_id, train_results["rmse"])
                     valid_results = log_loss_valid()
                     if self.rank == 0:
                         log.info(
@@ -907,9 +907,9 @@ class Trainer:
                             )
                         valid_results[_key] = log_loss_valid(_task_key=_key)
                         # Check for NaN in total loss using CPU values from lcurve computation
-                        if self.rank == 0 and "rmse_e" in train_results[_key]:
+                        if self.rank == 0 and "rmse" in train_results[_key]:
                             check_total_loss_nan(
-                                display_step_id, train_results[_key]["rmse_e"]
+                                display_step_id, train_results[_key]["rmse"]
                             )
                         if self.rank == 0:
                             log.info(

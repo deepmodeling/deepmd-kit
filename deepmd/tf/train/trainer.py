@@ -689,8 +689,8 @@ class DPTrainer:
         current_lr = run_sess(self.sess, self.learning_rate)
 
         # Check for NaN in total loss before writing to file and saving checkpoint
-        # We check the main energy loss component that represents total training loss
-        check_total_loss_nan(cur_batch, train_results["rmse_e"])
+        # We check the main total loss component that represents training loss
+        check_total_loss_nan(cur_batch, train_results["rmse"])
 
         if print_header:
             self.print_header(fp, train_results, valid_results)
