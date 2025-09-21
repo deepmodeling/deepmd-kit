@@ -469,7 +469,6 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "deepmd/pd/loss/**" = ["TID253", "ANN"]      # 🚧 Partial progress - other loss files need work
 "deepmd/pd/model/**" = ["TID253", "ANN"]     # 🚧 Partial progress - some files completed
 "deepmd/pd/infer/**" = ["TID253", "ANN"]     # 🚧 Partial progress - inference.py completed
-"deepmd/dpmodel/**" = ["ANN"]
 "source/**" = ["ANN"]
 "source/tests/tf/**" = ["TID253", "ANN"]
 "source/tests/pt/**" = ["TID253", "ANN"]
