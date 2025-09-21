@@ -460,6 +460,9 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "deepmd/pd/model/descriptor/__init__.py" = ["TID253"]  # ✅ Fully typed
 "deepmd/pd/model/task/ener.py" = ["TID253"]   # ✅ Fully typed
 "deepmd/pd/model/model/dp_model.py" = ["TID253"]  # ✅ Fully typed
+"deepmd/pd/utils/serialization.py" = ["TID253"]  # ✅ Fully typed
+"deepmd/pd/utils/region.py" = ["TID253"]      # ✅ Fully typed
+"deepmd/pd/utils/exclude_mask.py" = ["TID253"] # ✅ Fully typed
 # TODO: Complete type hints and remove ANN exclusion for remaining files:
 "deepmd/pd/train/**" = ["TID253", "ANN"]     # 🚧 Partial progress - training.py still needs work
 "deepmd/pd/utils/**" = ["TID253", "ANN"]     # 🚧 Partial progress - utils.py partially done
