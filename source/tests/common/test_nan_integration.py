@@ -48,27 +48,18 @@ class TestNaNDetectionIntegration(unittest.TestCase):
 
     def test_training_simulation_with_checkpoint_prevention(self):
         """Simulate the training checkpoint scenario to ensure NaN prevents saving."""
-
-        def mock_save_checkpoint():
-            """Mock function that should not be called when NaN is detected."""
-            raise AssertionError("Checkpoint should not be saved when NaN is detected!")
-
         # Simulate the training flow: check total loss, then save checkpoint
         step_id = 1000
         total_loss = float("nan")
 
-        # This should raise LossNaNError before checkpoint saving
-        with self.assertRaises(LossNaNError):
+        # This should raise LossNaNError, preventing any subsequent checkpoint saving
+        with self.assertRaises(LossNaNError) as context:
             check_total_loss_nan(step_id, total_loss)
-            # This line should never be reached
-            mock_save_checkpoint()
 
         # Verify the error contains expected information
-        try:
-            check_total_loss_nan(step_id, total_loss)
-        except LossNaNError as e:
-            self.assertIn("Training stopped to prevent wasting time", str(e))
-            self.assertIn("corrupted parameters", str(e))
+        exception = context.exception
+        self.assertIn("Training stopped to prevent wasting time", str(exception))
+        self.assertIn("corrupted parameters", str(exception))
 
     def test_realistic_training_scenario(self):
         """Test a more realistic training scenario with decreasing then NaN loss."""

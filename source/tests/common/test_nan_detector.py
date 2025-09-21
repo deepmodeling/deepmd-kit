@@ -22,10 +22,7 @@ class TestNaNDetector(unittest.TestCase):
 
         # Should not raise any exception
         for i, loss_val in enumerate(normal_losses):
-            try:
-                check_total_loss_nan(100 + i, loss_val)
-            except Exception as e:
-                self.fail(f"Normal values should not raise exception: {e}")
+            check_total_loss_nan(100 + i, loss_val)
 
     def test_nan_detection_raises_exception(self):
         """Test that NaN values trigger the proper exception."""
