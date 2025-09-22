@@ -132,7 +132,7 @@ class TestDeepPotFrozen(TestDeepPot):
     # Note: this can not actually disable cuda device to be used
     # only can be used to test whether devices are mismatched
     @unittest.skipIf(not paddle.device.is_compiled_with_cuda(), "CUDA not available")
-    @unittest.mock.patch("deepmd.pd.utils.env.DEVICE", paddle.device("cpu"))
-    @unittest.mock.patch("deepmd.pd.infer.deep_eval.DEVICE", paddle.device("cpu"))
+    @unittest.mock.patch("deepmd.pd.utils.env.DEVICE", paddle.CPUPlace())
+    @unittest.mock.patch("deepmd.pd.infer.deep_eval.DEVICE", paddle.CPUPlace())
     def test_dp_test_cpu(self) -> None:
         self.test_dp_test()
