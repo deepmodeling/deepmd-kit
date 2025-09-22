@@ -238,6 +238,9 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.a_rcut_smth = float(a_rcut_smth)
         self.a_sel = a_sel
         self.ntypes = ntypes
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
         self.nlayers = nlayers
         # for other common desciptor method
         sel = [e_sel] if isinstance(e_sel, int) else e_sel
@@ -375,7 +378,7 @@ class DescrptBlockRepflows(DescriptorBlock):
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.ntypes
+        return self.ntypes if paddle.in_dynamic_mode() else self.buffer_ntypes
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""

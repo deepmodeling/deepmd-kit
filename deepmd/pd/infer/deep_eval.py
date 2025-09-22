@@ -145,13 +145,15 @@ class DeepEval(DeepEvalBackend):
             self.dp = ModelWrapper(model)
             self.dp.set_state_dict(state_dict)
             self.rcut = self.dp.model["Default"].get_rcut()
-            self.type_map = self.dp.model["Default"].get_type_map()
+            self.type_map: list[str] = self.dp.model["Default"].get_type_map()
             self.dp.eval()
             self.static_model = False
         elif str(self.model_path).endswith(".json"):
             self.dp = paddle.jit.load(self.model_path.split(".json")[0])
             self.rcut = self.dp.get_rcut().item()
-            self.type_map = self.dp.get_type_map()
+            self.type_map: list[str] = "".join(
+                [chr(x) for x in self.dp.get_type_map().numpy()]
+            ).split(" ")
             config = paddle_inference.Config(
                 self.model_path, self.model_path.replace(".json", ".pdiparams")
             )

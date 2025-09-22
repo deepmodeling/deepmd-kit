@@ -52,4 +52,7 @@ class BaseModel(paddle.nn.Layer, make_base_model()):
 
     def get_ntypes(self):
         """Returns the number of element types."""
-        return len(self.get_type_map())
+        if paddle.in_dynamic_mode():
+            return len(self.get_type_map())
+        else:
+            return self.get_ntypes()

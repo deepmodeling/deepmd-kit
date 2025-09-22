@@ -343,7 +343,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         """Get the name to each type of atoms."""
         if paddle.in_dynamic_mode():
             return self.type_map
-        return "".join([chr(x) for x in self.buffer_type_map.numpy()]).split(" ")
+        return self.buffer_type_map
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""

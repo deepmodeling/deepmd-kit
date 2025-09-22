@@ -141,7 +141,7 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         """Get the name to each type of atoms."""
         if paddle.in_dynamic_mode():
             return self.type_map
-        return "".join([chr(x) for x in self.buffer_type_map.numpy()]).split(" ")
+        return self.buffer_type_map
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
@@ -456,6 +456,9 @@ class DescrptBlockSeA(DescriptorBlock):
         self.resnet_dt = resnet_dt
         self.env_protection = env_protection
         self.ntypes = len(sel)
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
         self.type_one_side = type_one_side
         self.seed = seed
         # order matters, placed after the assignment of self.ntypes
@@ -534,7 +537,7 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.ntypes
+        return self.ntypes if paddle.in_dynamic_mode() else self.buffer_ntypes
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""

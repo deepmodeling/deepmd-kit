@@ -321,6 +321,9 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         self.rcut = self.repinit.get_rcut()
         self.rcut_smth = self.repinit.get_rcut_smth()
         self.ntypes = ntypes
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
         self.sel = self.repinit.sel
         # set trainable
         for param in self.parameters():
@@ -349,7 +352,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.ntypes
+        return self.ntypes if paddle.in_dynamic_mode() else self.buffer_ntypes
 
     def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""

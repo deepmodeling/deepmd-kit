@@ -187,6 +187,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
             sel = [sel]
 
         self.ntypes = ntypes
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
+
         self.sel = sel
         self.sec = self.sel
         self.split_sel = self.sel
@@ -294,7 +298,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.ntypes
+        return self.ntypes if paddle.in_dynamic_mode() else self.buffer_ntypes
 
     def get_dim_in(self) -> int:
         """Returns the input dimension."""

@@ -87,6 +87,10 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         self.register_buffer(
             "buffer_type_map", paddle.to_tensor([ord(c) for c in type_map])
         )
+        self.ntypes = len(self.type_map)
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
         self.reinit_atom_exclude(atom_exclude_types)
         self.reinit_pair_exclude(pair_exclude_types)
         self.rcond = rcond
@@ -95,7 +99,6 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def init_out_stat(self) -> None:
         """Initialize the output bias."""
-        ntypes = self.get_ntypes()
         self.bias_keys: list[str] = list(self.fitting_output_def().keys())
         self.max_out_size = max(
             [self.atomic_output_def()[kk].size for kk in self.bias_keys]
@@ -127,9 +130,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def get_type_map(self) -> list[str]:
         """Get the type map."""
-        if paddle.in_dynamic_mode():
-            return self.type_map
-        return "".join([chr(x) for x in self.buffer_type_map.numpy()]).split(" ")
+        return self.type_map
 
     def get_compute_stats_distinguish_types(self) -> bool:
         """Get whether the fitting net computes stats which are not distinguished between different types of atoms."""
@@ -576,6 +577,11 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
             out_std_data[idx, :, :size] = out_std[kk].reshape([ntypes, size])
         paddle.assign(out_bias_data, self.out_bias)
         paddle.assign(out_std_data, self.out_std)
+
+    def get_ntypes(self):
+        if paddle.in_dynamic_mode():
+            return len(self.type_map)
+        return self.buffer_ntypes
 
     def _fetch_out_stat(
         self,
