@@ -69,7 +69,7 @@ The loss section is provided as follows
     },
 ```
 
-so that the atomic dipole is trained as labels. Note that the NumPy compressed file `atomic_dipole.npy` should be provided in each dataset.
+so that the atomic dipole is trained as labels. Note that the NumPy compressed file `atomic_dipole.npy` should be provided in each dataset. In the context of DPLR models, the atomic dipole data represents the displacement vector from each atom to its associated Wannier centroid (WC), which can be calculated as `atomic_dipole = wannier_centroid_position - atom_position` from DFT calculations using tools such as VASP with Wannier90.
 
 The training and freezing can be started from the example directory by
 
