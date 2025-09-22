@@ -178,7 +178,7 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         self.type_map = type_map
         self.register_buffer(
             "buffer_type_map",
-            paddle.to_tensor([ord(c) for c in self.type_map if c != " "]),
+            paddle.to_tensor([ord(c) for c in self.type_map]),
         )
         self.tebd_dim = self.repflow_args.n_dim
         self.type_embedding = TypeEmbedNet(
@@ -247,7 +247,7 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         """Get the name to each type of atoms."""
         if paddle.in_dynamic_mode():
             return self.type_map
-        return self.buffer_type_map
+        return [chr(x) for x in self.buffer_type_map.numpy() if x != ord(" ")]
 
     def get_dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""

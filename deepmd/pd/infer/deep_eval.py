@@ -10,6 +10,7 @@ from typing import (
 
 import numpy as np
 import paddle
+from paddle import inference as paddle_inference
 
 from deepmd.dpmodel.common import PRECISION_DICT as NP_PRECISION_DICT
 from deepmd.dpmodel.output_def import (
@@ -150,13 +151,10 @@ class DeepEval(DeepEvalBackend):
         elif str(self.model_path).endswith(".json"):
             self.dp = paddle.jit.load(self.model_path.split(".json")[0])
             self.rcut = self.dp.get_rcut().item()
-            self.type_map = [chr(i) for i in self.dp.get_type_map().numpy()]
-
-            from paddle import inference as paddle_inference
-
-            json_path = self.model_path
-            pdiparams_path = self.model_path.replace(".json", ".pdiparams")
-            config = paddle_inference.Config(json_path, pdiparams_path)
+            self.type_map = self.dp.get_type_map()
+            config = paddle_inference.Config(
+                self.model_path, self.model_path.replace(".json", ".pdiparams")
+            )
             config.enable_custom_passes(
                 ["add_shadow_output_after_dead_parameter_pass"], True
             )

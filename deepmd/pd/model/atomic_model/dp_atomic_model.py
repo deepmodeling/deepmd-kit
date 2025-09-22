@@ -67,8 +67,8 @@ class DPAtomicModel(BaseAtomicModel):
         self.eval_fitting_last_layer_list = []
 
         # register 'type_map' as buffer
-        def _string_to_array(s: str) -> list[int]:
-            return [ord(c) for c in s if c != " "]
+        def _string_to_array(s: str | list[str]) -> list[int]:
+            return [ord(c) for c in s]
 
         self.register_buffer(
             "buffer_type_map",

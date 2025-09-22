@@ -85,7 +85,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         BaseAtomicModel_.__init__(self)
         self.type_map = type_map
         self.register_buffer(
-            "buffer_type_map", paddle.to_tensor([ord(c) for c in type_map if c != " "])
+            "buffer_type_map", paddle.to_tensor([ord(c) for c in type_map])
         )
         self.reinit_atom_exclude(atom_exclude_types)
         self.reinit_pair_exclude(pair_exclude_types)
@@ -129,7 +129,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         """Get the type map."""
         if paddle.in_dynamic_mode():
             return self.type_map
-        return self.buffer_type_map
+        return [chr(x) for x in self.buffer_type_map.numpy() if x != ord(" ")]
 
     def get_compute_stats_distinguish_types(self) -> bool:
         """Get whether the fitting net computes stats which are not distinguished between different types of atoms."""
