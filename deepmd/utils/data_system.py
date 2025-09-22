@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import collections
+import itertools
 import logging
 import os
 import warnings
@@ -864,7 +865,11 @@ def process_systems(
             systems = rglob_sys_str(systems, patterns)
     elif isinstance(systems, list):
         # Process each system individually and flatten results
-        systems = sum([_process_single_system(system) for system in systems], [])
+        systems = list(
+            itertools.chain.from_iterable(
+                _process_single_system(system) for system in systems
+            )
+        )
     return systems
 
 
