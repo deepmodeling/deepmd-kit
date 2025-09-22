@@ -213,11 +213,15 @@ class DeepEval(DeepEvalBackend):
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this DP."""
-        return 0
+        if self.static_model:
+            return self.dp.get_dim_fparam()
+        return self.dp.model["Default"].get_dim_fparam()
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
-        return 0
+        if self.static_model:
+            return self.dp.get_dim_aparam()
+        return self.dp.model["Default"].get_dim_aparam()
 
     def has_default_fparam(self) -> bool:
         """Check if the model has default frame parameters."""

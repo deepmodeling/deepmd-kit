@@ -248,7 +248,13 @@ class GeneralFitting(Fitting):
         self.mixed_types = mixed_types
         self.resnet_dt = resnet_dt
         self.numb_fparam = numb_fparam
+        self.register_buffer(
+            "buffer_numb_fparam", paddle.to_tensor([numb_fparam], dtype=paddle.int64)
+        )
         self.numb_aparam = numb_aparam
+        self.register_buffer(
+            "buffer_numb_aparam", paddle.to_tensor([numb_aparam], dtype=paddle.int64)
+        )
         self.dim_case_embd = dim_case_embd
         self.default_fparam = default_fparam
         self.activation_function = activation_function
@@ -433,11 +439,15 @@ class GeneralFitting(Fitting):
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
-        return self.numb_fparam
+        if paddle.in_dynamic_mode():
+            return self.numb_fparam
+        return self.buffer_numb_fparam
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
-        return self.numb_aparam
+        if paddle.in_dynamic_mode():
+            return self.numb_aparam
+        return self.buffer_numb_aparam
 
     # make jit happy
     exclude_types: list[int]
