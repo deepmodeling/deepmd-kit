@@ -165,6 +165,9 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
         self.prec = PRECISION_DICT[precision]
         self.use_econf_tebd = use_econf_tebd
         self.type_map = type_map
+        self.register_buffer(
+            "buffer_type_map", paddle.to_tensor([ord(c) for c in type_map])
+        )
         self.smooth = smooth
         self.type_embedding = TypeEmbedNet(
             ntypes,
@@ -206,7 +209,9 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
 
     def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
-        return self.type_map
+        if paddle.in_dynamic_mode():
+            return self.type_map
+        return "".join([chr(x) for x in self.buffer_type_map.numpy()]).split(" ")
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""

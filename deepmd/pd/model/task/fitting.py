@@ -470,7 +470,7 @@ class GeneralFitting(Fitting):
         """Get the name to each type of atoms."""
         if paddle.in_dynamic_mode():
             return self.type_map
-        return [chr(x) for x in self.buffer_type_map.numpy() if x != ord(" ")]
+        return "".join([chr(x) for x in self.buffer_type_map.numpy()]).split(" ")
 
     def set_case_embd(self, case_idx: int):
         """

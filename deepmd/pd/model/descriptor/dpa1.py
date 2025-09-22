@@ -297,6 +297,9 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
+        self.register_buffer(
+            "buffer_type_map", paddle.to_tensor([ord(c) for c in type_map])
+        )
         self.compress = False
         self.type_embedding = TypeEmbedNet(
             ntypes,
@@ -338,7 +341,9 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
 
     def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
-        return self.type_map
+        if paddle.in_dynamic_mode():
+            return self.type_map
+        return "".join([chr(x) for x in self.buffer_type_map.numpy()]).split(" ")
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
