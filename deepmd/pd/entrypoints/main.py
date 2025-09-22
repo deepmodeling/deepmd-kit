@@ -342,6 +342,7 @@ def freeze(
     model: str,
     output: str = "frozen_model.json",
     head: Optional[str] = None,
+    do_atomic_virial: bool = False,
 ) -> None:
     paddle.set_flags(
         {
@@ -374,7 +375,7 @@ def freeze(
                 None,  # fparam
                 None,  # aparam
                 # InputSpec([], dtype="bool", name="do_atomic_virial"),  # do_atomic_virial
-                False,  # do_atomic_virial
+                do_atomic_virial,  # do_atomic_virial
             ],
             full_graph=True,
         )
@@ -390,13 +391,13 @@ def freeze(
             model.forward_lower,
             input_spec=[
                 InputSpec([-1, -1, 3], dtype="float64", name="coord"),  # extended_coord
-                InputSpec([-1, -1], dtype="int32", name="atype"),  # extended_atype
+                InputSpec([-1, -1], dtype="int64", name="atype"),  # extended_atype
                 InputSpec([-1, -1, -1], dtype="int32", name="nlist"),  # nlist
                 InputSpec([-1, -1], dtype="int64", name="mapping"),  # mapping
                 None,  # fparam
                 None,  # aparam
                 # InputSpec([], dtype="bool", name="do_atomic_virial"),  # do_atomic_virial
-                False,  # do_atomic_virial
+                do_atomic_virial,  # do_atomic_virial
                 (
                     InputSpec([-1], "int64", name="send_list"),
                     InputSpec([-1], "int32", name="send_proc"),

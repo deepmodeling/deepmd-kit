@@ -438,7 +438,9 @@ class DescrptBlockSeA(DescriptorBlock):
         """
         super().__init__()
         self.rcut = float(rcut)
+        self.register_buffer("buffer_rcut", paddle.to_tensor(self.rcut))
         self.rcut_smth = float(rcut_smth)
+        self.register_buffer("buffer_rcut_smth", paddle.to_tensor(self.rcut_smth))
         self.neuron = neuron
         self.filter_neuron = self.neuron
         self.axis_neuron = axis_neuron
@@ -507,11 +509,15 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
-        return self.rcut
+        if paddle.in_dynamic_mode():
+            return self.rcut
+        return self.buffer_rcut
 
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
-        return self.rcut_smth
+        if paddle.in_dynamic_mode():
+            return self.rcut_smth
+        return self.buffer_rcut_smth
 
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""

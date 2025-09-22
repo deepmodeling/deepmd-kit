@@ -326,11 +326,15 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
-        return self.rcut
+        if paddle.in_dynamic_mode():
+            return self.rcut
+        return self.repinit.get_rcut()
 
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
-        return self.rcut_smth
+        if paddle.in_dynamic_mode():
+            return self.rcut_smth
+        return self.repinit.get_rcut_smth()
 
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""

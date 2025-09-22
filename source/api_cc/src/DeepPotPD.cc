@@ -419,7 +419,6 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
       } else {
         sendnum_tensor->CopyFromCpu(lmp_list.sendnum);
       }
-
       communicator_tensor->Reshape({1});
       if (lmp_list.world) {
         communicator_tensor->CopyFromCpu(static_cast<int*>(lmp_list.world));
