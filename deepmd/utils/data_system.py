@@ -786,6 +786,56 @@ def prob_sys_size_ext(keywords: str, nsystems: int, nbatch: int) -> list[float]:
     return sys_probs
 
 
+def _process_single_system(system: str) -> list[str]:
+    """Process a single system string and return list of systems.
+
+    Parameters
+    ----------
+    system : str
+        A single system path
+
+    Returns
+    -------
+    list[str]
+        List of processed system paths
+    """
+    # Check if this is an HDF5 file without explicit system specification
+    if _is_hdf5_file(system) and "#" not in system:
+        try:
+            with h5py.File(system, "r") as file:
+                # Check if this looks like a single system (has type.raw and set.* groups at root)
+                has_type_raw = "type.raw" in file
+                has_sets = any(key.startswith("set.") for key in file.keys())
+
+                if has_type_raw and has_sets:
+                    # This is a single system HDF5 file, don't expand
+                    return [system]
+
+                # Look for system-like groups and expand them
+                expanded = []
+                for key in file.keys():
+                    if isinstance(file[key], h5py.Group):
+                        # Check if this group looks like a system
+                        group = file[key]
+                        group_has_type = "type.raw" in group
+                        group_has_sets = any(
+                            subkey.startswith("set.") for subkey in group.keys()
+                        )
+                        if group_has_type and group_has_sets:
+                            expanded.append(f"{system}#/{key}")
+
+                # If we found system-like groups, return them; otherwise treat as regular system
+                return expanded if expanded else [system]
+
+        except OSError as e:
+            log.warning(f"Could not read HDF5 file {system}: {e}")
+            # If we can't read as HDF5, treat as regular system
+            return [system]
+    else:
+        # Regular system or HDF5 with explicit system specification
+        return [system]
+
+
 def process_systems(
     systems: Union[str, list[str]], patterns: Optional[list[str]] = None
 ) -> list[str]:
@@ -813,37 +863,8 @@ def process_systems(
         else:
             systems = rglob_sys_str(systems, patterns)
     elif isinstance(systems, list):
-        expanded_systems = []
-        for system in systems:
-            # Check if this is an HDF5 file without explicit system specification
-            if _is_hdf5_file(system) and "#" not in system:
-                # Only expand if it's a multisystem HDF5 file
-                if _is_hdf5_multisystem(system):
-                    # Expand HDF5 file to include all systems within it
-                    try:
-                        with h5py.File(system, "r") as file:
-                            for key in file.keys():
-                                if isinstance(file[key], h5py.Group):
-                                    # Check if this group looks like a system
-                                    group = file[key]
-                                    group_has_type = "type.raw" in group
-                                    group_has_sets = any(
-                                        subkey.startswith("set.")
-                                        for subkey in group.keys()
-                                    )
-                                    if group_has_type and group_has_sets:
-                                        expanded_systems.append(f"{system}#{key}")
-                    except OSError as e:
-                        log.warning(f"Could not read HDF5 file {system}: {e}")
-                        # If we can't read as HDF5, treat as regular system
-                        expanded_systems.append(system)
-                else:
-                    # Single system HDF5 file, don't expand
-                    expanded_systems.append(system)
-            else:
-                # Regular system or HDF5 with explicit system specification
-                expanded_systems.append(system)
-        systems = expanded_systems
+        # Process each system individually and flatten results
+        systems = sum([_process_single_system(system) for system in systems], [])
     return systems
 
 

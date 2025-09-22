@@ -13,7 +13,6 @@ from threading import (
     Thread,
 )
 
-import h5py
 import numpy as np
 import paddle
 import paddle.distributed as dist
@@ -90,23 +89,12 @@ class DpLoaderSet(Dataset):
     ):
         if seed is not None:
             setup_seed(seed)
-        if isinstance(systems, str):
-            # Check if this is a multisystem HDF5 file that should be expanded
-            try:
-                with h5py.File(systems, "r") as file:
-                    # Check if this looks like a single system (has type.raw and set.* groups)
-                    has_type_raw = "type.raw" in file
-                    has_sets = any(key.startswith("set.") for key in file.keys())
+        # Use process_systems to handle HDF5 expansion and other system processing
+        from deepmd.utils.data_system import (
+            process_systems,
+        )
 
-                    if has_type_raw and has_sets:
-                        # This is a single system HDF5 file, don't expand
-                        systems = [systems]
-                    else:
-                        # This might be a multisystem file, expand it
-                        systems = [f"{systems}#{item}" for item in file.keys()]
-            except OSError:
-                # If we can't read as HDF5, treat as regular path
-                systems = [systems]
+        systems = process_systems(systems)
 
         self.systems: list[DeepmdDataSetForLoader] = []
         if len(systems) >= 100:

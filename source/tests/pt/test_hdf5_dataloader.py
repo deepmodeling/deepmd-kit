@@ -110,9 +110,10 @@ class TestHDF5DataloaderSupport(unittest.TestCase):
 
             # Should create one system without expansion
             self.assertEqual(len(loader.systems), 1)
-            # The system path should be the original file, not expanded
+            # The system path should be the HDF5 file with #/ suffix (standard HDF5 format)
             system_path = loader.systems[0].system
-            self.assertEqual(system_path, h5_file)
+            self.assertTrue(system_path.startswith(h5_file))
+            self.assertTrue(system_path.endswith("#/"))
 
         except Exception as e:
             # If there are issues with the actual data loading, that's ok
@@ -137,7 +138,7 @@ class TestHDF5DataloaderSupport(unittest.TestCase):
 
             # Check that the systems have correct expanded paths
             system_paths = [sys.system for sys in loader.systems]
-            expected_paths = [f"{h5_file}#sys1", f"{h5_file}#sys2"]
+            expected_paths = [f"{h5_file}#/sys1", f"{h5_file}#/sys2"]
 
             for expected in expected_paths:
                 self.assertIn(expected, system_paths)

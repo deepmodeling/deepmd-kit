@@ -81,10 +81,10 @@ class TestProcessSystems(unittest.TestCase):
 
         # Should expand to 4 systems total
         expected_systems = [
-            f"{h5_file1}#sys_a",
-            f"{h5_file1}#sys_b",
-            f"{h5_file2}#water",
-            f"{h5_file2}#ice",
+            f"{h5_file1}#/sys_a",
+            f"{h5_file1}#/sys_b",
+            f"{h5_file2}#/water",
+            f"{h5_file2}#/ice",
         ]
 
         self.assertEqual(len(result), 4)
@@ -100,7 +100,7 @@ class TestProcessSystems(unittest.TestCase):
         result = process_systems(input_systems)
 
         # Should expand HDF5 but keep regular directory as-is
-        expected_systems = [f"{h5_file}#system1", f"{h5_file}#system2", regular_dir]
+        expected_systems = [f"{h5_file}#/system1", f"{h5_file}#/system2", regular_dir]
 
         self.assertEqual(len(result), 3)
         for expected in expected_systems:
@@ -111,11 +111,11 @@ class TestProcessSystems(unittest.TestCase):
         h5_file = self._create_hdf5_file("explicit.h5", ["sys1", "sys2"])
 
         # Use explicit system specification with #
-        input_systems = [f"{h5_file}#sys1"]
+        input_systems = [f"{h5_file}#/sys1"]
         result = process_systems(input_systems)
 
         # Should not expand, keep as explicit
-        self.assertEqual(result, [f"{h5_file}#sys1"])
+        self.assertEqual(result, [f"{h5_file}#/sys1"])
 
     def test_regular_list_unchanged(self) -> None:
         """Test that lists without HDF5 files are unchanged."""
@@ -206,7 +206,7 @@ class TestProcessSystems(unittest.TestCase):
 
         # Test with HDF5 path containing #
         h5_file = self._create_hdf5_file("test.h5", ["sys1"])
-        self.assertTrue(_is_hdf5_file(f"{h5_file}#sys1"))
+        self.assertTrue(_is_hdf5_file(f"{h5_file}#/sys1"))
 
     def test_is_hdf5_format_edge_cases(self) -> None:
         """Test edge cases for _is_hdf5_format function."""
@@ -319,7 +319,7 @@ class TestProcessSystems(unittest.TestCase):
         result = process_systems(input_systems)
 
         # Should expand to include only valid systems
-        expected = [f"{mixed_h5}#water_system", f"{mixed_h5}#ice_system"]
+        expected = [f"{mixed_h5}#/water_system", f"{mixed_h5}#/ice_system"]
         self.assertEqual(len(result), 2)
         for expected_sys in expected:
             self.assertIn(expected_sys, result)
