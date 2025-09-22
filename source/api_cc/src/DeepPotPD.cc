@@ -383,10 +383,9 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   auto coord_wrapped_Tensor = predictor_fl->GetInputHandle("coord");
   coord_wrapped_Tensor->Reshape({1, nall_real, 3});
   coord_wrapped_Tensor->CopyFromCpu(coord_wrapped.data());
-  std::vector<std::int64_t> atype_64(datype.begin(), datype.end());
   auto atype_Tensor = predictor_fl->GetInputHandle("atype");
   atype_Tensor->Reshape({1, nall_real});
-  atype_Tensor->CopyFromCpu(atype_64.data());
+  atype_Tensor->CopyFromCpu(datype.data());
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list, nall - nghost);
     nlist_data.shuffle_exclude_empty(fwd_map);
@@ -564,10 +563,9 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   coord_wrapped_Tensor->Reshape({1, natoms, 3});
   coord_wrapped_Tensor->CopyFromCpu(coord_wrapped.data());
 
-  std::vector<std::int64_t> atype_64(atype.begin(), atype.end());
   auto atype_Tensor = predictor->GetInputHandle("atype");
   atype_Tensor->Reshape({1, natoms});
-  atype_Tensor->CopyFromCpu(atype_64.data());
+  atype_Tensor->CopyFromCpu(atype.data());
 
   std::unique_ptr<paddle_infer::Tensor> box_Tensor;
   if (!box.empty()) {

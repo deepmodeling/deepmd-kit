@@ -7,6 +7,8 @@ See [Environment variables](../env.md) for the runtime environment variables.
 
 Deep potential can be set up as a calculator with ASE to obtain potential energies and forces.
 
+::::{tab-set}
+
 :::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 ```python
@@ -90,3 +92,5 @@ print(water.get_positions())
 ```
 
 :::
+
+::::
