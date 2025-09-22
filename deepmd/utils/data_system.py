@@ -808,8 +808,8 @@ def _process_single_system(system: str) -> list[str]:
                 has_sets = any(key.startswith("set.") for key in file.keys())
 
                 if has_type_raw and has_sets:
-                    # This is a single system HDF5 file, don't expand
-                    return [system]
+                    # This is a single system HDF5 file, use standard HDF5 format
+                    return [f"{system}#/"]
 
                 # Look for system-like groups and expand them
                 expanded = []

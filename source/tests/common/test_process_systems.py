@@ -141,8 +141,8 @@ class TestProcessSystems(unittest.TestCase):
         # Should treat as regular system since it can't be read as HDF5
         self.assertEqual(result, [fake_h5])
 
-    def test_single_system_hdf5_not_expanded(self) -> None:
-        """Test that single-system HDF5 files are not expanded."""
+    def test_single_system_hdf5_standard_format(self) -> None:
+        """Test that single-system HDF5 files use standard HDF5 format."""
         # Create an HDF5 file that looks like a single system (has type.raw and set.* at root)
         h5_file = os.path.join(self.temp_dir, "single_system.h5")
 
@@ -172,8 +172,8 @@ class TestProcessSystems(unittest.TestCase):
         input_systems = [h5_file]
         result = process_systems(input_systems)
 
-        # Should NOT expand single-system HDF5 file
-        self.assertEqual(result, [h5_file])
+        # Should use standard HDF5 format for single-system files
+        self.assertEqual(result, [f"{h5_file}#/"])
 
     def test_backward_compatibility(self) -> None:
         """Test that existing functionality is preserved."""
