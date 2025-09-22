@@ -2,7 +2,6 @@
 
 :::{note}
 See [Environment variables](../env.md) for the runtime environment variables.
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
 :::
 
 Deep potential can be set up as a calculator with ASE to obtain potential energies and forces.
@@ -25,16 +24,6 @@ print(water.get_potential_energy())
 print(water.get_forces())
 ```
 
-Optimization is also available:
-
-```python
-from ase.optimize import BFGS
-
-dyn = BFGS(water)
-dyn.run(fmax=1e-6)
-print(water.get_positions())
-```
-
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
@@ -51,16 +40,6 @@ water = Atoms(
 )
 print(water.get_potential_energy())
 print(water.get_forces())
-```
-
-Optimization is also available:
-
-```python
-from ase.optimize import BFGS
-
-dyn = BFGS(water)
-dyn.run(fmax=1e-6)
-print(water.get_positions())
 ```
 
 :::
@@ -81,6 +60,10 @@ print(water.get_potential_energy())
 print(water.get_forces())
 ```
 
+:::
+
+::::
+
 Optimization is also available:
 
 ```python
@@ -90,7 +73,3 @@ dyn = BFGS(water)
 dyn.run(fmax=1e-6)
 print(water.get_positions())
 ```
-
-:::
-
-::::

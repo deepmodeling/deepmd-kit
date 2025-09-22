@@ -196,7 +196,7 @@ class DeepEval(DeepEvalBackend):
             else False
         )
         if callable(self._has_spin):
-            self._has_spin = self._has_spin()
+            setattr(self, "_has_spin", self._has_spin())
         self._has_hessian = False
 
     def get_rcut(self) -> float:
@@ -495,10 +495,14 @@ class DeepEval(DeepEvalBackend):
                 self.box_handle.copy_from_cpu(cells.reshape([nframes, 3, 3]))
 
             if fparam is not None:
-                raise NotImplementedError("fparam_input is not supported yet")
+                raise NotImplementedError(
+                    "fparam_input is not supported for .json files. Please use a .pd file instead."
+                )
 
             if aparam is not None:
-                raise NotImplementedError("aparam_input is not supported yet")
+                raise NotImplementedError(
+                    "aparam_input is not supported for .json files. Please use a .pd file instead."
+                )
 
         else:
             coord_input = paddle.to_tensor(
