@@ -553,6 +553,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             """Get the type map."""
             return self.atomic_model.get_type_map()
 
+        def get_buffer_rcut(self) -> paddle.Tensor:
+            """Get the cut-off radius."""
+            return self.atomic_model.get_buffer_rcut()
+
+        def get_buffer_type_map(self) -> paddle.Tensor:
+            """Get the type map."""
+            return self.atomic_model.get_buffer_type_map()
+
         def get_nsel(self) -> int:
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return self.atomic_model.get_nsel()

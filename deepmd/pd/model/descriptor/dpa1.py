@@ -325,9 +325,17 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         """Returns the cut-off radius."""
         return self.se_atten.get_rcut()
 
+    def get_buffer_rcut(self) -> float:
+        """Returns the cut-off radius."""
+        return self.se_atten.get_buffer_rcut()
+
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.se_atten.get_rcut_smth()
+
+    def get_buffer_rcut_smth(self) -> float:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        return self.se_atten.get_buffer_rcut_smth()
 
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
@@ -343,8 +351,10 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
 
     def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
-        if paddle.in_dynamic_mode():
-            return self.type_map
+        return self.type_map
+
+    def get_buffer_type_map(self) -> paddle.Tensor:
+        """Get the name to each type of atoms."""
         return self.buffer_type_map
 
     def get_dim_out(self) -> int:

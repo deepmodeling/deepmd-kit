@@ -150,9 +150,9 @@ class DeepEval(DeepEvalBackend):
             self.static_model = False
         elif str(self.model_path).endswith(".json"):
             self.dp = paddle.jit.load(self.model_path.split(".json")[0])
-            self.rcut = self.dp.get_rcut().item()
+            self.rcut = self.dp.get_buffer_rcut().item()
             self.type_map: list[str] = "".join(
-                [chr(x) for x in self.dp.get_type_map().numpy()]
+                [chr(x) for x in self.dp.get_buffer_type_map().numpy()]
             ).split(" ")
             config = paddle_inference.Config(
                 self.model_path, self.model_path.replace(".json", ".pdiparams")
@@ -214,13 +214,13 @@ class DeepEval(DeepEvalBackend):
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this DP."""
         if self.static_model:
-            return self.dp.get_dim_fparam()
+            return self.dp.get_buffer_dim_fparam()
         return self.dp.model["Default"].get_dim_fparam()
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
         if self.static_model:
-            return self.dp.get_dim_aparam()
+            return self.dp.get_buffer_dim_aparam()
         return self.dp.model["Default"].get_dim_aparam()
 
     def has_default_fparam(self) -> bool:

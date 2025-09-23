@@ -34,6 +34,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         DPModelCommon.__init__(self)
         DPEnergyModel_.__init__(self, *args, **kwargs)
 
+    def get_buffer_type_map(self) -> paddle.Tensor:
+        """Get the type map buffer."""
+        return super().get_buffer_type_map()
+
     def translated_output_def(self):
         out_def_data = self.model_output_def().get_data()
         output_def = {

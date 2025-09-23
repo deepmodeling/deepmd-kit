@@ -134,6 +134,10 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         """Get the type map."""
         return self.type_map
 
+    def get_buffer_type_map(self) -> list[str]:
+        """Get the type map."""
+        return self.buffer_type_map
+
     def get_compute_stats_distinguish_types(self) -> bool:
         """Get whether the fitting net computes stats which are not distinguished between different types of atoms."""
         return True
@@ -581,8 +585,9 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         paddle.assign(out_std_data, self.out_std)
 
     def get_ntypes(self):
-        if paddle.in_dynamic_mode():
-            return len(self.type_map)
+        return len(self.type_map)
+
+    def get_buffer_ntypes(self):
         return self.buffer_ntypes
 
     def _fetch_out_stat(

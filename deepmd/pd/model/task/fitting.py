@@ -440,14 +440,18 @@ class GeneralFitting(Fitting):
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
-        if paddle.in_dynamic_mode():
-            return self.numb_fparam
-        return self.buffer_numb_fparam
+        return self.numb_fparam
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
-        if paddle.in_dynamic_mode():
-            return self.numb_aparam
+        return self.numb_aparam
+
+    def get_buffer_dim_fparam(self) -> int:
+        """Get the number (dimension) of frame parameters of this atomic model."""
+        return self.buffer_numb_fparam
+
+    def get_buffer_dim_aparam(self) -> int:
+        """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.buffer_numb_aparam
 
     # make jit happy
@@ -469,8 +473,10 @@ class GeneralFitting(Fitting):
 
     def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
-        if paddle.in_dynamic_mode():
-            return self.type_map
+        return self.type_map
+
+    def get_buffer_type_map(self) -> paddle.Tensor:
+        """Get the name to each type of atoms."""
         return self.buffer_type_map
 
     def set_case_embd(self, case_idx: int):

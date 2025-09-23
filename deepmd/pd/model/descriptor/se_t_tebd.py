@@ -211,8 +211,10 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
 
     def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
-        if paddle.in_dynamic_mode():
-            return self.type_map
+        return self.type_map
+
+    def get_buffer_type_map(self) -> paddle.Tensor:
+        """Get the name to each type of atoms."""
         return self.buffer_type_map
 
     def get_dim_out(self) -> int:
@@ -622,14 +624,18 @@ class DescrptBlockSeTTebd(DescriptorBlock):
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
-        if paddle.in_dynamic_mode():
-            return self.rcut
-        return self.buffer_rcut
+        return self.rcut
 
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
-        if paddle.in_dynamic_mode():
-            return self.rcut_smth
+        return self.rcut_smth
+
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Returns the cut-off radius."""
+        return self.buffer_rcut
+
+    def get_buffer_rcut_smth(self) -> paddle.Tensor:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.buffer_rcut_smth
 
     def get_nsel(self) -> int:

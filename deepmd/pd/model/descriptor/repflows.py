@@ -358,8 +358,10 @@ class DescrptBlockRepflows(DescriptorBlock):
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
-        if paddle.in_dynamic_mode():
-            return self.e_rcut
+        return self.e_rcut
+
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Returns the cut-off radius."""
         return self.buffer_rcut
 
     def get_rcut_smth(self) -> float:
@@ -372,8 +374,10 @@ class DescrptBlockRepflows(DescriptorBlock):
 
     def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
-        if paddle.in_dynamic_mode():
-            return self.sel
+        return self.sel
+
+    def get_buffer_sel(self) -> paddle.Tensor:
+        """Returns the number of selected atoms for each type."""
         return self.buffer_sel
 
     def get_ntypes(self) -> int:

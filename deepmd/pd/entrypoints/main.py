@@ -353,6 +353,12 @@ def freeze(
     )
     model = inference.Tester(model, head=head).model
     model.eval()
+    # print(model.get_buffer_rcut.__func__.__qualname__)
+    # print(model.get_buffer_rcut.__func__.__module__)
+    # print(model.get_buffer_rcut.__func__.__code__.co_filename)
+    # print(model.get_buffer_rcut.__func__.__code__.co_firstlineno)
+    # print(model.get_buffer_type_map())
+    # exit()
     from paddle.static import (
         InputSpec,
     )
@@ -411,14 +417,14 @@ def freeze(
             full_graph=True,
         )
     for method_name in [
-        "get_rcut",
-        "get_type_map",
-        "get_dim_fparam",
-        "get_dim_aparam",
-        "get_intensive",
-        "get_sel_type",
-        "get_numb_dos",
-        "get_task_dim",
+        "get_buffer_rcut",
+        "get_buffer_type_map",
+        "get_buffer_dim_fparam",
+        "get_buffer_dim_aparam",
+        "get_buffer_intensive",
+        "get_buffer_sel_type",
+        "get_buffer_numb_dos",
+        "get_buffer_task_dim",
     ]:
         if hasattr(model, method_name):
             setattr(

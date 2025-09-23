@@ -71,11 +71,14 @@ class DPAtomicModel(BaseAtomicModel):
         def _string_to_array(s: Union[str, list[str]]) -> list[int]:
             return [ord(c) for c in s]
 
-        self.register_buffer(
-            "buffer_type_map",
-            paddle.to_tensor(_string_to_array(" ".join(self.type_map)), dtype="int32"),
-        )
-        self.buffer_type_map.name = "buffer_type_map"
+        if type_map is not None:
+            self.register_buffer(
+                "buffer_type_map",
+                paddle.to_tensor(
+                    _string_to_array(" ".join(self.type_map)), dtype="int32"
+                ),
+            )
+            self.buffer_type_map.name = "buffer_type_map"
         if hasattr(self.descriptor, "has_message_passing"):
             # register 'has_message_passing' as buffer(cast to int32 as problems may meets with vector<bool>)
             self.register_buffer(
@@ -148,15 +151,23 @@ class DPAtomicModel(BaseAtomicModel):
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
-        if paddle.in_dynamic_mode():
-            return self.rcut
-        return self.descriptor.get_rcut()
+        return self.rcut
 
     def get_sel(self) -> list[int]:
         """Get the neighbor selection."""
-        if paddle.in_dynamic_mode():
-            return self.sel
-        return self.descriptor.get_sel()
+        return self.sel
+
+    def get_buffer_type_map(self) -> paddle.Tensor:
+        """Get the neighbor selection."""
+        return self.buffer_type_map
+
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Get the cut-off radius."""
+        return self.descriptor.get_buffer_rcut()
+
+    def get_buffer_sel(self) -> paddle.Tensor:
+        """Get the neighbor selection."""
+        return self.descriptor.get_buffer_sel()
 
     def set_case_embd(self, case_idx: int):
         """

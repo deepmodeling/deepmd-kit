@@ -334,15 +334,19 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
-        if paddle.in_dynamic_mode():
-            return self.rcut
-        return self.repinit.get_rcut()
+        return self.rcut
 
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
-        if paddle.in_dynamic_mode():
-            return self.rcut_smth
-        return self.repinit.get_rcut_smth()
+        return self.rcut_smth
+
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Returns the cut-off radius."""
+        return self.repinit.get_buffer_rcut()
+
+    def get_buffer_rcut_smth(self) -> paddle.Tensor:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        return self.repinit.get_buffer_rcut_smth()
 
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
@@ -780,7 +784,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             type_embedding = None
         g1, _, _, _, _ = self.repinit(
             nlist_dict[
-                get_multiple_nlist_key(self.repinit.get_rcut(), self.repinit.get_nsel())
+                get_multiple_nlist_key(self.repinit.rcut, sum(self.repinit.sel))
             ],
             extended_coord,
             extended_atype,
