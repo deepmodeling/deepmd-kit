@@ -3,6 +3,7 @@ import functools
 import logging
 from typing import (
     Optional,
+    Union,
 )
 
 import paddle
@@ -67,7 +68,7 @@ class DPAtomicModel(BaseAtomicModel):
         self.eval_fitting_last_layer_list = []
 
         # register 'type_map' as buffer
-        def _string_to_array(s: str | list[str]) -> list[int]:
+        def _string_to_array(s: Union[str, list[str]]) -> list[int]:
             return [ord(c) for c in s]
 
         self.register_buffer(
