@@ -265,9 +265,11 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
-        self.register_buffer(
-            "buffer_type_map", paddle.to_tensor([ord(c) for c in type_map])
-        )
+        if type_map is not None:
+            self.register_buffer(
+                "buffer_type_map",
+                paddle.to_tensor([ord(c) for c in " ".join(type_map)]),
+            )
         self.type_embedding = TypeEmbedNet(
             ntypes,
             self.repinit_args.tebd_dim,

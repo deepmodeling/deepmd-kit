@@ -178,7 +178,7 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         self.type_map = type_map
         self.register_buffer(
             "buffer_type_map",
-            paddle.to_tensor([ord(c) for c in self.type_map]),
+            paddle.to_tensor([ord(c) for c in " ".join(self.type_map)]),
         )
         self.tebd_dim = self.repflow_args.n_dim
         self.type_embedding = TypeEmbedNet(

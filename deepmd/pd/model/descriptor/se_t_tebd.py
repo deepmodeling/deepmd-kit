@@ -165,9 +165,11 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
         self.prec = PRECISION_DICT[precision]
         self.use_econf_tebd = use_econf_tebd
         self.type_map = type_map
-        self.register_buffer(
-            "buffer_type_map", paddle.to_tensor([ord(c) for c in type_map])
-        )
+        if type_map is not None:
+            self.register_buffer(
+                "buffer_type_map",
+                paddle.to_tensor([ord(c) for c in " ".join(type_map)]),
+            )
         self.smooth = smooth
         self.type_embedding = TypeEmbedNet(
             ntypes,

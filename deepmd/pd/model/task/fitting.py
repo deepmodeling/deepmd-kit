@@ -263,10 +263,11 @@ class GeneralFitting(Fitting):
         self.rcond = rcond
         self.seed = seed
         self.type_map = type_map
-        self.register_buffer(
-            "buffer_type_map",
-            paddle.to_tensor([ord(c) for c in self.type_map]),
-        )
+        if type_map is not None:
+            self.register_buffer(
+                "buffer_type_map",
+                paddle.to_tensor([ord(c) for c in " ".join(self.type_map)]),
+            )
         self.use_aparam_as_mask = use_aparam_as_mask
         # order matters, should be place after the assignment of ntypes
         self.reinit_exclude(exclude_types)

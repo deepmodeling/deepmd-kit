@@ -84,9 +84,11 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         paddle.nn.Layer.__init__(self)
         BaseAtomicModel_.__init__(self)
         self.type_map = type_map
-        self.register_buffer(
-            "buffer_type_map", paddle.to_tensor([ord(c) for c in type_map])
-        )
+        if type_map is not None:
+            self.register_buffer(
+                "buffer_type_map",
+                paddle.to_tensor([ord(c) for c in " ".join(type_map)]),
+            )
         self.ntypes = len(self.type_map)
         self.register_buffer(
             "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
