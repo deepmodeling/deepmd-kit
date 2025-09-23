@@ -3,6 +3,9 @@ import logging
 from copy import (
     deepcopy,
 )
+from typing import (
+    Optional,
+)
 
 import paddle
 
@@ -23,9 +26,9 @@ log = logging.getLogger(__name__)
 class Tester:
     def __init__(
         self,
-        model_ckpt,
-        head=None,
-    ):
+        model_ckpt: str,
+        head: Optional[str] = None,
+    ) -> None:
         """Construct a DeePMD tester.
 
         Args:

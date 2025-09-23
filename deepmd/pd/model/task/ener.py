@@ -48,8 +48,8 @@ class EnergyFittingNet(InvarFitting):
         mixed_types: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
         type_map: Optional[list[str]] = None,
-        **kwargs,
-    ):
+        **kwargs: object,
+    ) -> None:
         super().__init__(
             "energy",
             ntypes,

@@ -2,6 +2,7 @@
 
 
 from typing import (
+    Any,
     Optional,
 )
 
@@ -16,7 +17,7 @@ from deepmd.utils.data import (
 
 
 class DeepmdDataSetForLoader(Dataset):
-    def __init__(self, system: str, type_map: Optional[list[str]] = None):
+    def __init__(self, system: str, type_map: Optional[list[str]] = None) -> None:
         """Construct DeePMD-style dataset containing frames cross different systems.
 
         Args:
@@ -31,16 +32,16 @@ class DeepmdDataSetForLoader(Dataset):
         self._natoms = self._data_system.get_natoms()
         self._natoms_vec = self._data_system.get_natoms_vec(self._ntypes)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self._data_system.nframes
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int) -> dict[str, Any]:
         """Get a frame from the selected system."""
         b_data = self._data_system.get_item_paddle(index)
         b_data["natoms"] = self._natoms_vec
         return b_data
 
-    def add_data_requirement(self, data_requirement: list[DataRequirementItem]):
+    def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
         """Add data requirement for this data system."""
         for data_item in data_requirement:
             self._data_system.add(

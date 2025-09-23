@@ -6,7 +6,7 @@ import paddle
 log = logging.getLogger(__name__)
 
 
-def compute_smooth_weight(distance, rmin: float, rmax: float):
+def compute_smooth_weight(distance: paddle.Tensor, rmin: float, rmax: float) -> paddle.Tensor:
     """Compute smooth weight for descriptor elements."""
     if rmin >= rmax:
         raise ValueError("rmin should be less than rmax.")
@@ -17,7 +17,7 @@ def compute_smooth_weight(distance, rmin: float, rmax: float):
     return vv
 
 
-def compute_exp_sw(distance, rmin: float, rmax: float):
+def compute_exp_sw(distance: paddle.Tensor, rmin: float, rmax: float) -> paddle.Tensor:
     """Compute the exponential switch function for neighbor update."""
     if rmin >= rmax:
         raise ValueError("rmin should be less than rmax.")
