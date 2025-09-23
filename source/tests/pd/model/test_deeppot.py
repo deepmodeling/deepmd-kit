@@ -42,7 +42,7 @@ class TestDeepPot(unittest.TestCase):
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
 
-        with paddle.device("cpu"):
+        with paddle.device.device_guard("cpu"):
             input_dict, label_dict, _ = trainer.get_data(is_train=False)
         trainer.wrapper(**input_dict, label=label_dict, cur_lr=1.0)
         self.model = "model.pd"
