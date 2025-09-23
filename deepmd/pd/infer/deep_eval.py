@@ -195,7 +195,7 @@ class DeepEval(DeepEvalBackend):
             if isinstance(self.dp, ModelWrapper)
             else False
         )
-        if callable(self._has_spin):
+        if callable(self._has_spin) and not isinstance(self._has_spin, bool):
             setattr(self, "_has_spin", self._has_spin())
         self._has_hessian = False
 
