@@ -7,6 +7,7 @@ from pathlib import (
     Path,
 )
 from typing import (
+    Any,
     Optional,
     Union,
 )
@@ -80,15 +81,15 @@ log = logging.getLogger(__name__)
 
 
 def get_trainer(
-    config,
-    init_model=None,
-    restart_model=None,
-    finetune_model=None,
-    force_load=False,
-    init_frz_model=None,
-    shared_links=None,
-    finetune_links=None,
-):
+    config: dict[str, Any],
+    init_model: Optional[str] = None,
+    restart_model: Optional[str] = None,
+    finetune_model: Optional[str] = None,
+    force_load: bool = False,
+    init_frz_model: Optional[str] = None,
+    shared_links: Optional[dict[str, Any]] = None,
+    finetune_links: Optional[dict[str, Any]] = None,
+) -> training.Trainer:
     multi_task = "model_dict" in config.get("model", {})
 
     # Initialize DDP
@@ -98,17 +99,22 @@ def get_trainer(
         fleet.init(is_collective=True)
 
     def prepare_trainer_input_single(
-        model_params_single, data_dict_single, rank=0, seed=None
-    ):
+        model_params_single: dict[str, Any],
+        data_dict_single: dict[str, Any],
+        rank: int = 0,
+        seed: Optional[int] = None,
+    ) -> tuple[DpLoaderSet, Optional[DpLoaderSet], Optional[DPPath]]:
         training_dataset_params = data_dict_single["training_data"]
         validation_dataset_params = data_dict_single.get("validation_data", None)
         validation_systems = (
             validation_dataset_params["systems"] if validation_dataset_params else None
         )
         training_systems = training_dataset_params["systems"]
-        training_systems = process_systems(training_systems)
+        trn_patterns = training_dataset_params.get("rglob_patterns", None)
+        training_systems = process_systems(training_systems, patterns=trn_patterns)
         if validation_systems is not None:
-            validation_systems = process_systems(validation_systems)
+            val_patterns = validation_dataset_params.get("rglob_patterns", None)
+            validation_systems = process_systems(validation_systems, val_patterns)
 
         # stat files
         stat_file_path_single = data_dict_single.get("stat_file", None)
@@ -353,12 +359,6 @@ def freeze(
     )
     model = inference.Tester(model, head=head).model
     model.eval()
-    # print(model.get_buffer_rcut.__func__.__qualname__)
-    # print(model.get_buffer_rcut.__func__.__module__)
-    # print(model.get_buffer_rcut.__func__.__code__.co_filename)
-    # print(model.get_buffer_rcut.__func__.__code__.co_firstlineno)
-    # print(model.get_buffer_type_map())
-    # exit()
     from paddle.static import (
         InputSpec,
     )

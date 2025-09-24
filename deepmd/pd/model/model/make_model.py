@@ -529,6 +529,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             """Get the number (dimension) of atomic parameters of this atomic model."""
             return self.atomic_model.get_dim_aparam()
 
+        def get_buffer_dim_fparam(self) -> paddle.Tensor:
+            """Get the number (dimension) of frame parameters of this atomic model."""
+            return self.atomic_model.get_buffer_dim_fparam()
+
+        def get_buffer_dim_aparam(self) -> paddle.Tensor:
+            """Get the number (dimension) of atomic parameters of this atomic model."""
+            return self.atomic_model.get_buffer_dim_aparam()
+
         def get_sel_type(self) -> list[int]:
             """Get the selected atom types of this model.
 

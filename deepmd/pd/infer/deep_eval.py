@@ -161,6 +161,7 @@ class DeepEval(DeepEvalBackend):
                 ["add_shadow_output_after_dead_parameter_pass"], True
             )
             config.enable_use_gpu(4096, 0)
+            config.disable_glog_info()
 
             self.predictor = paddle_inference.create_predictor(config)
             self.coord_handle = self.predictor.get_input_handle("coord")
@@ -195,8 +196,8 @@ class DeepEval(DeepEvalBackend):
             if isinstance(self.dp, ModelWrapper)
             else False
         )
-        if callable(self._has_spin) and not isinstance(self._has_spin, bool):
-            setattr(self, "_has_spin", self._has_spin())
+        if callable(self._has_spin):
+            self._has_spin = False
         self._has_hessian = False
 
     def get_rcut(self) -> float:
@@ -246,6 +247,8 @@ class DeepEval(DeepEvalBackend):
     @property
     def model_type(self) -> type["DeepEvalWrapper"]:
         """The the evaluator of the model type."""
+        if self.static_model:
+            return DeepPot
         model_output_type = self.dp.model["Default"].model_output_type()
         if "energy" in model_output_type:
             return DeepPot
