@@ -35,7 +35,7 @@ jobs:
         source/install/uv_with_retry.sh pip install --system -e .[test,jax] mpi4py "jax==0.5.0;python_version>='3.10'"
         source/install/uv_with_retry.sh pip install --system -U setuptools
         source/install/uv_with_retry.sh pip install --system horovod --no-build-isolation
-        source/install/uv_with_retry.sh pip install --system --pre "paddlepaddle==3.2.0" -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+        source/install/uv_with_retry.sh pip install --system --pre "paddlepaddle==3.1.1" -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
       env:
         # Please note that uv has some issues with finding
         # existing TensorFlow package. Currently, it uses
