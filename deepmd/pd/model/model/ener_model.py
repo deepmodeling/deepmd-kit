@@ -35,7 +35,15 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         DPEnergyModel_.__init__(self, *args, **kwargs)
 
     def get_buffer_type_map(self) -> paddle.Tensor:
-        """Get the type map buffer."""
+        """
+        Return the type map as a buffer-style Tensor for JIT saving.
+
+        The original type map (e.g., ['Ni', 'O']) is first joined into a single space-separated string
+        (e.g., "Ni O"). Each character in this string is then converted to its ASCII code using `ord()`,
+        and the resulting integer sequence is stored as a 1D paddle.Tensor of dtype int.
+
+        This format allows the type map to be serialized as a raw byte buffer during JIT model saving.
+        """
         return super().get_buffer_type_map()
 
     def translated_output_def(self):

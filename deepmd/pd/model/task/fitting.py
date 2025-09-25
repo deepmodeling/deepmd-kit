@@ -446,12 +446,12 @@ class GeneralFitting(Fitting):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.numb_aparam
 
-    def get_buffer_dim_fparam(self) -> int:
-        """Get the number (dimension) of frame parameters of this atomic model."""
+    def get_buffer_dim_fparam(self) -> paddle.Tensor:
+        """Get the number (dimension) of frame parameters of this atomic model as a buffer-style Tensor."""
         return self.buffer_numb_fparam
 
-    def get_buffer_dim_aparam(self) -> int:
-        """Get the number (dimension) of atomic parameters of this atomic model."""
+    def get_buffer_dim_aparam(self) -> paddle.Tensor:
+        """Get the number (dimension) of atomic parameters of this atomic model as a buffer-style Tensor."""
         return self.buffer_numb_aparam
 
     # make jit happy
@@ -476,7 +476,15 @@ class GeneralFitting(Fitting):
         return self.type_map
 
     def get_buffer_type_map(self) -> paddle.Tensor:
-        """Get the name to each type of atoms."""
+        """
+        Return the type map as a buffer-style Tensor for JIT saving.
+
+        The original type map (e.g., ['Ni', 'O']) is first joined into a single space-separated string
+        (e.g., "Ni O"). Each character in this string is then converted to its ASCII code using `ord()`,
+        and the resulting integer sequence is stored as a 1D paddle.Tensor of dtype int.
+
+        This format allows the type map to be serialized as a raw byte buffer during JIT model saving.
+        """
         return self.buffer_type_map
 
     def set_case_embd(self, case_idx: int):

@@ -345,7 +345,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         return self.repinit.get_buffer_rcut()
 
     def get_buffer_rcut_smth(self) -> paddle.Tensor:
-        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        """Returns the radius where the neighbor information starts to smoothly decay to 0 as a buffer-style Tensor."""
         return self.repinit.get_buffer_rcut_smth()
 
     def get_nsel(self) -> int:

@@ -361,7 +361,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         return self.e_rcut
 
     def get_buffer_rcut(self) -> paddle.Tensor:
-        """Returns the cut-off radius."""
+        """Returns the cut-off radius as a buffer-style Tensor."""
         return self.buffer_rcut
 
     def get_rcut_smth(self) -> float:
@@ -377,7 +377,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         return self.sel
 
     def get_buffer_sel(self) -> paddle.Tensor:
-        """Returns the number of selected atoms for each type."""
+        """Returns the number of selected atoms for each type as a buffer-style Tensor."""
         return self.buffer_sel
 
     def get_ntypes(self) -> int:

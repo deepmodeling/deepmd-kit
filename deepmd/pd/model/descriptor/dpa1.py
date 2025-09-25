@@ -325,16 +325,16 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         """Returns the cut-off radius."""
         return self.se_atten.get_rcut()
 
-    def get_buffer_rcut(self) -> float:
-        """Returns the cut-off radius."""
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Returns the cut-off radius as a buffer-style Tensor."""
         return self.se_atten.get_buffer_rcut()
 
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.se_atten.get_rcut_smth()
 
-    def get_buffer_rcut_smth(self) -> float:
-        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+    def get_buffer_rcut_smth(self) -> paddle.Tensor:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0 as a buffer-style Tensor."""
         return self.se_atten.get_buffer_rcut_smth()
 
     def get_nsel(self) -> int:
@@ -354,7 +354,15 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         return self.type_map
 
     def get_buffer_type_map(self) -> paddle.Tensor:
-        """Get the name to each type of atoms."""
+        """
+        Return the type map as a buffer-style Tensor for JIT saving.
+
+        The original type map (e.g., ['Ni', 'O']) is first joined into a single space-separated string
+        (e.g., "Ni O"). Each character in this string is then converted to its ASCII code using `ord()`,
+        and the resulting integer sequence is stored as a 1D paddle.Tensor of dtype int.
+
+        This format allows the type map to be serialized as a raw byte buffer during JIT model saving.
+        """
         return self.buffer_type_map
 
     def get_dim_out(self) -> int:

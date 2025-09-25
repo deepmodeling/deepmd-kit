@@ -134,8 +134,16 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         """Get the type map."""
         return self.type_map
 
-    def get_buffer_type_map(self) -> list[str]:
-        """Get the type map."""
+    def get_buffer_type_map(self) -> paddle.Tensor:
+        """
+        Return the type map as a buffer-style Tensor for JIT saving.
+
+        The original type map (e.g., ['Ni', 'O']) is first joined into a single space-separated string
+        (e.g., "Ni O"). Each character in this string is then converted to its ASCII code using `ord()`,
+        and the resulting integer sequence is stored as a 1D paddle.Tensor of dtype int.
+
+        This format allows the type map to be serialized as a raw byte buffer during JIT model saving.
+        """
         return self.buffer_type_map
 
     def get_compute_stats_distinguish_types(self) -> bool:
@@ -602,7 +610,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
     def get_ntypes(self):
         return len(self.type_map)
 
-    def get_buffer_ntypes(self):
+    def get_buffer_ntypes(self) -> paddle.Tensor:
         return self.buffer_ntypes
 
     def _fetch_out_stat(

@@ -285,11 +285,11 @@ class DescrptBlockSeAtten(DescriptorBlock):
         return self.rcut_smth
 
     def get_buffer_rcut(self) -> paddle.Tensor:
-        """Returns the cut-off radius."""
+        """Returns the cut-off radius as a buffer-style Tensor."""
         return self.buffer_rcut
 
     def get_buffer_rcut_smth(self) -> paddle.Tensor:
-        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        """Returns the radius where the neighbor information starts to smoothly decay to 0 as a buffer-style Tensor."""
         return self.buffer_rcut_smth
 
     def get_nsel(self) -> int:
