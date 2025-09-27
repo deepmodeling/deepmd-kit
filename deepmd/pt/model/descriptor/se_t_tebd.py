@@ -695,31 +695,11 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         # compression related variables
         self.compress = False
         self.compress_info = nn.ParameterList(
-            [
-                nn.Parameter(torch.zeros(0, dtype=self.prec, device="cpu"))
-                for _ in range(len(self.filter_layers.networks))
-            ]
+            [nn.Parameter(torch.zeros(0, dtype=self.prec, device="cpu"))]
         )
         self.compress_data = nn.ParameterList(
-            [
-                nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))
-                for _ in range(len(self.filter_layers.networks))
-            ]
+            [nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))]
         )
-
-        if self.tebd_input_mode in ["strip"] and self.filter_layers_strip is not None:
-            self.compress_info_strip = nn.ParameterList(
-                [
-                    nn.Parameter(torch.zeros(0, dtype=self.prec, device="cpu"))
-                    for _ in range(len(self.filter_layers_strip.networks))
-                ]
-            )
-            self.compress_data_strip = nn.ParameterList(
-                [
-                    nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))
-                    for _ in range(len(self.filter_layers_strip.networks))
-                ]
-            )
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -1058,51 +1038,21 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         upper : dict
             Upper bounds for compression
         """
-        # Compress the main embedding networks
-        for embedding_idx, ll in enumerate(self.filter_layers.networks):
-            ti = embedding_idx % self.ntypes
-            tj = embedding_idx // self.ntypes
-            if ti <= tj:
-                net = "filter_" + str(ti) + "_net_" + str(tj)
-                info_ii = torch.as_tensor(
-                    [
-                        lower[net],
-                        upper[net],
-                        upper[net] * table_config[0],
-                        table_config[1],
-                        table_config[2],
-                        table_config[3],
-                    ],
-                    dtype=self.prec,
-                    device="cpu",
-                )
-                tensor_data_ii = table_data[net].to(device=env.DEVICE, dtype=self.prec)
-                self.compress_data[embedding_idx].data = tensor_data_ii
-                self.compress_info[embedding_idx].data = info_ii
-
-        # Compress the strip embedding networks if they exist
-        if self.tebd_input_mode in ["strip"] and self.filter_layers_strip is not None:
-            for embedding_idx, ll in enumerate(self.filter_layers_strip.networks):
-                ti = embedding_idx % self.ntypes
-                tj = embedding_idx // self.ntypes
-                if ti <= tj:
-                    net = "filter_" + str(ti) + "_net_" + str(tj) + "_strip"
-                    if net in table_data:  # Only compress if data exists
-                        info_ii = torch.as_tensor(
-                            [
-                                lower[net],
-                                upper[net],
-                                upper[net] * table_config[0],
-                                table_config[1],
-                                table_config[2],
-                                table_config[3],
-                            ],
-                            dtype=self.prec,
-                            device="cpu",
-                        )
-                        tensor_data_ii = table_data[net].to(device=env.DEVICE, dtype=self.prec)
-                        self.compress_data_strip[embedding_idx].data = tensor_data_ii
-                        self.compress_info_strip[embedding_idx].data = info_ii
+        # Compress the main geometric embedding network (self.filter_layers)
+        net_key = "filter_net"
+        self.compress_info[0] = torch.as_tensor(
+            [
+                lower[net_key],
+                upper[net_key],
+                upper[net_key] * table_config[0],
+                table_config[1],
+                table_config[2],
+                table_config[3],
+            ],
+            dtype=self.prec,
+            device="cpu",
+        )
+        self.compress_data[0] = table_data[net_key].to(device=env.DEVICE, dtype=self.prec)
 
         self.compress = True
 

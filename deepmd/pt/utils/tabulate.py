@@ -66,12 +66,7 @@ class DPTabulate(BaseTabulate):
         )
         self.descrpt_type = self._get_descrpt_type()
 
-        supported_descrpt_type = (
-            "Atten",
-            "A",
-            "T",
-            "R",
-        )
+        supported_descrpt_type = ("Atten", "A", "T", "T_TEBD", "R")
 
         if self.descrpt_type in supported_descrpt_type:
             self.sel_a = self.descrpt.get_sel()
@@ -116,12 +111,12 @@ class DPTabulate(BaseTabulate):
         self.data_type = self._get_data_type()
         self.last_layer_size = self._get_last_layer_size()
 
-    def _make_data(self, xx: np.ndarray, idx: int) -> Any:
+    def _make_data(self, mesh: np.ndarray, idx: int) -> Any:
         """Generate tabulation data for the given input.
 
         Parameters
         ----------
-        xx : np.ndarray
+        mesh : np.ndarray
             Input values to tabulate
         idx : int
             Index for accessing the correct network parameters
@@ -131,11 +126,11 @@ class DPTabulate(BaseTabulate):
         tuple[np.ndarray, np.ndarray, np.ndarray]
             Values, first derivatives, and second derivatives
         """
-        xx = torch.from_numpy(xx).view(-1, 1).to(env.DEVICE)
+        mesh = torch.from_numpy(mesh).view(-1, 1).to(env.DEVICE)
         for layer in range(self.layer_size):
             if layer == 0:
                 xbar = torch.matmul(
-                    xx,
+                    mesh,
                     torch.from_numpy(self.matrix["layer_" + str(layer + 1)][idx]).to(
                         env.DEVICE
                     ),
@@ -145,39 +140,39 @@ class DPTabulate(BaseTabulate):
                 if self.neuron[0] == 1:
                     yy = (
                         self._layer_0(
-                            xx,
+                            mesh,
                             self.matrix["layer_" + str(layer + 1)][idx],
                             self.bias["layer_" + str(layer + 1)][idx],
                         )
-                        + xx
+                        + mesh
                     )
                     dy = unaggregated_dy_dx_s(
-                        yy - xx,
+                        yy - mesh,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         xbar,
                         self.functype,
-                    ) + torch.ones((1, 1), dtype=yy.dtype)  # pylint: disable=no-explicit-device
+                    ) + torch.ones((1, 1), dtype=yy.dtype, device=yy.device)
                     dy2 = unaggregated_dy2_dx_s(
-                        yy - xx,
+                        yy - mesh,
                         dy,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         xbar,
                         self.functype,
                     )
                 elif self.neuron[0] == 2:
-                    tt, yy = self._layer_1(
-                        xx,
+                    residual, yy = self._layer_1(
+                        mesh,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         self.bias["layer_" + str(layer + 1)][idx],
                     )
                     dy = unaggregated_dy_dx_s(
-                        yy - tt,
+                        yy - residual,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         xbar,
                         self.functype,
-                    ) + torch.ones((1, 2), dtype=yy.dtype)  # pylint: disable=no-explicit-device
+                    ) + torch.ones((1, 2), dtype=yy.dtype, device=yy.device)
                     dy2 = unaggregated_dy2_dx_s(
-                        yy - tt,
+                        yy - residual,
                         dy,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         xbar,
@@ -185,7 +180,7 @@ class DPTabulate(BaseTabulate):
                     )
                 else:
                     yy = self._layer_0(
-                        xx,
+                        mesh,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         self.bias["layer_" + str(layer + 1)][idx],
                     )
@@ -236,20 +231,20 @@ class DPTabulate(BaseTabulate):
                         self.functype,
                     )
                 elif self.neuron[layer] == 2 * self.neuron[layer - 1]:
-                    tt, zz = self._layer_1(
+                    residual, zz = self._layer_1(
                         yy,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         self.bias["layer_" + str(layer + 1)][idx],
                     )
                     dz = unaggregated_dy_dx(
-                        zz - tt,
+                        zz - residual,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         dy,
                         ybar,
                         self.functype,
                     )
                     dy2 = unaggregated_dy2_dx(
-                        zz - tt,
+                        zz - residual,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         dy,
                         dy2,
@@ -280,10 +275,10 @@ class DPTabulate(BaseTabulate):
                 dy = dz
                 yy = zz
 
-        vv = zz.detach().cpu().numpy().astype(self.data_type)
+        value = zz.detach().cpu().numpy().astype(self.data_type)
         dd = dy.detach().cpu().numpy().astype(self.data_type)
         d2 = dy2.detach().cpu().numpy().astype(self.data_type)
-        return vv, dd, d2
+        return value, dd, d2
 
     def _layer_0(self, x: torch.Tensor, w: np.ndarray, b: np.ndarray) -> torch.Tensor:
         w = torch.from_numpy(w).to(env.DEVICE)
@@ -311,6 +306,8 @@ class DPTabulate(BaseTabulate):
             return "R"
         elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT):
             return "T"
+        elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeTTebd):
+            return "T_TEBD"
         raise RuntimeError(f"Unsupported descriptor {self.descrpt}")
 
     def _get_layer_size(self) -> int:
@@ -325,7 +322,7 @@ class DPTabulate(BaseTabulate):
                 * len(self.embedding_net_nodes[0])
                 * len(self.neuron)
             )
-        if self.descrpt_type == "Atten":
+        if self.descrpt_type in ("Atten", "T_TEBD"):
             layer_size = len(self.embedding_net_nodes[0]["layers"])
         elif self.descrpt_type == "A":
             layer_size = len(self.embedding_net_nodes[0]["layers"])
@@ -394,6 +391,11 @@ class DPTabulate(BaseTabulate):
                             "layers"
                         ][layer - 1]["@variables"][var_name]
                         result["layer_" + str(layer)].append(node)
+            elif self.descrpt_type == "T_TEBD":
+                # For the se_e3_tebd descriptor, a single,
+                # shared embedding network is used for all type pairs
+                node = self.embedding_net_nodes[0]["layers"][layer - 1]["@variables"][var_name]
+                result["layer_" + str(layer)].append(node)
             elif self.descrpt_type == "R":
                 if self.type_one_side:
                     for ii in range(0, self.ntypes):

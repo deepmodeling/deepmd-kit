@@ -95,17 +95,17 @@ class BaseTabulate(ABC):
         if self.descrpt_type in ("Atten", "AEbdV2"):
             uu = np.max(upper)
             ll = np.min(lower)
-            xx = np.arange(ll, uu, stride0, dtype=self.data_type)
-            xx = np.append(
-                xx,
+            mesh = np.arange(ll, uu, stride0, dtype=self.data_type)
+            mesh = np.append(
+                mesh,
                 np.arange(uu, extrapolate * uu, stride1, dtype=self.data_type),
             )
-            xx = np.append(xx, np.array([extrapolate * uu], dtype=self.data_type))
+            mesh = np.append(mesh, np.array([extrapolate * uu], dtype=self.data_type))
             nspline = ((uu - ll) / stride0 + (extrapolate * uu - uu) / stride1).astype(
                 int
             )
-            self._build_lower(
-                "filter_net", xx, 0, uu, ll, stride0, stride1, extrapolate, nspline
+            self._generate_spline_table(
+                "filter_net", mesh, 0, uu, ll, stride0, stride1, extrapolate, nspline
             )
         elif self.descrpt_type == "A":
             for ii in range(self.table_size):
@@ -134,19 +134,19 @@ class BaseTabulate(ABC):
                         else:
                             uu = upper[ielement]
                             ll = lower[ielement]
-                    xx = np.arange(ll, uu, stride0, dtype=self.data_type)
-                    xx = np.append(
-                        xx,
+                    mesh = np.arange(ll, uu, stride0, dtype=self.data_type)
+                    mesh = np.append(
+                        mesh,
                         np.arange(uu, extrapolate * uu, stride1, dtype=self.data_type),
                     )
-                    xx = np.append(
-                        xx, np.array([extrapolate * uu], dtype=self.data_type)
+                    mesh = np.append(
+                        mesh, np.array([extrapolate * uu], dtype=self.data_type)
                     )
                     nspline = (
                         (uu - ll) / stride0 + (extrapolate * uu - uu) / stride1
                     ).astype(int)
-                    self._build_lower(
-                        net, xx, ii, uu, ll, stride0, stride1, extrapolate, nspline
+                    self._generate_spline_table(
+                        net, mesh, ii, uu, ll, stride0, stride1, extrapolate, nspline
                     )
         elif self.descrpt_type == "T":
             xx_all = []
@@ -158,10 +158,10 @@ class BaseTabulate(ABC):
                 else:
                     ll = lower[ii]
                     uu = upper[ii]
-                xx = np.arange(extrapolate * ll, ll, stride1, dtype=self.data_type)
-                xx = np.append(xx, np.arange(ll, uu, stride0, dtype=self.data_type))
-                xx = np.append(
-                    xx,
+                mesh = np.arange(extrapolate * ll, ll, stride1, dtype=self.data_type)
+                mesh = np.append(mesh, np.arange(ll, uu, stride0, dtype=self.data_type))
+                mesh = np.append(
+                    mesh,
                     np.arange(
                         uu,
                         extrapolate * uu,
@@ -169,8 +169,8 @@ class BaseTabulate(ABC):
                         dtype=self.data_type,
                     ),
                 )
-                xx = np.append(xx, np.array([extrapolate * uu], dtype=self.data_type))
-                xx_all.append(xx)
+                mesh = np.append(mesh, np.array([extrapolate * uu], dtype=self.data_type))
+                xx_all.append(mesh)
             nspline = (
                 (upper - lower) / stride0
                 + 2 * ((extrapolate * upper - upper) / stride1)
@@ -185,7 +185,7 @@ class BaseTabulate(ABC):
                     uu = upper[ii]
                 for jj in range(ii, self.ntypes):
                     net = "filter_" + str(ii) + "_net_" + str(jj)
-                    self._build_lower(
+                    self._generate_spline_table(
                         net,
                         xx_all[ii],
                         idx,
@@ -197,6 +197,37 @@ class BaseTabulate(ABC):
                         nspline[ii][0] if self.is_pt else nspline[ii],
                     )
                     idx += 1
+        elif self.descrpt_type == "T_TEBD":
+            # 1. Find the global range [global_lower, global_upper] of cos(theta) across all types
+            global_upper = np.max(upper)
+            global_lower = np.min(lower)
+
+            # 2. Create a unique input grid mesh for this shared geometric network based on the global range
+            mesh = np.arange(extrapolate * global_lower, global_lower, stride1, dtype=self.data_type)
+            mesh = np.append(mesh, np.arange(global_lower, global_upper, stride0, dtype=self.data_type))
+            mesh = np.append(
+                mesh,
+                np.arange(
+                    global_upper,
+                    extrapolate * global_upper,
+                    stride1,
+                    dtype=self.data_type,
+                ),
+            )
+            mesh = np.append(mesh, np.array([extrapolate * global_upper], dtype=self.data_type))
+
+            # 3. Calculate the number of spline points
+            nspline = (
+                (global_upper - global_lower) / stride0
+                + ((extrapolate * global_upper - global_upper) / stride1)
+                + ((global_lower - extrapolate * global_lower) / stride1)
+            ).astype(int)
+
+            # 4. Call _generate_spline_table only once to generate the table for this shared network
+            geometric_net_name = "filter_net"
+            self._generate_spline_table(
+                geometric_net_name, mesh, 0, global_upper, global_lower, stride0, stride1, extrapolate, nspline
+            )
         elif self.descrpt_type == "R":
             for ii in range(self.table_size):
                 if (self.type_one_side and not self._all_excluded(ii)) or (
@@ -220,19 +251,19 @@ class BaseTabulate(ABC):
                         )
                         uu = upper[ielement]
                         ll = lower[ielement]
-                    xx = np.arange(ll, uu, stride0, dtype=self.data_type)
-                    xx = np.append(
-                        xx,
+                    mesh = np.arange(ll, uu, stride0, dtype=self.data_type)
+                    mesh = np.append(
+                        mesh,
                         np.arange(uu, extrapolate * uu, stride1, dtype=self.data_type),
                     )
-                    xx = np.append(
-                        xx, np.array([extrapolate * uu], dtype=self.data_type)
+                    mesh = np.append(
+                        mesh, np.array([extrapolate * uu], dtype=self.data_type)
                     )
                     nspline = (
                         (uu - ll) / stride0 + (extrapolate * uu - uu) / stride1
                     ).astype(int)
-                    self._build_lower(
-                        net, xx, ii, uu, ll, stride0, stride1, extrapolate, nspline
+                    self._generate_spline_table(
+                        net, mesh, ii, uu, ll, stride0, stride1, extrapolate, nspline
                     )
         else:
             raise RuntimeError("Unsupported descriptor")
@@ -242,10 +273,10 @@ class BaseTabulate(ABC):
             self._convert_numpy_float_to_int()
         return self.lower, self.upper
 
-    def _build_lower(
+    def _generate_spline_table(
         self,
-        net: int,
-        xx: np.ndarray,
+        net: str,
+        mesh: np.ndarray,
         idx: int,
         upper: float,
         lower: float,
@@ -254,37 +285,30 @@ class BaseTabulate(ABC):
         extrapolate: bool,
         nspline: int,
     ) -> None:
-        vv, dd, d2 = self._make_data(xx, idx)
+        value, dd, d2 = self._make_data(mesh, idx)
         self.data[net] = np.zeros(
             [nspline, 6 * self.last_layer_size], dtype=self.data_type
         )
 
-        # tt.shape: [nspline, self.last_layer_size]
-        if self.descrpt_type in ("Atten", "A", "AEbdV2"):
-            tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
-            tt[: int((upper - lower) / stride0), :] = stride0
-        elif self.descrpt_type == "T":
-            tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
-            tt[
-                int((lower - extrapolate * lower) / stride1) + 1 : (
-                    int((lower - extrapolate * lower) / stride1)
-                    + int((upper - lower) / stride0)
-                ),
-                :,
-            ] = stride0
-        elif self.descrpt_type == "R":
-            tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
-            tt[: int((upper - lower) / stride0), :] = stride0
+        # stride.shape: [nspline, self.last_layer_size]
+        if self.descrpt_type in ("Atten", "A", "AEbdV2", "R"):
+            stride = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
+            stride[: int((upper - lower) / stride0), :] = stride0
+        elif self.descrpt_type in ("T", "T_TEBD"):
+            stride = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
+            start_index = int((lower - extrapolate * lower) / stride1) + 1
+            end_index = start_index + int((upper - lower) / stride0)
+            stride[start_index:end_index, :] = stride0
         else:
             raise RuntimeError("Unsupported descriptor")
 
         # hh.shape: [nspline, self.last_layer_size]
         hh = (
-            vv[1 : nspline + 1, : self.last_layer_size]
-            - vv[:nspline, : self.last_layer_size]
+            value[1 : nspline + 1, : self.last_layer_size]
+            - value[:nspline, : self.last_layer_size]
         )
 
-        self.data[net][:, : 6 * self.last_layer_size : 6] = vv[
+        self.data[net][:, : 6 * self.last_layer_size : 6] = value[
             :nspline, : self.last_layer_size
         ]
         self.data[net][:, 1 : 6 * self.last_layer_size : 6] = dd[
@@ -294,39 +318,39 @@ class BaseTabulate(ABC):
             0.5 * d2[:nspline, : self.last_layer_size]
         )
         self.data[net][:, 3 : 6 * self.last_layer_size : 6] = (
-            1 / (2 * tt * tt * tt)
+            1 / (2 * stride * stride * stride)
         ) * (
             20 * hh
             - (
                 8 * dd[1 : nspline + 1, : self.last_layer_size]
                 + 12 * dd[:nspline, : self.last_layer_size]
             )
-            * tt
+            * stride
             - (
                 3 * d2[:nspline, : self.last_layer_size]
                 - d2[1 : nspline + 1, : self.last_layer_size]
             )
-            * tt
-            * tt
+            * stride
+            * stride
         )
         self.data[net][:, 4 : 6 * self.last_layer_size : 6] = (
-            1 / (2 * tt * tt * tt * tt)
+            1 / (2 * stride * stride * stride * stride)
         ) * (
             -30 * hh
             + (
                 14 * dd[1 : nspline + 1, : self.last_layer_size]
                 + 16 * dd[:nspline, : self.last_layer_size]
             )
-            * tt
+            * stride
             + (
                 3 * d2[:nspline, : self.last_layer_size]
                 - 2 * d2[1 : nspline + 1, : self.last_layer_size]
             )
-            * tt
-            * tt
+            * stride
+            * stride
         )
         self.data[net][:, 5 : 6 * self.last_layer_size : 6] = (
-            1 / (2 * tt * tt * tt * tt * tt)
+            1 / (2 * stride * stride * stride * stride * stride)
         ) * (
             12 * hh
             - 6
@@ -334,13 +358,13 @@ class BaseTabulate(ABC):
                 dd[1 : nspline + 1, : self.last_layer_size]
                 + dd[:nspline, : self.last_layer_size]
             )
-            * tt
+            * stride
             + (
                 d2[1 : nspline + 1, : self.last_layer_size]
                 - d2[:nspline, : self.last_layer_size]
             )
-            * tt
-            * tt
+            * stride
+            * stride
         )
 
         self.upper[net] = upper
@@ -348,13 +372,13 @@ class BaseTabulate(ABC):
 
     @abstractmethod
     def _make_data(
-        self, xx: np.ndarray, idx: int
+        self, mesh: np.ndarray, idx: int
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Generate tabulation data for the given input.
 
         Parameters
         ----------
-        xx : np.ndarray
+        mesh : np.ndarray
             Input values to tabulate
         idx : int
             Index for accessing the correct network parameters
@@ -394,7 +418,7 @@ class BaseTabulate(ABC):
 
     def _get_table_size(self) -> int:
         table_size = 0
-        if self.descrpt_type in ("Atten", "AEbdV2"):
+        if self.descrpt_type in ("Atten", "AEbdV2", "T_TEBD"):
             table_size = 1
         elif self.descrpt_type == "A":
             table_size = self.ntypes * self.ntypes
@@ -448,7 +472,7 @@ class BaseTabulate(ABC):
         if self.descrpt_type in ("Atten", "A", "AEbdV2"):
             lower = -self.davg[:, 0] / self.dstd[:, 0]
             upper = ((1 / min_nbor_dist) * sw - self.davg[:, 0]) / self.dstd[:, 0]
-        elif self.descrpt_type == "T":
+        elif self.descrpt_type in ("T", "T_TEBD"):
             var = np.square(sw / (min_nbor_dist * self.dstd[:, 1:4]))
             lower = np.min(-var, axis=1)
             upper = np.max(var, axis=1)
@@ -462,12 +486,12 @@ class BaseTabulate(ABC):
         # returns element-wise lower and upper
         return np.floor(lower), np.ceil(upper)
 
-    def _spline5_switch(self, xx: float, rmin: float, rmax: float) -> float:
-        if xx < rmin:
-            vv = 1
-        elif xx < rmax:
-            uu = (xx - rmin) / (rmax - rmin)
-            vv = uu * uu * uu * (-6 * uu * uu + 15 * uu - 10) + 1
+    def _spline5_switch(self, x: float, rmin: float, rmax: float) -> float:
+        if x < rmin:
+            sw = 1
+        elif x < rmax:
+            uu = (x - rmin) / (rmax - rmin)
+            sw = uu * uu * uu * (-6 * uu * uu + 15 * uu - 10) + 1
         else:
-            vv = 0
-        return vv
+            sw = 0
+        return sw

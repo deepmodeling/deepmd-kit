@@ -316,33 +316,33 @@ class DPTabulate(BaseTabulate):
         return matrix
 
     # one-by-one executions
-    def _make_data(self, xx, idx):
+    def _make_data(self, mesh, idx):
         with self.sub_graph.as_default():
             with self.sub_sess.as_default():
-                xx = tf.reshape(xx, [xx.size, -1])
+                mesh = tf.reshape(mesh, [mesh.size, -1])
                 for layer in range(self.layer_size):
                     if layer == 0:
                         xbar = (
-                            tf.matmul(xx, self.matrix["layer_" + str(layer + 1)][idx])
+                            tf.matmul(mesh, self.matrix["layer_" + str(layer + 1)][idx])
                             + self.bias["layer_" + str(layer + 1)][idx]
                         )
                         if self.neuron[0] == 1:
                             yy = (
                                 self._layer_0(
-                                    xx,
+                                    mesh,
                                     self.matrix["layer_" + str(layer + 1)][idx],
                                     self.bias["layer_" + str(layer + 1)][idx],
                                 )
-                                + xx
+                                + mesh
                             )
                             dy = op_module.unaggregated_dy_dx_s(
-                                yy - xx,
+                                yy - mesh,
                                 self.matrix["layer_" + str(layer + 1)][idx],
                                 xbar,
                                 tf.constant(self.functype),
                             ) + tf.ones([1, 1], yy.dtype)  # pylint: disable=no-explicit-dtype
                             dy2 = op_module.unaggregated_dy2_dx_s(
-                                yy - xx,
+                                yy - mesh,
                                 dy,
                                 self.matrix["layer_" + str(layer + 1)][idx],
                                 xbar,
@@ -350,7 +350,7 @@ class DPTabulate(BaseTabulate):
                             )
                         elif self.neuron[0] == 2:
                             tt, yy = self._layer_1(
-                                xx,
+                                mesh,
                                 self.matrix["layer_" + str(layer + 1)][idx],
                                 self.bias["layer_" + str(layer + 1)][idx],
                             )
@@ -369,7 +369,7 @@ class DPTabulate(BaseTabulate):
                             )
                         else:
                             yy = self._layer_0(
-                                xx,
+                                mesh,
                                 self.matrix["layer_" + str(layer + 1)][idx],
                                 self.bias["layer_" + str(layer + 1)][idx],
                             )
