@@ -234,7 +234,7 @@ def build(self, min_nbor_dist, extrapolate, stride0, stride1):
                 xx = self._build_distance_grid(lower, upper, stride0, stride1, extrapolate, ii)
                 
                 # 查表数据
-                self._build_lower(net, xx, ii, uu, ll, stride0, stride1, extrapolate, nspline)
+                self._generate_spline_table(net, xx, ii, uu, ll, stride0, stride1, extrapolate, nspline)
     
     # 3. 后处理转换
     self._convert_numpy_to_tensor()
@@ -266,7 +266,7 @@ def _get_env_mat_range(self, min_nbor_dist):
 **文件位置**: `deepmd/utils/tabulate.py:245-347`
 
 ```python
-def _build_lower(self, net, xx, idx, upper, lower, stride0, stride1, extrapolate, nspline):
+def _generate_spline_table(self, net, xx, idx, upper, lower, stride0, stride1, extrapolate, nspline):
     # 1. 通过神经网络前向传播计算数据
     vv, dd, d2 = self._make_data(xx, idx)  # 值、一阶导数、二阶导数
     
