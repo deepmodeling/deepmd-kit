@@ -7,6 +7,7 @@ from typing import (
 )
 
 import torch
+import torch.nn as nn
 
 from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.dpmodel.utils.seed import (
@@ -39,8 +40,14 @@ from deepmd.pt.utils.env_mat_stat import (
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
+from deepmd.pt.utils.tabulate import (
+    DPTabulate,
+)
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
+)
+from deepmd.pt.utils.utils import (
+    ActivationFn,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -181,6 +188,7 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
         self.tebd_input_mode = tebd_input_mode
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable
+        self.compress = False
         # set trainable
         for param in self.parameters():
             param.requires_grad = trainable
@@ -516,6 +524,83 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
         local_jdata_cpy["sel"] = sel[0]
         return local_jdata_cpy, min_nbor_dist
 
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        # do some checks before the model compression process
+        if self.compress:
+            raise ValueError("Compression is already enabled.")
+        assert not self.se_ttebd.resnet_dt, (
+            "Model compression error: descriptor resnet_dt must be false!"
+        )
+        for tt in self.se_ttebd.exclude_types:
+            if (tt[0] not in range(self.se_ttebd.ntypes)) or (
+                tt[1] not in range(self.se_ttebd.ntypes)
+            ):
+                raise RuntimeError(
+                    "exclude types"
+                    + str(tt)
+                    + " must within the number of atomic types "
+                    + str(self.se_ttebd.ntypes)
+                    + "!"
+                )
+        if (
+            self.se_ttebd.ntypes * self.se_ttebd.ntypes
+            - len(self.se_ttebd.exclude_types)
+            == 0
+        ):
+            raise RuntimeError(
+                "Empty embedding-nets are not supported in model compression!"
+            )
+
+        if self.tebd_input_mode != "strip":
+            raise RuntimeError("Cannot compress model when tebd_input_mode == 'concat'")
+
+        data = self.serialize()
+        self.table = DPTabulate(
+            self,
+            data["neuron"],
+            exclude_types=data["exclude_types"],
+            activation_fn=ActivationFn(data["activation_function"]),
+        )
+        # Scale the stride values for SE_T descriptor
+        stride_1_scaled = table_stride_1 * 10
+        stride_2_scaled = table_stride_2 * 10
+        self.table_config = [
+            table_extrapolate,
+            stride_1_scaled,
+            stride_2_scaled,
+            check_frequency,
+        ]
+        self.lower, self.upper = self.table.build(
+            min_nbor_dist, table_extrapolate, stride_1_scaled, stride_2_scaled
+        )
+
+        self.se_ttebd.enable_compression(
+            self.table.data, self.table_config, self.lower, self.upper
+        )
+        self.compress = True
+
 
 @DescriptorBlock.register("se_ttebd")
 class DescrptBlockSeTTebd(DescriptorBlock):
@@ -607,6 +692,34 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             )
             self.filter_layers_strip = filter_layers_strip
         self.stats = None
+        # compression related variables
+        self.compress = False
+        self.compress_info = nn.ParameterList(
+            [
+                nn.Parameter(torch.zeros(0, dtype=self.prec, device="cpu"))
+                for _ in range(len(self.filter_layers.networks))
+            ]
+        )
+        self.compress_data = nn.ParameterList(
+            [
+                nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))
+                for _ in range(len(self.filter_layers.networks))
+            ]
+        )
+
+        if self.tebd_input_mode in ["strip"] and self.filter_layers_strip is not None:
+            self.compress_info_strip = nn.ParameterList(
+                [
+                    nn.Parameter(torch.zeros(0, dtype=self.prec, device="cpu"))
+                    for _ in range(len(self.filter_layers_strip.networks))
+                ]
+            )
+            self.compress_data_strip = nn.ParameterList(
+                [
+                    nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))
+                    for _ in range(len(self.filter_layers_strip.networks))
+                ]
+            )
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -924,6 +1037,74 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             None,
             sw,
         )
+
+    def enable_compression(
+        self,
+        table_data: dict,
+        table_config: dict,
+        lower: dict,
+        upper: dict,
+    ) -> None:
+        """Enable compression for the SE_T_TEBD descriptor block.
+
+        Parameters
+        ----------
+        table_data : dict
+            The tabulated data from DPTabulate
+        table_config : dict
+            Configuration for table compression
+        lower : dict
+            Lower bounds for compression
+        upper : dict
+            Upper bounds for compression
+        """
+        # Compress the main embedding networks
+        for embedding_idx, ll in enumerate(self.filter_layers.networks):
+            ti = embedding_idx % self.ntypes
+            tj = embedding_idx // self.ntypes
+            if ti <= tj:
+                net = "filter_" + str(ti) + "_net_" + str(tj)
+                info_ii = torch.as_tensor(
+                    [
+                        lower[net],
+                        upper[net],
+                        upper[net] * table_config[0],
+                        table_config[1],
+                        table_config[2],
+                        table_config[3],
+                    ],
+                    dtype=self.prec,
+                    device="cpu",
+                )
+                tensor_data_ii = table_data[net].to(device=env.DEVICE, dtype=self.prec)
+                self.compress_data[embedding_idx].data = tensor_data_ii
+                self.compress_info[embedding_idx].data = info_ii
+
+        # Compress the strip embedding networks if they exist
+        if self.tebd_input_mode in ["strip"] and self.filter_layers_strip is not None:
+            for embedding_idx, ll in enumerate(self.filter_layers_strip.networks):
+                ti = embedding_idx % self.ntypes
+                tj = embedding_idx // self.ntypes
+                if ti <= tj:
+                    net = "filter_" + str(ti) + "_net_" + str(tj) + "_strip"
+                    if net in table_data:  # Only compress if data exists
+                        info_ii = torch.as_tensor(
+                            [
+                                lower[net],
+                                upper[net],
+                                upper[net] * table_config[0],
+                                table_config[1],
+                                table_config[2],
+                                table_config[3],
+                            ],
+                            dtype=self.prec,
+                            device="cpu",
+                        )
+                        tensor_data_ii = table_data[net].to(device=env.DEVICE, dtype=self.prec)
+                        self.compress_data_strip[embedding_idx].data = tensor_data_ii
+                        self.compress_info_strip[embedding_idx].data = info_ii
+
+        self.compress = True
 
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
