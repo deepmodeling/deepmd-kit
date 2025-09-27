@@ -169,9 +169,7 @@ class BaseTabulate(ABC):
                         dtype=self.data_type,
                     ),
                 )
-                xx = np.append(
-                    xx, np.array([extrapolate * uu], dtype=self.data_type)
-                )
+                xx = np.append(xx, np.array([extrapolate * uu], dtype=self.data_type))
                 xx_all.append(xx)
             nspline = (
                 (upper - lower) / stride0
