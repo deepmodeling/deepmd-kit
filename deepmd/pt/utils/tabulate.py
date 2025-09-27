@@ -111,12 +111,12 @@ class DPTabulate(BaseTabulate):
         self.data_type = self._get_data_type()
         self.last_layer_size = self._get_last_layer_size()
 
-    def _make_data(self, mesh: np.ndarray, idx: int) -> Any:
+    def _make_data(self, xx: np.ndarray, idx: int) -> Any:
         """Generate tabulation data for the given input.
 
         Parameters
         ----------
-        mesh : np.ndarray
+        xx : np.ndarray
             Input values to tabulate
         idx : int
             Index for accessing the correct network parameters
@@ -126,11 +126,11 @@ class DPTabulate(BaseTabulate):
         tuple[np.ndarray, np.ndarray, np.ndarray]
             Values, first derivatives, and second derivatives
         """
-        mesh = torch.from_numpy(mesh).view(-1, 1).to(env.DEVICE)
+        xx = torch.from_numpy(xx).view(-1, 1).to(env.DEVICE)
         for layer in range(self.layer_size):
             if layer == 0:
                 xbar = torch.matmul(
-                    mesh,
+                    xx,
                     torch.from_numpy(self.matrix["layer_" + str(layer + 1)][idx]).to(
                         env.DEVICE
                     ),
@@ -140,20 +140,20 @@ class DPTabulate(BaseTabulate):
                 if self.neuron[0] == 1:
                     yy = (
                         self._layer_0(
-                            mesh,
+                            xx,
                             self.matrix["layer_" + str(layer + 1)][idx],
                             self.bias["layer_" + str(layer + 1)][idx],
                         )
-                        + mesh
+                        + xx
                     )
                     dy = unaggregated_dy_dx_s(
-                        yy - mesh,
+                        yy - xx,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         xbar,
                         self.functype,
                     ) + torch.ones((1, 1), dtype=yy.dtype, device=yy.device)
                     dy2 = unaggregated_dy2_dx_s(
-                        yy - mesh,
+                        yy - xx,
                         dy,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         xbar,
@@ -161,7 +161,7 @@ class DPTabulate(BaseTabulate):
                     )
                 elif self.neuron[0] == 2:
                     residual, yy = self._layer_1(
-                        mesh,
+                        xx,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         self.bias["layer_" + str(layer + 1)][idx],
                     )
@@ -180,7 +180,7 @@ class DPTabulate(BaseTabulate):
                     )
                 else:
                     yy = self._layer_0(
-                        mesh,
+                        xx,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         self.bias["layer_" + str(layer + 1)][idx],
                     )
