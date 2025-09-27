@@ -1052,7 +1052,9 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             dtype=self.prec,
             device="cpu",
         )
-        self.compress_data[0] = table_data[net_key].to(device=env.DEVICE, dtype=self.prec)
+        self.compress_data[0] = table_data[net_key].to(
+            device=env.DEVICE, dtype=self.prec
+        )
 
         self.compress = True
 

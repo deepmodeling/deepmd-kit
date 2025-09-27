@@ -169,7 +169,9 @@ class BaseTabulate(ABC):
                         dtype=self.data_type,
                     ),
                 )
-                mesh = np.append(mesh, np.array([extrapolate * uu], dtype=self.data_type))
+                mesh = np.append(
+                    mesh, np.array([extrapolate * uu], dtype=self.data_type)
+                )
                 xx_all.append(mesh)
             nspline = (
                 (upper - lower) / stride0
@@ -203,8 +205,13 @@ class BaseTabulate(ABC):
             global_lower = np.min(lower)
 
             # 2. Create a unique input grid mesh for this shared geometric network based on the global range
-            mesh = np.arange(extrapolate * global_lower, global_lower, stride1, dtype=self.data_type)
-            mesh = np.append(mesh, np.arange(global_lower, global_upper, stride0, dtype=self.data_type))
+            mesh = np.arange(
+                extrapolate * global_lower, global_lower, stride1, dtype=self.data_type
+            )
+            mesh = np.append(
+                mesh,
+                np.arange(global_lower, global_upper, stride0, dtype=self.data_type),
+            )
             mesh = np.append(
                 mesh,
                 np.arange(
@@ -214,7 +221,9 @@ class BaseTabulate(ABC):
                     dtype=self.data_type,
                 ),
             )
-            mesh = np.append(mesh, np.array([extrapolate * global_upper], dtype=self.data_type))
+            mesh = np.append(
+                mesh, np.array([extrapolate * global_upper], dtype=self.data_type)
+            )
 
             # 3. Calculate the number of spline points
             nspline = (
@@ -226,7 +235,15 @@ class BaseTabulate(ABC):
             # 4. Call _generate_spline_table only once to generate the table for this shared network
             geometric_net_name = "filter_net"
             self._generate_spline_table(
-                geometric_net_name, mesh, 0, global_upper, global_lower, stride0, stride1, extrapolate, nspline
+                geometric_net_name,
+                mesh,
+                0,
+                global_upper,
+                global_lower,
+                stride0,
+                stride1,
+                extrapolate,
+                nspline,
             )
         elif self.descrpt_type == "R":
             for ii in range(self.table_size):

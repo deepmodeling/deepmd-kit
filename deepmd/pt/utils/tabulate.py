@@ -394,7 +394,9 @@ class DPTabulate(BaseTabulate):
             elif self.descrpt_type == "T_TEBD":
                 # For the se_e3_tebd descriptor, a single,
                 # shared embedding network is used for all type pairs
-                node = self.embedding_net_nodes[0]["layers"][layer - 1]["@variables"][var_name]
+                node = self.embedding_net_nodes[0]["layers"][layer - 1]["@variables"][
+                    var_name
+                ]
                 result["layer_" + str(layer)].append(node)
             elif self.descrpt_type == "R":
                 if self.type_one_side:
