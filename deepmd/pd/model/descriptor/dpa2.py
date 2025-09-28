@@ -265,6 +265,11 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
+        if type_map is not None:
+            self.register_buffer(
+                "buffer_type_map",
+                paddle.to_tensor([ord(c) for c in " ".join(type_map)]),
+            )
         self.type_embedding = TypeEmbedNet(
             ntypes,
             self.repinit_args.tebd_dim,
@@ -318,6 +323,9 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         self.rcut = self.repinit.get_rcut()
         self.rcut_smth = self.repinit.get_rcut_smth()
         self.ntypes = ntypes
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
         self.sel = self.repinit.sel
         # set trainable
         for param in self.parameters():
@@ -332,6 +340,14 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.rcut_smth
 
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Returns the cut-off radius."""
+        return self.repinit.get_buffer_rcut()
+
+    def get_buffer_rcut_smth(self) -> paddle.Tensor:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0 as a buffer-style Tensor."""
+        return self.repinit.get_buffer_rcut_smth()
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
@@ -342,7 +358,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.ntypes
+        return self.ntypes if paddle.in_dynamic_mode() else self.buffer_ntypes
 
     def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
@@ -768,7 +784,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             type_embedding = None
         g1, _, _, _, _ = self.repinit(
             nlist_dict[
-                get_multiple_nlist_key(self.repinit.get_rcut(), self.repinit.get_nsel())
+                get_multiple_nlist_key(self.repinit.rcut, sum(self.repinit.sel))
             ],
             extended_coord,
             extended_atype,

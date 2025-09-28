@@ -7,6 +7,7 @@ from pathlib import (
     Path,
 )
 from typing import (
+    Any,
     Optional,
     Union,
 )
@@ -80,15 +81,15 @@ log = logging.getLogger(__name__)
 
 
 def get_trainer(
-    config,
-    init_model=None,
-    restart_model=None,
-    finetune_model=None,
-    force_load=False,
-    init_frz_model=None,
-    shared_links=None,
-    finetune_links=None,
-):
+    config: dict[str, Any],
+    init_model: Optional[str] = None,
+    restart_model: Optional[str] = None,
+    finetune_model: Optional[str] = None,
+    force_load: bool = False,
+    init_frz_model: Optional[str] = None,
+    shared_links: Optional[dict[str, Any]] = None,
+    finetune_links: Optional[dict[str, Any]] = None,
+) -> training.Trainer:
     multi_task = "model_dict" in config.get("model", {})
 
     # Initialize DDP
@@ -98,17 +99,22 @@ def get_trainer(
         fleet.init(is_collective=True)
 
     def prepare_trainer_input_single(
-        model_params_single, data_dict_single, rank=0, seed=None
-    ):
+        model_params_single: dict[str, Any],
+        data_dict_single: dict[str, Any],
+        rank: int = 0,
+        seed: Optional[int] = None,
+    ) -> tuple[DpLoaderSet, Optional[DpLoaderSet], Optional[DPPath]]:
         training_dataset_params = data_dict_single["training_data"]
         validation_dataset_params = data_dict_single.get("validation_data", None)
         validation_systems = (
             validation_dataset_params["systems"] if validation_dataset_params else None
         )
         training_systems = training_dataset_params["systems"]
-        training_systems = process_systems(training_systems)
+        trn_patterns = training_dataset_params.get("rglob_patterns", None)
+        training_systems = process_systems(training_systems, patterns=trn_patterns)
         if validation_systems is not None:
-            validation_systems = process_systems(validation_systems)
+            val_patterns = validation_dataset_params.get("rglob_patterns", None)
+            validation_systems = process_systems(validation_systems, val_patterns)
 
         # stat files
         stat_file_path_single = data_dict_single.get("stat_file", None)
@@ -342,6 +348,7 @@ def freeze(
     model: str,
     output: str = "frozen_model.json",
     head: Optional[str] = None,
+    do_atomic_virial: bool = False,
 ) -> None:
     paddle.set_flags(
         {
@@ -374,7 +381,7 @@ def freeze(
                 None,  # fparam
                 None,  # aparam
                 # InputSpec([], dtype="bool", name="do_atomic_virial"),  # do_atomic_virial
-                False,  # do_atomic_virial
+                do_atomic_virial,  # do_atomic_virial
             ],
             full_graph=True,
         )
@@ -396,7 +403,7 @@ def freeze(
                 None,  # fparam
                 None,  # aparam
                 # InputSpec([], dtype="bool", name="do_atomic_virial"),  # do_atomic_virial
-                False,  # do_atomic_virial
+                do_atomic_virial,  # do_atomic_virial
                 (
                     InputSpec([-1], "int64", name="send_list"),
                     InputSpec([-1], "int32", name="send_proc"),
@@ -409,6 +416,26 @@ def freeze(
             ],
             full_graph=True,
         )
+    for method_name in [
+        "get_buffer_rcut",
+        "get_buffer_type_map",
+        "get_buffer_dim_fparam",
+        "get_buffer_dim_aparam",
+        "get_buffer_intensive",
+        "get_buffer_sel_type",
+        "get_buffer_numb_dos",
+        "get_buffer_task_dim",
+    ]:
+        if hasattr(model, method_name):
+            setattr(
+                model,
+                method_name,
+                paddle.jit.to_static(
+                    getattr(model, method_name),
+                    input_spec=[],
+                    full_graph=True,
+                ),
+            )
     if output.endswith(".json"):
         output = output[:-5]
     paddle.jit.save(

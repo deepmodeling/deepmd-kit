@@ -176,6 +176,11 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         self.use_loc_mapping = use_loc_mapping
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
+        if type_map is not None:
+            self.register_buffer(
+                "buffer_type_map",
+                paddle.to_tensor([ord(c) for c in " ".join(self.type_map)]),
+            )
         self.tebd_dim = self.repflow_args.n_dim
         self.type_embedding = TypeEmbedNet(
             ntypes,
@@ -207,6 +212,9 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         self.rcut_smth = self.repflows.get_rcut_smth()
         self.sel = self.repflows.get_sel()
         self.ntypes = ntypes
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
 
         # set trainable
         for param in self.parameters():
@@ -221,6 +229,14 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.rcut_smth
 
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Returns the cut-off radius as a buffer-style Tensor."""
+        return self.repflows.get_buffer_rcut()
+
+    def get_buffer_rcut_smth(self) -> paddle.Tensor:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0 as a buffer-style Tensor."""
+        return self.repflows.get_buffer_rcut_smth()
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
@@ -229,13 +245,29 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         """Returns the number of selected atoms for each type."""
         return self.sel
 
+    def get_buffer_sel(self) -> paddle.Tensor:
+        """Returns the number of selected atoms for each type as a buffer-style Tensor."""
+        return self.repflows.get_sel()
+
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.ntypes
+        return self.ntypes if paddle.in_dynamic_mode() else self.buffer_ntypes
 
     def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
+
+    def get_buffer_type_map(self) -> paddle.Tensor:
+        """
+        Return the type map as a buffer-style Tensor for JIT saving.
+
+        The original type map (e.g., ['Ni', 'O']) is first joined into a single space-separated string
+        (e.g., "Ni O"). Each character in this string is then converted to its ASCII code using `ord()`,
+        and the resulting integer sequence is stored as a 1D paddle.Tensor of dtype int.
+
+        This format allows the type map to be serialized as a raw byte buffer during JIT model saving.
+        """
+        return self.buffer_type_map
 
     def get_dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
