@@ -950,8 +950,22 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             # nfnl x nt_i x nt_j x ng
             gg = self.filter_layers.networks[0](ss)
         elif self.tebd_input_mode in ["strip"]:
-            # nfnl x nt_i x nt_j x ng
-            gg_s = self.filter_layers.networks[0](ss)
+            if self.compress:
+                # Use tabulated computation for the geometric embedding
+                ebd_env_ij = env_ij.view(-1, 1)
+                gg_s = torch.ops.deepmd.tabulate_fusion_se_t(
+                    self.compress_data[0].contiguous(),
+                    self.compress_info[0].cpu().contiguous(),
+                    ebd_env_ij.contiguous(),
+                    env_ij.contiguous(),
+                    self.filter_neuron[-1],
+                )[0]
+                # Reshape back to the expected format: nfnl x nt_i x nt_j x ng
+                gg_s = gg_s.view(nfnl, nnei, nnei, self.filter_neuron[-1])
+            else:
+                # nfnl x nt_i x nt_j x ng
+                gg_s = self.filter_layers.networks[0](ss)
+
             assert self.filter_layers_strip is not None
             assert type_embedding is not None
             ng = self.filter_neuron[-1]
