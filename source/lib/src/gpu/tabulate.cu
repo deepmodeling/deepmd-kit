@@ -630,7 +630,7 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
   dz_dy[block_idx * last_layer_size + thread_idx] = sum;
 }
 
-template <typename FPTYPE, int MM, int KK>
+template <typename FPTYPE, int MTILE, int KTILE>
 __global__ void tabulate_fusion_se_t_tebd_fifth_order_polynomial(
     FPTYPE* out,
     const FPTYPE* table,
@@ -668,7 +668,7 @@ __global__ void tabulate_fusion_se_t_tebd_fifth_order_polynomial(
   }
 }
 
-template <typename FPTYPE, int MM, int KK>
+template <typename FPTYPE, int MTILE, int KTILE>
 __global__ void tabulate_fusion_se_t_tebd_grad_fifth_order_polynomial(
     FPTYPE* dy_dem_x,
     const FPTYPE* table,

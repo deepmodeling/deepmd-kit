@@ -904,6 +904,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             self.rcut_smth,
             protection=self.env_protection,
         )
+        # dmatrix: [1/r, dx/r^2, dy/r^2, dz/r^2], sw: distance weighting
         # nb x nloc x nnei
         exclude_mask = self.emask(nlist, extended_atype)
         nlist = torch.where(exclude_mask != 0, nlist, -1)
@@ -924,11 +925,11 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         rr = dmatrix
         rr = rr * exclude_mask[:, :, None]
 
-        # nfnl x nt_i x 3
+        # nfnl x nt_i x 3: direction vectors
         rr_i = rr[:, :, 1:]
         # nfnl x nt_j x 3
         rr_j = rr[:, :, 1:]
-        # nfnl x nt_i x nt_j
+        # nfnl x nt_i x nt_j: three-body angular correlations (cos theta_ij)
         env_ij = torch.einsum("ijm,ikm->ijk", rr_i, rr_j)
         # nfnl x nt_i x nt_j x 1
         ss = env_ij.unsqueeze(-1)
@@ -951,18 +952,19 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             gg = self.filter_layers.networks[0](ss)
         elif self.tebd_input_mode in ["strip"]:
             if self.compress:
-                # Use tabulated computation for the geometric embedding
+                # Tabulated geometric embedding from angular features
+                # using SE_T_TEBD specific function
                 ebd_env_ij = env_ij.view(-1, 1)
-                gg_s_compressed = torch.ops.deepmd.tabulate_fusion_se_t(
+                gg_s = torch.ops.deepmd.tabulate_fusion_se_t_tebd(
                     self.compress_data[0].contiguous(),
                     self.compress_info[0].cpu().contiguous(),
                     ebd_env_ij.contiguous(),
                     env_ij.contiguous(),
                     self.filter_neuron[-1],
                 )[0]
-                # The compressed output is nfnl x ng, need to expand to nfnl x nt_i x nt_j x ng
-                # by replicating across the neighbor dimensions
-                gg_s = gg_s_compressed.view(nfnl, 1, 1, self.filter_neuron[-1]).expand(nfnl, nnei, nnei, self.filter_neuron[-1])
+                # SE_T_TEBD tabulation preserves the full neighbor structure
+                # nfnl x nt_i x nt_j x ng
+                gg_s = gg_s.view(nfnl, nnei, nnei, self.filter_neuron[-1])
             else:
                 # nfnl x nt_i x nt_j x ng
                 gg_s = self.filter_layers.networks[0](ss)
@@ -1010,16 +1012,19 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             # (nfnl x nt_i x nt_j) x ng
             gg_t = gg_t.reshape(nfnl, nnei, nnei, ng)
             if self.smooth:
+                # Apply distance weighting to type features
                 gg_t = (
                     gg_t
                     * sw.reshape(nfnl, self.nnei, 1, 1)
                     * sw.reshape(nfnl, 1, self.nnei, 1)
                 )
+            # Combine geometric and type embeddings: gg_s * (1 + gg_t)
             # nfnl x nt_i x nt_j x ng
             gg = gg_s * gg_t + gg_s
         else:
             raise NotImplementedError
 
+        # Contract angular correlations with learned features
         # nfnl x ng
         res_ij = torch.einsum("ijk,ijkm->im", env_ij, gg)
         res_ij = res_ij * (1.0 / float(self.nnei) / float(self.nnei))
