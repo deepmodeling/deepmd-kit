@@ -953,15 +953,16 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             if self.compress:
                 # Use tabulated computation for the geometric embedding
                 ebd_env_ij = env_ij.view(-1, 1)
-                gg_s = torch.ops.deepmd.tabulate_fusion_se_t(
+                gg_s_compressed = torch.ops.deepmd.tabulate_fusion_se_t(
                     self.compress_data[0].contiguous(),
                     self.compress_info[0].cpu().contiguous(),
                     ebd_env_ij.contiguous(),
                     env_ij.contiguous(),
                     self.filter_neuron[-1],
                 )[0]
-                # Reshape back to the expected format: nfnl x nt_i x nt_j x ng
-                gg_s = gg_s.view(nfnl, nnei, nnei, self.filter_neuron[-1])
+                # The compressed output is nfnl x ng, need to expand to nfnl x nt_i x nt_j x ng
+                # by replicating across the neighbor dimensions
+                gg_s = gg_s_compressed.view(nfnl, 1, 1, self.filter_neuron[-1]).expand(nfnl, nnei, nnei, self.filter_neuron[-1])
             else:
                 # nfnl x nt_i x nt_j x ng
                 gg_s = self.filter_layers.networks[0](ss)
