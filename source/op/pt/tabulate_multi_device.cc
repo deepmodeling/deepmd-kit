@@ -346,8 +346,8 @@ void TabulateFusionSeTTebdForward(const torch::Tensor& table_tensor,
   if (table_tensor.dim() != 2) {
     throw std::invalid_argument("Dim of table should be 2");
   }
-  if (em_x_tensor.dim() != 3) {
-    throw std::invalid_argument("Dim of em_x should be 3");
+  if (em_x_tensor.dim() != 2) {
+    throw std::invalid_argument("Dim of em_x should be 2");
   }
   if (em_tensor.dim() != 3) {
     throw std::invalid_argument("Dim of em should be 3");
@@ -363,9 +363,9 @@ void TabulateFusionSeTTebdForward(const torch::Tensor& table_tensor,
   const FPTYPE* em_x = em_x_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* em = em_tensor.view({-1}).data_ptr<FPTYPE>();
 
-  const int64_t nloc = em_x_tensor.size(0);
-  const int64_t nnei_i = em_x_tensor.size(1);
-  const int64_t nnei_j = em_x_tensor.size(2);
+  const int64_t nloc = em_tensor.size(0);
+  const int64_t nnei_i = em_tensor.size(1);
+  const int64_t nnei_j = em_tensor.size(2);
   // compute
   if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -405,9 +405,9 @@ void TabulateFusionSeTTebdGradForward(const torch::Tensor& table_tensor,
   const FPTYPE* em = em_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* dy = dy_tensor.view({-1}).data_ptr<FPTYPE>();
 
-  const int64_t nloc = em_x_tensor.size(0);
-  const int64_t nnei_i = em_x_tensor.size(1);
-  const int64_t nnei_j = em_x_tensor.size(2);
+  const int64_t nloc = em_tensor.size(0);
+  const int64_t nnei_i = em_tensor.size(1);
+  const int64_t nnei_j = em_tensor.size(2);
   const int64_t last_layer_size = descriptor_tensor.size(3);
 
   // compute
@@ -451,9 +451,9 @@ void TabulateFusionSeTTebdGradGradForward(const torch::Tensor& table_tensor,
   const FPTYPE* em_x = em_x_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* em = em_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* dz_dy_dem_x = dz_dy_dem_x_tensor.view({-1}).data_ptr<FPTYPE>();
-  const int64_t nloc = em_x_tensor.size(0);
-  const int64_t nnei_i = em_x_tensor.size(1);
-  const int64_t nnei_j = em_x_tensor.size(2);
+  const int64_t nloc = em_tensor.size(0);
+  const int64_t nnei_i = em_tensor.size(1);
+  const int64_t nnei_j = em_tensor.size(2);
   const int64_t last_layer_size = descriptor_tensor.size(3);
   // compute
   if (device == "GPU") {
@@ -1113,7 +1113,7 @@ class TabulateFusionSeTTebdOp
                        .dtype(table_tensor.dtype())
                        .device(table_tensor.device());
     torch::Tensor descriptor_tensor = torch::empty(
-        {em_x_tensor.size(0), em_x_tensor.size(1), em_x_tensor.size(2), last_layer_size},
+        {em_tensor.size(0), em_tensor.size(1), em_tensor.size(2), last_layer_size},
         options);
     // compute
     TabulateFusionSeTTebdForward<FPTYPE>(table_tensor, table_info_tensor,
