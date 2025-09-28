@@ -149,7 +149,7 @@ class DeepEval(DeepEvalBackend):
             self.dp.eval()
             self.static_model = False
         elif str(self.model_path).endswith(".json"):
-            self.dp = paddle.jit.load(self.model_path.split(".json")[0])
+            self.dp = paddle.jit.load(self.model_path[:-5])
             self.rcut = self.dp.get_buffer_rcut().item()
             self.type_map: list[str] = "".join(
                 [chr(x) for x in self.dp.get_buffer_type_map().numpy()]
