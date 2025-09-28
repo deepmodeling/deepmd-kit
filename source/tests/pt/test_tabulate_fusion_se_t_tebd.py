@@ -233,7 +233,9 @@ class TestTabulateFusionSeTTebdOp(unittest.TestCase):
             dtype=dtype,
             device=env.DEVICE,
         ).reshape(4, 4)
-        self.em_tensor = self.em_x_tensor.reshape(4, 4, 1)  # SE_T_TEBD uses angular information, so 1D
+        self.em_tensor = self.em_x_tensor.reshape(
+            4, 4, 1
+        )  # SE_T_TEBD uses angular information, so 1D
         self.table_info_tensor.requires_grad = False
         self.table_tensor.requires_grad = False
         self.em_x_tensor.requires_grad = True
