@@ -198,36 +198,36 @@ class BaseTabulate(ABC):
                     )
                     idx += 1
         elif self.descrpt_type == "T_TEBD":
-            # 1. Find the global range [global_lower, global_upper] of cos(theta) across all types
-            global_upper = np.max(upper)
-            global_lower = np.min(lower)
+            # 1. Find the global range [ll, uu] of cos(theta) across all types
+            uu = np.max(upper)
+            ll = np.min(lower)
 
             # 2. Create a unique input grid xx for this shared geometric network based on the global range
             xx = np.arange(
-                extrapolate * global_lower, global_lower, stride1, dtype=self.data_type
+                extrapolate * ll, ll, stride1, dtype=self.data_type
             )
             xx = np.append(
                 xx,
-                np.arange(global_lower, global_upper, stride0, dtype=self.data_type),
+                np.arange(ll, uu, stride0, dtype=self.data_type),
             )
             xx = np.append(
                 xx,
                 np.arange(
-                    global_upper,
-                    extrapolate * global_upper,
+                    uu,
+                    extrapolate * uu,
                     stride1,
                     dtype=self.data_type,
                 ),
             )
             xx = np.append(
-                xx, np.array([extrapolate * global_upper], dtype=self.data_type)
+                xx, np.array([extrapolate * uu], dtype=self.data_type)
             )
 
             # 3. Calculate the number of spline points
             nspline = (
-                (global_upper - global_lower) / stride0
-                + ((extrapolate * global_upper - global_upper) / stride1)
-                + ((global_lower - extrapolate * global_lower) / stride1)
+                (uu - ll) / stride0
+                + ((extrapolate * uu - uu) / stride1)
+                + ((ll - extrapolate * ll) / stride1)
             ).astype(int)
 
             # 4. Call _generate_spline_table only once to generate the table for this shared network
@@ -236,8 +236,8 @@ class BaseTabulate(ABC):
                 geometric_net_name,
                 xx,
                 0,
-                global_upper,
-                global_lower,
+                uu,
+                ll,
                 stride0,
                 stride1,
                 extrapolate,

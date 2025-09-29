@@ -926,6 +926,8 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         rr = rr * exclude_mask[:, :, None]
 
         # nfnl x nt_i x 3: direction vectors
+        # nt_i = nnei
+        # nt_j = nnei
         rr_i = rr[:, :, 1:]
         # nfnl x nt_j x 3
         rr_j = rr[:, :, 1:]
