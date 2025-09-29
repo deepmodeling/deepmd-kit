@@ -696,3 +696,8 @@ class GeneralFitting(Fitting):
         outs = torch.where(mask[:, :, None], outs, 0.0)
         results.update({self.var_name: outs})
         return results
+
+    @torch.jit.export
+    def get_task_dim(self) -> int:
+        """Get the output dimension of the fitting net."""
+        return self._net_out_dim()

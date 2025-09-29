@@ -28,7 +28,7 @@ venv*
 .vscode/**
 _build
 _templates
-API_CC
+doc/API_CC/
 doc/api_py/
 doc/api_core/
 doc/api_c/
