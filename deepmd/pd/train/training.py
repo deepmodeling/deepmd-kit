@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import contextlib
 import functools
 import logging
 import time
@@ -18,6 +19,7 @@ import paddle.distributed as dist
 from paddle.distributed import (
     fleet,
 )
+from paddle.distributed.fleet.utils import hybrid_parallel_util as hpu
 from paddle.framework import (
     core,
 )
@@ -52,6 +54,7 @@ from deepmd.pd.utils.dataloader import (
 )
 from deepmd.pd.utils.env import (
     CINN,
+    CINN_ALLOW_DYNAMIC_SHAPE,
     DEFAULT_PRECISION,
     DEVICE,
     JIT,
@@ -130,6 +133,9 @@ class Trainer:
 
         # Iteration config
         self.num_steps = training_params["numb_steps"]
+        self.acc_freq: int = training_params.get(
+            "acc_freq", 1
+        )  # gradient accumulation steps
         self.disp_file = training_params.get("disp_file", "lcurve.out")
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.save_ckpt = training_params.get("save_ckpt", "model.ckpt")
@@ -607,40 +613,65 @@ class Trainer:
             )
 
             backend = "CINN" if CINN else None
-            self.wrapper.forward = jit.to_static(
-                backend=backend,
-                input_spec=[
-                    static.InputSpec([1, -1, 3], "float64", name="coord"),  # coord
-                    static.InputSpec([1, -1], "int32", name="atype"),  # atype
-                    None,  # spin
-                    static.InputSpec([1, 9], "float64", name="box"),  # box
-                    static.InputSpec([], "float64", name="cur_lr"),  # cur_lr
-                    {
-                        "find_box": np.float32(1.0),
-                        "find_coord": np.float32(1.0),
-                        "find_numb_copy": np.float32(0.0),
-                        "numb_copy": static.InputSpec(
-                            [1, 1], "int64", name="numb_copy"
-                        ),
-                        "find_energy": np.float32(1.0),
-                        "energy": static.InputSpec([1, 1], "float64", name="energy"),
-                        "find_force": np.float32(1.0),
-                        "force": static.InputSpec([1, -1, 3], "float64", name="force"),
-                        "natoms": static.InputSpec([1, -1], "int32", name="natoms"),
-                    },  # label,
-                    # None, # task_key
-                    # False, # inference_only
-                    # False, # do_atomic_virial
-                    # None, # fparam
-                    # None, # aparam
-                ],
-                full_graph=True,
-            )(self.wrapper.forward)
+            if CINN_ALLOW_DYNAMIC_SHAPE:
+                # Build spec only for keys present in sample data
+                # NOTE: This is a trick to decide the right input_spec for wrapper.forward
+                _, label_dict, _ = self.get_data(is_train=True)
+                # Define specification templates
+                spec_templates = {
+                    "find_box": np.float32(1.0),
+                    "find_coord": np.float32(1.0),
+                    "find_numb_copy": np.float32(0.0),
+                    "numb_copy": static.InputSpec([1, 1], "int64", name="numb_copy"),
+                    "find_energy": np.float32(1.0),
+                    "energy": static.InputSpec([1, 1], "float64", name="energy"),
+                    "find_force": np.float32(1.0),
+                    "force": static.InputSpec([1, -1, 3], "float64", name="force"),
+                    "find_virial": np.float32(0.0),
+                    "virial": static.InputSpec([1, 9], "float64", name="virial"),
+                    "natoms": static.InputSpec([1, -1], "int32", name="natoms"),
+                }
+                label_dict_spec = {
+                    k: spec_templates[k]
+                    for k in label_dict.keys()
+                    if k in spec_templates
+                }
+                self.wrapper.forward = jit.to_static(
+                    backend=backend,
+                    input_spec=[
+                        static.InputSpec([1, -1, 3], "float64", name="coord"),  # coord
+                        static.InputSpec([1, -1], "int32", name="atype"),  # atype
+                        None,  # spin
+                        static.InputSpec([1, 9], "float64", name="box"),  # box
+                        static.InputSpec([], "float64", name="cur_lr"),  # cur_lr
+                        label_dict_spec,  # label,
+                        # None, # task_key
+                        # False, # inference_only
+                        # False, # do_atomic_virial
+                        # None, # fparam
+                        # None, # aparam
+                    ],
+                    full_graph=True,
+                )(self.wrapper.forward)
+            else:
+                self.wrapper.forward = jit.to_static(full_graph=True, backend=backend)(
+                    self.wrapper.forward
+                )
 
             log.info(
-                "Enable CINN during training, there may be some additional "
-                "compilation time in the first traning step."
+                "[CINN] Enable CINN during training, there may be some additional "
+                "compilation time in the first training step."
             )
+            if not CINN_ALLOW_DYNAMIC_SHAPE:
+                log.info(
+                    "[CINN] Dynamic shape is disabled (CINN_ALLOW_DYNAMIC_SHAPE=0). "
+                    "Make sure the input batch shapes are fixed during training. "
+                    "This is recommended for optimal performance, e.g., as in examples/water."
+                )
+                log.info(
+                    "[CINN] If batch data from your dataset(s) has varying input shapes, consider setting "
+                    "CINN_ALLOW_DYNAMIC_SHAPE=1 to enable dynamic shape support."
+                )
 
         if dist.is_available() and dist.is_initialized():
             # DDP will guarantee the model parameters are identical across all processes
@@ -716,7 +747,6 @@ class Trainer:
                 _lr = self.lr_exp
             cur_lr = _lr.value(_step_id)
             pref_lr = cur_lr
-            self.optimizer.clear_grad(set_to_zero=False)
 
             with nvprof_context(enable_profiling, "Fetching data"):
                 input_dict, label_dict, log_dict = self.get_data(
@@ -732,28 +762,47 @@ class Trainer:
                     pref_lr = _lr.start_lr
                 else:
                     pref_lr = cur_lr
-                with nvprof_context(enable_profiling, "Forward pass"):
-                    model_pred, loss, more_loss = self.wrapper(
-                        **input_dict,
-                        cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
-                        label=label_dict,
-                        task_key=task_key,
-                    )
 
-                with nvprof_context(enable_profiling, "Backward pass"):
-                    loss.backward()
-
-                if self.gradient_max_norm > 0.0:
-                    with nvprof_context(enable_profiling, "Gradient clip"):
-                        paddle.nn.utils.clip_grad_norm_(
-                            self.wrapper.parameters(),
-                            self.gradient_max_norm,
-                            error_if_nonfinite=True,
+                # disable synchronization in forward-backward manually
+                # as derivatives exist in model forward
+                no_sync_context = (
+                    self.wrapper.no_sync
+                    if self.world_size > 1
+                    else contextlib.nullcontext
+                )
+                with no_sync_context():
+                    with nvprof_context(enable_profiling, "Forward pass"):
+                        model_pred, loss, more_loss = self.wrapper(
+                            **input_dict,
+                            cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
+                            label=label_dict,
+                            task_key=task_key,
                         )
 
-                with nvprof_context(enable_profiling, "Adam update"):
-                    self.optimizer.step()
-                self.scheduler.step()
+                    with nvprof_context(enable_profiling, "Backward pass"):
+                        loss.backward()
+
+                # gradient accumulation
+                if (_step_id + 1) % self.acc_freq == 0:
+                    # fuse + allreduce manually before optimization if use DDP + no_sync
+                    # details in https://github.com/PaddlePaddle/Paddle/issues/48898#issuecomment-1343838622
+                    if self.world_size > 1:
+                        hpu.fused_allreduce_gradients(
+                            list(self.wrapper.parameters()), None
+                        )
+
+                    if self.gradient_max_norm > 0.0:
+                        with nvprof_context(enable_profiling, "Gradient clip"):
+                            paddle.nn.utils.clip_grad_norm_(
+                                self.wrapper.parameters(),
+                                self.gradient_max_norm,
+                                error_if_nonfinite=True,
+                            )
+
+                    with nvprof_context(enable_profiling, "Adam update"):
+                        self.optimizer.step()
+                    self.optimizer.clear_grad(set_to_zero=False)
+                    self.scheduler.step()
 
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
@@ -876,7 +925,9 @@ class Trainer:
                 self.t0 = current_time
                 if self.rank == 0 and self.timing_in_training:
                     eta = int(
-                        (self.num_steps - display_step_id) / self.disp_freq * train_time
+                        (self.num_steps - display_step_id)
+                        / min(self.disp_freq, display_step_id - self.start_step)
+                        * train_time
                     )
                     log.info(
                         format_training_message(

@@ -4,6 +4,9 @@ on:
   push:
     branches-ignore:
       - "gh-readonly-queue/**"
+      - "copilot/**"
+      - "dependabot/**"
+      - "pre-commit-ci-update-config"
   pull_request:
   schedule:
     - cron: '45 2 * * 2'
@@ -27,8 +30,8 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+      uses: actions/checkout@v5
+    - uses: actions/setup-python@v6
       with:
         python-version: '3.11'
         cache: 'pip'
@@ -41,7 +44,7 @@ jobs:
          && sudo apt-get update \
          && sudo apt-get -y install cuda-cudart-dev-12-2 cuda-nvcc-12-2
         python -m pip install tensorflow
-        python -m pip install 'torch==2.7' --index-url https://download.pytorch.org/whl/cpu
+        python -m pip install 'torch==2.8.*' --index-url https://download.pytorch.org/whl/cpu
       env:
         DEBIAN_FRONTEND: noninteractive
     # Initializes the CodeQL tools for scanning.

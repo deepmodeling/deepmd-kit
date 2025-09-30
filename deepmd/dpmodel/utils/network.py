@@ -6,6 +6,7 @@ See issue #2982 for more information.
 
 import itertools
 from typing import (
+    Any,
     Callable,
     ClassVar,
     Optional,
@@ -21,6 +22,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
+    Array,
     support_array_api,
     xp_add_at,
     xp_bincount,
@@ -36,7 +38,7 @@ from deepmd.utils.version import (
 )
 
 
-def sigmoid_t(x: np.ndarray) -> np.ndarray:
+def sigmoid_t(x):  # noqa: ANN001, ANN201
     """Sigmoid."""
     if array_api_compat.is_jax_array(x):
         from deepmd.jax.env import (
@@ -53,7 +55,7 @@ class Identity(NativeOP):
     def __init__(self) -> None:
         super().__init__()
 
-    def call(self, x: np.ndarray) -> np.ndarray:
+    def call(self, x):  # noqa: ANN001, ANN201
         """The Identity operation layer."""
         return x
 
@@ -73,11 +75,11 @@ class NativeLayer(NativeOP):
 
     Parameters
     ----------
-    w : np.ndarray, optional
+    w : Array, optional
         The weights of the layer.
-    b : np.ndarray, optional
+    b : Array, optional
         The biases of the layer.
-    idt : np.ndarray, optional
+    idt : Array, optional
         The identity matrix of the layer.
     activation_function : str, optional
         The activation function of the layer.
@@ -87,19 +89,24 @@ class NativeLayer(NativeOP):
         The precision of the layer.
     seed : int, optional
         Random seed.
+    trainable : bool, default=True
+        Whether the layer is trainable.
     """
 
     def __init__(
         self,
-        num_in,
-        num_out,
+        num_in: int,
+        num_out: int,
         bias: bool = True,
         use_timestep: bool = False,
         activation_function: Optional[str] = None,
         resnet: bool = False,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
+        # trainable must be set before any array attribute is set
+        self.trainable = trainable
         prec = PRECISION_DICT[precision.lower()]
         self.precision = precision
         # only use_timestep when skip connection is established.
@@ -139,13 +146,14 @@ class NativeLayer(NativeOP):
         }
         return {
             "@class": "Layer",
-            "@version": 1,
+            "@version": 2,
             "bias": self.b is not None,
             "use_timestep": self.idt is not None,
             "activation_function": self.activation_function,
             "resnet": self.resnet,
             # make deterministic
             "precision": np.dtype(PRECISION_DICT[self.precision]).name,
+            "trainable": self.trainable,
             "@variables": data,
         }
 
@@ -159,7 +167,7 @@ class NativeLayer(NativeOP):
             The dict to deserialize from.
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
         variables = data.pop("@variables")
         assert variables["w"] is not None and len(variables["w"].shape) == 2
@@ -199,7 +207,7 @@ class NativeLayer(NativeOP):
     def check_type_consistency(self) -> None:
         precision = self.precision
 
-        def check_var(var) -> None:
+        def check_var(var: Optional[Array]) -> None:
             if var is not None:
                 # array api standard doesn't provide a API to get the dtype name
                 # this is really hacked
@@ -211,7 +219,7 @@ class NativeLayer(NativeOP):
         check_var(self.b)
         check_var(self.idt)
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         if key in ("w", "matrix"):
             self.w = value
         elif key in ("b", "bias"):
@@ -227,7 +235,7 @@ class NativeLayer(NativeOP):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if key in ("w", "matrix"):
             return self.w
         elif key in ("b", "bias"):
@@ -240,6 +248,8 @@ class NativeLayer(NativeOP):
             return self.resnet
         elif key == "precision":
             return self.precision
+        elif key == "trainable":
+            return self.trainable
         else:
             raise KeyError(key)
 
@@ -250,12 +260,12 @@ class NativeLayer(NativeOP):
         return self.w.shape[1]
 
     @support_array_api(version="2022.12")
-    def call(self, x: np.ndarray) -> np.ndarray:
+    def call(self, x):  # noqa: ANN001, ANN201
         """Forward pass.
 
         Parameters
         ----------
-        x : np.ndarray
+        x : Array
             The input.
 
         Returns
@@ -291,14 +301,14 @@ def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.nda
     activation_function = activation_function.lower()
     if activation_function == "tanh":
 
-        def fn(x):
+        def fn(x):  # noqa: ANN001, ANN202  # noqa: ANN001, ANN202
             xp = array_api_compat.array_namespace(x)
             return xp.tanh(x)
 
         return fn
     elif activation_function == "relu":
 
-        def fn(x):
+        def fn(x):  # noqa: ANN001, ANN202
             xp = array_api_compat.array_namespace(x)
             # https://stackoverflow.com/a/47936476/9567349
             return x * xp.astype(x > 0, x.dtype)
@@ -306,7 +316,7 @@ def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.nda
         return fn
     elif activation_function in ("gelu", "gelu_tf"):
 
-        def fn(x):
+        def fn(x):  # noqa: ANN001, ANN202
             xp = array_api_compat.array_namespace(x)
             # generated by GitHub Copilot
             return (
@@ -318,7 +328,7 @@ def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.nda
         return fn
     elif activation_function == "relu6":
 
-        def fn(x):
+        def fn(x):  # noqa: ANN001, ANN202
             xp = array_api_compat.array_namespace(x)
             # generated by GitHub Copilot
             return xp.where(
@@ -328,7 +338,7 @@ def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.nda
         return fn
     elif activation_function == "softplus":
 
-        def fn(x):
+        def fn(x):  # noqa: ANN001, ANN202
             xp = array_api_compat.array_namespace(x)
             # generated by GitHub Copilot
             return xp.log(1 + xp.exp(x))
@@ -336,14 +346,14 @@ def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.nda
         return fn
     elif activation_function == "sigmoid":
 
-        def fn(x):
+        def fn(x):  # noqa: ANN001, ANN202
             # generated by GitHub Copilot
             return sigmoid_t(x)
 
         return fn
     elif activation_function == "silu":
 
-        def fn(x):
+        def fn(x):  # noqa: ANN001, ANN202
             # generated by GitHub Copilot
             return x * sigmoid_t(x)
 
@@ -352,13 +362,13 @@ def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.nda
         "custom_silu"
     ):
 
-        def sigmoid(x):
+        def sigmoid(x):  # noqa: ANN001, ANN202
             return 1 / (1 + np.exp(-x))
 
-        def silu(x):
+        def silu(x):  # noqa: ANN001, ANN202
             return x * sigmoid(x)
 
-        def silu_grad(x):
+        def silu_grad(x):  # noqa: ANN001, ANN202
             sig = sigmoid(x)
             return sig + x * sig * (1 - sig)
 
@@ -370,7 +380,7 @@ def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.nda
         slope = float(silu_grad(threshold))
         const = float(silu(threshold))
 
-        def fn(x):
+        def fn(x):  # noqa: ANN001, ANN202
             xp = array_api_compat.array_namespace(x)
             return xp.where(
                 x < threshold,
@@ -381,7 +391,7 @@ def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.nda
         return fn
     elif activation_function.lower() in ("none", "linear"):
 
-        def fn(x):
+        def fn(x):  # noqa: ANN001, ANN202
             return x
 
         return fn
@@ -429,6 +439,7 @@ class LayerNorm(NativeLayer):
             resnet=False,
             precision=precision,
             seed=seed,
+            trainable=trainable,
         )
         xp = array_api_compat.array_namespace(self.w, self.b)
         self.w = xp.squeeze(self.w, 0)  # keep the weight shape to be [num_in]
@@ -493,7 +504,7 @@ class LayerNorm(NativeLayer):
                 f"of b {self.b.shape[0]}",
             )
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         if key in ("w", "matrix"):
             self.w = value
         elif key in ("b", "bias"):
@@ -507,7 +518,7 @@ class LayerNorm(NativeLayer):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if key in ("w", "matrix"):
             return self.w
         elif key in ("b", "bias"):
@@ -524,12 +535,12 @@ class LayerNorm(NativeLayer):
     def dim_out(self) -> int:
         return self.w.shape[0]
 
-    def call(self, x: np.ndarray) -> np.ndarray:
+    def call(self, x):  # noqa: ANN001, ANN201
         """Forward pass.
 
         Parameters
         ----------
-        x : np.ndarray
+        x : Array
             The input.
 
         Returns
@@ -541,7 +552,13 @@ class LayerNorm(NativeLayer):
         return y
 
     @staticmethod
-    def layer_norm_numpy(x, shape, weight=None, bias=None, eps=1e-5):
+    def layer_norm_numpy(  # noqa: ANN205
+        x,  # noqa: ANN001
+        shape: tuple[int, ...],
+        weight=None,  # noqa: ANN001
+        bias=None,  # noqa: ANN001
+        eps: float = 1e-5,
+    ):
         xp = array_api_compat.array_namespace(x)
         # mean and variance
         mean = xp.mean(x, axis=tuple(range(-len(shape), 0)), keepdims=True)
@@ -554,7 +571,7 @@ class LayerNorm(NativeLayer):
         return x_normalized
 
 
-def make_multilayer_network(T_NetworkLayer, ModuleBase):
+def make_multilayer_network(T_NetworkLayer: type, ModuleBase: type) -> type:
     class NN(ModuleBase):
         """Native representation of a neural network.
 
@@ -599,11 +616,11 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
             data.pop("@class", None)
             return cls(data["layers"])
 
-        def __getitem__(self, key):
+        def __getitem__(self, key: int) -> Any:
             assert isinstance(key, int)
             return self.layers[key]
 
-        def __setitem__(self, key, value) -> None:
+        def __setitem__(self, key: int, value: Any) -> None:
             assert isinstance(key, int)
             self.layers[key] = value
 
@@ -616,12 +633,12 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
                         f"output {self.layers[ii].dim_out}",
                     )
 
-        def call(self, x):
+        def call(self, x):  # noqa: ANN001, ANN202
             """Forward pass.
 
             Parameters
             ----------
-            x : np.ndarray
+            x : Array
                 The input.
 
             Returns
@@ -631,6 +648,25 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
             """
             for layer in self.layers:
                 x = layer(x)
+            return x
+
+        def call_until_last(self, x):  # noqa: ANN001, ANN202
+            """Return the output before last layer.
+
+            Parameters
+            ----------
+            x : Array
+                The input.
+
+            Returns
+            -------
+            np.ndarray
+                The output before last layer.
+            """
+            # avoid slice (self.layers[:-1]) for jit
+            for ii, layer in enumerate(self.layers):
+                if ii < len(self.layers) - 1:
+                    x = layer(x)
             return x
 
         def clear(self) -> None:
@@ -649,7 +685,7 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
 NativeNet = make_multilayer_network(NativeLayer, NativeOP)
 
 
-def make_embedding_network(T_Network, T_NetworkLayer):
+def make_embedding_network(T_Network: type, T_NetworkLayer: type) -> type:
     class EN(T_Network):
         """The embedding network.
 
@@ -674,16 +710,19 @@ def make_embedding_network(T_Network, T_NetworkLayer):
 
         def __init__(
             self,
-            in_dim,
+            in_dim: int,
             neuron: list[int] = [24, 48, 96],
             activation_function: str = "tanh",
             resnet_dt: bool = False,
             precision: str = DEFAULT_PRECISION,
             seed: Optional[Union[int, list[int]]] = None,
             bias: bool = True,
+            trainable: Union[bool, list[bool]] = True,
         ) -> None:
             layers = []
             i_in = in_dim
+            if isinstance(trainable, bool):
+                trainable = [trainable] * len(neuron)
             for idx, ii in enumerate(neuron):
                 i_ot = ii
                 layers.append(
@@ -696,6 +735,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
                         resnet=True,
                         precision=precision,
                         seed=child_seed(seed, idx),
+                        trainable=trainable[idx],
                     ).serialize()
                 )
                 i_in = i_ot
@@ -751,7 +791,9 @@ def make_embedding_network(T_Network, T_NetworkLayer):
 EmbeddingNet = make_embedding_network(NativeNet, NativeLayer)
 
 
-def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
+def make_fitting_network(
+    T_EmbeddingNet: type, T_Network: type, T_NetworkLayer: type
+) -> type:
     class FN(T_EmbeddingNet):
         """The fitting network. It may be implemented as an embedding
         net connected with a linear output layer.
@@ -778,15 +820,22 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
 
         def __init__(
             self,
-            in_dim,
-            out_dim,
+            in_dim: int,
+            out_dim: int,
             neuron: list[int] = [24, 48, 96],
             activation_function: str = "tanh",
             resnet_dt: bool = False,
             precision: str = DEFAULT_PRECISION,
             bias_out: bool = True,
             seed: Optional[Union[int, list[int]]] = None,
+            trainable: Union[bool, list[bool]] = True,
         ) -> None:
+            if trainable is None:
+                trainable = [True] * (len(neuron) + 1)
+            elif isinstance(trainable, bool):
+                trainable = [trainable] * (len(neuron) + 1)
+            else:
+                pass
             super().__init__(
                 in_dim,
                 neuron=neuron,
@@ -794,6 +843,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
                 resnet_dt=resnet_dt,
                 precision=precision,
                 seed=seed,
+                trainable=trainable[:-1],
             )
             i_in = neuron[-1] if len(neuron) > 0 else in_dim
             i_ot = out_dim
@@ -807,6 +857,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
                     resnet=False,
                     precision=precision,
                     seed=child_seed(seed, len(neuron)),
+                    trainable=trainable[-1],
                 )
             )
             self.out_dim = out_dim
@@ -894,7 +945,7 @@ class NetworkCollection:
         self._networks = [None for ii in range(ntypes**ndim)]
         for ii, network in enumerate(networks):
             self[ii] = network
-        if len(networks):
+        if len(networks) and all(net is not None for net in networks):
             self.check_completeness()
 
     def check_completeness(self) -> None:
@@ -909,7 +960,7 @@ class NetworkCollection:
             if self[tuple(tt)] is None:
                 raise RuntimeError(f"network for {tt} not found")
 
-    def _convert_key(self, key):
+    def _convert_key(self, key: Union[int, tuple]) -> int:
         if isinstance(key, int):
             idx = key
         else:
@@ -924,11 +975,13 @@ class NetworkCollection:
             idx = sum([tt * self.ntypes**ii for ii, tt in enumerate(key)])
         return idx
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: Union[int, tuple]) -> Any:
         return self._networks[self._convert_key(key)]
 
-    def __setitem__(self, key, value) -> None:
-        if isinstance(value, self.network_type):
+    def __setitem__(self, key: Union[int, tuple], value: Any) -> None:
+        if value is None:
+            pass
+        elif isinstance(value, self.network_type):
             pass
         elif isinstance(value, dict):
             value = self.network_type.deserialize(value)
@@ -952,7 +1005,9 @@ class NetworkCollection:
             "ndim": self.ndim,
             "ntypes": self.ntypes,
             "network_type": network_type_name,
-            "networks": [nn.serialize() for nn in self._networks],
+            "networks": [
+                nn.serialize() if nn is not None else None for nn in self._networks
+            ],
         }
 
     @classmethod
@@ -970,11 +1025,11 @@ class NetworkCollection:
         return cls(**data)
 
 
-def aggregate(
-    data: np.ndarray,
-    owners: np.ndarray,
-    average=True,
-    num_owner=None,
+def aggregate(  # noqa: ANN201
+    data,  # noqa: ANN001
+    owners,  # noqa: ANN001
+    average: bool = True,
+    num_owner: Optional[int] = None,
 ):
     """
     Aggregate rows in data by specifying the owners.
@@ -1010,10 +1065,10 @@ def aggregate(
     return output
 
 
-def get_graph_index(
-    nlist: np.ndarray,
-    nlist_mask: np.ndarray,
-    a_nlist_mask: np.ndarray,
+def get_graph_index(  # noqa: ANN201
+    nlist,  # noqa: ANN001
+    nlist_mask,  # noqa: ANN001
+    a_nlist_mask,  # noqa: ANN001
     nall: int,
     use_loc_mapping: bool = True,
 ):
@@ -1036,12 +1091,12 @@ def get_graph_index(
 
     Returns
     -------
-    edge_index : n_edge x 2
+    edge_index : 2 x n_edge
         n2e_index : n_edge
             Broadcast indices from node(i) to edge(ij), or reduction indices from edge(ij) to node(i).
         n_ext2e_index : n_edge
             Broadcast indices from extended node(j) to edge(ij).
-    angle_index : n_angle x 3
+    angle_index : 3 x n_angle
         n2a_index : n_angle
             Broadcast indices from extended node(j) to angle(ijk).
         eij2a_index : n_angle
@@ -1111,7 +1166,7 @@ def get_graph_index(
     # n_angle
     eik2a_index = edge_index_ik[a_nlist_mask_3d]
 
-    edge_index_result = xp.stack([n2e_index, n_ext2e_index], axis=-1)
-    angle_index_result = xp.stack([n2a_index, eij2a_index, eik2a_index], axis=-1)
+    edge_index_result = xp.stack([n2e_index, n_ext2e_index], axis=0)
+    angle_index_result = xp.stack([n2a_index, eij2a_index, eik2a_index], axis=0)
 
     return edge_index_result, angle_index_result

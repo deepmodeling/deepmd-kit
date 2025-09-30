@@ -10,6 +10,10 @@ import paddle
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.pd.cxx_op import (
+    ENABLE_CUSTOMIZED_OP,
+    paddle_ops_deepmd,
+)
 from deepmd.pd.model.descriptor.descriptor import (
     DescriptorBlock,
 )
@@ -18,6 +22,9 @@ from deepmd.pd.model.descriptor.env_mat import (
 )
 from deepmd.pd.model.network.mlp import (
     MLPLayer,
+)
+from deepmd.pd.model.network.utils import (
+    get_graph_index,
 )
 from deepmd.pd.utils import (
     env,
@@ -30,6 +37,9 @@ from deepmd.pd.utils.env_mat_stat import (
 )
 from deepmd.pd.utils.exclude_mask import (
     PairExcludeMask,
+)
+from deepmd.pd.utils.spin import (
+    concat_switch_virtual,
 )
 from deepmd.pd.utils.utils import (
     ActivationFn,
@@ -44,6 +54,30 @@ from deepmd.utils.path import (
 from .repflow_layer import (
     RepFlowLayer,
 )
+
+if not ENABLE_CUSTOMIZED_OP:
+
+    def border_op(
+        argument0,
+        argument1,
+        argument2,
+        argument3,
+        argument4,
+        argument5,
+        argument6,
+        argument7,
+        argument8,
+    ) -> paddle.Tensor:
+        raise NotImplementedError(
+            "The 'border_op' operator is unavailable because the custom Paddle OP library was not built when freezing the model.\n"
+            "To install 'border_op', run: python source/op/pd/setup.py install\n"
+            "For more information, please refer to the DPA3 documentation."
+        )
+
+    # Note: this hack cannot actually save a model that can be run using LAMMPS.
+    paddle_ops_deepmd_border_op = border_op
+else:
+    paddle_ops_deepmd_border_op = paddle_ops_deepmd.border_op
 
 
 @DescriptorBlock.register("se_repflow")
@@ -109,12 +143,35 @@ class DescrptBlockRepflows(DescriptorBlock):
     smooth_edge_update : bool, optional
         Whether to make edge update smooth.
         If True, the edge update from angle message will not use self as padding.
+    edge_init_use_dist : bool, optional
+        Whether to use direct distance r to initialize the edge features instead of 1/r.
+        Note that when using this option, the activation function will not be used when initializing edge features.
+    use_exp_switch : bool, optional
+        Whether to use an exponential switch function instead of a polynomial one in the neighbor update.
+        The exponential switch function ensures neighbor contributions smoothly diminish as the interatomic distance
+        `r` approaches the cutoff radius `rcut`. Specifically, the function is defined as:
+        s(r) = \\exp(-\\exp(20 * (r - rcut_smth) / rcut_smth)) for 0 < r \\leq rcut, and s(r) = 0 for r > rcut.
+        Here, `rcut_smth` is an adjustable smoothing factor and `rcut_smth` should be chosen carefully
+        according to `rcut`, ensuring s(r) approaches zero smoothly at the cutoff.
+        Typical recommended values are `rcut_smth` = 5.3 for `rcut` = 6.0, and 3.5 for `rcut` = 4.0.
+    use_dynamic_sel : bool, optional
+        Whether to dynamically select neighbors within the cutoff radius.
+        If True, the exact number of neighbors within the cutoff radius is used
+        without padding to a fixed selection numbers.
+        When enabled, users can safely set larger values for `e_sel` or `a_sel` (e.g., 1200 or 300, respectively)
+        to guarantee capturing all neighbors within the cutoff radius.
+        Note that when using dynamic selection, the `smooth_edge_update` must be True.
+    sel_reduce_factor : float, optional
+        Reduction factor applied to neighbor-scale normalization when `use_dynamic_sel` is True.
+        In the dynamic selection case, neighbor-scale normalization will use `e_sel / sel_reduce_factor`
+        or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values,
+        accommodating larger selection numbers.
+    use_loc_mapping : bool, Optional
+        Whether to use local atom index mapping in training or non-parallel inference.
+        When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.
     optim_update : bool, optional
         Whether to enable the optimized update method.
         Uses a more efficient process when enabled. Defaults to True
-    use_loc_mapping : bool, Optional
-        Whether to use local atom index mapping in training or non-parallel inference.
-        Not supported yet in Paddle.
     ntypes : int
         Number of element types
     activation_function : str, optional
@@ -131,6 +188,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
     seed : int, optional
         Random seed for parameter initialization.
+    trainable : bool, default: True
+        Whether this block is trainable
     """
 
     def __init__(
@@ -162,11 +221,14 @@ class DescrptBlockRepflows(DescriptorBlock):
         precision: str = "float64",
         fix_stat_std: float = 0.3,
         smooth_edge_update: bool = False,
+        edge_init_use_dist: bool = False,
+        use_exp_switch: bool = False,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
-        use_loc_mapping: bool = False,
+        use_loc_mapping: bool = True,
         optim_update: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.e_rcut = float(e_rcut)
@@ -176,6 +238,9 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.a_rcut_smth = float(a_rcut_smth)
         self.a_sel = a_sel
         self.ntypes = ntypes
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
         self.nlayers = nlayers
         # for other common desciptor method
         sel = [e_sel] if isinstance(e_sel, int) else e_sel
@@ -183,7 +248,9 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.ndescrpt = self.nnei * 4  # use full descriptor.
         assert len(sel) == 1
         self.sel = sel
+        self.register_buffer("buffer_sel", paddle.to_tensor(sel))
         self.rcut = e_rcut
+        self.register_buffer("buffer_rcut", paddle.to_tensor(self.e_rcut))
         self.rcut_smth = e_rcut_smth
         self.sec = self.sel
         self.split_sel = self.sel
@@ -195,13 +262,21 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.fix_stat_std = fix_stat_std
         self.set_stddev_constant = fix_stat_std != 0.0
         self.a_compress_use_split = a_compress_use_split
+        self.use_loc_mapping = use_loc_mapping
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
-        self.use_dynamic_sel = use_dynamic_sel  # not supported yet
+        self.edge_init_use_dist = edge_init_use_dist
+        self.use_exp_switch = use_exp_switch
+        self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
-        assert not self.use_dynamic_sel, "Dynamic selection is not supported yet."
-        self.use_loc_mapping = use_loc_mapping
-        assert not self.use_loc_mapping, "Local mapping is not supported yet."
+        if self.use_dynamic_sel and not self.smooth_edge_update:
+            raise NotImplementedError(
+                "smooth_edge_update must be True when use_dynamic_sel is True!"
+            )
+        if self.sel_reduce_factor <= 0:
+            raise ValueError(
+                f"`sel_reduce_factor` must be > 0, got {self.sel_reduce_factor}"
+            )
 
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -223,10 +298,19 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.seed = seed
 
         self.edge_embd = MLPLayer(
-            1, self.e_dim, precision=precision, seed=child_seed(seed, 0)
+            1,
+            self.e_dim,
+            precision=precision,
+            seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.angle_embd = MLPLayer(
-            1, self.a_dim, precision=precision, bias=False, seed=child_seed(seed, 1)
+            1,
+            self.a_dim,
+            precision=precision,
+            bias=False,
+            seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         layers = []
         for ii in range(nlayers):
@@ -258,6 +342,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                     sel_reduce_factor=self.sel_reduce_factor,
                     smooth_edge_update=self.smooth_edge_update,
                     seed=child_seed(child_seed(seed, 1), ii),
+                    trainable=trainable,
                 )
             )
         self.layers = paddle.nn.LayerList(layers)
@@ -275,6 +360,10 @@ class DescrptBlockRepflows(DescriptorBlock):
         """Returns the cut-off radius."""
         return self.e_rcut
 
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Returns the cut-off radius as a buffer-style Tensor."""
+        return self.buffer_rcut
+
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.e_rcut_smth
@@ -287,9 +376,13 @@ class DescrptBlockRepflows(DescriptorBlock):
         """Returns the number of selected atoms for each type."""
         return self.sel
 
+    def get_buffer_sel(self) -> paddle.Tensor:
+        """Returns the number of selected atoms for each type as a buffer-style Tensor."""
+        return self.buffer_sel
+
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.ntypes
+        return self.ntypes if paddle.in_dynamic_mode() else self.buffer_ntypes
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
@@ -364,17 +457,18 @@ class DescrptBlockRepflows(DescriptorBlock):
         extended_atype: paddle.Tensor,
         extended_atype_embd: Optional[paddle.Tensor] = None,
         mapping: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[list[paddle.Tensor]] = None,
     ):
-        if comm_dict is None:
-            assert mapping is not None
-            assert extended_atype_embd is not None
+        parallel_mode = comm_dict is not None
+        if not parallel_mode:
+            if paddle.in_dynamic_mode():
+                assert mapping is not None
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.reshape([nframes, -1]).shape[1] // 3
         atype = extended_atype[:, :nloc]
         # nb x nloc x nnei
         exclude_mask = self.emask(nlist, extended_atype)
-        nlist = paddle.where(exclude_mask != 0, nlist, -1)
+        nlist = paddle.where(exclude_mask != 0, nlist, paddle.full_like(nlist, -1))
         # nb x nloc x nnei x 4, nb x nloc x nnei x 3, nb x nloc x nnei x 1
         dmatrix, diff, sw = prod_env_mat(
             extended_coord,
@@ -385,36 +479,19 @@ class DescrptBlockRepflows(DescriptorBlock):
             self.e_rcut,
             self.e_rcut_smth,
             protection=self.env_protection,
+            use_exp_switch=self.use_exp_switch,
         )
         nlist_mask = nlist != -1
         sw = paddle.squeeze(sw, -1)
         # beyond the cutoff sw should be 0.0
         sw = sw.masked_fill(~nlist_mask, 0.0)
 
-        # [nframes, nloc, tebd_dim]
-        if comm_dict is None:
-            if paddle.in_dynamic_mode():
-                assert isinstance(extended_atype_embd, paddle.Tensor)
-            atype_embd = extended_atype_embd[:, :nloc, :]
-            if paddle.in_dynamic_mode():
-                assert atype_embd.shape == [nframes, nloc, self.n_dim]
-        else:
-            atype_embd = extended_atype_embd
-            if paddle.in_dynamic_mode():
-                assert isinstance(atype_embd, paddle.Tensor)
-        node_ebd = self.act(atype_embd)
-        n_dim = node_ebd.shape[-1]
-        # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
-        edge_input, h2 = paddle.split(dmatrix, [1, 3], axis=-1)
-        # nb x nloc x nnei x e_dim
-        edge_ebd = self.act(self.edge_embd(edge_input))
-
         # get angle nlist (maybe smaller)
         a_dist_mask = (paddle.linalg.norm(diff, axis=-1) < self.a_rcut)[
             :, :, : self.a_sel
         ]
         a_nlist = nlist[:, :, : self.a_sel]
-        a_nlist = paddle.where(a_dist_mask, a_nlist, -1)
+        a_nlist = paddle.where(a_dist_mask, a_nlist, paddle.full_like(a_nlist, -1))
         _, a_diff, a_sw = prod_env_mat(
             extended_coord,
             a_nlist,
@@ -424,12 +501,33 @@ class DescrptBlockRepflows(DescriptorBlock):
             self.a_rcut,
             self.a_rcut_smth,
             protection=self.env_protection,
+            use_exp_switch=self.use_exp_switch,
         )
         a_nlist_mask = a_nlist != -1
         a_sw = paddle.squeeze(a_sw, -1)
         # beyond the cutoff sw should be 0.0
         a_sw = a_sw.masked_fill(~a_nlist_mask, 0.0)
+        # set all padding positions to index of 0
+        # if the a neighbor is real or not is indicated by nlist_mask
+        nlist[nlist == -1] = 0
         a_nlist[a_nlist == -1] = 0
+
+        # get node embedding
+        # [nframes, nloc, tebd_dim]
+        assert extended_atype_embd is not None
+        atype_embd = extended_atype_embd[:, :nloc, :]
+        if paddle.in_dynamic_mode():
+            assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
+            assert isinstance(atype_embd, paddle.Tensor)  # for jit
+        node_ebd = self.act(atype_embd)
+        n_dim = node_ebd.shape[-1]
+
+        # get edge and angle embedding input
+        # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
+        edge_input, h2 = paddle.split(dmatrix, [1, 3], axis=-1)
+        if self.edge_init_use_dist:
+            # nb x nloc x nnei x 1
+            edge_input = paddle.linalg.norm(diff, axis=-1, keepdim=True)
 
         # nf x nloc x a_nnei x 3
         normalized_diff_i = a_diff / (
@@ -440,19 +538,57 @@ class DescrptBlockRepflows(DescriptorBlock):
         # nf x nloc x a_nnei x a_nnei
         # 1 - 1e-6 for paddle.acos stability
         cosine_ij = paddle.matmul(normalized_diff_i, normalized_diff_j) * (1 - 1e-6)
-        # nf x nloc x a_nnei x a_nnei x 1
-        cosine_ij = cosine_ij.unsqueeze(-1) / (paddle.pi**0.5)
-        # nf x nloc x a_nnei x a_nnei x a_dim
-        angle_ebd = self.angle_embd(cosine_ij).reshape(
-            [nframes, nloc, self.a_sel, self.a_sel, self.a_dim]
-        )
+        angle_input = cosine_ij.unsqueeze(-1) / (paddle.pi**0.5)
 
-        # set all padding positions to index of 0
-        # if the a neighbor is real or not is indicated by nlist_mask
-        nlist[nlist == -1] = 0
+        if not parallel_mode and self.use_loc_mapping:
+            if paddle.in_dynamic_mode():
+                assert mapping is not None
+            # convert nlist from nall to nloc index
+            nlist = paddle.take_along_axis(
+                mapping,
+                nlist.reshape([nframes, -1]),
+                1,
+                broadcast=False,
+            ).reshape(nlist.shape)
+        if self.use_dynamic_sel:
+            # get graph index
+            edge_index, angle_index = get_graph_index(
+                nlist,
+                nlist_mask,
+                a_nlist_mask,
+                nall,
+                use_loc_mapping=self.use_loc_mapping,
+            )
+            # flat all the tensors
+            # n_edge x 1
+            edge_input = edge_input[nlist_mask]
+            # n_edge x 3
+            h2 = h2[nlist_mask]
+            # n_edge x 1
+            sw = sw[nlist_mask]
+            # nb x nloc x a_nnei x a_nnei
+            a_nlist_mask = a_nlist_mask[:, :, :, None] & a_nlist_mask[:, :, None, :]
+            # n_angle x 1
+            angle_input = angle_input[a_nlist_mask]
+            # n_angle x 1
+            a_sw = (a_sw[:, :, :, None] * a_sw[:, :, None, :])[a_nlist_mask]
+        else:
+            # avoid jit assertion
+            edge_index = paddle.zeros([2, 1], dtype=nlist.dtype)
+            angle_index = paddle.zeros([3, 1], dtype=nlist.dtype)
+        # get edge and angle embedding
+        # nb x nloc x nnei x e_dim [OR] n_edge x e_dim
+        if not self.edge_init_use_dist:
+            edge_ebd = self.act(self.edge_embd(edge_input))
+        else:
+            edge_ebd = self.edge_embd(edge_input)
+        # nf x nloc x a_nnei x a_nnei x a_dim [OR] n_angle x a_dim
+        angle_ebd = self.angle_embd(angle_input)
+
         # nb x nall x n_dim
-        if comm_dict is None:
-            assert mapping is not None
+        if not parallel_mode:
+            if paddle.in_dynamic_mode():
+                assert mapping is not None
             mapping = (
                 mapping.reshape([nframes, nall])
                 .unsqueeze(-1)
@@ -460,14 +596,97 @@ class DescrptBlockRepflows(DescriptorBlock):
             )
         for idx, ll in enumerate(self.layers):
             # node_ebd:     nb x nloc x n_dim
-            # node_ebd_ext: nb x nall x n_dim
-            if comm_dict is None:
-                assert mapping is not None
-                node_ebd_ext = paddle.take_along_axis(
-                    node_ebd, mapping, 1, broadcast=False
+            # node_ebd_ext: nb x nall x n_dim [OR] nb x nloc x n_dim when not parallel_mode
+            if not parallel_mode:
+                if paddle.in_dynamic_mode():
+                    assert mapping is not None
+                node_ebd_ext = (
+                    paddle.take_along_axis(node_ebd, mapping, 1, broadcast=False)
+                    if not self.use_loc_mapping
+                    else node_ebd
                 )
             else:
-                raise NotImplementedError("Not implemented")
+                assert len(comm_dict) >= 6
+                has_spin = len(comm_dict) >= 7
+                if not has_spin:
+                    n_padding = nall - nloc
+                    if paddle.in_dynamic_mode():
+                        node_ebd = paddle.nn.functional.pad(
+                            node_ebd.squeeze(0), [0, 0, 0, n_padding], value=0.0
+                        )
+                    else:
+                        _fill_shape = node_ebd.shape[1:]
+                        _fill_shape[0] = n_padding
+                        node_ebd = paddle.concat(
+                            [
+                                node_ebd.squeeze(0),
+                                paddle.zeros(_fill_shape, dtype=node_ebd.dtype),
+                            ],
+                            axis=0,
+                        )
+                    # [nframes, nloc, tebd_dim]
+                    real_nloc = nloc
+                    real_nall = nall
+                else:
+                    # for spin
+                    real_nloc = nloc // 2
+                    real_nall = nall // 2
+                    real_n_padding = real_nall - real_nloc
+                    node_ebd_real, node_ebd_virtual = paddle.split(
+                        node_ebd, [real_nloc, real_nloc], axis=1
+                    )
+                    # mix_node_ebd: nb x real_nloc x (n_dim * 2)
+                    mix_node_ebd = paddle.concat(
+                        [node_ebd_real, node_ebd_virtual], axis=2
+                    )
+                    # nb x real_nall x (n_dim * 2)
+                    if paddle.in_dynamic_mode():
+                        node_ebd = paddle.nn.functional.pad(
+                            mix_node_ebd.squeeze(0),
+                            (0, 0, 0, real_n_padding),
+                            value=0.0,
+                        )
+                    else:
+                        _fill_shape = mix_node_ebd.shape[1:]
+                        _fill_shape[0] = real_n_padding
+                        node_ebd = paddle.concat(
+                            [
+                                mix_node_ebd.squeeze(0),
+                                paddle.zeros(_fill_shape, dtype=mix_node_ebd.dtype),
+                            ],
+                            axis=0,
+                        )
+
+                assert len(comm_dict) >= 6
+                ret = paddle_ops_deepmd_border_op(
+                    comm_dict[0],
+                    comm_dict[1],
+                    comm_dict[2],
+                    comm_dict[3],
+                    comm_dict[4],
+                    node_ebd,
+                    comm_dict[5],
+                    paddle.to_tensor(
+                        real_nloc,
+                        dtype=paddle.int32,
+                        place=paddle.CPUPlace(),
+                    ),  # should be int of c++, placed on cpu
+                    paddle.to_tensor(
+                        real_nall - real_nloc,
+                        dtype=paddle.int32,
+                        place=paddle.CPUPlace(),
+                    ),  # should be int of c++, placed on cpu
+                )
+                if not paddle.in_dynamic_mode():
+                    ret = paddle.assign(ret)
+                node_ebd_ext = ret.unsqueeze(0)
+                if has_spin:
+                    node_ebd_real_ext, node_ebd_virtual_ext = paddle.split(
+                        node_ebd_ext, [n_dim, n_dim], axis=2
+                    )
+                    node_ebd_ext = concat_switch_virtual(
+                        node_ebd_real_ext, node_ebd_virtual_ext, real_nloc
+                    )
             node_ebd, edge_ebd, angle_ebd = ll.forward(
                 node_ebd_ext,
                 edge_ebd,
@@ -479,12 +698,27 @@ class DescrptBlockRepflows(DescriptorBlock):
                 a_nlist,
                 a_nlist_mask,
                 a_sw,
+                edge_index=edge_index,
+                angle_index=angle_index,
             )
 
         # nb x nloc x 3 x e_dim
-        h2g2 = RepFlowLayer._cal_hg(edge_ebd, h2, nlist_mask, sw)
+        h2g2 = (
+            RepFlowLayer._cal_hg(edge_ebd, h2, nlist_mask, sw)
+            if not self.use_dynamic_sel
+            else RepFlowLayer._cal_hg_dynamic(
+                edge_ebd,
+                h2,
+                sw,
+                owner=edge_index[0],
+                num_owner=nframes * nloc,
+                nb=nframes,
+                nloc=nloc,
+                scale_factor=(self.nnei / self.sel_reduce_factor) ** (-0.5),
+            )
+        )
         # (nb x nloc) x e_dim x 3
-        rot_mat = paddle.transpose(h2g2, (0, 1, 3, 2))
+        rot_mat = paddle.transpose(h2g2, [0, 1, 3, 2])
 
         return (
             node_ebd,

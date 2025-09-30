@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from typing import (
+    Union,
+)
+
 import numpy as np
 from mendeleev import (
     element,
@@ -9,6 +13,7 @@ __all__ = [
     "electronic_configuration_embedding",
     "make_econf_embedding",
     "normalized_electronic_configuration_embedding",
+    "sort_element_type",
     "transform_to_spin_rep",
 ]
 
@@ -181,7 +186,7 @@ type_map = list(electronic_configuration_embedding.keys())
 ECONF_DIM = electronic_configuration_embedding[type_map[0]].shape[0]
 
 
-def normalize_vec_length(res):
+def normalize_vec_length(res: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     scale = 1.0 / np.sqrt(ECONF_DIM)
     return {kk: scale * vv for kk, vv in res.items()}
 
@@ -191,7 +196,7 @@ normalized_electronic_configuration_embedding = normalize_vec_length(
 )
 
 
-def make_empty_list_vec():
+def make_empty_list_vec() -> dict[str, np.ndarray]:
     ret = {}
     for kk in conf_keys:
         ll = lett_to_ln[kk[1]]
@@ -199,7 +204,7 @@ def make_empty_list_vec():
     return ret
 
 
-def flatten_list_vec(lv):
+def flatten_list_vec(lv: dict[str, np.ndarray]) -> np.ndarray:
     ret = np.array([], dtype=np.int32)
     for kk in conf_keys:
         ret = np.append(ret, lv[kk])
@@ -240,7 +245,7 @@ def transform_to_spin_rep(res: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     """Transform electron occupation of 0/1/2 to -1,-1/-1,1/1,1."""
     ret = {}
 
-    def transform(ii):
+    def transform(ii: int) -> list[int]:
         if ii == 0:
             return [-1, -1]
         elif ii == 1:
@@ -263,3 +268,16 @@ def print_econf_embedding(res: dict[str, np.ndarray]) -> None:
         vvstr = ",".join([str(ii) for ii in vv])
         space = " " * (2 - len(kk))
         print(f'"{kk}"{space} : [{vvstr}],')  # noqa: T201
+
+
+def sort_element_type(elements: list[str]) -> list[str]:
+    """Sort element types based on their atomic number."""
+
+    def get_atomic_number(symbol: str) -> Union[int, float]:
+        try:
+            return element(symbol).atomic_number
+        except ValueError:
+            return float("inf")
+
+    sorted_elements = sorted(elements, key=lambda x: get_atomic_number(x))
+    return sorted_elements

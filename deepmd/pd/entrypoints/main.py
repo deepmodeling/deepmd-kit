@@ -7,6 +7,7 @@ from pathlib import (
     Path,
 )
 from typing import (
+    Any,
     Optional,
     Union,
 )
@@ -22,6 +23,7 @@ from deepmd import (
 )
 from deepmd.common import (
     expand_sys_str,
+    j_loader,
 )
 from deepmd.loggers.loggers import (
     set_log_handles,
@@ -79,15 +81,15 @@ log = logging.getLogger(__name__)
 
 
 def get_trainer(
-    config,
-    init_model=None,
-    restart_model=None,
-    finetune_model=None,
-    force_load=False,
-    init_frz_model=None,
-    shared_links=None,
-    finetune_links=None,
-):
+    config: dict[str, Any],
+    init_model: Optional[str] = None,
+    restart_model: Optional[str] = None,
+    finetune_model: Optional[str] = None,
+    force_load: bool = False,
+    init_frz_model: Optional[str] = None,
+    shared_links: Optional[dict[str, Any]] = None,
+    finetune_links: Optional[dict[str, Any]] = None,
+) -> training.Trainer:
     multi_task = "model_dict" in config.get("model", {})
 
     # Initialize DDP
@@ -97,17 +99,22 @@ def get_trainer(
         fleet.init(is_collective=True)
 
     def prepare_trainer_input_single(
-        model_params_single, data_dict_single, rank=0, seed=None
-    ):
+        model_params_single: dict[str, Any],
+        data_dict_single: dict[str, Any],
+        rank: int = 0,
+        seed: Optional[int] = None,
+    ) -> tuple[DpLoaderSet, Optional[DpLoaderSet], Optional[DPPath]]:
         training_dataset_params = data_dict_single["training_data"]
         validation_dataset_params = data_dict_single.get("validation_data", None)
         validation_systems = (
             validation_dataset_params["systems"] if validation_dataset_params else None
         )
         training_systems = training_dataset_params["systems"]
-        training_systems = process_systems(training_systems)
+        trn_patterns = training_dataset_params.get("rglob_patterns", None)
+        training_systems = process_systems(training_systems, patterns=trn_patterns)
         if validation_systems is not None:
-            validation_systems = process_systems(validation_systems)
+            val_patterns = validation_dataset_params.get("rglob_patterns", None)
+            validation_systems = process_systems(validation_systems, val_patterns)
 
         # stat files
         stat_file_path_single = data_dict_single.get("stat_file", None)
@@ -235,8 +242,7 @@ def train(
     log.info("Configuration path: %s", input_file)
     if LOCAL_RANK == 0:
         SummaryPrinter()()
-    with open(input_file) as fin:
-        config = json.load(fin)
+    config = j_loader(input_file)
     # ensure suffix, as in the command line help, we say "path prefix of checkpoint files"
     if init_model is not None and not init_model.endswith(".pd"):
         init_model += ".pd"
@@ -342,6 +348,7 @@ def freeze(
     model: str,
     output: str = "frozen_model.json",
     head: Optional[str] = None,
+    do_atomic_virial: bool = False,
 ) -> None:
     paddle.set_flags(
         {
@@ -368,12 +375,13 @@ def freeze(
         model.forward = paddle.jit.to_static(
             model.forward,
             input_spec=[
-                InputSpec([1, -1, 3], dtype="float64", name="coord"),  # coord
-                InputSpec([1, -1], dtype="int64", name="atype"),  # atype
-                InputSpec([1, 9], dtype="float64", name="box"),  # box
+                InputSpec([-1, -1, 3], dtype="float64", name="coord"),  # coord
+                InputSpec([-1, -1], dtype="int64", name="atype"),  # atype
+                InputSpec([-1, 9], dtype="float64", name="box"),  # box
                 None,  # fparam
                 None,  # aparam
-                True,  # do_atomic_virial
+                # InputSpec([], dtype="bool", name="do_atomic_virial"),  # do_atomic_virial
+                do_atomic_virial,  # do_atomic_virial
             ],
             full_graph=True,
         )
@@ -388,17 +396,46 @@ def freeze(
         model.forward_lower = paddle.jit.to_static(
             model.forward_lower,
             input_spec=[
-                InputSpec([1, -1, 3], dtype="float64", name="coord"),  # extended_coord
-                InputSpec([1, -1], dtype="int32", name="atype"),  # extended_atype
-                InputSpec([1, -1, -1], dtype="int32", name="nlist"),  # nlist
-                InputSpec([1, -1], dtype="int64", name="mapping"),  # mapping
+                InputSpec([-1, -1, 3], dtype="float64", name="coord"),  # extended_coord
+                InputSpec([-1, -1], dtype="int32", name="atype"),  # extended_atype
+                InputSpec([-1, -1, -1], dtype="int32", name="nlist"),  # nlist
+                InputSpec([-1, -1], dtype="int64", name="mapping"),  # mapping
                 None,  # fparam
                 None,  # aparam
-                True,  # do_atomic_virial
-                None,  # comm_dict
+                # InputSpec([], dtype="bool", name="do_atomic_virial"),  # do_atomic_virial
+                do_atomic_virial,  # do_atomic_virial
+                (
+                    InputSpec([-1], "int64", name="send_list"),
+                    InputSpec([-1], "int32", name="send_proc"),
+                    InputSpec([-1], "int32", name="recv_proc"),
+                    InputSpec([-1], "int32", name="send_num"),
+                    InputSpec([-1], "int32", name="recv_num"),
+                    InputSpec([-1], "int64", name="communicator"),
+                    # InputSpec([1], "int64", name="has_spin"),
+                ),  # comm_dict
             ],
             full_graph=True,
         )
+    for method_name in [
+        "get_buffer_rcut",
+        "get_buffer_type_map",
+        "get_buffer_dim_fparam",
+        "get_buffer_dim_aparam",
+        "get_buffer_intensive",
+        "get_buffer_sel_type",
+        "get_buffer_numb_dos",
+        "get_buffer_task_dim",
+    ]:
+        if hasattr(model, method_name):
+            setattr(
+                model,
+                method_name,
+                paddle.jit.to_static(
+                    getattr(model, method_name),
+                    input_spec=[],
+                    full_graph=True,
+                ),
+            )
     if output.endswith(".json"):
         output = output[:-5]
     paddle.jit.save(

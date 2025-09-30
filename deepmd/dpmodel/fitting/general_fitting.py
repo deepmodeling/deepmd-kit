@@ -16,6 +16,9 @@ from deepmd.dpmodel import (
     PRECISION_DICT,
     NativeOP,
 )
+from deepmd.dpmodel.array_api import (
+    Array,
+)
 from deepmd.dpmodel.common import (
     get_xp_precision,
     to_numpy_array,
@@ -94,6 +97,9 @@ class GeneralFitting(NativeOP, BaseFitting):
             A list of strings. Give the name to each type of atoms.
     seed: Optional[Union[int, list[int]]]
         Random seed for initializing the network parameters.
+    default_fparam: list[float], optional
+        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+        this value will be used as the default value for the frame parameter in the fitting net.
     """
 
     def __init__(
@@ -106,7 +112,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        bias_atom_e: Optional[np.ndarray] = None,
+        bias_atom_e: Optional[Array] = None,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[list[bool]] = None,
@@ -120,6 +126,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         remove_vaccum_contribution: Optional[list[bool]] = None,
         type_map: Optional[list[str]] = None,
         seed: Optional[Union[int, list[int]]] = None,
+        default_fparam: Optional[list[float]] = None,
     ) -> None:
         self.var_name = var_name
         self.ntypes = ntypes
@@ -129,6 +136,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
         self.dim_case_embd = dim_case_embd
+        self.default_fparam = default_fparam
         self.rcond = rcond
         self.tot_ener_zero = tot_ener_zero
         self.trainable = trainable
@@ -177,6 +185,15 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.case_embd = np.zeros(self.dim_case_embd, dtype=self.prec)
         else:
             self.case_embd = None
+
+        if self.default_fparam is not None:
+            if self.numb_fparam > 0:
+                assert len(self.default_fparam) == self.numb_fparam, (
+                    "default_fparam length mismatch!"
+                )
+            self.default_fparam_tensor = np.array(self.default_fparam, dtype=self.prec)
+        else:
+            self.default_fparam_tensor = None
         # init networks
         in_dim = (
             self.dim_descrpt
@@ -198,13 +215,14 @@ class GeneralFitting(NativeOP, BaseFitting):
                     self.precision,
                     bias_out=True,
                     seed=child_seed(seed, ii),
+                    trainable=trainable,
                 )
                 for ii in range(self.ntypes if not self.mixed_types else 1)
             ],
         )
 
     @abstractmethod
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         pass
 
@@ -215,6 +233,10 @@ class GeneralFitting(NativeOP, BaseFitting):
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.numb_aparam
+
+    def has_default_fparam(self) -> bool:
+        """Check if the fitting has default frame parameters."""
+        return self.default_fparam is not None
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
@@ -229,7 +251,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Get the name to each type of atoms."""
         return self.type_map
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this fitting net by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -237,7 +259,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.case_embd = np.eye(self.dim_case_embd, dtype=self.prec)[case_idx]
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -258,7 +280,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             )
         self.bias_atom_e = self.bias_atom_e[remap_index]
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         if key in ["bias_atom_e"]:
             self.bias_atom_e = value
         elif key in ["fparam_avg"]:
@@ -273,10 +295,12 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.case_embd = value
         elif key in ["scale"]:
             self.scale = value
+        elif key in ["default_fparam_tensor"]:
+            self.default_fparam_tensor = value
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if key in ["bias_atom_e"]:
             return self.bias_atom_e
         elif key in ["fparam_avg"]:
@@ -291,6 +315,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             return self.case_embd
         elif key in ["scale"]:
             return self.scale
+        elif key in ["default_fparam_tensor"]:
+            return self.default_fparam_tensor
         else:
             raise KeyError(key)
 
@@ -305,7 +331,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
-            "@version": 3,
+            "@version": 4,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -314,6 +340,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
             "dim_case_embd": self.dim_case_embd,
+            "default_fparam": self.default_fparam,
             "rcond": self.rcond,
             "activation_function": self.activation_function,
             "precision": self.precision,
@@ -352,14 +379,14 @@ class GeneralFitting(NativeOP, BaseFitting):
 
     def _call_common(
         self,
-        descriptor: np.ndarray,
-        atype: np.ndarray,
-        gr: Optional[np.ndarray] = None,
-        g2: Optional[np.ndarray] = None,
-        h2: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        descriptor: Array,
+        atype: Array,
+        gr: Optional[Array] = None,
+        g2: Optional[Array] = None,
+        h2: Optional[Array] = None,
+        fparam: Optional[Array] = None,
+        aparam: Optional[Array] = None,
+    ) -> dict[str, Array]:
         """Calculate the fitting.
 
         Parameters
@@ -402,6 +429,14 @@ class GeneralFitting(NativeOP, BaseFitting):
             xx_zeros = xp.zeros_like(xx)
         else:
             xx_zeros = None
+
+        if self.numb_fparam > 0 and fparam is None:
+            # use default fparam
+            assert self.default_fparam_tensor is not None
+            fparam = xp.tile(
+                xp.reshape(self.default_fparam_tensor, (1, self.numb_fparam)), (nf, 1)
+            )
+
         # check fparam dim, concate to input descriptor
         if self.numb_fparam > 0:
             assert fparam is not None, "fparam should not be None"
@@ -412,7 +447,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                 )
             fparam = (fparam - self.fparam_avg[...]) * self.fparam_inv_std[...]
             fparam = xp.tile(
-                xp.reshape(fparam, [nf, 1, self.numb_fparam]), (1, nloc, 1)
+                xp.reshape(fparam, (nf, 1, self.numb_fparam)), (1, nloc, 1)
             )
             xx = xp.concat(
                 [xx, fparam],
@@ -431,7 +466,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                     f"get an input aparam of dim {aparam.shape[-1]}, "
                     f"which is not consistent with {self.numb_aparam}."
                 )
-            aparam = xp.reshape(aparam, [nf, nloc, self.numb_aparam])
+            aparam = xp.reshape(aparam, (nf, nloc, self.numb_aparam))
             aparam = (aparam - self.aparam_avg[...]) * self.aparam_inv_std[...]
             xx = xp.concat(
                 [xx, aparam],
@@ -446,7 +481,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         if self.dim_case_embd > 0:
             assert self.case_embd is not None
             case_embd = xp.tile(
-                xp.reshape(self.case_embd[...], [1, 1, -1]), [nf, nloc, 1]
+                xp.reshape(self.case_embd[...], (1, 1, -1)), (nf, nloc, 1)
             )
             xx = xp.concat(
                 [xx, case_embd],
@@ -465,7 +500,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             )
             for type_i in range(self.ntypes):
                 mask = xp.tile(
-                    xp.reshape((atype == type_i), [nf, nloc, 1]), (1, 1, net_dim_out)
+                    xp.reshape((atype == type_i), (nf, nloc, 1)), (1, 1, net_dim_out)
                 )
                 atom_property = self.nets[(type_i,)](xx)
                 if self.remove_vaccum_contribution is not None and not (
@@ -485,10 +520,10 @@ class GeneralFitting(NativeOP, BaseFitting):
         outs += xp.reshape(
             xp.take(
                 xp.astype(self.bias_atom_e[...], outs.dtype),
-                xp.reshape(atype, [-1]),
+                xp.reshape(atype, (-1,)),
                 axis=0,
             ),
-            [nf, nloc, net_dim_out],
+            (nf, nloc, net_dim_out),
         )
         # nf x nloc
         exclude_mask = self.emask.build_type_exclude_mask(atype)

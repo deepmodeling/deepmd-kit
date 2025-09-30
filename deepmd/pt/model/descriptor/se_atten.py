@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Callable,
     Optional,
     Union,
@@ -86,12 +87,12 @@ class DescrptBlockSeAtten(DescriptorBlock):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        activation_function="tanh",
+        activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        scaling_factor=1.0,
-        normalize=True,
-        temperature=None,
+        scaling_factor: float = 1.0,
+        normalize: bool = True,
+        temperature: Optional[float] = None,
         smooth: bool = True,
         type_one_side: bool = False,
         exclude_types: list[tuple[int, int]] = [],
@@ -100,6 +101,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         ln_eps: Optional[float] = 1e-5,
         seed: Optional[Union[int, list[int]]] = None,
         type: Optional[str] = None,
+        trainable: bool = True,
     ) -> None:
         r"""Construct an embedding net of type `se_atten`.
 
@@ -165,6 +167,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
             If not None, the scaling of attention weights is `temperature` itself.
         seed : int, Optional
             Random seed for parameter initialization.
+        trainable : bool, default: True
+            Whether this block is trainable
         """
         super().__init__()
         del type
@@ -224,6 +228,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             smooth=self.smooth,
             precision=self.precision,
             seed=child_seed(self.seed, 0),
+            trainable=trainable,
         )
 
         wanted_shape = (self.ntypes, self.nnei, 4)
@@ -248,6 +253,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             precision=self.precision,
             resnet_dt=self.resnet_dt,
             seed=child_seed(self.seed, 1),
+            trainable=trainable,
         )
         self.filter_layers = filter_layers
         if self.tebd_input_mode in ["strip"]:
@@ -261,6 +267,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 precision=self.precision,
                 resnet_dt=self.resnet_dt,
                 seed=child_seed(self.seed, 2),
+                trainable=trainable,
             )
             self.filter_layers_strip = filter_layers_strip
         self.stats = None
@@ -311,7 +318,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.filter_neuron[-1]
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -319,7 +326,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -344,17 +351,17 @@ class DescrptBlockSeAtten(DescriptorBlock):
         return self.env_protection
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.filter_neuron[-1] * self.axis_neuron
 
     @property
-    def dim_in(self):
+    def dim_in(self) -> int:
         """Returns the atomic input dimension of this descriptor."""
         return self.tebd_dim
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the output dimension of embedding."""
         return self.get_dim_emb()
 
@@ -419,10 +426,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def enable_compression(
         self,
-        table_data,
-        table_config,
-        lower,
-        upper,
+        table_data: dict,
+        table_config: dict,
+        lower: dict,
+        upper: dict,
     ) -> None:
         net = "filter_net"
         self.compress_info[0] = torch.as_tensor(
@@ -448,7 +455,13 @@ class DescrptBlockSeAtten(DescriptorBlock):
         extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
         type_embedding: Optional[torch.Tensor] = None,
-    ):
+    ) -> tuple[
+        torch.Tensor,
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+    ]:
         """Compute the descriptor.
 
         Parameters
@@ -680,6 +693,7 @@ class NeighborGatedAttention(nn.Module):
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         """Construct a neighbor-wise attention net."""
         super().__init__()
@@ -715,17 +729,18 @@ class NeighborGatedAttention(nn.Module):
                     smooth=smooth,
                     precision=precision,
                     seed=child_seed(seed, i),
+                    trainable=trainable,
                 )
             )
         self.attention_layers = nn.ModuleList(attention_layers)
 
     def forward(
         self,
-        input_G,
-        nei_mask,
+        input_G: torch.Tensor,
+        nei_mask: torch.Tensor,
         input_r: Optional[torch.Tensor] = None,
         sw: Optional[torch.Tensor] = None,
-    ):
+    ) -> torch.Tensor:
         """Compute the multi-layer gated self-attention.
 
         Parameters
@@ -745,13 +760,13 @@ class NeighborGatedAttention(nn.Module):
             out = layer(out, nei_mask, input_r=input_r, sw=sw)
         return out
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: int) -> Any:
         if isinstance(key, int):
             return self.attention_layers[key]
         else:
             raise TypeError(key)
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: int, value: Any) -> None:
         if not isinstance(key, int):
             raise TypeError(key)
         if isinstance(value, self.network_type):
@@ -823,6 +838,7 @@ class NeighborGatedAttentionLayer(nn.Module):
         ln_eps: float = 1e-5,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         """Construct a neighbor-wise attention layer."""
         super().__init__()
@@ -850,6 +866,7 @@ class NeighborGatedAttentionLayer(nn.Module):
             smooth=smooth,
             precision=precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.attn_layer_norm = LayerNorm(
             self.embed_dim,
@@ -861,11 +878,11 @@ class NeighborGatedAttentionLayer(nn.Module):
 
     def forward(
         self,
-        x,
-        nei_mask,
+        x: torch.Tensor,
+        nei_mask: torch.Tensor,
         input_r: Optional[torch.Tensor] = None,
         sw: Optional[torch.Tensor] = None,
-    ):
+    ) -> torch.Tensor:
         residual = x
         x, _ = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)
         x = residual + x
@@ -930,6 +947,7 @@ class GatedAttentionLayer(nn.Module):
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
+        trainable: bool = True,
     ) -> None:
         """Construct a multi-head neighbor-wise attention net."""
         super().__init__()
@@ -962,6 +980,7 @@ class GatedAttentionLayer(nn.Module):
             stddev=1.0,
             precision=precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.out_proj = MLPLayer(
             hidden_dim,
@@ -972,16 +991,17 @@ class GatedAttentionLayer(nn.Module):
             stddev=1.0,
             precision=precision,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
 
     def forward(
         self,
-        query,
-        nei_mask,
+        query: torch.Tensor,
+        nei_mask: torch.Tensor,
         input_r: Optional[torch.Tensor] = None,
         sw: Optional[torch.Tensor] = None,
         attnw_shift: float = 20.0,
-    ):
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute the multi-head gated self-attention.
 
         Parameters

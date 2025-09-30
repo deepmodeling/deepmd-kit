@@ -1,9 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from typing import (
+    Optional,
+)
+
 import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.array_api import (
+    Array,
     xp_scatter_sum,
 )
 from deepmd.dpmodel.common import (
@@ -20,11 +25,12 @@ from deepmd.dpmodel.output_def import (
 
 
 def fit_output_to_model_output(
-    fit_ret: dict[str, np.ndarray],
+    fit_ret: dict[str, Array],
     fit_output_def: FittingOutputDef,
-    coord_ext: np.ndarray,
+    coord_ext: Array,
     do_atomic_virial: bool = False,
-) -> dict[str, np.ndarray]:
+    mask: Optional[Array] = None,
+) -> dict[str, Array]:
     """Transform the output of the fitting network to
     the model output.
 
@@ -38,9 +44,19 @@ def fit_output_to_model_output(
         if vdef.reducible:
             kk_redu = get_reduce_name(kk)
             # cast to energy prec before reduction
-            model_ret[kk_redu] = xp.sum(
-                vv.astype(GLOBAL_ENER_FLOAT_PRECISION), axis=atom_axis
-            )
+            if vdef.intensive:
+                if mask is not None:
+                    model_ret[kk_redu] = xp.sum(
+                        vv.astype(GLOBAL_ENER_FLOAT_PRECISION), axis=atom_axis
+                    ) / np.sum(mask, axis=-1, keepdims=True)
+                else:
+                    model_ret[kk_redu] = xp.mean(
+                        vv.astype(GLOBAL_ENER_FLOAT_PRECISION), axis=atom_axis
+                    )
+            else:
+                model_ret[kk_redu] = xp.sum(
+                    vv.astype(GLOBAL_ENER_FLOAT_PRECISION), axis=atom_axis
+                )
             if vdef.r_differentiable:
                 kk_derv_r, kk_derv_c = get_deriv_name(kk)
                 # name-holders
@@ -53,14 +69,14 @@ def fit_output_to_model_output(
 
 
 def get_leading_dims(
-    vv: np.ndarray,
+    vv: Array,
     vdef: OutputVariableDef,
-):
+) -> list[int]:
     """Get the dimensions of nf x nloc.
 
     Parameters
     ----------
-    vv : np.ndarray
+    vv : Array
         The input array from which to compute the leading dimensions.
     vdef : OutputVariableDef
         The output variable definition containing the shape to exclude from `vv`.
@@ -75,11 +91,11 @@ def get_leading_dims(
 
 
 def communicate_extended_output(
-    model_ret: dict[str, np.ndarray],
+    model_ret: dict[str, Array],
     model_output_def: ModelOutputDef,
-    mapping: np.ndarray,  # nf x nloc
+    mapping: Array,  # nf x nloc
     do_atomic_virial: bool = False,
-) -> dict[str, np.ndarray]:
+) -> dict[str, Array]:
     """Transform the output of the model network defined on
     local and ghost (extended) atoms to local atoms.
 
@@ -100,7 +116,9 @@ def communicate_extended_output(
             if vdef.r_differentiable:
                 if model_ret[kk_derv_r] is not None:
                     derv_r_ext_dims = list(vdef.shape) + [3]  # noqa:RUF005
-                    mapping = xp.reshape(mapping, (mldims + [1] * len(derv_r_ext_dims)))
+                    mapping = xp.reshape(
+                        mapping, tuple(mldims + [1] * len(derv_r_ext_dims))
+                    )
                     mapping = xp.tile(mapping, [1] * len(mldims) + derv_r_ext_dims)
                     force = xp.zeros(vldims + derv_r_ext_dims, dtype=vv.dtype)
                     force = xp_scatter_sum(

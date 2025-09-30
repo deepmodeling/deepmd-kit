@@ -47,11 +47,12 @@ class DPModelCommon:
         )
         return local_jdata_cpy, min_nbor_dist
 
-    def get_fitting_net(self):
+    # sadly, use -> BaseFitting here will not make torchscript happy
+    def get_fitting_net(self):  # noqa: ANN201
         """Get the fitting network."""
         return self.atomic_model.fitting_net
 
-    def get_descriptor(self):
+    def get_descriptor(self):  # noqa: ANN201
         """Get the descriptor."""
         return self.atomic_model.descriptor
 
@@ -64,3 +65,13 @@ class DPModelCommon:
     def eval_descriptor(self) -> torch.Tensor:
         """Evaluate the descriptor."""
         return self.atomic_model.eval_descriptor()
+
+    @torch.jit.export
+    def set_eval_fitting_last_layer_hook(self, enable: bool) -> None:
+        """Set the hook for evaluating fitting_last_layer and clear the cache for fitting_last_layer list."""
+        self.atomic_model.set_eval_fitting_last_layer_hook(enable)
+
+    @torch.jit.export
+    def eval_fitting_last_layer(self) -> torch.Tensor:
+        """Evaluate the fitting_last_layer."""
+        return self.atomic_model.eval_fitting_last_layer()

@@ -13,6 +13,9 @@ import numpy as np
 from deepmd.common import (
     get_hash,
 )
+from deepmd.dpmodel.array_api import (
+    Array,
+)
 from deepmd.dpmodel.common import (
     get_xp_precision,
 )
@@ -38,12 +41,12 @@ if TYPE_CHECKING:
 
 
 class EnvMatStat(BaseEnvMatStat):
-    def compute_stat(self, env_mat: dict[str, np.ndarray]) -> dict[str, StatItem]:
+    def compute_stat(self, env_mat: dict[str, Array]) -> dict[str, StatItem]:
         """Compute the statistics of the environment matrix for a single system.
 
         Parameters
         ----------
-        env_mat : np.ndarray
+        env_mat : Array
             The environment matrix.
 
         Returns
@@ -166,7 +169,7 @@ class EnvMatStatSe(EnvMatStat):
                     self.last_dim,
                 ),
             )
-            atype = xp.reshape(atype, (coord.shape[0] * coord.shape[1]))
+            atype = xp.reshape(atype, (coord.shape[0] * coord.shape[1],))
             # (1, nloc) eq (ntypes, 1), so broadcast is possible
             # shape: (ntypes, nloc)
             type_idx = xp.equal(
@@ -189,7 +192,7 @@ class EnvMatStatSe(EnvMatStat):
             for type_i in range(self.descriptor.get_ntypes()):
                 dd = env_mat[type_idx[type_i, ...]]
                 dd = xp.reshape(
-                    dd, [-1, self.last_dim]
+                    dd, (-1, self.last_dim)
                 )  # typen_atoms * unmasked_nnei, 4
                 env_mats = {}
                 env_mats[f"r_{type_i}"] = dd[:, :1]
@@ -218,7 +221,7 @@ class EnvMatStatSe(EnvMatStat):
             }
         )
 
-    def __call__(self):
+    def __call__(self) -> tuple[Array, Array]:
         avgs = self.get_avg()
         stds = self.get_std()
 

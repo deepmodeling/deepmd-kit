@@ -1,14 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Optional,
     Union,
 )
 
 import array_api_compat
-import numpy as np
 
 from deepmd.dpmodel import (
     NativeOP,
+)
+from deepmd.dpmodel.array_api import (
+    Array,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -208,7 +211,7 @@ class RepFlowArgs:
         self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if hasattr(self, key):
             return getattr(self, key)
         else:
@@ -310,7 +313,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
     ) -> None:
         super().__init__()
 
-        def init_subclass_params(sub_data, sub_class):
+        def init_subclass_params(sub_data: Union[dict, Any], sub_class: type) -> Any:
             if isinstance(sub_data, dict):
                 return sub_class(**sub_data)
             elif isinstance(sub_data, sub_class):
@@ -357,6 +360,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             env_protection=env_protection,
             precision=precision,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
 
         self.use_econf_tebd = use_econf_tebd
@@ -374,6 +378,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             use_tebd_bias=use_tebd_bias,
             type_map=type_map,
             seed=child_seed(seed, 2),
+            trainable=trainable,
         )
         self.concat_output_tebd = concat_output_tebd
         self.precision = precision
@@ -448,7 +453,9 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         """Returns the protection of building environment matrix."""
         return self.repflows.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: Any, shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -457,7 +464,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -486,15 +493,17 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         repflow["dstd"] = repflow["dstd"][remap_index]
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         return self.get_dim_out()
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(
+        self, merged: list[dict], path: Optional[DPPath] = None
+    ) -> None:
         """Update mean and stddev for descriptor elements."""
         descrpt_list = [self.repflows]
         for ii, descrpt in enumerate(descrpt_list):
@@ -502,8 +511,8 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: list[np.ndarray],
-        stddev: list[np.ndarray],
+        mean: list[Array],
+        stddev: list[Array],
     ) -> None:
         """Update mean and stddev for descriptor."""
         descrpt_list = [self.repflows]
@@ -511,7 +520,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             descrpt.mean = mean[ii]
             descrpt.stddev = stddev[ii]
 
-    def get_stat_mean_and_stddev(self) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    def get_stat_mean_and_stddev(self) -> tuple[list[Array], list[Array]]:
         """Get mean and stddev for descriptor."""
         mean_list = [self.repflows.mean]
         stddev_list = [self.repflows.stddev]
@@ -520,11 +529,11 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
     @cast_precision
     def call(
         self,
-        coord_ext: np.ndarray,
-        atype_ext: np.ndarray,
-        nlist: np.ndarray,
-        mapping: Optional[np.ndarray] = None,
-    ):
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+        mapping: Optional[Array] = None,
+    ) -> tuple[Array, Array]:
         """Compute the descriptor.
 
         Parameters
@@ -562,12 +571,12 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         type_embedding = self.type_embedding.call()
         if self.use_loc_mapping:
             node_ebd_ext = xp.reshape(
-                xp.take(type_embedding, xp.reshape(atype_ext[:, :nloc], [-1]), axis=0),
+                xp.take(type_embedding, xp.reshape(atype_ext[:, :nloc], (-1,)), axis=0),
                 (nframes, nloc, self.tebd_dim),
             )
         else:
             node_ebd_ext = xp.reshape(
-                xp.take(type_embedding, xp.reshape(atype_ext, [-1]), axis=0),
+                xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
                 (nframes, nall, self.tebd_dim),
             )
         node_ebd_inp = node_ebd_ext[:, :nloc, :]
@@ -656,7 +665,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         train_data: DeepmdDataSystem,
         type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[Array, Array]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

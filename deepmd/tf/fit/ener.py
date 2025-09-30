@@ -119,6 +119,8 @@ class EnerFitting(Fitting):
             Number of atomic parameter
     dim_case_embd
         Dimension of case specific embedding.
+    default_fparam
+        The default frame parameter. This parameter is not supported in TensorFlow.
     rcond
             The condition number for the regression of atomic energy.
     tot_ener_zero
@@ -146,6 +148,9 @@ class EnerFitting(Fitting):
     mixed_types : bool
         If true, use a uniform fitting net for all atom types, otherwise use
         different fitting nets for different atom types.
+    default_fparam: list[float], optional
+        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+        this value will be used as the default value for the frame parameter in the fitting net.
     type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     """
@@ -172,6 +177,7 @@ class EnerFitting(Fitting):
         spin: Optional[Spin] = None,
         mixed_types: bool = False,
         type_map: Optional[list[str]] = None,  # to be compat with input
+        default_fparam: Optional[list[float]] = None,  # to be compat with input
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -196,6 +202,9 @@ class EnerFitting(Fitting):
         self.dim_case_embd = dim_case_embd
         if dim_case_embd > 0:
             raise ValueError("dim_case_embd is not supported in TensorFlow.")
+        self.default_fparam = default_fparam
+        if self.default_fparam is not None:
+            raise ValueError("default_fparam is not supported in TensorFlow.")
         self.n_neuron = neuron
         self.resnet_dt = resnet_dt
         self.rcond = rcond
@@ -884,7 +893,7 @@ class EnerFitting(Fitting):
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
             data["nets"],
@@ -910,7 +919,7 @@ class EnerFitting(Fitting):
         data = {
             "@class": "Fitting",
             "type": "ener",
-            "@version": 3,
+            "@version": 4,
             "var_name": "energy",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt + self.tebd_dim,
@@ -921,6 +930,7 @@ class EnerFitting(Fitting):
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
             "dim_case_embd": self.dim_case_embd,
+            "default_fparam": self.default_fparam,
             "rcond": self.rcond,
             "tot_ener_zero": self.tot_ener_zero,
             "trainable": self.trainable,
@@ -944,6 +954,7 @@ class EnerFitting(Fitting):
                 activation_function=self.activation_function_name,
                 resnet_dt=self.resnet_dt,
                 variables=self.fitting_net_variables,
+                trainable=self.trainable,
                 suffix=suffix,
             ),
             "@variables": {

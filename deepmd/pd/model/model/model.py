@@ -53,3 +53,7 @@ class BaseModel(paddle.nn.Layer, make_base_model()):
     def get_ntypes(self):
         """Returns the number of element types."""
         return len(self.get_type_map())
+
+    def get_buffer_ntypes(self) -> paddle.Tensor:
+        """Returns the number of element types as a buffer-style Tensor."""
+        return self.get_buffer_ntypes()

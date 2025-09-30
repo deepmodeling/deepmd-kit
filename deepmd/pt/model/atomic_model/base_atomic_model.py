@@ -106,7 +106,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
     def set_out_bias(self, out_bias: torch.Tensor) -> None:
         self.out_bias = out_bias
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: torch.Tensor) -> None:
         if key in ["out_bias"]:
             self.out_bias = value
         elif key in ["out_std"]:
@@ -114,7 +114,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> torch.Tensor:
         if key in ["out_bias"]:
             return self.out_bias
         elif key in ["out_std"]:
@@ -133,6 +133,10 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def get_intensive(self) -> bool:
         """Whether the fitting property is intensive."""
+        return False
+
+    def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
         return False
 
     def reinit_atom_exclude(
@@ -296,7 +300,9 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         )
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self,
+        type_map: list[str],
+        model_with_new_type_stat: Optional["BaseAtomicModel"] = None,
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -363,21 +369,25 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
+        compute_or_load_out_stat: bool = True,
     ) -> NoReturn:
         """
-        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
+        Compute or load the statistics parameters of the model,
+        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
+        When `sampled` is provided, all the statistics parameters will be calculated (or re-calculated for update),
+        and saved in the `stat_file_path`(s).
+        When `sampled` is not provided, it will check the existence of `stat_file_path`(s)
+        and load the calculated statistics parameters.
 
         Parameters
         ----------
-        merged : Union[Callable[[], list[dict]], list[dict]]
-            - list[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
-                originating from the `i`-th data system.
-            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
-                only when needed. Since the sampling process can be slow and memory-intensive,
-                the lazy function helps by only sampling once.
-        stat_file_path : Optional[DPPath]
-            The path to the stat file.
+        merged
+            The lazy sampled function to get data frames from different data systems.
+        stat_file_path
+            The dictionary of paths to the statistics files.
+        compute_or_load_out_stat : bool
+            Whether to compute the output statistics.
+            If False, it will only compute the input statistics (e.g. mean and standard deviation of descriptors).
 
         """
         raise NotImplementedError
@@ -413,7 +423,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self,
         ret: dict[str, torch.Tensor],
         atype: torch.Tensor,
-    ):
+    ) -> dict[str, torch.Tensor]:
         """Apply the stat to each atomic output.
         The developer may override the method to define how the bias is applied
         to the atomic output of the model.
@@ -434,9 +444,9 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def change_out_bias(
         self,
-        sample_merged,
+        sample_merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
-        bias_adjust_mode="change-by-statistic",
+        bias_adjust_mode: str = "change-by-statistic",
     ) -> None:
         """Change the output bias according to the input data and the pretrained model.
 
@@ -486,7 +496,13 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
     def _get_forward_wrapper_func(self) -> Callable[..., torch.Tensor]:
         """Get a forward wrapper of the atomic model for output bias calculation."""
 
-        def model_forward(coord, atype, box, fparam=None, aparam=None):
+        def model_forward(
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            box: Optional[torch.Tensor],
+            fparam: Optional[torch.Tensor] = None,
+            aparam: Optional[torch.Tensor] = None,
+        ) -> dict[str, torch.Tensor]:
             with (
                 torch.no_grad()
             ):  # it's essential for pure torch forward function to use auto_batchsize
@@ -515,13 +531,13 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
         return model_forward
 
-    def _default_bias(self):
+    def _default_bias(self) -> torch.Tensor:
         ntypes = self.get_ntypes()
         return torch.zeros(
             [self.n_out, ntypes, self.max_out_size], dtype=dtype, device=device
         )
 
-    def _default_std(self):
+    def _default_std(self) -> torch.Tensor:
         ntypes = self.get_ntypes()
         return torch.ones(
             [self.n_out, ntypes, self.max_out_size], dtype=dtype, device=device

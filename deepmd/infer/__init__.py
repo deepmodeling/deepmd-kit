@@ -17,7 +17,7 @@ __all__ = [
 ]
 
 
-def DeepPotential(*args, **kwargs) -> "DeepEval":
+def DeepPotential(*args: object, **kwargs: object) -> "DeepEval":
     """Factory function that forwards to DeepEval (for compatibility).
 
     Parameters

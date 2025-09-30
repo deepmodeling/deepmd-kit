@@ -4,6 +4,7 @@ from collections import (
     defaultdict,
 )
 from typing import (
+    Any,
     Callable,
     Optional,
     Union,
@@ -12,9 +13,6 @@ from typing import (
 import numpy as np
 import paddle
 
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-)
 from deepmd.pd.utils import (
     AtomExcludeMask,
 )
@@ -27,6 +25,7 @@ from deepmd.pd.utils.utils import (
     to_paddle_tensor,
 )
 from deepmd.utils.out_stat import (
+    compute_stats_do_not_distinguish_types,
     compute_stats_from_atomic,
     compute_stats_from_redu,
 )
@@ -37,7 +36,9 @@ from deepmd.utils.path import (
 log = logging.getLogger(__name__)
 
 
-def make_stat_input(datasets, dataloaders, nbatches):
+def make_stat_input(
+    datasets: list[Any], dataloaders: list[Any], nbatches: int
+) -> dict[str, Any]:
     """Pack data for statistics.
 
     Args:
@@ -61,6 +62,14 @@ def make_stat_input(datasets, dataloaders, nbatches):
             except StopIteration:
                 iterator = iter(dataloaders[i])
                 stat_data = next(iterator)
+            if (
+                "find_fparam" in stat_data
+                and "fparam" in stat_data
+                and stat_data["find_fparam"] == 0.0
+            ):
+                # for model using default fparam
+                stat_data.pop("fparam")
+                stat_data.pop("find_fparam")
             for dd in stat_data:
                 if stat_data[dd] is None:
                     sys_stat[dd] = None
@@ -117,7 +126,7 @@ def _save_to_file(
     stat_file_path: DPPath,
     bias_out: dict,
     std_out: dict,
-):
+) -> None:
     assert stat_file_path is not None
     stat_file_path.mkdir(exist_ok=True, parents=True)
     for kk, vv in bias_out.items():
@@ -129,18 +138,23 @@ def _save_to_file(
 
 
 def _post_process_stat(
-    out_bias,
-    out_std,
-):
+    out_bias: paddle.Tensor,
+    out_std: paddle.Tensor,
+) -> tuple[paddle.Tensor, paddle.Tensor]:
     """Post process the statistics.
 
     For global statistics, we do not have the std for each type of atoms,
     thus fake the output std by ones for all the types.
+    If the shape of out_std is already the same as out_bias,
+    we do not need to do anything.
 
     """
     new_std = {}
     for kk, vv in out_bias.items():
-        new_std[kk] = np.ones_like(vv)
+        if vv.shape == out_std[kk].shape:
+            new_std[kk] = out_std[kk]
+        else:
+            new_std[kk] = np.ones_like(vv)
     return out_bias, new_std
 
 
@@ -148,7 +162,7 @@ def _compute_model_predict(
     sampled: Union[Callable[[], list[dict]], list[dict]],
     keys: list[str],
     model_forward: Callable[..., paddle.Tensor],
-):
+) -> dict[str, list[paddle.Tensor]]:
     auto_batch_size = AutoBatchSize()
     model_predict = {kk: [] for kk in keys}
     for system in sampled:
@@ -211,7 +225,7 @@ def _make_preset_out_bias(
 def _fill_stat_with_global(
     atomic_stat: Union[np.ndarray, None],
     global_stat: np.ndarray,
-):
+) -> Union[np.ndarray, None]:
     """This function is used to fill atomic stat with global stat.
 
     Parameters
@@ -242,8 +256,9 @@ def compute_output_stats(
     rcond: Optional[float] = None,
     preset_bias: Optional[dict[str, list[Optional[np.ndarray]]]] = None,
     model_forward: Optional[Callable[..., paddle.Tensor]] = None,
-    atomic_output: Optional[FittingOutputDef] = None,
-):
+    stats_distinguish_types: bool = True,
+    intensive: bool = False,
+) -> dict[str, Any]:
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
 
@@ -272,8 +287,10 @@ def compute_output_stats(
         If not None, the model will be utilized to generate the original energy prediction,
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
-    atomic_output : FittingOutputDef, optional
-        The output of atomic model.
+    stats_distinguish_types : bool, optional
+        Whether to distinguish different element types in the statistics.
+    intensive : bool, optional
+        Whether the fitting target is intensive.
     """
     # try to restore the bias from stat file
     bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
@@ -362,7 +379,8 @@ def compute_output_stats(
             rcond,
             preset_bias,
             model_pred_g,
-            atomic_output,
+            stats_distinguish_types,
+            intensive,
         )
         bias_atom_a, std_atom_a = compute_output_stats_atomic(
             sampled,
@@ -405,8 +423,9 @@ def compute_output_stats_global(
     rcond: Optional[float] = None,
     preset_bias: Optional[dict[str, list[Optional[paddle.Tensor]]]] = None,
     model_pred: Optional[dict[str, np.ndarray]] = None,
-    atomic_output: Optional[FittingOutputDef] = None,
-):
+    stats_distinguish_types: bool = True,
+    intensive: bool = False,
+) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     """This function only handle stat computation from reduced global labels."""
     # return directly if model predict is empty for global
     if model_pred == {}:
@@ -469,26 +488,31 @@ def compute_output_stats_global(
         # subtract the model bias and output the delta bias
 
         stats_input = {
-            kk: merged_output[kk] - model_pred[kk] for kk in keys if kk in merged_output
+            kk: merged_output[kk] - model_pred[kk].reshape(merged_output[kk].shape)
+            for kk in keys
+            if kk in merged_output
         }
 
     bias_atom_e = {}
     std_atom_e = {}
     for kk in keys:
         if kk in stats_input:
-            if atomic_output is not None and atomic_output.get_data()[kk].intensive:
-                task_dim = stats_input[kk].shape[1]
-                assert merged_natoms[kk].shape == (nf[kk], ntypes)
-                stats_input[kk] = (
-                    merged_natoms[kk].sum(axis=1).reshape([-1, 1]) * stats_input[kk]
+            if not stats_distinguish_types:
+                bias_atom_e[kk], std_atom_e[kk] = (
+                    compute_stats_do_not_distinguish_types(
+                        stats_input[kk],
+                        merged_natoms[kk],
+                        assigned_bias=assigned_atom_ener[kk],
+                        intensive=intensive,
+                    )
                 )
-                assert stats_input[kk].shape == (nf[kk], task_dim)
-            bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
-                stats_input[kk],
-                merged_natoms[kk],
-                assigned_bias=assigned_atom_ener[kk],
-                rcond=rcond,
-            )
+            else:
+                bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
+                    stats_input[kk],
+                    merged_natoms[kk],
+                    assigned_bias=assigned_atom_ener[kk],
+                    rcond=rcond,
+                )
         else:
             # this key does not have global labels, skip it.
             continue
@@ -509,16 +533,16 @@ def compute_output_stats_global(
         }
     atom_numbs = {kk: merged_natoms[kk].sum(-1) for kk in bias_atom_e.keys()}
 
-    def rmse(x):
+    def rmse(x: np.ndarray) -> float:
         return np.sqrt(np.mean(np.square(x)))
 
     for kk in bias_atom_e.keys():
         rmse_ae = rmse(
             (
-                unbias_e[kk].reshape([nf[kk], -1]).astype(merged_output[kk].dtype)
+                unbias_e[kk].reshape([nf[kk], -1])
                 - merged_output[kk].reshape([nf[kk], -1])
             )
-            / atom_numbs[kk][:, None].astype(merged_output[kk].dtype)
+            / atom_numbs[kk][:, None]
         )
         log.info(
             f"RMSE of {kk} per atom after linear regression is: {rmse_ae} in the unit of {kk}."
@@ -531,7 +555,7 @@ def compute_output_stats_atomic(
     ntypes: int,
     keys: list[str],
     model_pred: Optional[dict[str, np.ndarray]] = None,
-):
+) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     # get label dict from sample; for each key, only picking the system with atomic labels.
     outputs = {
         kk: [
@@ -549,7 +573,17 @@ def compute_output_stats_atomic(
         ]
         for kk in keys
     }
-    # shape: (nframes, nloc, ndim)
+    # reshape outputs [nframes, nloc * ndim] --> reshape to [nframes * nloc, 1, ndim] for concatenation
+    # reshape natoms [nframes, nloc] --> reshape to [nframes * nolc, 1] for concatenation
+    natoms = {k: [sys_v.reshape([-1, 1]) for sys_v in v] for k, v in natoms.items()}
+    outputs = {
+        k: [
+            sys.reshape([natoms[k][sys_idx].shape[0], 1, -1])
+            for sys_idx, sys in enumerate(v)
+        ]
+        for k, v in outputs.items()
+    }
+
     merged_output = {
         kk: to_numpy_array(paddle.concat(outputs[kk]))
         for kk in keys

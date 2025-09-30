@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
 from typing import (
+    Any,
     Callable,
     ClassVar,
     Optional,
@@ -146,7 +147,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         type_map: Optional[list[str]] = None,
         ntypes: Optional[int] = None,  # to be compat with input
         # not implemented
-        spin=None,
+        spin: Optional[dict] = None,
     ) -> None:
         del ntypes
         if spin is not None:
@@ -202,7 +203,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         """Returns the output dimension."""
         return self.seat.get_dim_emb()
 
-    def mixed_types(self):
+    def mixed_types(self) -> bool:
         """Returns if the descriptor requires a neighbor list that distinguish different
         atomic types or not.
         """
@@ -220,7 +221,9 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         """Returns the protection of building environment matrix."""
         return self.seat.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: Any, shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -239,12 +242,12 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
             raise NotImplementedError
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.seat.dim_out
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -259,7 +262,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -340,7 +343,13 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
-    ):
+    ) -> tuple[
+        torch.Tensor,
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+    ]:
         """Compute the descriptor.
 
         Parameters
@@ -384,7 +393,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
             None,
             None,
             None,
-            sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION) if sw is not None else None,
         )
 
     def set_stat_mean_and_stddev(
@@ -439,7 +448,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         env_mat = data.pop("env_mat")
         obj = cls(**data)
 
-        def t_cvt(xx):
+        def t_cvt(xx: Any) -> torch.Tensor:
             return torch.tensor(xx, dtype=obj.seat.prec, device=env.DEVICE)
 
         obj.seat["davg"] = t_cvt(variables["davg"])
@@ -575,6 +584,7 @@ class DescrptBlockSeT(DescriptorBlock):
                 precision=self.precision,
                 resnet_dt=self.resnet_dt,
                 seed=child_seed(self.seed, ii),
+                trainable=trainable,
             )
         self.filter_layers = filter_layers
         self.stats = None
@@ -647,7 +657,7 @@ class DescrptBlockSeT(DescriptorBlock):
         return self.env_protection
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.filter_neuron[-1]
 
@@ -656,7 +666,7 @@ class DescrptBlockSeT(DescriptorBlock):
         """Returns the atomic input dimension of this descriptor."""
         return 0
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -664,7 +674,7 @@ class DescrptBlockSeT(DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -732,10 +742,10 @@ class DescrptBlockSeT(DescriptorBlock):
 
     def enable_compression(
         self,
-        table_data,
-        table_config,
-        lower,
-        upper,
+        table_data: dict,
+        table_config: dict,
+        lower: dict,
+        upper: dict,
     ) -> None:
         for embedding_idx, ll in enumerate(self.filter_layers.networks):
             ti = embedding_idx % self.ntypes
@@ -767,7 +777,13 @@ class DescrptBlockSeT(DescriptorBlock):
         extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
         type_embedding: Optional[torch.Tensor] = None,
-    ):
+    ) -> tuple[
+        torch.Tensor,
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+    ]:
         """Compute the descriptor.
 
         Parameters

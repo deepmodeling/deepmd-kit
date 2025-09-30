@@ -2,6 +2,9 @@ on:
   push:
     branches-ignore:
       - "gh-readonly-queue/**"
+      - "copilot/**"
+      - "dependabot/**"
+      - "pre-commit-ci-update-config"
   pull_request:
   merge_group:
 concurrency:
@@ -19,15 +22,15 @@ jobs:
         python: ["3.9", "3.12"]
 
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+    - uses: actions/checkout@v5
+    - uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python }}
     - run: python -m pip install -U uv
     - run: |
         source/install/uv_with_retry.sh pip install --system openmpi tensorflow-cpu~=2.18.0
         source/install/uv_with_retry.sh pip install --system torch -i https://download.pytorch.org/whl/cpu
-        export TENSORFLOW_ROOT=$(python -c 'import tensorflow;print(tensorflow.__path__[0])')
+        export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
         export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
         source/install/uv_with_retry.sh pip install --system -e .[test,jax] mpi4py "jax==0.5.0;python_version>='3.10'"
         source/install/uv_with_retry.sh pip install --system -U setuptools
@@ -40,7 +43,6 @@ jobs:
         # changes, setting `TENSORFLOW_ROOT`.
         DP_ENABLE_PYTORCH: 1
         DP_BUILD_TESTING: 1
-        UV_EXTRA_INDEX_URL: "https://pypi.anaconda.org/mpi4py/simple"
         HOROVOD_WITH_TENSORFLOW: 1
         HOROVOD_WITHOUT_PYTORCH: 1
         HOROVOD_WITH_MPI: 1
@@ -97,7 +99,7 @@ jobs:
         key: test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
         restore-keys: test2-durations-combined-${{ matrix.python }}
     - name: Download artifacts
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v5
       with:
         pattern: split-${{ matrix.python }}-*
         merge-multiple: true

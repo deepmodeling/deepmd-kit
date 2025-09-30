@@ -90,7 +90,9 @@ class DeepEvalBackend(ABC):
     ) -> None:
         pass
 
-    def __new__(cls, model_file: str, *args, **kwargs):
+    def __new__(
+        cls, model_file: str, *args: object, **kwargs: object
+    ) -> "DeepEvalBackend":
         if cls is DeepEvalBackend:
             backend = Backend.detect_backend_by_model(model_file)
             return super().__new__(backend().deep_eval)
@@ -160,6 +162,10 @@ class DeepEvalBackend(ABC):
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this DP."""
 
+    def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
+        return False
+
     @abstractmethod
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
@@ -212,6 +218,48 @@ class DeepEvalBackend(ABC):
         -------
         descriptor
             Descriptors.
+        """
+        raise NotImplementedError
+
+    def eval_fitting_last_layer(
+        self,
+        coords: np.ndarray,
+        cells: Optional[np.ndarray],
+        atom_types: np.ndarray,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+        **kwargs: Any,
+    ) -> np.ndarray:
+        """Evaluate fitting before last layer by using this DP.
+
+        Parameters
+        ----------
+        coords
+            The coordinates of atoms.
+            The array should be of size nframes x natoms x 3
+        cells
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
+            The array should be of size nframes x 9
+        atom_types
+            The atom types
+            The list should contain natoms ints
+        fparam
+            The frame parameter.
+            The array can be of size :
+            - nframes x dim_fparam.
+            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+        aparam
+            The atomic parameter
+            The array can be of size :
+            - nframes x natoms x dim_aparam.
+            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+            - dim_aparam. Then all frames and atoms are provided with the same aparam.
+
+        Returns
+        -------
+        fitting
+            Fitting output before last layer.
         """
         raise NotImplementedError
 
@@ -275,7 +323,7 @@ class DeepEvalBackend(ABC):
         """Check if the model has spin atom types."""
         return False
 
-    def get_has_hessian(self):
+    def get_has_hessian(self) -> bool:
         """Check if the model has hessian."""
         return False
 
@@ -294,6 +342,24 @@ class DeepEvalBackend(ABC):
     def get_model_size(self) -> dict:
         """Get model parameter count."""
         raise NotImplementedError("Not implemented in this backend.")
+
+    def get_observed_types(self) -> dict:
+        """Get observed types (elements) of the model during data statistics."""
+        raise NotImplementedError("Not implemented in this backend.")
+
+    @abstractmethod
+    def get_model(self) -> Any:
+        """Get the model module implemented by the deep learning framework.
+
+        For PyTorch, this returns the nn.Module. For Paddle, this returns
+        the paddle.nn.Layer. For TensorFlow, this returns the graph.
+        For dpmodel, this returns the BaseModel.
+
+        Returns
+        -------
+        model
+            The model module implemented by the deep learning framework.
+        """
 
 
 class DeepEval(ABC):
@@ -319,7 +385,7 @@ class DeepEval(ABC):
         Keyword arguments.
     """
 
-    def __new__(cls, model_file: str, *args, **kwargs):
+    def __new__(cls, model_file: str, *args: object, **kwargs: object) -> "DeepEval":
         if cls is DeepEval:
             deep_eval = DeepEvalBackend(
                 model_file,
@@ -370,6 +436,10 @@ class DeepEval(ABC):
         """Get the number (dimension) of frame parameters of this DP."""
         return self.deep_eval.get_dim_fparam()
 
+    def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
+        return self.deep_eval.has_default_fparam()
+
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
         return self.deep_eval.get_dim_aparam()
@@ -391,7 +461,9 @@ class DeepEval(ABC):
         nframes = coords.shape[0]
         return natoms, nframes
 
-    def _expande_atype(self, atype: np.ndarray, nframes: int, mixed_type: bool):
+    def _expande_atype(
+        self, atype: np.ndarray, nframes: int, mixed_type: bool
+    ) -> np.ndarray:
         if not mixed_type:
             atype = np.tile(atype.reshape(1, -1), (nframes, 1))
         return atype
@@ -463,6 +535,73 @@ class DeepEval(ABC):
         )
         return descriptor
 
+    def eval_fitting_last_layer(
+        self,
+        coords: np.ndarray,
+        cells: Optional[np.ndarray],
+        atom_types: np.ndarray,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+        mixed_type: bool = False,
+        **kwargs: Any,
+    ) -> np.ndarray:
+        """Evaluate fitting before last layer by using this DP.
+
+        Parameters
+        ----------
+        coords
+            The coordinates of atoms.
+            The array should be of size nframes x natoms x 3
+        cells
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
+            The array should be of size nframes x 9
+        atom_types
+            The atom types
+            The list should contain natoms ints
+        fparam
+            The frame parameter.
+            The array can be of size :
+            - nframes x dim_fparam.
+            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+        aparam
+            The atomic parameter
+            The array can be of size :
+            - nframes x natoms x dim_aparam.
+            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+            - dim_aparam. Then all frames and atoms are provided with the same aparam.
+        efield
+            The external field on atoms.
+            The array should be of size nframes x natoms x 3
+        mixed_type
+            Whether to perform the mixed_type mode.
+            If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
+            in which frames in a system may have different natoms_vec(s), with the same nloc.
+
+        Returns
+        -------
+        fitting
+            Fitting output before last layer.
+        """
+        (
+            coords,
+            cells,
+            atom_types,
+            fparam,
+            aparam,
+            nframes,
+            natoms,
+        ) = self._standard_input(coords, cells, atom_types, fparam, aparam, mixed_type)
+        fitting = self.deep_eval.eval_fitting_last_layer(
+            coords,
+            cells,
+            atom_types,
+            fparam=fparam,
+            aparam=aparam,
+            **kwargs,
+        )
+        return fitting
+
     def eval_typeebd(self) -> np.ndarray:
         """Evaluate output of type embedding network by using this model.
 
@@ -492,7 +631,21 @@ class DeepEval(ABC):
         """
         return self.deep_eval.eval_typeebd()
 
-    def _standard_input(self, coords, cells, atom_types, fparam, aparam, mixed_type):
+    def _standard_input(
+        self,
+        coords: Union[np.ndarray, list],
+        cells: Optional[Union[np.ndarray, list]],
+        atom_types: Union[np.ndarray, list],
+        fparam: Optional[Union[np.ndarray, list]],
+        aparam: Optional[Union[np.ndarray, list]],
+        mixed_type: bool,
+    ) -> tuple[
+        np.ndarray,
+        Optional[np.ndarray],
+        np.ndarray,
+        Optional[np.ndarray],
+        Optional[np.ndarray],
+    ]:
         coords = np.array(coords)
         if cells is not None:
             cells = np.array(cells)
@@ -539,7 +692,7 @@ class DeepEval(ABC):
         """
         return self.deep_eval.get_sel_type()
 
-    def _get_sel_natoms(self, atype) -> int:
+    def _get_sel_natoms(self, atype: np.ndarray) -> int:
         return np.sum(np.isin(atype, self.get_sel_type()).astype(int))
 
     @property
@@ -568,3 +721,21 @@ class DeepEval(ABC):
     def get_model_size(self) -> dict:
         """Get model parameter count."""
         return self.deep_eval.get_model_size()
+
+    def get_observed_types(self) -> dict:
+        """Get observed types (elements) of the model during data statistics."""
+        return self.deep_eval.get_observed_types()
+
+    def get_model(self) -> Any:
+        """Get the model module implemented by the deep learning framework.
+
+        For PyTorch, this returns the nn.Module. For Paddle, this returns
+        the paddle.nn.Layer. For TensorFlow, this returns the graph.
+        For dpmodel, this returns the BaseModel.
+
+        Returns
+        -------
+        model
+            The model module implemented by the deep learning framework.
+        """
+        return self.deep_eval.get_model()

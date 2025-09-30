@@ -2,7 +2,10 @@
 import functools
 import logging
 from typing import (
+    Any,
+    Callable,
     Optional,
+    Union,
 )
 
 import paddle
@@ -47,10 +50,10 @@ class DPAtomicModel(BaseAtomicModel):
 
     def __init__(
         self,
-        descriptor,
-        fitting,
+        descriptor: BaseDescriptor,
+        fitting: BaseFitting,
         type_map: list[str],
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
         ntypes = len(type_map)
@@ -62,17 +65,22 @@ class DPAtomicModel(BaseAtomicModel):
         self.fitting_net = fitting
         super().init_out_stat()
         self.enable_eval_descriptor_hook = False
+        self.enable_eval_fitting_last_layer_hook = False
         self.eval_descriptor_list = []
+        self.eval_fitting_last_layer_list = []
 
         # register 'type_map' as buffer
-        def _string_to_array(s: str) -> list[int]:
+        def _string_to_array(s: Union[str, list[str]]) -> list[int]:
             return [ord(c) for c in s]
 
-        self.register_buffer(
-            "buffer_type_map",
-            paddle.to_tensor(_string_to_array(" ".join(self.type_map)), dtype="int32"),
-        )
-        self.buffer_type_map.name = "buffer_type_map"
+        if type_map is not None:
+            self.register_buffer(
+                "buffer_type_map",
+                paddle.to_tensor(
+                    _string_to_array(" ".join(self.type_map)), dtype="int32"
+                ),
+            )
+            self.buffer_type_map.name = "buffer_type_map"
         if hasattr(self.descriptor, "has_message_passing"):
             # register 'has_message_passing' as buffer(cast to int32 as problems may meets with vector<bool>)
             self.register_buffer(
@@ -112,15 +120,28 @@ class DPAtomicModel(BaseAtomicModel):
         self.buffer_aparam_nall.name = "buffer_aparam_nall"
 
     eval_descriptor_list: list[paddle.Tensor]
+    eval_fitting_last_layer_list: list[paddle.Tensor]
 
     def set_eval_descriptor_hook(self, enable: bool) -> None:
         """Set the hook for evaluating descriptor and clear the cache for descriptor list."""
         self.enable_eval_descriptor_hook = enable
-        self.eval_descriptor_list = []
+        # = [] does not work; See #4533
+        self.eval_descriptor_list.clear()
 
     def eval_descriptor(self) -> paddle.Tensor:
         """Evaluate the descriptor."""
         return paddle.concat(self.eval_descriptor_list)
+
+    def set_eval_fitting_last_layer_hook(self, enable: bool) -> None:
+        """Set the hook for evaluating fitting last layer output and clear the cache for fitting last layer output list."""
+        self.enable_eval_fitting_last_layer_hook = enable
+        self.fitting_net.set_return_middle_output(enable)
+        # = [] does not work; See #4533
+        self.eval_fitting_last_layer_list.clear()
+
+    def eval_fitting_last_layer(self) -> paddle.Tensor:
+        """Evaluate the fitting last layer output."""
+        return paddle.concat(self.eval_fitting_last_layer_list)
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
@@ -138,7 +159,27 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the neighbor selection."""
         return self.sel
 
-    def set_case_embd(self, case_idx: int):
+    def get_buffer_type_map(self) -> paddle.Tensor:
+        """
+        Return the type map as a buffer-style Tensor for JIT saving.
+
+        The original type map (e.g., ['Ni', 'O']) is first joined into a single space-separated string
+        (e.g., "Ni O"). Each character in this string is then converted to its ASCII code using `ord()`,
+        and the resulting integer sequence is stored as a 1D paddle.Tensor of dtype int.
+
+        This format allows the type map to be serialized as a raw byte buffer during JIT model saving.
+        """
+        return self.buffer_type_map
+
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Get the cut-off radius as a buffer-style Tensor."""
+        return self.descriptor.get_buffer_rcut()
+
+    def get_buffer_sel(self) -> paddle.Tensor:
+        """Get the neighbor selection as a buffer-style Tensor."""
+        return self.descriptor.get_buffer_sel()
+
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -158,7 +199,9 @@ class DPAtomicModel(BaseAtomicModel):
         return self.descriptor.mixed_types()
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self,
+        type_map: list[str],
+        model_with_new_type_stat: Optional["DPAtomicModel"] = None,
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -199,7 +242,7 @@ class DPAtomicModel(BaseAtomicModel):
         return dd
 
     @classmethod
-    def deserialize(cls, data) -> "DPAtomicModel":
+    def deserialize(cls, data: dict) -> "DPAtomicModel":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
@@ -244,9 +287,9 @@ class DPAtomicModel(BaseAtomicModel):
 
     def forward_atomic(
         self,
-        extended_coord,
-        extended_atype,
-        nlist,
+        extended_coord: paddle.Tensor,
+        extended_atype: paddle.Tensor,
+        nlist: paddle.Tensor,
         mapping: Optional[paddle.Tensor] = None,
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
@@ -288,7 +331,7 @@ class DPAtomicModel(BaseAtomicModel):
         )
         assert descriptor is not None
         if self.enable_eval_descriptor_hook:
-            self.eval_descriptor_list.append(descriptor)
+            self.eval_descriptor_list.append(descriptor.detach())
         # energy, force
         fit_ret = self.fitting_net(
             descriptor,
@@ -299,6 +342,13 @@ class DPAtomicModel(BaseAtomicModel):
             fparam=fparam,
             aparam=aparam,
         )
+        if self.enable_eval_fitting_last_layer_hook:
+            assert "middle_output" in fit_ret, (
+                "eval_fitting_last_layer not supported for this fitting net!"
+            )
+            self.eval_fitting_last_layer_list.append(
+                fit_ret.pop("middle_output").detach()
+            )
         return fit_ret
 
     def get_out_bias(self) -> paddle.Tensor:
@@ -306,8 +356,9 @@ class DPAtomicModel(BaseAtomicModel):
 
     def compute_or_load_stat(
         self,
-        sampled_func,
+        sampled_func: Callable[[], list[dict]],
         stat_file_path: Optional[DPPath] = None,
+        compute_or_load_out_stat: bool = True,
     ) -> None:
         """
         Compute or load the statistics parameters of the model,
@@ -323,6 +374,9 @@ class DPAtomicModel(BaseAtomicModel):
             The lazy sampled function to get data frames from different data systems.
         stat_file_path
             The dictionary of paths to the statistics files.
+        compute_or_load_out_stat : bool
+            Whether to compute the output statistics.
+            If False, it will only compute the input statistics (e.g. mean and standard deviation of descriptors).
         """
         if stat_file_path is not None and self.type_map is not None:
             # descriptors and fitting net with different type_map
@@ -343,15 +397,31 @@ class DPAtomicModel(BaseAtomicModel):
             return sampled
 
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
-        self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
+        self.fitting_net.compute_input_stats(
+            wrapped_sampler, protection=self.data_stat_protect
+        )
+        if compute_or_load_out_stat:
+            self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
         return self.fitting_net.get_dim_fparam()
 
+    def get_buffer_dim_fparam(self) -> paddle.Tensor:
+        """Get the number (dimension) of frame parameters of this atomic model as a buffer-style Tensor."""
+        return self.fitting_net.get_buffer_dim_fparam()
+
+    def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
+        return self.fitting_net.has_default_fparam()
+
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.fitting_net.get_dim_aparam()
+
+    def get_buffer_dim_aparam(self) -> paddle.Tensor:
+        """Get the number (dimension) of atomic parameters of this atomic model as a buffer-style Tensor."""
+        return self.fitting_net.get_buffer_dim_aparam()
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.

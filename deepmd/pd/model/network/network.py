@@ -45,6 +45,7 @@ class TypeEmbedNet(nn.Layer):
         use_econf_tebd=False,
         use_tebd_bias: bool = False,
         type_map=None,
+        trainable: bool = True,
     ) -> None:
         """Construct a type embedding net."""
         super().__init__()
@@ -65,6 +66,7 @@ class TypeEmbedNet(nn.Layer):
             type_map=type_map,
             precision=precision,
             seed=seed,
+            trainable=trainable,
         )
         # init.normal_(self.embedding.weight[:-1], mean=bavg, std=stddev)
 
@@ -195,6 +197,7 @@ class TypeEmbedNetConsistent(nn.Layer):
             self.precision,
             self.seed,
             bias=self.use_tebd_bias,
+            trainable=trainable,
         )
         for param in self.parameters():
             param.stop_gradient = not trainable
@@ -208,9 +211,7 @@ class TypeEmbedNetConsistent(nn.Layer):
             Type embedding network.
         """
         if not self.use_econf_tebd:
-            embed = self.embedding_net(
-                paddle.eye(self.ntypes, dtype=self.prec).to(device=device)
-            )
+            embed = self.embedding_net(paddle.eye(self.ntypes, dtype=self.prec))
         else:
             assert self.econf_tebd is not None
             embed = self.embedding_net(self.econf_tebd.to(device))
@@ -218,9 +219,7 @@ class TypeEmbedNetConsistent(nn.Layer):
             embed = paddle.concat(
                 [
                     embed,
-                    paddle.zeros([1, embed.shape[1]], dtype=self.prec).to(
-                        device=device
-                    ),
+                    paddle.zeros([1, embed.shape[1]], dtype=self.prec),
                 ]
             )
         return embed

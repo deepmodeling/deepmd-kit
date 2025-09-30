@@ -27,7 +27,7 @@ except AttributeError:
     ncpus = os.cpu_count()
 NUM_WORKERS = int(os.environ.get("NUM_WORKERS", min(0, ncpus)))
 # Make sure DDP uses correct device if applicable
-LOCAL_RANK = paddle.distributed.get_rank()
+LOCAL_RANK = int(os.environ.get("PADDLE_LOCAL_RANK", 0))
 
 if os.environ.get("DEVICE") == "cpu" or paddle.device.cuda.device_count() <= 0:
     DEVICE = "cpu"
@@ -69,8 +69,17 @@ if CINN:
         "installation or recompiling with CINN enabled."
     )
 
+# NOTE: Allow the CINN compiler to optimize inputs with dynamic shapes,
+# may lead to a slight performance decrease compared to static shapes.
+
+# If you can confirm that the shape of the input tensors will not change,
+# you can set it to False to further enhance performance.
+# Otherwise, please use the default value(True) to improve runtime compatibility.
+CINN_ALLOW_DYNAMIC_SHAPE = to_bool(os.environ.get("CINN_ALLOW_DYNAMIC_SHAPE", True))
+
 CACHE_PER_SYS = 5  # keep at most so many sets per sys in memory
 ENERGY_BIAS_TRAINABLE = True
+CUSTOM_OP_USE_JIT = to_bool(os.environ.get("CUSTOM_OP_USE_JIT", False))
 
 PRECISION_DICT = {
     "float16": paddle.float16,
@@ -198,6 +207,8 @@ def enable_prim(enable: bool = True):
 __all__ = [
     "CACHE_PER_SYS",
     "CINN",
+    "CINN_ALLOW_DYNAMIC_SHAPE",
+    "CUSTOM_OP_USE_JIT",
     "DEFAULT_PRECISION",
     "DEVICE",
     "ENERGY_BIAS_TRAINABLE",

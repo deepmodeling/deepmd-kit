@@ -238,7 +238,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             fparam: Optional[paddle.Tensor] = None,
             aparam: Optional[paddle.Tensor] = None,
             do_atomic_virial: bool = False,
-            comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+            comm_dict: Optional[list[paddle.Tensor]] = None,
             extra_nlist_sort: bool = False,
         ):
             """Return model prediction. Lower interface that takes
@@ -364,7 +364,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                     continue
                 if check_operation_applied(odef[kk], OutputVariableOperation.REDU):
                     model_ret[kk] = (
-                        model_ret[kk].to(self.global_pd_ener_float_precision)
+                        model_ret[kk].astype(self.global_pd_ener_float_precision)
                         if model_ret[kk] is not None
                         else None
                     )
@@ -445,7 +445,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                         * paddle.ones(
                             [n_nf, n_nloc, nnei - n_nnei],
                             dtype=nlist.dtype,
-                        ).to(nlist.place),
+                        ),
                     ],
                     axis=-1,
                 )
@@ -458,17 +458,21 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 coord0 = extended_coord[:, :n_nloc, :]
                 # nf x (nloc x nnei) x 3
                 index = nlist.reshape([n_nf, n_nloc * n_nnei, 1]).expand([-1, -1, 3])
-                coord1 = paddle.take_along_axis(extended_coord, axis=1, indices=index)
+                coord1 = paddle.take_along_axis(
+                    extended_coord, axis=1, indices=index, broadcast=False
+                )
                 # nf x nloc x nnei x 3
                 coord1 = coord1.reshape([n_nf, n_nloc, n_nnei, 3])
                 # nf x nloc x nnei
                 rr = paddle.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
-                rr = paddle.where(m_real_nei, rr, float("inf"))
+                rr = paddle.where(m_real_nei, rr, paddle.full_like(rr, float("inf")))
                 rr, nlist_mapping = (
                     paddle.sort(rr, axis=-1),
                     paddle.argsort(rr, axis=-1),
                 )
-                nlist = paddle.take_along_axis(nlist, axis=2, indices=nlist_mapping)
+                nlist = paddle.take_along_axis(
+                    nlist, axis=2, indices=nlist_mapping, broadcast=False
+                )
                 nlist = paddle.where(rr > rcut, paddle.full_like(nlist, -1), nlist)
                 nlist = nlist[..., :nnei]
             else:  # not extra_nlist_sort and n_nnei <= nnei:
@@ -525,6 +529,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             """Get the number (dimension) of atomic parameters of this atomic model."""
             return self.atomic_model.get_dim_aparam()
 
+        def get_buffer_dim_fparam(self) -> paddle.Tensor:
+            """Get the number (dimension) of frame parameters of this atomic model as a buffer-style Tensor."""
+            return self.atomic_model.get_buffer_dim_fparam()
+
+        def get_buffer_dim_aparam(self) -> paddle.Tensor:
+            """Get the number (dimension) of atomic parameters of this atomic model as a buffer-style Tensor."""
+            return self.atomic_model.get_buffer_dim_aparam()
+
         def get_sel_type(self) -> list[int]:
             """Get the selected atom types of this model.
 
@@ -548,6 +560,22 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
         def get_type_map(self) -> list[str]:
             """Get the type map."""
             return self.atomic_model.get_type_map()
+
+        def get_buffer_rcut(self) -> paddle.Tensor:
+            """Get the cut-off radius as a buffer-style Tensor."""
+            return self.atomic_model.get_buffer_rcut()
+
+        def get_buffer_type_map(self) -> paddle.Tensor:
+            """
+            Return the type map as a buffer-style Tensor for JIT saving.
+
+            The original type map (e.g., ['Ni', 'O']) is first joined into a single space-separated string
+            (e.g., "Ni O"). Each character in this string is then converted to its ASCII code using `ord()`,
+            and the resulting integer sequence is stored as a 1D paddle.Tensor of dtype int.
+
+            This format allows the type map to be serialized as a raw byte buffer during JIT model saving.
+            """
+            return self.atomic_model.get_buffer_type_map()
 
         def get_nsel(self) -> int:
             """Returns the total number of selected neighboring atoms in the cut-off radius."""

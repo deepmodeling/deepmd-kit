@@ -57,7 +57,7 @@ def get_graph_index(
     a_nlist_mask: torch.Tensor,
     nall: int,
     use_loc_mapping: bool = True,
-):
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Get the index mapping for edge graph and angle graph, ready in `aggregate` or `index_select`.
 
@@ -74,12 +74,12 @@ def get_graph_index(
 
     Returns
     -------
-    edge_index : n_edge x 2
+    edge_index : 2 x n_edge
         n2e_index : n_edge
             Broadcast indices from node(i) to edge(ij), or reduction indices from edge(ij) to node(i).
         n_ext2e_index : n_edge
             Broadcast indices from extended node(j) to edge(ij).
-    angle_index : n_angle x 3
+    angle_index : 3 x n_angle
         n2a_index : n_angle
             Broadcast indices from extended node(j) to angle(ijk).
         eij2a_index : n_angle
@@ -135,9 +135,7 @@ def get_graph_index(
     # n_angle
     eik2a_index = edge_index_ik[a_nlist_mask_3d]
 
-    return torch.cat(
-        [n2e_index.unsqueeze(-1), n_ext2e_index.unsqueeze(-1)], dim=-1
-    ), torch.cat(
-        [n2a_index.unsqueeze(-1), eij2a_index.unsqueeze(-1), eik2a_index.unsqueeze(-1)],
-        dim=-1,
-    )
+    edge_index_result = torch.stack([n2e_index, n_ext2e_index], dim=0)
+    angle_index_result = torch.stack([n2a_index, eij2a_index, eik2a_index], dim=0)
+
+    return edge_index_result, angle_index_result

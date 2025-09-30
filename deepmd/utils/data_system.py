@@ -49,10 +49,10 @@ class DeepmdDataSystem:
         shuffle_test: bool = True,
         type_map: Optional[list[str]] = None,
         optional_type_map: bool = True,
-        modifier=None,
-        trn_all_set=False,
-        sys_probs=None,
-        auto_prob_style="prob_sys_size",
+        modifier: Optional[Any] = None,
+        trn_all_set: bool = False,
+        sys_probs: Optional[list[float]] = None,
+        auto_prob_style: str = "prob_sys_size",
         sort_atoms: bool = True,
     ) -> None:
         """Constructor.
@@ -152,6 +152,51 @@ class DeepmdDataSystem:
                 else:
                     raise RuntimeError("batch size must be specified for mixed systems")
                 self.batch_size = rule * np.ones(self.nsystems, dtype=int)
+            elif "max" == words[0]:
+                # Determine batch size so that batch_size * natoms <= rule, at least 1
+                if len(words) != 2:
+                    raise RuntimeError("batch size must be specified for max systems")
+                rule = int(words[1])
+                bs = []
+                for ii in self.data_systems:
+                    ni = ii.get_natoms()
+                    bsi = rule // ni
+                    if bsi == 0:
+                        bsi = 1
+                    bs.append(bsi)
+                self.batch_size = bs
+            elif "filter" == words[0]:
+                # Remove systems with natoms > rule, then set batch size like "max:rule"
+                if len(words) != 2:
+                    raise RuntimeError(
+                        "batch size must be specified for filter systems"
+                    )
+                rule = int(words[1])
+                filtered_data_systems = []
+                filtered_system_dirs = []
+                for sys_dir, data_sys in zip(self.system_dirs, self.data_systems):
+                    if data_sys.get_natoms() <= rule:
+                        filtered_data_systems.append(data_sys)
+                        filtered_system_dirs.append(sys_dir)
+                if len(filtered_data_systems) == 0:
+                    raise RuntimeError(
+                        f"No system left after removing systems with more than {rule} atoms"
+                    )
+                if len(filtered_data_systems) != len(self.data_systems):
+                    warnings.warn(
+                        f"Remove {len(self.data_systems) - len(filtered_data_systems)} systems with more than {rule} atoms"
+                    )
+                self.data_systems = filtered_data_systems
+                self.system_dirs = filtered_system_dirs
+                self.nsystems = len(self.data_systems)
+                bs = []
+                for ii in self.data_systems:
+                    ni = ii.get_natoms()
+                    bsi = rule // ni
+                    if bsi == 0:
+                        bsi = 1
+                    bs.append(bsi)
+                self.batch_size = bs
             else:
                 raise RuntimeError("unknown batch_size rule " + words[0])
         elif isinstance(self.batch_size, list):
@@ -224,7 +269,7 @@ class DeepmdDataSystem:
                     f"system {self.system_dirs[ii]} required test size is larger than the size of the dataset {chk_ret[0]} ({self.test_size[ii]} > {chk_ret[1]})"
                 )
 
-    def _load_test(self, ntests=-1) -> None:
+    def _load_test(self, ntests: int = -1) -> None:
         self.test_data = collections.defaultdict(list)
         for ii in range(self.nsystems):
             test_system_data = self.data_systems[ii].get_test(ntests=ntests)
@@ -241,7 +286,9 @@ class DeepmdDataSystem:
             for ii in range(self.nsystems)
         ]
 
-    def compute_energy_shift(self, rcond=None, key="energy"):
+    def compute_energy_shift(
+        self, rcond: Optional[float] = None, key: str = "energy"
+    ) -> tuple[np.ndarray, np.ndarray]:
         sys_ener = []
         for ss in self.data_systems:
             sys_ener.append(ss.avg(key))
@@ -349,7 +396,7 @@ class DeepmdDataSystem:
                 output_natoms_for_type_sel=output_natoms_for_type_sel,
             )
 
-    def reduce(self, key_out, key_in) -> None:
+    def reduce(self, key_out: str, key_in: str) -> None:
         """Generate a new item from the reduction of another atom.
 
         Parameters
@@ -366,7 +413,9 @@ class DeepmdDataSystem:
         return self.data_systems[ii].get_data_dict()
 
     def set_sys_probs(
-        self, sys_probs=None, auto_prob_style: str = "prob_sys_size"
+        self,
+        sys_probs: Optional[list[float]] = None,
+        auto_prob_style: str = "prob_sys_size",
     ) -> None:
         if sys_probs is None:
             if auto_prob_style == "prob_uniform":
@@ -512,7 +561,9 @@ class DeepmdDataSystem:
         return b_data
 
     # ! altered by Marián Rynik
-    def get_test(self, sys_idx: Optional[int] = None, n_test: int = -1):  # depreciated
+    def get_test(
+        self, sys_idx: Optional[int] = None, n_test: int = -1
+    ) -> dict[str, np.ndarray]:  # depreciated
         """Get test data from the the data systems.
 
         Parameters
@@ -537,7 +588,7 @@ class DeepmdDataSystem:
         test_system_data["default_mesh"] = self.default_mesh[idx]
         return test_system_data
 
-    def get_sys_ntest(self, sys_idx=None):
+    def get_sys_ntest(self, sys_idx: Optional[int] = None) -> int:
         """Get number of tests for the currently selected system,
         or one defined by sys_idx.
         """
@@ -582,7 +633,7 @@ class DeepmdDataSystem:
             [ii.pbc for ii in self.data_systems],
         )
 
-    def _make_auto_bs(self, rule):
+    def _make_auto_bs(self, rule: int) -> list[int]:
         bs = []
         for ii in self.data_systems:
             ni = ii.get_natoms()
@@ -593,7 +644,7 @@ class DeepmdDataSystem:
         return bs
 
     # ! added by Marián Rynik
-    def _make_auto_ts(self, percent):
+    def _make_auto_ts(self, percent: float) -> list[int]:
         ts = []
         for ii in range(self.nsystems):
             ni = self.batch_size[ii] * self.nbatches[ii]
@@ -602,7 +653,9 @@ class DeepmdDataSystem:
 
         return ts
 
-    def _check_type_map_consistency(self, type_map_list):
+    def _check_type_map_consistency(
+        self, type_map_list: list[Optional[list[str]]]
+    ) -> list[str]:
         ret = []
         for ii in type_map_list:
             if ii is not None:
@@ -619,7 +672,7 @@ class DeepmdDataSystem:
         return ret
 
 
-def _format_name_length(name, width):
+def _format_name_length(name: str, width: int) -> str:
     if len(name) <= width:
         return "{: >{}}".format(name, width)
     else:
@@ -689,7 +742,7 @@ def print_summary(
     )
 
 
-def process_sys_probs(sys_probs, nbatch):
+def process_sys_probs(sys_probs: list[float], nbatch: int) -> np.ndarray:
     sys_probs = np.array(sys_probs)
     type_filter = sys_probs >= 0
     assigned_sum_prob = np.sum(type_filter * sys_probs)
@@ -708,7 +761,7 @@ def process_sys_probs(sys_probs, nbatch):
     return ret_prob
 
 
-def prob_sys_size_ext(keywords, nsystems, nbatch):
+def prob_sys_size_ext(keywords: str, nsystems: int, nbatch: int) -> list[float]:
     block_str = keywords.split(";")[1:]
     block_stt = []
     block_end = []
@@ -762,7 +815,11 @@ def process_systems(
 
 
 def get_data(
-    jdata: dict[str, Any], rcut, type_map, modifier, multi_task_mode=False
+    jdata: dict[str, Any],
+    rcut: float,
+    type_map: Optional[list[str]],
+    modifier: Optional[Any],
+    multi_task_mode: bool = False,
 ) -> DeepmdDataSystem:
     """Get the data system.
 

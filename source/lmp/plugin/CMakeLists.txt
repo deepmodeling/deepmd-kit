@@ -38,8 +38,54 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
 
   # get_lammps_version
   # https://github.com/lammps/lammps/blob/c2a12f97c5f665852fb38fdd4922f7dd2e77a0a1/cmake/Modules/LAMMPSUtils.cmake#L27-L46
-  include(${LAMMPS_SOURCE_ROOT}/cmake/Modules/LAMMPSUtils.cmake)
-  get_lammps_version(${LAMMPS_HEADER_DIR}/version.h LAMMPS_VERSION_NUMBER)
+  # include(${LAMMPS_SOURCE_ROOT}/cmake/Modules/LAMMPSUtils.cmake) Since May 15,
+  # 2025, the output of get_lammps_version is changed. We vendor the old
+  # get_lammps_version
+  # https://github.com/lammps/lammps/commit/b3e7121535863df3db487cd3e6a68c080bf2a6b4#diff-1214db0d1c015a50103f61f8ff7896053dec7ebc1edb930d6ef8bb07282f52abR75
+
+  function(_get_lammps_version version_header variable)
+    file(STRINGS ${version_header} line REGEX LAMMPS_VERSION)
+    set(MONTHS
+        x
+        Jan
+        Feb
+        Mar
+        Apr
+        May
+        Jun
+        Jul
+        Aug
+        Sep
+        Oct
+        Nov
+        Dec)
+    string(REGEX
+           REPLACE "#define LAMMPS_VERSION \"([0-9]+) ([A-Za-z]+) ([0-9]+)\""
+                   "\\1" day "${line}")
+    string(REGEX
+           REPLACE "#define LAMMPS_VERSION \"([0-9]+) ([A-Za-z]+) ([0-9]+)\""
+                   "\\2" month "${line}")
+    string(REGEX
+           REPLACE "#define LAMMPS_VERSION \"([0-9]+) ([A-Za-z]+) ([0-9]+)\""
+                   "\\3" year "${line}")
+    string(STRIP ${day} day)
+    string(STRIP ${month} month)
+    string(STRIP ${year} year)
+    list(FIND MONTHS "${month}" month)
+    string(LENGTH ${day} day_length)
+    string(LENGTH ${month} month_length)
+    if(day_length EQUAL 1)
+      set(day "0${day}")
+    endif()
+    if(month_length EQUAL 1)
+      set(month "0${month}")
+    endif()
+    set(${variable}
+        "${year}${month}${day}"
+        PARENT_SCOPE)
+  endfunction()
+
+  _get_lammps_version(${LAMMPS_HEADER_DIR}/version.h LAMMPS_VERSION_NUMBER)
   set(LAMMPS_VERSION_NUMBER
       ${LAMMPS_VERSION_NUMBER}
       PARENT_SCOPE)
@@ -75,8 +121,7 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
     target_link_libraries(${libname} PUBLIC ${LIB_DEEPMD_C})
     target_precompile_headers(${libname} PUBLIC [["deepmd.hpp"]])
     remove_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
-    if("$ENV{CIBUILDWHEEL}" STREQUAL "1" OR "$ENV{LMP_CXX11_ABI_0}" STREQUAL
-                                            "1")
+    if("$ENV{LMP_CXX11_ABI_0}" STREQUAL "1")
       add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
     endif()
   else()

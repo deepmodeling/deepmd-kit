@@ -6,6 +6,7 @@ from pathlib import (
 )
 from typing import (
     TYPE_CHECKING,
+    Any,
     ClassVar,
     Optional,
     Union,
@@ -24,6 +25,9 @@ from deepmd.infer import (
 if TYPE_CHECKING:
     from ase import (
         Atoms,
+    )
+    from ase.neighborlist import (
+        NeighborList,
     )
 
 __all__ = ["DP"]
@@ -85,9 +89,9 @@ class DP(Calculator):
         model: Union[str, "Path"],
         label: str = "DP",
         type_dict: Optional[dict[str, int]] = None,
-        neighbor_list=None,
-        head=None,
-        **kwargs,
+        neighbor_list: Optional["NeighborList"] = None,
+        head: Optional[str] = None,
+        **kwargs: Any,
     ) -> None:
         Calculator.__init__(self, label=label, **kwargs)
         self.dp = DeepPot(
@@ -130,7 +134,12 @@ class DP(Calculator):
             cell = None
         symbols = self.atoms.get_chemical_symbols()
         atype = [self.type_dict[k] for k in symbols]
-        e, f, v = self.dp.eval(coords=coord, cells=cell, atom_types=atype)[:3]
+
+        fparam = self.atoms.info.get("fparam", None)
+        aparam = self.atoms.info.get("aparam", None)
+        e, f, v = self.dp.eval(
+            coords=coord, cells=cell, atom_types=atype, fparam=fparam, aparam=aparam
+        )[:3]
         self.results["energy"] = e[0][0]
         # see https://gitlab.com/ase/ase/-/merge_requests/2485
         self.results["free_energy"] = e[0][0]
