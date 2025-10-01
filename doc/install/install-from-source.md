@@ -377,7 +377,7 @@ mkdir build
 cd build
 ```
 
-The installation requires CMake 3.25 or later for all platforms (CPU, CUDA, and ROCM). One can install CMake via `pip` if it is not installed or the installed version does not satisfy the requirement:
+The installation requires CMake 3.25.2 or later for all platforms (CPU, CUDA, and ROCM). One can install CMake via `pip` if it is not installed or the installed version does not satisfy the requirement:
 
 ```sh
 pip install -U cmake
