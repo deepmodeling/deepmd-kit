@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 3.25)
 project(deepmd_api_c_test)
 
 file(GLOB TEST_SRC test_*.cc)

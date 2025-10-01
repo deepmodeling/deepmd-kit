@@ -1,6 +1,7 @@
 if(USE_CUDA_TOOLKIT)
-  # required cmake version 3.23: CMAKE_CUDA_ARCHITECTURES all
-  cmake_minimum_required(VERSION 3.23)
+  # required cmake version 3.25: CMAKE_CUDA_ARCHITECTURES all,
+  # RUN_OUTPUT_STDOUT_VARIABLE
+  cmake_minimum_required(VERSION 3.25)
   # project name
   project(deepmd_op_cuda)
   set(GPU_LIB_NAME deepmd_op_cuda)
@@ -54,7 +55,7 @@ if(USE_CUDA_TOOLKIT)
 elseif(USE_ROCM_TOOLKIT)
 
   # required cmake version
-  cmake_minimum_required(VERSION 3.21)
+  cmake_minimum_required(VERSION 3.25)
   # project name
   project(deepmd_op_rocm)
   enable_language(HIP)
