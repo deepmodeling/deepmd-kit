@@ -1,5 +1,5 @@
-# new in 3.16: GET_RUNTIME_DEPENDENCIES, target_precompile_headers
-cmake_minimum_required(VERSION 3.16)
+# new in 3.25: RUN_OUTPUT_STDOUT_VARIABLE
+cmake_minimum_required(VERSION 3.25.2)
 project(DeePMD)
 
 option(ENABLE_TENSORFLOW "Enable TensorFlow interface" OFF)
@@ -244,7 +244,7 @@ set(DP_VARIANT "cpu")
 
 # define USE_CUDA_TOOLKIT
 if(USE_CUDA_TOOLKIT)
-  cmake_minimum_required(VERSION 3.23)
+  cmake_minimum_required(VERSION 3.25.2)
   find_package(CUDAToolkit REQUIRED)
   if(NOT DEFINED CMAKE_CUDA_COMPILER)
     set(CMAKE_CUDA_COMPILER ${CUDAToolkit_NVCC_EXECUTABLE})
@@ -261,7 +261,7 @@ endif(USE_CUDA_TOOLKIT)
 
 # define USE_ROCM_TOOLKIT
 if(USE_ROCM_TOOLKIT)
-  cmake_minimum_required(VERSION 3.21)
+  cmake_minimum_required(VERSION 3.25.2)
   include(CMakeDetermineHIPCompiler)
   list(APPEND CMAKE_PREFIX_PATH ${CMAKE_HIP_COMPILER_ROCM_ROOT})
   find_package(hip REQUIRED)
