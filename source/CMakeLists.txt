@@ -2,6 +2,9 @@
 cmake_minimum_required(VERSION 3.25.2)
 project(DeePMD)
 
+# generate compile_commands.json
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 option(ENABLE_TENSORFLOW "Enable TensorFlow interface" OFF)
 option(ENABLE_PYTORCH "Enable PyTorch interface" OFF)
 option(ENABLE_JAX "Enable JAX interface" OFF)
