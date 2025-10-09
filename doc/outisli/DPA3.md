@@ -1,4 +1,4 @@
-# DeepMD 源码导读与 DPA3 PyTorch 实现技术文档
+# DeePMD 源码导读与 DPA-3 PyTorch 实现技术文档
 
 ## 概述
 
@@ -55,8 +55,14 @@ if not skip_neighbor_stat:
 
 # 4. 训练器创建
 trainer = get_trainer(
-    config, init_model, restart, finetune, force_load, init_frz_model,
-    shared_links=shared_links, finetune_links=finetune_links
+    config,
+    init_model,
+    restart,
+    finetune,
+    force_load,
+    init_frz_model,
+    shared_links=shared_links,
+    finetune_links=finetune_links,
 )
 ```
 
@@ -283,9 +289,11 @@ DPA3 描述符层
 class DescrptDPA3(BaseDescriptor, torch.nn.Module):
     """DPA3 描述符实现"""
 
+
 @DescriptorBlock.register("se_repflow")
 class DescrptBlockRepflows(DescriptorBlock):
     """RepFlow 描述符块"""
+
 
 class RepFlowLayer(torch.nn.Module):
     """单个 RepFlow 层"""
@@ -335,25 +343,26 @@ DeePMD-kit 采用分层次、模块化的设计，从底层的原子级计算到
 
 **最基础的计算单元** - 负责原子级别的物理量计算：
 
-```python
+```text
 # 抽象基类层
 ABC + PluginVariant + make_plugin_registry("atomic model")
     ↓
 BaseAtomicModel_ (由 make_base_atomic_model() 动态生成)
-    ↓  
+    ↓
 BaseAtomicModel (deepmd/dpmodel/atomic_model/base_atomic_model.py:42)
     ↓
 DPAtomicModel (deepmd/dpmodel/atomic_model/dp_atomic_model.py:29) - 注册为 "standard"
     ↓
 具体的物理属性原子模型:
 ├── DPEnergyAtomicModel (能量模型)
-├── DPDipoleAtomicModel (偶极子模型) 
+├── DPDipoleAtomicModel (偶极子模型)
 ├── DPPolarAtomicModel (极化率模型)
 ├── DPDOSAtomicModel (态密度模型)
 └── DPPropertyAtomicModel (通用属性模型)
 ```
 
 **作用和用途**:
+
 - **核心计算单元**: 包含描述器(Descriptor) + 拟合网络(Fitting)
 - **原子级预测**: 负责单个原子的能量/力等物理量预测
 - **不直接用于训练**: 作为组件被更高层模型调用
@@ -363,7 +372,7 @@ DPAtomicModel (deepmd/dpmodel/atomic_model/dp_atomic_model.py:29) - 注册为 "s
 
 **真正用于训练和推理的完整模型**：
 
-```python
+```text
 # 抽象基类层
 ABC + PluginVariant + make_plugin_registry("model")
     ↓
@@ -376,14 +385,15 @@ DPModelCommon (提供公共方法如 update_sel 等)
 通过 make_model(T_AtomicModel) 动态生成的模型类
     ↓
 具体的完整模型实现:
-├── EnergyModel (deepmd/pt/model/model/ener_model.py:30) - 注册为 "ener" 
+├── EnergyModel (deepmd/pt/model/model/ener_model.py:30) - 注册为 "ener"
 ├── DipoleModel - 注册为 "dipole"
-├── PolarModel - 注册为 "polar" 
+├── PolarModel - 注册为 "polar"
 ├── DOSModel - 注册为 "dos"
 └── PropertyModel - 注册为 "property"
 ```
 
 **作用和用途**:
+
 - **训练和推理接口**: `dp train input.json` 时创建的就是这个模型
 - **系统级功能**: 封装原子模型，添加邻居列表构建、坐标变换、批处理等
 - **梯度计算**: 自动计算力和应力
@@ -393,7 +403,7 @@ DPModelCommon (提供公共方法如 update_sel 等)
 
 **线性组合和特殊模型**：
 
-```python
+```text
 BaseAtomicModel
     ↓
 LinearEnergyAtomicModel (deepmd/dpmodel/atomic_model/linear_atomic_model.py:42) - 注册为 "linear"
@@ -406,6 +416,7 @@ DPZBLModel (deepmd/dpmodel/model/dp_zbl_model.py:28) - 注册为 "zbl"
 ```
 
 **作用和用途**:
+
 - **模型组合**: 线性组合多个原子模型
 - **物理修正**: DPZBLModel 结合深度势能和 ZBL 势函数
 - **特殊应用**: 处理短程排斥等特殊物理场景
@@ -414,7 +425,7 @@ DPZBLModel (deepmd/dpmodel/model/dp_zbl_model.py:28) - 注册为 "zbl"
 
 ##### 2.4.3.1 训练时的模型创建流程
 
-```python
+```text
 # 1. 用户配置
 "model": {"type": "ener"}  # input.json 中
 
@@ -423,7 +434,7 @@ dp train input.json
   ↓
 # 3. 模型工厂创建 (deepmd/pt/entrypoints/main.py:248)
 model = get_model(model_params)  # 返回 EnergyModel 实例
-  ↓  
+  ↓
 # 4. EnergyModel 初始化流程
 # 4a. 创建 DPEnergyAtomicModel 实例（原子级计算核心）
 # 4b. 通过 make_model() 包装成完整模型（添加系统级功能）
@@ -438,13 +449,13 @@ loss = model.forward(coord, atype, box, ...)  # EnergyModel.forward()
 
 ##### 2.4.3.2 推理时的模型加载流程
 
-```python
+```text
 # 1. 模型加载
 model = torch.jit.load("frozen_model.pth")  # 实际是 EnergyModel 的实例
   ↓
 # 2. 推理调用
 output = model(coord, atype, box)  # EnergyModel.forward()
-  ↓  
+  ↓
 # 3. 返回标准格式
 {"energy": ..., "force": ..., "virial": ...}
 ```
@@ -454,18 +465,21 @@ output = model(coord, atype, box)  # EnergyModel.forward()
 ##### 2.4.4.1 核心设计模式
 
 **1. 工厂模式**
+
 - `make_base_atomic_model()`: 动态生成原子模型基类
-- `make_base_model()`: 动态生成最终模型基类  
+- `make_base_model()`: 动态生成最终模型基类
 - `make_model(T_AtomicModel)`: 将原子模型包装成完整模型
 
 **2. 注册机制**
+
 - 使用 `@BaseAtomicModel.register()` 和 `@BaseModel.register()` 注册不同类型的模型
 - 支持通过字符串名称动态创建模型实例
 
 **3. 组合模式**
+
 - **DPAtomicModel**: 由描述器(Descriptor) + 拟合网络(Fitting) 组成
 - **LinearEnergyAtomicModel**: 线性组合多个原子模型
-- **DPZBLLinearEnergyAtomicModel**: 特殊的线性组合，结合DP模型和ZBL势函数
+- **DPZBLLinearEnergyAtomicModel**: 特殊的线性组合，结合 DP 模型和 ZBL 势函数
 
 **4. 多后端支持**
 每个后端(PyTorch/TensorFlow/JAX/Paddle)都有相应的实现，遵循相同的接口但针对特定框架优化。
@@ -473,37 +487,43 @@ output = model(coord, atype, box)  # EnergyModel.forward()
 ##### 2.4.4.2 架构优势
 
 **模块化**:
+
 - 描述器和拟合网络可以独立开发和组合
 - 不同物理量的预测可以共享相同的框架
 
-**可扩展性**: 
+**可扩展性**:
+
 - 容易添加新的物理属性或模型类型
 - 支持自定义描述器和拟合网络
 
-**多后端支持**: 
+**多后端支持**:
+
 - 同一套接口支持不同的深度学习框架
 - 代码复用和维护效率高
 
-**类型安全**: 
+**类型安全**:
+
 - 通过注册机制确保模型类型的正确性
 - 编译时类型检查和运行时验证
 
 #### 2.4.7 模型压缩功能 (enable_compression)
 
-模型压缩是DeePMD-kit中一个重要的性能优化功能，通过表格化(tabulation)的方式来加速模型推理，特别适用于生产环境的部署。
+模型压缩是 DeePMD-kit 中一个重要的性能优化功能，通过表格化(tabulation)的方式来加速模型推理，特别适用于生产环境的部署。
 
 ##### 2.4.7.1 压缩功能调用链
 
 **压缩入口点** (`deepmd/pt/entrypoints/compress.py:75`):
+
 ```python
 model.enable_compression(
-    extrapolate,    # 外推尺度
-    stride,         # 步长1
-    stride * 10,    # 步长2
+    extrapolate,  # 外推尺度
+    stride,  # 步长1
+    stride * 10,  # 步长2
 )
 ```
 
 **压缩方法层次**:
+
 ```
 顶层模型压缩 (make_model.py:246-266)
     ↓
@@ -513,7 +533,7 @@ self.atomic_model.enable_compression(
     self.get_min_nbor_dist(),  # 获取最小邻居距离
     table_extrapolate,
     table_stride_1,
-    table_stride_2, 
+    table_stride_2,
     check_frequency,
 )
     ↓
@@ -523,6 +543,7 @@ self.atomic_model.enable_compression(
 ##### 2.4.7.2 压缩参数说明
 
 **关键参数**:
+
 - `table_extrapolate`: 模型外推的尺度参数，控制表格的外推范围
 - `table_stride_1`: 第一个表格的均匀步长，影响近程精度
 - `table_stride_2`: 第二个表格的均匀步长，影响远程精度
@@ -532,12 +553,14 @@ self.atomic_model.enable_compression(
 ##### 2.4.7.3 压缩机制的实现原理
 
 **表格化加速**:
+
 1. **距离离散化**: 将连续的原子间距离离散化为表格索引
 2. **预计算存储**: 预先计算并存储常用距离范围内的描述符值
 3. **插值查表**: 推理时通过插值查表替代复杂的神经网络计算
 4. **内存换时间**: 牺牲一定内存空间换取显著的计算速度提升
 
 **多级表格策略**:
+
 - **近程高精度**: `table_stride_1` 控制近程的高精度表格
 - **远程适中精度**: `table_stride_2` 控制远程的适中精度表格
 - **平滑过渡**: 两个表格之间实现平滑过渡，避免不连续性
@@ -545,11 +568,13 @@ self.atomic_model.enable_compression(
 ##### 2.4.7.4 压缩的应用场景和优势
 
 **适用场景**:
-- **生产环境部署**: MD模拟中需要高频调用模型推理
+
+- **生产环境部署**: MD 模拟中需要高频调用模型推理
 - **大规模系统**: 原子数量庞大，计算资源有限
 - **实时仿真**: 对推理速度有严格要求的应用
 
 **性能优势**:
+
 - **推理加速**: 可实现数倍到数十倍的推理速度提升
 - **内存可控**: 表格大小可通过步长参数灵活控制
 - **精度平衡**: 在速度和精度之间找到最优平衡点
@@ -557,23 +582,25 @@ self.atomic_model.enable_compression(
 ##### 2.4.7.5 压缩功能的使用建议
 
 **参数调优策略**:
+
 ```python
 # 高精度场景 - 较小的步长，更高的精度
 model.enable_compression(
     extrapolate=5.0,
-    stride_1=0.005,    # 更小的近程步长
-    stride_2=0.05,     # 更小的远程步长
+    stride_1=0.005,  # 更小的近程步长
+    stride_2=0.05,  # 更小的远程步长
 )
 
-# 高性能场景 - 较大的步长，更快的速度  
+# 高性能场景 - 较大的步长，更快的速度
 model.enable_compression(
     extrapolate=3.0,
-    stride_1=0.02,     # 较大的近程步长
-    stride_2=0.2,      # 较大的远程步长
+    stride_1=0.02,  # 较大的近程步长
+    stride_2=0.2,  # 较大的远程步长
 )
 ```
 
 **最佳实践**:
+
 1. **测试验证**: 压缩后务必验证模型精度是否满足要求
 2. **参数调优**: 根据具体应用场景调整步长参数
 3. **内存监控**: 关注压缩后的内存使用情况
@@ -582,11 +609,13 @@ model.enable_compression(
 #### 2.4.8 在实际使用中的角色分工
 
 **对用户而言**:
+
 - **只需关心最终模型**: EnergyModel、DipoleModel 等
 - **配置简单**: 通过 JSON 配置文件指定模型类型
 - **接口统一**: 所有模型都使用相同的训练和推理接口
 
 **对开发者而言**:
+
 - **清晰的层次**: 每一层都有明确的职责
 - **易于扩展**: 在正确的层级添加新功能
 - **代码复用**: 通过工厂模式避免重复代码
@@ -594,11 +623,13 @@ model.enable_compression(
 #### 2.4.9 模型架构总结
 
 **对用户而言**:
+
 - **只需关心最终模型**: EnergyModel、DipoleModel 等
 - **配置简单**: 通过 JSON 配置文件指定模型类型
 - **接口统一**: 所有模型都使用相同的训练和推理接口
 
 **对开发者而言**:
+
 - **清晰的层次**: 每一层都有明确的职责
 - **易于扩展**: 在正确的层级添加新功能
 - **代码复用**: 通过工厂模式避免重复代码
@@ -609,7 +640,7 @@ model.enable_compression(
 @BaseAtomicModel.register("standard")
 class DPAtomicModel(BaseAtomicModel):
     """Model give atomic prediction of some physical property.
-    
+
     Parameters
     ----------
     descriptor
@@ -628,69 +659,86 @@ DeePMD-kit 中存在多个不同的 forward 方法，每个都有特定的用途
 ##### 2.4.6.1 Forward 方法层级结构
 
 **1. 用户接口层** - `forward()`
-```python
+
+```text
 # deepmd/pt/model/model/ener_model.py:94
 def forward(self, coord, atype, box=None, fparam=None, aparam=None, do_atomic_virial=False)
 ```
-**用途**: 
+
+**用途**:
+
 - **最高级的用户接口**，训练和推理时直接调用的方法
 - 接收原始的坐标、原子类型、盒子信息
 - 返回标准的物理量格式 `{"energy": ..., "force": ..., "virial": ...}`
 
 **什么时候使用**:
+
 - 训练时的损失函数计算
 - 推理时的预测
-- LAMMPS等MD引擎调用的接口
+- LAMMPS 等 MD 引擎调用的接口
 
 **2. 坐标处理层** - `forward_common()`
-```python
+
+```text
 # deepmd/pt/model/model/make_model.py:152
 def forward_common(self, coord, atype, box=None, fparam=None, aparam=None, do_atomic_virial=False)
 ```
+
 **用途**:
+
 - **处理坐标变换和邻居列表构建**
-- 将原始坐标转换为扩展坐标(包含ghost原子)
+- 将原始坐标转换为扩展坐标(包含 ghost 原子)
 - 构建邻居列表
 - 调用底层的`forward_common_lower()`
 
 **内部工作流程**:
+
 ```python
 # 1. 坐标标准化和扩展
 extended_coord, extended_atype, mapping = extend_coord_with_ghosts(...)
-# 2. 构建邻居列表  
+# 2. 构建邻居列表
 nlist = build_neighbor_list(...)
 # 3. 调用底层计算
 model_ret = self.forward_common_lower(extended_coord, extended_atype, nlist, ...)
 ```
 
 **3. 底层计算层** - `forward_common_lower()`
-```python
+
+```text
 # deepmd/pt/model/model/make_model.py:278
 def forward_common_lower(self, extended_coord, extended_atype, nlist, mapping=None, ...)
 ```
+
 **用途**:
+
 - **真正的模型计算逻辑**
 - 接收已处理好的扩展坐标和邻居列表
 - 调用原子模型进行实际计算
-- 处理输出的格式转换和reduction操作
+- 处理输出的格式转换和 reduction 操作
 
 **4. 外部接口层** - `forward_lower()`
-```python  
+
+```text
 # deepmd/pt/model/model/ener_model.py:135
 def forward_lower(self, extended_coord, extended_atype, nlist, mapping=None, ...)
 ```
+
 **用途**:
-- **提供给外部程序的底层接口** (如LAMMPS插件)
-- 外部程序已经准备好了邻居列表，不需要DeePMD重新构建
+
+- **提供给外部程序的底层接口** (如 LAMMPS 插件)
+- 外部程序已经准备好了邻居列表，不需要 DeePMD 重新构建
 - 直接调用`forward_common_lower()`
-- 返回扩展区域的结果(不做reduction)
+- 返回扩展区域的结果(不做 reduction)
 
 **5. 原子级计算层** - `forward_atomic()`
-```python
-# deepmd/pt/model/atomic_model/dp_atomic_model.py:273  
+
+```text
+# deepmd/pt/model/atomic_model/dp_atomic_model.py:273
 def forward_atomic(self, extended_coord, extended_atype, nlist, mapping=None, ...)
 ```
+
 **用途**:
+
 - **最底层的原子级计算**
 - 描述器(Descriptor)计算原子环境表示
 - 拟合网络(Fitting)预测原子能量/力等
@@ -699,33 +747,35 @@ def forward_atomic(self, extended_coord, extended_atype, nlist, mapping=None, ..
 ##### 2.4.6.2 Forward 方法调用关系链
 
 **训练/推理时的完整调用链:**
-```python
+
+```text
 # 用户调用
 model.forward(coord, atype, box)
   ↓
-# 坐标处理 
+# 坐标处理
 model.forward_common(coord, atype, box)
-  ↓  
+  ↓
 # 坐标扩展 + 邻居列表构建
 extended_coord, nlist = preprocess(...)
   ↓
 # 底层计算
 model.forward_common_lower(extended_coord, extended_atype, nlist)
   ↓
-# 原子模型计算  
+# 原子模型计算
 atomic_ret = self.atomic_model.forward_atomic(extended_coord, extended_atype, nlist)
   ↓
 # 输出转换和reduction
 return transform_output(atomic_ret)
 ```
 
-**LAMMPS等外部程序调用:**
-```python
+**LAMMPS 等外部程序调用:**
+
+```text
 # 外部程序已经有邻居列表
 model.forward_lower(extended_coord, extended_atype, nlist, mapping)
   ↓
 # 直接底层计算
-model.forward_common_lower(extended_coord, extended_atype, nlist, mapping)  
+model.forward_common_lower(extended_coord, extended_atype, nlist, mapping)
   ↓
 # 原子模型计算
 atomic_ret = self.atomic_model.forward_atomic(...)
@@ -734,32 +784,39 @@ atomic_ret = self.atomic_model.forward_atomic(...)
 ##### 2.4.6.3 设计多层次 Forward 的原因
 
 **1. 性能优化**
+
 - `forward_lower()`: 外部程序可以复用邻居列表，避免重复计算
 - `forward_common_lower()`: 批处理时可以直接使用预构建的数据
 
-**2. 接口灵活性** 
+**2. 接口灵活性**
+
 - `forward()`: 简单易用的高级接口
 - `forward_lower()`: 高性能的底层接口
 
 **3. 代码复用**
+
 - `forward_common()`: 坐标处理逻辑可以被多种模型复用
 - `forward_atomic()`: 原子级计算与系统级处理分离
 
 **4. 调试和测试**
+
 - 可以单独测试每个层级的功能
 - 便于定位性能瓶颈
 
 ##### 2.4.6.4 实际使用建议
 
 **对于普通用户**:
+
 - **只需关心 `forward()`**: 训练和推理的标准接口
-- **偶尔使用 `forward_lower()`**: 如果你要写MD插件或需要高性能推理
+- **偶尔使用 `forward_lower()`**: 如果你要写 MD 插件或需要高性能推理
 
 **对于开发者**:
+
 - **`forward_common` 系列**: 理解内部实现和优化的关键
 - **`forward_atomic()`**: 自定义原子模型时需要实现的核心方法
 
 **性能优化场景**:
+
 - **外部邻居列表**: 使用 `forward_lower()` 避免重复计算
 - **批处理优化**: 直接调用 `forward_common_lower()` 处理预处理好的数据
 - **调试分析**: 单独调用 `forward_atomic()` 分析原子级计算
@@ -767,53 +824,67 @@ atomic_ret = self.atomic_model.forward_atomic(...)
 #### 2.4.2 具体派生模型
 
 **能量模型** (`deepmd/pt/model/atomic_model/energy_atomic_model.py:13`):
+
 ```python
 class DPEnergyAtomicModel(DPAtomicModel):
     def __init__(self, descriptor, fitting, type_map, **kwargs):
-        if not (isinstance(fitting, EnergyFittingNet) or 
-                isinstance(fitting, EnergyFittingNetDirect) or 
-                isinstance(fitting, InvarFitting)):
-            raise TypeError("fitting must be an instance of EnergyFittingNet, "
-                          "EnergyFittingNetDirect or InvarFitting for DPEnergyAtomicModel")
+        if not (
+            isinstance(fitting, EnergyFittingNet)
+            or isinstance(fitting, EnergyFittingNetDirect)
+            or isinstance(fitting, InvarFitting)
+        ):
+            raise TypeError(
+                "fitting must be an instance of EnergyFittingNet, "
+                "EnergyFittingNetDirect or InvarFitting for DPEnergyAtomicModel"
+            )
         super().__init__(descriptor, fitting, type_map, **kwargs)
 ```
 
 **偶极矩模型** (`deepmd/pt/model/atomic_model/dipole_atomic_model.py:14`):
+
 ```python
 class DPDipoleAtomicModel(DPAtomicModel):
     def __init__(self, descriptor, fitting, type_map, **kwargs):
         if not isinstance(fitting, DipoleFittingNet):
-            raise TypeError("fitting must be an instance of DipoleFittingNet for DPDipoleAtomicModel")
+            raise TypeError(
+                "fitting must be an instance of DipoleFittingNet for DPDipoleAtomicModel"
+            )
         super().__init__(descriptor, fitting, type_map, **kwargs)
-    
+
     def apply_out_stat(self, ret: dict[str, torch.Tensor], atype: torch.Tensor):
         # dipole not applying bias
         return ret
 ```
 
 **极化率模型** (`deepmd/pt/model/atomic_model/polar_atomic_model.py:14`):
+
 ```python
 class DPPolarAtomicModel(DPAtomicModel):
     def __init__(self, descriptor, fitting, type_map, **kwargs):
         if not isinstance(fitting, PolarFittingNet):
-            raise TypeError("fitting must be an instance of PolarFittingNet for DPPolarAtomicModel")
+            raise TypeError(
+                "fitting must be an instance of PolarFittingNet for DPPolarAtomicModel"
+            )
         super().__init__(descriptor, fitting, type_map, **kwargs)
 ```
 
 #### 2.4.3 DPAtomicModel 核心功能
 
 **原子级前向传播** (`dp_atomic_model.py:205-265`):
+
 ```python
-def forward_atomic(self,
-                  extended_coord,
-                  extended_atype,
-                  nlist,
-                  mapping: Optional[torch.Tensor] = None,
-                  fparam: Optional[torch.Tensor] = None,
-                  aparam: Optional[torch.Tensor] = None,
-                  comm_dict: Optional[dict[str, torch.Tensor]] = None) -> dict[str, torch.Tensor]:
+def forward_atomic(
+    self,
+    extended_coord,
+    extended_atype,
+    nlist,
+    mapping: Optional[torch.Tensor] = None,
+    fparam: Optional[torch.Tensor] = None,
+    aparam: Optional[torch.Tensor] = None,
+    comm_dict: Optional[dict[str, torch.Tensor]] = None,
+) -> dict[str, torch.Tensor]:
     """Return atomic prediction.
-    
+
     Parameters
     ----------
     extended_coord
@@ -828,7 +899,7 @@ def forward_atomic(self,
             frame parameter. nf x ndf
     aparam
             atomic parameter. nf x nloc x nda
-    
+
     Returns
     -------
     result_dict
@@ -839,21 +910,22 @@ def forward_atomic(self,
     atype = extended_atype[:, :nloc]
     if self.do_grad_r() or self.do_grad_c():
         extended_coord.requires_grad_(True)
-    
+
     # 2. 描述符计算
     descriptor, rot_mat, g2, h2, sw = self.descriptor(
-        extended_coord, extended_atype, nlist,
-        mapping=mapping, comm_dict=comm_dict)
-    
+        extended_coord, extended_atype, nlist, mapping=mapping, comm_dict=comm_dict
+    )
+
     # 3. 拟合网络计算
     fit_ret = self.fitting_net(
-        descriptor, atype, gr=rot_mat, g2=g2, h2=h2,
-        fparam=fparam, aparam=aparam)
-    
+        descriptor, atype, gr=rot_mat, g2=g2, h2=h2, fparam=fparam, aparam=aparam
+    )
+
     return fit_ret
 ```
 
 **模型工厂集成** (`deepmd/pt/model/model/__init__.py`):
+
 ```python
 def get_model(model_params):
     model_type = model_params.get("type", "standard")
@@ -886,7 +958,7 @@ DPAtomicModel 通过统一的接口和灵活的设计，为 DPA3 描述符与各
 
 **文件位置**: `deepmd/pt/model/descriptor/dpa3.py:105-171`
 
-```python
+```text
 def __init__(self,
              ntypes: int,
              repflow: Union[RepFlowArgs, dict],
@@ -920,7 +992,7 @@ def __init__(self,
        precision=precision,
        seed=child_seed(seed, 0),
        use_econf_tebd=use_econf_tebd,
-       type_map=type_map
+       type_map=type_map,
    )
    ```
 
@@ -956,8 +1028,7 @@ def __init__(self,
 **处理流程**:
 
 ```python
-def forward(self, extended_coord, extended_atype, nlist,
-            mapping=None, comm_dict=None):
+def forward(self, extended_coord, extended_atype, nlist, mapping=None, comm_dict=None):
     # 1. 数据类型转换
     extended_coord = extended_coord.to(dtype=self.prec)
     nframes, nloc, nnei = nlist.shape
@@ -972,8 +1043,12 @@ def forward(self, extended_coord, extended_atype, nlist,
 
     # 3. RepFlow 计算
     node_ebd, edge_ebd, h2, rot_mat, sw = self.repflows(
-        nlist, extended_coord, extended_atype, node_ebd_ext,
-        mapping, comm_dict=comm_dict
+        nlist,
+        extended_coord,
+        extended_atype,
+        node_ebd_ext,
+        mapping,
+        comm_dict=comm_dict,
     )
 
     # 4. 输出拼接处理
@@ -997,7 +1072,7 @@ def forward(self, extended_coord, extended_atype, nlist,
 
 **文件位置**: `deepmd/pt/model/descriptor/repflows.py:77-200`
 
-```python
+```text
 class DescrptBlockRepflows(DescriptorBlock):
     def __init__(self,
                  n_dim: int = 128,
@@ -1020,8 +1095,11 @@ class DescrptBlockRepflows(DescriptorBlock):
 
    ```python
    self.edge_embd = MLPLayer(
-       1, e_dim, activation=activation_function,
-       precision=precision, seed=child_seed(seed, 1)
+       1,
+       e_dim,
+       activation=activation_function,
+       precision=precision,
+       seed=child_seed(seed, 1),
    )
    ```
 
@@ -1029,8 +1107,11 @@ class DescrptBlockRepflows(DescriptorBlock):
 
    ```python
    self.angle_embd = MLPLayer(
-       1, a_dim, activation=activation_function,
-       precision=precision, seed=child_seed(seed, 2)
+       1,
+       a_dim,
+       activation=activation_function,
+       precision=precision,
+       seed=child_seed(seed, 2),
    )
    ```
 
@@ -1039,8 +1120,19 @@ class DescrptBlockRepflows(DescriptorBlock):
    self.layers = torch.nn.ModuleList()
    for ii in range(nlayers):
        self.layers.append(
-           RepFlowLayer(e_rcut, e_rcut_smth, e_sel, a_rcut, a_rcut_smth, a_sel,
-                       ntypes, n_dim, e_dim, a_dim, ...)
+           RepFlowLayer(
+               e_rcut,
+               e_rcut_smth,
+               e_sel,
+               a_rcut,
+               a_rcut_smth,
+               a_sel,
+               ntypes,
+               n_dim,
+               e_dim,
+               a_dim,
+               ...,
+           )
        )
    ```
 
@@ -1049,12 +1141,22 @@ class DescrptBlockRepflows(DescriptorBlock):
 **文件位置**: `deepmd/pt/model/descriptor/repflows.py:429-647`
 
 ```python
-def forward(self, nlist, extended_coord, extended_atype,
-            extended_atype_embd=None, mapping=None, comm_dict=None):
+def forward(
+    self,
+    nlist,
+    extended_coord,
+    extended_atype,
+    extended_atype_embd=None,
+    mapping=None,
+    comm_dict=None,
+):
     # 1. 环境矩阵计算
     dmatrix, diff, sw = prod_env_mat(
-        extended_coord, nlist, self.e_rcut, self.e_rcut_smth,
-        protection=self.env_protection
+        extended_coord,
+        nlist,
+        self.e_rcut,
+        self.e_rcut_smth,
+        protection=self.env_protection,
     )
 
     # 2. 边和角度邻居列表处理
@@ -1071,8 +1173,7 @@ def forward(self, nlist, extended_coord, extended_atype,
     # 5. RepFlow 层迭代
     for idx, ll in enumerate(self.layers):
         node_ebd, edge_ebd, angle_ebd = ll.forward(
-            node_ebd, edge_ebd, angle_ebd,
-            nlist, extended_coord, extended_atype, ...
+            node_ebd, edge_ebd, angle_ebd, nlist, extended_coord, extended_atype, ...
         )
 
     return node_ebd, edge_ebd, h2, rot_mat, sw
@@ -1084,7 +1185,7 @@ def forward(self, nlist, extended_coord, extended_atype,
 
 **文件位置**: `deepmd/pt/model/descriptor/repflow_layer.py:38-200`
 
-```python
+```text
 class RepFlowLayer(torch.nn.Module):
     def __init__(self,
                  e_rcut: float,
@@ -1113,7 +1214,6 @@ class RepFlowLayer(torch.nn.Module):
 #### 3.4.1 网络组件
 
 - **MLP 网络**: `deepmd/pt/model/network/mlp.py`
-
   - `MLPLayer`: 多层感知机实现
   - `TypeEmbedNet`: 类型嵌入网络
   - `TypeEmbedNetConsistent`: 一致性类型嵌入网络
@@ -1126,12 +1226,10 @@ class RepFlowLayer(torch.nn.Module):
 #### 3.4.2 工具函数
 
 - **环境矩阵**: `deepmd/pt/model/descriptor/env_mat.py`
-
   - `prod_env_mat`: 环境矩阵计算
   - 距离和角度计算
 
 - **邻居列表**: `deepmd/pt/utils/nlist.py`
-
   - 邻居列表生成和处理
   - 排除掩码处理
 
@@ -1143,7 +1241,6 @@ class RepFlowLayer(torch.nn.Module):
 #### 3.4.3 统计和预处理
 
 - **环境矩阵统计**: `deepmd/pt/utils/env_mat_stat.py`
-
   - 邻居统计
   - 数据预处理
 
@@ -1158,9 +1255,11 @@ class RepFlowLayer(torch.nn.Module):
 根据深度势能的基本原理，系统的总能量等于系统中每个原子局部环境能量的总和。这一原理在 PyTorch 后端中通过**分离的两阶段计算**得到精确实现，确保了模型的物理正确性和能量守恒。
 
 **核心公式**:
+
 ```
 E_total = Σ E_i
 ```
+
 其中 E_i 是第 i 个原子的局部环境能量。
 
 #### 3.5.2 原子级能量计算阶段
@@ -1169,14 +1268,14 @@ E_total = Σ E_i
 
 在拟合网络的 `_forward_common` 方法中，每个原子的能量被独立计算：
 
-```python
+```text
 def _forward_common(self, descriptor, atype, ...):
     # descriptor shape: [nf, nloc, nd] - 原子环境描述符
     nf, nloc, nd = xx.shape
-    
+
     # 初始化输出张量
     outs = torch.zeros((nf, nloc, net_dim_out), dtype=self.prec, device=descriptor.device)
-    
+
     if self.mixed_types:
         # 混合类型模式：统一网络处理所有原子类型
         atom_property = self.filter_layers.networks[0](xx)  # 神经网络计算
@@ -1190,17 +1289,18 @@ def _forward_common(self, descriptor, atype, ...):
             atom_property = atom_property + self.bias_atom_e[type_i].to(self.prec)
             atom_property = torch.where(mask, atom_property, 0.0)
             outs = outs + atom_property
-    
+
     # 应用排除掩码
     mask = self.emask(atype).to(torch.bool)
     outs = torch.where(mask[:, :, None], outs, 0.0)
-    
+
     # 返回原子级能量，shape: [nf, nloc, net_dim_out]
     results.update({self.var_name: outs})
     return results
 ```
 
 **关键特征**:
+
 - **原子级输出**: 网络输出为 `[nf, nloc, net_dim_out]`，每个原子都有独立的能量贡献
 - **类型特定处理**: 支持混合类型和非混合类型两种计算模式
 - **局部环境原理**: 每个原子的能量只依赖于其局部环境描述符，符合深度势能的核心思想
@@ -1212,16 +1312,16 @@ def _forward_common(self, descriptor, atype, ...):
 
 **重要发现**: 原子级能量到系统能量的转换是在 `fit_output_to_model_output` 函数中完成的，而不是在拟合网络中！
 
-```python
+```text
 def fit_output_to_model_output(fit_ret, fit_output_def, coord_ext, ...):
     redu_prec = env.GLOBAL_PT_ENER_FLOAT_PRECISION
     model_ret = dict(fit_ret.items())
-    
+
     for kk, vv in fit_ret.items():
         vdef = fit_output_def[kk]
         shap = vdef.shape  # 对于能量，shap = [1]
         atom_axis = -(len(shap) + 1)  # atom_axis = -2 (原子维度)
-        
+
         if vdef.reducible:
             kk_redu = get_reduce_name(kk)  # "energy" -> "energy_redu"
             if vdef.intensive:
@@ -1230,7 +1330,7 @@ def fit_output_to_model_output(fit_ret, fit_output_def, coord_ext, ...):
             else:
                 # 广延性质：计算总和
                 model_ret[kk_redu] = torch.sum(vv.to(redu_prec), dim=atom_axis)
-            
+
             # 力和维里的自动微分计算
             if vdef.r_differentiable:
                 kk_derv_r, kk_derv_c = get_deriv_name(kk)
@@ -1239,11 +1339,12 @@ def fit_output_to_model_output(fit_ret, fit_output_def, coord_ext, ...):
                 if vdef.c_differentiable:
                     model_ret[kk_derv_c] = dc
                     model_ret[kk_derv_c + "_redu"] = torch.sum(model_ret[kk_derv_c].to(redu_prec), dim=1)
-    
+
     return model_ret
 ```
 
 **能量求和详解**:
+
 - **输入**: `vv` shape `[nf, nloc, 1]` - 原子级能量
 - **求和操作**: `torch.mean(vv, dim=-2)` 对原子维度求平均
 - **输出**: `energy_redu` shape `[nf, 1]` - 系统能量
@@ -1256,21 +1357,22 @@ def fit_output_to_model_output(fit_ret, fit_output_def, coord_ext, ...):
 
 在训练过程中，能量损失按原子数量归一化：
 
-```python
+```text
 def forward(self, model_pred, label, natoms, ...):
     # 系统能量预测值
     energy_pred = model_pred["energy"]  # shape: [nf, 1]
     energy_label = label["energy"]      # shape: [nf, 1]
-    
+
     # 计算能量损失
     l2_ener_loss = torch.mean(torch.square(energy_pred - energy_label))
-    
+
     # 按原子数量归一化 (per atom loss)
     atom_norm = 1.0 / natoms
     loss += atom_norm * (pref_e * l2_ener_loss)
 ```
 
 **归一化策略**:
+
 - **原子级归一化**: `atom_norm = 1.0 / natoms` 确保损失是 per atom 的
 - **训练稳定性**: 防止大系统主导训练过程
 - **物理一致性**: 保持能量与原子数量的线性关系
@@ -1300,38 +1402,41 @@ Per Atom 归一化损失 [scalar]
 #### 3.5.6 关键设计特点
 
 **分离式计算架构**:
+
 1. **原子能量计算**: 在 `_forward_common` 中计算每个原子的局部环境能量
 2. **系统能量聚合**: 在 `fit_output_to_model_output` 中将原子能量聚合成系统能量
 3. **自动微分支持**: 力的计算通过自动微分实现，保持梯度传递
 
 **灵活的求和策略**:
+
 - **求平均**: `torch.mean()` 用于训练时的能量损失计算
 - **求总和**: `torch.sum()` 用于某些需要总量的场景
 - **精度控制**: 使用 `redu_prec` 确保数值稳定性
 
 **物理正确性保证**:
+
 - **局部性原理**: 每个原子的能量只依赖于其局部环境
 - **可加性**: 系统能量严格等于原子能量之和
 - **不变性**: 保持旋转和平移不变性
 
 **计算效率优化**:
+
 - **并行计算**: 原子级能量计算可以完全并行化
 - **批处理**: 支持多帧同时处理
 - **内存效率**: 分离的计算阶段减少内存占用
 
-### 3.6 DPA3描述符输出变量详解
+### 3.6 DPA3 描述符输出变量详解
 
-在DPA3描述符的forward方法中，输出的变量包含了原子环境表示的完整信息。这些变量对于理解描述符的工作原理和调试模型行为非常重要。
+在 DPA3 描述符的 forward 方法中，输出的变量包含了原子环境表示的完整信息。这些变量对于理解描述符的工作原理和调试模型行为非常重要。
 
 #### 3.6.1 输出变量概述
 
 **文件位置**: `deepmd/pt/model/descriptor/dpa3.py:430-498`
 
-DPA3描述符的forward方法返回五个核心变量：
+DPA3 描述符的 forward 方法返回五个核心变量：
 
 ```python
-def forward(self, extended_coord, extended_atype, nlist,
-            mapping=None, comm_dict=None):
+def forward(self, extended_coord, extended_atype, nlist, mapping=None, comm_dict=None):
     # ... 计算过程 ...
     return node_ebd, rot_mat, edge_ebd, h2, sw
 ```
@@ -1339,42 +1444,47 @@ def forward(self, extended_coord, extended_atype, nlist,
 #### 3.6.2 变量详细说明
 
 **node_ebd: 节点描述符**
+
 - **形状**: `[nf, nloc, n_dim]`
 - **含义**: 主要的原子环境描述符，包含每个原子的环境信息
 - **作用**: 直接输入拟合网络计算原子级能量
 
 **rot_mat: 旋转矩阵**
+
 - **形状**: `[nf, nloc, e_dim, 3]`
 - **含义**: 旋转矩阵用于坐标变换，保持旋转不变性
-- **作用**: 
+- **作用**:
   - 将局部坐标转换到全局坐标系
   - 确保描述符在分子旋转时的不变性
-  - 支持SE(3)等变变换
+  - 支持 SE(3)等变变换
 
 **edge_ebd: 边嵌入**
+
 - **形状**: `[nf, nloc, nnei, e_dim]`
 - **含义**: 原子间边的嵌入表示
 - **作用**: 描述原子间的成键信息和相互作用
 
 **h2: 角度信息**
+
 - **形状**: `[nf, nloc, nnei, 3]`
 - **含义**: 三体角度相关信息
-- **作用**: 描述原子间的角度关系，支持3-body相互作用建模
+- **作用**: 描述原子间的角度关系，支持 3-body 相互作用建模
 
 **sw: 平滑开关函数**
+
 - **形状**: `[nf, nloc, nnei]`
 - **含义**: 用于平滑截止边界的开关函数
-- **作用**: 在cutoff半径处平滑过渡到零，避免能量和力的不连续跳跃
+- **作用**: 在 cutoff 半径处平滑过渡到零，避免能量和力的不连续跳跃
 
 #### 3.6.3 变量在模型中的应用
 
 **在拟合网络中的使用** (`deepmd/pt/model/task/fitting.py:473-614`):
 
-```python
+```text
 def _forward_common(self, descriptor, atype, ...):
     # descriptor是node_ebd [nf, nloc, nd]
     nf, nloc, nd = descriptor.shape
-    
+
     # 计算原子级能量
     atom_property = self.filter_layers.networks[0](descriptor)
     # ...
@@ -1403,7 +1513,7 @@ node_ebd, rot_mat ← 最终描述符输出
 
 ### 3.7 代码修改和功能增强历史
 
-#### 3.7.1 process_systems函数增强
+#### 3.7.1 process_systems 函数增强
 
 **修改位置**: `deepmd/utils/data_system.py`
 
@@ -1463,13 +1573,15 @@ system_path/
 
 ```python
 class DeepmdData:
-    def __init__(self,
-                 systems: Union[str, List[str]],
-                 batch_size: int = 1,
-                 test_size: int = 0,
-                 shuffle_test: bool = True,
-                 type_map: Optional[List[str]] = None,
-                 modifier=None):
+    def __init__(
+        self,
+        systems: Union[str, List[str]],
+        batch_size: int = 1,
+        test_size: int = 0,
+        shuffle_test: bool = True,
+        type_map: Optional[List[str]] = None,
+        modifier=None,
+    ):
         """
         初始化数据系统
 
@@ -1565,12 +1677,14 @@ def reformat_data_torch(self, data_dict: dict) -> dict:
 
 ```python
 class DpLoaderSet:
-    def __init__(self,
-                 systems: List[str],
-                 batch_size: Union[int, str, List[int]],
-                 type_map: List[str],
-                 shuffle: bool = True,
-                 dist: bool = False):
+    def __init__(
+        self,
+        systems: List[str],
+        batch_size: Union[int, str, List[int]],
+        type_map: List[str],
+        shuffle: bool = True,
+        dist: bool = False,
+    ):
         """
         初始化系统级 DataLoader 集合
 
@@ -1590,7 +1704,7 @@ class DpLoaderSet:
             system_data = DeepmdData(
                 system_path,
                 batch_size=1,  # 系统级批处理在 DataLoader 中处理
-                type_map=type_map
+                type_map=type_map,
             )
 
             # 转换为 PyTorch 数据集
@@ -1629,7 +1743,7 @@ def _create_system_dataloader(self, system, batch_size, shuffle, dist):
             system,
             num_replicas=dist.get_world_size(),
             rank=dist.get_rank(),
-            shuffle=shuffle
+            shuffle=shuffle,
         )
     else:
         system_sampler = None
@@ -1668,8 +1782,8 @@ def _calculate_auto_batch_size(self, system_data: DeepmdData) -> int:
 
     # 2. 计算内存需求
     memory_per_frame = natoms * 3 * 4  # 坐标内存 (float32)
-    memory_per_frame += natoms * 4     # 原子类型内存 (int32)
-    memory_per_frame += 9 * 4         # 盒子内存 (float32)
+    memory_per_frame += natoms * 4  # 原子类型内存 (int32)
+    memory_per_frame += 9 * 4  # 盒子内存 (float32)
 
     # 3. 基于可用内存计算批处理大小
     available_memory = self._get_available_memory()
@@ -1746,9 +1860,7 @@ def collate_batch(batch: List[dict]) -> dict:
             continue
         else:
             # 其他键进行张量批处理
-            result[key] = collate_tensor_fn(
-                [torch.as_tensor(d[key]) for d in batch]
-            )
+            result[key] = collate_tensor_fn([torch.as_tensor(d[key]) for d in batch])
 
     return result
 ```
@@ -1773,8 +1885,10 @@ def collate_tensor_fn(tensors: List[torch.Tensor]) -> torch.Tensor:
         padded_tensors = []
 
         for tensor in tensors:
-            padding = [(0, max_dim - curr_dim)
-                      for max_dim, curr_dim in zip(max_shape, tensor.shape)]
+            padding = [
+                (0, max_dim - curr_dim)
+                for max_dim, curr_dim in zip(max_shape, tensor.shape)
+            ]
             padded_tensor = torch.nn.functional.pad(tensor, padding)
             padded_tensors.append(padded_tensor)
 
@@ -1809,13 +1923,13 @@ def get_data_loader(_training_data, _validation_data, _training_params):
 
         # 2. 创建训练级 DataLoader
         _dataloader = DataLoader(
-            _data,                              # DpLoaderSet 实例
-            sampler=_sampler,                   # 采样器
-            batch_size=None,                   # 单系统批处理
+            _data,  # DpLoaderSet 实例
+            sampler=_sampler,  # 采样器
+            batch_size=None,  # 单系统批处理
             num_workers=NUM_WORKERS if dist.is_available() else 0,
-            drop_last=False,                   # 不丢弃最后一个不完整批次
-            collate_fn=lambda batch: batch,     # 防止额外转换
-            pin_memory=True,                    # 锁页内存优化
+            drop_last=False,  # 不丢弃最后一个不完整批次
+            collate_fn=lambda batch: batch,  # 防止额外转换
+            pin_memory=True,  # 锁页内存优化
         )
 
         # 3. 创建无限循环迭代器
@@ -1831,7 +1945,12 @@ def get_data_loader(_training_data, _validation_data, _training_params):
         _validation_data, _training_params["validation_data"]
     )
 
-    return training_dataloader, training_data_iter, validation_dataloader, validation_data_iter
+    return (
+        training_dataloader,
+        training_data_iter,
+        validation_dataloader,
+        validation_data_iter,
+    )
 ```
 
 #### 4.5.2 采样器配置
@@ -1856,9 +1975,7 @@ def get_sampler_from_params(_data, _params):
     # 2. 创建采样器
     if prob is not None:
         sampler = WeightedRandomSampler(
-            weights=prob,
-            num_samples=len(prob),
-            replacement=True
+            weights=prob, num_samples=len(prob), replacement=True
         )
     else:
         sampler = None
@@ -1929,9 +2046,7 @@ def get_data(self, is_train=True, task_key="Default"):
     for key in batch_data.keys():
         if key not in ["sid", "fid", "box", "find_*"]:
             # 移动到目标设备
-            batch_data[key] = batch_data[key].to(
-                env.DEVICE, non_blocking=True
-            )
+            batch_data[key] = batch_data[key].to(env.DEVICE, non_blocking=True)
 
     # 4. 分离输入和标签
     input_dict, label_dict, log_dict = self._separate_inputs_labels(batch_data)
@@ -1979,28 +2094,21 @@ def step(self, task_key="Default", **kwargs):
     """执行单个训练步骤"""
 
     # 1. 获取数据
-    input_dict, label_dict, log_dict = self.get_data(
-        is_train=True, task_key=task_key
-    )
+    input_dict, label_dict, log_dict = self.get_data(is_train=True, task_key=task_key)
 
     # 2. 前向传播
     with torch.cuda.amp.autocast(enabled=self.mixed_precision):
         model_pred, loss, more_loss = self.wrapper(
-            **input_dict,
-            cur_lr=self.get_cur_lr(),
-            label=label_dict,
-            task_key=task_key
+            **input_dict, cur_lr=self.get_cur_lr(), label=label_dict, task_key=task_key
         )
 
-    # 3. 反向传播
+        # 3. 反向传播
         self.optimizer.zero_grad()
         loss.backward()
 
         # 4. 梯度裁剪
         if self.grad_clip > 0:
-            torch.nn.utils.clip_grad_norm_(
-                self.wrapper.parameters(), self.grad_clip
-            )
+            torch.nn.utils.clip_grad_norm_(self.wrapper.parameters(), self.grad_clip)
 
         # 5. 参数更新
         self.optimizer.step()
@@ -2029,7 +2137,9 @@ NUM_WORKERS = int(os.environ.get("NUM_WORKERS", min(4, ncpus)))
 
 # 多进程方法检查
 if multiprocessing.get_start_method() != "fork":
-    log.warning("NUM_WORKERS > 0 is not supported with spawn or forkserver start method. Setting NUM_WORKERS to 0.")
+    log.warning(
+        "NUM_WORKERS > 0 is not supported with spawn or forkserver start method. Setting NUM_WORKERS to 0."
+    )
     NUM_WORKERS = 0
 ```
 
@@ -2135,10 +2245,10 @@ evaluator = DeepEval("dpa3_model.pt", output_def)
 
 # 执行推理
 result = evaluator.eval(
-    coords=coordinates,      # [nframes x natoms x 3]
-    cells=cell_parameters,    # [nframes x 9] (可选)
-    atom_types=atom_types,    # [natoms] 或 [nframes x natoms]
-    atomic=False             # 是否计算原子级贡献
+    coords=coordinates,  # [nframes x natoms x 3]
+    cells=cell_parameters,  # [nframes x 9] (可选)
+    atom_types=atom_types,  # [natoms] 或 [nframes x natoms]
+    atomic=False,  # 是否计算原子级贡献
 )
 ```
 
@@ -2163,11 +2273,15 @@ dp freeze -m dpa3_model.pt -o frozen_model.pth
 **文件位置**: `deepmd/pt/infer/deep_eval.py:96-161`
 
 ```python
-def __init__(self, model_file: str, output_def: ModelOutputDef,
-             auto_batch_size: Union[bool, int, AutoBatchSize] = True,
-             neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
-             head: Optional[Union[str, int]] = None,
-             no_jit: bool = False):
+def __init__(
+    self,
+    model_file: str,
+    output_def: ModelOutputDef,
+    auto_batch_size: Union[bool, int, AutoBatchSize] = True,
+    neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
+    head: Optional[Union[str, int]] = None,
+    no_jit: bool = False,
+):
 
     # 1. 加载模型检查点
     state_dict = torch.load(model_file, map_location=env.DEVICE, weights_only=True)
@@ -2210,13 +2324,23 @@ evaluator = DeepEval("multi_task_model.pt", output_def, head="task_name")
 ```python
 def _eval_model(self, coords, cells, atom_types, fparam, aparam, request_defs):
     # 1. 数据预处理
-    coord_input = torch.tensor(coords.reshape([nframes, natoms, 3]),
-                               dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE)
+    coord_input = torch.tensor(
+        coords.reshape([nframes, natoms, 3]),
+        dtype=GLOBAL_PT_FLOAT_PRECISION,
+        device=DEVICE,
+    )
     type_input = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
 
     # 2. 可选参数处理
-    box_input = torch.tensor(cells.reshape([nframes, 3, 3]),
-                             dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE) if cells is not None else None
+    box_input = (
+        torch.tensor(
+            cells.reshape([nframes, 3, 3]),
+            dtype=GLOBAL_PT_FLOAT_PRECISION,
+            device=DEVICE,
+        )
+        if cells is not None
+        else None
+    )
 
     # 3. 执行模型推理
     batch_output = model(
@@ -2225,7 +2349,7 @@ def _eval_model(self, coords, cells, atom_types, fparam, aparam, request_defs):
         box=box_input,
         do_atomic_virial=do_atomic_virial,
         fparam=fparam_input,
-        aparam=aparam_input
+        aparam=aparam_input,
     )
 
     # 4. 后处理和返回结果
@@ -2250,8 +2374,12 @@ def _eval_model(self, coords, cells, atom_types, fparam, aparam, request_defs):
 ```python
 def _eval_func(self, inner_func: Callable, numb_test: int, natoms: int) -> Callable:
     if self.auto_batch_size is not None:
+
         def eval_func(*args, **kwargs):
-            return self.auto_batch_size.execute_all(inner_func, numb_test, natoms, *args, **kwargs)
+            return self.auto_batch_size.execute_all(
+                inner_func, numb_test, natoms, *args, **kwargs
+            )
+
     else:
         eval_func = inner_func
     return eval_func
@@ -2302,7 +2430,6 @@ model = model.to(device)
 **支持的模型格式**:
 
 1. **.pt 文件**: PyTorch 标准检查点格式
-
    - 包含完整的模型权重和配置信息
    - 支持多任务模型和元数据
 
@@ -2382,9 +2509,9 @@ def eval_fitting_last_layer(self, coords, cells, atom_types, fparam=None, aparam
 def get_model_size(self) -> dict:
     """获取模型参数统计"""
     return {
-        "descriptor": sum_param_des,      # 描述符参数数量
-        "fitting-net": sum_param_fit,     # 拟合网络参数数量
-        "total": sum_param_des + sum_param_fit  # 总参数数量
+        "descriptor": sum_param_des,  # 描述符参数数量
+        "fitting-net": sum_param_fit,  # 拟合网络参数数量
+        "total": sum_param_des + sum_param_fit,  # 总参数数量
     }
 ```
 
@@ -2424,12 +2551,10 @@ def get_model_size(self) -> dict:
 
 ```python
 # 内存敏感环境
-evaluator = DeepEval("model.pt", output_def,
-                    auto_batch_size=False)  # 禁用自动批处理
+evaluator = DeepEval("model.pt", output_def, auto_batch_size=False)  # 禁用自动批处理
 
 # 性能优化配置
-evaluator = DeepEval("model.pt", output_def,
-                    auto_batch_size=1024)  # 设置固定批处理大小
+evaluator = DeepEval("model.pt", output_def, auto_batch_size=1024)  # 设置固定批处理大小
 ```
 
 #### 5.9.3 错误处理和调试

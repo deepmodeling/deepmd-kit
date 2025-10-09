@@ -20,9 +20,6 @@ from typing import (
 import numpy as np
 import torch
 
-from deepmd.pt.utils import (
-    env,
-)
 from deepmd.common import (
     symlink_prefix_files,
 )
@@ -54,6 +51,7 @@ from deepmd.pt.train.wrapper import (
 )
 from deepmd.pt.utils import (
     dp_random,
+    env,
 )
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,

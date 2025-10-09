@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Debug script for model compression.
 
 Equivalent to: dp --pt compress -i no.pth -o yes.pth -t input_torch.json
@@ -9,7 +10,9 @@ This script can be run directly in VSCode with debugging capabilities.
 import logging
 import os
 import sys
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 # Add the deepmd-kit root to Python path
 deepmd_root = Path(__file__).parent.parent
@@ -22,7 +25,9 @@ def compress_model() -> None:
     dp --pt compress -i no.pth -o yes.pth -t input_torch.json
     """
     # Import here to avoid module-level import restriction
-    from deepmd.pt.entrypoints.compress import enable_compression
+    from deepmd.pt.entrypoints.compress import (
+        enable_compression,
+    )
 
     # Setup logging
     logging.basicConfig(level=logging.INFO)
@@ -46,10 +51,14 @@ def compress_model() -> None:
 
         # Check if input files exist
         if not os.path.exists(input_file):
-            raise FileNotFoundError(f"Input model file '{input_file}' not found in {work_dir}")
+            raise FileNotFoundError(
+                f"Input model file '{input_file}' not found in {work_dir}"
+            )
 
         if not os.path.exists(training_script):
-            raise FileNotFoundError(f"Training script '{training_script}' not found in {work_dir}")
+            raise FileNotFoundError(
+                f"Training script '{training_script}' not found in {work_dir}"
+            )
 
         log.info(f"Input model: {input_file}")
         log.info(f"Output model: {output_file}")

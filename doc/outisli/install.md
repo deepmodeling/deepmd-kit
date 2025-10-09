@@ -1,8 +1,8 @@
-鉴于大家可能觉得从源码安装`DeepMD-kit`门槛较高，而极少使用。然而从源码安装的灵活性最高，为进一步推广，并减少可能的坑，笔者在此根据自己的安装流程结合官方文档给出一个适用性较广的安装教程，各位可自行尝试。
+鉴于大家可能觉得从源码安装`DeePMD-kit`门槛较高，而极少使用。然而从源码安装的灵活性最高，为进一步推广，并减少可能的坑，笔者在此根据自己的安装流程结合官方文档给出一个适用性较广的安装教程，各位可自行尝试。
 
 本教程适用于 Linux(with NVIDIA GPU) 及 Mac(with Apple Silicon)
 
-Since some users may find installing `DeepMD-kit` from source to be challenging and rarely attempt it, this guide aims to make the process more accessible. Installing from source offers the highest flexibility. To promote this method and reduce potential pitfalls, I have compiled a broadly applicable installation tutorial based on my own experience and the official documentation. You are encouraged to try it out.
+Since some users may find installing `DeePMD-kit` from source to be challenging and rarely attempt it, this guide aims to make the process more accessible. Installing from source offers the highest flexibility. To promote this method and reduce potential pitfalls, I have compiled a broadly applicable installation tutorial based on my own experience and the official documentation. You are encouraged to try it out.
 
 This tutorial is applicable to Linux (with NVIDIA GPU) and Mac (with Apple Silicon).
 
@@ -23,6 +23,7 @@ This tutorial is applicable to Linux (with NVIDIA GPU) and Mac (with Apple Silic
 > 5. This tutorial assumes some basic knowledge of computer (Linux) operations. If you encounter any issues, feel free to comment or ask AI for help.
 
 # 0. Preparation (Optional)
+
 ## 0.1 CUDA Toolkit
 
 ```shell
@@ -155,7 +156,7 @@ make lammps && rm -rf $software/lammps
 # Or conda install
 mamba install jpeg libpng zlib -c conda-forge -y
 
-# 2. Download Lammps
+# 2. Download LAMMPS
 cd $software && mkdir -p lammps && cd lammps && wget https://gh-proxy.com/github.com/lammps/lammps/archive/stable_22Jul2025.tar.gz && tar xzf stable_22Jul2025.tar.gz && cd lammps-stable_22Jul2025 && mkdir -p build && cd build
 # wget https://github.com/lammps/lammps/archive/stable_22Jul2025.tar.gz
 
