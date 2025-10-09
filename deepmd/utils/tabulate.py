@@ -203,9 +203,7 @@ class BaseTabulate(ABC):
             ll = np.min(lower)
 
             # 2. Create a unique input grid xx for this shared geometric network based on the global range
-            xx = np.arange(
-                extrapolate * ll, ll, stride1, dtype=self.data_type
-            )
+            xx = np.arange(extrapolate * ll, ll, stride1, dtype=self.data_type)
             xx = np.append(
                 xx,
                 np.arange(ll, uu, stride0, dtype=self.data_type),
@@ -219,9 +217,7 @@ class BaseTabulate(ABC):
                     dtype=self.data_type,
                 ),
             )
-            xx = np.append(
-                xx, np.array([extrapolate * uu], dtype=self.data_type)
-            )
+            xx = np.append(xx, np.array([extrapolate * uu], dtype=self.data_type))
 
             # 3. Calculate the number of spline points
             nspline = (
