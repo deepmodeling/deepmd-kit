@@ -160,19 +160,19 @@ class DPTabulate(BaseTabulate):
                         self.functype,
                     )
                 elif self.neuron[0] == 2:
-                    residual, yy = self._layer_1(
+                    tt, yy = self._layer_1(
                         xx,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         self.bias["layer_" + str(layer + 1)][idx],
                     )
                     dy = unaggregated_dy_dx_s(
-                        yy - residual,
+                        yy - tt,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         xbar,
                         self.functype,
                     ) + torch.ones((1, 2), dtype=yy.dtype, device=yy.device)
                     dy2 = unaggregated_dy2_dx_s(
-                        yy - residual,
+                        yy - tt,
                         dy,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         xbar,
@@ -231,20 +231,20 @@ class DPTabulate(BaseTabulate):
                         self.functype,
                     )
                 elif self.neuron[layer] == 2 * self.neuron[layer - 1]:
-                    residual, zz = self._layer_1(
+                    tt, zz = self._layer_1(
                         yy,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         self.bias["layer_" + str(layer + 1)][idx],
                     )
                     dz = unaggregated_dy_dx(
-                        zz - residual,
+                        zz - tt,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         dy,
                         ybar,
                         self.functype,
                     )
                     dy2 = unaggregated_dy2_dx(
-                        zz - residual,
+                        zz - tt,
                         self.matrix["layer_" + str(layer + 1)][idx],
                         dy,
                         dy2,
@@ -275,10 +275,10 @@ class DPTabulate(BaseTabulate):
                 dy = dz
                 yy = zz
 
-        value = zz.detach().cpu().numpy().astype(self.data_type)
+        vv = zz.detach().cpu().numpy().astype(self.data_type)
         dd = dy.detach().cpu().numpy().astype(self.data_type)
         d2 = dy2.detach().cpu().numpy().astype(self.data_type)
-        return value, dd, d2
+        return vv, dd, d2
 
     def _layer_0(self, x: torch.Tensor, w: np.ndarray, b: np.ndarray) -> torch.Tensor:
         w = torch.from_numpy(w).to(env.DEVICE)

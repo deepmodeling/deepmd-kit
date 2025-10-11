@@ -104,7 +104,7 @@ class BaseTabulate(ABC):
             nspline = ((uu - ll) / stride0 + (extrapolate * uu - uu) / stride1).astype(
                 int
             )
-            self._generate_spline_table(
+            self._build_lower(
                 "filter_net", xx, 0, uu, ll, stride0, stride1, extrapolate, nspline
             )
         elif self.descrpt_type == "A":
@@ -145,7 +145,7 @@ class BaseTabulate(ABC):
                     nspline = (
                         (uu - ll) / stride0 + (extrapolate * uu - uu) / stride1
                     ).astype(int)
-                    self._generate_spline_table(
+                    self._build_lower(
                         net, xx, ii, uu, ll, stride0, stride1, extrapolate, nspline
                     )
         elif self.descrpt_type == "T":
@@ -185,7 +185,7 @@ class BaseTabulate(ABC):
                     uu = upper[ii]
                 for jj in range(ii, self.ntypes):
                     net = "filter_" + str(ii) + "_net_" + str(jj)
-                    self._generate_spline_table(
+                    self._build_lower(
                         net,
                         xx_all[ii],
                         idx,
@@ -226,9 +226,9 @@ class BaseTabulate(ABC):
                 + ((ll - extrapolate * ll) / stride1)
             ).astype(int)
 
-            # 4. Call _generate_spline_table only once to generate the table for this shared network
+            # 4. Call _build_lower only once to generate the table for this shared network
             geometric_net_name = "filter_net"
-            self._generate_spline_table(
+            self._build_lower(
                 geometric_net_name,
                 xx,
                 0,
@@ -273,7 +273,7 @@ class BaseTabulate(ABC):
                     nspline = (
                         (uu - ll) / stride0 + (extrapolate * uu - uu) / stride1
                     ).astype(int)
-                    self._generate_spline_table(
+                    self._build_lower(
                         net, xx, ii, uu, ll, stride0, stride1, extrapolate, nspline
                     )
         else:
@@ -284,7 +284,8 @@ class BaseTabulate(ABC):
             self._convert_numpy_float_to_int()
         return self.lower, self.upper
 
-    def _generate_spline_table(
+    # generate_spline_table
+    def _build_lower(
         self,
         net: str,
         xx: np.ndarray,
@@ -497,12 +498,12 @@ class BaseTabulate(ABC):
         # returns element-wise lower and upper
         return np.floor(lower), np.ceil(upper)
 
-    def _spline5_switch(self, x: float, rmin: float, rmax: float) -> float:
-        if x < rmin:
-            sw = 1
-        elif x < rmax:
-            uu = (x - rmin) / (rmax - rmin)
-            sw = uu * uu * uu * (-6 * uu * uu + 15 * uu - 10) + 1
+    def _spline5_switch(self, xx: float, rmin: float, rmax: float) -> float:
+        if xx < rmin:
+            vv = 1
+        elif xx < rmax:
+            uu = (xx - rmin) / (rmax - rmin)
+            vv = uu * uu * uu * (-6 * uu * uu + 15 * uu - 10) + 1
         else:
-            sw = 0
-        return sw
+            vv = 0
+        return vv
