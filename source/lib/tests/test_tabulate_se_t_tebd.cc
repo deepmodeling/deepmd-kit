@@ -507,7 +507,7 @@ class TestTabulateSeTTebd : public ::testing::Test {
       4.0511515406019899e-01};
 
   // Environment matrix data (em) - same as em_x reshaped to 4x4x4
-  std::vector<double> em = em_x;  // Will be reshaped in tests
+  std::vector<double> em = em_x;
 
   // Expected outputs
   std::vector<double> expected_xyz_scatter = {
@@ -689,8 +689,7 @@ TEST_F(TestTabulateSeTTebd, tabulate_fusion_se_t_tebd_cpu) {
 
 TEST_F(TestTabulateSeTTebd, tabulate_fusion_se_t_tebd_grad_cpu) {
   std::vector<double> dy_dem_x(em_x.size());
-  std::vector<double> dy(expected_xyz_scatter.begin(),
-                         expected_xyz_scatter.end());
+  std::vector<double> dy(nloc * nnei_i * nnei_j * last_layer_size, 1.0);
 
   deepmd::tabulate_fusion_se_t_tebd_grad_cpu<double>(
       &dy_dem_x[0], &table[0], &table_info[0], &em_x[0], &em[0], &dy[0], nloc,
@@ -738,8 +737,7 @@ TEST_F(TestTabulateSeTTebd, tabulate_fusion_se_t_tebd_gpu) {
 
 TEST_F(TestTabulateSeTTebd, tabulate_fusion_se_t_tebd_grad_gpu) {
   std::vector<double> dy_dem_x(em_x.size(), 0.0);
-  std::vector<double> dy(expected_xyz_scatter.begin(),
-                         expected_xyz_scatter.end());
+  std::vector<double> dy(nloc * nnei_i * nnei_j * last_layer_size, 1.0);
 
   double *dy_dem_x_dev = NULL, *table_dev = NULL, *table_info_dev = NULL,
          *em_x_dev = NULL, *em_dev = NULL, *dy_dev = NULL;
