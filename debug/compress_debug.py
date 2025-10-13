@@ -10,6 +10,7 @@ This script can be run directly in VSCode with debugging capabilities.
 import logging
 import os
 import sys
+import time
 from pathlib import (
     Path,
 )
@@ -19,18 +20,27 @@ deepmd_root = Path(__file__).parent.parent
 sys.path.insert(0, str(deepmd_root))
 
 
-def compress_model() -> None:
+def compress_model() -> float:
     """Compress the model using the same parameters as the CLI command.
 
     dp --pt compress -i no.pth -o yes.pth -t input_torch.json
+
+    Returns
+    -------
+    float
+        Elapsed time for the compression in seconds.
     """
     # Import here to avoid module-level import restriction
     from deepmd.pt.entrypoints.compress import (
         enable_compression,
     )
 
-    # Setup logging
-    logging.basicConfig(level=logging.INFO)
+    # Setup logging with timestamp
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     log = logging.getLogger(__name__)
 
     # Set working directory to examples/water/se_e3_tebd
@@ -39,7 +49,7 @@ def compress_model() -> None:
 
     try:
         os.chdir(work_dir)
-        log.info(f"Changed to working directory: {work_dir}")
+        log.debug(f"Changed to working directory: {work_dir}")
 
         # Model compression parameters
         input_file = "no.pth"
@@ -60,14 +70,17 @@ def compress_model() -> None:
                 f"Training script '{training_script}' not found in {work_dir}"
             )
 
-        log.info(f"Input model: {input_file}")
-        log.info(f"Output model: {output_file}")
-        log.info(f"Training script: {training_script}")
-        log.info(f"Stride: {stride}")
-        log.info(f"Extrapolate: {extrapolate}")
-        log.info(f"Check frequency: {check_frequency}")
+        log.debug(f"Input model: {input_file}")
+        log.debug(f"Output model: {output_file}")
+        log.debug(f"Training script: {training_script}")
+        log.debug(f"Stride: {stride}")
+        log.debug(f"Extrapolate: {extrapolate}")
+        log.debug(f"Check frequency: {check_frequency}")
 
-        log.info("Starting model compression...")
+        log.debug("Starting model compression...")
+
+        # Record time usage
+        start_time = time.monotonic()
 
         # Call the compression function
         enable_compression(
@@ -79,8 +92,14 @@ def compress_model() -> None:
             training_script=training_script,
         )
 
+        elapsed_time = time.monotonic() - start_time
+
+        # Print results (keep these as info level - these are the main results)
         log.info("Model compression completed successfully!")
         log.info(f"Compressed model saved to: {output_file}")
+        log.info(f"Elapsed time: {elapsed_time:.2f} seconds")
+
+        return elapsed_time
 
     except Exception as e:
         log.error(f"Error during compression: {e}")

@@ -15,23 +15,34 @@ from pathlib import (
     Path,
 )
 
+import numpy as np
+
 # Add the deepmd-kit root to Python path
 deepmd_root = Path(__file__).parent.parent
 sys.path.insert(0, str(deepmd_root))
 
 
-def test_model() -> None:
+def test_model() -> float:
     """Test the model using the same parameters as the CLI command.
 
     dp --pt test -m model.ckpt.pt -s . -n 100 -f test_debug.txt
+
+    Returns
+    -------
+    float
+        Elapsed time for the testing in seconds.
     """
     # Import here to avoid module-level import restriction
     from deepmd.entrypoints.test import (
         test,
     )
 
-    # Setup logging
-    logging.basicConfig(level=logging.INFO)
+    # Setup logging with timestamp
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     log = logging.getLogger(__name__)
 
     # Set working directory to examples/water/se_e3_tebd
@@ -40,7 +51,7 @@ def test_model() -> None:
 
     try:
         os.chdir(work_dir)
-        log.info(f"Changed to working directory: {work_dir}")
+        log.debug(f"Changed to working directory: {work_dir}")
 
         # Test parameters
         model_file = "no.pth"  # Model file to test
@@ -64,16 +75,16 @@ def test_model() -> None:
         # Set environment variable to limit batch size for testing
         os.environ["DP_INFER_BATCH_SIZE"] = "1024"
 
-        log.info(f"Model: {model_file}")
-        log.info(f"System directory: {system_dir}")
-        log.info(f"Number of test frames: {numb_test}")
-        log.info(f"Detail file: {detail_file}")
-        log.info(f"Atomic output: {atomic}")
+        log.debug(f"Model: {model_file}")
+        log.debug(f"System directory: {system_dir}")
+        log.debug(f"Number of test frames: {numb_test}")
+        log.debug(f"Detail file: {detail_file}")
+        log.debug(f"Atomic output: {atomic}")
 
-        log.info("Starting model testing...")
+        log.debug("Starting model testing...")
 
         # Record time usage
-        start_time = time.time()
+        start_time = time.monotonic()
         # Call the test function
         test(
             model=model_file,
@@ -88,12 +99,15 @@ def test_model() -> None:
             atomic=atomic,
             head=head,
         )
-        end_time = time.time()
+        end_time = time.monotonic()
         elapsed_time = end_time - start_time
 
+        # Print results (keep these as info level - these are the main results)
         log.info("Model testing completed successfully!")
         log.info(f"Test results saved to: {detail_file}")
         log.info(f"Elapsed time: {elapsed_time:.2f} seconds")
+
+        return elapsed_time
 
     except Exception as e:
         log.error(f"Error during testing: {e}")
@@ -104,4 +118,30 @@ def test_model() -> None:
 
 
 if __name__ == "__main__":
-    test_model()
+    # Run testing 10 times and calculate average timing
+    num_runs = 10
+    times = []
+
+    print(f"Running model testing {num_runs} times...")  # noqa: T201
+    print("=" * 50)  # noqa: T201
+
+    for i in range(num_runs):
+        print(f"\nRun {i + 1}/{num_runs}")  # noqa: T201
+        print("-" * 20)  # noqa: T201
+        elapsed_time = test_model()
+        times.append(elapsed_time)
+
+    # Calculate and display statistics
+    print("\n" + "=" * 50)  # noqa: T201
+    print("Timing Summary:")  # noqa: T201
+    print("=" * 50)  # noqa: T201
+
+    avg_time = sum(times) / len(times)
+    min_time = min(times)
+    max_time = max(times)
+
+    print(f"Average time: {avg_time:.2f} seconds")  # noqa: T201
+    print(f"Min time: {min_time:.2f} seconds")  # noqa: T201
+    print(f"Max time: {max_time:.2f} seconds")  # noqa: T201
+    print(f"Std deviation: {np.std(times):.2f} seconds")  # noqa: T201
+    print(f"All times: {[f'{t:.2f}' for t in times]}")  # noqa: T201

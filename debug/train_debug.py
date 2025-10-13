@@ -10,6 +10,7 @@ This script can be run directly in VSCode with debugging capabilities.
 import logging
 import os
 import sys
+import time
 from pathlib import (
     Path,
 )
@@ -19,18 +20,27 @@ deepmd_root = Path(__file__).parent.parent
 sys.path.insert(0, str(deepmd_root))
 
 
-def train_model() -> None:
+def train_model() -> float:
     """Train the model using the same parameters as the CLI command.
 
     dp --pt train input_torch.json
+
+    Returns
+    -------
+    float
+        Elapsed time for the training in seconds.
     """
     # Import here to avoid module-level import restriction
     from deepmd.pt.entrypoints.main import (
         train,
     )
 
-    # Setup logging
-    logging.basicConfig(level=logging.INFO)
+    # Setup logging with timestamp
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     log = logging.getLogger(__name__)
 
     # Set working directory to examples/water/se_e3_tebd
@@ -39,7 +49,7 @@ def train_model() -> None:
 
     try:
         os.chdir(work_dir)
-        log.info(f"Changed to working directory: {work_dir}")
+        log.debug(f"Changed to working directory: {work_dir}")
 
         # Training parameters
         input_file = "input_torch.json"
@@ -60,12 +70,15 @@ def train_model() -> None:
                 f"Training input file '{input_file}' not found in {work_dir}"
             )
 
-        log.info(f"Input file: {input_file}")
-        log.info(f"Output config: {output}")
-        log.info(f"Skip neighbor stat: {skip_neighbor_stat}")
-        log.info(f"Compile model: {compile_model}")
+        log.debug(f"Input file: {input_file}")
+        log.debug(f"Output config: {output}")
+        log.debug(f"Skip neighbor stat: {skip_neighbor_stat}")
+        log.debug(f"Compile model: {compile_model}")
 
-        log.info("Starting model training...")
+        log.debug("Starting model training...")
+
+        # Record time usage
+        start_time = time.monotonic()
 
         # Call the training function
         train(
@@ -82,8 +95,14 @@ def train_model() -> None:
             output=output,
         )
 
+        elapsed_time = time.monotonic() - start_time
+
+        # Print results (keep these as info level - these are the main results)
         log.info("Model training completed successfully!")
         log.info(f"Output configuration saved to: {output}")
+        log.info(f"Elapsed time: {elapsed_time:.2f} seconds")
+
+        return elapsed_time
 
     except Exception as e:
         log.error(f"Error during training: {e}")

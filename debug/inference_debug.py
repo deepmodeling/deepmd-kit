@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Debug script for single configuration model inference.
+"""Inference performance profiling script with TensorBoard visualization.
 
-This script loads only one configuration from the dataset and performs inference.
-Perfect for profiling and debugging individual forward passes.
+This script focuses on identifying performance hotspots in DeePMD-kit inference
+by breaking down the computation into detailed components and visualizing results.
 """
 
 import logging
@@ -18,6 +18,9 @@ from typing import (
 )
 
 import numpy as np
+import torch  # noqa: TID253
+from torch.profiler import record_function  # noqa: TID253
+from torch.utils.tensorboard import SummaryWriter  # noqa: TID253
 
 # Add the deepmd-kit root to Python path
 deepmd_root = Path(__file__).parent.parent
@@ -81,8 +84,24 @@ def load_single_configuration(data_dir: str, frame_idx: int = 0) -> dict[str, An
     return data
 
 
-def inference_single_config() -> None:
-    """Perform inference on a single configuration."""
+def inference_single_config(
+    model_file: str,
+    enable_profiling: bool = False,
+) -> float:
+    """Perform inference on a single configuration with comprehensive TensorBoard logging.
+
+    Parameters
+    ----------
+    model_file : str
+        Path to the model checkpoint file.
+    enable_profiling : bool, optional
+        Whether to enable PyTorch profiling, by default False
+
+    Returns
+    -------
+    float
+        Elapsed time for the inference in seconds.
+    """
     # Import DeepPot for simplified inference
     from deepmd.infer import (
         DeepPot,
@@ -96,16 +115,19 @@ def inference_single_config() -> None:
     )
     log = logging.getLogger(__name__)
 
-    # Set working directory to examples/water/se_e3_tebd
+    # Setting working directory
     work_dir = deepmd_root / "examples" / "water" / "se_e3_tebd"
     original_cwd = os.getcwd()
 
     try:
         os.chdir(work_dir)
-        log.info(f"Changed to working directory: {work_dir}")
+        log.debug(f"Changed to working directory: {work_dir}")
+
+        log_dir = "./profile_logs"
+        os.makedirs(log_dir, exist_ok=True)
+        writer = SummaryWriter(log_dir)
 
         # Test parameters
-        model_file = "no.pth"  # Model file to test
         data_dir = "../data/data_3"  # Directory contains test data
         frame_idx = 0  # Use first frame
 
@@ -115,41 +137,105 @@ def inference_single_config() -> None:
                 f"Model file '{model_file}' not found in {work_dir}"
             )
 
-        log.info(f"Loading model: {model_file}")
+        log.debug(f"Loading model: {model_file}")
 
-        # Initialize model using DeepPot interface
-        dp = DeepPot(model_file, auto_batch_size=True)
+        # Initialize model using DeepPot interface (outside profiling for cleaner results)
+        dp = DeepPot(model_file, auto_batch_size=1024)
 
-        log.info(f"Loading single configuration from: {data_dir}")
+        log.debug(f"Loading single configuration from: {data_dir}")
 
-        # Load single configuration
+        # Load single configuration (outside profiling)
         data = load_single_configuration(data_dir, frame_idx)
-
         coord = data["coord"]
         box = data["box"]
         atom_types = data["atom_types"]
 
-        log.info("Configuration info:")
-        log.info(f"  Number of atoms: {len(atom_types)}")
-        log.info(f"  Coordinate shape: {coord.shape}")
-        log.info(f"  Box shape: {box.shape}")
-        log.info(f"  Atom types shape: {atom_types.shape}")
-        log.info(f"  Unique atom types: {np.unique(atom_types)}")
+        log.debug("Configuration info:")
+        log.debug(f"  Number of atoms: {len(atom_types)}")
+        log.debug(f"  Coordinate shape: {coord.shape}")
+        log.debug(f"  Box shape: {box.shape}")
+        log.debug(f"  Atom types shape: {atom_types.shape}")
+        log.debug(f"  Unique atom types: {np.unique(atom_types)}")
 
         if data.get("type_map"):
-            log.info(f"  Type map: {data['type_map']}")
+            log.debug(f"  Type map: {data['type_map']}")
 
-        log.info("Starting single configuration inference...")
+        log.debug("Starting single configuration inference...")
 
-        # Record time usage
-        start_time = time.time()
+        # Use profiler if enabled
+        if enable_profiling:
+            log.info("PyTorch profiling enabled...")
 
-        # Perform inference using DeepPot.eval()
-        e, f, v = dp.eval(coord, box, atom_types)
+            with torch.profiler.profile(
+                schedule=torch.profiler.schedule(wait=3, warmup=3, active=3, repeat=1),
+                on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                    writer.get_logdir()
+                ),
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True,
+                with_flops=True,
+                with_modules=True,
+            ) as prof:
+                # Warmup and active phases for profiling
+                for phase in range(9):  # 3 wait + 3 warmup + 3 active
+                    if phase == 6:  # Start active profiling
+                        log.debug("Starting profiling phase...")
 
-        elapsed_time = time.time() - start_time
+                    # Record time usage
+                    start_time = time.monotonic()
 
-        # Print results
+                    # 3: Use record_function to label the core inference step
+                    with record_function("Inference (DeepPot.eval)"):
+                        # Perform inference using DeepPot.eval()
+                        e, f, v = dp.eval(coord, box, atom_types)
+
+                    elapsed_time = time.monotonic() - start_time
+
+                    if phase == 6:  # End active profiling
+                        log.debug("Ending profiling phase...")
+
+                    # Mark profiler step
+                    prof.step()
+
+                # Save profiling summaries to a log file instead of showing on screen
+                profiling_output_path = "profile_summary.log"
+                with open(profiling_output_path, "w") as pf:
+                    pf.write("=== PyTorch Profiling Summary ===\n")
+                    pf.write("Top 10 CPU operations by total time:\n")
+                    cpu_summary = prof.key_averages().table(
+                        sort_by="cpu_time_total", row_limit=10
+                    )
+                    pf.write(f"{cpu_summary}\n\n")
+
+                    pf.write("Top 10 CUDA operations by total time:\n")
+                    cuda_summary = prof.key_averages().table(
+                        sort_by="cuda_time_total", row_limit=10
+                    )
+                    pf.write(f"{cuda_summary}\n\n")
+
+                    pf.write("Top 10 memory allocations:\n")
+                    memory_summary = prof.key_averages().table(
+                        sort_by="cpu_memory_usage", row_limit=10
+                    )
+                    pf.write(f"{memory_summary}\n")
+
+                log.info("Profile logs saved to ./profile_logs/")
+                log.info(
+                    "To view detailed results, run: tensorboard --logdir=./profile_logs"
+                )
+            writer.close()
+        else:
+            # Regular inference without profiling
+            # Record time usage
+            start_time = time.monotonic()
+
+            # Perform inference using DeepPot.eval()
+            e, f, v = dp.eval(coord, box, atom_types)
+
+            elapsed_time = time.monotonic() - start_time
+
+        # Print results (keep these as info level - these are the main results)
         log.info("\n=== Inference Results ===")
         predicted_energy = e.reshape(-1)[0]
         log.info(f"Predicted energy: {predicted_energy:.6f}")
@@ -161,7 +247,6 @@ def inference_single_config() -> None:
             log.info(f"Energy difference: {energy_diff:.6f}")
 
         predicted_force = f
-        log.info(f"Predicted force shape: {predicted_force.shape}")
         log.info(f"Force norm: {np.linalg.norm(predicted_force):.6f}")
 
         if "force" in data:
@@ -176,6 +261,8 @@ def inference_single_config() -> None:
         log.info("Inference completed successfully!")
         log.info(f"Elapsed time: {elapsed_time:.6f} seconds")
 
+        return elapsed_time
+
     except Exception as e:
         log.error(f"Error during inference: {e}")
         raise
@@ -185,4 +272,46 @@ def inference_single_config() -> None:
 
 
 if __name__ == "__main__":
-    inference_single_config()
+    # Set this to True to enable PyTorch profiling
+    ENABLE_PROFILING = True
+
+    # Run inference and calculate average timing
+    # If profiling is enabled, force single run
+    num_runs = 1 if ENABLE_PROFILING else 10
+    times = []
+
+    model_name = "no"
+
+    print(f"Running inference {num_runs} times...")  # noqa: T201
+    if ENABLE_PROFILING:
+        print("PyTorch profiling ENABLED (single run forced)")  # noqa: T201
+    print("=" * 50)  # noqa: T201
+
+    for i in range(num_runs):
+        print(f"\nRun {i + 1}/{num_runs}")  # noqa: T201
+        print("-" * 20)  # noqa: T201
+
+        # Enable profiling if requested (will only run once anyway)
+        elapsed_time = inference_single_config(
+            model_file=f"{model_name}.pth", enable_profiling=ENABLE_PROFILING
+        )
+        times.append(elapsed_time)
+
+    # Calculate and display statistics
+    print("\n" + "=" * 50)  # noqa: T201
+    print("Timing Summary:")  # noqa: T201
+    print("=" * 50)  # noqa: T201
+
+    # Drop the first run to avoid cold start bias
+    if len(times) > 1:
+        times = times[1:]
+
+    avg_time = sum(times) / len(times)
+    min_time = min(times)
+    max_time = max(times)
+
+    print(f"Average time: {avg_time:.6f} seconds")  # noqa: T201
+    print(f"Min time: {min_time:.6f} seconds")  # noqa: T201
+    print(f"Max time: {max_time:.6f} seconds")  # noqa: T201
+    print(f"Std deviation: {np.std(times):.6f} seconds")  # noqa: T201
+    print(f"All times: {[f'{t:.6f}' for t in times]}")  # noqa: T201

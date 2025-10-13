@@ -1,191 +1,415 @@
-# DeePMD-kit
+# CLAUDE.md
 
-DeePMD-kit is a deep learning package for many-body potential energy representation and molecular dynamics. It supports multiple backends (TensorFlow, PyTorch, JAX, Paddle) and integrates with MD packages like LAMMPS, GROMACS, and i-PI.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Always reference these instructions first and fallback to search or bash commands only when you encounter unexpected information that does not match the info here.**
+## Project Overview
 
-## Working Effectively
+DeePMD-kit is a deep learning-based molecular dynamics potential model modeling software package that supports four deep learning backends: TensorFlow, PyTorch, JAX, and Paddle, and integrates with multiple MD software including LAMMPS, i-PI, AMBER, CP2K, GROMACS, etc.
 
-### Bootstrap and Build Repository
+## Common Development Commands
 
-- Create virtual environment: `uv venv venv && source venv/bin/activate`
-- Install base dependencies: `uv pip install tensorflow-cpu` (takes ~8 seconds)
-- Install PyTorch: `uv pip install torch --index-url https://download.pytorch.org/whl/cpu` (takes ~5 seconds)
-- Build Python package: `uv pip install -e .[cpu,test]` -- takes 67 seconds. **NEVER CANCEL. Set timeout to 120+ seconds.**
-- Build C++ components: `export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')` then `export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')` then `./source/install/build_cc.sh` -- takes 164 seconds. **NEVER CANCEL. Set timeout to 300+ seconds.**
+Use this python if needed: /home/outisli/miniforge3/envs/dpmd/bin/python
 
-### Test Repository
+### Code Check and Format
 
-- Run single test: `pytest source/tests/tf/test_dp_test.py::TestDPTestEner::test_1frame -v` -- takes 8-13 seconds
-- Run test subset: `pytest source/tests/tf/test_dp_test.py -v` -- takes 15 seconds. **NEVER CANCEL. Set timeout to 60+ seconds.**
-- **Recommended: Use single test cases for validation instead of full test suite** -- full suite has 314 test files and takes 60+ minutes
-
-### Lint and Format Code
-
-- Install linter: `uv pip install ruff`
-- Run linting: `ruff check .` -- takes <1 second
-- Format code: `ruff format .` -- takes <1 second
-- **Always run `ruff check .` and `ruff format .` before committing changes or the CI will fail.**
-
-### Training and Validation
-
-- Test TensorFlow training: `cd examples/water/se_e2_a && dp train input.json --skip-neighbor-stat` -- training proceeds but is slow on CPU
-- Test PyTorch training: `cd examples/water/se_e2_a && dp --pt train input_torch.json --skip-neighbor-stat` -- training proceeds but is slow on CPU
-- **Training examples are for validation only. Real training takes hours/days. Timeout training tests after 60 seconds for validation.**
-
-## Validation Scenarios
-
-**ALWAYS manually validate any new code through at least one complete scenario:**
-
-### Basic Functionality Validation
-
-1. **CLI Interface**: Run `dp --version` and `dp -h` to verify installation
-2. **Python Interface**: Run `python -c "import deepmd; import deepmd.tf; print('Both interfaces work')"`
-3. **Backend Selection**: Test `dp --tf -h`, `dp --pt -h`, `dp --jax -h`, `dp --pd -h`
-
-### Training Workflow Validation
-
-1. **TensorFlow Training**: `cd examples/water/se_e2_a && timeout 60 dp train input.json --skip-neighbor-stat` -- should start training and show decreasing loss
-2. **PyTorch Training**: `cd examples/water/se_e2_a && timeout 60 dp --pt train input_torch.json --skip-neighbor-stat` -- should start training and show decreasing loss
-3. **Verify training output**: Look for "batch X: trn: rmse" messages showing decreasing error values
-
-### Test-Based Validation
-
-1. **Core Tests**: `pytest source/tests/tf/test_dp_test.py::TestDPTestEner::test_1frame -v` -- should pass in ~10 seconds
-2. **Multi-backend**: Test both TensorFlow and PyTorch components work
-
-## Common Commands and Timing
-
-### Repository Structure
-
-```
-ls -la [repo-root]
-.github/               # GitHub workflows and templates
-CONTRIBUTING.md        # Contributing guide
-README.md             # Project overview
-deepmd/               # Python package source
-doc/                  # Documentation
-examples/             # Training examples and configurations
-pyproject.toml        # Python build configuration
-source/               # C++ source code and tests
+```bash
+ruff check .      # Check code style
+ruff format .     # Format code
+isort .           # Sort imports
 ```
 
-### Key Directories and Files
+### Test Commands
 
-- `deepmd/` - Main Python package with backend implementations
-- `source/lib/` - Core C++ library
-- `source/op/` - Backend-specific operators (TF, PyTorch, etc.)
-- `source/api_cc/` - C++ API
-- `source/api_c/` - C API
-- `source/tests/` - Test suite (314 test files)
-- `examples/water/se_e2_a/` - Basic water training example
-- `examples/` - Various model examples for different scenarios
+```bash
+# Verify installation
+dp --version
+python -c "import deepmd; import deepmd.tf; print('Interfaces working')"
 
-### Common CLI Commands
+# VITAL!: set these three OMP_NUM_THREADS, DP_INTER_OP_PARALLELISM_THREADS, DP_INTRA_OP_PARALLELISM_THREADS to zero before running test
 
-- `dp --version` - Show version information
-- `dp -h` - Show help and available commands
-- `dp train input.json` - Train a model (TensorFlow backend)
-- `dp --pt train input.json` - Train with PyTorch backend
-- `dp --jax train input.json` - Train with JAX backend
-- `dp --pd train input.json` - Train with Paddle backend
-- `dp test -m model.pb -s system/` - Test a trained model
-- `dp freeze -o model.pb` - Freeze/save a model
+# Single test (recommended for development)
+pytest source/tests/tf/test_dp_test.py::TestDPTestEner::test_1frame -v
 
-### Build Dependencies and Setup
+# Specific test suite
+pytest source/tests/tf/test_dp_test.py -v
 
-- **Python 3.10+** required
-- **Virtual environment** strongly recommended: `uv venv venv && source venv/bin/activate`
-- **Backend dependencies**: TensorFlow, PyTorch, JAX, or Paddle (install before building)
-- **Build tools**: CMake, C++ compiler, scikit-build-core
-- **C++ build requires**: Both TensorFlow and PyTorch installed, set TENSORFLOW_ROOT and PYTORCH_ROOT environment variables
+# Training test
+cd examples/water/se_e2_a
+dp train input.json --skip-neighbor-stat  # TensorFlow
+dp --pt train input_torch.json --skip-neighbor-stat  # PyTorch
+```
 
-### Key Configuration Files
+### Model Compression (Reference: doc/outisli/compress.md)
 
-- `pyproject.toml` - Python build configuration and dependencies
-- `source/CMakeLists.txt` - C++ build configuration
-- `examples/water/se_e2_a/input.json` - Basic TensorFlow training config
-- `examples/water/se_e2_a/input_torch.json` - Basic PyTorch training config
+#### Compression Principle
 
-## Frequent Patterns and Time Expectations
+- **Tabulation**: Pre-compute and store embedding network outputs
+- **Piecewise Interpolation**: Use quintic Hermite interpolation for continuity
+- **Performance**: Significantly reduces memory usage and improves inference speed
 
-### Installation and Build Times
+#### Supported Descriptors
 
-- **Virtual environment setup**: ~5 seconds
-- **TensorFlow CPU install**: ~8 seconds
-- **PyTorch CPU install**: ~5 seconds
-- **Python package build**: ~67 seconds. **NEVER CANCEL.**
-- **C++ components build**: ~164 seconds. **NEVER CANCEL.**
-- **Full fresh setup**: ~3-4 minutes total
+- ✅ SE_A, SE_R, SE_T, SE_Atten
+- ✅ DPA1, DPA2
+- ❌ DPA3 (compression not supported)
 
-### Testing Times
+## Code Architecture and Core Modules
 
-- **Single test**: 8-13 seconds
-- **Test file (~5 tests)**: ~15 seconds
-- **Backend-specific test subset**: 15-30 minutes. **Use sparingly.**
-- **Full test suite (314 files)**: 60+ minutes. **Avoid in development - use single tests instead.**
+### 1. Deep Learning Model Layer (deepmd/dpmodel/)
 
-### Linting and Formatting
+This is the core model definition layer of DeePMD-kit, containing all mathematical abstractions of models:
 
-- **Ruff check**: <1 second
-- **Ruff format**: <1 second
-- **Pre-commit hooks**: May have network issues, use individual tools
+- **descriptor/**: Descriptor modules (embedding networks, environment information extraction)
+  - `se_a.py`: Embedded Atom Descriptor
+  - `se_r.py`: Simplified embedding descriptor
+  - `se_a_tpe.py`: Descriptor with type embedding
+  - `hybrid.py`: Hybrid descriptor
+- **fitting/**: Fitting network modules
+  - `ener.py`: Energy fitting network
+  - `dipole.py`: Dipole fitting
+  - `polar.py`: Polarizability fitting
+- **model/**: Model definitions
+  - `model.py`: Base model class
+  - `ener_model.py`: Energy model
+  - `dos_model.py`: Density of states model
 
-### Commit Messages and PR Titles
+### 2. Backend Implementation Layer
 
-**All commit messages and PR titles must follow [conventional commit specification](https://www.conventionalcommits.org/):**
+Each backend implements the same interface to ensure consistency:
 
-- **Format**: `type(scope): description`
-- **Common types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `ci`
-- **Examples**:
-  - `feat(core): add new descriptor type`
-  - `fix(tf): resolve memory leak in training`
-  - `docs: update installation guide`
-  - `ci: add workflow for testing`
+#### TensorFlow Backend (deepmd/tf/)
 
-### Training and Model Operations
+- **entrypoints/**: Command line entry points
+  - `main.py`: Main CLI entry
+  - `train.py`: Training script
+  - `freeze.py`: Model freezing
+  - `test.py`: Model testing
+- **network/**: Network definitions
+  - `network.py`: Main network class
+  - `embedding_net.py`: Embedding network
+  - `fitting_net.py`: Fitting network
+- **model/**: Model implementations
+  - `model.py`: Model definition
+  - `model_stat.py`: Model statistics
+- **infer/**: Inference interface
+  - `deep_eval.py`: Deep evaluation
+  - `deep_pot.py`: Deep potential
 
-- **Training initialization**: 10-30 seconds
-- **Training per batch**: 0.1-1 second (CPU), much faster on GPU
-- **Model freezing**: 5-15 seconds
-- **Model testing**: 10-30 seconds
+#### PyTorch Backend (deepmd/pt/)
 
-## Backend-Specific Notes
+Similar structure to TensorFlow backend but with PyTorch-specific optimizations:
 
-### TensorFlow Backend
+- **model/**: PyTorch model implementations
+  - `model.py`: Base model class
+  - `nn.py`: Neural network modules
+- **utils/**: PyTorch utilities
+  - `env_mat.py`: Environment matrix construction
+  - `region.py`: Periodic boundary condition handling
+- **train/**: Training related
+  - `training.py`: Training loop
+  - `optimizer.py`: Optimizer configuration
 
-- **Default backend** when no flag specified
-- **Configuration**: Use `input.json` format
-- **Training**: `dp train input.json`
-- **Requirements**: `tensorflow` or `tensorflow-cpu` package
+### 3. C++ Core Engine (source/)
 
-### PyTorch Backend
+Core implementation for high-performance computing:
 
-- **Activation**: Use `--pt` flag or `export DP_BACKEND=pytorch`
-- **Configuration**: Use `input_torch.json` format typically
-- **Training**: `dp --pt train input_torch.json`
-- **Requirements**: `torch` package
+#### Core Library (source/lib/)
 
-### JAX Backend
+- **include/**: Header file definitions
+  - `deepmd.hpp`: Main API declarations
+  - `common.hpp`: Common definitions
+  - `neighbor_list.hpp`: Neighbor list algorithm
+- **src/**: Source code implementation
+  - `deepmd.cpp`: Core C++ implementation
+  - `region.cpp`: Region processing
+  - `neighbor_list.cpp`: High-performance neighbor list
+  - `prod_env_mat_a.cpp`: Environment matrix production
 
-- **Activation**: Use `--jax` flag
-- **Training**: `dp --jax train input.json`
-- **Requirements**: `jax` and related packages
-- **Note**: Experimental backend, may have limitations
+#### Operator Implementation (source/op/)
 
-### Paddle Backend
+Framework-specific operators for each deep learning framework:
 
-- **Activation**: Use `--pd` flag
-- **Training**: `dp --pd train input.json`
-- **Requirements**: `paddlepaddle` package
-- **Note**: Less commonly used
+- **tf/**: TensorFlow custom operators
+  - `prod_env_mat_a.cc`: Environment matrix operator
+  - `prod_force_se_a.cc`: Force calculation operator
+  - `tabulate.cc`: Lookup table operator
+- **torch/**: PyTorch C++ extensions
+  - `prod_env_mat_a.cpp`: PyTorch version of environment matrix operator
 
-## Critical Warnings
+### 4. Data Processing Layer (deepmd/utils/)
 
-- **NEVER CANCEL BUILD OPERATIONS**: Python build takes 67 seconds, C++ build takes 164 seconds
-- **USE SINGLE TESTS FOR VALIDATION**: Run individual tests instead of full test suite for faster feedback
-- **ALWAYS activate virtual environment**: Build and runtime failures occur without proper environment
-- **ALWAYS install backend dependencies first**: TensorFlow/PyTorch required before building C++ components
-- **ALWAYS run linting before commits**: `ruff check . && ruff format .` or CI will fail
-- **ALWAYS test both Python and C++ components**: Some features require both to be built
-- **ALWAYS follow conventional commit format**: All commit messages and PR titles must use conventional commit specification (`type(scope): description`)
+- **data.py**: Data loading and preprocessing
+- `data_system.py`: Data system management
+- `shuffle.py`: Data shuffling
+- `neighbor_stat.py`: Neighbor statistics
+- `type_embed.py`: Type embedding
+- `args.py`: Argument parsing
+- `path.py`: Path handling
+- `compat.py`: Version compatibility handling
+
+### 5. Input/Output Layer (deepmd/infer/)
+
+- **deep_pot.py**: High-level inference interface
+- **deep_dipole.py**: Dipole inference
+- **deep_dos.py**: Density of states inference
+- **deep_wfc.py**: Wave function inference
+
+## Key Data Flow
+
+1. **Training Flow**:
+
+   ```
+   Atomic coordinates → neighbor_list → env_matrix → descriptor → fitting_net → loss
+   ```
+
+2. **Inference Flow**:
+
+   ```
+   Input structure → Descriptor calculation → Fitting network → Energy/Force/Stress
+   ```
+
+3. **Multi-backend Unified Interface**:
+   - Python layer provides unified API through `deepmd.infer`
+   - C++ layer provides unified interface through `source/api_cc/`
+   - Each backend implements the same model specification
+
+### Select Backend
+
+```bash
+# Command line flags
+dp --pt train input.json
+dp --tf train input.json
+
+# Environment variable
+export DP_BACKEND=pytorch
+dp train input.json
+```
+
+## Core Algorithms and Data Structures
+
+### 1. Descriptor Implementation
+
+Descriptors are the core innovation of DeePMD-kit, used to convert local atomic environments into vector representations:
+
+#### Embedded Atom Descriptor (SE_A)
+
+- **Location**: `deepmd/dpmodel/descriptor/se_a.py`
+- **Core functions**:
+  - `build()`: Build descriptor network
+  - `call()`: Calculate descriptor values
+- **Mathematical principle**:
+  - Radial basis function expansion: $g(r) = \sum_{i} \exp[-\gamma (r-r_s)^2]$
+  - Angular basis function: Angular dependency through 1D filters
+
+#### Environment Matrix (Env Mat)
+
+- **C++ implementation**: `source/lib/src/prod_env_mat_a.cpp`
+- **Function**: Efficiently calculate environment matrix between atom pairs
+- **Optimization**: Use parallelization and SIMD instructions for acceleration
+
+### 2. Fitting Network
+
+Maps descriptors to physical quantities:
+
+#### Energy Fitting
+
+- **Location**: `deepmd/dpmodel/fitting/ener.py`
+- **Output**: Atomic energy, system total energy obtained by summation
+- **Force calculation**: Through automatic differentiation or analytical gradient
+
+#### Fitting Network Structure
+
+```python
+# Typical fitting network architecture
+FittingNet(
+    layers=[embedding_dim, 240, 240, 240, 1],  # Network layer sizes
+    activation_function="tanh",  # Activation function
+    precision="float64",  # Numerical precision
+)
+```
+
+### 3. Training Strategy
+
+#### Loss Function
+
+```python
+# Location: deepmd/loss.py or backend implementations
+Loss = lr_e * energy_loss + lr_f * force_loss + lr_v * virial_loss
+```
+
+#### Data Preprocessing
+
+- **Data shuffling**: `deepmd/utils/shuffle.py`
+- **Batching**: Auto-fill to ensure consistent batch size
+- **Data augmentation**: Increase data diversity through rotation and translation
+
+### 4. Model Saving and Loading
+
+#### Checkpoint Formats
+
+- **TensorFlow**: .pb format (frozen graph)
+- **PyTorch**: .pth format
+- **Universal format**: .dp format (framework-agnostic)
+
+#### Model Conversion
+
+```python
+# TensorFlow to PyTorch conversion
+from deepmd.pt import model as pt_model
+
+pt_model.load_tf_graph(tf_checkpoint_path)
+```
+
+## Common Development Patterns
+
+### 1. Adding New Descriptors
+
+1. Create new descriptor class in `deepmd/dpmodel/descriptor/`
+2. Inherit from `BaseDescriptor` and implement necessary methods
+3. Add corresponding implementations in each backend (tf/pt/jax/pd)
+4. Add unit tests
+
+### 2. Debugging Tips
+
+- Use small systems for quick testing
+- Check energy conservation and symmetry
+- Compare results consistency across different backends
+- Use `dp test --rand-init` to verify model
+
+## Development Standards
+
+### Naming Conventions
+
+- Always use correct capitalization: DeePMD-kit, PyTorch, TensorFlow, NumPy, GitHub, LAMMPS
+
+### License Requirements
+
+All source files must include header license:
+`SPDX-License-Identifier: LGPL-3.0-or-later`
+
+## Test Strategy
+
+### Test Locations
+
+- **source/tests/**: C++ and Python tests
+- **tests/** directories in each submodule
+
+### Test Principles
+
+- During development, only run single or few related tests; full test suite takes 60+ minutes
+- Training tests use `--skip-neighbor-stat` to skip statistics for speed
+- Use `timeout` to limit training test time
+
+## Configuration File Structure
+
+### Typical Training Configuration (input.json)
+
+```json
+{
+  "model": {
+    "type_map": ["O", "H"],
+    "descriptor": {
+      "type": "se_a",
+      "sel": [46, 92],
+      "rcut_smth": 5.8,
+      "rcut": 6.0,
+      "neuron": [25, 50, 100],
+      "axis_neuron": 12
+    },
+    "fitting_net": {
+      "type": "ener",
+      "neuron": [240, 240, 240],
+      "resnet_dt": true
+    }
+  },
+  "learning_rate": {
+    "type": "exp",
+    "start_lr": 0.001,
+    "decay_steps": 5000
+  },
+  "loss": {
+    "start_pref_e": 0.02,
+    "start_pref_f": 1000,
+    "start_pref_v": 0.0
+  },
+  "training": {
+    "training_data": {
+      "systems": ["system1/", "system2/"],
+      "batch_size": 8
+    },
+    "numb_steps": 1000000
+  }
+}
+```
+
+## Special Features
+
+### 1. Type Embedding
+
+- Support unified training for multi-element systems
+- Location: `deepmd/utils/type_embed.py`
+- Dynamic type embedding can handle unseen element combinations
+
+### 2. Adaptive Selection (UpdateSel)
+
+- Automatically update neighbor list selection parameters
+- Avoid neighbor loss due to atomic migration
+- Location: `deepmd/utils/update_sel.py`
+
+### 3. Multi-task Learning
+
+- Simultaneously fit energy, force, stress, dipole, etc.
+- Loss function can configure weights for each task
+- Support physical constraints and regularization
+
+## Model Compression Details (Advanced)
+
+### Compression Data Structure
+
+#### 1. Compression Information (compress_info)
+
+```python
+# Store 6 parameters for each embedding network [6]
+compress_info[embedding_idx] = torch.tensor(
+    [
+        lower[net],  # Lower bound
+        upper[net],  # Upper bound
+        upper[net] * extrapolate,  # Extrapolation upper bound
+        table_stride_1,  # First segment stride
+        table_stride_2,  # Second segment stride
+        check_frequency,  # Overflow check frequency
+    ]
+)
+```
+
+#### 2. Compression Data (compress_data)
+
+```python
+# Store coefficient table for each embedding network [nspline, 6 * last_layer_size]
+compress_data[embedding_idx] = table_data[net]
+
+# Each 6 consecutive coefficients represent polynomial coefficients
+# [f(x), f'(x), f''(x)/2, c3, c4, c5] × last_layer_size
+```
+
+### Tabulation Implementation
+
+- **Table Builder**: `deepmd/pt/utils/tabulate.py` (PyTorch)
+- **Common Utilities**: `deepmd/utils/tabulate.py`
+- **Supported Activations**: tanh, gelu, relu, relu6, softplus, sigmoid
+
+### Polynomial Interpolation Formula
+
+In interval [x_i, x_{i+1}], for variable x, the polynomial is:
+
+```
+f(x) = c₀ + c₁t + c₂t² + c₃t³ + c₄t⁴ + c₅t⁵
+```
+
+Where:
+
+- `t = (x - x_i) / h`, h is step size
+- `c₀ = f(x_i)`
+- `c₁ = f'(x_i) × h`
+- `c₂ = f''(x_i) × h² / 2`
+- `c₃, c₄, c₅` determined by boundary continuity

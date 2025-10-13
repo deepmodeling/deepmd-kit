@@ -51,6 +51,8 @@ buildcxx/
 node_modules/
 *.bib.original
 .claude
+.spec-workflow
+.serena
 
 # Coverage files
 .coverage
@@ -76,3 +78,7 @@ system/
 # clangd
 compile_commands.json
 source/.cache
+
+# pytorch profiler
+*.tfevents.*
+*.pt.trace.json

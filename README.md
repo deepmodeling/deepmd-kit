@@ -108,3 +108,5 @@ See [DeePMD-kit Contributing Guide](CONTRIBUTING.md) to become a contributor! ðŸ
 [2]: https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.143001
 [3]: https://arxiv.org/abs/1805.09003
 [4]: https://aip.scitation.org/doi/full/10.1063/1.5027645
+
+Use this command to generate json schema: `python -c "from deepmd.utils.argcheck import gen_json_schema; import json; json.dump(json.loads(gen_json_schema(multi_task=True)), open('/home/outisli/Research/dpmd/deepmd_json_schema.json', 'w'), indent=2)"`
