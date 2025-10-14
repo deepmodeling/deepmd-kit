@@ -1094,6 +1094,7 @@ void tabulate_fusion_se_t_tebd_grad_gpu(FPTYPE* dy_dem_x,
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   DPErrcheck(gpuMemset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j));
+  // table_info should be on CPU side
   tabulate_fusion_se_t_tebd_grad_fifth_order_polynomial<FPTYPE, MM, KK>
       <<<nloc, KK * WARP_SIZE>>>(dy_dem_x, table, em_x, em, dy, table_info[0],
                                  table_info[1], table_info[2], table_info[3],
