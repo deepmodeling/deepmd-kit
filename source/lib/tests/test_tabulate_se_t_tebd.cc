@@ -718,8 +718,7 @@ TEST_F(TestTabulateSeTTebd, tabulate_fusion_se_t_tebd_gpu) {
       xyz_scatter_dev, table_dev, &table_info[0], em_x_dev, em_dev, nloc,
       nnei_i, nnei_j, last_layer_size);
 
-  deepmd::memcpy_device_to_host(&xyz_scatter[0], xyz_scatter_dev,
-                                xyz_scatter.size() * sizeof(double));
+  deepmd::memcpy_device_to_host(xyz_scatter_dev, xyz_scatter);
 
   deepmd::delete_device_memory(xyz_scatter_dev);
   deepmd::delete_device_memory(table_dev);
@@ -750,8 +749,7 @@ TEST_F(TestTabulateSeTTebd, tabulate_fusion_se_t_tebd_grad_gpu) {
       dy_dem_x_dev, table_dev, &table_info[0], em_x_dev, em_dev, dy_dev, nloc,
       nnei_i, nnei_j, last_layer_size);
 
-  deepmd::memcpy_device_to_host(&dy_dem_x[0], dy_dem_x_dev,
-                                dy_dem_x.size() * sizeof(double));
+  deepmd::memcpy_device_to_host(dy_dem_x_dev, dy_dem_x);
 
   deepmd::delete_device_memory(dy_dem_x_dev);
   deepmd::delete_device_memory(table_dev);

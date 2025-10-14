@@ -740,8 +740,8 @@ __global__ void tabulate_fusion_se_t_tebd_grad_fifth_order_polynomial(
   // gridDim.x -> nloc
 
   // Identify which atom and neighbor pair this thread is responsible for.
-  const int block_idx = blockIdx.x;
-  const int thread_idx = threadIdx.x;
+  const int_64 block_idx = blockIdx.x;
+  const int_64 thread_idx = threadIdx.x;
   const int ii = thread_idx / nnei_j;
   const int jj = thread_idx % nnei_j;
 
@@ -800,8 +800,8 @@ __global__ void tabulate_fusion_se_t_tebd_grad_grad_fifth_order_polynomial(
   // gridDim.x -> nloc
 
   // Identify which atom and neighbor pair this thread is responsible for.
-  const int block_idx = blockIdx.x;
-  const int thread_idx = threadIdx.x;
+  const int_64 block_idx = blockIdx.x;
+  const int_64 thread_idx = threadIdx.x;
   const int ii = thread_idx / nnei_j;
   const int jj = thread_idx % nnei_j;
 
