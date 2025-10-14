@@ -599,7 +599,7 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
   FPTYPE sum = (FPTYPE)0.;
   for (int ii = 0; ii < nnei_i; ii++) {
     int mark_table_idx = -1;
-    for (int jj = 0; ii < nnei_j; jj++) {
+    for (int jj = 0; jj < nnei_j; jj++) {
       FPTYPE xx = em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
       FPTYPE tmp = xx;
       FPTYPE dz_xx =
