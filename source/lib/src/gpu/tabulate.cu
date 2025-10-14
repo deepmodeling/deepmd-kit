@@ -662,6 +662,7 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
   dz_dy[block_idx * last_layer_size + thread_idx] = sum;
 }
 
+// Apply Grid-Stride Loop
 template <typename FPTYPE, int MTILE, int KTILE>
 __global__ void tabulate_fusion_se_t_tebd_fifth_order_polynomial(
     FPTYPE* out,
@@ -675,52 +676,51 @@ __global__ void tabulate_fusion_se_t_tebd_fifth_order_polynomial(
     const FPTYPE stride1,
     const int nnei_i,
     const int nnei_j,
-    const int last_layer_size) {
+    const int last_layer_size,
+    const int_64 total_work) {
   // NOT USED: em: (nfnl, nnei_i, nnei_j)
   // em_x: (nfnl * nnei_i * nnei_j, 1) flat version of em
-  // blockDim.x -> total threads in a block: nnei_i * nnei_j
-  // gridDim.x -> total blocks in a grid: nloc
+  // total_work = nloc * nnei_i * nnei_j
+  // Grid-Stride Loop
+  for (int_64 i = (int_64)blockIdx.x * blockDim.x + threadIdx.x; i < total_work;
+       i += (int_64)gridDim.x * blockDim.x) {
+    // Decompose the 1D index 'i' to get atom and neighbor indices
+    const int_64 block_idx = i / (nnei_i * nnei_j);
+    const int_64 local_idx = i % (nnei_i * nnei_j);
+    const int_64 ii = local_idx / nnei_j;
+    const int_64 jj = local_idx % nnei_j;
 
-  // Identify which atom and neighbor pair this thread is responsible for.
-  // block_idx corresponds to the atom index, given by the block index.
-  const int_64 block_idx = blockIdx.x;
+    // Read the input value xx for this specific neighbor pair.
+    FPTYPE xx = em_x[i];
 
-  // thread_idx is the flattened 1D index for the (ii, jj) neighbor pair.
-  const int_64 thread_idx = threadIdx.x;
+    // Determine the table index based on the value of xx.
+    int table_idx = 0;
+    locate_xx_se_t_tebd(xx, table_idx, lower, upper, -max, max, stride0,
+                        stride1);
 
-  // Recover the 2D (ii, jj) indices from the 1D thread index.
-  // thread_idx = ii * nnei_j + jj
-  const int_64 ii = thread_idx / nnei_j;
-  const int_64 jj = thread_idx % nnei_j;
-
-  // Read the input value xx for this specific neighbor pair.
-  const int_64 em_x_idx = (int_64)block_idx * nnei_i * nnei_j + thread_idx;
-  FPTYPE xx = em_x[em_x_idx];
-
-  // Determine the table index based on the value of xx.
-  int table_idx = 0;
-  locate_xx_se_t_tebd(xx, table_idx, lower, upper, -max, max, stride0, stride1);
-
-  // Serially loop through the 'last_layer_size' dimension to calculate all
-  // features.
-  for (int idx = 0; idx < last_layer_size; idx++) {
-    FPTYPE var[6];
-    load_polynomial_params(var, table, table_idx, idx, last_layer_size);
-    FPTYPE res =
-        var[0] +
-        (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
-            xx;
-    // Calculate the unique 1D output index for the 4D tensor (block_idx, ii,
-    // jj, idx).
-    const int_64 out_idx =
-        (int_64)block_idx * nnei_i * nnei_j * last_layer_size +
-        (int_64)ii * nnei_j * last_layer_size + (int_64)jj * last_layer_size +
-        idx;
-    // Write the result to the global output memory.
-    out[out_idx] = res;
+    // Serially loop through the 'last_layer_size' dimension to calculate all
+    // features.
+    for (int idx = 0; idx < last_layer_size; idx++) {
+      FPTYPE var[6];
+      load_polynomial_params(var, table, table_idx, idx, last_layer_size);
+      FPTYPE res =
+          var[0] +
+          (var[1] +
+           (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
+              xx;
+      // Calculate the unique 1D output index for the 4D tensor (block_idx, ii,
+      // jj, idx).
+      const int_64 out_idx =
+          (int_64)block_idx * nnei_i * nnei_j * last_layer_size +
+          (int_64)ii * nnei_j * last_layer_size + (int_64)jj * last_layer_size +
+          idx;
+      // Write the result to the global output memory.
+      out[out_idx] = res;
+    }
   }
 }
 
+// Apply Grid-Stride Loop
 template <typename FPTYPE, int MTILE, int KTILE>
 __global__ void tabulate_fusion_se_t_tebd_grad_fifth_order_polynomial(
     FPTYPE* dy_dem_x,
@@ -735,52 +735,56 @@ __global__ void tabulate_fusion_se_t_tebd_grad_fifth_order_polynomial(
     const FPTYPE stride1,
     const int nnei_i,
     const int nnei_j,
-    const int last_layer_size) {
-  // blockDim.x -> nnei_i * nnei_j
-  // gridDim.x -> nloc
+    const int last_layer_size,
+    const int_64 total_work) {
+  // total_work = nloc * nnei_i * nnei_j
+  // Grid-Stride Loop
+  for (int_64 i = (int_64)blockIdx.x * blockDim.x + threadIdx.x; i < total_work;
+       i += (int_64)gridDim.x * blockDim.x) {
+    // Decompose the 1D index 'i' to get atom and neighbor indices
+    const int_64 block_idx = i / (nnei_i * nnei_j);
+    const int_64 local_idx = i % (nnei_i * nnei_j);
+    const int ii = local_idx / nnei_j;
+    const int jj = local_idx % nnei_j;
 
-  // Identify which atom and neighbor pair this thread is responsible for.
-  const int_64 block_idx = blockIdx.x;
-  const int_64 thread_idx = threadIdx.x;
-  const int ii = thread_idx / nnei_j;
-  const int jj = thread_idx % nnei_j;
+    // Determine the table index based on the value of xx.
+    FPTYPE xx = em_x[i];
+    int table_idx = 0;
+    locate_xx_se_t_tebd(xx, table_idx, lower, upper, -max, max, stride0,
+                        stride1);
 
-  // Determine the table index based on the value of xx.
-  const int_64 em_x_idx = (int_64)block_idx * nnei_i * nnei_j + thread_idx;
-  FPTYPE xx = em_x[em_x_idx];
-  int table_idx = 0;
-  locate_xx_se_t_tebd(xx, table_idx, lower, upper, -max, max, stride0, stride1);
+    // Accumulate the gradient contributions from all features.
+    FPTYPE grad_sum = 0.0;
+    for (int idx = 0; idx < last_layer_size; idx++) {
+      FPTYPE var[6];
+      load_polynomial_params(var, table, table_idx, idx, last_layer_size);
 
-  // Accumulate the gradient contributions from all features.
-  FPTYPE grad_sum = 0.0;
-  for (int idx = 0; idx < last_layer_size; idx++) {
-    FPTYPE var[6];
-    load_polynomial_params(var, table, table_idx, idx, last_layer_size);
+      // Calculate the derivative of the polynomial with respect to xx.
+      FPTYPE dres_dxx =
+          var[1] + ((FPTYPE)2. * var[2] +
+                    ((FPTYPE)3. * var[3] +
+                     ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
+                        xx) *
+                       xx;
 
-    // Calculate the derivative of the polynomial with respect to xx.
-    FPTYPE dres_dxx =
-        var[1] + ((FPTYPE)2. * var[2] +
-                  ((FPTYPE)3. * var[3] +
-                   ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
-                      xx) *
-                     xx;
+      // Read the incoming gradient from the previous layer.
+      const int_64 dy_idx =
+          (int_64)block_idx * nnei_i * nnei_j * last_layer_size +
+          (int_64)ii * nnei_j * last_layer_size + (int_64)jj * last_layer_size +
+          idx;
+      FPTYPE dy_val = dy[dy_idx];
 
-    // Read the incoming gradient from the previous layer.
-    const int_64 dy_idx =
-        (int_64)block_idx * nnei_i * nnei_j * last_layer_size +
-        (int_64)ii * nnei_j * last_layer_size + (int_64)jj * last_layer_size +
-        idx;
-    FPTYPE dy_val = dy[dy_idx];
+      // Apply the chain rule: dL/dxx = sum over idx [ (dL/d_res_mm) *
+      // (d_res_mm/dxx) ]
+      grad_sum += dy_val * dres_dxx;
+    }
 
-    // Apply the chain rule: dL/dxx = sum over idx [ (dL/d_res_mm) *
-    // (d_res_mm/dxx) ]
-    grad_sum += dy_val * dres_dxx;
+    // Write the final summed gradient to the output array.
+    dy_dem_x[i] = grad_sum;
   }
-
-  // Write the final summed gradient to the output array.
-  dy_dem_x[em_x_idx] = grad_sum;
 }
 
+// Apply Grid-Stride Loop
 template <typename FPTYPE, int MTILE, int KTILE>
 __global__ void tabulate_fusion_se_t_tebd_grad_grad_fifth_order_polynomial(
     FPTYPE* dz_dy,
@@ -795,51 +799,54 @@ __global__ void tabulate_fusion_se_t_tebd_grad_grad_fifth_order_polynomial(
     const FPTYPE stride1,
     const int nnei_i,
     const int nnei_j,
-    const int last_layer_size) {
-  // blockDim.x -> nnei_i * nnei_j
-  // gridDim.x -> nloc
+    const int last_layer_size,
+    const int_64 total_work) {
+  // total_work = nloc * nnei_i * nnei_j
+  // Grid-Stride Loop
+  for (int_64 i = (int_64)blockIdx.x * blockDim.x + threadIdx.x; i < total_work;
+       i += (int_64)gridDim.x * blockDim.x) {
+    // Decompose the 1D index 'i' to get atom and neighbor indices
+    const int_64 block_idx = i / (nnei_i * nnei_j);
+    const int_64 local_idx = i % (nnei_i * nnei_j);
+    const int ii = local_idx / nnei_j;
+    const int jj = local_idx % nnei_j;
 
-  // Identify which atom and neighbor pair this thread is responsible for.
-  const int_64 block_idx = blockIdx.x;
-  const int_64 thread_idx = threadIdx.x;
-  const int ii = thread_idx / nnei_j;
-  const int jj = thread_idx % nnei_j;
+    FPTYPE xx = em_x[i];
 
-  const int_64 em_x_idx = (int_64)block_idx * nnei_i * nnei_j + thread_idx;
-  FPTYPE xx = em_x[em_x_idx];
+    // Read the incoming gradient for xx. This value is the same for all 'idx'
+    // features.
+    const FPTYPE dz_dy_dem_x_val = dz_dy_dem_x[i];
 
-  // Read the incoming gradient for xx. This value is the same for all 'idx'
-  // features.
-  const FPTYPE dz_dy_dem_x_val = dz_dy_dem_x[em_x_idx];
+    // Determine the table index based on the value of xx.
+    int table_idx = 0;
+    locate_xx_se_t_tebd(xx, table_idx, lower, upper, -max, max, stride0,
+                        stride1);
 
-  // Determine the table index based on the value of xx.
-  int table_idx = 0;
-  locate_xx_se_t_tebd(xx, table_idx, lower, upper, -max, max, stride0, stride1);
+    // Serially loop through the 'last_layer_size' dimension.
+    for (int idx = 0; idx < last_layer_size; idx++) {
+      FPTYPE var[6];
+      load_polynomial_params(var, table, table_idx, idx, last_layer_size);
 
-  // Serially loop through the 'last_layer_size' dimension.
-  for (int idx = 0; idx < last_layer_size; idx++) {
-    FPTYPE var[6];
-    load_polynomial_params(var, table, table_idx, idx, last_layer_size);
+      // Calculate the derivative of the polynomial with respect to xx.
+      FPTYPE dres_dxx =
+          var[1] + ((FPTYPE)2. * var[2] +
+                    ((FPTYPE)3. * var[3] +
+                     ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
+                        xx) *
+                       xx;
 
-    // Calculate the derivative of the polynomial with respect to xx.
-    FPTYPE dres_dxx =
-        var[1] + ((FPTYPE)2. * var[2] +
-                  ((FPTYPE)3. * var[3] +
-                   ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
-                      xx) *
-                     xx;
+      // Apply the chain rule: dz/dy_idx = (dz/dxx) * (dxx/dy_idx)
+      // which simplifies to dz_dy_dem_x_val * dres_dxx
+      FPTYPE out_grad = dz_dy_dem_x_val * dres_dxx;
 
-    // Apply the chain rule: dz/dy_idx = (dz/dxx) * (dxx/dy_idx)
-    // which simplifies to dz_dy_dem_x_val * dres_dxx
-    FPTYPE out_grad = dz_dy_dem_x_val * dres_dxx;
-
-    // Calculate the unique 1D output index for the 4D tensor (block_idx, ii,
-    // jj, idx).
-    const int_64 out_idx =
-        (int_64)block_idx * nnei_i * nnei_j * last_layer_size +
-        (int_64)ii * nnei_j * last_layer_size + (int_64)jj * last_layer_size +
-        idx;
-    dz_dy[out_idx] = out_grad;
+      // Calculate the unique 1D output index for the 4D tensor (block_idx, ii,
+      // jj, idx).
+      const int_64 out_idx =
+          (int_64)block_idx * nnei_i * nnei_j * last_layer_size +
+          (int_64)ii * nnei_j * last_layer_size + (int_64)jj * last_layer_size +
+          idx;
+      dz_dy[out_idx] = out_grad;
+    }
   }
 }
 
@@ -1150,18 +1157,19 @@ void tabulate_fusion_se_t_tebd_gpu(FPTYPE* out,
   if (nloc <= 0 || nnei_i <= 0 || nnei_j <= 0) {
     return;
   }
-  // Grid dimension: One block for each atom: nloc
-  dim3 num_blocks(nloc);
-  // Block dimension: One thread for each (ii, jj) neighbor pair: nnei_i *
-  // nnei_j
-  dim3 num_threads(nnei_i * nnei_j);
+  const int_64 total_work = (int_64)nloc * nnei_i * nnei_j;
+  // Use fixed number of threads per block
+  const int num_threads = TPB;
+  // Calculate number of blocks needed
+  const int num_blocks = (total_work + num_threads - 1) / num_threads;
 
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   tabulate_fusion_se_t_tebd_fifth_order_polynomial<FPTYPE, MM, KK>
-      <<<num_blocks, num_threads>>>(
-          out, table, em_x, em, table_info[0], table_info[1], table_info[2],
-          table_info[3], table_info[4], nnei_i, nnei_j, last_layer_size);
+      <<<num_blocks, num_threads>>>(out, table, em_x, em, table_info[0],
+                                    table_info[1], table_info[2], table_info[3],
+                                    table_info[4], nnei_i, nnei_j,
+                                    last_layer_size, total_work);
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
 }
@@ -1180,19 +1188,18 @@ void tabulate_fusion_se_t_tebd_grad_gpu(FPTYPE* dy_dem_x,
   if (nloc <= 0 || nnei_i <= 0 || nnei_j <= 0) {
     return;
   }
-  // Define Grid and Block dimensions, matching the forward pass strategy.
-  dim3 num_blocks(nloc);
-  dim3 num_threads(nnei_i * nnei_j);
+  const int_64 total_work = (int_64)nloc * nnei_i * nnei_j;
+  const int num_threads = TPB;
+  const int num_blocks = (total_work + num_threads - 1) / num_threads;
 
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
-  DPErrcheck(gpuMemset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j));
-  // table_info should be on CPU side
+  DPErrcheck(gpuMemset(dy_dem_x, 0, sizeof(FPTYPE) * total_work));
   tabulate_fusion_se_t_tebd_grad_fifth_order_polynomial<FPTYPE, MM, KK>
       <<<num_blocks, num_threads>>>(dy_dem_x, table, em_x, em, dy,
                                     table_info[0], table_info[1], table_info[2],
                                     table_info[3], table_info[4], nnei_i,
-                                    nnei_j, last_layer_size);
+                                    nnei_j, last_layer_size, total_work);
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
 }
@@ -1211,19 +1218,20 @@ void tabulate_fusion_se_t_tebd_grad_grad_gpu(FPTYPE* dz_dy,
   if (nloc <= 0 || nnei_i <= 0 || nnei_j <= 0) {
     return;
   }
-  dim3 num_blocks(nloc);
-  dim3 num_threads(nnei_i * nnei_j);
+  const int_64 total_work = (int_64)nloc * nnei_i * nnei_j;
+  const int num_threads = TPB;
+  const int num_blocks = (total_work + num_threads - 1) / num_threads;
 
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
-  DPErrcheck(gpuMemset(
-      dz_dy, 0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j * last_layer_size));
+  DPErrcheck(
+      gpuMemset(dz_dy, 0, sizeof(FPTYPE) * total_work * last_layer_size));
 
   tabulate_fusion_se_t_tebd_grad_grad_fifth_order_polynomial<FPTYPE, MM, KK>
       <<<num_blocks, num_threads>>>(dz_dy, table, em_x, em, dz_dy_dem_x,
                                     table_info[0], table_info[1], table_info[2],
                                     table_info[3], table_info[4], nnei_i,
-                                    nnei_j, last_layer_size);
+                                    nnei_j, last_layer_size, total_work);
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
 }
