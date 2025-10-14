@@ -960,8 +960,8 @@ class DescrptBlockSeTTebd(DescriptorBlock):
                 gg_s = torch.ops.deepmd.tabulate_fusion_se_t_tebd(
                     self.compress_data[0].contiguous(),
                     self.compress_info[0].cpu().contiguous(),
-                    ebd_env_ij.contiguous(),
-                    env_ij.contiguous(),
+                    ebd_env_ij.contiguous(),  # em_x: (nfnl * nt_i * nt_j, 1)
+                    env_ij.contiguous(),  # em: (nfnl, nt_i, nt_j)
                     self.filter_neuron[-1],
                 )[0]
                 # SE_T_TEBD tabulation preserves the full neighbor structure
