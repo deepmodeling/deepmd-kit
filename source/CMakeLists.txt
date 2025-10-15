@@ -31,11 +31,13 @@ endif()
 
 # CUDA 13.0+ requires C++17
 if(USE_CUDA_TOOLKIT)
-  if(DEFINED CMAKE_CUDA_COMPILER_VERSION AND CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL
-                                     "13.0")
+  if(DEFINED CMAKE_CUDA_COMPILER_VERSION AND CMAKE_CUDA_COMPILER_VERSION
+                                             VERSION_GREATER_EQUAL "13.0")
     set_if_higher(CMAKE_CXX_STANDARD 17)
     message(
-      STATUS "CUDA ${CMAKE_CUDA_COMPILER_VERSION} detected, setting C++ standard to 17")
+      STATUS
+        "CUDA ${CMAKE_CUDA_COMPILER_VERSION} detected, setting C++ standard to 17"
+    )
   endif()
 endif()
 
