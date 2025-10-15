@@ -43,6 +43,15 @@ if(USE_CUDA_TOOLKIT)
     message(FATAL_ERROR "CUDA version must be >= 9.0")
   endif()
 
+  # CUDA 13.0+ requires C++17
+  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL "13.0")
+    set(CMAKE_CUDA_STANDARD 17)
+    message(
+      STATUS
+        "CUDA ${CMAKE_CUDA_COMPILER_VERSION} detected, setting C++ standard to 17"
+    )
+  endif()
+
   message(STATUS "NVCC version is " ${CMAKE_CUDA_COMPILER_VERSION})
 
   # arch will be configured by CMAKE_CUDA_ARCHITECTURES
