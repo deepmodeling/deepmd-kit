@@ -29,18 +29,6 @@ if(NOT DEEPMD_C_ROOT)
   set_if_higher(CMAKE_CXX_STANDARD 14)
 endif()
 
-# CUDA 13.0+ requires C++17
-if(USE_CUDA_TOOLKIT)
-  if(DEFINED CMAKE_CUDA_COMPILER_VERSION AND CMAKE_CUDA_COMPILER_VERSION
-                                             VERSION_GREATER_EQUAL "13.0")
-    set_if_higher(CMAKE_CXX_STANDARD 17)
-    message(
-      STATUS
-        "CUDA ${CMAKE_CUDA_COMPILER_VERSION} detected, setting C++ standard to 17"
-    )
-  endif()
-endif()
-
 if(ENABLE_PADDLE)
   if(NOT DEFINED PADDLE_INFERENCE_DIR)
     # message(FATAL_ERROR "Make sure PADDLE_INFERENCE_DIR is set when
@@ -258,6 +246,12 @@ set(DP_VARIANT "cpu")
 if(USE_CUDA_TOOLKIT)
   cmake_minimum_required(VERSION 3.25.2)
   find_package(CUDAToolkit REQUIRED)
+  # CUDA 13.0+ requires C++17
+  if(CUDAToolkit_VERSION VERSION_GREATER_EQUAL "13.0")
+    set_if_higher(CMAKE_CXX_STANDARD 17)
+    message(
+      STATUS "CUDA ${CUDAToolkit_VERSION} detected, setting C++ standard to 17")
+  endif()
   if(NOT DEFINED CMAKE_CUDA_COMPILER)
     set(CMAKE_CUDA_COMPILER ${CUDAToolkit_NVCC_EXECUTABLE})
   endif()
