@@ -111,6 +111,41 @@ void tabulate_fusion_se_r_grad_grad_cpu(FPTYPE* dz_dy,
                                         const int nnei,
                                         const int last_layer_size);
 
+template <typename FPTYPE>
+void tabulate_fusion_se_t_tebd_cpu(FPTYPE* out,
+                                   const FPTYPE* table,
+                                   const FPTYPE* table_info,
+                                   const FPTYPE* em_x,
+                                   const FPTYPE* em,
+                                   const int nloc,
+                                   const int nnei_i,
+                                   const int nnei_j,
+                                   const int last_layer_size);
+
+template <typename FPTYPE>
+void tabulate_fusion_se_t_tebd_grad_cpu(FPTYPE* dy_dem_x,
+                                        const FPTYPE* table,
+                                        const FPTYPE* table_info,
+                                        const FPTYPE* em_x,
+                                        const FPTYPE* em,
+                                        const FPTYPE* dy,
+                                        const int nloc,
+                                        const int nnei_i,
+                                        const int nnei_j,
+                                        const int last_layer_size);
+
+template <typename FPTYPE>
+void tabulate_fusion_se_t_tebd_grad_grad_cpu(FPTYPE* dz_dy,
+                                             const FPTYPE* table,
+                                             const FPTYPE* table_info,
+                                             const FPTYPE* em_x,
+                                             const FPTYPE* em,
+                                             const FPTYPE* dz_dy_dem_x,
+                                             const int nloc,
+                                             const int nnei_i,
+                                             const int nnei_j,
+                                             const int last_layer_size);
+
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 template <typename FPTYPE>
 void tabulate_fusion_se_a_gpu(FPTYPE* out,
@@ -219,5 +254,40 @@ void tabulate_fusion_se_r_grad_grad_gpu(FPTYPE* dz_dy,
                                         const int nloc,
                                         const int nnei,
                                         const int last_layer_size);
+
+template <typename FPTYPE>
+void tabulate_fusion_se_t_tebd_gpu(FPTYPE* out,
+                                   const FPTYPE* table,
+                                   const FPTYPE* table_info,
+                                   const FPTYPE* em_x,
+                                   const FPTYPE* em,
+                                   const int nloc,
+                                   const int nnei_i,
+                                   const int nnei_j,
+                                   const int last_layer_size);
+
+template <typename FPTYPE>
+void tabulate_fusion_se_t_tebd_grad_gpu(FPTYPE* dy_dem_x,
+                                        const FPTYPE* table,
+                                        const FPTYPE* table_info,
+                                        const FPTYPE* em_x,
+                                        const FPTYPE* em,
+                                        const FPTYPE* dy,
+                                        const int nloc,
+                                        const int nnei_i,
+                                        const int nnei_j,
+                                        const int last_layer_size);
+
+template <typename FPTYPE>
+void tabulate_fusion_se_t_tebd_grad_grad_gpu(FPTYPE* dz_dy,
+                                             const FPTYPE* table,
+                                             const FPTYPE* table_info,
+                                             const FPTYPE* em_x,
+                                             const FPTYPE* em,
+                                             const FPTYPE* dz_dy_dem_x,
+                                             const int nloc,
+                                             const int nnei_i,
+                                             const int nnei_j,
+                                             const int last_layer_size);
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 }  // namespace deepmd

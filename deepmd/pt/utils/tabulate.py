@@ -66,12 +66,7 @@ class DPTabulate(BaseTabulate):
         )
         self.descrpt_type = self._get_descrpt_type()
 
-        supported_descrpt_type = (
-            "Atten",
-            "A",
-            "T",
-            "R",
-        )
+        supported_descrpt_type = ("Atten", "A", "T", "T_TEBD", "R")
 
         if self.descrpt_type in supported_descrpt_type:
             self.sel_a = self.descrpt.get_sel()
@@ -156,7 +151,7 @@ class DPTabulate(BaseTabulate):
                         self.matrix["layer_" + str(layer + 1)][idx],
                         xbar,
                         self.functype,
-                    ) + torch.ones((1, 1), dtype=yy.dtype)  # pylint: disable=no-explicit-device
+                    ) + torch.ones((1, 1), dtype=yy.dtype, device=yy.device)
                     dy2 = unaggregated_dy2_dx_s(
                         yy - xx,
                         dy,
@@ -175,7 +170,7 @@ class DPTabulate(BaseTabulate):
                         self.matrix["layer_" + str(layer + 1)][idx],
                         xbar,
                         self.functype,
-                    ) + torch.ones((1, 2), dtype=yy.dtype)  # pylint: disable=no-explicit-device
+                    ) + torch.ones((1, 2), dtype=yy.dtype, device=yy.device)
                     dy2 = unaggregated_dy2_dx_s(
                         yy - tt,
                         dy,
@@ -311,6 +306,8 @@ class DPTabulate(BaseTabulate):
             return "R"
         elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT):
             return "T"
+        elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeTTebd):
+            return "T_TEBD"
         raise RuntimeError(f"Unsupported descriptor {self.descrpt}")
 
     def _get_layer_size(self) -> int:
@@ -325,7 +322,7 @@ class DPTabulate(BaseTabulate):
                 * len(self.embedding_net_nodes[0])
                 * len(self.neuron)
             )
-        if self.descrpt_type == "Atten":
+        if self.descrpt_type in ("Atten", "T_TEBD"):
             layer_size = len(self.embedding_net_nodes[0]["layers"])
         elif self.descrpt_type == "A":
             layer_size = len(self.embedding_net_nodes[0]["layers"])
@@ -394,6 +391,13 @@ class DPTabulate(BaseTabulate):
                             "layers"
                         ][layer - 1]["@variables"][var_name]
                         result["layer_" + str(layer)].append(node)
+            elif self.descrpt_type == "T_TEBD":
+                # For the se_e3_tebd descriptor, a single,
+                # shared embedding network is used for all type pairs
+                node = self.embedding_net_nodes[0]["layers"][layer - 1]["@variables"][
+                    var_name
+                ]
+                result["layer_" + str(layer)].append(node)
             elif self.descrpt_type == "R":
                 if self.type_one_side:
                     for ii in range(0, self.ntypes):
