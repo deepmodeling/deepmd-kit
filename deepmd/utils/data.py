@@ -3,6 +3,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import bisect
 import logging
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    as_completed,
+)
 from pathlib import (
     Path,
 )
@@ -71,10 +75,7 @@ class DeepmdData:
             raise FileNotFoundError(f"No {set_prefix}.* is found in {sys_path}")
         self.dirs.sort()
         # check mix_type format
-        error_format_msg = (
-            "if one of the set is of mixed_type format, "
-            "then all of the sets in this system should be of mixed_type format!"
-        )
+        error_format_msg = "if one of the set is of mixed_type format, then all of the sets in this system should be of mixed_type format!"
         self.mixed_type = self._check_mode(self.dirs[0])
         for set_item in self.dirs[1:]:
             assert self._check_mode(set_item) == self.mixed_type, error_format_msg
@@ -384,28 +385,37 @@ class DeepmdData:
         local_idx = index - self.prefix_sum[set_idx]
 
         frame_data = {}
-        # 2. Load all non-reduced items first
-        # TODO: use async
-        for key, vv in self.data_dict.items():
-            if vv["reduce"] is None:
-                frame_data["find_" + key], frame_data[key] = self._load_single_data(
-                    set_dir, key, local_idx
-                )
+        # 2. Concurrently load all non-reduced items
+        non_reduced_keys = [k for k, v in self.data_dict.items() if v["reduce"] is None]
+        reduced_keys = [k for k, v in self.data_dict.items() if v["reduce"] is not None]
+        # Use a thread pool to parallelize loading
+        if non_reduced_keys:
+            with ThreadPoolExecutor(max_workers=len(non_reduced_keys)) as executor:
+                future_to_key = {
+                    executor.submit(
+                        self._load_single_data, set_dir, key, local_idx
+                    ): key
+                    for key in non_reduced_keys
+                }
+                for future in as_completed(future_to_key):
+                    key = future_to_key[future]
+                    try:
+                        frame_data["find_" + key], frame_data[key] = future.result()
+                    except Exception as exc:
+                        log.error(f"{key!r} generated an exception: {exc}")
+                        raise
 
         # 3. Compute reduced items from already loaded data
-        # TODO: use async
-        for key, vv in self.data_dict.items():
-            if vv["reduce"] is not None:
-                k_in = vv["reduce"]
-                ndof = vv["ndof"]
-                frame_data["find_" + key] = frame_data["find_" + k_in]
-                # Reshape to (natoms, ndof) and sum over atom axis
-                tmp_in = (
-                    frame_data[k_in]
-                    .reshape(-1, ndof)
-                    .astype(GLOBAL_ENER_FLOAT_PRECISION)
-                )
-                frame_data[key] = np.sum(tmp_in, axis=0)
+        for key in reduced_keys:
+            vv = self.data_dict[key]
+            k_in = vv["reduce"]
+            ndof = vv["ndof"]
+            frame_data["find_" + key] = frame_data["find_" + k_in]
+            # Reshape to (natoms, ndof) and sum over atom axis
+            tmp_in = (
+                frame_data[k_in].reshape(-1, ndof).astype(GLOBAL_ENER_FLOAT_PRECISION)
+            )
+            frame_data[key] = np.sum(tmp_in, axis=0)
 
         # 4. Handle atom types (mixed or standard)
         if self.mixed_type:
