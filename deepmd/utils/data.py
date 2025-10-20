@@ -505,9 +505,12 @@ class DeepmdData:
             # Open the npy file to read its header and get shape/dtype
             with open(str(path), "rb") as f:
                 version = np.lib.format.read_magic(f)
-                shape, fortran_order, dtype = np.lib.format._read_array_header(
-                    f, version
-                )
+                if version[0] == 1:
+                    shape, fortran_order, dtype = np.lib.format.read_array_header_1_0(f)
+                elif version[0] in [2, 3]:
+                    shape, fortran_order, dtype = np.lib.format.read_array_header_2_0(f)
+                else:
+                    raise ValueError(f"Unsupported .npy file version: {version}")
                 offset = f.tell()
             order = "F" if fortran_order else "C"
             # Create a read-only memmap and cache it
