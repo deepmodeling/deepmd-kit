@@ -2,6 +2,7 @@
 
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import bisect
+import functools
 import logging
 from concurrent.futures import (
     ThreadPoolExecutor,
@@ -20,6 +21,7 @@ import numpy as np
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
+    LRU_CACHE_SIZE,
 )
 from deepmd.utils import random as dp_random
 from deepmd.utils.path import (
@@ -500,29 +502,8 @@ class DeepmdData:
 
     def _get_memmap(self, path: DPPath) -> np.memmap:
         """Get or create a memory-mapped object for a given npy file."""
-        memmap_key = Path(str(path)).absolute()
-        if memmap_key not in self.memmap_cache:
-            # Open the npy file to read its header and get shape/dtype
-            with open(str(path), "rb") as f:
-                version = np.lib.format.read_magic(f)
-                if version[0] == 1:
-                    shape, fortran_order, dtype = np.lib.format.read_array_header_1_0(f)
-                elif version[0] in [2, 3]:
-                    shape, fortran_order, dtype = np.lib.format.read_array_header_2_0(f)
-                else:
-                    raise ValueError(f"Unsupported .npy file version: {version}")
-                offset = f.tell()
-            order = "F" if fortran_order else "C"
-            # Create a read-only memmap and cache it
-            self.memmap_cache[memmap_key] = np.memmap(
-                str(path),
-                dtype=dtype,
-                mode="r",
-                shape=shape,
-                order=order,
-                offset=offset,
-            )
-        return self.memmap_cache[memmap_key]
+        abs_path_str = str(Path(str(path)).absolute())
+        return self._create_memmap(abs_path_str)
 
     def _get_subdata(
         self, data: dict[str, Any], idx: Optional[np.ndarray] = None
@@ -961,6 +942,32 @@ class DeepmdData:
 
     def _check_mode(self, set_path: DPPath) -> bool:
         return (set_path / "real_atom_types.npy").is_file()
+
+    @staticmethod
+    @functools.lru_cache(maxsize=LRU_CACHE_SIZE)
+    def _create_memmap(path_str: str) -> np.memmap:
+        """A cached helper function to create memmap objects.
+        Using lru_cache to limit the number of open file handles.
+
+        Parameters
+        ----------
+        path_str
+            The file path as a string.
+        """
+        with open(path_str, "rb") as f:
+            version = np.lib.format.read_magic(f)
+            if version[0] == 1:
+                shape, fortran_order, dtype = np.lib.format.read_array_header_1_0(f)
+            elif version[0] in [2, 3]:
+                shape, fortran_order, dtype = np.lib.format.read_array_header_2_0(f)
+            else:
+                raise ValueError(f"Unsupported .npy file version: {version}")
+            offset = f.tell()
+        order = "F" if fortran_order else "C"
+        # Create a read-only memmap
+        return np.memmap(
+            path_str, dtype=dtype, mode="r", shape=shape, order=order, offset=offset
+        )
 
 
 class DataRequirementItem:

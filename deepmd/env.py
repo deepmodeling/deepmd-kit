@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 import os
+import platform
 from configparser import (
     ConfigParser,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "GLOBAL_CONFIG",
     "GLOBAL_ENER_FLOAT_PRECISION",
     "GLOBAL_NP_FLOAT_PRECISION",
+    "LRU_CACHE_SIZE",
     "SHARED_LIB_DIR",
     "SHARED_LIB_MODULE",
     "global_float_prec",
@@ -46,6 +48,25 @@ else:
         "low. Please set precision with environmental variable "
         "DP_INTERFACE_PREC."
     )
+
+# Dynamic calculation of cache size
+DEFAULT_LRU_CACHE_SIZE = 888
+LRU_CACHE_SIZE = DEFAULT_LRU_CACHE_SIZE
+
+if platform.system() != "Windows":
+    try:
+        import resource
+
+        soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+        safe_buffer = 128
+        if soft_limit > safe_buffer + DEFAULT_LRU_CACHE_SIZE:
+            LRU_CACHE_SIZE = soft_limit - safe_buffer
+        else:
+            LRU_CACHE_SIZE = soft_limit // 2
+    except ImportError:
+        LRU_CACHE_SIZE = DEFAULT_LRU_CACHE_SIZE
+else:
+    LRU_CACHE_SIZE = DEFAULT_LRU_CACHE_SIZE
 
 
 def set_env_if_empty(key: str, value: str, verbose: bool = True) -> None:
