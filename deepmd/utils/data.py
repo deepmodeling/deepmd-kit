@@ -253,27 +253,18 @@ class DeepmdData:
         index
             index of the frame
         """
-        i = bisect.bisect_right(self.prefix_sum, index)
-        frames = self._load_set(self.dirs[i])
-        frame = self._get_subdata(frames, index - self.prefix_sum[i])
-        frame = self.reformat_data_torch(frame)
-        frame["fid"] = index
-        return frame
+        return self.get_single_frame(index)
 
     def get_item_paddle(self, index: int) -> dict:
         """Get a single frame data . The frame is picked from the data system by index. The index is coded across all the sets.
+        Same with PyTorch backend.
 
         Parameters
         ----------
         index
             index of the frame
         """
-        i = bisect.bisect_right(self.prefix_sum, index)
-        frames = self._load_set(self.dirs[i])
-        frame = self._get_subdata(frames, index - self.prefix_sum[i])
-        frame = self.reformat_data_torch(frame)
-        frame["fid"] = index
-        return frame
+        return self.get_single_frame(index)
 
     def get_batch(self, batch_size: int) -> dict:
         """Get a batch of data with `batch_size` frames. The frames are randomly picked from the data system.
@@ -382,47 +373,7 @@ class DeepmdData:
         tmp = np.append(tmp, natoms_vec)
         return tmp.astype(np.int32)
 
-    def avg(self, key: str) -> float:
-        """Return the average value of an item."""
-        if key not in self.data_dict.keys():
-            raise RuntimeError(f"key {key} has not been added")
-        info = self.data_dict[key]
-        ndof = info["ndof"]
-        eners = []
-        for ii in self.dirs:
-            data = self._load_set(ii)
-            ei = data[key].reshape([-1, ndof])
-            eners.append(ei)
-        eners = np.concatenate(eners, axis=0)
-        if eners.size == 0:
-            return 0
-        else:
-            return np.average(eners, axis=0)
-
-    def _get_memmap(self, path: DPPath) -> np.memmap:
-        """Get or create a memory-mapped object for a given npy file."""
-        memmap_key = Path(str(path)).absolute()
-        if memmap_key not in self.memmap_cache:
-            # Open the npy file to read its header and get shape/dtype
-            with open(str(path), "rb") as f:
-                version = np.lib.format.read_magic(f)
-                shape, fortran_order, dtype = np.lib.format._read_array_header(
-                    f, version
-                )
-                offset = f.tell()
-            order = "F" if fortran_order else "C"
-            # Create a read-only memmap and cache it
-            self.memmap_cache[memmap_key] = np.memmap(
-                str(path),
-                dtype=dtype,
-                mode="r",
-                shape=shape,
-                order=order,
-                offset=offset,
-            )
-        return self.memmap_cache[memmap_key]
-
-    def _get_single_frame(self, index: int) -> dict:
+    def get_single_frame(self, index: int) -> dict:
         """Orchestrates loading a single frame efficiently using memmap."""
         # 1. Find the correct set directory and local frame index
         set_idx = bisect.bisect_right(self.prefix_sum, index)
@@ -437,7 +388,7 @@ class DeepmdData:
         # TODO: use async
         for key, vv in self.data_dict.items():
             if vv["reduce"] is None:
-                frame_data["find_" + key], frame_data[key] = self._load_single_item(
+                frame_data["find_" + key], frame_data[key] = self._load_single_data(
                     set_dir, key, local_idx
                 )
 
@@ -457,14 +408,18 @@ class DeepmdData:
                 frame_data[key] = np.sum(tmp_in, axis=0)
 
         # 4. Handle atom types (mixed or standard)
-        # TODO: mixed_type
         if self.mixed_type:
             type_path = set_dir / "real_atom_types.npy"
             mmap_types = self._get_memmap(type_path)
             real_type = mmap_types[local_idx].copy().astype(np.int32)
 
             if self.enforce_type_map:
-                real_type = self.type_idx_map[real_type].astype(np.int32)
+                try:
+                    real_type = self.type_idx_map[real_type].astype(np.int32)
+                except IndexError as e:
+                    raise IndexError(
+                        f"some types in 'real_atom_types.npy' of set {set_dir} are not contained in {self.get_ntypes()} types!"
+                    ) from e
 
             frame_data["type"] = real_type
             ntypes = self.get_ntypes()
@@ -497,115 +452,22 @@ class DeepmdData:
         frame_data["fid"] = index
         return frame_data
 
-    def _load_single_item(
-        self, set_dir: DPPath, key: str, frame_idx: int
-    ) -> tuple[np.float32, np.ndarray]:
-        """
-        Loads and processes data for a SINGLE frame from a SINGLE key,
-        fully replicating the logic from the original _load_data method.
-        """
-        vv = self.data_dict[key]
-        path = set_dir / (key + ".npy")
-
-        if vv["atomic"]:
-            natoms = self.natoms
-            idx_map = self.idx_map
-            # if type_sel, then revise natoms and idx_map
-            if vv["type_sel"] is not None:
-                natoms_sel = 0
-                for jj in vv["type_sel"]:
-                    natoms_sel += np.sum(self.atom_type == jj)
-                idx_map_sel = self._idx_map_sel(self.atom_type, vv["type_sel"])
-            else:
-                natoms_sel = natoms
-                idx_map_sel = idx_map
+    def avg(self, key: str) -> float:
+        """Return the average value of an item."""
+        if key not in self.data_dict.keys():
+            raise RuntimeError(f"key {key} has not been added")
+        info = self.data_dict[key]
+        ndof = info["ndof"]
+        eners = []
+        for ii in self.dirs:
+            data = self._load_set(ii)
+            ei = data[key].reshape([-1, ndof])
+            eners.append(ei)
+        eners = np.concatenate(eners, axis=0)
+        if eners.size == 0:
+            return 0
         else:
-            natoms = 1
-            natoms_sel = 0
-            idx_map_sel = None
-        ndof = vv["ndof"]
-
-        # Determine target data type from requirements
-        dtype = vv.get("dtype")
-        if dtype is None:
-            dtype = (
-                GLOBAL_ENER_FLOAT_PRECISION
-                if vv.get("high_prec")
-                else GLOBAL_NP_FLOAT_PRECISION
-            )
-
-        # Branch 1: File does not exist
-        if not path.is_file():
-            if vv.get("must"):
-                raise RuntimeError(f"{path} not found!")
-
-            # Create a default array based on requirements
-            if (
-                vv["atomic"]
-                and vv["type_sel"] is not None
-                and not vv["output_natoms_for_type_sel"]
-            ):
-                natoms = natoms_sel
-            data = np.full([natoms, ndof], vv["default"], dtype=dtype)
-            return np.float32(0.0), data
-
-        # Branch 2: File exists, use memmap
-        mmap_obj = self._get_memmap(path)
-        # Slice the single frame and make an in-memory copy for modification
-        data = mmap_obj[frame_idx].copy().astype(dtype, copy=False)
-
-        try:
-            if vv["atomic"]:
-                # Handle type_sel logic
-                if vv["type_sel"] is not None:
-                    sel_mask = np.isin(self.atom_type, vv["type_sel"])
-
-                    if mmap_obj.shape[1] == natoms_sel * ndof:
-                        if vv["output_natoms_for_type_sel"]:
-                            tmp = np.zeros([natoms, ndof], dtype=data.dtype)
-                            # sel_mask needs to be applied to the original atom layout
-                            tmp[sel_mask] = data.reshape([natoms_sel, ndof])
-                            data = tmp
-                        else:  # output is natoms_sel
-                            natoms = natoms_sel
-                            idx_map = idx_map_sel
-                    elif mmap_obj.shape[1] == natoms * ndof:
-                        data = data.reshape([natoms, ndof])
-                        if vv["output_natoms_for_type_sel"]:
-                            pass
-                        else:
-                            data = data[sel_mask]
-                            idx_map = idx_map_sel
-                            natoms = natoms_sel
-                    else:  # Shape mismatch error
-                        raise ValueError(
-                            f"The shape of the data {key} in {set_dir} has width {mmap_obj.shape[1]}, which doesn't match either ({natoms_sel * ndof}) or ({natoms * ndof})"
-                        )
-
-                # Handle special case for Hessian
-                if key == "hessian":
-                    data = data.reshape(3 * natoms, 3 * natoms)
-                    num_chunks, chunk_size = len(idx_map), 3
-                    idx_map_hess = np.arange(
-                        num_chunks * chunk_size, dtype=int
-                    ).reshape(num_chunks, chunk_size)
-                    idx_map_hess = idx_map_hess[idx_map].flatten()
-                    data = data[idx_map_hess, :]
-                    data = data[:, idx_map_hess]
-                    data = data.reshape(-1)
-                    ndof = 3 * ndof * 3 * ndof  # size of hessian is 3Natoms * 3Natoms
-                else:
-                    # data should be 2D here: (natoms, ndof)
-                    data = data.reshape([natoms, -1])
-                    data = data[idx_map, :]
-
-            return np.float32(1.0), data
-
-        except ValueError as err_message:
-            explanation = "This error may occur when your label mismatch it's name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`."
-            log.error(str(err_message))
-            log.error(explanation)
-            raise ValueError(str(err_message) + ". " + explanation) from err_message
+            return np.average(eners, axis=0)
 
     def _idx_map_sel(self, atom_type: np.ndarray, type_sel: list[int]) -> np.ndarray:
         new_types = []
@@ -625,6 +487,29 @@ class DeepmdData:
         for ii in range(ntypes):
             natoms_vec[ii] = np.count_nonzero(sample_type == ii)
         return natoms, natoms_vec
+
+    def _get_memmap(self, path: DPPath) -> np.memmap:
+        """Get or create a memory-mapped object for a given npy file."""
+        memmap_key = Path(str(path)).absolute()
+        if memmap_key not in self.memmap_cache:
+            # Open the npy file to read its header and get shape/dtype
+            with open(str(path), "rb") as f:
+                version = np.lib.format.read_magic(f)
+                shape, fortran_order, dtype = np.lib.format._read_array_header(
+                    f, version
+                )
+                offset = f.tell()
+            order = "F" if fortran_order else "C"
+            # Create a read-only memmap and cache it
+            self.memmap_cache[memmap_key] = np.memmap(
+                str(path),
+                dtype=dtype,
+                mode="r",
+                shape=shape,
+                order=order,
+                offset=offset,
+            )
+        return self.memmap_cache[memmap_key]
 
     def _get_subdata(
         self, data: dict[str, Any], idx: Optional[np.ndarray] = None
@@ -919,6 +804,116 @@ class DeepmdData:
             if repeat != 1:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
             return np.float32(0.0), data
+
+    def _load_single_data(
+        self, set_dir: DPPath, key: str, frame_idx: int
+    ) -> tuple[np.float32, np.ndarray]:
+        """
+        Loads and processes data for a SINGLE frame from a SINGLE key,
+        fully replicating the logic from the original _load_data method.
+        """
+        vv = self.data_dict[key]
+        path = set_dir / (key + ".npy")
+
+        if vv["atomic"]:
+            natoms = self.natoms
+            idx_map = self.idx_map
+            # if type_sel, then revise natoms and idx_map
+            if vv["type_sel"] is not None:
+                natoms_sel = 0
+                for jj in vv["type_sel"]:
+                    natoms_sel += np.sum(self.atom_type == jj)
+                idx_map_sel = self._idx_map_sel(self.atom_type, vv["type_sel"])
+            else:
+                natoms_sel = natoms
+                idx_map_sel = idx_map
+        else:
+            natoms = 1
+            natoms_sel = 0
+            idx_map_sel = None
+        ndof = vv["ndof"]
+
+        # Determine target data type from requirements
+        dtype = vv.get("dtype")
+        if dtype is None:
+            dtype = (
+                GLOBAL_ENER_FLOAT_PRECISION
+                if vv.get("high_prec")
+                else GLOBAL_NP_FLOAT_PRECISION
+            )
+
+        # Branch 1: File does not exist
+        if not path.is_file():
+            if vv.get("must"):
+                raise RuntimeError(f"{path} not found!")
+
+            # Create a default array based on requirements
+            if (
+                vv["atomic"]
+                and vv["type_sel"] is not None
+                and not vv["output_natoms_for_type_sel"]
+            ):
+                natoms = natoms_sel
+            data = np.full([natoms, ndof], vv["default"], dtype=dtype)
+            return np.float32(0.0), data
+
+        # Branch 2: File exists, use memmap
+        mmap_obj = self._get_memmap(path)
+        # Slice the single frame and make an in-memory copy for modification
+        data = mmap_obj[frame_idx].copy().astype(dtype, copy=False)
+
+        try:
+            if vv["atomic"]:
+                # Handle type_sel logic
+                if vv["type_sel"] is not None:
+                    sel_mask = np.isin(self.atom_type, vv["type_sel"])
+
+                    if mmap_obj.shape[1] == natoms_sel * ndof:
+                        if vv["output_natoms_for_type_sel"]:
+                            tmp = np.zeros([natoms, ndof], dtype=data.dtype)
+                            # sel_mask needs to be applied to the original atom layout
+                            tmp[sel_mask] = data.reshape([natoms_sel, ndof])
+                            data = tmp
+                        else:  # output is natoms_sel
+                            natoms = natoms_sel
+                            idx_map = idx_map_sel
+                    elif mmap_obj.shape[1] == natoms * ndof:
+                        data = data.reshape([natoms, ndof])
+                        if vv["output_natoms_for_type_sel"]:
+                            pass
+                        else:
+                            data = data[sel_mask]
+                            idx_map = idx_map_sel
+                            natoms = natoms_sel
+                    else:  # Shape mismatch error
+                        raise ValueError(
+                            f"The shape of the data {key} in {set_dir} has width {mmap_obj.shape[1]}, which doesn't match either ({natoms_sel * ndof}) or ({natoms * ndof})"
+                        )
+
+                # Handle special case for Hessian
+                if key == "hessian":
+                    data = data.reshape(3 * natoms, 3 * natoms)
+                    num_chunks, chunk_size = len(idx_map), 3
+                    idx_map_hess = np.arange(
+                        num_chunks * chunk_size, dtype=int
+                    ).reshape(num_chunks, chunk_size)
+                    idx_map_hess = idx_map_hess[idx_map].flatten()
+                    data = data[idx_map_hess, :]
+                    data = data[:, idx_map_hess]
+                    data = data.reshape(-1)
+                    ndof = 3 * ndof * 3 * ndof  # size of hessian is 3Natoms * 3Natoms
+                else:
+                    # data should be 2D here: (natoms, ndof)
+                    data = data.reshape([natoms, -1])
+                    data = data[idx_map, :]
+
+            return np.float32(1.0), data
+
+        except ValueError as err_message:
+            explanation = "This error may occur when your label mismatch it's name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`."
+            log.error(str(err_message))
+            log.error(explanation)
+            raise ValueError(str(err_message) + ". " + explanation) from err_message
 
     def _load_type(self, sys_path: DPPath) -> np.ndarray:
         atom_type = (sys_path / "type.raw").load_txt(ndmin=1).astype(np.int32)
