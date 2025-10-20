@@ -984,6 +984,15 @@ def main(args: Optional[list[str]] = None) -> None:
     RuntimeError
         if no command was input
     """
+    try:
+        import multiprocessing
+
+        # Force fork multiprocessing start method.
+        multiprocessing.set_start_method("fork", force=True)
+        logging.info("Successfully set multiprocessing start method to 'fork'.")
+    except Exception as e:
+        logging.warning(f"Could not set multiprocessing start method: {e}")
+
     args = parse_args(args=args)
 
     if args.backend not in BACKEND_TABLE:
