@@ -83,4 +83,4 @@ Type embedding is within this descriptor with the {ref}`tebd_dim <model[standard
 
 ## Model compression
 
-Model compression is supported.
+Model compression is supported only when `tebd_input_mode` is `strip`.
