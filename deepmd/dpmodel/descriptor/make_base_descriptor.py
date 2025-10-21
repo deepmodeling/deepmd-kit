@@ -148,6 +148,13 @@ def make_base_descriptor(
             """Update mean and stddev for descriptor elements."""
             raise NotImplementedError
 
+        def get_norm_fact(self) -> list[float]:
+            """Returns the norm factor."""
+            raise NotImplementedError
+
+        def get_additional_output_for_fitting(self):
+            raise NotImplementedError
+            
         def enable_compression(
             self,
             min_nbor_dist: float,

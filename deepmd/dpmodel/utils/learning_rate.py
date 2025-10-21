@@ -51,3 +51,36 @@ class LearningRateExp:
         if step_lr < self.min_lr:
             step_lr = self.min_lr
         return step_lr
+
+class LearningRateWSD:
+    def __init__(
+        self,
+        start_lr,
+        stop_lr,
+        stop_steps,
+        decay_mode="85:10:5",  # stable-decay-stable
+        **kwargs,
+    ) -> None:
+        self.start_lr = start_lr
+        self.stop_lr = stop_lr
+        self.stop_steps = stop_steps
+        self.decay_mode = [float(ii) for ii in decay_mode.split(":")]
+        assert len(self.decay_mode) == 3
+        self.decay_start_rate = self.decay_mode[0] / sum(self.decay_mode)
+        self.decay_end_rate = (self.decay_mode[0] + self.decay_mode[1]) / sum(
+            self.decay_mode
+        )
+    def value(self, step) -> np.float64:
+        if step < self.decay_start_rate * self.stop_steps:
+            return self.start_lr
+        elif step >= self.decay_end_rate * self.stop_steps:
+            return self.stop_lr
+        else:
+            # linear decay
+            decay_rate = (self.start_lr - self.stop_lr) / (
+                self.decay_end_rate * self.stop_steps
+                - self.decay_start_rate * self.stop_steps
+            )
+            return self.start_lr - decay_rate * (
+                step - self.decay_start_rate * self.stop_steps
+            )

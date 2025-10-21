@@ -67,6 +67,9 @@ def make_base_fitting(
             """Update the output bias for fitting net."""
             raise NotImplementedError
 
+        def need_additional_input(self) -> bool:
+            return False
+            
         @abstractmethod
         def get_type_map(self) -> list[str]:
             """Get the name to each type of atoms."""

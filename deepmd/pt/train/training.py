@@ -61,6 +61,7 @@ from deepmd.pt.utils.env import (
 )
 from deepmd.pt.utils.learning_rate import (
     LearningRateExp,
+    LearningRateWSD
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
@@ -258,12 +259,15 @@ class Trainer:
             return get_sample
 
         def get_lr(lr_params):
-            assert lr_params.get("type", "exp") == "exp", (
-                "Only learning rate `exp` is supported!"
-            )
+            lr_type = lr_params.get("type", "exp")
             lr_params["stop_steps"] = self.num_steps - self.warmup_steps
-            lr_exp = LearningRateExp(**lr_params)
-            return lr_exp
+            if lr_type == "exp":
+                lr_schedule = LearningRateExp(**lr_params)
+            elif lr_type == "wsd":
+                lr_schedule = LearningRateWSD(**lr_params)
+            else:
+                raise ValueError(f"Not supported learning rate type '{lr_type}'")
+            return lr_schedule
 
         # Optimizer
         if self.multi_task and training_params.get("optim_dict", None) is not None:

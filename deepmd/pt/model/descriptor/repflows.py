@@ -254,6 +254,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.use_exp_switch = use_exp_switch
         self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
+        self.dynamic_e_sel = self.nnei / self.sel_reduce_factor
+        self.dynamic_a_sel = self.a_sel / self.sel_reduce_factor
         if self.use_dynamic_sel and not self.smooth_edge_update:
             raise NotImplementedError(
                 "smooth_edge_update must be True when use_dynamic_sel is True!"
@@ -321,6 +323,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                 )
             )
         self.layers = torch.nn.ModuleList(layers)
+        self.additional_output_for_fitting: dict[str, Optional[torch.Tensor]] = {}
 
         wanted_shape = (self.ntypes, self.nnei, 4)
         mean = torch.zeros(wanted_shape, dtype=self.prec, device=env.DEVICE)
@@ -330,6 +333,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
         self.stats = None
+    
+    additional_output_for_fitting: dict[str, Optional[torch.Tensor]]
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -362,6 +367,17 @@ class DescrptBlockRepflows(DescriptorBlock):
     def get_dim_emb(self) -> int:
         """Returns the embedding dimension e_dim."""
         return self.e_dim
+    
+    def get_additional_output_for_fitting(self):
+        return self.additional_output_for_fitting
+
+    def get_norm_fact(self) -> list[float]:
+        """Returns the norm factor."""
+        return [
+            float(self.dynamic_e_sel if self.use_dynamic_sel else self.nnei),
+            # float(self.dynamic_a_sel if self.use_dynamic_sel else self.a_sel),
+        ]
+
 
     def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):
@@ -535,10 +551,12 @@ class DescrptBlockRepflows(DescriptorBlock):
             angle_input = angle_input[a_nlist_mask]
             # n_angle x 1
             a_sw = (a_sw[:, :, :, None] * a_sw[:, :, None, :])[a_nlist_mask]
+            self.additional_output_for_fitting["edge_index"] = edge_index
         else:
             # avoid jit assertion
             edge_index = torch.zeros([2, 1], device=nlist.device, dtype=nlist.dtype)
             angle_index = torch.zeros([3, 1], device=nlist.device, dtype=nlist.dtype)
+            self.additional_output_for_fitting["edge_index"] = None
         # get edge and angle embedding
         # nb x nloc x nnei x e_dim [OR] n_edge x e_dim
         if not self.edge_init_use_dist:
