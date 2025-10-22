@@ -235,13 +235,24 @@ class DPAtomicModel(BaseAtomicModel):
         atype = extended_atype[:, :nloc]
         if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
+
+        if self.fitting_net.get_dim_fparam() > 0 and fparam is None:
+            # use default fparam
+            default_fparam_tensor = self.fitting_net.get_default_fparam()
+            assert default_fparam_tensor is not None
+            fparam_input_for_des = torch.tile(
+                default_fparam_tensor.unsqueeze(0), [nframes, 1]
+            )
+        else:
+            fparam_input_for_des = fparam
+
         descriptor, rot_mat, g2, h2, sw = self.descriptor(
             extended_coord,
             extended_atype,
             nlist,
             mapping=mapping,
             comm_dict=comm_dict,
-            fparam=fparam,
+            fparam=fparam_input_for_des,
         )
         assert descriptor is not None
         if self.enable_eval_descriptor_hook:
