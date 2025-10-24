@@ -854,20 +854,11 @@ class DeepmdData:
 
         # Branch 2: File exists, use memmap
         mmap_obj = self._get_memmap(path)
+        # corner case: single frame
+        if self._get_nframes(set_dir) == 1:
+            mmap_obj = mmap_obj[None, ...]
         # Slice the single frame and make an in-memory copy for modification
-        if mmap_obj.ndim == 0:
-            # case: single frame data && non-atomic
-            data = mmap_obj.copy().astype(dtype, copy=False).reshape(1, -1)
-        elif mmap_obj.ndim == 1:
-            # case: single frame data && atomic
-            if frame_idx != 0:
-                raise IndexError(
-                    f"frame index {frame_idx} out of range for single-frame file: {path}"
-                )
-            data = mmap_obj.copy().astype(dtype, copy=False).reshape(1, -1)
-        else:
-            # case: multi-frame data
-            data = mmap_obj[frame_idx].copy().astype(dtype, copy=False).reshape(1, -1)
+        data = mmap_obj[frame_idx].copy().astype(dtype, copy=False)
 
         try:
             if vv["atomic"]:
@@ -875,7 +866,7 @@ class DeepmdData:
                 if vv["type_sel"] is not None:
                     sel_mask = np.isin(self.atom_type, vv["type_sel"])
 
-                    if data.shape[1] == natoms_sel * ndof:
+                    if mmap_obj.shape[1] == natoms_sel * ndof:
                         if vv["output_natoms_for_type_sel"]:
                             tmp = np.zeros([natoms, ndof], dtype=data.dtype)
                             # sel_mask needs to be applied to the original atom layout
@@ -884,7 +875,7 @@ class DeepmdData:
                         else:  # output is natoms_sel
                             natoms = natoms_sel
                             idx_map = idx_map_sel
-                    elif data.shape[1] == natoms * ndof:
+                    elif mmap_obj.shape[1] == natoms * ndof:
                         data = data.reshape([natoms, ndof])
                         if vv["output_natoms_for_type_sel"]:
                             pass
@@ -894,7 +885,7 @@ class DeepmdData:
                             natoms = natoms_sel
                     else:  # Shape mismatch error
                         raise ValueError(
-                            f"The shape of the data {key} in {set_dir} has width {data.shape[1]}, which doesn't match either ({natoms_sel * ndof}) or ({natoms * ndof})"
+                            f"The shape of the data {key} in {set_dir} has width {mmap_obj.shape[1]}, which doesn't match either ({natoms_sel * ndof}) or ({natoms * ndof})"
                         )
 
                 # Handle special case for Hessian
@@ -911,14 +902,13 @@ class DeepmdData:
                     # size of hessian is 3Natoms * 3Natoms
                     # ndof = 3 * ndof * 3 * ndof
                 else:
-                    # data should be 2D here: (natoms, ndof)
+                    # data should be 2D here: [natoms, ndof]
                     data = data.reshape([natoms, -1])
                     data = data[idx_map, :]
-                # Atomic: return [natoms, ndof] or flattened hessian above
-                return np.float32(1.0), data
 
+            # Atomic: return [natoms, ndof] or flattened hessian above
             # Non-atomic: return [ndof]
-            return np.float32(1.0), data.reshape([ndof])
+            return np.float32(1.0), data
 
         except ValueError as err_message:
             explanation = (
