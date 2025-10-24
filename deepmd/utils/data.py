@@ -853,7 +853,12 @@ class DeepmdData:
         # Branch 2: File exists, use memmap
         mmap_obj = self._get_memmap(path)
         # Slice the single frame and make an in-memory copy for modification
-        data = mmap_obj[frame_idx].copy().astype(dtype, copy=False)
+        if mmap_obj.ndim == 0:
+            # Handle scalar data (0-dimensional array)
+            data = mmap_obj.copy().astype(dtype, copy=False)
+        else:
+            # Handle array data that can be indexed by frame
+            data = mmap_obj[frame_idx].copy().astype(dtype, copy=False)
 
         try:
             if vv["atomic"]:
@@ -900,7 +905,9 @@ class DeepmdData:
                     data = data.reshape([natoms, -1])
                     data = data[idx_map, :]
 
-            return np.float32(1.0), data
+            # Handle non-atomic data
+            # For non-atomic data, reshape to (ndof,) shape
+            return np.float32(1.0), data.reshape([ndof])
 
         except ValueError as err_message:
             explanation = "This error may occur when your label mismatch its name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`."
