@@ -24,7 +24,11 @@ def _make_env_mat(
     mask = nlist >= 0
     # nlist = nlist * mask  ## this impl will contribute nans in Hessian calculation.
     nlist = paddle.where(mask, nlist, nall - 1)
+    
+    # tmp = coord[:, :natoms].clone()
+    # coord_l = tmp.reshape([bsz, -1, 1, 3])
     coord_l = coord[:, :natoms].reshape([bsz, -1, 1, 3])
+
     index = nlist.reshape([bsz, -1]).unsqueeze(-1).expand([-1, -1, 3])
     coord_pad = paddle.concat([coord, coord[:, -1:, :] + rcut], axis=1)
     coord_r = paddle.take_along_axis(coord_pad, axis=1, indices=index)

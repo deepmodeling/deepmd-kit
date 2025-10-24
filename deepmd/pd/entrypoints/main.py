@@ -3,6 +3,7 @@ import argparse
 import copy
 import json
 import logging
+import paddle.distributed as dist
 from pathlib import (
     Path,
 )
@@ -542,6 +543,8 @@ def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
     )
     log.debug("Log handles were successfully set")
     log.info("DeePMD version: %s", __version__)
+
+    dist.enable_auto_dp()
 
     if FLAGS.command == "train":
         train(

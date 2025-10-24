@@ -103,10 +103,6 @@ class Trainer:
         Args:
         - config: The Dict-like configuration with training options.
         """
-        from paddle.distributed import fleet
-        mesh_dims = [("dp", 32)]
-        fleet.auto.create_mesh(mesh_dims)
-        fleet.init(is_collective=True)
 
         enable_prim(True)
         if init_model is not None:
@@ -171,10 +167,11 @@ class Trainer:
                     )  # None sampler will lead to a premature stop iteration. Replacement should be True in attribute of the sampler to produce expected number of items in one iteration.
                 _dataloader = DataLoader(
                     _data,
-                    batch_sampler=paddle.io.BatchSampler(
-                        sampler=_sampler,
-                        drop_last=False,
-                    ),
+                    # batch_sampler=paddle.io.BatchSampler(
+                    #     sampler=_sampler,
+                    #     drop_last=False,
+                    # ),
+                    batch_size=8 ,
                     num_workers=NUM_WORKERS
                     if dist.is_available()
                     else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
@@ -325,17 +322,6 @@ class Trainer:
                 self.validation_data,
                 self.valid_numb_batch,
             ) = get_data_loader(training_data, validation_data, training_params)
-            training_data.print_summary(
-                "training",
-                to_numpy_array(self.training_dataloader.batch_sampler.sampler.weights),
-            )
-            if validation_data is not None:
-                validation_data.print_summary(
-                    "validation",
-                    to_numpy_array(
-                        self.validation_dataloader.batch_sampler.sampler.weights
-                    ),
-                )
         else:
             (
                 self.training_dataloader,
@@ -371,26 +357,6 @@ class Trainer:
                     training_params["data_dict"][model_key],
                 )
 
-                training_data[model_key].print_summary(
-                    f"training in {model_key}",
-                    to_numpy_array(
-                        self.training_dataloader[
-                            model_key
-                        ].batch_sampler.sampler.weights
-                    ),
-                )
-                if (
-                    validation_data is not None
-                    and validation_data[model_key] is not None
-                ):
-                    validation_data[model_key].print_summary(
-                        f"validation in {model_key}",
-                        to_numpy_array(
-                            self.validation_dataloader[
-                                model_key
-                            ].batch_sampler.sampler.weights
-                        ),
-                    )
 
         # Learning rate
         self.warmup_steps = training_params.get("warmup_steps", 0)
@@ -662,10 +628,10 @@ class Trainer:
 
         if dist.is_available() and dist.is_initialized():
             # DDP will guarantee the model parameters are identical across all processes
-            self.wrapper = fleet.distributed_model(
-                self.wrapper,
-                # find_unused_parameters=True,
-            )
+            # self.wrapper = fleet.distributed_model(
+            #     self.wrapper,
+            #     # find_unused_parameters=True,
+            # )
             self.optimizer = fleet.distributed_optimizer(self.optimizer)
 
         # Get model prob for multi-task
@@ -750,11 +716,11 @@ class Trainer:
                     pref_lr = _lr.start_lr
                 else:
                     pref_lr = cur_lr
-                sync_context = (
-                    self.wrapper.no_sync
-                    if self.world_size > 1
-                    else contextlib.nullcontext
-                )
+                # sync_context = (
+                #     self.wrapper.no_sync
+                #     if self.world_size > 1
+                #     else contextlib.nullcontext
+                # )
                 
                 # with sync_context():
                 #     with nvprof_context(enable_profiling, "Forward pass"):
@@ -774,11 +740,6 @@ class Trainer:
                 #     hpu.fused_allreduce_gradients(list(self.wrapper.parameters()), None)
 
                 with nvprof_context(enable_profiling, "Forward pass"):
-                    for __key in ('coord', 'atype', 'box'):
-                        input_dict[__key] = dist.shard_tensor(input_dict[__key], mesh=dist.get_mesh(), placements=[dist.Shard(0)])
-                    for __key, _ in label_dict.items():
-                        if isinstance(label_dict[__key], paddle.Tensor):
-                            label_dict[__key] = dist.shard_tensor(label_dict[__key], mesh=dist.get_mesh(), placements=[dist.Shard(0)])
                     model_pred, loss, more_loss = self.wrapper(
                         **input_dict,
                         cur_lr=paddle.full([], pref_lr, DEFAULT_PRECISION),
@@ -856,7 +817,7 @@ class Trainer:
 
                 if not self.multi_task:
                     train_results = log_loss_train(loss, more_loss)
-                    valid_results = log_loss_valid()
+                    valid_results = None
                     if self.rank == 0:
                         log.info(
                             format_training_message_per_task(
@@ -977,6 +938,30 @@ class Trainer:
         self.total_train_time = 0.0
         for step_id in range(self.start_step, self.num_steps):
             step(step_id)
+            GB = 1024.0 * 1024.0 * 1024.0
+            # print("xxx[debug] ------- max_memory_allocated: ", paddle.device.cuda.max_memory_allocated()/GB)
+            # print("xxx[debug]  ------- max_memory_reserved: ", paddle.device.cuda.max_memory_reserved()/GB)
+            # print("xxx[debug]  ----------- end step id : ", step_id)
+
+            # if step_id == 210:
+            #     print("------xxx[debug] ---------------------begin step == 210--------", step_id)
+            #     paddle.base.core.nvprof_start()
+            #     paddle.base.core.nvprof_enable_record_event()
+            #     paddle.base.core.nvprof_nvtx_push(f"xxx dynamic start step {step_id}")
+            # if step_id == 220:
+            #     print("------xxx[debug] ---------------------begin step == 220--------", step_id)
+            #     paddle.base.core.nvprof_nvtx_pop()
+            #     paddle.base.core.nvprof_stop()
+            #     import sys
+            #     sys.exit()
+            # if step_id > 210 and step_id < 220:
+            #     print("------xxx[debug] ---------------------begin step > 210 and step < 220--------", step_id)
+            #     paddle.base.core.nvprof_nvtx_pop()
+            #     paddle.base.core.nvprof_nvtx_push(f"xxx dynamic record step {step_id}")
+ 
+            if step_id == 1:
+                import sys
+                sys.exit()
             if JIT:
                 break
 
