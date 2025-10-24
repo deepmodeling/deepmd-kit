@@ -376,13 +376,15 @@ class DeepmdData:
 
     def get_single_frame(self, index: int) -> dict:
         """Orchestrates loading a single frame efficiently using memmap."""
+        if index < 0 or index >= self.nframes:
+            raise IndexError(f"Frame index {index} out of range [0, {self.nframes})")
         # 1. Find the correct set directory and local frame index
         set_idx = bisect.bisect_right(self.prefix_sum, index)
         set_dir = self.dirs[set_idx]
         if not isinstance(set_dir, DPPath):
             set_dir = DPPath(set_dir)
         # Calculate local index within the set.* directory
-        local_idx = index - self.prefix_sum[set_idx]
+        local_idx = index - (0 if set_idx == 0 else self.prefix_sum[set_idx - 1])
 
         frame_data = {}
         # 2. Concurrently load all non-reduced items
@@ -854,18 +856,18 @@ class DeepmdData:
         mmap_obj = self._get_memmap(path)
         # Slice the single frame and make an in-memory copy for modification
         if mmap_obj.ndim == 0:
-            # Scalar array
-            data = mmap_obj.copy().astype(dtype, copy=False)
+            # case: single frame data && non-atomic
+            data = mmap_obj.copy().astype(dtype, copy=False).reshape(1, -1)
         elif mmap_obj.ndim == 1:
-            # Single-frame file (shape: [ndof]); only frame_idx==0 is valid
+            # case: single frame data && atomic
             if frame_idx != 0:
                 raise IndexError(
                     f"frame index {frame_idx} out of range for single-frame file: {path}"
                 )
-            data = mmap_obj.copy().astype(dtype, copy=False)
+            data = mmap_obj.copy().astype(dtype, copy=False).reshape(1, -1)
         else:
-            # Regular [nframes, ...]
-            data = mmap_obj[frame_idx].copy().astype(dtype, copy=False)
+            # case: multi-frame data
+            data = mmap_obj[frame_idx].copy().astype(dtype, copy=False).reshape(1, -1)
 
         try:
             if vv["atomic"]:
@@ -873,7 +875,7 @@ class DeepmdData:
                 if vv["type_sel"] is not None:
                     sel_mask = np.isin(self.atom_type, vv["type_sel"])
 
-                    if mmap_obj.shape[1] == natoms_sel * ndof:
+                    if data.shape[1] == natoms_sel * ndof:
                         if vv["output_natoms_for_type_sel"]:
                             tmp = np.zeros([natoms, ndof], dtype=data.dtype)
                             # sel_mask needs to be applied to the original atom layout
@@ -882,7 +884,7 @@ class DeepmdData:
                         else:  # output is natoms_sel
                             natoms = natoms_sel
                             idx_map = idx_map_sel
-                    elif mmap_obj.shape[1] == natoms * ndof:
+                    elif data.shape[1] == natoms * ndof:
                         data = data.reshape([natoms, ndof])
                         if vv["output_natoms_for_type_sel"]:
                             pass
@@ -892,7 +894,7 @@ class DeepmdData:
                             natoms = natoms_sel
                     else:  # Shape mismatch error
                         raise ValueError(
-                            f"The shape of the data {key} in {set_dir} has width {mmap_obj.shape[1]}, which doesn't match either ({natoms_sel * ndof}) or ({natoms * ndof})"
+                            f"The shape of the data {key} in {set_dir} has width {data.shape[1]}, which doesn't match either ({natoms_sel * ndof}) or ({natoms * ndof})"
                         )
 
                 # Handle special case for Hessian
@@ -907,7 +909,7 @@ class DeepmdData:
                     data = data[:, idx_map_hess]
                     data = data.reshape(-1)
                     # size of hessian is 3Natoms * 3Natoms
-                    ndof = 3 * ndof * 3 * ndof
+                    # ndof = 3 * ndof * 3 * ndof
                 else:
                     # data should be 2D here: (natoms, ndof)
                     data = data.reshape([natoms, -1])
