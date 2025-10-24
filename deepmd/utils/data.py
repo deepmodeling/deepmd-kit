@@ -338,8 +338,9 @@ class DeepmdData:
 
     def get_numb_batch(self, batch_size: int, set_idx: int) -> int:
         """Get the number of batches in a set."""
-        data = self._load_set(self.dirs[set_idx])
-        ret = data["coord"].shape[0] // batch_size
+        # Directly obtain the number of frames to avoid loading the entire dataset
+        nframes = self._get_nframes(self.dirs[set_idx])
+        ret = nframes // batch_size
         if ret == 0:
             ret = 1
         return ret
@@ -583,13 +584,16 @@ class DeepmdData:
         if not isinstance(set_name, DPPath):
             set_name = DPPath(set_name)
         path = set_name / "coord.npy"
-        if self.data_dict["coord"]["high_prec"]:
-            coord = path.load_numpy().astype(GLOBAL_ENER_FLOAT_PRECISION)
-        else:
-            coord = path.load_numpy().astype(GLOBAL_NP_FLOAT_PRECISION)
-        if coord.ndim == 1:
-            coord = coord.reshape([1, -1])
-        nframes = coord.shape[0]
+        # Read only the header to get shape without creating memmap
+        with open(str(path), "rb") as f:
+            version = np.lib.format.read_magic(f)
+            if version[0] == 1:
+                shape, fortran_order, dtype = np.lib.format.read_array_header_1_0(f)
+            elif version[0] in [2, 3]:
+                shape, fortran_order, dtype = np.lib.format.read_array_header_2_0(f)
+            else:
+                raise ValueError(f"Unsupported .npy file version: {version}")
+        nframes = shape[0]
         return nframes
 
     def reformat_data_torch(self, data: dict[str, Any]) -> dict[str, Any]:
