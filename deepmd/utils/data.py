@@ -401,8 +401,8 @@ class DeepmdData:
                     key = future_to_key[future]
                     try:
                         frame_data["find_" + key], frame_data[key] = future.result()
-                    except Exception as exc:
-                        log.error(f"{key!r} generated an exception: {exc}")
+                    except Exception:
+                        log.exception("Key %r generated an exception", key)
                         raise
 
         # 3. Compute reduced items from already loaded data
@@ -854,10 +854,17 @@ class DeepmdData:
         mmap_obj = self._get_memmap(path)
         # Slice the single frame and make an in-memory copy for modification
         if mmap_obj.ndim == 0:
-            # Handle scalar data (0-dimensional array)
+            # Scalar array
+            data = mmap_obj.copy().astype(dtype, copy=False)
+        elif mmap_obj.ndim == 1:
+            # Single-frame file (shape: [ndof]); only frame_idx==0 is valid
+            if frame_idx != 0:
+                raise IndexError(
+                    f"frame index {frame_idx} out of range for single-frame file: {path}"
+                )
             data = mmap_obj.copy().astype(dtype, copy=False)
         else:
-            # Handle array data that can be indexed by frame
+            # Regular [nframes, ...]
             data = mmap_obj[frame_idx].copy().astype(dtype, copy=False)
 
         try:
@@ -899,21 +906,31 @@ class DeepmdData:
                     data = data[idx_map_hess, :]
                     data = data[:, idx_map_hess]
                     data = data.reshape(-1)
-                    ndof = 3 * ndof * 3 * ndof  # size of hessian is 3Natoms * 3Natoms
+                    # size of hessian is 3Natoms * 3Natoms
+                    ndof = 3 * ndof * 3 * ndof
                 else:
                     # data should be 2D here: (natoms, ndof)
                     data = data.reshape([natoms, -1])
                     data = data[idx_map, :]
+                # Atomic: return [natoms, ndof] or flattened hessian above
+                return np.float32(1.0), data
 
-            # Handle non-atomic data
-            # For non-atomic data, reshape to (ndof,) shape
+            # Non-atomic: return [ndof]
             return np.float32(1.0), data.reshape([ndof])
 
         except ValueError as err_message:
-            explanation = "This error may occur when your label mismatch its name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`."
-            log.error(str(err_message))
-            log.error(explanation)
-            raise ValueError(str(err_message) + ". " + explanation) from err_message
+            explanation = (
+                "This error may occur when your label mismatches its name, "
+                "e.g., global tensor stored in `atomic_tensor.npy` or atomic tensor in `tensor.npy`."
+            )
+            log.exception(
+                "Single-frame load failed for key=%s, set=%s, frame=%d. %s",
+                key,
+                set_dir,
+                frame_idx,
+                explanation,
+            )
+            raise ValueError(f"{err_message}. {explanation}") from err_message
 
     def _load_type(self, sys_path: DPPath) -> np.ndarray:
         atom_type = (sys_path / "type.raw").load_txt(ndmin=1).astype(np.int32)
