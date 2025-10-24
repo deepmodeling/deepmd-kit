@@ -134,8 +134,6 @@ class DeepmdData:
         self.shuffle_test = shuffle_test
         # set modifier
         self.modifier = modifier
-        # Add a cache for memory-mapped files
-        self.memmap_cache = {}
         # calculate prefix sum for get_item method
         frames_list = [self._get_nframes(item) for item in self.dirs]
         self.nframes = np.sum(frames_list)
@@ -451,11 +449,12 @@ class DeepmdData:
 
         # 6. Reshape atomic data to match expected format [natoms, ndof]
         for kk in self.data_dict.keys():
-            if "find_" in kk:
-                pass
-            else:
-                if kk in frame_data and not self.data_dict[kk]["atomic"]:
-                    frame_data[kk] = frame_data[kk].reshape(-1)
+            if (
+                "find_" not in kk
+                and kk in frame_data
+                and not self.data_dict[kk]["atomic"]
+            ):
+                frame_data[kk] = frame_data[kk].reshape(-1)
         frame_data["atype"] = frame_data["type"]
 
         if not self.pbc:
@@ -782,7 +781,7 @@ class DeepmdData:
                         data = data.reshape([nframes, -1])
                 data = np.reshape(data, [nframes, ndof])
             except ValueError as err_message:
-                explanation = "This error may occur when your label mismatch it's name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`."
+                explanation = "This error may occur when your label mismatch its name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`."
                 log.error(str(err_message))
                 log.error(explanation)
                 raise ValueError(str(err_message) + ". " + explanation) from err_message
@@ -904,7 +903,7 @@ class DeepmdData:
             return np.float32(1.0), data
 
         except ValueError as err_message:
-            explanation = "This error may occur when your label mismatch it's name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`."
+            explanation = "This error may occur when your label mismatch its name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`."
             log.error(str(err_message))
             log.error(explanation)
             raise ValueError(str(err_message) + ". " + explanation) from err_message

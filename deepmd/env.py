@@ -50,8 +50,8 @@ else:
     )
 
 # Dynamic calculation of cache size
-DEFAULT_LRU_CACHE_SIZE = 888
-LRU_CACHE_SIZE = DEFAULT_LRU_CACHE_SIZE
+_default_lru_cache_size = 888
+LRU_CACHE_SIZE = _default_lru_cache_size
 
 if platform.system() != "Windows":
     try:
@@ -59,14 +59,14 @@ if platform.system() != "Windows":
 
         soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
         safe_buffer = 128
-        if soft_limit > safe_buffer + DEFAULT_LRU_CACHE_SIZE:
+        if soft_limit > safe_buffer + _default_lru_cache_size:
             LRU_CACHE_SIZE = soft_limit - safe_buffer
         else:
             LRU_CACHE_SIZE = soft_limit // 2
     except ImportError:
-        LRU_CACHE_SIZE = DEFAULT_LRU_CACHE_SIZE
+        LRU_CACHE_SIZE = _default_lru_cache_size
 else:
-    LRU_CACHE_SIZE = DEFAULT_LRU_CACHE_SIZE
+    LRU_CACHE_SIZE = _default_lru_cache_size
 
 
 def set_env_if_empty(key: str, value: str, verbose: bool = True) -> None:
