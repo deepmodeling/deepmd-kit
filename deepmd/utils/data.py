@@ -3,6 +3,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import bisect
 import logging
+from pathlib import (
+    Path,
+)
 from typing import (
     Any,
     Optional,
@@ -128,6 +131,8 @@ class DeepmdData:
         self.shuffle_test = shuffle_test
         # set modifier
         self.modifier = modifier
+        # Add a cache for memory-mapped files
+        self.memmap_cache = {}
         # calculate prefix sum for get_item method
         frames_list = [self._get_nframes(item) for item in self.dirs]
         self.nframes = np.sum(frames_list)
@@ -393,6 +398,214 @@ class DeepmdData:
             return 0
         else:
             return np.average(eners, axis=0)
+
+    def _get_memmap(self, path: DPPath) -> np.memmap:
+        """Get or create a memory-mapped object for a given npy file."""
+        memmap_key = Path(str(path)).absolute()
+        if memmap_key not in self.memmap_cache:
+            # Open the npy file to read its header and get shape/dtype
+            with open(str(path), "rb") as f:
+                version = np.lib.format.read_magic(f)
+                shape, fortran_order, dtype = np.lib.format._read_array_header(
+                    f, version
+                )
+                offset = f.tell()
+            order = "F" if fortran_order else "C"
+            # Create a read-only memmap and cache it
+            self.memmap_cache[memmap_key] = np.memmap(
+                str(path),
+                dtype=dtype,
+                mode="r",
+                shape=shape,
+                order=order,
+                offset=offset,
+            )
+        return self.memmap_cache[memmap_key]
+
+    def _get_single_frame(self, index: int) -> dict:
+        """Orchestrates loading a single frame efficiently using memmap."""
+        # 1. Find the correct set directory and local frame index
+        set_idx = bisect.bisect_right(self.prefix_sum, index)
+        set_dir = self.dirs[set_idx]
+        if not isinstance(set_dir, DPPath):
+            set_dir = DPPath(set_dir)
+        # Calculate local index within the set.* directory
+        local_idx = index - self.prefix_sum[set_idx]
+
+        frame_data = {}
+        # 2. Load all non-reduced items first
+        # TODO: use async
+        for key, vv in self.data_dict.items():
+            if vv["reduce"] is None:
+                frame_data["find_" + key], frame_data[key] = self._load_single_item(
+                    set_dir, key, local_idx
+                )
+
+        # 3. Compute reduced items from already loaded data
+        # TODO: use async
+        for key, vv in self.data_dict.items():
+            if vv["reduce"] is not None:
+                k_in = vv["reduce"]
+                ndof = vv["ndof"]
+                frame_data["find_" + key] = frame_data["find_" + k_in]
+                # Reshape to (natoms, ndof) and sum over atom axis
+                tmp_in = (
+                    frame_data[k_in]
+                    .reshape(-1, ndof)
+                    .astype(GLOBAL_ENER_FLOAT_PRECISION)
+                )
+                frame_data[key] = np.sum(tmp_in, axis=0)
+
+        # 4. Handle atom types (mixed or standard)
+        # TODO: mixed_type
+        if self.mixed_type:
+            type_path = set_dir / "real_atom_types.npy"
+            mmap_types = self._get_memmap(type_path)
+            real_type = mmap_types[local_idx].copy().astype(np.int32)
+
+            if self.enforce_type_map:
+                real_type = self.type_idx_map[real_type].astype(np.int32)
+
+            frame_data["type"] = real_type
+            ntypes = self.get_ntypes()
+            natoms = len(real_type)
+            # Use bincount for efficient counting of each type
+            natoms_vec = np.bincount(
+                real_type[real_type >= 0], minlength=ntypes
+            ).astype(np.int32)
+            frame_data["real_natoms_vec"] = np.concatenate(
+                (np.array([natoms, natoms], dtype=np.int32), natoms_vec)
+            )
+        else:
+            frame_data["type"] = self.atom_type[self.idx_map]
+
+        # 5. Standardize keys
+        frame_data = {kk.replace("atomic", "atom"): vv for kk, vv in frame_data.items()}
+
+        # 6. Reshape atomic data to match expected format [natoms, ndof]
+        for kk in self.data_dict.keys():
+            if "find_" in kk:
+                pass
+            else:
+                if kk in frame_data and not self.data_dict[kk]["atomic"]:
+                    frame_data[kk] = frame_data[kk].reshape(-1)
+        frame_data["atype"] = frame_data["type"]
+
+        if not self.pbc:
+            frame_data["box"] = None
+
+        frame_data["fid"] = index
+        return frame_data
+
+    def _load_single_item(
+        self, set_dir: DPPath, key: str, frame_idx: int
+    ) -> tuple[np.float32, np.ndarray]:
+        """
+        Loads and processes data for a SINGLE frame from a SINGLE key,
+        fully replicating the logic from the original _load_data method.
+        """
+        vv = self.data_dict[key]
+        path = set_dir / (key + ".npy")
+
+        if vv["atomic"]:
+            natoms = self.natoms
+            idx_map = self.idx_map
+            # if type_sel, then revise natoms and idx_map
+            if vv["type_sel"] is not None:
+                natoms_sel = 0
+                for jj in vv["type_sel"]:
+                    natoms_sel += np.sum(self.atom_type == jj)
+                idx_map_sel = self._idx_map_sel(self.atom_type, vv["type_sel"])
+            else:
+                natoms_sel = natoms
+                idx_map_sel = idx_map
+        else:
+            natoms = 1
+            natoms_sel = 0
+            idx_map_sel = None
+        ndof = vv["ndof"]
+
+        # Determine target data type from requirements
+        dtype = vv.get("dtype")
+        if dtype is None:
+            dtype = (
+                GLOBAL_ENER_FLOAT_PRECISION
+                if vv.get("high_prec")
+                else GLOBAL_NP_FLOAT_PRECISION
+            )
+
+        # Branch 1: File does not exist
+        if not path.is_file():
+            if vv.get("must"):
+                raise RuntimeError(f"{path} not found!")
+
+            # Create a default array based on requirements
+            if (
+                vv["atomic"]
+                and vv["type_sel"] is not None
+                and not vv["output_natoms_for_type_sel"]
+            ):
+                natoms = natoms_sel
+            data = np.full([natoms, ndof], vv["default"], dtype=dtype)
+            return np.float32(0.0), data
+
+        # Branch 2: File exists, use memmap
+        mmap_obj = self._get_memmap(path)
+        # Slice the single frame and make an in-memory copy for modification
+        data = mmap_obj[frame_idx].copy().astype(dtype, copy=False)
+
+        try:
+            if vv["atomic"]:
+                # Handle type_sel logic
+                if vv["type_sel"] is not None:
+                    sel_mask = np.isin(self.atom_type, vv["type_sel"])
+
+                    if mmap_obj.shape[1] == natoms_sel * ndof:
+                        if vv["output_natoms_for_type_sel"]:
+                            tmp = np.zeros([natoms, ndof], dtype=data.dtype)
+                            # sel_mask needs to be applied to the original atom layout
+                            tmp[sel_mask] = data.reshape([natoms_sel, ndof])
+                            data = tmp
+                        else:  # output is natoms_sel
+                            natoms = natoms_sel
+                            idx_map = idx_map_sel
+                    elif mmap_obj.shape[1] == natoms * ndof:
+                        data = data.reshape([natoms, ndof])
+                        if vv["output_natoms_for_type_sel"]:
+                            pass
+                        else:
+                            data = data[sel_mask]
+                            idx_map = idx_map_sel
+                            natoms = natoms_sel
+                    else:  # Shape mismatch error
+                        raise ValueError(
+                            f"The shape of the data {key} in {set_dir} has width {mmap_obj.shape[1]}, which doesn't match either ({natoms_sel * ndof}) or ({natoms * ndof})"
+                        )
+
+                # Handle special case for Hessian
+                if key == "hessian":
+                    data = data.reshape(3 * natoms, 3 * natoms)
+                    num_chunks, chunk_size = len(idx_map), 3
+                    idx_map_hess = np.arange(
+                        num_chunks * chunk_size, dtype=int
+                    ).reshape(num_chunks, chunk_size)
+                    idx_map_hess = idx_map_hess[idx_map].flatten()
+                    data = data[idx_map_hess, :]
+                    data = data[:, idx_map_hess]
+                    data = data.reshape(-1)
+                    ndof = 3 * ndof * 3 * ndof  # size of hessian is 3Natoms * 3Natoms
+                else:
+                    # data should be 2D here: (natoms, ndof)
+                    data = data.reshape([natoms, -1])
+                    data = data[idx_map, :]
+
+            return np.float32(1.0), data
+
+        except ValueError as err_message:
+            explanation = "This error may occur when your label mismatch it's name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`."
+            log.error(str(err_message))
+            log.error(explanation)
+            raise ValueError(str(err_message) + ". " + explanation) from err_message
 
     def _idx_map_sel(self, atom_type: np.ndarray, type_sel: list[int]) -> np.ndarray:
         new_types = []
