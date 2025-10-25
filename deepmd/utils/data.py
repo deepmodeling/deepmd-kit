@@ -905,6 +905,8 @@ class DeepmdData:
                     # data should be 2D here: [natoms, ndof]
                     data = data.reshape([natoms, -1])
                     data = data[idx_map, :]
+            else:
+                data = data.reshape([ndof])
 
             # Atomic: return [natoms, ndof] or flattened hessian above
             # Non-atomic: return [ndof]
