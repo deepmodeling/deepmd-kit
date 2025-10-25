@@ -843,13 +843,13 @@ class DeepmdData:
                 raise RuntimeError(f"{path} not found!")
 
             # Create a default array based on requirements
-            if (
-                vv["atomic"]
-                and vv["type_sel"] is not None
-                and not vv["output_natoms_for_type_sel"]
-            ):
-                natoms = natoms_sel
-            data = np.full([natoms, ndof], vv["default"], dtype=dtype)
+            if vv["atomic"]:
+                if vv["type_sel"] is not None and not vv["output_natoms_for_type_sel"]:
+                    natoms = natoms_sel
+                data = np.full([natoms, ndof], vv["default"], dtype=dtype)
+            else:
+                # For non-atomic data, shape should be [ndof]
+                data = np.full([ndof], vv["default"], dtype=dtype)
             return np.float32(0.0), data
 
         # Branch 2: File exists, use memmap
