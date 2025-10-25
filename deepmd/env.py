@@ -50,7 +50,7 @@ else:
     )
 
 # Dynamic calculation of cache size
-_default_lru_cache_size = 888
+_default_lru_cache_size = 512
 LRU_CACHE_SIZE = _default_lru_cache_size
 
 if platform.system() != "Windows":

@@ -502,9 +502,13 @@ class DeepmdData:
         return natoms, natoms_vec
 
     def _get_memmap(self, path: DPPath) -> np.memmap:
-        """Get or create a memory-mapped object for a given npy file."""
-        abs_path_str = str(Path(str(path)).absolute())
-        return self._create_memmap(abs_path_str)
+        """Get or create a memory-mapped object for a given npy file.
+        Uses file path and modification time as cache keys to detect file changes
+        and invalidate cache when files are modified.
+        """
+        abs_path = Path(str(path)).absolute()
+        file_mtime = abs_path.stat().st_mtime
+        return self._create_memmap(str(abs_path), str(file_mtime))
 
     def _get_subdata(
         self, data: dict[str, Any], idx: Optional[np.ndarray] = None
@@ -962,7 +966,7 @@ class DeepmdData:
 
     @staticmethod
     @functools.lru_cache(maxsize=LRU_CACHE_SIZE)
-    def _create_memmap(path_str: str) -> np.memmap:
+    def _create_memmap(path_str: str, mtime_str: str) -> np.memmap:
         """A cached helper function to create memmap objects.
         Using lru_cache to limit the number of open file handles.
 
@@ -970,6 +974,8 @@ class DeepmdData:
         ----------
         path_str
             The file path as a string.
+        mtime_str
+            The modification time as a string, used for cache invalidation.
         """
         with open(path_str, "rb") as f:
             version = np.lib.format.read_magic(f)
