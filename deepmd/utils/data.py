@@ -102,10 +102,13 @@ class DeepmdData:
                     f"Elements {missing_elements} are not present in the provided `type_map`."
                 )
             if not self.mixed_type:
-                atom_type_ = [
-                    type_map.index(self.type_map[ii]) for ii in self.atom_type
-                ]
-                self.atom_type = np.array(atom_type_, dtype=np.int32)
+                # Use vectorized operation for better performance with large atom counts
+                # Create a mapping array where old_type_idx -> new_type_idx
+                max_old_type = max(self.atom_type) + 1
+                type_mapping = np.zeros(max_old_type, dtype=np.int32)
+                for old_idx in range(len(self.type_map)):
+                    type_mapping[old_idx] = type_map.index(self.type_map[old_idx])
+                self.atom_type = type_mapping[self.atom_type].astype(np.int32)
             else:
                 self.enforce_type_map = True
                 sorter = np.argsort(type_map)
@@ -489,11 +492,9 @@ class DeepmdData:
             return np.average(eners, axis=0)
 
     def _idx_map_sel(self, atom_type: np.ndarray, type_sel: list[int]) -> np.ndarray:
-        new_types = []
-        for ii in atom_type:
-            if ii in type_sel:
-                new_types.append(ii)
-        new_types = np.array(new_types, dtype=int)
+        # Use vectorized operations instead of Python loop
+        sel_mask = np.isin(atom_type, type_sel)
+        new_types = atom_type[sel_mask]
         natoms = new_types.shape[0]
         idx = np.arange(natoms, dtype=np.int64)
         idx_map = np.lexsort((idx, new_types))
@@ -717,9 +718,9 @@ class DeepmdData:
             idx_map = self.idx_map
             # if type_sel, then revise natoms and idx_map
             if type_sel is not None:
-                natoms_sel = 0
-                for jj in type_sel:
-                    natoms_sel += np.sum(self.atom_type == jj)
+                # Use vectorized operations for better performance
+                sel_mask = np.isin(self.atom_type, type_sel)
+                natoms_sel = np.sum(sel_mask)
                 idx_map_sel = self._idx_map_sel(self.atom_type, type_sel)
             else:
                 natoms_sel = natoms
@@ -747,7 +748,6 @@ class DeepmdData:
                                 tmp = np.zeros(
                                     [nframes, natoms, ndof_], dtype=data.dtype
                                 )
-                                sel_mask = np.isin(self.atom_type, type_sel)
                                 tmp[:, sel_mask] = data.reshape(
                                     [nframes, natoms_sel, ndof_]
                                 )
@@ -760,7 +760,6 @@ class DeepmdData:
                             if output_natoms_for_type_sel:
                                 pass
                             else:
-                                sel_mask = np.isin(self.atom_type, type_sel)
                                 data = data.reshape([nframes, natoms, ndof_])
                                 data = data[:, sel_mask]
                                 natoms = natoms_sel
@@ -836,9 +835,9 @@ class DeepmdData:
             idx_map = self.idx_map
             # if type_sel, then revise natoms and idx_map
             if vv["type_sel"] is not None:
-                natoms_sel = 0
-                for jj in vv["type_sel"]:
-                    natoms_sel += np.sum(self.atom_type == jj)
+                # Use vectorized operations for better performance
+                sel_mask = np.isin(self.atom_type, vv["type_sel"])
+                natoms_sel = np.sum(sel_mask)
                 idx_map_sel = self._idx_map_sel(self.atom_type, vv["type_sel"])
             else:
                 natoms_sel = natoms
@@ -885,8 +884,6 @@ class DeepmdData:
             if vv["atomic"]:
                 # Handle type_sel logic
                 if vv["type_sel"] is not None:
-                    sel_mask = np.isin(self.atom_type, vv["type_sel"])
-
                     if mmap_obj.shape[1] == natoms_sel * ndof:
                         if vv["output_natoms_for_type_sel"]:
                             tmp = np.zeros([natoms, ndof], dtype=data.dtype)
