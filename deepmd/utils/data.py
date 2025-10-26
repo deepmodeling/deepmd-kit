@@ -385,6 +385,12 @@ class DeepmdData:
             set_dir = DPPath(set_dir)
         # Calculate local index within the set.* directory
         local_idx = index - (0 if set_idx == 0 else self.prefix_sum[set_idx - 1])
+        # Calculate the number of frames in this set to avoid redundant _get_nframes calls
+        set_nframes = (
+            self.prefix_sum[set_idx]
+            if set_idx == 0
+            else self.prefix_sum[set_idx] - self.prefix_sum[set_idx - 1]
+        )
 
         frame_data = {}
         # 2. Concurrently load all non-reduced items
@@ -395,7 +401,7 @@ class DeepmdData:
             with ThreadPoolExecutor(max_workers=len(non_reduced_keys)) as executor:
                 future_to_key = {
                     executor.submit(
-                        self._load_single_data, set_dir, key, local_idx
+                        self._load_single_data, set_dir, key, local_idx, set_nframes
                     ): key
                     for key in non_reduced_keys
                 }
@@ -805,11 +811,22 @@ class DeepmdData:
             return np.float32(0.0), data
 
     def _load_single_data(
-        self, set_dir: DPPath, key: str, frame_idx: int
+        self, set_dir: DPPath, key: str, frame_idx: int, set_nframes: int
     ) -> tuple[np.float32, np.ndarray]:
         """
         Loads and processes data for a SINGLE frame from a SINGLE key,
         fully replicating the logic from the original _load_data method.
+
+        Parameters
+        ----------
+        set_dir : DPPath
+            The directory path of the set
+        key : str
+            The key name of the data to load
+        frame_idx : int
+            The local frame index within the set
+        set_nframes : int
+            The total number of frames in this set (to avoid redundant _get_nframes calls)
         """
         vv = self.data_dict[key]
         path = set_dir / (key + ".npy")
@@ -859,7 +876,7 @@ class DeepmdData:
         # Branch 2: File exists, use memmap
         mmap_obj = self._get_memmap(path)
         # corner case: single frame
-        if self._get_nframes(set_dir) == 1:
+        if set_nframes == 1:
             mmap_obj = mmap_obj[None, ...]
         # Slice the single frame and make an in-memory copy for modification
         data = mmap_obj[frame_idx].copy().astype(dtype, copy=False)
