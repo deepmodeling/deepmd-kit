@@ -65,8 +65,6 @@ if platform.system() != "Windows":
             LRU_CACHE_SIZE = soft_limit // 2
     except ImportError:
         LRU_CACHE_SIZE = _default_lru_cache_size
-else:
-    LRU_CACHE_SIZE = _default_lru_cache_size
 
 
 def set_env_if_empty(key: str, value: str, verbose: bool = True) -> None:

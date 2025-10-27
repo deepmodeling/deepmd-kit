@@ -24,11 +24,9 @@ from deepmd.utils.data import (
     DataRequirementItem,
 )
 
-# from ..seed import (
-#     GLOBAL_SEED,
-# )
-
-GLOBAL_SEED = 7
+from ..seed import (
+    GLOBAL_SEED,
+)
 
 CUR_DIR = os.path.dirname(__file__)
 
