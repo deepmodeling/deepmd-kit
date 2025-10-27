@@ -410,11 +410,7 @@ class DeepmdData:
                 }
                 for future in as_completed(future_to_key):
                     key = future_to_key[future]
-                    try:
-                        frame_data["find_" + key], frame_data[key] = future.result()
-                    except Exception:
-                        log.exception("Key %r generated an exception", key)
-                        raise
+                    frame_data["find_" + key], frame_data[key] = future.result()
 
         # 3. Compute reduced items from already loaded data
         for key in reduced_keys:

@@ -54,17 +54,14 @@ _default_lru_cache_size = 512
 LRU_CACHE_SIZE = _default_lru_cache_size
 
 if platform.system() != "Windows":
-    try:
-        import resource
+    import resource
 
-        soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
-        safe_buffer = 128
-        if soft_limit > safe_buffer + _default_lru_cache_size:
-            LRU_CACHE_SIZE = soft_limit - safe_buffer
-        else:
-            LRU_CACHE_SIZE = soft_limit // 2
-    except ImportError:
-        LRU_CACHE_SIZE = _default_lru_cache_size
+    soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+    safe_buffer = 128
+    if soft_limit > safe_buffer + _default_lru_cache_size:
+        LRU_CACHE_SIZE = soft_limit - safe_buffer
+    else:
+        LRU_CACHE_SIZE = soft_limit // 2
 
 
 def set_env_if_empty(key: str, value: str, verbose: bool = True) -> None:
