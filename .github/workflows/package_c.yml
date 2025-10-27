@@ -40,7 +40,7 @@ jobs:
         if: matrix.filename != 'libdeepmd_c.tar.gz'
       # for download and debug
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: libdeepmd_c-${{ strategy.job-index }}-${{ matrix.filename }}
           path: ${{ matrix.filename }}
