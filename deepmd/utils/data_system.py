@@ -816,7 +816,7 @@ def process_systems(
             f"Invalid systems type: {type(systems)}. Must be str or list[str]."
         )
 
-    # Iterate over the search_paths list and apply
+    # Iterate over the search_paths list and apply expansion logic to each path
     result_systems = []
     for path in search_paths:
         if patterns is None:
