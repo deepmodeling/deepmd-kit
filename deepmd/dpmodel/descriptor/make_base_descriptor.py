@@ -4,6 +4,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Any,
     Callable,
     NoReturn,
     Optional,
@@ -12,6 +13,9 @@ from typing import (
 
 from deepmd.common import (
     j_get_type,
+)
+from deepmd.dpmodel.array_api import (
+    Array,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -26,9 +30,9 @@ from deepmd.utils.plugin import (
 
 
 def make_base_descriptor(
-    t_tensor,
+    t_tensor: type,
     fwd_method_name: str = "forward",
-):
+) -> type:
     """Make the base class for the descriptor.
 
     Parameters
@@ -44,7 +48,7 @@ def make_base_descriptor(
     class BD(ABC, PluginVariant, make_plugin_registry("descriptor")):
         """Base descriptor provides the interfaces of descriptor."""
 
-        def __new__(cls, *args, **kwargs):
+        def __new__(cls, *args: Any, **kwargs: Any) -> Any:
             if cls is BD:
                 cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
             return super().__new__(cls)
@@ -113,7 +117,9 @@ def make_base_descriptor(
             pass
 
         @abstractmethod
-        def share_params(self, base_class, shared_level, resume=False):
+        def share_params(
+            self, base_class: Any, shared_level: Any, resume: bool = False
+        ) -> None:
             """
             Share the parameters of self to the base_class with shared_level during multitask training.
             If not start from checkpoint (resume is False),
@@ -123,7 +129,7 @@ def make_base_descriptor(
 
         @abstractmethod
         def change_type_map(
-            self, type_map: list[str], model_with_new_type_stat=None
+            self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
         ) -> None:
             """Change the type related params to new ones, according to `type_map` and the original one in the model.
             If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -131,12 +137,12 @@ def make_base_descriptor(
             pass
 
         @abstractmethod
-        def set_stat_mean_and_stddev(self, mean, stddev) -> None:
+        def set_stat_mean_and_stddev(self, mean: Any, stddev: Any) -> None:
             """Update mean and stddev for descriptor."""
             pass
 
         @abstractmethod
-        def get_stat_mean_and_stddev(self):
+        def get_stat_mean_and_stddev(self) -> Any:
             """Get mean and stddev for descriptor."""
             pass
 
@@ -176,11 +182,11 @@ def make_base_descriptor(
         @abstractmethod
         def fwd(
             self,
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping: Optional[t_tensor] = None,
-        ):
+            extended_coord: Array,
+            extended_atype: Array,
+            nlist: Array,
+            mapping: Optional[Array] = None,
+        ) -> Array:
             """Calculate descriptor."""
             pass
 

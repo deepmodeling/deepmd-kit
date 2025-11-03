@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     NoReturn,
     Optional,
 )
@@ -18,7 +19,7 @@ from deepmd.utils.path import (
 
 
 class BaseModel(torch.nn.Module, make_base_model()):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Construct a basic model for different tasks."""
         torch.nn.Module.__init__(self)
         self.model_def_script = ""
@@ -28,7 +29,7 @@ class BaseModel(torch.nn.Module, make_base_model()):
 
     def compute_or_load_stat(
         self,
-        sampled_func,
+        sampled_func: Any,
         stat_file_path: Optional[DPPath] = None,
     ) -> NoReturn:
         """
@@ -71,6 +72,6 @@ class BaseModel(torch.nn.Module, make_base_model()):
         return self.min_nbor_dist.item()
 
     @torch.jit.export
-    def get_ntypes(self):
+    def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return len(self.get_type_map())

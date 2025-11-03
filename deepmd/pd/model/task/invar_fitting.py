@@ -147,7 +147,7 @@ class InvarFitting(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         return super().deserialize(data)
 
     def output_def(self) -> FittingOutputDef:

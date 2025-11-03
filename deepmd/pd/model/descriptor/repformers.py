@@ -210,8 +210,14 @@ class DescrptBlockRepformers(DescriptorBlock):
         """
         super().__init__()
         self.rcut = float(rcut)
+        self.register_buffer("buffer_rcut", paddle.to_tensor(self.rcut))
         self.rcut_smth = float(rcut_smth)
+        self.register_buffer("buffer_rcut_smth", paddle.to_tensor(self.rcut_smth))
         self.ntypes = ntypes
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
+
         self.nlayers = nlayers
         sel = [sel] if isinstance(sel, int) else sel
         self.nnei = sum(sel)
@@ -323,6 +329,14 @@ class DescrptBlockRepformers(DescriptorBlock):
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.rcut_smth
 
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Returns the cut-off radius as a buffer-style Tensor."""
+        return self.buffer_rcut
+
+    def get_buffer_rcut_smth(self) -> paddle.Tensor:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0 as a buffer-style Tensor."""
+        return self.buffer_rcut_smth
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
@@ -333,7 +347,7 @@ class DescrptBlockRepformers(DescriptorBlock):
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.ntypes
+        return self.ntypes if paddle.in_dynamic_mode() else self.buffer_ntypes
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""

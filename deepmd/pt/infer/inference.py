@@ -3,6 +3,10 @@ import logging
 from copy import (
     deepcopy,
 )
+from typing import (
+    Optional,
+    Union,
+)
 
 import torch
 
@@ -25,8 +29,8 @@ log = logging.getLogger(__name__)
 class Tester:
     def __init__(
         self,
-        model_ckpt,
-        head=None,
+        model_ckpt: Union[str, torch.nn.Module],
+        head: Optional[str] = None,
     ) -> None:
         """Construct a DeePMD tester.
 

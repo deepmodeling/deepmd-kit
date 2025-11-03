@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
+
 from deepmd.pt.model.task.dos import (
     DOSFittingNet,
 )
@@ -9,7 +13,9 @@ from .dp_atomic_model import (
 
 
 class DPDOSAtomicModel(DPAtomicModel):
-    def __init__(self, descriptor, fitting, type_map, **kwargs):
+    def __init__(
+        self, descriptor: Any, fitting: Any, type_map: Any, **kwargs: Any
+    ) -> None:
         if not isinstance(fitting, DOSFittingNet):
             raise TypeError(
                 "fitting must be an instance of DOSFittingNet for DPDOSAtomicModel"

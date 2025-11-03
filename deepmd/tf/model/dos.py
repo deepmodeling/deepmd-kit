@@ -149,6 +149,9 @@ class DOSModel(StandardModel):
             t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
             t_od = tf.constant(self.numb_dos, name="output_dim", dtype=tf.int32)
 
+            # Initialize out_bias and out_std for DOS models
+            self.init_out_stat(suffix=suffix)
+
         coord = tf.reshape(coord_, [-1, natoms[1] * 3])
         atype = tf.reshape(atype_, [-1, natoms[1]])
         input_dict["nframes"] = tf.shape(coord)[0]
@@ -181,6 +184,10 @@ class DOSModel(StandardModel):
         atom_dos = self.fitting.build(
             dout, natoms, input_dict, reuse=reuse, suffix=suffix
         )
+
+        # Apply out_bias and out_std directly to DOS output
+        atom_dos = self._apply_out_bias_std(atom_dos, atype, natoms, coord)
+
         self.atom_dos = atom_dos
 
         dos_raw = atom_dos

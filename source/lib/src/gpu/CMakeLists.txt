@@ -1,6 +1,7 @@
 if(USE_CUDA_TOOLKIT)
-  # required cmake version 3.23: CMAKE_CUDA_ARCHITECTURES all
-  cmake_minimum_required(VERSION 3.23)
+  # required cmake version 3.25: CMAKE_CUDA_ARCHITECTURES all,
+  # RUN_OUTPUT_STDOUT_VARIABLE
+  cmake_minimum_required(VERSION 3.25.2)
   # project name
   project(deepmd_op_cuda)
   set(GPU_LIB_NAME deepmd_op_cuda)
@@ -25,7 +26,7 @@ if(USE_CUDA_TOOLKIT)
 
   # cub has been included in CUDA Toolkit 11, we do not need to include it any
   # more see https://github.com/NVIDIA/cub
-  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_LESS "11")
+  if(CMAKE_CUDA_COMPILER_VERSION VERSION_LESS "11")
     include(FetchContent)
     FetchContent_Declare(
       cub_download
@@ -38,8 +39,17 @@ if(USE_CUDA_TOOLKIT)
     endif()
     include_directories(${CUB_SOURCE_ROOT})
   endif()
-  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_LESS "9")
+  if(CMAKE_CUDA_COMPILER_VERSION VERSION_LESS "9")
     message(FATAL_ERROR "CUDA version must be >= 9.0")
+  endif()
+
+  # CUDA 13.0+ requires C++17
+  if(CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL "13.0")
+    set(CMAKE_CUDA_STANDARD 17)
+    message(
+      STATUS
+        "CUDA ${CMAKE_CUDA_COMPILER_VERSION} detected, setting C++ standard to 17"
+    )
   endif()
 
   message(STATUS "NVCC version is " ${CMAKE_CUDA_COMPILER_VERSION})
@@ -54,7 +64,7 @@ if(USE_CUDA_TOOLKIT)
 elseif(USE_ROCM_TOOLKIT)
 
   # required cmake version
-  cmake_minimum_required(VERSION 3.21)
+  cmake_minimum_required(VERSION 3.25.2)
   # project name
   project(deepmd_op_rocm)
   enable_language(HIP)

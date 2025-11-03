@@ -18,7 +18,7 @@ TEST(TestDeepmdException, deepmdexception) {
   std::string expected_error_message = "DeePMD-kit Error: unittest";
   try {
     throw deepmd::deepmd_exception("unittest");
-  } catch (deepmd::deepmd_exception &ex) {
+  } catch (deepmd::deepmd_exception& ex) {
     EXPECT_STREQ(expected_error_message.c_str(), ex.what());
   }
 }

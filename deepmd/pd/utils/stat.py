@@ -4,6 +4,7 @@ from collections import (
     defaultdict,
 )
 from typing import (
+    Any,
     Callable,
     Optional,
     Union,
@@ -35,7 +36,9 @@ from deepmd.utils.path import (
 log = logging.getLogger(__name__)
 
 
-def make_stat_input(datasets, dataloaders, nbatches):
+def make_stat_input(
+    datasets: list[Any], dataloaders: list[Any], nbatches: int
+) -> dict[str, Any]:
     """Pack data for statistics.
 
     Args:
@@ -59,6 +62,14 @@ def make_stat_input(datasets, dataloaders, nbatches):
             except StopIteration:
                 iterator = iter(dataloaders[i])
                 stat_data = next(iterator)
+            if (
+                "find_fparam" in stat_data
+                and "fparam" in stat_data
+                and stat_data["find_fparam"] == 0.0
+            ):
+                # for model using default fparam
+                stat_data.pop("fparam")
+                stat_data.pop("find_fparam")
             for dd in stat_data:
                 if stat_data[dd] is None:
                     sys_stat[dd] = None
@@ -127,9 +138,9 @@ def _save_to_file(
 
 
 def _post_process_stat(
-    out_bias,
-    out_std,
-):
+    out_bias: paddle.Tensor,
+    out_std: paddle.Tensor,
+) -> tuple[paddle.Tensor, paddle.Tensor]:
     """Post process the statistics.
 
     For global statistics, we do not have the std for each type of atoms,
@@ -140,7 +151,10 @@ def _post_process_stat(
     """
     new_std = {}
     for kk, vv in out_bias.items():
-        new_std[kk] = np.ones_like(vv)
+        if vv.shape == out_std[kk].shape:
+            new_std[kk] = out_std[kk]
+        else:
+            new_std[kk] = np.ones_like(vv)
     return out_bias, new_std
 
 
@@ -148,7 +162,7 @@ def _compute_model_predict(
     sampled: Union[Callable[[], list[dict]], list[dict]],
     keys: list[str],
     model_forward: Callable[..., paddle.Tensor],
-):
+) -> dict[str, list[paddle.Tensor]]:
     auto_batch_size = AutoBatchSize()
     model_predict = {kk: [] for kk in keys}
     for system in sampled:
@@ -211,7 +225,7 @@ def _make_preset_out_bias(
 def _fill_stat_with_global(
     atomic_stat: Union[np.ndarray, None],
     global_stat: np.ndarray,
-):
+) -> Union[np.ndarray, None]:
     """This function is used to fill atomic stat with global stat.
 
     Parameters
@@ -244,7 +258,7 @@ def compute_output_stats(
     model_forward: Optional[Callable[..., paddle.Tensor]] = None,
     stats_distinguish_types: bool = True,
     intensive: bool = False,
-):
+) -> dict[str, Any]:
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
 
@@ -411,7 +425,7 @@ def compute_output_stats_global(
     model_pred: Optional[dict[str, np.ndarray]] = None,
     stats_distinguish_types: bool = True,
     intensive: bool = False,
-):
+) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     """This function only handle stat computation from reduced global labels."""
     # return directly if model predict is empty for global
     if model_pred == {}:
@@ -519,7 +533,7 @@ def compute_output_stats_global(
         }
     atom_numbs = {kk: merged_natoms[kk].sum(-1) for kk in bias_atom_e.keys()}
 
-    def rmse(x):
+    def rmse(x: np.ndarray) -> float:
         return np.sqrt(np.mean(np.square(x)))
 
     for kk in bias_atom_e.keys():
@@ -541,7 +555,7 @@ def compute_output_stats_atomic(
     ntypes: int,
     keys: list[str],
     model_pred: Optional[dict[str, np.ndarray]] = None,
-):
+) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     # get label dict from sample; for each key, only picking the system with atomic labels.
     outputs = {
         kk: [

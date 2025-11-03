@@ -64,9 +64,9 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         of the atomic model. Implemented by removing the pairs from the nlist.
     rcond : float, optional
         The condition number for the regression of atomic energy.
-    preset_out_bias : Dict[str, list[Optional[paddle.Tensor]]], optional
+    preset_out_bias : dict[str, list[Optional[np.ndarray]]], optional
         Specifying atomic energy contribution in vacuum. Given by key:value pairs.
-        The value is a list specifying the bias. the elements can be None or np.array of output shape.
+        The value is a list specifying the bias. the elements can be None or np.ndarray of output shape.
         For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
         The `set_davg_zero` key in the descriptor should be set.
 
@@ -84,6 +84,15 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         paddle.nn.Layer.__init__(self)
         BaseAtomicModel_.__init__(self)
         self.type_map = type_map
+        if type_map is not None:
+            self.register_buffer(
+                "buffer_type_map",
+                paddle.to_tensor([ord(c) for c in " ".join(type_map)]),
+            )
+        self.ntypes = len(self.type_map)
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
         self.reinit_atom_exclude(atom_exclude_types)
         self.reinit_pair_exclude(pair_exclude_types)
         self.rcond = rcond
@@ -92,7 +101,6 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def init_out_stat(self) -> None:
         """Initialize the output bias."""
-        ntypes = self.get_ntypes()
         self.bias_keys: list[str] = list(self.fitting_output_def().keys())
         self.max_out_size = max(
             [self.atomic_output_def()[kk].size for kk in self.bias_keys]
@@ -106,7 +114,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
     def set_out_bias(self, out_bias: paddle.Tensor) -> None:
         self.out_bias = out_bias
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: paddle.Tensor) -> None:
         if key in ["out_bias"]:
             self.out_bias = value
         elif key in ["out_std"]:
@@ -114,7 +122,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> paddle.Tensor:
         if key in ["out_bias"]:
             return self.out_bias
         elif key in ["out_std"]:
@@ -126,12 +134,28 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         """Get the type map."""
         return self.type_map
 
+    def get_buffer_type_map(self) -> paddle.Tensor:
+        """
+        Return the type map as a buffer-style Tensor for JIT saving.
+
+        The original type map (e.g., ['Ni', 'O']) is first joined into a single space-separated string
+        (e.g., "Ni O"). Each character in this string is then converted to its ASCII code using `ord()`,
+        and the resulting integer sequence is stored as a 1D paddle.Tensor of dtype int.
+
+        This format allows the type map to be serialized as a raw byte buffer during JIT model saving.
+        """
+        return self.buffer_type_map
+
     def get_compute_stats_distinguish_types(self) -> bool:
         """Get whether the fitting net computes stats which are not distinguished between different types of atoms."""
         return True
 
     def get_intensive(self) -> bool:
         """Whether the fitting property is intensive."""
+        return False
+
+    def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
         return False
 
     def reinit_atom_exclude(
@@ -259,7 +283,6 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
             comm_dict=comm_dict,
         )
         ret_dict = self.apply_out_stat(ret_dict, atype)
-
         # nf x nloc
         atom_mask = ext_atom_mask[:, :nloc].astype(paddle.int32)
         if self.atom_excl is not None:
@@ -272,10 +295,10 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
                 out_shape2 *= ss
             ret_dict[kk] = (
                 ret_dict[kk].reshape([out_shape[0], out_shape[1], out_shape2])
-                * atom_mask.unsqueeze(2).astype(ret_dict[kk].dtype)
+                * atom_mask[:, :, None].astype(ret_dict[kk].dtype)
             ).reshape(out_shape)
         ret_dict["mask"] = atom_mask
-
+        # raise
         return ret_dict
 
     def forward(
@@ -299,7 +322,9 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         )
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self,
+        type_map: list[str],
+        model_with_new_type_stat: Optional["BaseAtomicModel"] = None,
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -366,21 +391,25 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
+        compute_or_load_out_stat: bool = True,
     ) -> NoReturn:
         """
-        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
+        Compute or load the statistics parameters of the model,
+        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
+        When `sampled` is provided, all the statistics parameters will be calculated (or re-calculated for update),
+        and saved in the `stat_file_path`(s).
+        When `sampled` is not provided, it will check the existence of `stat_file_path`(s)
+        and load the calculated statistics parameters.
 
         Parameters
         ----------
-        merged : Union[Callable[[], list[dict]], list[dict]]
-            - list[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
-                originating from the `i`-th data system.
-            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
-                only when needed. Since the sampling process can be slow and memory-intensive,
-                the lazy function helps by only sampling once.
-        stat_file_path : Optional[DPPath]
-            The path to the stat file.
+        merged
+            The lazy sampled function to get data frames from different data systems.
+        stat_file_path
+            The dictionary of paths to the statistics files.
+        compute_or_load_out_stat : bool
+            Whether to compute the output statistics.
+            If False, it will only compute the input statistics (e.g. mean and standard deviation of descriptors).
 
         """
         raise NotImplementedError
@@ -416,7 +445,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         self,
         ret: dict[str, paddle.Tensor],
         atype: paddle.Tensor,
-    ):
+    ) -> dict[str, paddle.Tensor]:
         """Apply the stat to each atomic output.
         The developer may override the method to define how the bias is applied
         to the atomic output of the model.
@@ -437,9 +466,9 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def change_out_bias(
         self,
-        sample_merged,
+        sample_merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
-        bias_adjust_mode="change-by-statistic",
+        bias_adjust_mode: str = "change-by-statistic",
     ) -> None:
         """Change the output bias according to the input data and the pretrained model.
 
@@ -489,7 +518,13 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
     def _get_forward_wrapper_func(self) -> Callable[..., paddle.Tensor]:
         """Get a forward wrapper of the atomic model for output bias calculation."""
 
-        def model_forward(coord, atype, box, fparam=None, aparam=None):
+        def model_forward(
+            coord: paddle.Tensor,
+            atype: paddle.Tensor,
+            box: Optional[paddle.Tensor],
+            fparam: Optional[paddle.Tensor] = None,
+            aparam: Optional[paddle.Tensor] = None,
+        ) -> dict[str, paddle.Tensor]:
             with (
                 paddle.no_grad()
             ):  # it's essential for pure paddle forward function to use auto_batchsize
@@ -518,7 +553,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
         return model_forward
 
-    def _default_bias(self):
+    def _default_bias(self) -> paddle.Tensor:
         ntypes = self.get_ntypes()
         return paddle.zeros([self.n_out, ntypes, self.max_out_size], dtype=dtype).to(
             device=device
@@ -571,6 +606,12 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
             out_std_data[idx, :, :size] = out_std[kk].reshape([ntypes, size])
         paddle.assign(out_bias_data, self.out_bias)
         paddle.assign(out_std_data, self.out_std)
+
+    def get_ntypes(self):
+        return len(self.type_map)
+
+    def get_buffer_ntypes(self) -> paddle.Tensor:
+        return self.buffer_ntypes
 
     def _fetch_out_stat(
         self,

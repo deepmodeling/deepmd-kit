@@ -52,6 +52,7 @@ def FittingParamEnergy(
         "numb_fparam": numb_param,
         "numb_aparam": numb_param,
         "dim_case_embd": numb_param,
+        "default_fparam": [1.0] * numb_param if numb_param > 0 else None,
     }
     return input_dict
 

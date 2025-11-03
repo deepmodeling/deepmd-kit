@@ -56,7 +56,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        scaling_factor=1.0,
+        scaling_factor: float = 1.0,
         normalize: bool = True,
         temperature: Optional[float] = None,
         trainable_ln: bool = True,

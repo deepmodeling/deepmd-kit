@@ -528,7 +528,7 @@ TEST_F(TestEnvMatAMix, prod_cpu) {
     }
   }
   std::vector<int> ilist(nloc), numneigh(nloc);
-  std::vector<int *> firstneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
   deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   deepmd::convert_nlist(inlist, nlist_a_cpy);
 
@@ -537,7 +537,7 @@ TEST_F(TestEnvMatAMix, prod_cpu) {
       rij(static_cast<size_t>(nloc) * nnei * 3);
   std::vector<int> nlist(static_cast<size_t>(nloc) * nnei);
   std::vector<int> ntype(static_cast<size_t>(nloc) * nnei);
-  bool *nmask = new bool[static_cast<size_t>(nloc) * nnei];
+  bool* nmask = new bool[static_cast<size_t>(nloc) * nnei];
   memset(nmask, 0, sizeof(bool) * nloc * nnei);
   std::vector<double> avg(ntypes * ndescrpt, 0);
   std::vector<double> std(ntypes * ndescrpt, 1);
@@ -573,7 +573,7 @@ TEST_F(TestEnvMatAMix, prod_cpu_equal_cpu) {
     }
   }
   std::vector<int> ilist(nloc), numneigh(nloc);
-  std::vector<int *> firstneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
   deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_a_cpy);
   std::vector<double> em(static_cast<size_t>(nloc) * ndescrpt),
@@ -650,7 +650,7 @@ TEST_F(TestEnvMatAMix, prod_gpu) {
     max_nbor_size = 4096;
   }
   std::vector<int> ilist(nloc), numneigh(nloc);
-  std::vector<int *> firstneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
   deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]),
       gpu_inlist;
   convert_nlist(inlist, nlist_a_cpy);
@@ -659,18 +659,18 @@ TEST_F(TestEnvMatAMix, prod_gpu) {
       rij(static_cast<size_t>(nloc) * nnei * 3, 0.0);
   std::vector<int> nlist(static_cast<size_t>(nloc) * nnei, 0);
   std::vector<int> ntype(static_cast<size_t>(nloc) * nnei, 0);
-  bool *nmask = new bool[static_cast<size_t>(nloc) * nnei];
+  bool* nmask = new bool[static_cast<size_t>(nloc) * nnei];
   memset(nmask, 0, sizeof(bool) * nloc * nnei);
   std::vector<double> avg(ntypes * ndescrpt, 0);
   std::vector<double> std(ntypes * ndescrpt, 1);
 
   double *em_dev = NULL, *em_deriv_dev = NULL, *rij_dev = NULL;
-  bool *nmask_dev = NULL;
+  bool* nmask_dev = NULL;
   double *posi_cpy_dev = NULL, *avg_dev = NULL, *std_dev = NULL;
   int *f_atype_cpy_dev = NULL, *atype_dev = NULL, *nlist_dev = NULL,
       *ntype_dev = NULL, *mapping_dev = NULL, *array_int_dev = NULL,
       *memory_dev = NULL;
-  uint_64 *array_longlong_dev = NULL;
+  uint_64* array_longlong_dev = NULL;
   deepmd::malloc_device_memory_sync(em_dev, em);
   deepmd::malloc_device_memory_sync(em_deriv_dev, em_deriv);
   deepmd::malloc_device_memory_sync(rij_dev, rij);
@@ -751,7 +751,7 @@ TEST_F(TestEnvMatAMix, prod_gpu_equal_cpu) {
     max_nbor_size = 4096;
   }
   std::vector<int> ilist(nloc), numneigh(nloc);
-  std::vector<int *> firstneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
   deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]),
       gpu_inlist;
   convert_nlist(inlist, nlist_a_cpy);
@@ -765,7 +765,7 @@ TEST_F(TestEnvMatAMix, prod_gpu_equal_cpu) {
   double *posi_cpy_dev = NULL, *avg_dev = NULL, *std_dev = NULL;
   int *f_atype_cpy_dev = NULL, *atype_dev = NULL, *nlist_dev = NULL,
       *array_int_dev = NULL, *memory_dev = NULL;
-  uint_64 *array_longlong_dev = NULL;
+  uint_64* array_longlong_dev = NULL;
   deepmd::malloc_device_memory_sync(em_dev, em);
   deepmd::malloc_device_memory_sync(em_deriv_dev, em_deriv);
   deepmd::malloc_device_memory_sync(rij_dev, rij);
