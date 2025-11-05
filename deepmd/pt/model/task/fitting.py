@@ -599,6 +599,14 @@ class GeneralFitting(Fitting):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.numb_aparam
 
+    def get_dim_case_embd(self) -> int:
+        """Get the number (dimension) of dataset embedding."""
+        return self.dim_case_embd
+
+    def get_case_embd(self) -> Optional[torch.Tensor]:
+        """Get the dataset embedding."""
+        return self.case_embd
+
     # make jit happy
     exclude_types: list[int]
 

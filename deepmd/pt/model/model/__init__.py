@@ -83,6 +83,10 @@ def _get_standard_model_components(model_params, ntypes):
     # descriptor
     model_params["descriptor"]["ntypes"] = ntypes
     model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
+    # explicitly add dim_case_embd if using case embedding
+    if model_params["descriptor"].get("type", "se_e2_a") in ["dpa3"]:
+        dim_case_embd = model_params.get("fitting_net", {}).get("dim_case_embd", 0)
+        model_params["descriptor"]["dim_case_embd"] = dim_case_embd
     descriptor = BaseDescriptor(**model_params["descriptor"])
     # fitting
     fitting_net = model_params.get("fitting_net", {})

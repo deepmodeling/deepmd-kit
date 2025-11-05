@@ -121,6 +121,8 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         use_loc_mapping: bool = True,
         type_map: Optional[list[str]] = None,
         add_chg_spin_ebd: bool = False,
+        add_case_embd: bool = False,
+        dim_case_embd: int = 0,
     ) -> None:
         super().__init__()
 
@@ -180,6 +182,8 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
 
         self.use_econf_tebd = use_econf_tebd
         self.add_chg_spin_ebd = add_chg_spin_ebd
+        self.add_case_embd = add_case_embd
+        self.dim_case_embd = dim_case_embd
         self.use_loc_mapping = use_loc_mapping
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
@@ -216,12 +220,24 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
                 2 * self.tebd_dim,
                 self.tebd_dim,
                 precision=precision,
-                seed=child_seed(seed, 3),
+                seed=child_seed(seed, 5),
             )
         else:
             self.chg_embedding = None
             self.spin_embedding = None
             self.mix_cs_mlp = None
+
+        if self.add_case_embd:
+            assert self.dim_case_embd > 0
+            self.case_embd_mlp = MLPLayer(
+                self.dim_case_embd,
+                self.tebd_dim,
+                precision=precision,
+                bias=False,
+                seed=child_seed(seed, 6),
+            )
+        else:
+            self.case_embd_mlp = None
 
         self.exclude_types = exclude_types
         self.env_protection = env_protection
@@ -326,7 +342,12 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         # share all parameters in type_embedding, repflow
         if shared_level == 0:
             self._modules["type_embedding"] = base_class._modules["type_embedding"]
-            for kk in ["chg_embedding", "spin_embedding", "mix_cs_mlp"]:
+            for kk in [
+                "chg_embedding",
+                "spin_embedding",
+                "mix_cs_mlp",
+                "case_embd_mlp",
+            ]:
                 if kk in self._modules:
                     self._modules[kk] = base_class._modules[kk]
             self.repflows.share_params(base_class.repflows, 0, resume=resume)
@@ -496,6 +517,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         mapping: Optional[torch.Tensor] = None,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
         fparam: Optional[torch.Tensor] = None,
+        case_embd: Optional[torch.Tensor] = None,
     ):
         """Compute the descriptor.
 
@@ -511,6 +533,10 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             The index mapping, mapps extended region index to local region.
         comm_dict
             The data needed for communication for parallel inference.
+        fparam
+            The frame-level parameters. shape: nf x nfparam
+        case_embd
+            The case (dataset) embedding for multitask training with shared fitting. shape: nf x dim_case_embd
 
         Returns
         -------
@@ -552,6 +578,12 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
                 self.mix_cs_mlp(torch.cat((chg_ebd, spin_ebd), dim=-1))
             )
             node_ebd_ext = node_ebd_ext + sys_cs_embd.unsqueeze(1)
+
+        if self.add_case_embd:
+            assert case_embd is not None
+            assert self.case_embd_mlp is not None
+            case_embd_out = self.case_embd_mlp(case_embd)
+            node_ebd_ext = node_ebd_ext + case_embd_out.unsqueeze(0).unsqueeze(0)
 
         node_ebd_inp = node_ebd_ext[:, :nloc, :]
         # repflows

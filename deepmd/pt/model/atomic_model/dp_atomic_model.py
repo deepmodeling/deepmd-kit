@@ -246,6 +246,11 @@ class DPAtomicModel(BaseAtomicModel):
         else:
             fparam_input_for_des = fparam
 
+        if self.fitting_net.get_dim_case_embd() > 0:
+            case_embd_input_for_des = self.fitting_net.get_case_embd()
+        else:
+            case_embd_input_for_des = None
+
         descriptor, rot_mat, g2, h2, sw = self.descriptor(
             extended_coord,
             extended_atype,
@@ -253,6 +258,7 @@ class DPAtomicModel(BaseAtomicModel):
             mapping=mapping,
             comm_dict=comm_dict,
             fparam=fparam_input_for_des,
+            case_embd=case_embd_input_for_des,
         )
         assert descriptor is not None
         if self.enable_eval_descriptor_hook:

@@ -1376,6 +1376,10 @@ def descrpt_dpa3_args():
         "Whether to use local atom index mapping in training or non-parallel inference. "
         "When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation."
     )
+    doc_add_chg_spin_ebd = (
+        "Whether to use charge and spin embedding in the type embedding."
+    )
+    doc_add_case_embd = "Whether to use case (dataset) embedding in the type embedding."
     return [
         # doc_repflow args
         Argument("repflow", dict, dpa3_repflow_args(), doc=doc_repflow),
@@ -1392,6 +1396,14 @@ def descrpt_dpa3_args():
             bool,
             optional=True,
             default=False,
+            doc=doc_add_chg_spin_ebd,
+        ),
+        Argument(
+            "add_case_embd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_add_case_embd,
         ),
         Argument(
             "activation_function",
