@@ -13,7 +13,6 @@ from threading import (
     Thread,
 )
 
-import h5py
 import numpy as np
 import paddle
 import paddle.distributed as dist
@@ -90,9 +89,12 @@ class DpLoaderSet(Dataset):
     ):
         if seed is not None:
             setup_seed(seed)
-        if isinstance(systems, str):
-            with h5py.File(systems) as file:
-                systems = [os.path.join(systems, item) for item in file.keys()]
+        # Use process_systems to handle HDF5 expansion and other system processing
+        from deepmd.utils.data_system import (
+            process_systems,
+        )
+
+        systems = process_systems(systems)
 
         self.systems: list[DeepmdDataSetForLoader] = []
         if len(systems) >= 100:

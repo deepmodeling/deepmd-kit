@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-import os
 from multiprocessing.dummy import (
     Pool,
 )
@@ -10,7 +9,6 @@ from typing import (
     Union,
 )
 
-import h5py
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -88,9 +86,12 @@ class DpLoaderSet(Dataset):
     ) -> None:
         if seed is not None:
             setup_seed(seed)
-        if isinstance(systems, str):
-            with h5py.File(systems) as file:
-                systems = [os.path.join(systems, item) for item in file.keys()]
+        # Use process_systems to handle HDF5 expansion and other system processing
+        from deepmd.utils.data_system import (
+            process_systems,
+        )
+
+        systems = process_systems(systems)
 
         def construct_dataset(system: str) -> DeepmdDataSetForLoader:
             return DeepmdDataSetForLoader(
