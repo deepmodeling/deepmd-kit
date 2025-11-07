@@ -2993,8 +2993,9 @@ def training_data_args() -> list[
     link_sys = make_link("systems", "training/training_data/systems")
     doc_systems = (
         "The data systems for training. "
+        "This key can be a list or a str. "
         "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
-        "When provided as a list, each string item is processed the same way as individual string inputs."
+        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all training systems. "
@@ -3074,8 +3075,9 @@ def validation_data_args() -> list[
     link_sys = make_link("systems", "training/validation_data/systems")
     doc_systems = (
         "The data systems for validation. "
+        "This key can be a list or a str. "
         "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
-        "When provided as a list, each string item is processed the same way as individual string inputs."
+        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all validation systems. "
