@@ -493,7 +493,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         else:
             raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
 
-    def compute_fitting_stat(self, sample_merged) -> None:
+    def compute_fitting_stat(self, sample_merged: Union[Callable[[], list[dict]], list[dict]],) -> None:
         """Compute the input statistics (e.g. mean and stddev) for the fittings from packed data..
 
         Parameters
@@ -506,9 +506,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         """
-        self.fitting_net.compute_input_stats(
-            sample_merged, protection=self.data_stat_protect
-        )
+        pass
 
     def _get_forward_wrapper_func(self) -> Callable[..., torch.Tensor]:
         """Get a forward wrapper of the atomic model for output bias calculation."""
