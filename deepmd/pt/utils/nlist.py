@@ -16,13 +16,13 @@ from deepmd.pt.utils.region import (
 
 
 def extend_input_and_build_neighbor_list(
-    coord,
-    atype,
+    coord: torch.Tensor,
+    atype: torch.Tensor,
     rcut: float,
     sel: list[int],
     mixed_types: bool = False,
     box: Optional[torch.Tensor] = None,
-):
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     nframes, nloc = atype.shape[:2]
     if box is not None:
         box_gpu = box.to(coord.device, non_blocking=True)
@@ -292,7 +292,7 @@ def nlist_distinguish_types(
     nlist: torch.Tensor,
     atype: torch.Tensor,
     sel: list[int],
-):
+) -> torch.Tensor:
     """Given a nlist that does not distinguish atom types, return a nlist that
     distinguish atom types.
 
@@ -414,7 +414,7 @@ def extend_coord_with_ghosts(
     cell: Optional[torch.Tensor],
     rcut: float,
     cell_cpu: Optional[torch.Tensor] = None,
-):
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Extend the coordinates of the atoms by appending peridoc images.
     The number of images is large enough to ensure all the neighbors
     within rcut are appended.

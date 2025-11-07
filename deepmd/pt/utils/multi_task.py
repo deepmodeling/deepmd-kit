@@ -2,6 +2,10 @@
 from copy import (
     deepcopy,
 )
+from typing import (
+    Any,
+    Optional,
+)
 
 from deepmd.pt.model.descriptor import (
     BaseDescriptor,
@@ -11,7 +15,9 @@ from deepmd.pt.model.task import (
 )
 
 
-def preprocess_shared_params(model_config):
+def preprocess_shared_params(
+    model_config: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Preprocess the model params for multitask model, and generate the links dict for further sharing.
 
     Args:
@@ -97,7 +103,11 @@ def preprocess_shared_params(model_config):
     type_map_keys = []
 
     def replace_one_item(
-        params_dict, key_type, key_in_dict, suffix="", index=None
+        params_dict: dict[str, Any],
+        key_type: str,
+        key_in_dict: str,
+        suffix: str = "",
+        index: Optional[int] = None,
     ) -> None:
         shared_type = key_type
         shared_key = key_in_dict
@@ -155,7 +165,7 @@ def preprocess_shared_params(model_config):
     return model_config, shared_links
 
 
-def get_class_name(item_key, item_params):
+def get_class_name(item_key: str, item_params: dict[str, Any]) -> type:
     if item_key == "descriptor":
         return BaseDescriptor.get_class_by_type(item_params.get("type", "se_e2_a"))
     elif item_key == "fitting_net":

@@ -7,6 +7,10 @@ from abc import (
 from functools import (
     lru_cache,
 )
+from typing import (
+    Any,
+    Optional,
+)
 
 import numpy as np
 from scipy.special import (
@@ -21,11 +25,11 @@ class BaseTabulate(ABC):
 
     def __init__(
         self,
-        descrpt,
-        neuron,
-        type_one_side,
-        exclude_types,
-        is_pt,
+        descrpt: Any,
+        neuron: list[int],
+        type_one_side: bool,
+        exclude_types: list[list[int]],
+        is_pt: bool,
     ) -> None:
         """Constructor."""
         super().__init__()
@@ -193,6 +197,48 @@ class BaseTabulate(ABC):
                         nspline[ii][0] if self.is_pt else nspline[ii],
                     )
                     idx += 1
+        elif self.descrpt_type == "T_TEBD":
+            # 1. Find the global range [ll, uu] of cos(theta) across all types
+            uu = np.max(upper)
+            ll = np.min(lower)
+
+            # 2. Create a unique input grid xx for this shared geometric network based on the global range
+            xx = np.arange(extrapolate * ll, ll, stride1, dtype=self.data_type)
+            xx = np.append(
+                xx,
+                np.arange(ll, uu, stride0, dtype=self.data_type),
+            )
+            xx = np.append(
+                xx,
+                np.arange(
+                    uu,
+                    extrapolate * uu,
+                    stride1,
+                    dtype=self.data_type,
+                ),
+            )
+            xx = np.append(xx, np.array([extrapolate * uu], dtype=self.data_type))
+
+            # 3. Calculate the number of spline points
+            nspline = (
+                (uu - ll) / stride0
+                + ((extrapolate * uu - uu) / stride1)
+                + ((ll - extrapolate * ll) / stride1)
+            ).astype(int)
+
+            # 4. Call _build_lower only once to generate the table for this shared network
+            geometric_net_name = "filter_net"
+            self._build_lower(
+                geometric_net_name,
+                xx,
+                0,
+                uu,
+                ll,
+                stride0,
+                stride1,
+                extrapolate,
+                nspline,
+            )
         elif self.descrpt_type == "R":
             for ii in range(self.table_size):
                 if (self.type_one_side and not self._all_excluded(ii)) or (
@@ -238,8 +284,18 @@ class BaseTabulate(ABC):
             self._convert_numpy_float_to_int()
         return self.lower, self.upper
 
+    # generate_spline_table
     def _build_lower(
-        self, net, xx, idx, upper, lower, stride0, stride1, extrapolate, nspline
+        self,
+        net: str,
+        xx: np.ndarray,
+        idx: int,
+        upper: float,
+        lower: float,
+        stride0: int,
+        stride1: int,
+        extrapolate: bool,
+        nspline: int,
     ) -> None:
         vv, dd, d2 = self._make_data(xx, idx)
         self.data[net] = np.zeros(
@@ -247,21 +303,14 @@ class BaseTabulate(ABC):
         )
 
         # tt.shape: [nspline, self.last_layer_size]
-        if self.descrpt_type in ("Atten", "A", "AEbdV2"):
+        if self.descrpt_type in ("Atten", "A", "AEbdV2", "R"):
             tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
             tt[: int((upper - lower) / stride0), :] = stride0
-        elif self.descrpt_type == "T":
+        elif self.descrpt_type in ("T", "T_TEBD"):
             tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
-            tt[
-                int((lower - extrapolate * lower) / stride1) + 1 : (
-                    int((lower - extrapolate * lower) / stride1)
-                    + int((upper - lower) / stride0)
-                ),
-                :,
-            ] = stride0
-        elif self.descrpt_type == "R":
-            tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
-            tt[: int((upper - lower) / stride0), :] = stride0
+            start_index = int((lower - extrapolate * lower) / stride1) + 1
+            end_index = start_index + int((upper - lower) / stride0)
+            tt[start_index:end_index, :] = stride0
         else:
             raise RuntimeError("Unsupported descriptor")
 
@@ -334,7 +383,9 @@ class BaseTabulate(ABC):
         self.lower[net] = lower
 
     @abstractmethod
-    def _make_data(self, xx, idx) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _make_data(
+        self, xx: np.ndarray, idx: int
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Generate tabulation data for the given input.
 
         Parameters
@@ -368,18 +419,18 @@ class BaseTabulate(ABC):
         return all((ii, type_i) in self.exclude_types for type_i in range(self.ntypes))
 
     @abstractmethod
-    def _get_descrpt_type(self):
+    def _get_descrpt_type(self) -> str:
         """Get the descrpt type."""
         pass
 
     @abstractmethod
-    def _get_layer_size(self):
+    def _get_layer_size(self) -> int:
         """Get the number of embedding layer."""
         pass
 
-    def _get_table_size(self):
+    def _get_table_size(self) -> int:
         table_size = 0
-        if self.descrpt_type in ("Atten", "AEbdV2"):
+        if self.descrpt_type in ("Atten", "AEbdV2", "T_TEBD"):
             table_size = 1
         elif self.descrpt_type == "A":
             table_size = self.ntypes * self.ntypes
@@ -395,30 +446,30 @@ class BaseTabulate(ABC):
             raise RuntimeError("Unsupported descriptor")
         return table_size
 
-    def _get_data_type(self):
+    def _get_data_type(self) -> Optional[type]:
         for item in self.matrix["layer_" + str(self.layer_size)]:
             if len(item) != 0:
                 return type(item[0][0])
         return None
 
-    def _get_last_layer_size(self):
+    def _get_last_layer_size(self) -> int:
         for item in self.matrix["layer_" + str(self.layer_size)]:
             if len(item) != 0:
                 return item.shape[1]
         return 0
 
     @abstractmethod
-    def _get_bias(self):
+    def _get_bias(self) -> dict[str, Any]:
         """Get bias of embedding net."""
         pass
 
     @abstractmethod
-    def _get_matrix(self):
+    def _get_matrix(self) -> dict[str, Any]:
         """Get weight matrx of embedding net."""
         pass
 
     @abstractmethod
-    def _convert_numpy_to_tensor(self):
+    def _convert_numpy_to_tensor(self) -> None:
         """Convert self.data from np.ndarray to torch.Tensor."""
         pass
 
@@ -427,13 +478,13 @@ class BaseTabulate(ABC):
         self.lower = {k: int(v) for k, v in self.lower.items()}
         self.upper = {k: int(v) for k, v in self.upper.items()}
 
-    def _get_env_mat_range(self, min_nbor_dist):
+    def _get_env_mat_range(self, min_nbor_dist: float) -> tuple[np.ndarray, np.ndarray]:
         """Change the embedding net range to sw / min_nbor_dist."""
         sw = self._spline5_switch(min_nbor_dist, self.rcut_smth, self.rcut)
         if self.descrpt_type in ("Atten", "A", "AEbdV2"):
             lower = -self.davg[:, 0] / self.dstd[:, 0]
             upper = ((1 / min_nbor_dist) * sw - self.davg[:, 0]) / self.dstd[:, 0]
-        elif self.descrpt_type == "T":
+        elif self.descrpt_type in ("T", "T_TEBD"):
             var = np.square(sw / (min_nbor_dist * self.dstd[:, 1:4]))
             lower = np.min(-var, axis=1)
             upper = np.max(var, axis=1)
@@ -447,7 +498,7 @@ class BaseTabulate(ABC):
         # returns element-wise lower and upper
         return np.floor(lower), np.ceil(upper)
 
-    def _spline5_switch(self, xx, rmin, rmax):
+    def _spline5_switch(self, xx: float, rmin: float, rmax: float) -> float:
         if xx < rmin:
             vv = 1
         elif xx < rmax:

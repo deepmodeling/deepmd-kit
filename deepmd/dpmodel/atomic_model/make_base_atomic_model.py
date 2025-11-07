@@ -4,6 +4,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Any,
     Optional,
 )
 
@@ -17,9 +18,9 @@ from deepmd.utils.plugin import (
 
 
 def make_base_atomic_model(
-    t_tensor,
+    t_tensor: type,
     fwd_method_name: str = "forward_atomic",
-):
+) -> type:
     """Make the base class for the atomic model.
 
     Parameters
@@ -147,12 +148,12 @@ def make_base_atomic_model(
 
         @classmethod
         @abstractmethod
-        def deserialize(cls, data: dict):
+        def deserialize(cls, data: dict) -> Any:
             pass
 
         @abstractmethod
         def change_type_map(
-            self, type_map: list[str], model_with_new_type_stat=None
+            self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
         ) -> None:
             pass
 

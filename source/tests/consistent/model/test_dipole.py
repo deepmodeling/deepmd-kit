@@ -73,6 +73,7 @@ class TestDipole(CommonTest, ModelTest, unittest.TestCase):
     pt_class = DipoleModelPT
     jax_class = DipoleModelJAX
     args = model_args()
+    atol = 1e-8
 
     def get_reference_backend(self):
         """Get the reference backend.
@@ -89,7 +90,7 @@ class TestDipole(CommonTest, ModelTest, unittest.TestCase):
 
     @property
     def skip_tf(self):
-        return True  # need to fix tf consistency
+        return not INSTALLED_TF
 
     @property
     def skip_jax(self) -> bool:

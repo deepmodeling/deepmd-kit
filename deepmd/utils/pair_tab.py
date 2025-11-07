@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    Any,
     Optional,
 )
 
@@ -95,7 +96,7 @@ class PairTab:
         }
 
     @classmethod
-    def deserialize(cls, data) -> "PairTab":
+    def deserialize(cls, data: dict[str, Any]) -> "PairTab":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class")
@@ -257,7 +258,7 @@ class PairTab:
         )
         return pad_extrapolation
 
-    def _make_data(self):
+    def _make_data(self) -> np.ndarray:
         data = np.zeros(
             [self.ntypes * self.ntypes * 4 * self.nspline], dtype=self.data_type
         )

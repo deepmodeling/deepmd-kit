@@ -712,7 +712,7 @@ class RepFlowLayer(torch.nn.Module):
         a_sw: torch.Tensor,  # switch func, nf x nloc x a_nnei
         edge_index: torch.Tensor,  # 2 x n_edge
         angle_index: torch.Tensor,  # 3 x n_angle
-    ):
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Parameters
         ----------

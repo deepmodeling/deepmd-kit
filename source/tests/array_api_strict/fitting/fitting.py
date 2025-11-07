@@ -31,6 +31,7 @@ def setattr_for_general_fitting(name: str, value: Any) -> Any:
         "fparam_inv_std",
         "aparam_avg",
         "aparam_inv_std",
+        "default_fparam_tensor",
     }:
         value = to_array_api_strict_array(value)
     elif name == "emask":

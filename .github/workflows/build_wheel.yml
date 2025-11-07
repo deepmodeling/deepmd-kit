@@ -4,6 +4,9 @@ on:
   push:
     branches-ignore:
       - "gh-readonly-queue/**"
+      - "copilot/**"
+      - "dependabot/**"
+      - "pre-commit-ci-update-config"
     tags:
       - "v*"
   pull_request:
@@ -34,7 +37,7 @@ jobs:
             cuda_version: 11.8
             dp_pkg_name: deepmd-kit-cu11
           # macos-x86-64
-          - os: macos-13
+          - os: macos-15-intel
             python: 311
             platform_id: macosx_x86_64
             dp_variant: cpu
@@ -70,7 +73,7 @@ jobs:
           rm -rf .git
         if: matrix.dp_pkg_name == 'deepmd-kit-cu11'
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.1
+        uses: pypa/cibuildwheel@v3.2
         env:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_ARCHS: all
@@ -79,7 +82,7 @@ jobs:
           CUDA_VERSION: ${{ matrix.cuda_version }}
           DP_PKG_NAME: ${{ matrix.dp_pkg_name }}
           CIBW_BUILD_FRONTEND: 'build[uv]'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: cibw-cp${{ matrix.python }}-${{ matrix.platform_id }}-cu${{ matrix.cuda_version }}-${{ strategy.job-index }}
           path: ./wheelhouse/*.whl
@@ -93,7 +96,7 @@ jobs:
       - name: Build sdist
         run: pipx run uv tool run --with build[uv] --from build python -m build --installer uv --sdist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: cibw-sdist
           path: dist/*.tar.gz
@@ -106,7 +109,7 @@ jobs:
       id-token: write
     if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags/v')
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v6
         with:
           pattern: cibw-*
           path: dist
@@ -129,7 +132,7 @@ jobs:
       - name: Delete huge unnecessary tools folder
         run: rm -rf /opt/hostedtoolcache
       - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v6
         with:
           path: source/install/docker/dist
           pattern: cibw-*-manylinux_x86_64-cu${{ matrix.cuda_version }}*
@@ -162,12 +165,12 @@ jobs:
     needs: [build_wheels, build_sdist]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v6
         with:
           path: dist/packages
           pattern: cibw-*
           merge-multiple: true
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         name: Install Python
         with:
           python-version: '3.11'
@@ -176,7 +179,7 @@ jobs:
           ls dist/packages > package_list.txt
           dumb-pypi --output-dir dist --packages-url ../../packages --package-list package_list.txt --title "DeePMD-kit Developed Packages"
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: dist
   deploy_pypi_index:

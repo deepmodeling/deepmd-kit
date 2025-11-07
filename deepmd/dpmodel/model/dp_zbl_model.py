@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Optional,
 )
 
@@ -29,8 +30,8 @@ class DPZBLModel(DPZBLModel_):
 
     def __init__(
         self,
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
 

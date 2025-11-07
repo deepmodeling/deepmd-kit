@@ -14,7 +14,7 @@ def choice(
     size: Optional[Union[int, tuple[int, ...]]] = None,
     replace: bool = True,
     p: Optional[np.ndarray] = None,
-):
+) -> Union[np.ndarray, int]:
     """Generates a random sample from a given 1-D array.
 
     Parameters
@@ -40,7 +40,9 @@ def choice(
     return _RANDOM_GENERATOR.choice(a, size=size, replace=replace, p=p)
 
 
-def random(size=None):
+def random(
+    size: Optional[Union[int, tuple[int, ...]]] = None,
+) -> Union[float, np.ndarray]:
     """Return random floats in the half-open interval [0.0, 1.0).
 
     Parameters

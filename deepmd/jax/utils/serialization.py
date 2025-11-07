@@ -55,10 +55,15 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
 
         def exported_whether_do_atomic_virial(
             do_atomic_virial: bool, has_ghost_atoms: bool
-        ):
+        ) -> "jax_export.Exported":
             def call_lower_with_fixed_do_atomic_virial(
-                coord, atype, nlist, mapping, fparam, aparam
-            ):
+                coord: jnp.ndarray,
+                atype: jnp.ndarray,
+                nlist: jnp.ndarray,
+                mapping: jnp.ndarray,
+                fparam: jnp.ndarray,
+                aparam: jnp.ndarray,
+            ) -> dict[str, jnp.ndarray]:
                 return call_lower(
                     coord,
                     atype,

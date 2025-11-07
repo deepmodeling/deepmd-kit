@@ -70,11 +70,11 @@ def flax_module(
         metas.add(type(nnx.Module))
 
     class MixedMetaClass(*metas):
-        def __call__(self, *args, **kwargs):
+        def __call__(self, *args: Any, **kwargs: Any) -> Any:
             return type(nnx.Module).__call__(self, *args, **kwargs)
 
     class FlaxModule(module, nnx.Module, metaclass=MixedMetaClass):
-        def __init_subclass__(cls, **kwargs) -> None:
+        def __init_subclass__(cls, **kwargs: Any) -> None:
             return super().__init_subclass__(**kwargs)
 
         def __setattr__(self, name: str, value: Any) -> None:
@@ -84,20 +84,22 @@ def flax_module(
 
 
 class ArrayAPIVariable(nnx.Variable):
-    def __array__(self, *args, **kwargs):
+    def __array__(self, *args: Any, **kwargs: Any) -> np.ndarray:
         return self.value.__array__(*args, **kwargs)
 
-    def __array_namespace__(self, *args, **kwargs):
+    def __array_namespace__(self, *args: Any, **kwargs: Any) -> Any:
         return self.value.__array_namespace__(*args, **kwargs)
 
-    def __dlpack__(self, *args, **kwargs):
+    def __dlpack__(self, *args: Any, **kwargs: Any) -> Any:
         return self.value.__dlpack__(*args, **kwargs)
 
-    def __dlpack_device__(self, *args, **kwargs):
+    def __dlpack_device__(self, *args: Any, **kwargs: Any) -> Any:
         return self.value.__dlpack_device__(*args, **kwargs)
 
 
-def scatter_sum(input, dim, index: jnp.ndarray, src: jnp.ndarray) -> jnp.ndarray:
+def scatter_sum(
+    input: jnp.ndarray, dim: int, index: jnp.ndarray, src: jnp.ndarray
+) -> jnp.ndarray:
     """Reduces all values from the src tensor to the indices specified in the index tensor."""
     idx = jnp.arange(input.size, dtype=jnp.int64).reshape(input.shape)
     new_idx = jnp.take_along_axis(idx, index, axis=dim).ravel()

@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
+
 import torch
 import torch.nn.functional as F
 
@@ -13,15 +17,15 @@ from deepmd.pt.utils import (
 class DenoiseLoss(TaskLoss):
     def __init__(
         self,
-        ntypes,
-        masked_token_loss=1.0,
-        masked_coord_loss=1.0,
-        norm_loss=0.01,
-        use_l1=True,
-        beta=1.00,
-        mask_loss_coord=True,
-        mask_loss_token=True,
-        **kwargs,
+        ntypes: int,
+        masked_token_loss: float = 1.0,
+        masked_coord_loss: float = 1.0,
+        norm_loss: float = 0.01,
+        use_l1: bool = True,
+        beta: float = 1.00,
+        mask_loss_coord: bool = True,
+        mask_loss_token: bool = True,
+        **kwargs: Any,
     ) -> None:
         """Construct a layer to compute loss on coord, and type reconstruction."""
         super().__init__()
@@ -38,7 +42,14 @@ class DenoiseLoss(TaskLoss):
         self.mask_loss_coord = mask_loss_coord
         self.mask_loss_token = mask_loss_token
 
-    def forward(self, model_pred, label, natoms, learning_rate, mae=False):
+    def forward(
+        self,
+        model_pred: dict[str, torch.Tensor],
+        label: dict[str, torch.Tensor],
+        natoms: int,
+        learning_rate: float,
+        mae: bool = False,
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Return loss on coord and type denoise.
 
         Returns

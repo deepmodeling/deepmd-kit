@@ -35,6 +35,7 @@ def setattr_for_general_fitting(name: str, value: Any) -> Any:
         "fparam_inv_std",
         "aparam_avg",
         "aparam_inv_std",
+        "default_fparam_tensor",
     }:
         value = to_jax_array(value)
         if value is not None:

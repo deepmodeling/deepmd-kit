@@ -585,12 +585,12 @@ class LocalAtten(torch.nn.Module):
 class RepformerLayer(torch.nn.Module):
     def __init__(
         self,
-        rcut,
-        rcut_smth,
+        rcut: float,
+        rcut_smth: float,
         sel: int,
         ntypes: int,
-        g1_dim=128,
-        g2_dim=16,
+        g1_dim: int = 128,
+        g2_dim: int = 16,
         axis_neuron: int = 4,
         update_chnnl_2: bool = True,
         update_g1_has_conv: bool = True,
@@ -1141,7 +1141,7 @@ class RepformerLayer(torch.nn.Module):
         nlist: torch.Tensor,  # nf x nloc x nnei
         nlist_mask: torch.Tensor,  # nf x nloc x nnei
         sw: torch.Tensor,  # switch func, nf x nloc x nnei
-    ):
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Parameters
         ----------

@@ -8,6 +8,14 @@ The top module (deepmd.__init__) should not import any third-party
 modules for performance.
 """
 
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
+
+if TYPE_CHECKING:
+    from deepmd.infer import DeepPotential as DeepPotentialType
+
 try:
     from deepmd._version import version as __version__
 except ImportError:
@@ -16,7 +24,7 @@ except ImportError:
     )
 
 
-def DeepPotential(*args, **kwargs):
+def DeepPotential(*args: Any, **kwargs: Any) -> "DeepPotentialType":
     """Factory function that forwards to DeepEval (for compatibility
     and performance).
 

@@ -164,15 +164,23 @@ inline void enableTimestamp(bool enable = true) {
 }
 }  // namespace logg
 
-std::vector<int> createNlistTensorPD(
-    const std::vector<std::vector<int>>& data) {
-  std::vector<int> ret;
+void fillNlistTensor(const std::vector<std::vector<int>>& data,
+                     std::unique_ptr<paddle_infer::Tensor>& flat_tensor) {
+  size_t total_size = 0;
   for (const auto& row : data) {
-    ret.insert(ret.end(), row.begin(), row.end());
+    total_size += row.size();
   }
-  return ret;
-}
+  std::vector<int> flat_data;
+  flat_data.reserve(total_size);
+  for (const auto& row : data) {
+    flat_data.insert(flat_data.end(), row.begin(), row.end());
+  }
 
+  int nloc = data.size();
+  int nnei = nloc > 0 ? total_size / nloc : 0;
+  flat_tensor->Reshape({1, nloc, nnei});
+  flat_tensor->CopyFromCpu(flat_data.data());
+}
 DeepPotPD::DeepPotPD() : inited(false) {}
 DeepPotPD::DeepPotPD(const std::string& model,
                      const int& gpu_rank,
@@ -375,16 +383,14 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   auto coord_wrapped_Tensor = predictor_fl->GetInputHandle("coord");
   coord_wrapped_Tensor->Reshape({1, nall_real, 3});
   coord_wrapped_Tensor->CopyFromCpu(coord_wrapped.data());
-
   auto atype_Tensor = predictor_fl->GetInputHandle("atype");
   atype_Tensor->Reshape({1, nall_real});
   atype_Tensor->CopyFromCpu(datype.data());
-
   if (ago == 0) {
-    nlist_data.copy_from_nlist(lmp_list);
+    nlist_data.copy_from_nlist(lmp_list, nall - nghost);
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
-    if (do_message_passing == 1 && nghost > 0) {
+    if (do_message_passing) {
       auto sendproc_tensor = predictor_fl->GetInputHandle("send_proc");
       auto recvproc_tensor = predictor_fl->GetInputHandle("recv_proc");
       auto recvnum_tensor = predictor_fl->GetInputHandle("recv_num");
@@ -446,11 +452,8 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
       this->mapping_tensor->CopyFromCpu(mapping.data());
     }
   }
-  std::vector<int> firstneigh = createNlistTensorPD(nlist_data.jlist);
   this->firstneigh_tensor = predictor_fl->GetInputHandle("nlist");
-  this->firstneigh_tensor->Reshape(
-      {1, nloc, (int)firstneigh.size() / (int)nloc});
-  this->firstneigh_tensor->CopyFromCpu(firstneigh.data());
+  fillNlistTensor(nlist_data.jlist, this->firstneigh_tensor);
   bool do_atom_virial_tensor = atomic;
   if (!fparam.empty()) {
     std::unique_ptr<paddle_infer::Tensor> fparam_tensor;
@@ -474,9 +477,9 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   auto energy_ = predictor_fl->GetOutputHandle(output_names.at(1));
   auto force_ = predictor_fl->GetOutputHandle(output_names.at(2));
   auto virial_ = predictor_fl->GetOutputHandle(output_names.at(4));
-  int output_energy_size = numel(*energy_);
-  int output_force_size = numel(*force_);
-  int output_virial_size = numel(*virial_);
+  size_t output_energy_size = numel(*energy_);
+  size_t output_force_size = numel(*force_);
+  size_t output_virial_size = numel(*virial_);
   // output energy
   ener.resize(output_energy_size);
   energy_->CopyToCpu(ener.data());
@@ -510,7 +513,7 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   }
 }
 template void DeepPotPD::compute<double, std::vector<ENERGYTYPE>>(
-    std::vector<ENERGYTYPE>& dener,
+    std::vector<ENERGYTYPE>& ener,
     std::vector<double>& force,
     std::vector<double>& virial,
     std::vector<double>& atom_energy,
@@ -522,11 +525,10 @@ template void DeepPotPD::compute<double, std::vector<ENERGYTYPE>>(
     const InputNlist& lmp_list,
     const int& ago,
     const std::vector<double>& fparam,
-    const std::vector<double>& aparam_,
+    const std::vector<double>& aparam,
     const bool atomic);
-
 template void DeepPotPD::compute<float, std::vector<ENERGYTYPE>>(
-    std::vector<ENERGYTYPE>& dener,
+    std::vector<ENERGYTYPE>& ener,
     std::vector<float>& force,
     std::vector<float>& virial,
     std::vector<float>& atom_energy,
@@ -538,9 +540,8 @@ template void DeepPotPD::compute<float, std::vector<ENERGYTYPE>>(
     const InputNlist& lmp_list,
     const int& ago,
     const std::vector<float>& fparam,
-    const std::vector<float>& aparam_,
+    const std::vector<float>& aparam,
     const bool atomic);
-
 // ENERGYVTYPE: std::vector<ENERGYTYPE> or ENERGYTYPE
 template <typename VALUETYPE, typename ENERGYVTYPE>
 void DeepPotPD::compute(ENERGYVTYPE& ener,
@@ -562,9 +563,9 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   coord_wrapped_Tensor->Reshape({1, natoms, 3});
   coord_wrapped_Tensor->CopyFromCpu(coord_wrapped.data());
 
-  std::vector<std::int64_t> atype_64(atype.begin(), atype.end());
   auto atype_Tensor = predictor->GetInputHandle("atype");
   atype_Tensor->Reshape({1, natoms});
+  std::vector<std::int64_t> atype_64(atype.begin(), atype.end());
   atype_Tensor->CopyFromCpu(atype_64.data());
 
   std::unique_ptr<paddle_infer::Tensor> box_Tensor;
@@ -573,15 +574,15 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
     box_Tensor->Reshape({1, 9});
     box_Tensor->CopyFromCpu((box.data()));
   }
-  std::unique_ptr<paddle_infer::Tensor> fparam_tensor;
   if (!fparam.empty()) {
-    fparam_tensor = predictor->GetInputHandle("box");
+    std::unique_ptr<paddle_infer::Tensor> fparam_tensor;
+    fparam_tensor = predictor->GetInputHandle("fparam");
     fparam_tensor->Reshape({1, static_cast<int>(fparam.size())});
     fparam_tensor->CopyFromCpu((fparam.data()));
   }
-  std::unique_ptr<paddle_infer::Tensor> aparam_tensor;
   if (!aparam.empty()) {
-    aparam_tensor = predictor->GetInputHandle("box");
+    std::unique_ptr<paddle_infer::Tensor> aparam_tensor;
+    aparam_tensor = predictor->GetInputHandle("aparam");
     aparam_tensor->Reshape(
         {1, natoms, static_cast<int>(aparam.size()) / natoms});
     aparam_tensor->CopyFromCpu((aparam.data()));
@@ -597,17 +598,17 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   auto force_ = predictor->GetOutputHandle(output_names.at(3));
   auto virial_ = predictor->GetOutputHandle(output_names.at(5));
 
-  int enery_numel = numel(*energy_);
+  size_t enery_numel = numel(*energy_);
   assert(enery_numel > 0);
   ener.resize(enery_numel);
   energy_->CopyToCpu(ener.data());
 
-  int force_numel = numel(*force_);
+  size_t force_numel = numel(*force_);
   assert(force_numel > 0);
   force.resize(force_numel);
   force_->CopyToCpu(force.data());
 
-  int virial_numel = numel(*virial_);
+  size_t virial_numel = numel(*virial_);
   assert(virial_numel > 0);
   virial.resize(virial_numel);
   virial_->CopyToCpu(virial.data());
@@ -615,8 +616,8 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   if (atomic) {
     auto atom_energy_ = predictor->GetOutputHandle(output_names.at(0));
     auto atom_virial_ = predictor->GetOutputHandle(output_names.at(1));
-    int atom_energy_numel = numel(*atom_energy_);
-    int atom_virial_numel = numel(*atom_virial_);
+    size_t atom_energy_numel = numel(*atom_energy_);
+    size_t atom_virial_numel = numel(*atom_virial_);
     assert(atom_energy_numel > 0);
     assert(atom_virial_numel > 0);
     atom_energy.resize(atom_energy_numel);
@@ -628,11 +629,11 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
 
 template void DeepPotPD::compute<double, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
-    std::vector<double>& dforce,
+    std::vector<double>& force,
     std::vector<double>& virial,
     std::vector<double>& atom_energy,
     std::vector<double>& atom_virial,
-    const std::vector<double>& dcoord,
+    const std::vector<double>& coord,
     const std::vector<int>& atype,
     const std::vector<double>& box,
     const std::vector<double>& fparam,
@@ -645,7 +646,7 @@ template void DeepPotPD::compute<float, std::vector<ENERGYTYPE>>(
     std::vector<float>& virial,
     std::vector<float>& atom_energy,
     std::vector<float>& atom_virial,
-    const std::vector<float>& dcoord,
+    const std::vector<float>& coord,
     const std::vector<int>& atype,
     const std::vector<float>& box,
     const std::vector<float>& fparam,
@@ -656,7 +657,7 @@ template void DeepPotPD::compute<float, std::vector<ENERGYTYPE>>(
 that need to be postprocessed */
 void DeepPotPD::get_type_map(std::string& type_map) {
   auto type_map_tensor = predictor->GetOutputHandle("buffer_type_map");
-  int type_map_size = numel(*type_map_tensor);
+  size_t type_map_size = numel(*type_map_tensor);
 
   std::vector<int> type_map_arr(type_map_size, 0);
   type_map_tensor->CopyToCpu(type_map_arr.data());
@@ -670,7 +671,7 @@ template <typename BUFFERTYPE>
 void DeepPotPD::get_buffer(const std::string& buffer_name,
                            std::vector<BUFFERTYPE>& buffer_array) {
   auto buffer_tensor = predictor->GetOutputHandle(buffer_name);
-  int buffer_size = numel(*buffer_tensor);
+  size_t buffer_size = numel(*buffer_tensor);
   buffer_array.resize(buffer_size);
   buffer_tensor->CopyToCpu(buffer_array.data());
 }

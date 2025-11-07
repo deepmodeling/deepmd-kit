@@ -116,7 +116,7 @@ def get_pt_requirement(pt_version: str = "") -> dict:
         cuda_version = os.environ.get("CUDA_VERSION", "12.2")
         if cuda_version == "" or cuda_version in SpecifierSet(">=12,<13"):
             # CUDA 12.2, cudnn 9
-            pt_version = "2.7.0"
+            pt_version = "2.8.0"
         elif cuda_version in SpecifierSet(">=11,<12"):
             # CUDA 11.8, cudnn 8
             pt_version = "2.3.1"

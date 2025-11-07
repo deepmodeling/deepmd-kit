@@ -45,7 +45,7 @@ def decode_list_of_bytes(list_of_bytes: list[bytes]) -> list[str]:
 class TFModelWrapper(tf.Module):
     def __init__(
         self,
-        model,
+        model: str,
     ) -> None:
         self.model = tf.saved_model.load(model)
         self._call_lower = jax2tf.call_tf(self.model.call_lower)
@@ -115,7 +115,7 @@ class TFModelWrapper(tf.Module):
         fparam: Optional[jnp.ndarray] = None,
         aparam: Optional[jnp.ndarray] = None,
         do_atomic_virial: bool = False,
-    ):
+    ) -> dict[str, jnp.ndarray]:
         """Return model prediction.
 
         Parameters
@@ -165,7 +165,7 @@ class TFModelWrapper(tf.Module):
             aparam,
         )
 
-    def model_output_def(self):
+    def model_output_def(self) -> ModelOutputDef:
         return ModelOutputDef(
             FittingOutputDef([OUTPUT_DEFS[tt] for tt in self.model_output_type()])
         )
@@ -179,7 +179,7 @@ class TFModelWrapper(tf.Module):
         fparam: Optional[jnp.ndarray] = None,
         aparam: Optional[jnp.ndarray] = None,
         do_atomic_virial: bool = False,
-    ):
+    ) -> dict[str, jnp.ndarray]:
         if do_atomic_virial:
             call_lower = self._call_lower_atomic_virial
         else:
@@ -207,15 +207,15 @@ class TFModelWrapper(tf.Module):
         """Get the type map."""
         return self.type_map
 
-    def get_rcut(self):
+    def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return self.rcut
 
-    def get_dim_fparam(self):
+    def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
         return self.dim_fparam
 
-    def get_dim_aparam(self):
+    def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.dim_aparam
 

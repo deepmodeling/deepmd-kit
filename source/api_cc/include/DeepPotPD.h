@@ -282,12 +282,11 @@ class DeepPotPD : public DeepPotBackend {
    * @brief Compute the number of elements in a tensor.
    * @param[in] x Tensor x.
    **/
-  int numel(const paddle_infer::Tensor& x) const {
-    // TODO: There might be a overflow problem here for multiply int numbers.
-    int ret = 1;
+  size_t numel(const paddle_infer::Tensor& x) const {
+    size_t ret = 1;
     std::vector<int> x_shape = x.shape();
     for (std::size_t i = 0, n = x_shape.size(); i < n; ++i) {
-      ret *= x_shape[i];
+      ret *= static_cast<size_t>(x_shape[i]);
     }
     return ret;
   };
