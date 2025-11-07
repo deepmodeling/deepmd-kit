@@ -89,7 +89,11 @@ class DPTrainTest:
                     state_dict_trained[state_key].numpy(),
                     state_dict_finetuned_empty[state_key].numpy(),
                 )
-                if ("fitting_net" not in state_key) or ("fparam" in state_key) or ("aparam" in state_key):
+                if (
+                    ("fitting_net" not in state_key)
+                    or ("fparam" in state_key)
+                    or ("aparam" in state_key)
+                ):
                     np.testing.assert_allclose(
                         state_dict_trained[state_key].numpy(),
                         state_dict_finetuned_random[state_key].numpy(),
