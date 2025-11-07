@@ -3,9 +3,9 @@ import functools
 import logging
 from typing import (
     Any,
-    Union,
     Callable,
     Optional,
+    Union,
 )
 
 import torch
@@ -333,7 +333,10 @@ class DPAtomicModel(BaseAtomicModel):
         if compute_or_load_out_stat:
             self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
-    def compute_fitting_stat(self, sample_merged: Union[Callable[[], list[dict]], list[dict]],) -> None:
+    def compute_fitting_stat(
+        self,
+        sample_merged: Union[Callable[[], list[dict]], list[dict]],
+    ) -> None:
         """Compute the input statistics (e.g. mean and stddev) for the fittings from packed data..
 
         Parameters
