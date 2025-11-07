@@ -25,6 +25,7 @@ from deepmd.env import (
 )
 from deepmd.utils import random as dp_random
 from deepmd.utils.path import (
+    DPH5Path,
     DPPath,
 )
 
@@ -427,7 +428,11 @@ class DeepmdData:
         # 4. Handle atom types (mixed or standard)
         if self.mixed_type:
             type_path = set_dir / "real_atom_types.npy"
-            mmap_types = self._get_memmap(type_path)
+            # For HDF5 files, use load_numpy; for filesystem, use memmap
+            if isinstance(type_path, DPH5Path):
+                mmap_types = type_path.load_numpy()
+            else:
+                mmap_types = self._get_memmap(type_path)
             real_type = mmap_types[local_idx].copy().astype(np.int32)
 
             if self.enforce_type_map:
@@ -868,8 +873,14 @@ class DeepmdData:
                 data = np.full([ndof], vv["default"], dtype=dtype)
             return np.float32(0.0), data
 
-        # Branch 2: File exists, use memmap
-        mmap_obj = self._get_memmap(path)
+        # Branch 2: Data loading
+        if isinstance(path, DPH5Path):
+            # For HDF5 files, use load_numpy which handles HDF5 datasets
+            mmap_obj = path.load_numpy().astype(dtype)
+        else:
+            # For filesystem paths, use memmap for better performance
+            mmap_obj = self._get_memmap(path)
+
         # corner case: single frame
         if set_nframes == 1:
             mmap_obj = mmap_obj[None, ...]
