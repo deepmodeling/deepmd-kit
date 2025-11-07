@@ -337,13 +337,13 @@ class DPAtomicModel(BaseAtomicModel):
         self,
         sample_merged: Union[Callable[[], list[dict]], list[dict]],
     ) -> None:
-        """Compute the input statistics (e.g. mean and stddev) for the fittings from packed data..
+        """Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
 
         Parameters
         ----------
         sample_merged : Union[Callable[[], list[dict]], list[dict]]
             - list[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
             - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
