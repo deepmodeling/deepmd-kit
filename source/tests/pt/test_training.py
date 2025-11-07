@@ -256,6 +256,7 @@ class TestFparam(unittest.TestCase, DPTrainTest):
         self.config["training"]["save_freq"] = 1
         self.set_path = Path(__file__).parent / "water/data/data_0" / "set.000"
         shutil.copyfile(self.set_path / "energy.npy", self.set_path / "fparam.npy")
+        self.config["model"]["data_stat_nbatch"] = 100
 
     def tearDown(self) -> None:
         (self.set_path / "fparam.npy").unlink(missing_ok=True)
