@@ -790,6 +790,7 @@ def process_systems(
     """Process the user-input systems.
 
     If it is a single directory, search for all the systems in the directory.
+    If it is a list, each item in the list is treated as a directory to search.
     Check if the systems are valid.
 
     Parameters
@@ -801,17 +802,31 @@ def process_systems(
 
     Returns
     -------
-    list of str
+    result_systems: list of str
         The valid systems
     """
+    # Normalize input to a list of paths to search
     if isinstance(systems, str):
-        if patterns is None:
-            systems = expand_sys_str(systems)
-        else:
-            systems = rglob_sys_str(systems, patterns)
+        search_paths = [systems]
     elif isinstance(systems, list):
-        systems = systems.copy()
-    return systems
+        search_paths = systems
+    else:
+        # Handle unsupported input types
+        raise ValueError(
+            f"Invalid systems type: {type(systems)}. Must be str or list[str]."
+        )
+
+    # Iterate over the search_paths list and apply expansion logic to each path
+    result_systems = []
+    for path in search_paths:
+        if patterns is None:
+            expanded_paths = expand_sys_str(path)
+        else:
+            expanded_paths = rglob_sys_str(path, patterns)
+
+        result_systems.extend(expanded_paths)
+
+    return result_systems
 
 
 def get_data(
