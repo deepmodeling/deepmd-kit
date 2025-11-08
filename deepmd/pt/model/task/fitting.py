@@ -6,7 +6,6 @@ from abc import (
 from typing import (
     Any,
     Callable,
-    List,
     Optional,
     Union,
 )
@@ -64,7 +63,7 @@ class Fitting(torch.nn.Module, BaseFitting):
         return super().__new__(cls)
 
     def share_params(
-        self, base_class: "Fitting", shared_level: int, model_prob=1.0, protection=1e-2, resume: bool = False
+        self, base_class: "Fitting", shared_level: int, model_prob: float = 1.0, protection: float = 1e-2, resume: bool = False
     ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
@@ -301,7 +300,7 @@ class Fitting(torch.nn.Module, BaseFitting):
             self.aparam_avg.copy_(to_torch_tensor(aparam_avg))
             self.aparam_inv_std.copy_(to_torch_tensor(aparam_inv_std))
 
-    def get_stats(self) -> dict[str, List[StatItem]]:
+    def get_stats(self) -> dict[str, list[StatItem]]:
         """Get the statistics of the fitting_net."""
         if self.stats is None:
             raise RuntimeError(
