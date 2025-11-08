@@ -616,11 +616,30 @@ class Trainer:
             frz_model = torch.jit.load(init_frz_model, map_location=DEVICE)
             self.model.load_state_dict(frz_model.state_dict())
 
+        # Get model prob for multi-task
+        if self.multi_task:
+            self.model_prob = np.array([0.0 for key in self.model_keys])
+            if training_params.get("model_prob", None) is not None:
+                model_prob = training_params["model_prob"]
+                for ii, model_key in enumerate(self.model_keys):
+                    if model_key in model_prob:
+                        self.model_prob[ii] += float(model_prob[model_key])
+            else:
+                for ii, model_key in enumerate(self.model_keys):
+                    self.model_prob[ii] += float(len(self.training_data[model_key]))
+            sum_prob = np.sum(self.model_prob)
+            assert sum_prob > 0.0, "Sum of model prob must be larger than 0!"
+            self.model_prob = self.model_prob / sum_prob
+
         # Multi-task share params
         if shared_links is not None:
+            _data_stat_protect = np.array([model_params["model_dict"][ii].get("data_stat_protect", 1e-2) for ii in model_params["model_dict"]])
+            assert np.allclose(_data_stat_protect, _data_stat_protect[0]), f"Model key 'data_stat_protect' must be the same in each branch when multitask!"
             self.wrapper.share_params(
                 shared_links,
                 resume=(resuming and not self.finetune_update_stat) or self.rank != 0,
+                model_key_prob_map = dict(zip(self.model_keys, self.model_prob)),
+                data_stat_protect = _data_stat_protect[0]
             )
 
         if dist.is_available() and dist.is_initialized():
@@ -669,21 +688,6 @@ class Trainer:
             )
         else:
             raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
-
-        # Get model prob for multi-task
-        if self.multi_task:
-            self.model_prob = np.array([0.0 for key in self.model_keys])
-            if training_params.get("model_prob", None) is not None:
-                model_prob = training_params["model_prob"]
-                for ii, model_key in enumerate(self.model_keys):
-                    if model_key in model_prob:
-                        self.model_prob[ii] += float(model_prob[model_key])
-            else:
-                for ii, model_key in enumerate(self.model_keys):
-                    self.model_prob[ii] += float(len(self.training_data[model_key]))
-            sum_prob = np.sum(self.model_prob)
-            assert sum_prob > 0.0, "Sum of model prob must be larger than 0!"
-            self.model_prob = self.model_prob / sum_prob
 
         # Tensorboard
         self.enable_tensorboard = training_params.get("tensorboard", False)
@@ -1337,12 +1341,14 @@ class Trainer:
 def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
     additional_data_requirement = []
     if _model.get_dim_fparam() > 0:
+        _fparam_default = _model.get_default_fparam().cpu().numpy() if _model.has_default_fparam() else 0.0
         fparam_requirement_items = [
             DataRequirementItem(
                 "fparam",
                 _model.get_dim_fparam(),
                 atomic=False,
                 must=not _model.has_default_fparam(),
+                default=_fparam_default,
             )
         ]
         additional_data_requirement += fparam_requirement_items
