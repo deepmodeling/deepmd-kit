@@ -63,8 +63,8 @@ class ModelWrapper(torch.nn.Module):
     def share_params(
         self,
         shared_links: dict[str, Any],
-        model_key_prob_map,
-        data_stat_protect=1e-2,
+        model_key_prob_map: dict,
+        data_stat_protect: float = 1e-2,
         resume: bool = False,
     ) -> None:
         """
