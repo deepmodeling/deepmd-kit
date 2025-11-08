@@ -633,13 +633,20 @@ class Trainer:
 
         # Multi-task share params
         if shared_links is not None:
-            _data_stat_protect = np.array([model_params["model_dict"][ii].get("data_stat_protect", 1e-2) for ii in model_params["model_dict"]])
-            assert np.allclose(_data_stat_protect, _data_stat_protect[0]), f"Model key 'data_stat_protect' must be the same in each branch when multitask!"
+            _data_stat_protect = np.array(
+                [
+                    model_params["model_dict"][ii].get("data_stat_protect", 1e-2)
+                    for ii in model_params["model_dict"]
+                ]
+            )
+            assert np.allclose(_data_stat_protect, _data_stat_protect[0]), (
+                "Model key 'data_stat_protect' must be the same in each branch when multitask!"
+            )
             self.wrapper.share_params(
                 shared_links,
                 resume=(resuming and not self.finetune_update_stat) or self.rank != 0,
-                model_key_prob_map = dict(zip(self.model_keys, self.model_prob)),
-                data_stat_protect = _data_stat_protect[0]
+                model_key_prob_map=dict(zip(self.model_keys, self.model_prob)),
+                data_stat_protect=_data_stat_protect[0],
             )
 
         if dist.is_available() and dist.is_initialized():
@@ -1341,7 +1348,11 @@ class Trainer:
 def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
     additional_data_requirement = []
     if _model.get_dim_fparam() > 0:
-        _fparam_default = _model.get_default_fparam().cpu().numpy() if _model.has_default_fparam() else 0.0
+        _fparam_default = (
+            _model.get_default_fparam().cpu().numpy()
+            if _model.has_default_fparam()
+            else 0.0
+        )
         fparam_requirement_items = [
             DataRequirementItem(
                 "fparam",

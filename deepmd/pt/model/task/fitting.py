@@ -6,9 +6,9 @@ from abc import (
 from typing import (
     Any,
     Callable,
+    List,
     Optional,
     Union,
-    List,
 )
 
 import numpy as np
@@ -38,15 +38,15 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
 )
+from deepmd.utils.env_mat_stat import (
+    StatItem,
+)
 from deepmd.utils.finetune import (
     get_index_between_two_maps,
     map_atom_exclude_types,
 )
 from deepmd.utils.path import (
     DPPath,
-)
-from deepmd.utils.env_mat_stat import (
-    StatItem,
 )
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
@@ -118,7 +118,7 @@ class Fitting(torch.nn.Module, BaseFitting):
                         torch.tensor(
                             aparam_inv_std, device=env.DEVICE, dtype=base_class.aparam_inv_std.dtype
                         )
-                    )     
+                    )
                 self.aparam_avg = base_class.aparam_avg
                 self.aparam_inv_std = base_class.aparam_inv_std
             # the following will successfully link all the params except buffers, which need manually link.
