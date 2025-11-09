@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import tempfile
 import json
 import os
 import shutil
+import tempfile
 import unittest
 from copy import (
     deepcopy,
@@ -14,9 +14,9 @@ from typing import (
     NoReturn,
 )
 
-import torch
 import h5py
 import numpy as np
+import torch
 
 from deepmd.pt.entrypoints.main import (
     get_trainer,
@@ -30,19 +30,20 @@ from deepmd.pt.model.task import (
 from deepmd.pt.utils.multi_task import (
     preprocess_shared_params,
 )
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+    to_torch_tensor,
+)
 from deepmd.utils.argcheck import (
     normalize,
 )
 from deepmd.utils.compat import (
     update_deepmd_input,
 )
-from deepmd.pt.utils.utils import (
-    to_numpy_array,
-    to_torch_tensor,
-)
 from deepmd.utils.path import (
     DPPath,
 )
+
 from .model.test_permutation import (
     model_se_e2_a,
 )
@@ -204,13 +205,14 @@ class TestEnerFittingStat(unittest.TestCase):
             arefs_inv, to_numpy_array(fitting.aparam_inv_std)
         )
 
+
 def get_weighted_fitting_stat(model_prob: list, *stat_arrays, protection: float):
     n_arrays = len(stat_arrays)
     assert len(model_prob) == n_arrays
 
     nframes = [stat.shape[0] for stat in stat_arrays]
     sums = [stat.sum(axis=0) for stat in stat_arrays]
-    squared_sums = [(stat ** 2).sum(axis=0) for stat in stat_arrays]
+    squared_sums = [(stat**2).sum(axis=0) for stat in stat_arrays]
 
     weighted_sum = sum(model_prob[i] * sums[i] for i in range(n_arrays))
     total_weighted_frames = sum(model_prob[i] * nframes[i] for i in range(n_arrays))
@@ -218,24 +220,26 @@ def get_weighted_fitting_stat(model_prob: list, *stat_arrays, protection: float)
 
     weighted_square_sum = sum(model_prob[i] * squared_sums[i] for i in range(n_arrays))
     weighted_square_avg = weighted_square_sum / total_weighted_frames
-    weighted_std = np.sqrt(weighted_square_avg - weighted_avg ** 2)
+    weighted_std = np.sqrt(weighted_square_avg - weighted_avg**2)
     weighted_std = np.where(weighted_std < protection, protection, weighted_std)
-    
+
     return weighted_avg, weighted_std
 
-class TestMultiTaskFittingStat(unittest.TestCase):
 
+class TestMultiTaskFittingStat(unittest.TestCase):
     def setUp(self) -> None:
         multitask_sharefit_template_json = str(
             Path(__file__).parent / "water/multitask_sharefit.json"
         )
         with open(multitask_sharefit_template_json) as f:
-           multitask_se_e2_a = json.load(f)
+            multitask_se_e2_a = json.load(f)
         multitask_se_e2_a["model"]["shared_dict"]["my_descriptor"] = model_se_e2_a[
             "descriptor"
         ]
         self.data_file = [str(Path(__file__).parent / "water/data/data_0")]
-        self.data_file_without_fparam = [str(Path(__file__).parent / "water/data/data_1")]
+        self.data_file_without_fparam = [
+            str(Path(__file__).parent / "water/data/data_1")
+        ]
         self.data_file_single = [str(Path(__file__).parent / "water/data/single")]
         self.stat_files = "se_e2_a_share_fit"
         os.makedirs(self.stat_files, exist_ok=True)
@@ -249,12 +253,14 @@ class TestMultiTaskFittingStat(unittest.TestCase):
         )
         self.config["model"]["shared_dict"]["my_fitting"]["numb_fparam"] = 2
         self.default_fparam = [1.0, 0.0]
-        self.config["model"]["shared_dict"]["my_fitting"]["default_fparam"] = self.default_fparam
+        self.config["model"]["shared_dict"]["my_fitting"]["default_fparam"] = (
+            self.default_fparam
+        )
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
 
         self.origin_config = deepcopy(self.config)
-    
+
     def test_sharefitting_with_fparam(self):
         # test multitask training with fparam
         self.config = deepcopy(self.origin_config)
@@ -287,12 +293,12 @@ class TestMultiTaskFittingStat(unittest.TestCase):
         # check fparam shared
         multi_state_dict = trainer.wrapper.model.state_dict()
         torch.testing.assert_close(
-            multi_state_dict['model_1.atomic_model.fitting_net.fparam_avg'], 
-            multi_state_dict['model_2.atomic_model.fitting_net.fparam_avg']
+            multi_state_dict["model_1.atomic_model.fitting_net.fparam_avg"],
+            multi_state_dict["model_2.atomic_model.fitting_net.fparam_avg"],
         )
         torch.testing.assert_close(
-            multi_state_dict['model_1.atomic_model.fitting_net.fparam_inv_std'], 
-            multi_state_dict['model_2.atomic_model.fitting_net.fparam_inv_std']
+            multi_state_dict["model_1.atomic_model.fitting_net.fparam_inv_std"],
+            multi_state_dict["model_2.atomic_model.fitting_net.fparam_inv_std"],
         )
 
         # check fitting stat in stat_file is correct
@@ -301,31 +307,39 @@ class TestMultiTaskFittingStat(unittest.TestCase):
         fparam_data1 = np.load(f"{self.data_file[0]}/set.000/fparam.npy")
         fparam_data2 = np.load(f"{self.data_file_single[0]}/set.000/fparam.npy")
         np.testing.assert_almost_equal(
-            fparam_stat_model1[:,0], [fparam_data1.shape[0]] * 2
+            fparam_stat_model1[:, 0], [fparam_data1.shape[0]] * 2
         )
         np.testing.assert_almost_equal(
-            fparam_stat_model1[:,1], fparam_data1.sum(axis=0)
+            fparam_stat_model1[:, 1], fparam_data1.sum(axis=0)
         )
         np.testing.assert_almost_equal(
-            fparam_stat_model1[:,2], (fparam_data1 ** 2).sum(axis=0)
+            fparam_stat_model1[:, 2], (fparam_data1**2).sum(axis=0)
         )
         np.testing.assert_almost_equal(
-            fparam_stat_model2[:,0], [fparam_data2.shape[0]] * 2
+            fparam_stat_model2[:, 0], [fparam_data2.shape[0]] * 2
         )
         np.testing.assert_almost_equal(
-            fparam_stat_model2[:,1], fparam_data2.sum(axis=0)
+            fparam_stat_model2[:, 1], fparam_data2.sum(axis=0)
         )
         np.testing.assert_almost_equal(
-            fparam_stat_model2[:,2], (fparam_data2 ** 2).sum(axis=0)
+            fparam_stat_model2[:, 2], (fparam_data2**2).sum(axis=0)
         )
 
         # check shared fitting stat is computed correctly
-        weighted_avg, weighted_std = get_weighted_fitting_stat(model_prob, fparam_data1, fparam_data2, protection=1e-2)
-        np.testing.assert_almost_equal(
-            weighted_avg, to_numpy_array(multi_state_dict['model_1.atomic_model.fitting_net.fparam_avg'])
+        weighted_avg, weighted_std = get_weighted_fitting_stat(
+            model_prob, fparam_data1, fparam_data2, protection=1e-2
         )
         np.testing.assert_almost_equal(
-            1/weighted_std, to_numpy_array(multi_state_dict['model_1.atomic_model.fitting_net.fparam_inv_std'])
+            weighted_avg,
+            to_numpy_array(
+                multi_state_dict["model_1.atomic_model.fitting_net.fparam_avg"]
+            ),
+        )
+        np.testing.assert_almost_equal(
+            1 / weighted_std,
+            to_numpy_array(
+                multi_state_dict["model_1.atomic_model.fitting_net.fparam_inv_std"]
+            ),
         )
 
     def test_sharefitting_using_default_fparam(self):
@@ -344,11 +358,9 @@ class TestMultiTaskFittingStat(unittest.TestCase):
         self.config["training"]["data_dict"]["model_3"] = deepcopy(
             self.config["training"]["data_dict"]["model_2"]
         )
-        self.config["training"]["data_dict"]["model_3"]["stat_file"] = (
-            self.config["training"]["data_dict"]["model_3"]["stat_file"].replace(
-                "model_2", "model_3"
-            )
-        )
+        self.config["training"]["data_dict"]["model_3"]["stat_file"] = self.config[
+            "training"
+        ]["data_dict"]["model_3"]["stat_file"].replace("model_2", "model_3")
         self.config["model"]["shared_dict"]["my_fitting"]["dim_case_embd"] = 3
 
         model_prob = [0.1, 0.3, 0.6]
@@ -380,9 +392,15 @@ class TestMultiTaskFittingStat(unittest.TestCase):
         data_stat_protect = 5e-3
         self.config["model"]["model_dict"]["model_1"]["data_stat_nbatch"] = 3
         self.config["model"]["model_dict"]["model_3"]["data_stat_nbatch"] = 100
-        self.config["model"]["model_dict"]["model_1"]["data_stat_protect"] = data_stat_protect
-        self.config["model"]["model_dict"]["model_2"]["data_stat_protect"] = data_stat_protect
-        self.config["model"]["model_dict"]["model_3"]["data_stat_protect"] = data_stat_protect
+        self.config["model"]["model_dict"]["model_1"]["data_stat_protect"] = (
+            data_stat_protect
+        )
+        self.config["model"]["model_dict"]["model_2"]["data_stat_protect"] = (
+            data_stat_protect
+        )
+        self.config["model"]["model_dict"]["model_3"]["data_stat_protect"] = (
+            data_stat_protect
+        )
 
         self.config["model"], self.shared_links = preprocess_shared_params(
             self.config["model"]
@@ -395,20 +413,20 @@ class TestMultiTaskFittingStat(unittest.TestCase):
         # check fparam shared
         multi_state_dict = trainer.wrapper.model.state_dict()
         torch.testing.assert_close(
-            multi_state_dict['model_1.atomic_model.fitting_net.fparam_avg'], 
-            multi_state_dict['model_2.atomic_model.fitting_net.fparam_avg']
+            multi_state_dict["model_1.atomic_model.fitting_net.fparam_avg"],
+            multi_state_dict["model_2.atomic_model.fitting_net.fparam_avg"],
         )
         torch.testing.assert_close(
-            multi_state_dict['model_1.atomic_model.fitting_net.fparam_avg'], 
-            multi_state_dict['model_3.atomic_model.fitting_net.fparam_avg']
+            multi_state_dict["model_1.atomic_model.fitting_net.fparam_avg"],
+            multi_state_dict["model_3.atomic_model.fitting_net.fparam_avg"],
         )
         torch.testing.assert_close(
-            multi_state_dict['model_1.atomic_model.fitting_net.fparam_inv_std'], 
-            multi_state_dict['model_2.atomic_model.fitting_net.fparam_inv_std']
+            multi_state_dict["model_1.atomic_model.fitting_net.fparam_inv_std"],
+            multi_state_dict["model_2.atomic_model.fitting_net.fparam_inv_std"],
         )
         torch.testing.assert_close(
-            multi_state_dict['model_1.atomic_model.fitting_net.fparam_inv_std'], 
-            multi_state_dict['model_3.atomic_model.fitting_net.fparam_inv_std']
+            multi_state_dict["model_1.atomic_model.fitting_net.fparam_inv_std"],
+            multi_state_dict["model_3.atomic_model.fitting_net.fparam_inv_std"],
         )
 
         # check fitting stat in stat_file is correct
@@ -419,40 +437,52 @@ class TestMultiTaskFittingStat(unittest.TestCase):
         fparam_data2 = np.load(f"{self.data_file_single[0]}/set.000/fparam.npy")
         fparam_data3 = np.load(f"{self.data_file[0]}/set.000/fparam.npy")
         np.testing.assert_almost_equal(
-            fparam_stat_model1[:,0], [fparam_data1.shape[0]] * 2
+            fparam_stat_model1[:, 0], [fparam_data1.shape[0]] * 2
         )
         np.testing.assert_almost_equal(
-            fparam_stat_model1[:,1], fparam_data1.sum(axis=0)
+            fparam_stat_model1[:, 1], fparam_data1.sum(axis=0)
         )
         np.testing.assert_almost_equal(
-            fparam_stat_model1[:,2], (fparam_data1 ** 2).sum(axis=0)
+            fparam_stat_model1[:, 2], (fparam_data1**2).sum(axis=0)
         )
         np.testing.assert_almost_equal(
-            fparam_stat_model2[:,0], [fparam_data2.shape[0]] * 2
+            fparam_stat_model2[:, 0], [fparam_data2.shape[0]] * 2
         )
         np.testing.assert_almost_equal(
-            fparam_stat_model2[:,1], fparam_data2.sum(axis=0)
+            fparam_stat_model2[:, 1], fparam_data2.sum(axis=0)
         )
         np.testing.assert_almost_equal(
-            fparam_stat_model2[:,2], (fparam_data2 ** 2).sum(axis=0)
+            fparam_stat_model2[:, 2], (fparam_data2**2).sum(axis=0)
         )
         np.testing.assert_almost_equal(
-            fparam_stat_model3[:,0], [fparam_data3.shape[0]] * 2
+            fparam_stat_model3[:, 0], [fparam_data3.shape[0]] * 2
         )
         np.testing.assert_almost_equal(
-            fparam_stat_model3[:,1], fparam_data3.sum(axis=0)
+            fparam_stat_model3[:, 1], fparam_data3.sum(axis=0)
         )
         np.testing.assert_almost_equal(
-            fparam_stat_model3[:,2], (fparam_data3 ** 2).sum(axis=0)
+            fparam_stat_model3[:, 2], (fparam_data3**2).sum(axis=0)
         )
 
         # check shared fitting stat is computed correctly
-        weighted_avg, weighted_std = get_weighted_fitting_stat(model_prob, fparam_data1, fparam_data2, fparam_data3, protection=data_stat_protect)
-        np.testing.assert_almost_equal(
-            weighted_avg, to_numpy_array(multi_state_dict['model_1.atomic_model.fitting_net.fparam_avg'])
+        weighted_avg, weighted_std = get_weighted_fitting_stat(
+            model_prob,
+            fparam_data1,
+            fparam_data2,
+            fparam_data3,
+            protection=data_stat_protect,
         )
         np.testing.assert_almost_equal(
-            1/weighted_std, to_numpy_array(multi_state_dict['model_1.atomic_model.fitting_net.fparam_inv_std'])
+            weighted_avg,
+            to_numpy_array(
+                multi_state_dict["model_1.atomic_model.fitting_net.fparam_avg"]
+            ),
+        )
+        np.testing.assert_almost_equal(
+            1 / weighted_std,
+            to_numpy_array(
+                multi_state_dict["model_1.atomic_model.fitting_net.fparam_inv_std"]
+            ),
         )
 
     def tearDown(self) -> None:
