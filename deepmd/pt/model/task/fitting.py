@@ -265,7 +265,7 @@ class Fitting(torch.nn.Module, BaseFitting):
 
         # stat fparam
         if self.numb_fparam > 0:
-            if stat_file_path is not None and stat_file_path.is_dir():
+            if stat_file_path is not None and stat_file_path.is_dir() and (stat_file_path / "fparam").is_file():
                 self.restore_fparam_from_file(stat_file_path)
             else:
                 sampled = merged() if callable(merged) else merged
@@ -299,7 +299,7 @@ class Fitting(torch.nn.Module, BaseFitting):
 
         # stat aparam
         if self.numb_aparam > 0:
-            if stat_file_path is not None and stat_file_path.is_dir():
+            if stat_file_path is not None and stat_file_path.is_dir() and (stat_file_path / "aparam").is_file():
                 self.restore_aparam_from_file(stat_file_path)
             else:
                 sampled = merged() if callable(merged) else merged
