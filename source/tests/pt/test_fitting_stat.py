@@ -115,7 +115,9 @@ class TestEnerFittingStat(unittest.TestCase):
             numb_fparam=3,
             numb_aparam=3,
         )
-        fitting.compute_input_stats(all_data, protection=1e-2, stat_file_path=self.stat_file_path)
+        fitting.compute_input_stats(
+            all_data, protection=1e-2, stat_file_path=self.stat_file_path
+        )
         np.testing.assert_almost_equal(frefa, to_numpy_array(fitting.fparam_avg))
         np.testing.assert_almost_equal(
             frefs_inv, to_numpy_array(fitting.fparam_inv_std)
@@ -127,20 +129,39 @@ class TestEnerFittingStat(unittest.TestCase):
         del fitting
 
         # 2. test fitting stat writing to file is correct
-        concat_fparam = np.concatenate([to_numpy_array(all_data[ii]["fparam"].reshape(-1, 3)) for ii in range(len(sys_nframes))])
-        concat_aparam = np.concatenate([to_numpy_array(all_data[ii]["aparam"].reshape(-1, 3)) for ii in range(len(sys_nframes))])
+        concat_fparam = np.concatenate(
+            [
+                to_numpy_array(all_data[ii]["fparam"].reshape(-1, 3))
+                for ii in range(len(sys_nframes))
+            ]
+        )
+        concat_aparam = np.concatenate(
+            [
+                to_numpy_array(all_data[ii]["aparam"].reshape(-1, 3))
+                for ii in range(len(sys_nframes))
+            ]
+        )
         fparam_stat = (self.stat_file_path / "fparam").load_numpy()
         aparam_stat = (self.stat_file_path / "aparam").load_numpy()
-        np.testing.assert_almost_equal(fparam_stat[:,0], np.array([concat_fparam.shape[0]] * 3))
-        np.testing.assert_almost_equal(fparam_stat[:,1], np.sum(concat_fparam, axis=0))
-        np.testing.assert_almost_equal(fparam_stat[:,2], np.sum(concat_fparam ** 2, axis=0))
-        np.testing.assert_almost_equal(aparam_stat[:,0], np.array([concat_aparam.shape[0]] * 3))
-        np.testing.assert_almost_equal(aparam_stat[:,1], np.sum(concat_aparam, axis=0))
-        np.testing.assert_almost_equal(aparam_stat[:,2], np.sum(concat_aparam ** 2, axis=0))
+        np.testing.assert_almost_equal(
+            fparam_stat[:, 0], np.array([concat_fparam.shape[0]] * 3)
+        )
+        np.testing.assert_almost_equal(fparam_stat[:, 1], np.sum(concat_fparam, axis=0))
+        np.testing.assert_almost_equal(
+            fparam_stat[:, 2], np.sum(concat_fparam**2, axis=0)
+        )
+        np.testing.assert_almost_equal(
+            aparam_stat[:, 0], np.array([concat_aparam.shape[0]] * 3)
+        )
+        np.testing.assert_almost_equal(aparam_stat[:, 1], np.sum(concat_aparam, axis=0))
+        np.testing.assert_almost_equal(
+            aparam_stat[:, 2], np.sum(concat_aparam**2, axis=0)
+        )
 
         # 3. test fitting stat load from file
         def raise_error() -> NoReturn:
             raise RuntimeError
+
         fitting = EnergyFittingNet(
             descrpt.get_ntypes(),
             descrpt.get_dim_out(),
@@ -149,7 +170,9 @@ class TestEnerFittingStat(unittest.TestCase):
             numb_fparam=3,
             numb_aparam=3,
         )
-        fitting.compute_input_stats(raise_error, protection=1e-2, stat_file_path=self.stat_file_path)
+        fitting.compute_input_stats(
+            raise_error, protection=1e-2, stat_file_path=self.stat_file_path
+        )
         np.testing.assert_almost_equal(frefa, to_numpy_array(fitting.fparam_avg))
         np.testing.assert_almost_equal(
             frefs_inv, to_numpy_array(fitting.fparam_inv_std)
