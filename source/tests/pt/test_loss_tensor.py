@@ -57,7 +57,7 @@ def get_single_batch(dataset, index=None):
         if key in np_batch.keys():
             np_batch[key] = np.expand_dims(np_batch[key], axis=0)
             pt_batch[key] = torch.as_tensor(np_batch[key], device=env.DEVICE)
-            if key in ["coord", "atom_dipole"]:
+            if key in ["coord", "atom_dipole", "atom_polarizability"]:
                 np_batch[key] = np_batch[key].reshape(1, -1)
     np_batch["natoms"] = np_batch["natoms"][0]
     return np_batch, pt_batch
