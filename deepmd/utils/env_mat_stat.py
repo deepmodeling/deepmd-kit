@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-import os
 from abc import (
     ABC,
     abstractmethod,
@@ -10,9 +9,6 @@ from collections import (
 )
 from collections.abc import (
     Iterator,
-)
-from concurrent.futures import (
-    ThreadPoolExecutor,
 )
 from typing import (
     Optional,
@@ -146,7 +142,7 @@ class EnvMatStat(ABC):
             (path / kk).save_numpy(np.array([vv.number, vv.sum, vv.squared_sum]))
 
     def load_stats(self, path: DPPath) -> None:
-        """Load the statistics of the environment matrix in parallel.
+        """Load the statistics of the environment matrix.
 
         Parameters
         ----------
@@ -155,18 +151,13 @@ class EnvMatStat(ABC):
         """
         if len(self.stats) > 0:
             raise ValueError("The statistics has already been computed.")
-
-        files_to_load = list(path.glob("*"))
-
-        if not files_to_load:
-            raise ValueError(f"No statistics files found in {path}.")
-
-        with ThreadPoolExecutor(min(64, (os.cpu_count() or 1) * 4)) as executor:
-            results = executor.map(self._load_stat_file, files_to_load)
-
-        for name, stat_item in results:
-            if stat_item is not None:
-                self.stats[name] = stat_item
+        for kk in path.glob("*"):
+            arr = kk.load_numpy()
+            self.stats[kk.name] = StatItem(
+                number=arr[0],
+                sum=arr[1],
+                squared_sum=arr[2],
+            )
 
     def load_or_compute_stats(
         self, data: list[dict[str, np.ndarray]], path: Optional[DPPath] = None
@@ -225,19 +216,3 @@ class EnvMatStat(ABC):
             kk: vv.compute_std(default=default, protection=protection)
             for kk, vv in self.stats.items()
         }
-
-    @staticmethod
-    def _load_stat_file(file_path: DPPath) -> tuple[str, StatItem]:
-        """Helper function for parallel loading of stat files."""
-        try:
-            arr = file_path.load_numpy()
-            if arr.shape == (3,):
-                return file_path.name, StatItem(
-                    number=arr[0], sum=arr[1], squared_sum=arr[2]
-                )
-            else:
-                log.warning(f"Skipping malformed stat file: {file_path.name}")
-                return file_path.name, None
-        except Exception as e:
-            log.warning(f"Failed to load stat file {file_path.name}: {e}")
-            return file_path.name, None

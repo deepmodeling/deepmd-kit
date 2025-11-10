@@ -1,11 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-import os
 from collections import (
     defaultdict,
-)
-from concurrent.futures import (
-    ThreadPoolExecutor,
 )
 from typing import (
     Any,
@@ -43,7 +39,7 @@ log = logging.getLogger(__name__)
 def make_stat_input(
     datasets: list[Any], dataloaders: list[Any], nbatches: int
 ) -> dict[str, Any]:
-    """Pack data for statistics in parallel.
+    """Pack data for statistics.
 
     Args:
     - dataset: A list of dataset to analyze.
@@ -53,83 +49,49 @@ def make_stat_input(
     -------
     - a list of dicts, each of which contains data from a system
     """
-    log.info(f"Packing data for statistics from {len(datasets)} systems")
-    dataloader_lens = [len(dl) for dl in dataloaders]
-    args_list = [
-        (dataloaders[i], nbatches, dataloader_lens[i]) for i in range(len(datasets))
-    ]
-
     lst = []
-    # I/O intensive, set a larger number of workers
-    with ThreadPoolExecutor(min(128, (os.cpu_count() or 1) * 6)) as executor:
-        lst = list(executor.map(_process_one_dataset, args_list))
-    log.info("Finished packing data.")
-    return lst
+    log.info(f"Packing data for statistics from {len(datasets)} systems")
+    for i in range(len(datasets)):
+        sys_stat = {}
+        with torch.device("cpu"):
+            iterator = iter(dataloaders[i])
+            numb_batches = min(nbatches, len(dataloaders[i]))
+            for _ in range(numb_batches):
+                try:
+                    stat_data = next(iterator)
+                except StopIteration:
+                    iterator = iter(dataloaders[i])
+                    stat_data = next(iterator)
+                if (
+                    "find_fparam" in stat_data
+                    and "fparam" in stat_data
+                    and stat_data["find_fparam"] == 0.0
+                ):
+                    # for model using default fparam
+                    stat_data.pop("fparam")
+                    stat_data.pop("find_fparam")
+                for dd in stat_data:
+                    if stat_data[dd] is None:
+                        sys_stat[dd] = None
+                    elif isinstance(stat_data[dd], torch.Tensor):
+                        if dd not in sys_stat:
+                            sys_stat[dd] = []
+                        sys_stat[dd].append(stat_data[dd])
+                    elif isinstance(stat_data[dd], np.float32):
+                        sys_stat[dd] = stat_data[dd]
+                    else:
+                        pass
 
-
-def _process_one_dataset(args: tuple[Any, int, int]) -> dict[str, Any]:
-    """
-    Helper function to process a single dataset's dataloader for statistics.
-    Designed to be called in parallel by a ThreadPoolExecutor.
-
-    Parameters
-    ----------
-    args : tuple(Any, int, int)
-        A tuple containing (dataloader, nbatches, dataloader_len)
-
-    Returns
-    -------
-    dict[str, Any]
-        The processed sys_stat dictionary for one dataset.
-    """
-    dataloader, nbatches, dataloader_len = args
-    sys_stat = {}
-
-    with torch.device("cpu"):
-        iterator = iter(dataloader)
-        numb_batches = min(nbatches, dataloader_len)
-
-        for _ in range(numb_batches):
-            try:
-                stat_data = next(iterator)
-            except StopIteration:
-                iterator = iter(dataloader)
-                stat_data = next(iterator)
-
-            if (
-                "find_fparam" in stat_data
-                and "fparam" in stat_data
-                and stat_data["find_fparam"] == 0.0
-            ):
-                # for model using default fparam
-                stat_data.pop("fparam")
-                stat_data.pop("find_fparam")
-
-            for dd in stat_data:
-                if stat_data[dd] is None:
-                    sys_stat[dd] = None
-                elif isinstance(stat_data[dd], torch.Tensor):
-                    if dd not in sys_stat:
-                        sys_stat[dd] = []
-                    sys_stat[dd].append(stat_data[dd])
-                elif isinstance(stat_data[dd], np.float32):
-                    sys_stat[dd] = stat_data[dd]
-                else:
-                    pass
-
-    for key in sys_stat:
-        if isinstance(sys_stat[key], np.float32):
-            pass
-        elif isinstance(sys_stat[key], list):
-            if len(sys_stat[key]) == 0 or sys_stat[key][0] is None:
+        for key in sys_stat:
+            if isinstance(sys_stat[key], np.float32):
+                pass
+            elif sys_stat[key] is None or sys_stat[key][0] is None:
                 sys_stat[key] = None
-            else:
+            elif isinstance(stat_data[dd], torch.Tensor):
                 sys_stat[key] = torch.cat(sys_stat[key], dim=0)
-        elif sys_stat[key] is None:
-            pass
-
-    dict_to_device(sys_stat)
-    return sys_stat
+        dict_to_device(sys_stat)
+        lst.append(sys_stat)
+    return lst
 
 
 def _restore_from_file(
