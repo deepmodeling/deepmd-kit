@@ -346,6 +346,7 @@ def get_generator(
                 int(DEVICE.split("gpu:")[1])
             )
         else:
+            return None
             raise ValueError("DEVICE should be cpu or gpu or gpu:x")
         generator.manual_seed(seed)
         return generator
