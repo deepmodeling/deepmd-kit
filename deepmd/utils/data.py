@@ -603,7 +603,7 @@ class DeepmdData:
                 shape, fortran_order, dtype = np.lib.format.read_array_header_2_0(f)
             else:
                 raise ValueError(f"Unsupported .npy file version: {version}")
-        nframes = shape[0]
+        nframes = shape[0] if (len(shape) if isinstance(shape, tuple) else 0) > 1 else 1
         return nframes
 
     def reformat_data_torch(self, data: dict[str, Any]) -> dict[str, Any]:
