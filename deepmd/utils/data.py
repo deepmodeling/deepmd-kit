@@ -103,10 +103,10 @@ class DeepmdData:
                     f"Elements {missing_elements} are not present in the provided `type_map`."
                 )
             if not self.mixed_type:
-                global_type_dict = {name: index for index, name in enumerate(type_map)}
-                atom_names = [self.type_map[atom_idx] for atom_idx in self.atom_type]
-                atom_type_ = [global_type_dict[name] for name in atom_names]
-                self.atom_type = np.array(atom_type_, dtype=np.int32)
+                old_to_new_type_idx = np.array(
+                    [type_map.index(name) for name in self.type_map], dtype=np.int32
+                )
+                self.atom_type = old_to_new_type_idx[self.atom_type].astype(np.int32)
             else:
                 self.enforce_type_map = True
                 sorter = np.argsort(type_map)
