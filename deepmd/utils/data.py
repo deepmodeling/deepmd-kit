@@ -103,13 +103,10 @@ class DeepmdData:
                     f"Elements {missing_elements} are not present in the provided `type_map`."
                 )
             if not self.mixed_type:
-                # Use vectorized operation for better performance with large atom counts
-                # Create a mapping array where old_type_idx -> new_type_idx
-                max_old_type = max(self.atom_type) + 1
-                type_mapping = np.zeros(max_old_type, dtype=np.int32)
-                for old_idx in range(len(self.type_map)):
-                    type_mapping[old_idx] = type_map.index(self.type_map[old_idx])
-                self.atom_type = type_mapping[self.atom_type].astype(np.int32)
+                global_type_dict = {name: index for index, name in enumerate(type_map)}
+                atom_names = [self.type_map[atom_idx] for atom_idx in self.atom_type]
+                atom_type_ = [global_type_dict[name] for name in atom_names]
+                self.atom_type = np.array(atom_type_, dtype=np.int32)
             else:
                 self.enforce_type_map = True
                 sorter = np.argsort(type_map)
