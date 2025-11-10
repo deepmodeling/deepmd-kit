@@ -338,8 +338,13 @@ class DeepmdData:
 
     def get_numb_batch(self, batch_size: int, set_idx: int) -> int:
         """Get the number of batches in a set."""
-        # Directly obtain the number of frames to avoid loading the entire dataset
-        nframes = self._get_nframes(self.dirs[set_idx])
+        set_name = self.dirs[set_idx]
+        if isinstance(set_name, DPH5Path):
+            data = self._load_set(set_name)
+            nframes = data["coord"].shape[0]
+        else:
+            # Directly obtain the number of frames to avoid loading the entire dataset
+            nframes = self._get_nframes(set_name)
         ret = nframes // batch_size
         if ret == 0:
             ret = 1
@@ -584,7 +589,7 @@ class DeepmdData:
         if not isinstance(set_name, DPPath):
             set_name = DPPath(set_name)
         path = set_name / "coord.npy"
-        # Read only the header to get shape without creating memmap
+        # Read only the header to get shape
         with open(str(path), "rb") as f:
             version = np.lib.format.read_magic(f)
             if version[0] == 1:

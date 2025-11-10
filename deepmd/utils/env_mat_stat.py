@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+import os
 from abc import (
     ABC,
     abstractmethod,
@@ -160,7 +161,7 @@ class EnvMatStat(ABC):
         if not files_to_load:
             raise ValueError(f"No statistics files found in {path}.")
 
-        with ThreadPoolExecutor(max_workers=128) as executor:
+        with ThreadPoolExecutor(min(64, (os.cpu_count() or 1) * 4)) as executor:
             results = executor.map(self._load_stat_file, files_to_load)
 
         for name, stat_item in results:

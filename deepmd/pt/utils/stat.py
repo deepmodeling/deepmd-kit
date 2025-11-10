@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+import os
 from collections import (
     defaultdict,
 )
@@ -60,7 +61,7 @@ def make_stat_input(
 
     lst = []
     # I/O intensive, set a larger number of workers
-    with ThreadPoolExecutor(max_workers=256) as executor:
+    with ThreadPoolExecutor(min(128, (os.cpu_count() or 1) * 6)) as executor:
         lst = list(executor.map(_process_one_dataset, args_list))
     log.info("Finished packing data.")
     return lst
@@ -120,7 +121,7 @@ def _process_one_dataset(args: tuple[Any, int, int]) -> dict[str, Any]:
         if isinstance(sys_stat[key], np.float32):
             pass
         elif isinstance(sys_stat[key], list):
-            if sys_stat[key][0] is None:
+            if len(sys_stat[key]) == 0 or sys_stat[key][0] is None:
                 sys_stat[key] = None
             else:
                 sys_stat[key] = torch.cat(sys_stat[key], dim=0)
