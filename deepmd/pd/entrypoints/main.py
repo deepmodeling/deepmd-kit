@@ -214,7 +214,7 @@ class SummaryPrinter(BaseSummaryPrinter):
 
     def get_ngpus(self) -> int:
         """Get the number of GPUs."""
-        return paddle.device.cuda.device_count()
+        return paddle.device.device_count()
 
     def get_backend_info(self) -> dict:
         """Get backend information."""

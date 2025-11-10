@@ -29,8 +29,10 @@ NUM_WORKERS = int(os.environ.get("NUM_WORKERS", min(0, ncpus)))
 # Make sure DDP uses correct device if applicable
 LOCAL_RANK = int(os.environ.get("PADDLE_LOCAL_RANK", 0))
 
-if os.environ.get("DEVICE") == "cpu" or paddle.device.cuda.device_count() <= 0:
+if os.environ.get("DEVICE") == "cpu" or paddle.device.device_count() <= 0:
     DEVICE = "cpu"
+elif os.environ.get("DEVICE") is not None:
+    DEVICE = os.environ.get("DEVICE")
 else:
     DEVICE = f"gpu:{LOCAL_RANK}"
 
