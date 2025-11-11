@@ -348,6 +348,10 @@ def get_generator(
             )
         elif DEVICE == "xpu":
             generator = paddle.framework.core.default_xpu_generator(0)
+        elif DEVICE.startswith("xpu:"):
+            generator = paddle.framework.core.default_cuda_generator(
+                int(DEVICE.split("xpu:")[1])
+            )
         else:
             # return none for compability in different devices
             warnings.warn(
