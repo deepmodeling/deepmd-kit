@@ -528,7 +528,7 @@ class DeepEval(DeepEvalBackend):
                 out = batch_output[pt_name].reshape(shape).detach().cpu().numpy()
                 results.append(out)
             else:
-                shape = self._get_output_shape(odef, nframes, natoms)
+                shape = self._get_output_shape(odef, 1, 1)
                 results.append(
                     np.full(np.abs(shape), np.nan, dtype=prec)
                 )  # this is kinda hacky
@@ -608,7 +608,7 @@ class DeepEval(DeepEvalBackend):
                 out = batch_output[pt_name].reshape(shape).detach().cpu().numpy()
                 results.append(out)
             else:
-                shape = self._get_output_shape(odef, nframes, natoms)
+                shape = self._get_output_shape(odef, 1, 1)
                 results.append(
                     np.full(
                         np.abs(shape),
