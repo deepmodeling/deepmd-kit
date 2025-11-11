@@ -95,7 +95,7 @@ def get_trainer(
     # Initialize DDP
     world_size = dist.get_world_size()
     if world_size > 1:
-        assert paddle.version.nccl() != "0"
+        assert not paddle.core.is_compiled_with_nccl() or paddle.version.nccl() != "0"
         fleet.init(is_collective=True)
 
     def prepare_trainer_input_single(
