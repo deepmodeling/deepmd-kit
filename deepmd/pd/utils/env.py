@@ -31,10 +31,8 @@ LOCAL_RANK = int(os.environ.get("PADDLE_LOCAL_RANK", 0))
 
 if os.environ.get("DEVICE") == "cpu" or paddle.device.device_count() <= 0:
     DEVICE = "cpu"
-elif os.environ.get("DEVICE") is not None:
-    DEVICE = os.environ.get("DEVICE")
 else:
-    DEVICE = f"gpu:{LOCAL_RANK}"
+    DEVICE = paddle.device.get_device()
 
 paddle.device.set_device(DEVICE)
 
