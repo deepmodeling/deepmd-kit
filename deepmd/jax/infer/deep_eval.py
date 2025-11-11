@@ -389,7 +389,7 @@ class DeepEval(DeepEvalBackend):
                     out = np.full(shape, np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
                 results.append(out)
             else:
-                shape = self._get_output_shape(odef, 1, 1)
+                shape = self._get_output_shape(odef, nframes, natoms)
                 results.append(
                     np.full(np.abs(shape), np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
                 )  # this is kinda hacky
