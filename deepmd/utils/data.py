@@ -135,13 +135,7 @@ class DeepmdData:
         self.shuffle_test = shuffle_test
         # set modifier
         self.modifier = modifier
-        # calculate prefix sum for get_item method
-        frames_list = [
-            self._load_set(item)["coord"].shape[0]
-            if isinstance(item, DPH5Path)
-            else self._get_nframes(item)
-            for item in self.dirs
-        ]
+        frames_list = [self._get_nframes(set_name) for set_name in self.dirs]
         self.nframes = np.sum(frames_list)
         # The prefix sum stores the range of indices contained in each directory, which is needed by get_item method
         self.prefix_sum = np.cumsum(frames_list).tolist()
