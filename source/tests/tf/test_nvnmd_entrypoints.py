@@ -515,6 +515,7 @@ class TestNvnmdEntrypointsV0(tf.test.TestCase):
     def tearDown(self) -> None:
         # close
         nvnmd_cfg.enable = False
+        tf.reset_default_graph()
 
 
 class TestNvnmdEntrypointsV1(tf.test.TestCase):
