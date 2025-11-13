@@ -339,12 +339,8 @@ class DeepmdData:
     def get_numb_batch(self, batch_size: int, set_idx: int) -> int:
         """Get the number of batches in a set."""
         set_name = self.dirs[set_idx]
-        if isinstance(set_name, DPH5Path):
-            data = self._load_set(set_name)
-            nframes = data["coord"].shape[0]
-        else:
-            # Directly obtain the number of frames to avoid loading the entire dataset
-            nframes = self._get_nframes(set_name)
+        # Directly obtain the number of frames to avoid loading the entire dataset
+        nframes = self._get_nframes(set_name)
         ret = nframes // batch_size
         if ret == 0:
             ret = 1
