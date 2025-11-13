@@ -589,21 +589,28 @@ class DeepmdData:
                 ret[kk] = data[kk]
         return ret, idx
 
-    def _get_nframes(self, set_name: DPPath) -> int:
-        # get nframes
+    def _get_nframes(self, set_name: DPPath | str) -> int:
         if not isinstance(set_name, DPPath):
             set_name = DPPath(set_name)
-        path = set_name / "coord.npy"
-        # Read only the header to get shape
-        with open(str(path), "rb") as f:
-            version = np.lib.format.read_magic(f)
-            if version[0] == 1:
-                shape, fortran_order, dtype = np.lib.format.read_array_header_1_0(f)
-            elif version[0] in [2, 3]:
-                shape, fortran_order, dtype = np.lib.format.read_array_header_2_0(f)
-            else:
-                raise ValueError(f"Unsupported .npy file version: {version}")
-        nframes = shape[0] if (len(shape) if isinstance(shape, tuple) else 0) > 1 else 1
+        if isinstance(set_name, DPH5Path):
+            path = set_name / "coord.npy"
+            nframes = path.root[path._name].shape[0]
+        else:
+            path = set_name / "coord.npy"
+            # Read only the header to get shape
+            with open(str(path), "rb") as f:
+                version = np.lib.format.read_magic(f)
+                if version[0] == 1:
+                    shape, _fortran_order, _dtype = np.lib.format.read_array_header_1_0(
+                        f
+                    )
+                elif version[0] in [2, 3]:
+                    shape, _fortran_order, _dtype = np.lib.format.read_array_header_2_0(
+                        f
+                    )
+                else:
+                    raise ValueError(f"Unsupported .npy file version: {version}")
+            nframes = shape[0] if len(shape) > 1 else 1
         return nframes
 
     def reformat_data_torch(self, data: dict[str, Any]) -> dict[str, Any]:
