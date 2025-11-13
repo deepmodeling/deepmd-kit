@@ -14,6 +14,7 @@ from pathlib import (
 from typing import (
     Any,
     Optional,
+    Union,
 )
 
 import numpy as np
@@ -583,7 +584,7 @@ class DeepmdData:
                 ret[kk] = data[kk]
         return ret, idx
 
-    def _get_nframes(self, set_name: DPPath | str) -> int:
+    def _get_nframes(self, set_name: Union[DPPath, str]) -> int:
         if not isinstance(set_name, DPPath):
             set_name = DPPath(set_name)
         if isinstance(set_name, DPH5Path):
