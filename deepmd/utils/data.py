@@ -583,11 +583,10 @@ class DeepmdData:
     def _get_nframes(self, set_name: Union[DPPath, str]) -> int:
         if not isinstance(set_name, DPPath):
             set_name = DPPath(set_name)
+        path = set_name / "coord.npy"
         if isinstance(set_name, DPH5Path):
-            path = set_name / "coord.npy"
             nframes = path.root[path._name].shape[0]
         else:
-            path = set_name / "coord.npy"
             # Read only the header to get shape
             with open(str(path), "rb") as f:
                 version = np.lib.format.read_magic(f)
