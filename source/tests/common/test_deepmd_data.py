@@ -20,15 +20,15 @@ class TestDeepmdDataTypeMap(unittest.TestCase):
         self.set_dir.mkdir()
 
         # minimal required dataset
-        self._atom_types = np.array([0, 1, 0, 1], dtype=np.int32)
-        np.savetxt(self.root / "type.raw", self._atom_types, fmt="%d")
+        atom_types = np.array([0, 1, 0, 1], dtype=np.int32)
+        np.savetxt(self.root / "type.raw", atom_types, fmt="%d")
         np.savetxt(
             self.root / "type_map.raw",
             np.array(["O", "H", "Si"], dtype=object),
             fmt="%s",
         )
 
-        coord = np.zeros((1, self._atom_types.size * 3), dtype=np.float32)
+        coord = np.zeros((1, atom_types.size * 3), dtype=np.float32)
         box = np.eye(3, dtype=np.float32).reshape(1, 9)
         np.save(self.set_dir / "coord.npy", coord)
         np.save(self.set_dir / "box.npy", box)
