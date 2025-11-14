@@ -157,11 +157,6 @@ class DPPath(ABC):
             If true, no error will be raised if the target directory already exists.
         """
 
-    @property
-    @abstractmethod
-    def parent(self) -> "DPPath":
-        """Return the parent path."""
-
 
 class DPOSPath(DPPath):
     """The OS path class to data system (DeepmdData) for real directories.
@@ -271,11 +266,6 @@ class DPOSPath(DPPath):
     def name(self) -> str:
         """Name of the path."""
         return self.path.name
-
-    @property
-    def parent(self) -> "DPPath":
-        """Return the parent path."""
-        return type(self)(self.path.parent, mode=self.mode)
 
     def mkdir(self, parents: bool = False, exist_ok: bool = False) -> None:
         """Make directory.
@@ -478,14 +468,6 @@ class DPH5Path(DPPath):
     def name(self) -> str:
         """Name of the path."""
         return self._name.split("/")[-1]
-
-    @property
-    def parent(self) -> "DPPath":
-        """Return the parent path."""
-        parent_name = "/".join(self._name.split("/")[:-1])
-        if not parent_name:
-            parent_name = "/"
-        return type(self)(f"{self.root_path}#{parent_name}", mode=self.mode)
 
     def mkdir(self, parents: bool = False, exist_ok: bool = False) -> None:
         """Make directory.

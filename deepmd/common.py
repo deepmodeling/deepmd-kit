@@ -202,7 +202,9 @@ def expand_sys_str(root_dir: Union[str, Path]) -> list[str]:
         list of string pointing to system directories
     """
     root_dir = DPPath(root_dir)
-    matches = [str(p.parent) for p in root_dir.rglob("type.raw") if p.is_file()]
+    matches = [str(d) for d in root_dir.rglob("*") if (d / "type.raw").is_file()]
+    if (root_dir / "type.raw").is_file():
+        matches.append(str(root_dir))
     return matches
 
 
