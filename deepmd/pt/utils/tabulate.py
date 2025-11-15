@@ -46,7 +46,8 @@ class DPTabulate(BaseTabulate):
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     activation_function
-            The activation function in the embedding net. Supported options are {"tanh","gelu"} in common.ActivationFn.
+            The activation function in the embedding net. See :class:`ActivationFn`
+            for supported options (e.g. "tanh", "gelu", "relu", "silu").
     """
 
     def __init__(
