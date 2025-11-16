@@ -4,6 +4,9 @@ import unittest
 import numpy as np
 import torch
 
+from deepmd.dpmodel.utils.network import (
+    get_activation_fn,
+)
 from deepmd.pt.utils import (
     env,
 )
@@ -18,31 +21,6 @@ from deepmd.tf.env import (
     tf,
 )
 
-
-def get_activation_function(functype: int):
-    """Get activation function corresponding to functype."""
-    if functype == 1:
-        return lambda x: np.tanh(x)
-    elif functype == 2:
-        return (
-            lambda x: 0.5
-            * x
-            * (1 + np.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * x**3)))
-        )
-    elif functype == 3:
-        return lambda x: np.maximum(x, 0)
-    elif functype == 4:
-        return lambda x: np.minimum(np.maximum(x, 0), 6)
-    elif functype == 5:
-        return lambda x: np.log(1 + np.exp(x))
-    elif functype == 6:
-        return lambda x: 1 / (1 + np.exp(-x))
-    elif functype == 7:
-        return lambda x: x / (1 + np.exp(-x))
-    else:
-        raise ValueError(f"Unknown functype: {functype}")
-
-
 ACTIVATION_NAMES = {
     1: "tanh",
     2: "gelu",
@@ -52,6 +30,14 @@ ACTIVATION_NAMES = {
     6: "sigmoid",
     7: "silu",
 }
+
+
+def get_activation_function(functype: int):
+    """Get activation function corresponding to functype."""
+    if functype not in ACTIVATION_NAMES:
+        raise ValueError(f"Unknown functype: {functype}")
+
+    return get_activation_fn(ACTIVATION_NAMES[functype])
 
 
 def setUpModule() -> None:
