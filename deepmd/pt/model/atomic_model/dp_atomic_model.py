@@ -328,6 +328,15 @@ class DPAtomicModel(BaseAtomicModel):
                 atom_exclude_types = self.atom_excl.get_exclude_types()
                 for sample in sampled:
                     sample["atom_exclude_types"] = list(atom_exclude_types)
+            if (
+                "find_fparam" not in sampled[0]
+                and "fparam" not in sampled[0]
+                and self.has_default_fparam()
+            ):
+                default_fparam = self.get_default_fparam()
+                for sample in sampled:
+                    nframe = sample["atype"].shape[0]
+                    sample["fparam"] = default_fparam.repeat(nframe, 1)
             return sampled
 
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)

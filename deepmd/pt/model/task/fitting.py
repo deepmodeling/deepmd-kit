@@ -63,7 +63,12 @@ class Fitting(torch.nn.Module, BaseFitting):
         return super().__new__(cls)
 
     def share_params(
-        self, base_class, shared_level, model_prob=1.0, protection=1e-2, resume=False
+        self,
+        base_class: "Fitting",
+        shared_level: int,
+        model_prob: float = 1.0,
+        protection: float = 1e-2,
+        resume: bool = False,
     ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
@@ -132,7 +137,6 @@ class Fitting(torch.nn.Module, BaseFitting):
                     )
                 self.aparam_avg = base_class.aparam_avg
                 self.aparam_inv_std = base_class.aparam_inv_std
-
             # the following will successfully link all the params except buffers, which need manually link.
             for item in self._modules:
                 self._modules[item] = base_class._modules[item]
@@ -261,7 +265,11 @@ class Fitting(torch.nn.Module, BaseFitting):
 
         # stat fparam
         if self.numb_fparam > 0:
-            if stat_file_path is not None and stat_file_path.is_dir():
+            if (
+                stat_file_path is not None
+                and stat_file_path.is_dir()
+                and (stat_file_path / "fparam").is_file()
+            ):
                 self.restore_fparam_from_file(stat_file_path)
             else:
                 sampled = merged() if callable(merged) else merged
@@ -292,10 +300,13 @@ class Fitting(torch.nn.Module, BaseFitting):
             log.info(f"fparam_avg is {fparam_avg}, fparam_inv_std is {fparam_inv_std}")
             self.fparam_avg.copy_(to_torch_tensor(fparam_avg))
             self.fparam_inv_std.copy_(to_torch_tensor(fparam_inv_std))
-
         # stat aparam
         if self.numb_aparam > 0:
-            if stat_file_path is not None and stat_file_path.is_dir():
+            if (
+                stat_file_path is not None
+                and stat_file_path.is_dir()
+                and (stat_file_path / "aparam").is_file()
+            ):
                 self.restore_aparam_from_file(stat_file_path)
             else:
                 sampled = merged() if callable(merged) else merged
