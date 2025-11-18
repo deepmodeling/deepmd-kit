@@ -275,7 +275,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             self.filter_layers_strip = filter_layers_strip
         self.stats = None
 
-        # add for compression
+        # For geometric compression
         self.compress = False
         self.is_sorted = False
         self.compress_info = nn.ParameterList(
@@ -284,9 +284,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.compress_data = nn.ParameterList(
             [nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))]
         )
-        # For type embedding compression (strip mode, two-side only)
-        self.compress_type_embd = False
-        self.two_side_embd_data = None
+        # For type embedding compression
+        self.type_embd_data = None
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -453,23 +452,12 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.compress_data[0] = table_data[net].to(device=env.DEVICE, dtype=self.prec)
         self.compress = True
 
-    def enable_type_embedding_compression(
-        self, type_embedding_net: TypeEmbedNet
-    ) -> None:
-        """Enable type embedding compression for strip mode (two-side only).
+    def type_embedding_compression(self, type_embedding_net: TypeEmbedNet) -> None:
+        """Enable type embedding compression for strip mode.
 
-        This method precomputes the type embedding network outputs for all possible
-        type pairs, following the same approach as TF backend's compression:
-
-        TF approach:
-        1. get_two_side_type_embedding(): creates (ntypes+1)^2 type pair combinations
-        2. make_data(): applies embedding network to get precomputed outputs
-        3. In forward: lookup precomputed values instead of real-time computation
-
-        PyTorch implementation:
-        - Precomputes all (ntypes+1)^2 type pair embedding network outputs
-        - Stores in buffer for proper serialization and device management
-        - Uses lookup during inference to avoid redundant computations
+        Precomputes embedding network outputs for all type combinations:
+        - One-side: (ntypes+1) combinations (neighbor types only)
+        - Two-side: (ntypes+1)² combinations (neighbor x center type pairs)
 
         Parameters
         ----------
@@ -477,25 +465,31 @@ class DescrptBlockSeAtten(DescriptorBlock):
             The type embedding network that provides get_full_embedding() method
         """
         with torch.no_grad():
-            # Get full type embedding: (ntypes+1) x t_dim
+            # Get full type embedding: (ntypes+1) x tebd_dim
             full_embd = type_embedding_net.get_full_embedding(env.DEVICE)
             nt, t_dim = full_embd.shape
 
-            # Create all type pair combinations [neighbor, center]
-            # for a fixed row i, all columns j have different neighbor types
-            embd_nei = full_embd.view(1, nt, t_dim).expand(nt, nt, t_dim)
-            # for a fixed row i, all columns j share the same center type i
-            embd_center = full_embd.view(nt, 1, t_dim).expand(nt, nt, t_dim)
-            two_side_embd = torch.cat([embd_nei, embd_center], dim=-1).reshape(
-                -1, t_dim * 2
-            )
-
-            # Apply strip embedding network and store
-            # index logic: index = center_type * nt + neighbor_type
-            self.two_side_embd_data = self.filter_layers_strip.networks[0](
-                two_side_embd
-            ).detach()
-            self.compress_type_embd = True
+            if self.type_one_side:
+                # One-side: only neighbor types, much simpler!
+                # Precompute for all (ntypes+1) neighbor types
+                self.type_embd_data = self.filter_layers_strip.networks[0](
+                    full_embd
+                ).detach()
+            else:
+                # Two-side: all (ntypes+1)² type pair combinations
+                # Create [neighbor, center] combinations
+                # for a fixed row i, all columns j have different neighbor types
+                embd_nei = full_embd.view(1, nt, t_dim).expand(nt, nt, t_dim)
+                # for a fixed row i, all columns j share the same center type i
+                embd_center = full_embd.view(nt, 1, t_dim).expand(nt, nt, t_dim)
+                two_side_embd = torch.cat([embd_nei, embd_center], dim=-1).reshape(
+                    -1, t_dim * 2
+                )
+                # Precompute for all type pairs
+                # Index formula: idx = center_type * nt + neighbor_type
+                self.type_embd_data = self.filter_layers_strip.networks[0](
+                    two_side_embd
+                ).detach()
 
     def forward(
         self,
@@ -622,12 +616,14 @@ class DescrptBlockSeAtten(DescriptorBlock):
             nlist_index = nlist.reshape(nb, nloc * nnei)
             # nf x (nl x nnei)
             nei_type = torch.gather(extended_atype, dim=1, index=nlist_index)
-            # (nf x nl x nnei) x ng
-            nei_type_index = nei_type.view(-1, 1).expand(-1, ng).type(torch.long)
             if self.type_one_side:
-                tt_full = self.filter_layers_strip.networks[0](type_embedding)
-                # (nf x nl x nnei) x ng
-                gg_t = torch.gather(tt_full, dim=0, index=nei_type_index)
+                if self.type_embd_data is not None:
+                    tt_full = self.type_embd_data
+                else:
+                    # (ntypes+1, tebd_dim) -> (ntypes+1, ng)
+                    tt_full = self.filter_layers_strip.networks[0](type_embedding)
+                # (nf*nl*nnei,) -> (nf*nl*nnei, ng)
+                gg_t = tt_full[nei_type.view(-1).type(torch.long)]
             else:
                 idx_i = torch.tile(
                     atype.reshape(-1, 1) * ntypes_with_padding, [1, nnei]
@@ -635,9 +631,9 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 idx_j = nei_type.view(-1)
                 # (nf x nl x nnei)
                 idx = (idx_i + idx_j).to(torch.long)
-                if self.compress_type_embd and self.two_side_embd_data is not None:
+                if self.type_embd_data is not None:
                     # (ntypes^2, ng)
-                    tt_full = self.two_side_embd_data
+                    tt_full = self.type_embd_data
                 else:
                     # (ntypes) * ntypes * nt
                     type_embedding_nei = torch.tile(
