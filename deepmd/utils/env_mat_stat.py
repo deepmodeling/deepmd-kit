@@ -28,7 +28,7 @@ class StatItem:
 
     Parameters
     ----------
-    number : int
+    number : float
         The total size of given array.
     sum : float
         The sum value of the matrix.
@@ -36,7 +36,7 @@ class StatItem:
         The sum squared value of the matrix.
     """
 
-    def __init__(self, number: int = 0, sum: float = 0, squared_sum: float = 0) -> None:
+    def __init__(self, number: float = 0, sum: float = 0, squared_sum: float = 0) -> None:
         self.number = number
         self.sum = sum
         self.squared_sum = squared_sum
