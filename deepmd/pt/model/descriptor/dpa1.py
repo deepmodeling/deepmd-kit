@@ -645,6 +645,12 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         self.se_atten.enable_compression(
             self.table.data, self.table_config, self.lower, self.upper
         )
+
+        # Enable type embedding compression only for two-side mode
+        # TODO: why not enable for one-side mode? (do not consider this for now)
+        if not self.se_atten.type_one_side:
+            self.se_atten.enable_type_embedding_compression(self.type_embedding)
+
         self.compress = True
 
     def forward(
