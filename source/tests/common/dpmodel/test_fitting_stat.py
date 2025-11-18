@@ -90,10 +90,6 @@ class TestEnerFittingStat(unittest.TestCase):
         frefs_inv[frefs_inv > 100] = 100
         arefs_inv[arefs_inv > 100] = 100
         np.testing.assert_almost_equal(frefa, fitting.fparam_avg)
-        np.testing.assert_almost_equal(
-            frefs_inv, fitting.fparam_inv_std
-        )
+        np.testing.assert_almost_equal(frefs_inv, fitting.fparam_inv_std)
         np.testing.assert_almost_equal(arefa, fitting.aparam_avg)
-        np.testing.assert_almost_equal(
-            arefs_inv, fitting.aparam_inv_std
-        )
+        np.testing.assert_almost_equal(arefs_inv, fitting.aparam_inv_std)
