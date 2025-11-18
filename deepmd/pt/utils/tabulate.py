@@ -46,7 +46,8 @@ class DPTabulate(BaseTabulate):
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     activation_function
-            The activation function in the embedding net. Supported options are {"tanh","gelu"} in common.ActivationFn.
+            The activation function in the embedding net. See :class:`ActivationFn`
+            for supported options (e.g. "tanh", "gelu", "relu", "silu").
     """
 
     def __init__(
@@ -84,6 +85,7 @@ class DPTabulate(BaseTabulate):
             "relu6": 4,
             "softplus": 5,
             "sigmoid": 6,
+            "silu": 7,
         }
 
         activation = activation_fn.activation
@@ -468,6 +470,11 @@ def grad(xbar: torch.Tensor, y: torch.Tensor, functype: int) -> torch.Tensor:
     elif functype == 6:
         return y * (1 - y)
 
+    elif functype == 7:
+        # silu'(x) = sigmoid(x) * (1 + x * (1 - sigmoid(x)))
+        sig = torch.sigmoid(xbar)
+        return sig + xbar * sig * (1 - sig)
+
     else:
         raise ValueError(f"Unsupported function type: {functype}")
 
@@ -494,6 +501,12 @@ def grad_grad(xbar: torch.Tensor, y: torch.Tensor, functype: int) -> torch.Tenso
 
     elif functype == 6:
         return y * (1 - y) * (1 - 2 * y)
+
+    elif functype == 7:
+        sig = torch.sigmoid(xbar)
+        d_sig = sig * (1 - sig)
+        # silu''(x) = 2 * d_sig + x * d_sig * (1 - 2 * sig)
+        return 2 * d_sig + xbar * d_sig * (1 - 2 * sig)
 
     else:
         return -torch.ones_like(xbar)
