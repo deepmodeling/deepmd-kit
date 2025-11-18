@@ -633,36 +633,31 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     atype.reshape(-1, 1) * ntypes_with_padding, [1, nnei]
                 ).view(-1)
                 idx_j = nei_type.view(-1)
-                # (nf x nl x nnei) x ng
-                idx = (
-                    (idx_i + idx_j)
-                    .view(-1, 1)
-                    .expand(-1, ng)
-                    .type(torch.long)
-                    .to(torch.long)
-                )
-                # (ntypes) * ntypes * nt
-                type_embedding_nei = torch.tile(
-                    type_embedding.view(1, ntypes_with_padding, nt),
-                    [ntypes_with_padding, 1, 1],
-                )
-                # ntypes * (ntypes) * nt
-                type_embedding_center = torch.tile(
-                    type_embedding.view(ntypes_with_padding, 1, nt),
-                    [1, ntypes_with_padding, 1],
-                )
-                # (ntypes * ntypes) * (nt+nt)
-                two_side_type_embedding = torch.cat(
-                    [type_embedding_nei, type_embedding_center], -1
-                ).reshape(-1, nt * 2)
+                # (nf x nl x nnei)
+                idx = (idx_i + idx_j).to(torch.long)
                 if self.compress_type_embd and self.two_side_embd_data is not None:
+                    # (ntypes^2, ng)
                     tt_full = self.two_side_embd_data
                 else:
+                    # (ntypes) * ntypes * nt
+                    type_embedding_nei = torch.tile(
+                        type_embedding.view(1, ntypes_with_padding, nt),
+                        [ntypes_with_padding, 1, 1],
+                    )
+                    # ntypes * (ntypes) * nt
+                    type_embedding_center = torch.tile(
+                        type_embedding.view(ntypes_with_padding, 1, nt),
+                        [1, ntypes_with_padding, 1],
+                    )
+                    # (ntypes * ntypes) * (nt+nt)
+                    two_side_type_embedding = torch.cat(
+                        [type_embedding_nei, type_embedding_center], -1
+                    ).reshape(-1, nt * 2)
                     tt_full = self.filter_layers_strip.networks[0](
                         two_side_type_embedding
                     )
                 # (nf x nl x nnei) x ng
-                gg_t = torch.gather(tt_full, dim=0, index=idx)
+                gg_t = tt_full[idx]
             # (nf x nl) x nnei x ng
             gg_t = gg_t.reshape(nfnl, nnei, ng)
             if self.smooth:
