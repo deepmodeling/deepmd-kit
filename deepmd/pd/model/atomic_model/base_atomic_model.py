@@ -515,7 +515,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         else:
             raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
 
-    def compute_fitting_stat(
+    def compute_fitting_input_stat(
         self,
         sample_merged: Union[Callable[[], list[dict]], list[dict]],
     ) -> None:

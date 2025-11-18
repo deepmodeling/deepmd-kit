@@ -329,11 +329,11 @@ class DPAtomicModel(BaseAtomicModel):
             return sampled
 
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
-        self.compute_fitting_stat(wrapped_sampler)
+        self.compute_fitting_input_stat(wrapped_sampler)
         if compute_or_load_out_stat:
             self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
-    def compute_fitting_stat(
+    def compute_fitting_input_stat(
         self,
         sample_merged: Union[Callable[[], list[dict]], list[dict]],
     ) -> None:
