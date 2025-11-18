@@ -464,6 +464,13 @@ class DescrptBlockSeAtten(DescriptorBlock):
         type_embedding_net : TypeEmbedNet
             The type embedding network that provides get_full_embedding() method
         """
+        if self.tebd_input_mode != "strip":
+            raise RuntimeError("Type embedding compression only works in strip mode")
+        if self.filter_layers_strip is None:
+            raise RuntimeError(
+                "filter_layers_strip must be initialized for type embedding compression"
+            )
+
         with torch.no_grad():
             # Get full type embedding: (ntypes+1) x tebd_dim
             full_embd = type_embedding_net.get_full_embedding(env.DEVICE)
@@ -632,20 +639,20 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 # (nf x nl x nnei)
                 idx = (idx_i + idx_j).to(torch.long)
                 if self.type_embd_data is not None:
-                    # (ntypes^2, ng)
+                    # ((ntypes+1)^2, ng)
                     tt_full = self.type_embd_data
                 else:
-                    # (ntypes) * ntypes * nt
+                    # ((ntypes+1)^2) * (ntypes+1)^2 * nt
                     type_embedding_nei = torch.tile(
                         type_embedding.view(1, ntypes_with_padding, nt),
                         [ntypes_with_padding, 1, 1],
                     )
-                    # ntypes * (ntypes) * nt
+                    # (ntypes+1)^2 * ((ntypes+1)^2) * nt
                     type_embedding_center = torch.tile(
                         type_embedding.view(ntypes_with_padding, 1, nt),
                         [1, ntypes_with_padding, 1],
                     )
-                    # (ntypes * ntypes) * (nt+nt)
+                    # ((ntypes+1)^2 * (ntypes+1)^2) * (nt+nt)
                     two_side_type_embedding = torch.cat(
                         [type_embedding_nei, type_embedding_center], -1
                     ).reshape(-1, nt * 2)
