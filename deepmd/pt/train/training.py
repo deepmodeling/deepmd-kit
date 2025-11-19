@@ -61,7 +61,7 @@ from deepmd.pt.utils.env import (
 )
 from deepmd.pt.utils.learning_rate import (
     LearningRateExp,
-    LearningRateWSD
+    LearningRateWSD,
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
@@ -345,14 +345,14 @@ class Trainer:
                 self.validation_data,
                 self.valid_numb_batch,
             ) = get_data_loader(training_data, validation_data, training_params)
-            training_data.print_summary(
-                "training", to_numpy_array(self.training_dataloader.sampler.weights)
-            )
-            if validation_data is not None:
-                validation_data.print_summary(
-                    "validation",
-                    to_numpy_array(self.validation_dataloader.sampler.weights),
-                )
+            # training_data.print_summary(
+            #     "training", to_numpy_array(self.training_dataloader.sampler.weights)
+            # )
+            # if validation_data is not None:
+            #     validation_data.print_summary(
+            #         "validation",
+            #         to_numpy_array(self.validation_dataloader.sampler.weights),
+            #     )
         else:
             (
                 self.training_dataloader,
@@ -388,20 +388,20 @@ class Trainer:
                     training_params["data_dict"][model_key],
                 )
 
-                training_data[model_key].print_summary(
-                    f"training in {model_key}",
-                    to_numpy_array(self.training_dataloader[model_key].sampler.weights),
-                )
-                if (
-                    validation_data is not None
-                    and validation_data[model_key] is not None
-                ):
-                    validation_data[model_key].print_summary(
-                        f"validation in {model_key}",
-                        to_numpy_array(
-                            self.validation_dataloader[model_key].sampler.weights
-                        ),
-                    )
+                # training_data[model_key].print_summary(
+                #     f"training in {model_key}",
+                #     to_numpy_array(self.training_dataloader[model_key].sampler.weights),
+                # )
+                # if (
+                #     validation_data is not None
+                #     and validation_data[model_key] is not None
+                # ):
+                #     validation_data[model_key].print_summary(
+                #         f"validation in {model_key}",
+                #         to_numpy_array(
+                #             self.validation_dataloader[model_key].sampler.weights
+                #         ),
+                #     )
 
         # Learning rate
         self.warmup_steps = training_params.get("warmup_steps", 0)
@@ -604,13 +604,20 @@ class Trainer:
 
         # Multi-task share params
         if shared_links is not None:
-            _data_stat_protect = np.array([model_params["model_dict"][ii].get("data_stat_protect", 1e-2) for ii in model_params["model_dict"]])
-            assert np.allclose(_data_stat_protect, _data_stat_protect[0]), f"Model key 'data_stat_protect' must be the same in each branch when multitask!"
+            _data_stat_protect = np.array(
+                [
+                    model_params["model_dict"][ii].get("data_stat_protect", 1e-2)
+                    for ii in model_params["model_dict"]
+                ]
+            )
+            assert np.allclose(_data_stat_protect, _data_stat_protect[0]), (
+                "Model key 'data_stat_protect' must be the same in each branch when multitask!"
+            )
             self.wrapper.share_params(
                 shared_links,
                 resume=(resuming and not self.finetune_update_stat) or self.rank != 0,
-                model_key_prob_map = dict(zip(self.model_keys, self.model_prob)),
-                data_stat_protect = _data_stat_protect[0]
+                model_key_prob_map=dict(zip(self.model_keys, self.model_prob)),
+                data_stat_protect=_data_stat_protect[0],
             )
 
         if dist.is_available() and dist.is_initialized():
@@ -1212,7 +1219,11 @@ class Trainer:
 def get_additional_data_requirement(_model):
     additional_data_requirement = []
     if _model.get_dim_fparam() > 0:
-        _fparam_default = _model.get_default_fparam().cpu().numpy() if _model.has_default_fparam() else 0.0
+        _fparam_default = (
+            _model.get_default_fparam().cpu().numpy()
+            if _model.has_default_fparam()
+            else 0.0
+        )
         fparam_requirement_items = [
             DataRequirementItem(
                 "fparam",
