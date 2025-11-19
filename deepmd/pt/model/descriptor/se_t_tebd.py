@@ -857,9 +857,10 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             two_side_type_embedding = torch.cat(
                 [type_embedding_i, type_embedding_j], dim=-1
             ).reshape(-1, t_dim * 2)
-            self.type_embd_data = self.filter_layers_strip.networks[0](
+            embd_tensor = self.filter_layers_strip.networks[0](
                 two_side_type_embedding
             ).detach()
+            self.register_buffer("type_embd_data", embd_tensor)
 
     def forward(
         self,
