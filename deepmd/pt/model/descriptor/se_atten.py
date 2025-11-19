@@ -479,9 +479,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
             if self.type_one_side:
                 # One-side: only neighbor types, much simpler!
                 # Precompute for all (ntypes+1) neighbor types
-                self.type_embd_data = self.filter_layers_strip.networks[0](
-                    full_embd
-                ).detach()
+                embd_tensor = self.filter_layers_strip.networks[0](full_embd).detach()
+                self.register_buffer("type_embd_data", embd_tensor)
             else:
                 # Two-side: all (ntypes+1)² type pair combinations
                 # Create [neighbor, center] combinations
@@ -494,9 +493,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 )
                 # Precompute for all type pairs
                 # Index formula: idx = center_type * nt + neighbor_type
-                self.type_embd_data = self.filter_layers_strip.networks[0](
+                embd_tensor = self.filter_layers_strip.networks[0](
                     two_side_embd
                 ).detach()
+                self.register_buffer("type_embd_data", embd_tensor)
 
     def forward(
         self,
