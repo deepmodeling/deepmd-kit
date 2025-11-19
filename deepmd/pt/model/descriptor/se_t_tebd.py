@@ -599,6 +599,7 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
         self.se_ttebd.enable_compression(
             self.table.data, self.table_config, self.lower, self.upper
         )
+        self.se_ttebd.type_embedding_compression(self.type_embedding)
         self.compress = True
 
 
@@ -700,6 +701,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         self.compress_data = nn.ParameterList(
             [nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))]
         )
+        self.type_embd_data: Optional[torch.Tensor] = None
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -837,6 +839,27 @@ class DescrptBlockSeTTebd(DescriptorBlock):
     ) -> None:
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
+
+    def type_embedding_compression(self, type_embedding_net: TypeEmbedNet) -> None:
+        """Precompute strip-mode type embeddings for all type pairs."""
+        if self.tebd_input_mode != "strip":
+            raise RuntimeError("Type embedding compression only works in strip mode")
+        if self.filter_layers_strip is None:
+            raise RuntimeError(
+                "filter_layers_strip must exist for type embedding compression"
+            )
+
+        with torch.no_grad():
+            full_embd = type_embedding_net.get_full_embedding(env.DEVICE)
+            nt, t_dim = full_embd.shape
+            type_embedding_i = full_embd.view(nt, 1, t_dim).expand(nt, nt, t_dim)
+            type_embedding_j = full_embd.view(1, nt, t_dim).expand(nt, nt, t_dim)
+            two_side_type_embedding = torch.cat(
+                [type_embedding_i, type_embedding_j], dim=-1
+            ).reshape(-1, t_dim * 2)
+            self.type_embd_data = self.filter_layers_strip.networks[0](
+                two_side_type_embedding
+            ).detach()
 
     def forward(
         self,
@@ -986,31 +1009,24 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             nei_type_j = nei_type.unsqueeze(1).expand([-1, nnei, -1])
             idx_i = nei_type_i * ntypes_with_padding
             idx_j = nei_type_j
-            # (nf x nl x nt_i x nt_j) x ng
-            idx = (
-                (idx_i + idx_j)
-                .view(-1, 1)
-                .expand(-1, ng)
-                .type(torch.long)
-                .to(torch.long)
-            )
-            # ntypes * (ntypes) * nt
-            type_embedding_i = torch.tile(
-                type_embedding.view(ntypes_with_padding, 1, nt),
-                [1, ntypes_with_padding, 1],
-            )
-            # (ntypes) * ntypes * nt
-            type_embedding_j = torch.tile(
-                type_embedding.view(1, ntypes_with_padding, nt),
-                [ntypes_with_padding, 1, 1],
-            )
-            # (ntypes * ntypes) * (nt+nt)
-            two_side_type_embedding = torch.cat(
-                [type_embedding_i, type_embedding_j], -1
-            ).reshape(-1, nt * 2)
-            tt_full = self.filter_layers_strip.networks[0](two_side_type_embedding)
+            idx = (idx_i + idx_j).reshape(-1).to(torch.long)
+            if self.type_embd_data is not None:
+                tt_full = self.type_embd_data
+            else:
+                type_embedding_i = torch.tile(
+                    type_embedding.view(ntypes_with_padding, 1, nt),
+                    [1, ntypes_with_padding, 1],
+                )
+                type_embedding_j = torch.tile(
+                    type_embedding.view(1, ntypes_with_padding, nt),
+                    [ntypes_with_padding, 1, 1],
+                )
+                two_side_type_embedding = torch.cat(
+                    [type_embedding_i, type_embedding_j], -1
+                ).reshape(-1, nt * 2)
+                tt_full = self.filter_layers_strip.networks[0](two_side_type_embedding)
             # (nfnl x nt_i x nt_j) x ng
-            gg_t = torch.gather(tt_full, dim=0, index=idx)
+            gg_t = tt_full[idx]
             # (nfnl x nt_i x nt_j) x ng
             gg_t = gg_t.reshape(nfnl, nnei, nnei, ng)
             if self.smooth:
