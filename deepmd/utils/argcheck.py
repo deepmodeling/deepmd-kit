@@ -2659,6 +2659,12 @@ def loss_ener():
             default=0.00,
             doc=doc_limit_pref_pf,
         ),
+        Argument(
+            "use_default_pf",
+            bool,
+            optional=True,
+            default=False,
+        ),
         Argument("relative_f", [float, None], optional=True, doc=doc_relative_f),
         Argument(
             "enable_atom_ener_coeff",

@@ -54,6 +54,7 @@ class EnergyStdLoss(TaskLoss):
         use_l1_all: bool = False,
         inference=False,
         use_huber=False,
+        use_default_pf=False,
         huber_delta=0.01,
         **kwargs,
     ) -> None:
@@ -131,6 +132,7 @@ class EnergyStdLoss(TaskLoss):
         self.limit_pref_pf = limit_pref_pf
         self.start_pref_gf = start_pref_gf
         self.limit_pref_gf = limit_pref_gf
+        self.use_default_pf = use_default_pf
         self.relative_f = relative_f
         self.enable_atom_ener_coeff = enable_atom_ener_coeff
         self.numb_generalized_coord = numb_generalized_coord
@@ -301,7 +303,9 @@ class EnergyStdLoss(TaskLoss):
 
             if self.has_pf and "atom_pref" in label:
                 atom_pref = label["atom_pref"]
-                find_atom_pref = label.get("find_atom_pref", 0.0)
+                find_atom_pref = (
+                    label.get("find_atom_pref", 0.0) if not self.use_default_pf else 1.0
+                )
                 pref_pf = pref_pf * find_atom_pref
                 atom_pref_reshape = atom_pref.reshape(-1)
                 l2_pref_force_loss = (torch.square(diff_f) * atom_pref_reshape).mean()
@@ -410,7 +414,7 @@ class EnergyStdLoss(TaskLoss):
                     high_prec=True,
                 )
             )
-        if self.has_f:
+        if self.has_f or self.has_pf or self.relative_f is not None or self.has_gf:
             label_requirement.append(
                 DataRequirementItem(
                     "force",
@@ -449,6 +453,7 @@ class EnergyStdLoss(TaskLoss):
                     must=False,
                     high_prec=False,
                     repeat=3,
+                    default=1.0,
                 )
             )
         if self.has_gf > 0:
