@@ -860,6 +860,8 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             embd_tensor = self.filter_layers_strip.networks[0](
                 two_side_type_embedding
             ).detach()
+            if hasattr(self, "type_embd_data"):
+                del self.type_embd_data
             self.register_buffer("type_embd_data", embd_tensor)
 
     def forward(
