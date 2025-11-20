@@ -232,6 +232,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 merged,
                 bias_adjust_mode=bias_adjust_mode,
             )
+            if bias_adjust_mode == "set-by-statistic":
+                self.atomic_model.compute_fitting_input_stat(merged)
 
         def forward_common_lower(
             self,
