@@ -285,7 +285,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             [nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))]
         )
         # For type embedding compression
-        self.type_embd_data = None
+        self.type_embd_data: Optional[torch.Tensor] = None
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
