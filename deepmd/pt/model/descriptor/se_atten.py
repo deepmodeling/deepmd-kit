@@ -480,6 +480,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 # One-side: only neighbor types, much simpler!
                 # Precompute for all (ntypes+1) neighbor types
                 embd_tensor = self.filter_layers_strip.networks[0](full_embd).detach()
+                if hasattr(self, "type_embd_data"):
+                    del self.type_embd_data
                 self.register_buffer("type_embd_data", embd_tensor)
             else:
                 # Two-side: all (ntypes+1)² type pair combinations
@@ -496,6 +498,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 embd_tensor = self.filter_layers_strip.networks[0](
                     two_side_embd
                 ).detach()
+                if hasattr(self, "type_embd_data"):
+                    del self.type_embd_data
                 self.register_buffer("type_embd_data", embd_tensor)
 
     def forward(
