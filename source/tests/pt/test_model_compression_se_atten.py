@@ -521,7 +521,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
             Atoms,
         )
 
-        from deepmd.tf.calculator import (
+        from deepmd.calculator import (
             DP,
         )
 
