@@ -2,6 +2,7 @@
 # Set environment variables before any imports to avoid threading conflicts
 import json
 import os
+import shutil
 import unittest
 
 import numpy as np
@@ -27,7 +28,7 @@ else:
 
 def _file_delete(file) -> None:
     if os.path.isdir(file):
-        os.rmdir(file)
+        shutil.rmtree(file)
     elif os.path.isfile(file):
         os.remove(file)
 
@@ -163,6 +164,28 @@ def setUpModule() -> None:
         _init_models_skip_neighbor_stat()
     )
     INPUT_ET, FROZEN_MODEL_ET, COMPRESSED_MODEL_ET = _init_models_exclude_types()
+
+
+def tearDownModule() -> None:
+    # Clean up files created by _init_models
+    _file_delete(INPUT)
+    _file_delete(FROZEN_MODEL)
+    _file_delete(COMPRESSED_MODEL)
+    # Clean up files created by _init_models_skip_neighbor_stat
+    _file_delete(FROZEN_MODEL_SKIP_NEIGHBOR_STAT)
+    _file_delete(COMPRESSED_MODEL_SKIP_NEIGHBOR_STAT)
+    # Clean up files created by _init_models_exclude_types
+    _file_delete(INPUT_ET)
+    _file_delete(FROZEN_MODEL_ET)
+    _file_delete(COMPRESSED_MODEL_ET)
+    # Clean up other artifacts
+    _file_delete("out.json")
+    _file_delete("compress.json")
+    _file_delete("checkpoint")
+    _file_delete("lcurve.out")
+    _file_delete("model.ckpt")
+    _file_delete("model-compression/checkpoint")
+    _file_delete("model-compression")
 
 
 class TestDeepPotAPBC(unittest.TestCase):
@@ -534,19 +557,6 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         )
         cls.atype = [0, 1, 1, 0, 1, 1]
         cls.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        _file_delete(INPUT_ET)
-        _file_delete(FROZEN_MODEL_ET)
-        _file_delete(COMPRESSED_MODEL_ET)
-        _file_delete("out.json")
-        _file_delete("compress.json")
-        _file_delete("checkpoint")
-        _file_delete("lcurve.out")
-        _file_delete("model.ckpt")
-        _file_delete("model-compression/checkpoint")
-        _file_delete("model-compression")
 
     def test_attrs(self) -> None:
         self.assertEqual(self.dp_original.get_ntypes(), 2)
