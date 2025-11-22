@@ -285,7 +285,9 @@ class DescrptBlockSeAtten(DescriptorBlock):
             [nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))]
         )
         # For type embedding compression
-        self.type_embd_data: Optional[torch.Tensor] = None
+        self.register_buffer(
+            "type_embd_data", torch.zeros(0, dtype=self.prec, device=env.DEVICE)
+        )
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -628,7 +630,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             # nf x (nl x nnei)
             nei_type = torch.gather(extended_atype, dim=1, index=nlist_index)
             if self.type_one_side:
-                if self.type_embd_data is not None:
+                if self.compress:
                     tt_full = self.type_embd_data
                 else:
                     # (ntypes+1, tebd_dim) -> (ntypes+1, ng)
@@ -642,7 +644,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 idx_j = nei_type.view(-1)
                 # (nf x nl x nnei)
                 idx = (idx_i + idx_j).to(torch.long)
-                if self.type_embd_data is not None:
+                if self.compress:
                     # ((ntypes+1)^2, ng)
                     tt_full = self.type_embd_data
                 else:
