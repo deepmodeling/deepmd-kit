@@ -4,6 +4,7 @@ from abc import (
 )
 from typing import (
     Any,
+    Callable,
     Optional,
     Union,
 )
@@ -220,6 +221,71 @@ class GeneralFitting(NativeOP, BaseFitting):
                 for ii in range(self.ntypes if not self.mixed_types else 1)
             ],
         )
+
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], list[dict]], list[dict]],
+        protection: float = 1e-2,
+    ) -> None:
+        """
+        Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `numpy.ndarray`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        protection : float
+            Divided-by-zero protection
+        """
+        if self.numb_fparam == 0 and self.numb_aparam == 0:
+            # skip data statistics
+            return
+        if callable(merged):
+            sampled = merged()
+        else:
+            sampled = merged
+        # stat fparam
+        if self.numb_fparam > 0:
+            cat_data = np.concatenate([frame["fparam"] for frame in sampled], axis=0)
+            cat_data = np.reshape(cat_data, [-1, self.numb_fparam])
+            fparam_avg = np.mean(cat_data, axis=0)
+            fparam_std = np.std(cat_data, axis=0, ddof=0)  # ddof=0 for population std
+            fparam_std = np.where(
+                fparam_std < protection,
+                np.array(protection, dtype=fparam_std.dtype),
+                fparam_std,
+            )
+            fparam_inv_std = 1.0 / fparam_std
+            self.fparam_avg = fparam_avg.astype(self.fparam_avg.dtype)
+            self.fparam_inv_std = fparam_inv_std.astype(self.fparam_inv_std.dtype)
+        # stat aparam
+        if self.numb_aparam > 0:
+            sys_sumv = []
+            sys_sumv2 = []
+            sys_sumn = []
+            for ss_ in [frame["aparam"] for frame in sampled]:
+                ss = np.reshape(ss_, [-1, self.numb_aparam])
+                sys_sumv.append(np.sum(ss, axis=0))
+                sys_sumv2.append(np.sum(ss * ss, axis=0))
+                sys_sumn.append(ss.shape[0])
+            sumv = np.sum(np.stack(sys_sumv), axis=0)
+            sumv2 = np.sum(np.stack(sys_sumv2), axis=0)
+            sumn = sum(sys_sumn)
+            aparam_avg = sumv / sumn
+            aparam_std = np.sqrt(sumv2 / sumn - (sumv / sumn) ** 2)
+            aparam_std = np.where(
+                aparam_std < protection,
+                np.array(protection, dtype=aparam_std.dtype),
+                aparam_std,
+            )
+            aparam_inv_std = 1.0 / aparam_std
+            self.aparam_avg = aparam_avg.astype(self.aparam_avg.dtype)
+            self.aparam_inv_std = aparam_inv_std.astype(self.aparam_inv_std.dtype)
 
     @abstractmethod
     def _net_out_dim(self) -> int:

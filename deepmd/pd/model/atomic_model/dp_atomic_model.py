@@ -397,11 +397,29 @@ class DPAtomicModel(BaseAtomicModel):
             return sampled
 
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
-        self.fitting_net.compute_input_stats(
-            wrapped_sampler, protection=self.data_stat_protect
-        )
+        self.compute_fitting_input_stat(wrapped_sampler)
         if compute_or_load_out_stat:
             self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
+
+    def compute_fitting_input_stat(
+        self,
+        sample_merged: Union[Callable[[], list[dict]], list[dict]],
+    ) -> None:
+        """Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
+
+        Parameters
+        ----------
+        sample_merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        """
+        self.fitting_net.compute_input_stats(
+            sample_merged, protection=self.data_stat_protect
+        )
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
