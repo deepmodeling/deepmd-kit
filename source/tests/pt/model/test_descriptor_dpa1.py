@@ -249,6 +249,7 @@ class TestDPA1(unittest.TestCase):
         # this is an old state dict, modify manually
         state_dict["compress_info.0"] = des.compress_info[0]
         state_dict["compress_data.0"] = des.compress_data[0]
+        state_dict["type_embd_data"] = des.type_embd_data
         des.load_state_dict(state_dict)
         coord = self.coord
         atype = self.atype
