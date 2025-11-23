@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-# Set environment variables before any imports to avoid threading conflicts
 import json
 import os
 import shutil
