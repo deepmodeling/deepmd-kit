@@ -553,6 +553,8 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
         assert not self.se_ttebd.resnet_dt, (
             "Model compression error: descriptor resnet_dt must be false!"
         )
+        if self.tebd_input_mode != "strip":
+            raise RuntimeError("Cannot compress model when tebd_input_mode != 'strip'")
         for tt in self.se_ttebd.exclude_types:
             if (tt[0] not in range(self.se_ttebd.ntypes)) or (
                 tt[1] not in range(self.se_ttebd.ntypes)
@@ -572,9 +574,6 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
             raise RuntimeError(
                 "Empty embedding-nets are not supported in model compression!"
             )
-
-        if self.tebd_input_mode != "strip":
-            raise RuntimeError("Cannot compress model when tebd_input_mode == 'concat'")
 
         data = self.serialize()
         self.table = DPTabulate(
@@ -597,9 +596,12 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
         )
 
         self.se_ttebd.enable_compression(
-            self.table.data, self.table_config, self.lower, self.upper
+            self.type_embedding,
+            self.table.data,
+            self.table_config,
+            self.lower,
+            self.upper,
         )
-        self.se_ttebd.type_embedding_compression(self.type_embedding)
         self.compress = True
 
 
@@ -695,13 +697,17 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         self.stats = None
         # compression related variables
         self.compress = False
+        # For geometric compression
         self.compress_info = nn.ParameterList(
             [nn.Parameter(torch.zeros(0, dtype=self.prec, device="cpu"))]
         )
         self.compress_data = nn.ParameterList(
             [nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))]
         )
-        self.type_embd_data: Optional[torch.Tensor] = None
+        # For type embedding compression
+        self.register_buffer(
+            "type_embd_data", torch.zeros(0, dtype=self.prec, device=env.DEVICE)
+        )
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -839,30 +845,6 @@ class DescrptBlockSeTTebd(DescriptorBlock):
     ) -> None:
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
-
-    def type_embedding_compression(self, type_embedding_net: TypeEmbedNet) -> None:
-        """Precompute strip-mode type embeddings for all type pairs."""
-        if self.tebd_input_mode != "strip":
-            raise RuntimeError("Type embedding compression only works in strip mode")
-        if self.filter_layers_strip is None:
-            raise RuntimeError(
-                "filter_layers_strip must exist for type embedding compression"
-            )
-
-        with torch.no_grad():
-            full_embd = type_embedding_net.get_full_embedding(env.DEVICE)
-            nt, t_dim = full_embd.shape
-            type_embedding_i = full_embd.view(nt, 1, t_dim).expand(nt, nt, t_dim)
-            type_embedding_j = full_embd.view(1, nt, t_dim).expand(nt, nt, t_dim)
-            two_side_type_embedding = torch.cat(
-                [type_embedding_i, type_embedding_j], dim=-1
-            ).reshape(-1, t_dim * 2)
-            embd_tensor = self.filter_layers_strip.networks[0](
-                two_side_type_embedding
-            ).detach()
-            if hasattr(self, "type_embd_data"):
-                del self.type_embd_data
-            self.register_buffer("type_embd_data", embd_tensor)
 
     def forward(
         self,
@@ -1013,7 +995,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             idx_i = nei_type_i * ntypes_with_padding
             idx_j = nei_type_j
             idx = (idx_i + idx_j).reshape(-1).to(torch.long)
-            if self.type_embd_data is not None:
+            if self.compress:
                 tt_full = self.type_embd_data
             else:
                 type_embedding_i = torch.tile(
@@ -1061,6 +1043,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
 
     def enable_compression(
         self,
+        type_embedding_net: TypeEmbedNet,
         table_data: dict,
         table_config: dict,
         lower: dict,
@@ -1070,6 +1053,8 @@ class DescrptBlockSeTTebd(DescriptorBlock):
 
         Parameters
         ----------
+        type_embedding_net : TypeEmbedNet
+            The type embedding network
         table_data : dict
             The tabulated data from DPTabulate
         table_config : dict
@@ -1079,6 +1064,13 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         upper : dict
             Upper bounds for compression
         """
+        if self.tebd_input_mode != "strip":
+            raise RuntimeError("Type embedding compression only works in strip mode")
+        if self.filter_layers_strip is None:
+            raise RuntimeError(
+                "filter_layers_strip must exist for type embedding compression"
+            )
+
         # Compress the main geometric embedding network (self.filter_layers)
         net_key = "filter_net"
         self.compress_info[0] = torch.as_tensor(
@@ -1096,6 +1088,22 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         self.compress_data[0] = table_data[net_key].to(
             device=env.DEVICE, dtype=self.prec
         )
+
+        # Compress the type embedding network (self.filter_layers_strip)
+        with torch.no_grad():
+            full_embd = type_embedding_net.get_full_embedding(env.DEVICE)
+            nt, t_dim = full_embd.shape
+            type_embedding_i = full_embd.view(nt, 1, t_dim).expand(nt, nt, t_dim)
+            type_embedding_j = full_embd.view(1, nt, t_dim).expand(nt, nt, t_dim)
+            two_side_type_embedding = torch.cat(
+                [type_embedding_i, type_embedding_j], dim=-1
+            ).reshape(-1, t_dim * 2)
+            embd_tensor = self.filter_layers_strip.networks[0](
+                two_side_type_embedding
+            ).detach()
+            if hasattr(self, "type_embd_data"):
+                del self.type_embd_data
+            self.register_buffer("type_embd_data", embd_tensor)
 
         self.compress = True
 
