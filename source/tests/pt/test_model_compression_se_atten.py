@@ -200,10 +200,11 @@ def tearDownModule() -> None:
     _file_delete(COMPRESSED_MODEL_ET)
     # Clean up other artifacts
     _file_delete("out.json")
-    _file_delete("compress.json")
+    _file_delete("input_v2_compat.json")
     _file_delete("checkpoint")
     _file_delete("lcurve.out")
-    _file_delete("model.ckpt")
+    _file_delete("model.ckpt.pt")
+    _file_delete("model.ckpt-1.pt")
     _file_delete("model-compression/checkpoint")
     _file_delete("model-compression")
 
