@@ -421,7 +421,9 @@ class DPAtomicModel(BaseAtomicModel):
             The dictionary of paths to the statistics files.
         """
         self.fitting_net.compute_input_stats(
-            sample_merged, protection=self.data_stat_protect, stat_file_path=stat_file_path,
+            sample_merged,
+            protection=self.data_stat_protect,
+            stat_file_path=stat_file_path,
         )
 
     def get_dim_fparam(self) -> int:
