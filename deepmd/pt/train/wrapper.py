@@ -60,7 +60,13 @@ class ModelWrapper(torch.nn.Module):
                     self.loss[task_key] = loss[task_key]
         self.inference_only = self.loss is None
 
-    def share_params(self, shared_links: dict[str, Any], resume: bool = False) -> None:
+    def share_params(
+        self,
+        shared_links: dict[str, Any],
+        model_key_prob_map: dict,
+        data_stat_protect: float = 1e-2,
+        resume: bool = False,
+    ) -> None:
         """
         Share the parameters of classes following rules defined in shared_links during multitask training.
         If not start from checkpoint (resume is False),
@@ -130,8 +136,16 @@ class ModelWrapper(torch.nn.Module):
                         link_class = self.model[
                             model_key_link
                         ].atomic_model.__getattr__(class_type_link)
+                        frac_prob = (
+                            model_key_prob_map[model_key_link]
+                            / model_key_prob_map[model_key_base]
+                        )
                         link_class.share_params(
-                            base_class, shared_level_link, resume=resume
+                            base_class,
+                            shared_level_link,
+                            model_prob=frac_prob,
+                            protection=data_stat_protect,
+                            resume=resume,
                         )
                         log.warning(
                             f"Shared params of {model_key_base}.{class_type_base} and {model_key_link}.{class_type_link}!"
