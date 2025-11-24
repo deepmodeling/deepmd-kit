@@ -145,4 +145,4 @@ Now, your PR is successfully submitted! After this PR is merged, you will automa
 
 ## Contact us
 
-E-mail: contact@deepmodeling.org
+E-mail: deepmodeling@deepmodeling.com
