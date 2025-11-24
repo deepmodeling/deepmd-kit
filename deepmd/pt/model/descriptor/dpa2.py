@@ -970,4 +970,8 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         self.repinit.enable_compression(
             self.table.data, self.table_config, self.lower, self.upper
         )
+
+        # Enable type embedding compression for repinit (se_atten)
+        self.repinit.type_embedding_compression(self.type_embedding)
+
         self.compress = True

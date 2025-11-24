@@ -645,6 +645,10 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         self.se_atten.enable_compression(
             self.table.data, self.table_config, self.lower, self.upper
         )
+
+        # Enable type embedding compression
+        self.se_atten.type_embedding_compression(self.type_embedding)
+
         self.compress = True
 
     def forward(
