@@ -134,7 +134,7 @@ You can use descriptor `"se_atten_v2"` and is not allowed to set `tebd_input_mod
 
 Practical evidence demonstrates that `"se_atten_v2"` offers better and more stable performance compared to `"se_atten"`.
 
-Notice: Model compression for the `se_atten_v2` descriptor is exclusively designed for models with the training parameter {ref}`attn_layer <model[standard]/descriptor[se_atten_v2]/attn_layer>` set to 0.
+Notice: Model compression for the `se_atten_v2` descriptor is designed for models with any `attn_layer` value. When `attn_layer` is not 0, only type embedding will be compressed, while the geometric part will not be compressed.
 
 ## Type embedding
 
@@ -182,7 +182,7 @@ DPA-1 supports both the [standard data format](../data/system.md) and the [mixed
 
 ## Model compression
 
-Model compression is supported only when there is no attention layer (`attn_layer` is 0) and `tebd_input_mode` is `strip`.
+Model compression is supported for any `attn_layer` value when `tebd_input_mode` is `strip`. When `attn_layer` is not 0, only type embedding will be compressed, while the geometric part will not be compressed.
 
 ## Training example
 

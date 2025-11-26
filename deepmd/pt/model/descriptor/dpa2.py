@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import warnings
 from typing import (
     Any,
     Callable,
@@ -938,38 +939,39 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
                 "Repinit empty embedding-nets are not supported in model compression!"
             )
 
-        if self.repinit.attn_layer != 0:
-            raise RuntimeError(
-                "Cannot compress model when repinit attention layer is not 0."
-            )
-
         if self.repinit.tebd_input_mode != "strip":
             raise RuntimeError(
                 "Cannot compress model when repinit tebd_input_mode == 'concat'"
             )
 
-        # repinit doesn't have a serialize method
-        data = self.serialize()
-        self.table = DPTabulate(
-            self,
-            data["repinit_args"]["neuron"],
-            data["repinit_args"]["type_one_side"],
-            data["exclude_types"],
-            ActivationFn(data["repinit_args"]["activation_function"]),
-        )
-        self.table_config = [
-            table_extrapolate,
-            table_stride_1,
-            table_stride_2,
-            check_frequency,
-        ]
-        self.lower, self.upper = self.table.build(
-            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
-        )
+        if self.repinit.attn_layer == 0:
+            # repinit doesn't have a serialize method
+            data = self.serialize()
+            self.table = DPTabulate(
+                self,
+                data["repinit_args"]["neuron"],
+                data["repinit_args"]["type_one_side"],
+                data["exclude_types"],
+                ActivationFn(data["repinit_args"]["activation_function"]),
+            )
+            self.table_config = [
+                table_extrapolate,
+                table_stride_1,
+                table_stride_2,
+                check_frequency,
+            ]
+            self.lower, self.upper = self.table.build(
+                min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+            )
 
-        self.repinit.enable_compression(
-            self.table.data, self.table_config, self.lower, self.upper
-        )
+            self.repinit.enable_compression(
+                self.table.data, self.table_config, self.lower, self.upper
+            )
+        else:
+            warnings.warn(
+                "Attention layer is not 0, only type embedding is compressed. Geometric part is not compressed.",
+                UserWarning,
+            )
 
         # Enable type embedding compression for repinit (se_atten)
         self.repinit.type_embedding_compression(self.type_embedding)
