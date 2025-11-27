@@ -21,6 +21,13 @@ from ..utils.type_embed import (
     TypeEmbedNet,
 )
 
+from packaging.version import (
+    Version,
+)
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 
 class DescrptBlockSeTTebd(DescrptBlockSeTTebdDP):
     def __setattr__(self, name: str, value: Any) -> None:
@@ -29,6 +36,8 @@ class DescrptBlockSeTTebd(DescrptBlockSeTTebdDP):
         elif name in {"embeddings", "embeddings_strip"}:
             if value is not None:
                 value = NetworkCollection.deserialize(value.serialize())
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name == "env_mat":
             # env_mat doesn't store any value
             pass

@@ -31,6 +31,13 @@ from deepmd.jax.utils.network import (
 from deepmd.jax.utils.type_embed import (
     TypeEmbedNet,
 )
+from packaging.version import (
+    Version,
+)
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 
 
 @flax_module
@@ -58,6 +65,8 @@ class NeighborGatedAttention(NeighborGatedAttentionDP):
             value = [
                 NeighborGatedAttentionLayer.deserialize(ii.serialize()) for ii in value
             ]
+            if Version(flax_version) >= Version("0.12.0"):
+                value = nnx.List([nnx.data(item) for item in value])
         return super().__setattr__(name, value)
 
 
@@ -71,6 +80,8 @@ class DescrptBlockSeAtten(DescrptBlockSeAttenDP):
         elif name in {"embeddings", "embeddings_strip"}:
             if value is not None:
                 value = NetworkCollection.deserialize(value.serialize())
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name == "dpa1_attention":
             value = NeighborGatedAttention.deserialize(value.serialize())
         elif name == "env_mat":

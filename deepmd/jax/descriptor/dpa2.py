@@ -29,6 +29,13 @@ from deepmd.jax.utils.network import (
 from deepmd.jax.utils.type_embed import (
     TypeEmbedNet,
 )
+from packaging.version import (
+    Version,
+)
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 
 
 @BaseDescriptor.register("dpa2")
@@ -44,13 +51,16 @@ class DescrptDPA2(DescrptDPA2DP):
         elif name in {"repinit_three_body"}:
             if value is not None:
                 value = DescrptBlockSeTTebd.deserialize(value.serialize())
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name in {"repformers"}:
             value = DescrptBlockRepformers.deserialize(value.serialize())
         elif name in {"type_embedding"}:
             value = TypeEmbedNet.deserialize(value.serialize())
         elif name in {"g1_shape_tranform", "tebd_transform"}:
             if value is None:
-                pass
+                if Version(flax_version) >= Version("0.12.0"):
+                    value = nnx.data(value)
             elif isinstance(value, NativeLayerDP):
                 value = NativeLayer.deserialize(value.serialize())
             elif isinstance(value, IdentityDP):

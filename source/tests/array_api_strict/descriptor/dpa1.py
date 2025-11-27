@@ -31,6 +31,14 @@ from .base_descriptor import (
     BaseDescriptor,
 )
 
+from packaging.version import (
+    Version,
+)
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
+
 
 class GatedAttentionLayer(GatedAttentionLayerDP):
     def __setattr__(self, name: str, value: Any) -> None:
@@ -64,6 +72,8 @@ class DescrptBlockSeAtten(DescrptBlockSeAttenDP):
         elif name in {"embeddings", "embeddings_strip"}:
             if value is not None:
                 value = NetworkCollection.deserialize(value.serialize())
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name == "dpa1_attention":
             value = NeighborGatedAttention.deserialize(value.serialize())
         elif name == "env_mat":

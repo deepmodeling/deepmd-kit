@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 from flax import (
     nnx,
+    __version__ as flax_version,
 )
 from jax import export as jax_export
 
@@ -23,4 +24,5 @@ __all__ = [
     "jax_export",
     "jnp",
     "nnx",
+    "flax_version",
 ]

@@ -18,6 +18,13 @@ from deepmd.jax.utils.exclude_mask import (
 from deepmd.jax.utils.network import (
     NativeLayer,
 )
+from packaging.version import (
+    Version,
+)
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 
 
 @flax_module
@@ -29,6 +36,8 @@ class DescrptBlockRepflows(DescrptBlockRepflowsDP):
                 value = ArrayAPIVariable(value)
         elif name in {"layers"}:
             value = [RepFlowLayer.deserialize(layer.serialize()) for layer in value]
+            if Version(flax_version) >= Version("0.12.0"):
+                value = nnx.List([nnx.data(item) for item in value])
         elif name in {"edge_embd", "angle_embd"}:
             value = NativeLayer.deserialize(value.serialize())
         elif name in {"env_mat_edge", "env_mat_angle"}:
@@ -58,8 +67,12 @@ class RepFlowLayer(RepFlowLayerDP):
         }:
             if value is not None:
                 value = NativeLayer.deserialize(value.serialize())
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name in {"n_residual", "e_residual", "a_residual"}:
             value = [ArrayAPIVariable(to_jax_array(vv)) for vv in value]
+            if Version(flax_version) >= Version("0.12.0"):
+                value = nnx.List([nnx.data(item) for item in value])
         else:
             pass
         return super().__setattr__(name, value)

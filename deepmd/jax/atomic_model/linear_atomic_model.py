@@ -25,6 +25,13 @@ from deepmd.jax.env import (
     jax,
     jnp,
 )
+from packaging.version import (
+    Version,
+)
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 
 
 @flax_module
@@ -33,6 +40,8 @@ class DPZBLLinearEnergyAtomicModel(DPZBLLinearEnergyAtomicModelDP):
         value = base_atomic_model_set_attr(name, value)
         if name == "mapping_list":
             value = [ArrayAPIVariable(to_jax_array(vv)) for vv in value]
+            if Version(flax_version) >= Version("0.12.0"):
+                value = nnx.List([nnx.data(item) for item in value])
         elif name == "zbl_weight":
             value = ArrayAPIVariable(to_jax_array(value))
         elif name == "models":
@@ -40,6 +49,8 @@ class DPZBLLinearEnergyAtomicModel(DPZBLLinearEnergyAtomicModelDP):
                 DPAtomicModel.deserialize(value[0].serialize()),
                 PairTabAtomicModel.deserialize(value[1].serialize()),
             ]
+            if Version(flax_version) >= Version("0.12.0"):
+                value = nnx.List([nnx.data(item) for item in value])
         return super().__setattr__(name, value)
 
     def forward_common_atomic(

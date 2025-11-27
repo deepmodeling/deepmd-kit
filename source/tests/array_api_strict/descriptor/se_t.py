@@ -15,6 +15,13 @@ from ..utils.network import (
     NetworkCollection,
 )
 
+from packaging.version import (
+    Version,
+)
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 
 class DescrptSeT(DescrptSeTDP):
     def __setattr__(self, name: str, value: Any) -> None:
@@ -23,6 +30,8 @@ class DescrptSeT(DescrptSeTDP):
         elif name in {"embeddings"}:
             if value is not None:
                 value = NetworkCollection.deserialize(value.serialize())
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name == "env_mat":
             # env_mat doesn't store any value
             pass

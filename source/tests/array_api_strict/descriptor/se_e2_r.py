@@ -18,6 +18,13 @@ from .base_descriptor import (
     BaseDescriptor,
 )
 
+from packaging.version import (
+    Version,
+)
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 
 @BaseDescriptor.register("se_e2_r")
 @BaseDescriptor.register("se_r")
@@ -28,6 +35,8 @@ class DescrptSeR(DescrptSeRDP):
         elif name in {"embeddings"}:
             if value is not None:
                 value = NetworkCollection.deserialize(value.serialize())
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name == "env_mat":
             # env_mat doesn't store any value
             pass
