@@ -941,7 +941,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
 
         if self.repinit.tebd_input_mode != "strip":
             raise RuntimeError(
-                "Cannot compress model when repinit tebd_input_mode == 'concat'"
+                "Cannot compress model when repinit tebd_input_mode != 'strip'"
             )
 
         if self.repinit.attn_layer == 0:

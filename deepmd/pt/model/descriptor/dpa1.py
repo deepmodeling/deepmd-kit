@@ -598,9 +598,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         if self.tebd_compress or self.geo_compress:
             raise ValueError("Compression is already enabled.")
 
-        assert self.tebd_input_mode != "strip", (
-            "Cannot compress model when tebd_input_mode == 'strip'"
-        )
+        if self.tebd_input_mode != "strip":
+            raise RuntimeError("Type embedding compression only works in strip mode")
 
         assert not self.se_atten.resnet_dt, (
             "Model compression error: descriptor resnet_dt must be false!"
