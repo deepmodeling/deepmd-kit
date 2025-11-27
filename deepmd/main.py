@@ -984,19 +984,6 @@ def main(args: Optional[list[str]] = None) -> None:
     RuntimeError
         if no command was input
     """
-    try:
-        import multiprocessing
-        import sys
-
-        # Force fork multiprocessing start method (not available on Windows)
-        if sys.platform != "win32":
-            multiprocessing.set_start_method("fork", force=True)
-            logging.debug("Successfully set multiprocessing start method to 'fork'.")
-        else:
-            logging.debug("Skipping fork start method on Windows (not supported).")
-    except (RuntimeError, ValueError) as e:
-        logging.warning(f"Could not set multiprocessing start method: {e}")
-
     args = parse_args(args=args)
 
     if args.backend not in BACKEND_TABLE:
