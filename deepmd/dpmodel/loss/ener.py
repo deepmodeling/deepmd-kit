@@ -418,9 +418,9 @@ class EnergyHessianLoss(EnergyLoss):
         self,
         learning_rate: float,
         natoms: int,
-        model_dict: dict[str, np.ndarray],
-        label_dict: dict[str, np.ndarray],
-    ) -> dict[str, np.ndarray]:
+        model_dict: dict[str, Array],
+        label_dict: dict[str, Array],
+    ) -> dict[str, Array]:
         """Calculate loss from model results and labeled results."""
         loss, more_loss = EnergyLoss.call(
             self, learning_rate, natoms, model_dict, label_dict
