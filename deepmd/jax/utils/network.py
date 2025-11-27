@@ -5,7 +5,6 @@ from typing import (
 )
 
 import numpy as np
-
 from packaging.version import (
     Version,
 )
@@ -27,8 +26,8 @@ from deepmd.jax.common import (
     to_jax_array,
 )
 from deepmd.jax.env import (
-    nnx,
     flax_version,
+    nnx,
 )
 
 
@@ -82,10 +81,12 @@ class NetworkCollection(NetworkCollectionDP):
         "embedding_network": EmbeddingNet,
         "fitting_network": FittingNet,
     }
+
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"_networks"} and Version(flax_version) >= Version("0.12.0"):
             value = nnx.List([nnx.data(item) for item in value])
         return super().__setattr__(name, value)
+
 
 class LayerNorm(LayerNormDP, NativeLayer):
     pass

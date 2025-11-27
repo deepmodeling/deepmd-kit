@@ -3,6 +3,10 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.descriptor.repformers import (
     Atten2EquiVarApply as Atten2EquiVarApplyDP,
 )
@@ -15,6 +19,10 @@ from deepmd.dpmodel.descriptor.repformers import (
 )
 from deepmd.dpmodel.descriptor.repformers import LocalAtten as LocalAttenDP
 from deepmd.dpmodel.descriptor.repformers import RepformerLayer as RepformerLayerDP
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 
 from ..common import (
     to_array_api_strict_array,
@@ -25,14 +33,6 @@ from ..utils.exclude_mask import (
 from ..utils.network import (
     LayerNorm,
     NativeLayer,
-)
-
-from packaging.version import (
-    Version,
-)
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
 )
 
 

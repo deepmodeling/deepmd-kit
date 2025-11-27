@@ -3,6 +3,10 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.descriptor.dpa2 import DescrptDPA2 as DescrptDPA2DP
 from deepmd.dpmodel.utils.network import Identity as IdentityDP
 from deepmd.dpmodel.utils.network import NativeLayer as NativeLayerDP
@@ -23,18 +27,15 @@ from deepmd.jax.descriptor.repformers import (
 from deepmd.jax.descriptor.se_t_tebd import (
     DescrptBlockSeTTebd,
 )
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 from deepmd.jax.utils.network import (
     NativeLayer,
 )
 from deepmd.jax.utils.type_embed import (
     TypeEmbedNet,
-)
-from packaging.version import (
-    Version,
-)
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
 )
 
 

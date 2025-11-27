@@ -3,6 +3,10 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.descriptor.dpa1 import DescrptBlockSeAtten as DescrptBlockSeAttenDP
 from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
 from deepmd.dpmodel.descriptor.dpa1 import GatedAttentionLayer as GatedAttentionLayerDP
@@ -11,6 +15,10 @@ from deepmd.dpmodel.descriptor.dpa1 import (
 )
 from deepmd.dpmodel.descriptor.dpa1 import (
     NeighborGatedAttentionLayer as NeighborGatedAttentionLayerDP,
+)
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
 )
 
 from ..common import (
@@ -29,14 +37,6 @@ from ..utils.type_embed import (
 )
 from .base_descriptor import (
     BaseDescriptor,
-)
-
-from packaging.version import (
-    Version,
-)
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
 )
 
 

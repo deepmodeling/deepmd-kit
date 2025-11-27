@@ -3,10 +3,18 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.descriptor.se_t_tebd import (
     DescrptBlockSeTTebd as DescrptBlockSeTTebdDP,
 )
 from deepmd.dpmodel.descriptor.se_t_tebd import DescrptSeTTebd as DescrptSeTTebdDP
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 
 from ..common import (
     to_array_api_strict_array,
@@ -21,13 +29,6 @@ from ..utils.type_embed import (
     TypeEmbedNet,
 )
 
-from packaging.version import (
-    Version,
-)
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
-)
 
 class DescrptBlockSeTTebd(DescrptBlockSeTTebdDP):
     def __setattr__(self, name: str, value: Any) -> None:

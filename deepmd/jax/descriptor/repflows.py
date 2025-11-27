@@ -3,6 +3,10 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.descriptor.repflows import (
     DescrptBlockRepflows as DescrptBlockRepflowsDP,
 )
@@ -12,18 +16,15 @@ from deepmd.jax.common import (
     flax_module,
     to_jax_array,
 )
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 from deepmd.jax.utils.exclude_mask import (
     PairExcludeMask,
 )
 from deepmd.jax.utils.network import (
     NativeLayer,
-)
-from packaging.version import (
-    Version,
-)
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
 )
 
 

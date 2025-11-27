@@ -3,7 +3,15 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.descriptor.se_r import DescrptSeR as DescrptSeRDP
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 
 from ..common import (
     to_array_api_strict_array,
@@ -18,13 +26,6 @@ from .base_descriptor import (
     BaseDescriptor,
 )
 
-from packaging.version import (
-    Version,
-)
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
-)
 
 @BaseDescriptor.register("se_e2_r")
 @BaseDescriptor.register("se_r")

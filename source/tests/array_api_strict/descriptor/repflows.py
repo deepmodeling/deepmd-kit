@@ -3,10 +3,18 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.descriptor.repflows import (
     DescrptBlockRepflows as DescrptBlockRepflowsDP,
 )
 from deepmd.dpmodel.descriptor.repflows import RepFlowLayer as RepFlowLayerDP
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 
 from ..common import (
     to_array_api_strict_array,
@@ -16,14 +24,6 @@ from ..utils.exclude_mask import (
 )
 from ..utils.network import (
     NativeLayer,
-)
-
-from packaging.version import (
-    Version,
-)
-from deepmd.jax.env import (
-    flax_version,
-    nnx,    
 )
 
 

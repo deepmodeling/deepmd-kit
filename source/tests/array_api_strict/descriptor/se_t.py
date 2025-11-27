@@ -3,7 +3,15 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.descriptor.se_t import DescrptSeT as DescrptSeTDP
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 
 from ..common import (
     to_array_api_strict_array,
@@ -15,13 +23,6 @@ from ..utils.network import (
     NetworkCollection,
 )
 
-from packaging.version import (
-    Version,
-)
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
-)
 
 class DescrptSeT(DescrptSeTDP):
     def __setattr__(self, name: str, value: Any) -> None:

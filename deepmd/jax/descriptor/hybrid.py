@@ -3,6 +3,10 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.descriptor.hybrid import DescrptHybrid as DescrptHybridDP
 from deepmd.jax.common import (
     ArrayAPIVariable,
@@ -12,13 +16,11 @@ from deepmd.jax.common import (
 from deepmd.jax.descriptor.base_descriptor import (
     BaseDescriptor,
 )
-from packaging.version import (
-    Version,
-)
 from deepmd.jax.env import (
     flax_version,
     nnx,
 )
+
 
 @BaseDescriptor.register("hybrid")
 @flax_module

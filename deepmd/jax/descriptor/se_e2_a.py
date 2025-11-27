@@ -3,6 +3,10 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.descriptor.se_e2_a import DescrptSeAArrayAPI as DescrptSeADP
 from deepmd.jax.common import (
     ArrayAPIVariable,
@@ -12,19 +16,15 @@ from deepmd.jax.common import (
 from deepmd.jax.descriptor.base_descriptor import (
     BaseDescriptor,
 )
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 from deepmd.jax.utils.exclude_mask import (
     PairExcludeMask,
 )
 from deepmd.jax.utils.network import (
     NetworkCollection,
-)
-
-from packaging.version import (
-    Version,
-)
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
 )
 
 

@@ -4,6 +4,10 @@ from typing import (
     Optional,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.atomic_model.linear_atomic_model import (
     DPZBLLinearEnergyAtomicModel as DPZBLLinearEnergyAtomicModelDP,
 )
@@ -22,14 +26,9 @@ from deepmd.jax.common import (
     to_jax_array,
 )
 from deepmd.jax.env import (
+    flax_version,
     jax,
     jnp,
-)
-from packaging.version import (
-    Version,
-)
-from deepmd.jax.env import (
-    flax_version,
     nnx,
 )
 
