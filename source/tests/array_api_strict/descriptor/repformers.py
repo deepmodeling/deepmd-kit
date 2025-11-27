@@ -3,10 +3,6 @@ from typing import (
     Any,
 )
 
-from packaging.version import (
-    Version,
-)
-
 from deepmd.dpmodel.descriptor.repformers import (
     Atten2EquiVarApply as Atten2EquiVarApplyDP,
 )
@@ -19,10 +15,6 @@ from deepmd.dpmodel.descriptor.repformers import (
 )
 from deepmd.dpmodel.descriptor.repformers import LocalAtten as LocalAttenDP
 from deepmd.dpmodel.descriptor.repformers import RepformerLayer as RepformerLayerDP
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
-)
 
 from ..common import (
     to_array_api_strict_array,
@@ -86,33 +78,21 @@ class RepformerLayer(RepformerLayerDP):
         if name in {"linear1", "linear2", "g1_self_mlp", "proj_g1g2", "proj_g1g1g2"}:
             if value is not None:
                 value = NativeLayer.deserialize(value.serialize())
-            elif Version(flax_version) >= Version("0.12.0"):
-                value = nnx.data(value)
         elif name in {"g1_residual", "g2_residual", "h2_residual"}:
             value = [to_array_api_strict_array(vv) for vv in value]
         elif name in {"attn2g_map"}:
             if value is not None:
                 value = Atten2Map.deserialize(value.serialize())
-            elif Version(flax_version) >= Version("0.12.0"):
-                value = nnx.data(value)
         elif name in {"attn2_mh_apply"}:
             if value is not None:
                 value = Atten2MultiHeadApply.deserialize(value.serialize())
-            elif Version(flax_version) >= Version("0.12.0"):
-                value = nnx.data(value)
         elif name in {"attn2_lm"}:
             if value is not None:
                 value = LayerNorm.deserialize(value.serialize())
-            elif Version(flax_version) >= Version("0.12.0"):
-                value = nnx.data(value)
         elif name in {"attn2_ev_apply"}:
             if value is not None:
                 value = Atten2EquiVarApply.deserialize(value.serialize())
-            elif Version(flax_version) >= Version("0.12.0"):
-                value = nnx.data(value)
         elif name in {"loc_attn"}:
             if value is not None:
                 value = LocalAtten.deserialize(value.serialize())
-            elif Version(flax_version) >= Version("0.12.0"):
-                value = nnx.data(value)
         return super().__setattr__(name, value)

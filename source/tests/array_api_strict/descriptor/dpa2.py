@@ -3,17 +3,9 @@ from typing import (
     Any,
 )
 
-from packaging.version import (
-    Version,
-)
-
 from deepmd.dpmodel.descriptor.dpa2 import DescrptDPA2 as DescrptDPA2DP
 from deepmd.dpmodel.utils.network import Identity as IdentityDP
 from deepmd.dpmodel.utils.network import NativeLayer as NativeLayerDP
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
-)
 
 from ..common import (
     to_array_api_strict_array,
@@ -48,8 +40,6 @@ class DescrptDPA2(DescrptDPA2DP):
         elif name in {"repinit_three_body"}:
             if value is not None:
                 value = DescrptBlockSeTTebd.deserialize(value.serialize())
-            elif Version(flax_version) >= Version("0.12.0"):
-                value = nnx.data(value)
         elif name in {"repformers"}:
             value = DescrptBlockRepformers.deserialize(value.serialize())
         elif name in {"type_embedding"}:

@@ -3,18 +3,10 @@ from typing import (
     Any,
 )
 
-from packaging.version import (
-    Version,
-)
-
 from deepmd.dpmodel.descriptor.se_t_tebd import (
     DescrptBlockSeTTebd as DescrptBlockSeTTebdDP,
 )
 from deepmd.dpmodel.descriptor.se_t_tebd import DescrptSeTTebd as DescrptSeTTebdDP
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
-)
 
 from ..common import (
     to_array_api_strict_array,
@@ -37,8 +29,6 @@ class DescrptBlockSeTTebd(DescrptBlockSeTTebdDP):
         elif name in {"embeddings", "embeddings_strip"}:
             if value is not None:
                 value = NetworkCollection.deserialize(value.serialize())
-            elif Version(flax_version) >= Version("0.12.0"):
-                value = nnx.data(value)
         elif name == "env_mat":
             # env_mat doesn't store any value
             pass

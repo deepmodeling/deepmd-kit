@@ -3,18 +3,10 @@ from typing import (
     Any,
 )
 
-from packaging.version import (
-    Version,
-)
-
 from deepmd.dpmodel.descriptor.repflows import (
     DescrptBlockRepflows as DescrptBlockRepflowsDP,
 )
 from deepmd.dpmodel.descriptor.repflows import RepFlowLayer as RepFlowLayerDP
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
-)
 
 from ..common import (
     to_array_api_strict_array,
@@ -61,8 +53,6 @@ class RepFlowLayer(RepFlowLayerDP):
         }:
             if value is not None:
                 value = NativeLayer.deserialize(value.serialize())
-            elif Version(flax_version) >= Version("0.12.0"):
-                value = nnx.data(value)
         elif name in {"n_residual", "e_residual", "a_residual"}:
             value = [to_array_api_strict_array(vv) for vv in value]
         else:

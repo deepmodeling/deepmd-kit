@@ -3,10 +3,6 @@ from typing import (
     Any,
 )
 
-from packaging.version import (
-    Version,
-)
-
 from deepmd.dpmodel.descriptor.dpa1 import DescrptBlockSeAtten as DescrptBlockSeAttenDP
 from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
 from deepmd.dpmodel.descriptor.dpa1 import GatedAttentionLayer as GatedAttentionLayerDP
@@ -15,10 +11,6 @@ from deepmd.dpmodel.descriptor.dpa1 import (
 )
 from deepmd.dpmodel.descriptor.dpa1 import (
     NeighborGatedAttentionLayer as NeighborGatedAttentionLayerDP,
-)
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
 )
 
 from ..common import (
@@ -72,8 +64,6 @@ class DescrptBlockSeAtten(DescrptBlockSeAttenDP):
         elif name in {"embeddings", "embeddings_strip"}:
             if value is not None:
                 value = NetworkCollection.deserialize(value.serialize())
-            elif Version(flax_version) >= Version("0.12.0"):
-                value = nnx.data(value)
         elif name == "dpa1_attention":
             value = NeighborGatedAttention.deserialize(value.serialize())
         elif name == "env_mat":
