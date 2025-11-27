@@ -112,10 +112,7 @@ def masked_add__decomp(
     """
     assert mask.dtype == paddle.bool, f"mask must be bool type, but got {mask.dtype}"
     # indices is bool mask
-    mask_coord = paddle.concat(
-        paddle.nonzero(mask, as_tuple=True),
-        axis=1,
-    )  # [nz, dim]
+    mask_coord = paddle.nonzero(mask, as_tuple=False)  # [nz, dim]
     if not paddle.is_tensor(v):
         v = paddle.full([mask_coord.shape[0]], v, dtype=x.dtype)
     t = paddle.scatter_nd_add(

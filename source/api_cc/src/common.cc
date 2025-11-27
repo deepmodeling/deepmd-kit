@@ -416,6 +416,9 @@ void deepmd::load_op_library() {
 #ifdef BUILD_PYTORCH
   _load_single_op_library("deepmd_op_pt");
 #endif
+#ifdef BUILD_PADDLE
+  _load_single_op_library("deepmd_op_pd");
+#endif
   // load customized plugins
   const char* env_customized_plugins = std::getenv("DP_PLUGIN_PATH");
   if (env_customized_plugins) {
@@ -1419,7 +1422,9 @@ deepmd::DPBackend deepmd::get_backend(const std::string& model) {
              model.substr(model.length() - 11) == ".savedmodel") {
     return deepmd::DPBackend::JAX;
   } else if ((model.length() >= 5 &&
-              model.substr(model.length() - 5) == ".json")) {
+              model.substr(model.length() - 5) == ".json") ||
+             (model.length() >= 8 &&
+              model.substr(model.length() - 8) == ".pdmodel")) {
     return deepmd::DPBackend::Paddle;
   }
   throw deepmd::deepmd_exception("Unsupported model file format");

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Callable,
     Optional,
     Union,
@@ -13,6 +14,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
+    Array,
     xp_take_along_axis,
 )
 from deepmd.dpmodel.common import (
@@ -54,7 +56,7 @@ from .dpa1 import (
 )
 
 
-def xp_transpose_01423(x):
+def xp_transpose_01423(x: Array) -> Array:
     xp = array_api_compat.array_namespace(x)
     x_shape2 = x.shape[2]
     x_shape3 = x.shape[3]
@@ -65,7 +67,7 @@ def xp_transpose_01423(x):
     return x
 
 
-def xp_transpose_01342(x):
+def xp_transpose_01342(x: Array) -> Array:
     xp = array_api_compat.array_namespace(x)
     x_shape2 = x.shape[2]
     x_shape3 = x.shape[3]
@@ -170,13 +172,13 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
 
     def __init__(
         self,
-        rcut,
-        rcut_smth,
+        rcut: float,
+        rcut_smth: float,
         sel: int,
         ntypes: int,
         nlayers: int = 3,
-        g1_dim=128,
-        g2_dim=16,
+        g1_dim: int = 128,
+        g2_dim: int = 16,
         axis_neuron: int = 4,
         direct_dist: bool = False,
         update_g1_has_conv: bool = True,
@@ -336,7 +338,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         """Returns the embedding dimension g2."""
         return self.g2_dim
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Array) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -344,7 +346,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Array:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -365,17 +367,17 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         return True
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.g1_dim
 
     @property
-    def dim_in(self):
+    def dim_in(self) -> int:
         """Returns the atomic input dimension of this descriptor."""
         return self.g1_dim
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
@@ -436,13 +438,13 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
 
     def call(
         self,
-        nlist: np.ndarray,
-        coord_ext: np.ndarray,
-        atype_ext: np.ndarray,
-        atype_embd_ext: Optional[np.ndarray] = None,
-        mapping: Optional[np.ndarray] = None,
-        type_embedding: Optional[np.ndarray] = None,
-    ):
+        nlist: Array,
+        coord_ext: Array,
+        atype_ext: Array,
+        atype_embd_ext: Optional[Array] = None,
+        mapping: Optional[Array] = None,
+        type_embedding: Optional[Array] = None,
+    ) -> Array:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         exclude_mask = xp.astype(exclude_mask, xp.bool)
@@ -517,7 +519,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         return False
 
     @classmethod
-    def deserialize(cls, data):
+    def deserialize(cls, data: dict[str, Any]) -> "DescrptBlockRepformers":
         """Deserialize the descriptor block."""
         data = data.copy()
         g2_embd = NativeLayer.deserialize(data.pop("g2_embd"))
@@ -534,7 +536,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         obj.stddev = dstd
         return obj
 
-    def serialize(self):
+    def serialize(self) -> dict[str, Any]:
         """Serialize the descriptor block."""
         return {
             "rcut": self.rcut,
@@ -591,7 +593,7 @@ def get_residual(
     trainable: bool = True,
     precision: str = "float64",
     seed: Optional[Union[int, list[int]]] = None,
-) -> np.ndarray:
+) -> Array:
     """
     Get residual tensor for one update vector.
 
@@ -625,9 +627,9 @@ def get_residual(
 
 
 def _make_nei_g1(
-    g1_ext: np.ndarray,
-    nlist: np.ndarray,
-) -> np.ndarray:
+    g1_ext: Array,
+    nlist: Array,
+) -> Array:
     """
     Make neighbor-wise atomic invariant rep.
 
@@ -640,7 +642,7 @@ def _make_nei_g1(
 
     Returns
     -------
-    gg1: np.ndarray
+    gg1: Array
         Neighbor-wise atomic invariant rep, with shape [nf, nloc, nnei, ng1].
     """
     xp = array_api_compat.array_namespace(g1_ext, nlist)
@@ -658,9 +660,9 @@ def _make_nei_g1(
 
 
 def _apply_nlist_mask(
-    gg: np.ndarray,
-    nlist_mask: np.ndarray,
-) -> np.ndarray:
+    gg: Array,
+    nlist_mask: Array,
+) -> Array:
     """
     Apply nlist mask to neighbor-wise rep tensors.
 
@@ -676,7 +678,7 @@ def _apply_nlist_mask(
     return masked_gg
 
 
-def _apply_switch(gg: np.ndarray, sw: np.ndarray) -> np.ndarray:
+def _apply_switch(gg: Array, sw: Array) -> Array:
     """
     Apply switch function to neighbor-wise rep tensors.
 
@@ -694,14 +696,14 @@ def _apply_switch(gg: np.ndarray, sw: np.ndarray) -> np.ndarray:
 
 
 def _cal_hg(
-    g: np.ndarray,
-    h: np.ndarray,
-    nlist_mask: np.ndarray,
-    sw: np.ndarray,
+    g: Array,
+    h: Array,
+    nlist_mask: Array,
+    sw: Array,
     smooth: bool = True,
     epsilon: float = 1e-4,
     use_sqrt_nnei: bool = True,
-) -> np.ndarray:
+) -> Array:
     """
     Calculate the transposed rotation matrix.
 
@@ -759,7 +761,7 @@ def _cal_hg(
     return hg
 
 
-def _cal_grrg(hg: np.ndarray, axis_neuron: int) -> np.ndarray:
+def _cal_grrg(hg: Array, axis_neuron: int) -> Array:
     """
     Calculate the atomic invariant rep.
 
@@ -788,15 +790,15 @@ def _cal_grrg(hg: np.ndarray, axis_neuron: int) -> np.ndarray:
 
 
 def symmetrization_op(
-    g: np.ndarray,
-    h: np.ndarray,
-    nlist_mask: np.ndarray,
-    sw: np.ndarray,
+    g: Array,
+    h: Array,
+    nlist_mask: Array,
+    sw: Array,
     axis_neuron: int,
     smooth: bool = True,
     epsilon: float = 1e-4,
     use_sqrt_nnei: bool = True,
-) -> np.ndarray:
+) -> Array:
     """
     Symmetrization operator to obtain atomic invariant rep.
 
@@ -877,11 +879,11 @@ class Atten2Map(NativeOP):
 
     def call(
         self,
-        g2: np.ndarray,  # nf x nloc x nnei x ng2
-        h2: np.ndarray,  # nf x nloc x nnei x 3
-        nlist_mask: np.ndarray,  # nf x nloc x nnei
-        sw: np.ndarray,  # nf x nloc x nnei
-    ) -> np.ndarray:
+        g2: Array,  # nf x nloc x nnei x ng2
+        h2: Array,  # nf x nloc x nnei x 3
+        nlist_mask: Array,  # nf x nloc x nnei
+        sw: Array,  # nf x nloc x nnei
+    ) -> Array:
         xp = array_api_compat.array_namespace(g2, h2, nlist_mask, sw)
         (
             nf,
@@ -1004,9 +1006,9 @@ class Atten2MultiHeadApply(NativeOP):
 
     def call(
         self,
-        AA: np.ndarray,  # nf x nloc x nnei x nnei x nh
-        g2: np.ndarray,  # nf x nloc x nnei x ng2
-    ) -> np.ndarray:
+        AA: Array,  # nf x nloc x nnei x nnei x nh
+        g2: Array,  # nf x nloc x nnei x ng2
+    ) -> Array:
         xp = array_api_compat.array_namespace(AA, g2)
         nf, nloc, nnei, ng2 = g2.shape
         nh = self.head_num
@@ -1088,9 +1090,9 @@ class Atten2EquiVarApply(NativeOP):
 
     def call(
         self,
-        AA: np.ndarray,  # nf x nloc x nnei x nnei x nh
-        h2: np.ndarray,  # nf x nloc x nnei x 3
-    ) -> np.ndarray:
+        AA: Array,  # nf x nloc x nnei x nnei x nh
+        h2: Array,  # nf x nloc x nnei x 3
+    ) -> Array:
         xp = array_api_compat.array_namespace(AA, h2)
         nf, nloc, nnei, _ = h2.shape
         nh = self.head_num
@@ -1187,11 +1189,11 @@ class LocalAtten(NativeOP):
 
     def call(
         self,
-        g1: np.ndarray,  # nf x nloc x ng1
-        gg1: np.ndarray,  # nf x nloc x nnei x ng1
-        nlist_mask: np.ndarray,  # nf x nloc x nnei
-        sw: np.ndarray,  # nf x nloc x nnei
-    ) -> np.ndarray:
+        g1: Array,  # nf x nloc x ng1
+        gg1: Array,  # nf x nloc x nnei x ng1
+        nlist_mask: Array,  # nf x nloc x nnei
+        sw: Array,  # nf x nloc x nnei
+    ) -> Array:
         xp = array_api_compat.array_namespace(g1, gg1, nlist_mask, sw)
         nf, nloc, nnei = nlist_mask.shape
         ni, nd, nh = self.input_dim, self.hidden_dim, self.head_num
@@ -1286,12 +1288,12 @@ class LocalAtten(NativeOP):
 class RepformerLayer(NativeOP):
     def __init__(
         self,
-        rcut,
-        rcut_smth,
+        rcut: float,
+        rcut_smth: float,
         sel: int,
         ntypes: int,
-        g1_dim=128,
-        g2_dim=16,
+        g1_dim: int = 128,
+        g2_dim: int = 16,
         axis_neuron: int = 4,
         update_chnnl_2: bool = True,
         update_g1_has_conv: bool = True,
@@ -1584,9 +1586,9 @@ class RepformerLayer(NativeOP):
 
     def _update_h2(
         self,
-        h2: np.ndarray,
-        attn: np.ndarray,
-    ) -> np.ndarray:
+        h2: Array,
+        attn: Array,
+    ) -> Array:
         """
         Calculate the attention weights update for pair-wise equivariant rep.
 
@@ -1604,11 +1606,11 @@ class RepformerLayer(NativeOP):
 
     def _update_g1_conv(
         self,
-        gg1: np.ndarray,
-        g2: np.ndarray,
-        nlist_mask: np.ndarray,
-        sw: np.ndarray,
-    ) -> np.ndarray:
+        gg1: Array,
+        g2: Array,
+        nlist_mask: Array,
+        sw: Array,
+    ) -> Array:
         """
         Calculate the convolution update for atomic invariant rep.
 
@@ -1662,11 +1664,11 @@ class RepformerLayer(NativeOP):
 
     def _update_g2_g1g1(
         self,
-        g1: np.ndarray,  # nf x nloc x ng1
-        gg1: np.ndarray,  # nf x nloc x nnei x ng1
-        nlist_mask: np.ndarray,  # nf x nloc x nnei
-        sw: np.ndarray,  # nf x nloc x nnei
-    ) -> np.ndarray:
+        g1: Array,  # nf x nloc x ng1
+        gg1: Array,  # nf x nloc x nnei x ng1
+        nlist_mask: Array,  # nf x nloc x nnei
+        sw: Array,  # nf x nloc x nnei
+    ) -> Array:
         """
         Update the g2 using element-wise dot g1_i * g1_j.
 
@@ -1692,13 +1694,13 @@ class RepformerLayer(NativeOP):
 
     def call(
         self,
-        g1_ext: np.ndarray,  # nf x nall x ng1
-        g2: np.ndarray,  # nf x nloc x nnei x ng2
-        h2: np.ndarray,  # nf x nloc x nnei x 3
-        nlist: np.ndarray,  # nf x nloc x nnei
-        nlist_mask: np.ndarray,  # nf x nloc x nnei
-        sw: np.ndarray,  # switch func, nf x nloc x nnei
-    ):
+        g1_ext: Array,  # nf x nall x ng1
+        g2: Array,  # nf x nloc x nnei x ng2
+        h2: Array,  # nf x nloc x nnei x 3
+        nlist: Array,  # nf x nloc x nnei
+        nlist_mask: Array,  # nf x nloc x nnei
+        sw: Array,  # switch func, nf x nloc x nnei
+    ) -> tuple[Array, Array]:
         """
         Parameters
         ----------
@@ -1730,10 +1732,10 @@ class RepformerLayer(NativeOP):
         assert (nf, nloc) == g1.shape[:2]
         assert (nf, nloc, nnei) == h2.shape[:3]
 
-        g2_update: list[np.ndarray] = [g2]
-        h2_update: list[np.ndarray] = [h2]
-        g1_update: list[np.ndarray] = [g1]
-        g1_mlp: list[np.ndarray] = [g1] if not self.g1_out_mlp else []
+        g2_update: list[Array] = [g2]
+        h2_update: list[Array] = [h2]
+        g1_update: list[Array] = [g1]
+        g1_mlp: list[Array] = [g1] if not self.g1_out_mlp else []
         if self.g1_out_mlp:
             assert self.g1_self_mlp is not None
             g1_self_mlp = self.act(self.g1_self_mlp(g1))
@@ -1835,15 +1837,15 @@ class RepformerLayer(NativeOP):
 
     def list_update_res_avg(
         self,
-        update_list: list[np.ndarray],
-    ) -> np.ndarray:
+        update_list: list[Array],
+    ) -> Array:
         nitem = len(update_list)
         uu = update_list[0]
         for ii in range(1, nitem):
             uu = uu + update_list[ii]
         return uu / (float(nitem) ** 0.5)
 
-    def list_update_res_incr(self, update_list: list[np.ndarray]) -> np.ndarray:
+    def list_update_res_incr(self, update_list: list[Array]) -> Array:
         nitem = len(update_list)
         uu = update_list[0]
         scale = 1.0 / (float(nitem - 1) ** 0.5) if nitem > 1 else 0.0
@@ -1852,8 +1854,8 @@ class RepformerLayer(NativeOP):
         return uu
 
     def list_update_res_residual(
-        self, update_list: list[np.ndarray], update_name: str = "g1"
-    ) -> np.ndarray:
+        self, update_list: list[Array], update_name: str = "g1"
+    ) -> Array:
         nitem = len(update_list)
         uu = update_list[0]
         if update_name == "g1":
@@ -1869,9 +1871,7 @@ class RepformerLayer(NativeOP):
             raise NotImplementedError
         return uu
 
-    def list_update(
-        self, update_list: list[np.ndarray], update_name: str = "g1"
-    ) -> np.ndarray:
+    def list_update(self, update_list: list[Array], update_name: str = "g1") -> Array:
         if self.update_style == "res_avg":
             return self.list_update_res_avg(update_list)
         elif self.update_style == "res_incr":

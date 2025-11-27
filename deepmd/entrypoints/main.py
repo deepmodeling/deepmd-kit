@@ -18,6 +18,9 @@ from deepmd.entrypoints.convert_backend import (
 from deepmd.entrypoints.doc import (
     doc_train_input,
 )
+from deepmd.entrypoints.eval_desc import (
+    eval_desc,
+)
 from deepmd.entrypoints.gui import (
     start_dpgui,
 )
@@ -65,6 +68,14 @@ def main(args: argparse.Namespace) -> None:
             strict_prefer=False,
         )
         test(**dict_args)
+    elif args.command == "eval-desc":
+        dict_args["model"] = format_model_suffix(
+            dict_args["model"],
+            feature=Backend.Feature.DEEP_EVAL,
+            preferred_backend=args.backend,
+            strict_prefer=False,
+        )
+        eval_desc(**dict_args)
     elif args.command == "doc-train-input":
         doc_train_input(**dict_args)
     elif args.command == "model-devi":

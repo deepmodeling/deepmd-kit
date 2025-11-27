@@ -81,7 +81,6 @@ tf_dir = tf.sysconfig.get_lib()
 pt_dir = os.path.join(torch.__path__[0], "lib")
 op_dir = str(SHARED_LIB_DIR)
 
-
 cuda_library_paths = []
 if platform.system() == "Linux":
     cuda_library_paths.extend(

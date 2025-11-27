@@ -4,6 +4,11 @@ import os
 from multiprocessing.dummy import (
     Pool,
 )
+from typing import (
+    Any,
+    Optional,
+    Union,
+)
 
 import h5py
 import numpy as np
@@ -45,7 +50,7 @@ log = logging.getLogger(__name__)
 torch.multiprocessing.set_sharing_strategy("file_system")
 
 
-def setup_seed(seed) -> None:
+def setup_seed(seed: Union[int, list[int], tuple[int, ...]]) -> None:
     if isinstance(seed, (list, tuple)):
         mixed_seed = mix_entropy(seed)
     else:
@@ -75,11 +80,11 @@ class DpLoaderSet(Dataset):
 
     def __init__(
         self,
-        systems,
-        batch_size,
-        type_map,
-        seed=None,
-        shuffle=True,
+        systems: Union[str, list[str]],
+        batch_size: int,
+        type_map: Optional[list[str]],
+        seed: Optional[int] = None,
+        shuffle: bool = True,
     ) -> None:
         if seed is not None:
             setup_seed(seed)
@@ -87,7 +92,7 @@ class DpLoaderSet(Dataset):
             with h5py.File(systems) as file:
                 systems = [os.path.join(systems, item) for item in file.keys()]
 
-        def construct_dataset(system):
+        def construct_dataset(system: str) -> DeepmdDataSetForLoader:
             return DeepmdDataSetForLoader(
                 system=system,
                 type_map=type_map,
@@ -180,7 +185,7 @@ class DpLoaderSet(Dataset):
             for item in self.dataloaders:
                 self.iters.append(iter(item))
 
-    def set_noise(self, noise_settings) -> None:
+    def set_noise(self, noise_settings: dict[str, Any]) -> None:
         # noise_settings['noise_type'] # "trunc_normal", "normal", "uniform"
         # noise_settings['noise'] # float, default 1.0
         # noise_settings['noise_mode'] # "prob", "fix_num"
@@ -193,7 +198,7 @@ class DpLoaderSet(Dataset):
     def __len__(self) -> int:
         return len(self.dataloaders)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         # log.warning(str(torch.distributed.get_rank())+" idx: "+str(idx)+" index: "+str(self.index[idx]))
         with torch.device("cpu"):
             try:
@@ -231,7 +236,7 @@ class DpLoaderSet(Dataset):
             )
 
 
-def collate_batch(batch):
+def collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
     example = batch[0]
     result = {}
     for key in example.keys():
@@ -251,7 +256,9 @@ def collate_batch(batch):
     return result
 
 
-def get_weighted_sampler(training_data, prob_style, sys_prob=False):
+def get_weighted_sampler(
+    training_data: Any, prob_style: str, sys_prob: bool = False
+) -> WeightedRandomSampler:
     if sys_prob is False:
         if prob_style == "prob_uniform":
             prob_v = 1.0 / float(training_data.__len__())
@@ -276,7 +283,7 @@ def get_weighted_sampler(training_data, prob_style, sys_prob=False):
     return sampler
 
 
-def get_sampler_from_params(_data, _params):
+def get_sampler_from_params(_data: Any, _params: dict[str, Any]) -> Any:
     if (
         "sys_probs" in _params and _params["sys_probs"] is not None
     ):  # use sys_probs first

@@ -2,7 +2,7 @@
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
         exclude: "^.+\\.pbtxt$"
@@ -22,14 +22,14 @@ repos:
       - id: check-toml
   # Python
   - repo: https://github.com/PyCQA/isort
-    rev: 6.0.1
+    rev: 7.0.0
     hooks:
       - id: isort
         files: \.py$
         exclude: ^source/3rdparty
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.12.4
+    rev: v0.14.6
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -55,12 +55,12 @@ repos:
         exclude: ^source/3rdparty
   # Python inside docs
   - repo: https://github.com/asottile/blacken-docs
-    rev: 1.19.1
+    rev: 1.20.0
     hooks:
       - id: blacken-docs
   # C++
   - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v20.1.8
+    rev: v21.1.6
     hooks:
       - id: clang-format
         exclude: ^(source/3rdparty|source/lib/src/gpu/cudart/.+\.inc|.+\.ipynb$|.+\.json$)
@@ -84,7 +84,7 @@ repos:
       - id: cmake-format
       #- id: cmake-lint
   - repo: https://github.com/njzjz/mirrors-bibtex-tidy
-    rev: v1.13.0
+    rev: v1.14.0
     hooks:
       - id: bibtex-tidy
         args:
@@ -154,7 +154,7 @@ repos:
         exclude: .pre-commit-config.yaml|source/lmp
   # customized pylint rules
   - repo: https://github.com/pylint-dev/pylint/
-    rev: v3.3.7
+    rev: v4.0.3
     hooks:
       - id: pylint
         entry: env PYTHONPATH=source/checker pylint

@@ -36,35 +36,35 @@ class FinetuneRuleItem:
         self.resuming = resuming
         self.update_type = self.p_type_map != self.type_map
 
-    def get_index_mapping(self):
+    def get_index_mapping(self) -> list[int]:
         """Returns the mapping index of newly defined types to those in the pretrained model."""
         return get_index_between_two_maps(self.p_type_map, self.type_map)[0]
 
-    def get_has_new_type(self):
+    def get_has_new_type(self) -> bool:
         """Returns whether there are unseen types in the new type_map."""
         return get_index_between_two_maps(self.p_type_map, self.type_map)[1]
 
-    def get_model_branch(self):
+    def get_model_branch(self) -> str:
         """Returns the chosen model branch."""
         return self.model_branch
 
-    def get_random_fitting(self):
+    def get_random_fitting(self) -> bool:
         """Returns whether to use random fitting."""
         return self.random_fitting
 
-    def get_resuming(self):
+    def get_resuming(self) -> bool:
         """Returns whether to only do resuming."""
         return self.resuming
 
-    def get_update_type(self):
+    def get_update_type(self) -> bool:
         """Returns whether to update the type related params when loading from pretrained model with redundant types."""
         return self.update_type
 
-    def get_pretrained_tmap(self):
+    def get_pretrained_tmap(self) -> list[str]:
         """Returns the type map in the pretrained model."""
         return self.p_type_map
 
-    def get_finetune_tmap(self):
+    def get_finetune_tmap(self) -> list[str]:
         """Returns the type map in the fine-tuned model."""
         return self.type_map
 
@@ -72,7 +72,7 @@ class FinetuneRuleItem:
 def get_index_between_two_maps(
     old_map: list[str],
     new_map: list[str],
-):
+) -> tuple[list[int], bool]:
     """Returns the mapping index of types in new_map to those in the old_map.
 
     Parameters
@@ -110,7 +110,7 @@ def get_index_between_two_maps(
 def map_atom_exclude_types(
     atom_exclude_types: list[int],
     remap_index: list[int],
-):
+) -> list[int]:
     """Return the remapped atom_exclude_types according to remap_index.
 
     Parameters
@@ -135,7 +135,7 @@ def map_atom_exclude_types(
 def map_pair_exclude_types(
     pair_exclude_types: list[tuple[int, int]],
     remap_index: list[int],
-):
+) -> list[tuple[int, int]]:
     """Return the remapped atom_exclude_types according to remap_index.
 
     Parameters

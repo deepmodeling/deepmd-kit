@@ -5,17 +5,24 @@ Check https://jax.readthedocs.io/en/latest/faq.html#gradients-contain-nan-where-
 for more information.
 """
 
+from typing import (
+    Any,
+    Optional,
+)
+
 import array_api_compat
 
 
-def safe_for_sqrt(x):
+def safe_for_sqrt(x: Any) -> Any:
     """Safe version of sqrt that has a gradient of 0 at x = 0."""
     xp = array_api_compat.array_namespace(x)
     mask = x > 0.0
     return xp.where(mask, xp.sqrt(xp.where(mask, x, xp.ones_like(x))), xp.zeros_like(x))
 
 
-def safe_for_vector_norm(x, /, *, axis=None, keepdims=False, ord=2):
+def safe_for_vector_norm(
+    x: Any, /, *, axis: Optional[Any] = None, keepdims: bool = False, ord: Any = 2
+) -> Any:
     """Safe version of sqrt that has a gradient of 0 at x = 0."""
     xp = array_api_compat.array_namespace(x)
     mask = xp.sum(xp.square(x), axis=axis, keepdims=True) > 0

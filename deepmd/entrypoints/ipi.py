@@ -15,7 +15,7 @@ from deepmd.lmp import (
 ROOT_DIR = get_op_dir()
 
 
-def _program(name: str, args: list[str]):
+def _program(name: str, args: list[str]) -> None:
     """Execute a program.
 
     Parameters

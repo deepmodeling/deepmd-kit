@@ -954,9 +954,7 @@ class RepformerLayer(paddle.nn.Layer):
             ).unsqueeze(-1)
         else:
             gg1 = _apply_switch(gg1, sw)
-            invnnei = (1.0 / float(nnei)) * paddle.ones(
-                (nb, nloc, 1), dtype=gg1.dtype
-            ).to(device=gg1.place)
+            invnnei = (1.0 / float(nnei)) * paddle.ones((nb, nloc, 1), dtype=gg1.dtype)
         if not self.g1_out_conv:
             # nb x nloc x ng2
             g1_11 = paddle.sum(g2 * gg1, axis=2) * invnnei
@@ -1026,11 +1024,10 @@ class RepformerLayer(paddle.nn.Layer):
             if not use_sqrt_nnei:
                 invnnei = (1.0 / float(nnei)) * paddle.ones(
                     (nb, nloc, 1, 1), dtype=g2.dtype
-                ).to(device=g2.place)
+                )
             else:
                 invnnei = paddle.rsqrt(
-                    float(nnei)
-                    * paddle.ones([nb, nloc, 1, 1], dtype=g2.dtype).to(device=g2.place)
+                    float(nnei) * paddle.ones([nb, nloc, 1, 1], dtype=g2.dtype)
                 )
         # nb x nloc x 3 x ng2
         h2g2 = paddle.matmul(paddle.transpose(h2, [0, 1, 3, 2]), g2) * invnnei

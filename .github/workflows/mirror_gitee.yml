@@ -1,6 +1,13 @@
 name: Mirror to Gitee Repo
 
-on: [ push, delete, create ]
+on:
+  push:
+    branches-ignore:
+      - "copilot/**"
+      - "dependabot/**"
+      - "pre-commit-ci-update-config"
+  delete:
+  create:
 
 # Ensures that only one mirror task will run at a time.
 concurrency:

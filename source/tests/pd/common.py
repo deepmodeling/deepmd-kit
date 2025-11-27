@@ -79,7 +79,12 @@ def eval_model(
         if spins is not None:
             assert isinstance(spins, paddle.Tensor), err_msg
         assert isinstance(atom_types, paddle.Tensor) or isinstance(atom_types, list)
-        atom_types = paddle.to_tensor(atom_types, dtype=paddle.int32, place=DEVICE)
+        if isinstance(atom_types, paddle.Tensor):
+            atom_types = (
+                atom_types.clone().detach().to(dtype=paddle.int32, device=DEVICE)
+            )
+        else:
+            atom_types = paddle.to_tensor(atom_types, dtype=paddle.int32, place=DEVICE)
     elif isinstance(coords, np.ndarray):
         if cells is not None:
             assert isinstance(cells, np.ndarray), err_msg
@@ -101,28 +106,57 @@ def eval_model(
     else:
         natoms = len(atom_types[0])
 
-    coord_input = paddle.to_tensor(
-        coords.reshape([-1, natoms, 3]), dtype=GLOBAL_PD_FLOAT_PRECISION, place=DEVICE
-    )
-    spin_input = None
-    if spins is not None:
-        spin_input = paddle.to_tensor(
-            spins.reshape([-1, natoms, 3]),
+    if isinstance(coords, paddle.Tensor):
+        coord_input = (
+            coords.reshape([-1, natoms, 3])
+            .clone()
+            .detach()
+            .to(dtype=GLOBAL_PD_FLOAT_PRECISION, device=DEVICE)
+        )
+    else:
+        coord_input = paddle.to_tensor(
+            coords.reshape([-1, natoms, 3]),
             dtype=GLOBAL_PD_FLOAT_PRECISION,
             place=DEVICE,
         )
+    spin_input = None
+    if spins is not None:
+        if isinstance(spins, paddle.Tensor):
+            spin_input = (
+                spins.reshape([-1, natoms, 3])
+                .clone()
+                .detach()
+                .to(dtype=GLOBAL_PD_FLOAT_PRECISION, device=DEVICE)
+            )
+        else:
+            spin_input = paddle.to_tensor(
+                spins.reshape([-1, natoms, 3]),
+                dtype=GLOBAL_PD_FLOAT_PRECISION,
+                place=DEVICE,
+            )
     has_spin = getattr(model, "has_spin", False)
     if callable(has_spin):
         has_spin = has_spin()
-    type_input = paddle.to_tensor(atom_types, dtype=paddle.int64, place=DEVICE)
+    if isinstance(atom_types, paddle.Tensor):
+        type_input = atom_types.clone().detach().to(dtype=paddle.int64, device=DEVICE)
+    else:
+        type_input = paddle.to_tensor(atom_types, dtype=paddle.int64, place=DEVICE)
     box_input = None
     if cells is None:
         pbc = False
     else:
         pbc = True
-        box_input = paddle.to_tensor(
-            cells.reshape([-1, 3, 3]), dtype=GLOBAL_PD_FLOAT_PRECISION, place=DEVICE
-        )
+        if isinstance(cells, paddle.Tensor):
+            box_input = (
+                cells.reshape([-1, 3, 3])
+                .clone()
+                .detach()
+                .to(dtype=GLOBAL_PD_FLOAT_PRECISION, device=DEVICE)
+            )
+        else:
+            box_input = paddle.to_tensor(
+                cells.reshape([-1, 3, 3]), dtype=GLOBAL_PD_FLOAT_PRECISION, place=DEVICE
+            )
     num_iter = int((nframes + infer_batch_size - 1) / infer_batch_size)
 
     for ii in range(num_iter):

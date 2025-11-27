@@ -89,7 +89,11 @@ class DPTrainTest:
                     state_dict_trained[state_key].numpy(),
                     state_dict_finetuned_empty[state_key].numpy(),
                 )
-                if "fitting_net" not in state_key:
+                if (
+                    ("fitting_net" not in state_key)
+                    or ("fparam" in state_key)
+                    or ("aparam" in state_key)
+                ):
                     np.testing.assert_allclose(
                         state_dict_trained[state_key].numpy(),
                         state_dict_finetuned_random[state_key].numpy(),
@@ -150,9 +154,25 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         self.config["model"] = deepcopy(model_se_e2_a)
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
-        # import paddle
         enable_prim(True)
-        # assert paddle.framework.core._is_eager_prim_enabled()
+
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
+
+
+class TestEnergyModelGradientAccumulation(unittest.TestCase, DPTrainTest):
+    def setUp(self) -> None:
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        self.config["training"]["acc_freq"] = 4
+        enable_prim(True)
 
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
@@ -174,6 +194,7 @@ class TestFparam(unittest.TestCase, DPTrainTest):
         self.config["training"]["save_freq"] = 1
         self.set_path = Path(__file__).parent / "water/data/data_0" / "set.000"
         shutil.copyfile(self.set_path / "energy.npy", self.set_path / "fparam.npy")
+        self.config["model"]["data_stat_nbatch"] = 100
 
     def tearDown(self) -> None:
         (self.set_path / "fparam.npy").unlink(missing_ok=True)

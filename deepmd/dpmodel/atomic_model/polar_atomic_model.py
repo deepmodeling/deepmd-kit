@@ -1,8 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
 
 import array_api_compat
-import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    Array,
+)
 from deepmd.dpmodel.fitting.polarizability_fitting import (
     PolarFitting,
 )
@@ -13,7 +18,9 @@ from .dp_atomic_model import (
 
 
 class DPPolarAtomicModel(DPAtomicModel):
-    def __init__(self, descriptor, fitting, type_map, **kwargs):
+    def __init__(
+        self, descriptor: Any, fitting: Any, type_map: list[str], **kwargs: Any
+    ) -> None:
         if not isinstance(fitting, PolarFitting):
             raise TypeError(
                 "fitting must be an instance of PolarFitting for DPPolarAtomicModel"
@@ -22,9 +29,9 @@ class DPPolarAtomicModel(DPAtomicModel):
 
     def apply_out_stat(
         self,
-        ret: dict[str, np.ndarray],
-        atype: np.ndarray,
-    ):
+        ret: dict[str, Array],
+        atype: Array,
+    ) -> dict[str, Array]:
         """Apply the stat to each atomic output.
 
         Parameters

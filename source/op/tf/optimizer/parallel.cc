@@ -27,7 +27,7 @@
 // based on tensorflow/core/grappler/optimizers/remapper.cc
 
 struct RemapperContext {
-  explicit RemapperContext(GrapplerItem *item, Status *status)
+  explicit RemapperContext(GrapplerItem* item, Status* status)
       : nodes_to_preserve(item->NodesToPreserve()),
         graph_view(&item->graph, status) {}
 
@@ -35,11 +35,11 @@ struct RemapperContext {
   utils::MutableGraphView graph_view;
 };
 
-bool IsProdForce(const NodeDef &node) { return node.op() == "ProdForceSeA"; }
+bool IsProdForce(const NodeDef& node) { return node.op() == "ProdForceSeA"; }
 
-bool FindProdForce(RemapperContext *ctx, int node_index) {
-  const auto *node_view = ctx->graph_view.GetNode(node_index);
-  const auto *node_def = node_view->node();
+bool FindProdForce(RemapperContext* ctx, int node_index) {
+  const auto* node_view = ctx->graph_view.GetNode(node_index);
+  const auto* node_def = node_view->node();
   return IsProdForce(*node_def);
 }
 
@@ -55,17 +55,17 @@ TF_INT64 GetNThreads() {
   return tot;
 }
 
-Status ParallelProdForce(RemapperContext *ctx,
+Status ParallelProdForce(RemapperContext* ctx,
                          int node_index,
-                         std::vector<bool> *invalidated_nodes,
-                         std::vector<bool> *nodes_to_delete) {
+                         std::vector<bool>* invalidated_nodes,
+                         std::vector<bool>* nodes_to_delete) {
   // skip on GPUs
   if (GetNumAvailableGPUs() > 0) {
     return Status();
   }
 
-  const NodeDef *ori_node = ctx->graph_view.GetNode(node_index)->node();
-  auto &src_attr = ori_node->attr();
+  const NodeDef* ori_node = ctx->graph_view.GetNode(node_index)->node();
+  auto& src_attr = ori_node->attr();
   TF_INT64 tot = GetNThreads();
   if (tot <= 1) {
     return Status();
@@ -75,11 +75,11 @@ Status ParallelProdForce(RemapperContext *ctx,
   sum_node.set_name(ori_node->name());
   sum_node.set_op("AddN");
   sum_node.set_device(ori_node->device());
-  auto *sum_attr = sum_node.mutable_attr();
+  auto* sum_attr = sum_node.mutable_attr();
   (*sum_attr)["N"].set_i(tot);
   (*sum_attr)["T"] = src_attr.at("T");
 
-  utils::Mutation *mutation = ctx->graph_view.GetMutationBuilder();
+  utils::Mutation* mutation = ctx->graph_view.GetMutationBuilder();
   Status status;
 
   for (int ii = 0; ii < tot; ++ii) {
@@ -92,7 +92,7 @@ Status ParallelProdForce(RemapperContext *ctx,
       sub_node.add_input(ori_node->input(jj));
     }
     // set frac
-    auto *sub_attr = sub_node.mutable_attr();
+    auto* sub_attr = sub_node.mutable_attr();
     (*sub_attr)["T"] = src_attr.at("T");
     (*sub_attr)["n_a_sel"] = src_attr.at("n_a_sel");
     (*sub_attr)["n_r_sel"] = src_attr.at("n_r_sel");
@@ -111,9 +111,9 @@ Status ParallelProdForce(RemapperContext *ctx,
   return Status();
 }
 
-Status DPParallel::Optimize(Cluster *cluster,
-                            const GrapplerItem &item,
-                            GraphDef *optimized_graph) {
+Status DPParallel::Optimize(Cluster* cluster,
+                            const GrapplerItem& item,
+                            GraphDef* optimized_graph) {
   GrapplerItem mutable_item = item;
   Status status;
   RemapperContext ctx(&mutable_item, &status);
@@ -147,7 +147,7 @@ Status DPParallel::Optimize(Cluster *cluster,
   }
 
   // Remove invalidated nodes.
-  utils::Mutation *mutation = ctx.graph_view.GetMutationBuilder();
+  utils::Mutation* mutation = ctx.graph_view.GetMutationBuilder();
   for (int i = 0; i < num_nodes; ++i) {
     if (nodes_to_delete[i]) {
       mutation->RemoveNode(ctx.graph_view.GetNode(i));

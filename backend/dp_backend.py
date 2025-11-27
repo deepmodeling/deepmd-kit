@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """A PEP-517 backend to find TensorFlow."""
 
+import os
+
 from scikit_build_core import build as _orig
 
 from .find_pytorch import (
@@ -39,10 +41,15 @@ build_editable = _orig.build_editable
 def get_requires_for_build_wheel(
     config_settings: dict,
 ) -> list[str]:
+    if os.environ.get("CIBUILDWHEEL", "0") == "1":
+        cibw_deps = ["mpich"]
+    else:
+        cibw_deps = []
     return (
         _orig.get_requires_for_build_wheel(config_settings)
         + find_tensorflow()[1]
         + find_pytorch()[1]
+        + cibw_deps
     )
 
 

@@ -64,14 +64,18 @@ class TestCalculator(unittest.TestCase):
         atomic_numbers = [1, 1, 1, 8, 8]
         idx_perm = [1, 0, 4, 3, 2]
 
+        # Convert tensors to numpy for ASE compatibility
+        cell_np = cell.numpy()
+        coord_np = coord.numpy()
+
         prec = 1e-10
         low_prec = 1e-4
 
         ase_atoms0 = Atoms(
             numbers=atomic_numbers,
-            positions=coord,
+            positions=coord_np,
             # positions=[tuple(item) for item in coordinate],
-            cell=cell,
+            cell=cell_np,
             calculator=self.calculator,
             pbc=True,
         )
@@ -83,9 +87,9 @@ class TestCalculator(unittest.TestCase):
 
         ase_atoms1 = Atoms(
             numbers=[atomic_numbers[i] for i in idx_perm],
-            positions=coord[idx_perm, :],
+            positions=coord_np[idx_perm, :],
             # positions=[tuple(item) for item in coordinate],
-            cell=cell,
+            cell=cell_np,
             calculator=self.calculator,
             pbc=True,
         )
@@ -141,19 +145,23 @@ class TestCalculatorWithFparamAparam(unittest.TestCase):
         generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
         coord = torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)
         coord = torch.matmul(coord, cell)
-        fparam = torch.IntTensor([1, 2])
-        aparam = torch.IntTensor([[1], [0], [2], [1], [0]])
+        fparam = torch.IntTensor([1, 2]).numpy()
+        aparam = torch.IntTensor([[1], [0], [2], [1], [0]]).numpy()
         atomic_numbers = [1, 1, 1, 8, 8]
         idx_perm = [1, 0, 4, 3, 2]
+
+        # Convert tensors to numpy for ASE compatibility
+        cell_np = cell.numpy()
+        coord_np = coord.numpy()
 
         prec = 1e-10
         low_prec = 1e-4
 
         ase_atoms0 = Atoms(
             numbers=atomic_numbers,
-            positions=coord,
+            positions=coord_np,
             # positions=[tuple(item) for item in coordinate],
-            cell=cell,
+            cell=cell_np,
             calculator=self.calculator,
             pbc=True,
         )
@@ -166,9 +174,9 @@ class TestCalculatorWithFparamAparam(unittest.TestCase):
 
         ase_atoms1 = Atoms(
             numbers=[atomic_numbers[i] for i in idx_perm],
-            positions=coord[idx_perm, :],
+            positions=coord_np[idx_perm, :],
             # positions=[tuple(item) for item in coordinate],
-            cell=cell,
+            cell=cell_np,
             calculator=self.calculator,
             pbc=True,
         )

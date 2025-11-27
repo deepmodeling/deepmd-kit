@@ -322,6 +322,32 @@ class TestParserOutput(unittest.TestCase):
 
         self.run_test(command="test", mapping=ARGS)
 
+    def test_parser_test_train_data(self) -> None:
+        """Test test subparser with train-data."""
+        ARGS = {
+            "--model": {"type": str, "value": "MODEL.PB"},
+            "--train-data": {
+                "type": (str, type(None)),
+                "value": "INPUT.JSON",
+                "dest": "train_json",
+            },
+        }
+
+        self.run_test(command="test", mapping=ARGS)
+
+    def test_parser_test_valid_data(self) -> None:
+        """Test test subparser with valid-data."""
+        ARGS = {
+            "--model": {"type": str, "value": "MODEL.PB"},
+            "--valid-data": {
+                "type": (str, type(None)),
+                "value": "INPUT.JSON",
+                "dest": "valid_json",
+            },
+        }
+
+        self.run_test(command="test", mapping=ARGS)
+
     def test_parser_compress(self) -> None:
         """Test compress subparser."""
         ARGS = {

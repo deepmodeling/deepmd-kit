@@ -11,7 +11,6 @@
     "PATH": "${containerEnv:PATH}:${containerWorkspaceFolder}/.venv/bin",
     "DP_ENABLE_PYTORCH": "1",
     "DP_VARIANT": "cpu",
-    "LMP_CXX11_ABI_0": "1",
     "UV_EXTRA_INDEX_URL": "https://download.pytorch.org/whl/cpu"
   }
 }

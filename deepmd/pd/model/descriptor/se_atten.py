@@ -153,7 +153,9 @@ class DescrptBlockSeAtten(DescriptorBlock):
         super().__init__()
         del type
         self.rcut = float(rcut)
+        self.register_buffer("buffer_rcut", paddle.to_tensor(self.rcut))
         self.rcut_smth = float(rcut_smth)
+        self.register_buffer("buffer_rcut_smth", paddle.to_tensor(self.rcut_smth))
         self.neuron = neuron
         self.filter_neuron = self.neuron
         self.axis_neuron = axis_neuron
@@ -185,6 +187,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
             sel = [sel]
 
         self.ntypes = ntypes
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
+
         self.sel = sel
         self.sec = self.sel
         self.split_sel = self.sel
@@ -278,6 +284,14 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.rcut_smth
 
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Returns the cut-off radius as a buffer-style Tensor."""
+        return self.buffer_rcut
+
+    def get_buffer_rcut_smth(self) -> paddle.Tensor:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0 as a buffer-style Tensor."""
+        return self.buffer_rcut_smth
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
@@ -288,7 +302,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.ntypes
+        return self.ntypes if paddle.in_dynamic_mode() else self.buffer_ntypes
 
     def get_dim_in(self) -> int:
         """Returns the input dimension."""
@@ -525,7 +539,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
             index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand([-1, -1, nt])
             # nb x (nloc x nnei) x nt
             atype_tebd_nlist = paddle.take_along_axis(
-                atype_tebd_ext, axis=1, indices=index
+                atype_tebd_ext,
+                axis=1,
+                indices=index,
+                broadcast=False,
             )  # j
             # nb x nloc x nnei x nt
             atype_tebd_nlist = atype_tebd_nlist.reshape([nb, nloc, nnei, nt])
@@ -563,14 +580,16 @@ class DescrptBlockSeAtten(DescriptorBlock):
             nlist_index = nlist.reshape([nb, nloc * nnei])
             # nf x (nl x nnei)
             nei_type = paddle.take_along_axis(
-                extended_atype, indices=nlist_index, axis=1
+                extended_atype, indices=nlist_index, axis=1, broadcast=False
             )
             # (nf x nl x nnei) x ng
             nei_type_index = nei_type.reshape([-1, 1]).expand([-1, ng]).to(paddle.int64)
             if self.type_one_side:
                 tt_full = self.filter_layers_strip.networks[0](type_embedding)
                 # (nf x nl x nnei) x ng
-                gg_t = paddle.take_along_axis(tt_full, indices=nei_type_index, axis=0)
+                gg_t = paddle.take_along_axis(
+                    tt_full, indices=nei_type_index, axis=0, broadcast=False
+                )
             else:
                 idx_i = paddle.tile(
                     atype.reshape([-1, 1]) * ntypes_with_padding, [1, nnei]
@@ -594,7 +613,9 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 ).reshape([-1, nt * 2])
                 tt_full = self.filter_layers_strip.networks[0](two_side_type_embedding)
                 # (nf x nl x nnei) x ng
-                gg_t = paddle.take_along_axis(tt_full, axis=0, indices=idx)
+                gg_t = paddle.take_along_axis(
+                    tt_full, axis=0, indices=idx, broadcast=False
+                )
             # (nf x nl) x nnei x ng
             gg_t = gg_t.reshape([nfnl, nnei, ng])
             if self.smooth:

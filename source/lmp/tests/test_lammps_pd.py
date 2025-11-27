@@ -333,7 +333,7 @@ def test_pair_deepmd_virial(lammps):
         assert lammps.atoms[ii].force == pytest.approx(
             expected_f[lammps.atoms[ii].id - 1]
         )
-    idx_map = lammps.lmp.numpy.extract_atom("id") - 1
+    idx_map = lammps.lmp.numpy.extract_atom("id")[: coord.shape[0]] - 1
     for ii in range(9):
         assert np.array(
             lammps.variables[f"virial{ii}"].value
@@ -384,7 +384,7 @@ def test_pair_deepmd_model_devi_virial(lammps):
         assert lammps.atoms[ii].force == pytest.approx(
             expected_f[lammps.atoms[ii].id - 1], RTOL, ATOL
         )
-    idx_map = lammps.lmp.numpy.extract_atom("id") - 1
+    idx_map = lammps.lmp.numpy.extract_atom("id")[: coord.shape[0]] - 1
     for ii in range(9):
         assert np.array(
             lammps.variables[f"virial{ii}"].value
@@ -516,7 +516,7 @@ def test_pair_deepmd_virial_real(lammps_real):
             RTOL,
             ATOL,
         )
-    idx_map = lammps_real.lmp.numpy.extract_atom("id") - 1
+    idx_map = lammps_real.lmp.numpy.extract_atom("id")[: coord.shape[0]] - 1
     for ii in range(9):
         assert np.array(
             lammps_real.variables[f"virial{ii}"].value
@@ -581,7 +581,7 @@ def test_pair_deepmd_model_devi_virial_real(lammps_real):
             RTOL,
             ATOL,
         )
-    idx_map = lammps_real.lmp.numpy.extract_atom("id") - 1
+    idx_map = lammps_real.lmp.numpy.extract_atom("id")[: coord.shape[0]] - 1
     for ii in range(9):
         assert np.array(
             lammps_real.variables[f"virial{ii}"].value

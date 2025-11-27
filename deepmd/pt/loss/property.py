@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    Any,
     Union,
 )
 
@@ -23,15 +24,15 @@ log = logging.getLogger(__name__)
 class PropertyLoss(TaskLoss):
     def __init__(
         self,
-        task_dim,
+        task_dim: int,
         var_name: str,
         loss_func: str = "smooth_mae",
-        metric: list = ["mae"],
+        metric: list[str] = ["mae"],
         beta: float = 1.00,
         out_bias: Union[list, None] = None,
         out_std: Union[list, None] = None,
         intensive: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         r"""Construct a layer to compute loss on property.
 
@@ -42,7 +43,7 @@ class PropertyLoss(TaskLoss):
         var_name : str
             The atomic property to fit, 'energy', 'dipole', and 'polar'.
         loss_func : str
-            The loss function, such as "smooth_mae", "mae", "rmse".
+            The loss function, such as "smooth_mae", "mae", "rmse", "mape".
         metric : list
             The metric such as mae, rmse which will be printed.
         beta : float
@@ -66,7 +67,15 @@ class PropertyLoss(TaskLoss):
         self.intensive = intensive
         self.var_name = var_name
 
-    def forward(self, input_dict, model, label, natoms, learning_rate=0.0, mae=False):
+    def forward(
+        self,
+        input_dict: dict[str, torch.Tensor],
+        model: torch.nn.Module,
+        label: dict[str, torch.Tensor],
+        natoms: int,
+        learning_rate: float = 0.0,
+        mae: bool = False,
+    ) -> tuple[dict[str, torch.Tensor], torch.Tensor, dict[str, torch.Tensor]]:
         """Return loss on properties .
 
         Parameters
@@ -151,6 +160,12 @@ class PropertyLoss(TaskLoss):
                     reduction="mean",
                 )
             )
+        elif self.loss_func == "mape":
+            loss += torch.mean(
+                torch.abs(
+                    (label[var_name] - model_pred[var_name]) / (label[var_name] + 1e-3)
+                )
+            )
         else:
             raise RuntimeError(f"Unknown loss function : {self.loss_func}")
 
@@ -180,6 +195,12 @@ class PropertyLoss(TaskLoss):
                     label[var_name],
                     model_pred[var_name],
                     reduction="mean",
+                )
+            ).detach()
+        if "mape" in self.metric:
+            more_loss["mape"] = torch.mean(
+                torch.abs(
+                    (label[var_name] - model_pred[var_name]) / (label[var_name] + 1e-3)
                 )
             ).detach()
 

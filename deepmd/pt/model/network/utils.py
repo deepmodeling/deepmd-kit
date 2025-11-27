@@ -57,7 +57,7 @@ def get_graph_index(
     a_nlist_mask: torch.Tensor,
     nall: int,
     use_loc_mapping: bool = True,
-):
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Get the index mapping for edge graph and angle graph, ready in `aggregate` or `index_select`.
 

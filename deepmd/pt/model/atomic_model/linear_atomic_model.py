@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import functools
 from typing import (
+    Any,
     Callable,
     Optional,
     Union,
@@ -56,7 +58,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         models: list[BaseAtomicModel],
         type_map: list[str],
         weights: Optional[Union[str, list[float]]] = "mean",
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
         super().init_out_stat()
@@ -135,7 +137,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return self.type_map
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self,
+        type_map: list[str],
+        model_with_new_type_stat: Optional["LinearEnergyAtomicModel"] = None,
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -158,7 +162,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     def get_sel(self) -> list[int]:
         return [max([model.get_nsel() for model in self.models])]
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -290,6 +294,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                     mapping,
                     fparam,
                     aparam,
+                    comm_dict=comm_dict,
                 )["energy"]
             )
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)
@@ -306,7 +311,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self,
         ret: dict[str, torch.Tensor],
         atype: torch.Tensor,
-    ):
+    ) -> dict[str, torch.Tensor]:
         """Apply the stat to each atomic output.
         The developer may override the method to define how the bias is applied
         to the atomic output of the model.
@@ -319,6 +324,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             The atom types. nf x nloc
 
         """
+        out_bias, out_std = self._fetch_out_stat(self.bias_keys)
+        for kk in self.bias_keys:
+            # nf x nloc x odims, out_bias: ntypes x odims
+            ret[kk] = ret[kk] + out_bias[kk][atype]
         return ret
 
     @staticmethod
@@ -464,34 +473,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         return False
 
-    def compute_or_load_out_stat(
-        self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
-    ) -> None:
-        """
-        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
-
-        Parameters
-        ----------
-        merged : Union[Callable[[], list[dict]], list[dict]]
-            - list[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
-                originating from the `i`-th data system.
-            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
-                only when needed. Since the sampling process can be slow and memory-intensive,
-                the lazy function helps by only sampling once.
-        stat_file_path : Optional[DPPath]
-            The path to the stat file.
-
-        """
-        for md in self.models:
-            md.compute_or_load_out_stat(merged, stat_file_path)
-
     def compute_or_load_stat(
         self,
-        sampled_func,
+        sampled_func: Callable[[], list[dict[str, Any]]],
         stat_file_path: Optional[DPPath] = None,
+        compute_or_load_out_stat: bool = True,
     ) -> None:
         """
         Compute or load the statistics parameters of the model,
@@ -507,9 +493,34 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             The lazy sampled function to get data frames from different data systems.
         stat_file_path
             The dictionary of paths to the statistics files.
+        compute_or_load_out_stat : bool
+            Whether to compute the output statistics.
+            If False, it will only compute the input statistics (e.g. mean and standard deviation of descriptors).
         """
         for md in self.models:
-            md.compute_or_load_stat(sampled_func, stat_file_path)
+            md.compute_or_load_stat(
+                sampled_func, stat_file_path, compute_or_load_out_stat=False
+            )
+
+        if stat_file_path is not None and self.type_map is not None:
+            # descriptors and fitting net with different type_map
+            # should not share the same parameters
+            stat_file_path /= " ".join(self.type_map)
+
+        @functools.lru_cache
+        def wrapped_sampler() -> list[dict[str, Any]]:
+            sampled = sampled_func()
+            if self.pair_excl is not None:
+                pair_exclude_types = self.pair_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["pair_exclude_types"] = list(pair_exclude_types)
+            if self.atom_excl is not None:
+                atom_exclude_types = self.atom_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["atom_exclude_types"] = list(atom_exclude_types)
+            return sampled
+
+        self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
 
 class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
@@ -541,7 +552,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         sw_rmax: float,
         type_map: list[str],
         smin_alpha: Optional[float] = 0.1,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         models = [dp_model, zbl_model]
         kwargs["models"] = models
@@ -569,7 +580,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         )
         return dd
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -578,7 +589,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         self.models[0].set_case_embd(case_idx)
 
     @classmethod
-    def deserialize(cls, data) -> "DPZBLLinearEnergyAtomicModel":
+    def deserialize(cls, data: dict[str, Any]) -> "DPZBLLinearEnergyAtomicModel":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         models = [

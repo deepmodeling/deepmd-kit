@@ -1,10 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Optional,
 )
 
 import torch
 
+from deepmd.dpmodel.output_def import (
+    OutputVariableDef,
+)
 from deepmd.pt.model.atomic_model import (
     DPPolarAtomicModel,
 )
@@ -28,13 +32,13 @@ class PolarModel(DPModelCommon, DPPolarModel_):
 
     def __init__(
         self,
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         DPModelCommon.__init__(self)
         DPPolarModel_.__init__(self, *args, **kwargs)
 
-    def translated_output_def(self):
+    def translated_output_def(self) -> dict[str, OutputVariableDef]:
         out_def_data = self.model_output_def().get_data()
         output_def = {
             "polar": out_def_data["polarizability"],
@@ -46,8 +50,8 @@ class PolarModel(DPModelCommon, DPPolarModel_):
 
     def forward(
         self,
-        coord,
-        atype,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
         box: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
@@ -75,14 +79,15 @@ class PolarModel(DPModelCommon, DPPolarModel_):
     @torch.jit.export
     def forward_lower(
         self,
-        extended_coord,
-        extended_atype,
-        nlist,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
-    ):
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+    ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,
@@ -91,6 +96,7 @@ class PolarModel(DPModelCommon, DPPolarModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            comm_dict=comm_dict,
             extra_nlist_sort=self.need_sorted_nlist_for_lower(),
         )
         if self.get_fitting_net() is not None:

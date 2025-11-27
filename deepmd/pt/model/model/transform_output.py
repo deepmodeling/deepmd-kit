@@ -20,7 +20,7 @@ from deepmd.pt.utils import (
 def atomic_virial_corr(
     extended_coord: torch.Tensor,
     atom_energy: torch.Tensor,
-):
+) -> torch.Tensor:
     nall = extended_coord.shape[1]
     nloc = atom_energy.shape[1]
     coord, _ = torch.split(extended_coord, [nloc, nall - nloc], dim=1)
@@ -72,7 +72,7 @@ def task_deriv_one(
     do_virial: bool = True,
     do_atomic_virial: bool = False,
     create_graph: bool = True,
-):
+) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
     faked_grad = torch.ones_like(energy)
     lst = torch.jit.annotate(list[Optional[torch.Tensor]], [faked_grad])
     extended_force = torch.autograd.grad(
@@ -102,7 +102,7 @@ def task_deriv_one(
 def get_leading_dims(
     vv: torch.Tensor,
     vdef: OutputVariableDef,
-):
+) -> list[int]:
     """Get the dimensions of nf x nloc."""
     vshape = vv.shape
     return list(vshape[: (len(vshape) - len(vdef.shape))])
@@ -116,7 +116,7 @@ def take_deriv(
     do_virial: bool = False,
     do_atomic_virial: bool = False,
     create_graph: bool = True,
-):
+) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
     size = 1
     for ii in vdef.shape:
         size *= ii
@@ -158,6 +158,7 @@ def fit_output_to_model_output(
     coord_ext: torch.Tensor,
     do_atomic_virial: bool = False,
     create_graph: bool = True,
+    mask: Optional[torch.Tensor] = None,
 ) -> dict[str, torch.Tensor]:
     """Transform the output of the fitting network to
     the model output.
@@ -172,7 +173,12 @@ def fit_output_to_model_output(
         if vdef.reducible:
             kk_redu = get_reduce_name(kk)
             if vdef.intensive:
-                model_ret[kk_redu] = torch.mean(vv.to(redu_prec), dim=atom_axis)
+                if mask is not None:
+                    model_ret[kk_redu] = torch.sum(
+                        vv.to(redu_prec), dim=atom_axis
+                    ) / torch.sum(mask, dim=-1, keepdim=True)
+                else:
+                    model_ret[kk_redu] = torch.mean(vv.to(redu_prec), dim=atom_axis)
             else:
                 model_ret[kk_redu] = torch.sum(vv.to(redu_prec), dim=atom_axis)
             if vdef.r_differentiable:

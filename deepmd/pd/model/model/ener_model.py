@@ -34,6 +34,18 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         DPModelCommon.__init__(self)
         DPEnergyModel_.__init__(self, *args, **kwargs)
 
+    def get_buffer_type_map(self) -> paddle.Tensor:
+        """
+        Return the type map as a buffer-style Tensor for JIT saving.
+
+        The original type map (e.g., ['Ni', 'O']) is first joined into a single space-separated string
+        (e.g., "Ni O"). Each character in this string is then converted to its ASCII code using `ord()`,
+        and the resulting integer sequence is stored as a 1D paddle.Tensor of dtype int.
+
+        This format allows the type map to be serialized as a raw byte buffer during JIT model saving.
+        """
+        return super().get_buffer_type_map()
+
     def translated_output_def(self):
         out_def_data = self.model_output_def().get_data()
         output_def = {
@@ -81,6 +93,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                     model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(
                         -3
                     )
+                else:
+                    model_predict["atom_virial"] = paddle.zeros(
+                        [model_predict["energy"].shape[0], 1, 9], dtype=paddle.float64
+                    )
             else:
                 model_predict["force"] = model_ret["dforce"]
             if "mask" in model_ret:
@@ -99,7 +115,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[list[paddle.Tensor]] = None,
     ):
         model_ret = self.forward_common_lower(
             extended_coord,
@@ -124,6 +140,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                     model_predict["extended_virial"] = model_ret[
                         "energy_derv_c"
                     ].squeeze(-3)
+                else:
+                    model_predict["extended_virial"] = paddle.zeros(
+                        [model_predict["energy"].shape[0], 1, 9], dtype=paddle.float64
+                    )
             else:
                 assert model_ret["dforce"] is not None
                 model_predict["dforce"] = model_ret["dforce"]

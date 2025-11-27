@@ -1,4 +1,4 @@
-# Descriptor DPA3 {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
+# Descriptor DPA3 {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
 
 :::{note}
 **Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
@@ -40,7 +40,11 @@ Virial RMSEs were averaged exclusively for systems containing virial labels (`Al
 
 Note that we set `float32` in all DPA3 models, while `float64` in other models by default.
 
-## Requirements of installation from source code {{ pytorch_icon }}
+## Requirements of installation from source code {{ pytorch_icon }} {{ paddle_icon }}
+
+::::{tab-set}
+
+:::{tab-item} PyTorch {{ pytorch_icon }}
 
 To run the DPA3 model on LAMMPS via source code installation
 (users can skip this step if using [easy installation](../install/easy-install.md)),
@@ -52,6 +56,25 @@ The customized OP library for the Python interface can be installed by setting e
 If one runs LAMMPS with MPI, the customized OP library for the C++ interface should be compiled against the same MPI library as the runtime MPI.
 If one runs LAMMPS with MPI and CUDA devices, it is recommended to compile the customized OP library for the C++ interface with a [CUDA-Aware MPI](https://developer.nvidia.com/mpi-solutions-gpus) library and CUDA,
 otherwise the communication between GPU cards falls back to the slower CPU implementation.
+
+:::
+
+:::{tab-item} Paddle {{ paddle_icon }}
+
+The customized OP library for the Python interface can be installed by
+
+```sh
+cd deepmd-kit/source/op/pd
+python setup.py install
+```
+
+If one runs LAMMPS with MPI, the customized OP library for the C++ interface should be compiled against the same MPI library as the runtime MPI.
+If one runs LAMMPS with MPI and CUDA devices, it is recommended to compile the customized OP library for the C++ interface with a [CUDA-Aware MPI](https://developer.nvidia.com/mpi-solutions-gpus) library and CUDA,
+otherwise the communication between GPU cards falls back to the slower CPU implementation.
+
+:::
+
+::::
 
 ## Limitations of the JAX backend with LAMMPS {{ jax_icon }}
 

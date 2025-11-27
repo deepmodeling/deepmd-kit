@@ -14,7 +14,7 @@ typedef testing::Types<double, float> ValueTypes;
 template <typename VALUETYPE>
 inline void _fold_back(typename std::vector<VALUETYPE>::iterator out,
                        const typename std::vector<VALUETYPE>::const_iterator in,
-                       const std::vector<int> &mapping,
+                       const std::vector<int>& mapping,
                        const int nloc,
                        const int nall,
                        const int ndim,
@@ -35,9 +35,9 @@ inline void _fold_back(typename std::vector<VALUETYPE>::iterator out,
 }
 
 template <typename VALUETYPE>
-inline void _fold_back(std::vector<VALUETYPE> &out,
-                       const std::vector<VALUETYPE> &in,
-                       const std::vector<int> &mapping,
+inline void _fold_back(std::vector<VALUETYPE>& out,
+                       const std::vector<VALUETYPE>& in,
+                       const std::vector<int>& mapping,
                        const int nloc,
                        const int nall,
                        const int ndim,
@@ -48,14 +48,14 @@ inline void _fold_back(std::vector<VALUETYPE> &out,
 }
 
 template <typename VALUETYPE>
-inline void _build_nlist(std::vector<std::vector<int>> &nlist_data,
-                         std::vector<VALUETYPE> &coord_cpy,
-                         std::vector<int> &atype_cpy,
-                         std::vector<int> &mapping,
-                         const std::vector<VALUETYPE> &coord,
-                         const std::vector<int> &atype,
-                         const std::vector<VALUETYPE> &box,
-                         const float &rc) {
+inline void _build_nlist(std::vector<std::vector<int>>& nlist_data,
+                         std::vector<VALUETYPE>& coord_cpy,
+                         std::vector<int>& atype_cpy,
+                         std::vector<int>& mapping,
+                         const std::vector<VALUETYPE>& coord,
+                         const std::vector<int>& atype,
+                         const std::vector<VALUETYPE>& box,
+                         const float& rc) {
   // convert VALUETYPE to double, it looks like copy_coord only accepts double
   std::vector<double> coord_cpy_;
   std::vector<double> coord_(coord.begin(), coord.end());
@@ -90,13 +90,13 @@ class EnergyModelTest {
   double level =
       std::is_same<VALUETYPE, double>::value ? 1e-6 : 1e-2;  // expected?
  public:
-  virtual void compute(double &ener,
-                       std::vector<VALUETYPE> &force,
-                       std::vector<VALUETYPE> &virial,
-                       const std::vector<VALUETYPE> &coord,
-                       const std::vector<VALUETYPE> &box) = 0;
-  void test_f(const std::vector<VALUETYPE> &coord,
-              const std::vector<VALUETYPE> &box) {
+  virtual void compute(double& ener,
+                       std::vector<VALUETYPE>& force,
+                       std::vector<VALUETYPE>& virial,
+                       const std::vector<VALUETYPE>& coord,
+                       const std::vector<VALUETYPE>& box) = 0;
+  void test_f(const std::vector<VALUETYPE>& coord,
+              const std::vector<VALUETYPE>& box) {
     int ndof = coord.size();
     double ener;
     std::vector<VALUETYPE> force, virial;
@@ -114,8 +114,8 @@ class EnergyModelTest {
       EXPECT_LT(fabs(num - ana), level);
     }
   }
-  void test_v(const std::vector<VALUETYPE> &coord,
-              const std::vector<VALUETYPE> &box) {
+  void test_v(const std::vector<VALUETYPE>& coord,
+              const std::vector<VALUETYPE>& box) {
     std::vector<VALUETYPE> num_diff(9);
     double ener;
     std::vector<VALUETYPE> force, virial;

@@ -62,7 +62,6 @@ class TestSampler(unittest.TestCase):
             batch_size=None,
             num_workers=0,  # setting to 0 diverges the behavior of its iterator; should be >=1
             drop_last=False,
-            pin_memory=True,
         )
         with torch.device("cpu"):
             batch_data = next(iter(dataloader))
