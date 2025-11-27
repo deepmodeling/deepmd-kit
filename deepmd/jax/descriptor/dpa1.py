@@ -39,13 +39,7 @@ from deepmd.jax.utils.network import (
 from deepmd.jax.utils.type_embed import (
     TypeEmbedNet,
 )
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
-)
-from packaging.version import (
-    Version,
-)
+
 
 @flax_module
 class GatedAttentionLayer(GatedAttentionLayerDP):

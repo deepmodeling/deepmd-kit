@@ -26,13 +26,7 @@ from deepmd.jax.utils.exclude_mask import (
 from deepmd.jax.utils.network import (
     NetworkCollection,
 )
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
-)
-from packaging.version import (
-    Version,
-)
+
 
 @BaseDescriptor.register("se_e2_a")
 @BaseDescriptor.register("se_a")

@@ -3,23 +3,24 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.utils.type_embed import TypeEmbedNet as TypeEmbedNetDP
 from deepmd.jax.common import (
     ArrayAPIVariable,
     flax_module,
     to_jax_array,
 )
-from deepmd.jax.utils.network import (
-    EmbeddingNet,
-)
-
 from deepmd.jax.env import (
     flax_version,
     nnx,
 )
-from packaging.version import (
-    Version,
+from deepmd.jax.utils.network import (
+    EmbeddingNet,
 )
+
 
 @flax_module
 class TypeEmbedNet(TypeEmbedNetDP):

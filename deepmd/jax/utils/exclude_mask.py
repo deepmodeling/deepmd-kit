@@ -3,6 +3,10 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.utils.exclude_mask import AtomExcludeMask as AtomExcludeMaskDP
 from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask as PairExcludeMaskDP
 from deepmd.jax.common import (
@@ -10,14 +14,12 @@ from deepmd.jax.common import (
     flax_module,
     to_jax_array,
 )
-
 from deepmd.jax.env import (
     flax_version,
     nnx,
 )
-from packaging.version import (
-    Version,
-)
+
+
 @flax_module
 class AtomExcludeMask(AtomExcludeMaskDP):
     def __setattr__(self, name: str, value: Any) -> None:

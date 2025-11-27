@@ -3,21 +3,21 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.jax.common import (
     ArrayAPIVariable,
     to_jax_array,
 )
-from deepmd.jax.utils.exclude_mask import (
-    AtomExcludeMask,
-    PairExcludeMask,
-)
-
-from packaging.version import (
-    Version,
-)
 from deepmd.jax.env import (
     flax_version,
     nnx,
+)
+from deepmd.jax.utils.exclude_mask import (
+    AtomExcludeMask,
+    PairExcludeMask,
 )
 
 

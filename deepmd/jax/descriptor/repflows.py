@@ -26,13 +26,7 @@ from deepmd.jax.utils.exclude_mask import (
 from deepmd.jax.utils.network import (
     NativeLayer,
 )
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
-)
-from packaging.version import (
-    Version,
-)
+
 
 @flax_module
 class DescrptBlockRepflows(DescrptBlockRepflowsDP):

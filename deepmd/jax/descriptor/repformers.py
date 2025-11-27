@@ -36,13 +36,7 @@ from deepmd.jax.utils.network import (
     NativeLayer,
 )
 
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
-)
-from packaging.version import (
-    Version,
-)
+
 @flax_module
 class DescrptBlockRepformers(DescrptBlockRepformersDP):
     def __setattr__(self, name: str, value: Any) -> None:

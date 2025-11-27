@@ -3,6 +3,10 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.fitting.dipole_fitting import DipoleFitting as DipoleFittingNetDP
 from deepmd.dpmodel.fitting.dos_fitting import DOSFittingNet as DOSFittingNetDP
 from deepmd.dpmodel.fitting.ener_fitting import EnergyFittingNet as EnergyFittingNetDP
@@ -17,6 +21,10 @@ from deepmd.jax.common import (
     flax_module,
     to_jax_array,
 )
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 from deepmd.jax.fitting.base_fitting import (
     BaseFitting,
 )
@@ -26,13 +34,7 @@ from deepmd.jax.utils.exclude_mask import (
 from deepmd.jax.utils.network import (
     NetworkCollection,
 )
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
-)
-from packaging.version import (
-    Version,
-)
+
 
 def setattr_for_general_fitting(name: str, value: Any) -> Any:
     if name in {

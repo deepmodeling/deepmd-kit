@@ -3,6 +3,10 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.descriptor.se_t_tebd import (
     DescrptBlockSeTTebd as DescrptBlockSeTTebdDP,
 )
@@ -15,6 +19,10 @@ from deepmd.jax.common import (
 from deepmd.jax.descriptor.base_descriptor import (
     BaseDescriptor,
 )
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 from deepmd.jax.utils.exclude_mask import (
     PairExcludeMask,
 )
@@ -24,13 +32,7 @@ from deepmd.jax.utils.network import (
 from deepmd.jax.utils.type_embed import (
     TypeEmbedNet,
 )
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
-)
-from packaging.version import (
-    Version,
-)
+
 
 @flax_module
 class DescrptBlockSeTTebd(DescrptBlockSeTTebdDP):

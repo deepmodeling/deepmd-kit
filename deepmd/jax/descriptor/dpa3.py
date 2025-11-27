@@ -3,6 +3,10 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.descriptor.dpa3 import DescrptDPA3 as DescrptDPA3DP
 from deepmd.jax.common import (
     ArrayAPIVariable,
@@ -15,16 +19,14 @@ from deepmd.jax.descriptor.base_descriptor import (
 from deepmd.jax.descriptor.repflows import (
     DescrptBlockRepflows,
 )
-from deepmd.jax.utils.type_embed import (
-    TypeEmbedNet,
-)
 from deepmd.jax.env import (
     flax_version,
     nnx,
 )
-from packaging.version import (
-    Version,
+from deepmd.jax.utils.type_embed import (
+    TypeEmbedNet,
 )
+
 
 @BaseDescriptor.register("dpa3")
 @flax_module
