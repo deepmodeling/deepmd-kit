@@ -20,6 +20,14 @@ from deepmd.jax.env import (
     jnp,
 )
 
+from packaging.version import (
+    Version,
+)
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
+
 
 @flax_module
 class PairTabAtomicModel(PairTabAtomicModelDP):
@@ -29,6 +37,8 @@ class PairTabAtomicModel(PairTabAtomicModelDP):
             value = to_jax_array(value)
             if value is not None:
                 value = ArrayAPIVariable(value)
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         return super().__setattr__(name, value)
 
     def forward_common_atomic(

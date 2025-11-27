@@ -26,7 +26,13 @@ from deepmd.jax.utils.exclude_mask import (
 from deepmd.jax.utils.network import (
     NetworkCollection,
 )
-
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
+from packaging.version import (
+    Version,
+)
 
 def setattr_for_general_fitting(name: str, value: Any) -> Any:
     if name in {
@@ -40,6 +46,8 @@ def setattr_for_general_fitting(name: str, value: Any) -> Any:
         value = to_jax_array(value)
         if value is not None:
             value = ArrayAPIVariable(value)
+        elif Version(flax_version) >= Version("0.12.0"):
+            value = nnx.data(value)
     elif name == "emask":
         value = AtomExcludeMask(value.ntypes, value.exclude_types)
     elif name == "nets":
@@ -91,4 +99,6 @@ class PolarFittingNet(PolarFittingNetDP):
             value = to_jax_array(value)
             if value is not None:
                 value = ArrayAPIVariable(value)
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         return super().__setattr__(name, value)

@@ -26,7 +26,13 @@ from deepmd.jax.utils.exclude_mask import (
 from deepmd.jax.utils.network import (
     NetworkCollection,
 )
-
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
+from packaging.version import (
+    Version,
+)
 
 @BaseDescriptor.register("se_e2_a")
 @BaseDescriptor.register("se_a")
@@ -37,6 +43,8 @@ class DescrptSeA(DescrptSeADP):
             value = to_jax_array(value)
             if value is not None:
                 value = ArrayAPIVariable(value)
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name in {"embeddings"}:
             if value is not None:
                 value = NetworkCollection.deserialize(value.serialize())

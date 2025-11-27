@@ -11,7 +11,13 @@ from deepmd.jax.common import (
     to_jax_array,
 )
 
-
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
+from packaging.version import (
+    Version,
+)
 @flax_module
 class AtomExcludeMask(AtomExcludeMaskDP):
     def __setattr__(self, name: str, value: Any) -> None:
@@ -19,6 +25,8 @@ class AtomExcludeMask(AtomExcludeMaskDP):
             value = to_jax_array(value)
             if value is not None:
                 value = ArrayAPIVariable(value)
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         return super().__setattr__(name, value)
 
 
@@ -29,4 +37,6 @@ class PairExcludeMask(PairExcludeMaskDP):
             value = to_jax_array(value)
             if value is not None:
                 value = ArrayAPIVariable(value)
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         return super().__setattr__(name, value)

@@ -26,7 +26,13 @@ from deepmd.jax.utils.exclude_mask import (
 from deepmd.jax.utils.network import (
     NativeLayer,
 )
-
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
+from packaging.version import (
+    Version,
+)
 
 @flax_module
 class DescrptBlockRepflows(DescrptBlockRepflowsDP):
@@ -35,6 +41,8 @@ class DescrptBlockRepflows(DescrptBlockRepflowsDP):
             value = to_jax_array(value)
             if value is not None:
                 value = ArrayAPIVariable(value)
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name in {"layers"}:
             value = [RepFlowLayer.deserialize(layer.serialize()) for layer in value]
             if Version(flax_version) >= Version("0.12.0"):

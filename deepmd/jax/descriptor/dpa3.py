@@ -18,7 +18,13 @@ from deepmd.jax.descriptor.repflows import (
 from deepmd.jax.utils.type_embed import (
     TypeEmbedNet,
 )
-
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
+from packaging.version import (
+    Version,
+)
 
 @BaseDescriptor.register("dpa3")
 @flax_module
@@ -28,6 +34,8 @@ class DescrptDPA3(DescrptDPA3DP):
             value = to_jax_array(value)
             if value is not None:
                 value = ArrayAPIVariable(value)
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name in {"repflows"}:
             value = DescrptBlockRepflows.deserialize(value.serialize())
         elif name in {"type_embedding"}:

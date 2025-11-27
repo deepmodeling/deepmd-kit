@@ -36,7 +36,13 @@ from deepmd.jax.utils.network import (
     NativeLayer,
 )
 
-
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
+from packaging.version import (
+    Version,
+)
 @flax_module
 class DescrptBlockRepformers(DescrptBlockRepformersDP):
     def __setattr__(self, name: str, value: Any) -> None:
@@ -44,6 +50,8 @@ class DescrptBlockRepformers(DescrptBlockRepformersDP):
             value = to_jax_array(value)
             if value is not None:
                 value = ArrayAPIVariable(value)
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name in {"layers"}:
             value = [RepformerLayer.deserialize(layer.serialize()) for layer in value]
             if Version(flax_version) >= Version("0.12.0"):

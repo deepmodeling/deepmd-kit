@@ -37,7 +37,13 @@ from deepmd.jax.utils.network import (
 from deepmd.jax.utils.type_embed import (
     TypeEmbedNet,
 )
-
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
+from packaging.version import (
+    Version,
+)
 
 @BaseDescriptor.register("dpa2")
 @flax_module
@@ -47,6 +53,8 @@ class DescrptDPA2(DescrptDPA2DP):
             value = to_jax_array(value)
             if value is not None:
                 value = ArrayAPIVariable(value)
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name in {"repinit"}:
             value = DescrptBlockSeAtten.deserialize(value.serialize())
         elif name in {"repinit_three_body"}:
