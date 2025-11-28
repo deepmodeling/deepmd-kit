@@ -42,7 +42,9 @@ class DPZBLLinearEnergyAtomicModel(DPZBLLinearEnergyAtomicModelDP):
             if Version(flax_version) >= Version("0.12.0"):
                 value = nnx.List([nnx.data(item) for item in value])
         elif name == "zbl_weight":
-            value = ArrayAPIVariable(to_jax_array(value))
+            # discard since it's only used in tests
+            # to fix flax.errors.TraceContextError: Cannot mutate 'FlaxModule' from different trace level
+            return
         elif name == "models":
             value = [
                 DPAtomicModel.deserialize(value[0].serialize()),
