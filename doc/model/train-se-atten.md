@@ -188,7 +188,7 @@ DPA-1 supports both the [standard data format](../data/system.md) and the [mixed
 
 Model compression is supported only when the descriptor attention depth {ref}`attn_layer <model[standard]/descriptor[se_atten]/attn_layer>` is 0 and {ref}`tebd_input_mode <model[standard]/descriptor[se_atten]/tebd_input_mode>` is `"strip"`. Attention layers higher than 0 cannot be compressed in the TensorFlow implementation because the geometric part is tabulated from the static computation graph.
 
-### PyTorch {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
+### PyTorch {{ pytorch_icon }}
 
 Model compression is supported for any {ref}`attn_layer <model[standard]/descriptor[se_atten_v2]/attn_layer>` value when {ref}`tebd_input_mode <model[standard]/descriptor[se_atten_v2]/tebd_input_mode>` is `"strip"`. When `attn_layer` is 0, both the type embedding and geometric parts are compressed. When `attn_layer` is not 0, only the type embedding is compressed while the geometric part keeps the neural network implementation (a warning is emitted during compression).
 
