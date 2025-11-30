@@ -35,7 +35,7 @@ jobs:
         python-version: '3.11'
     - uses: lukka/get-cmake@latest
     - run: python -m pip install uv
-    - run: source/install/uv_with_retry.sh pip install --system --group pin_tensorflow_cpu --group pin_pytorch_cpu --group pin_jax --torch-backend cpu
+    - run: source/install/uv_with_retry.sh pip install --system --group pin_tensorflow_cpu --group pin_pytorch_cpu --torch-backend cpu
     - run: |
          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
          && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
