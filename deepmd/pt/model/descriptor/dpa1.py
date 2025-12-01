@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import warnings
 from typing import (
     Any,
     Callable,
@@ -304,7 +305,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
-        self.compress = False
+        self.tebd_compress = False
+        self.geo_compress = False
         self.type_embedding = TypeEmbedNet(
             ntypes,
             tebd_dim,
@@ -592,12 +594,17 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         check_frequency
             The overflow check frequency
         """
-        # do some checks before the mocel compression process
-        if self.compress:
+        # do some checks before the model compression process
+        if self.tebd_compress or self.geo_compress:
             raise ValueError("Compression is already enabled.")
+
+        if self.tebd_input_mode != "strip":
+            raise RuntimeError("Type embedding compression only works in strip mode")
+
         assert not self.se_atten.resnet_dt, (
             "Model compression error: descriptor resnet_dt must be false!"
         )
+
         for tt in self.se_atten.exclude_types:
             if (tt[0] not in range(self.se_atten.ntypes)) or (
                 tt[1] not in range(self.se_atten.ntypes)
@@ -609,6 +616,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
                     + str(self.se_atten.ntypes)
                     + "!"
                 )
+
         if (
             self.se_atten.ntypes * self.se_atten.ntypes
             - len(self.se_atten.exclude_types)
@@ -618,38 +626,38 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
                 "Empty embedding-nets are not supported in model compression!"
             )
 
-        if self.se_atten.attn_layer != 0:
-            raise RuntimeError("Cannot compress model when attention layer is not 0.")
-
-        if self.tebd_input_mode != "strip":
-            raise RuntimeError("Cannot compress model when tebd_input_mode == 'concat'")
-
-        data = self.serialize()
-        self.table = DPTabulate(
-            self,
-            data["neuron"],
-            data["type_one_side"],
-            data["exclude_types"],
-            ActivationFn(data["activation_function"]),
-        )
-        self.table_config = [
-            table_extrapolate,
-            table_stride_1,
-            table_stride_2,
-            check_frequency,
-        ]
-        self.lower, self.upper = self.table.build(
-            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
-        )
-
-        self.se_atten.enable_compression(
-            self.table.data, self.table_config, self.lower, self.upper
-        )
-
         # Enable type embedding compression
         self.se_atten.type_embedding_compression(self.type_embedding)
+        self.tebd_compress = True
 
-        self.compress = True
+        if self.se_atten.attn_layer == 0:
+            data = self.serialize()
+            self.table = DPTabulate(
+                self,
+                data["neuron"],
+                data["type_one_side"],
+                data["exclude_types"],
+                ActivationFn(data["activation_function"]),
+            )
+            self.table_config = [
+                table_extrapolate,
+                table_stride_1,
+                table_stride_2,
+                check_frequency,
+            ]
+            self.lower, self.upper = self.table.build(
+                min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+            )
+
+            self.se_atten.enable_compression(
+                self.table.data, self.table_config, self.lower, self.upper
+            )
+            self.geo_compress = True
+        else:
+            warnings.warn(
+                "Attention layer is not 0, only type embedding is compressed. Geometric part is not compressed.",
+                UserWarning,
+            )
 
     def forward(
         self,

@@ -39,7 +39,7 @@ def _init_models():
     INPUT = str(tests_path / "input.json")
     jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
 
-    # Configure se_atten descriptor with attn_layer=0 for compression compatibility
+    # Configure se_atten descriptor with attn_layer=0 for full compression compatibility (both type embedding and geometric parts)
     jdata["model"]["descriptor"] = {
         "type": "se_atten_v2",
         "sel": 120,
@@ -123,6 +123,54 @@ def _init_models_exclude_types():
     return INPUT, frozen_model, compressed_model
 
 
+def _init_models_nonzero_attn_layer():
+    """Initialize models with attn_layer > 0 for partial compression testing."""
+    suffix = "-nonzero-attn"
+    data_file = str(tests_path / os.path.join("model_compression", "data"))
+    frozen_model = str(tests_path / f"dp-original-se-atten{suffix}.pth")
+    compressed_model = str(tests_path / f"dp-compressed-se-atten{suffix}.pth")
+    INPUT = str(tests_path / f"input{suffix}.json")
+    jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
+
+    # Configure se_atten descriptor with attn_layer=2 for partial compression
+    # Only type embedding will be compressed, geometric parts (attention layers) will not
+    jdata["model"]["descriptor"] = {
+        "type": "se_atten_v2",
+        "sel": 120,
+        "rcut_smth": 0.50,
+        "rcut": 6.00,
+        "neuron": [25, 50, 100],
+        "resnet_dt": False,
+        "axis_neuron": 16,
+        "seed": 1,
+        "attn": 128,
+        "attn_layer": 2,  # Non-zero attention layer for partial compression testing
+        "attn_dotr": True,
+        "attn_mask": False,
+        "precision": "float64",
+    }
+
+    jdata["training"]["training_data"]["systems"] = data_file
+    with open(INPUT, "w") as fp:
+        json.dump(jdata, fp, indent=4)
+
+    ret = run_dp("dp --pt train " + INPUT)
+    np.testing.assert_equal(ret, 0, "DP train failed!")
+    ret = run_dp("dp --pt freeze -o " + frozen_model)
+    np.testing.assert_equal(ret, 0, "DP freeze failed!")
+    ret = run_dp(
+        "dp --pt compress "
+        + " -i "
+        + frozen_model
+        + " -o "
+        + compressed_model
+        + " -t "
+        + INPUT
+    )
+    np.testing.assert_equal(ret, 0, "DP model compression failed!")
+    return INPUT, frozen_model, compressed_model
+
+
 def _init_models_skip_neighbor_stat():
     suffix = "-skip-neighbor-stat"
     data_file = str(tests_path / os.path.join("model_compression", "data"))
@@ -177,6 +225,9 @@ def setUpModule() -> None:
         INPUT_ET, \
         FROZEN_MODEL_ET, \
         COMPRESSED_MODEL_ET, \
+        INPUT_NONZERO_ATTN, \
+        FROZEN_MODEL_NONZERO_ATTN, \
+        COMPRESSED_MODEL_NONZERO_ATTN, \
         FROZEN_MODEL_SKIP_NEIGHBOR_STAT, \
         COMPRESSED_MODEL_SKIP_NEIGHBOR_STAT
     INPUT, FROZEN_MODEL, COMPRESSED_MODEL = _init_models()
@@ -184,6 +235,9 @@ def setUpModule() -> None:
         _init_models_skip_neighbor_stat()
     )
     INPUT_ET, FROZEN_MODEL_ET, COMPRESSED_MODEL_ET = _init_models_exclude_types()
+    INPUT_NONZERO_ATTN, FROZEN_MODEL_NONZERO_ATTN, COMPRESSED_MODEL_NONZERO_ATTN = (
+        _init_models_nonzero_attn_layer()
+    )
 
 
 def tearDownModule() -> None:
@@ -198,6 +252,10 @@ def tearDownModule() -> None:
     _file_delete(INPUT_ET)
     _file_delete(FROZEN_MODEL_ET)
     _file_delete(COMPRESSED_MODEL_ET)
+    # Clean up files created by _init_models_nonzero_attn_layer
+    _file_delete(INPUT_NONZERO_ATTN)
+    _file_delete(FROZEN_MODEL_NONZERO_ATTN)
+    _file_delete(COMPRESSED_MODEL_NONZERO_ATTN)
     # Clean up other artifacts
     _file_delete("out.json")
     _file_delete("input_v2_compat.json")
@@ -795,6 +853,166 @@ class TestSkipNeighborStat(unittest.TestCase):
         np.testing.assert_almost_equal(av0, av1, default_places)
         np.testing.assert_almost_equal(ee0, ee1, default_places)
         np.testing.assert_almost_equal(vv0, vv1, default_places)
+
+
+class TestDeepPotATNonZeroAttnLayer(unittest.TestCase):
+    """Test model compression with attn_layer > 0 (partial compression)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.dp_original = DeepEval(FROZEN_MODEL_NONZERO_ATTN)
+        cls.dp_compressed = DeepEval(COMPRESSED_MODEL_NONZERO_ATTN)
+        cls.coords = np.array(
+            [
+                12.83,
+                2.56,
+                2.18,
+                12.09,
+                2.87,
+                2.74,
+                00.25,
+                3.32,
+                1.68,
+                3.36,
+                3.00,
+                1.81,
+                3.51,
+                2.51,
+                2.60,
+                4.27,
+                3.22,
+                1.56,
+            ]
+        )
+        cls.atype = [0, 1, 1, 0, 1, 1]
+        cls.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
+
+    def test_attrs(self) -> None:
+        """Test model attributes are consistent between original and compressed models."""
+        self.assertEqual(self.dp_original.get_ntypes(), 2)
+        self.assertAlmostEqual(self.dp_original.get_rcut(), 6.0, places=default_places)
+        self.assertEqual(self.dp_original.get_type_map(), ["O", "H"])
+        self.assertEqual(self.dp_original.get_dim_fparam(), 0)
+        self.assertEqual(self.dp_original.get_dim_aparam(), 0)
+
+        self.assertEqual(self.dp_compressed.get_ntypes(), 2)
+        self.assertAlmostEqual(
+            self.dp_compressed.get_rcut(), 6.0, places=default_places
+        )
+        self.assertEqual(self.dp_compressed.get_type_map(), ["O", "H"])
+        self.assertEqual(self.dp_compressed.get_dim_fparam(), 0)
+        self.assertEqual(self.dp_compressed.get_dim_aparam(), 0)
+
+    def test_1frame(self) -> None:
+        """Test single frame evaluation with partial compression."""
+        ee0, ff0, vv0 = self.dp_original.eval(
+            self.coords, self.box, self.atype, atomic=False
+        )
+        ee1, ff1, vv1 = self.dp_compressed.eval(
+            self.coords, self.box, self.atype, atomic=False
+        )
+        # check shape of the returns
+        nframes = 1
+        natoms = len(self.atype)
+        self.assertEqual(ee0.shape, (nframes, 1))
+        self.assertEqual(ff0.shape, (nframes, natoms, 3))
+        self.assertEqual(vv0.shape, (nframes, 9))
+        self.assertEqual(ee1.shape, (nframes, 1))
+        self.assertEqual(ff1.shape, (nframes, natoms, 3))
+        self.assertEqual(vv1.shape, (nframes, 9))
+        # check values - should be identical even with partial compression
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
+
+    def test_1frame_atm(self) -> None:
+        """Test single frame atomic evaluation with partial compression."""
+        ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(
+            self.coords, self.box, self.atype, atomic=True
+        )
+        ee1, ff1, vv1, ae1, av1 = self.dp_compressed.eval(
+            self.coords, self.box, self.atype, atomic=True
+        )
+        # check shape of the returns
+        nframes = 1
+        natoms = len(self.atype)
+        self.assertEqual(ee0.shape, (nframes, 1))
+        self.assertEqual(ff0.shape, (nframes, natoms, 3))
+        self.assertEqual(vv0.shape, (nframes, 9))
+        self.assertEqual(ae0.shape, (nframes, natoms, 1))
+        self.assertEqual(av0.shape, (nframes, natoms, 9))
+        self.assertEqual(ee1.shape, (nframes, 1))
+        self.assertEqual(ff1.shape, (nframes, natoms, 3))
+        self.assertEqual(vv1.shape, (nframes, 9))
+        self.assertEqual(ae1.shape, (nframes, natoms, 1))
+        self.assertEqual(av1.shape, (nframes, natoms, 9))
+        # check values - should be identical even with partial compression
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ae0, ae1, default_places)
+        np.testing.assert_almost_equal(av0, av1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
+
+    def test_2frame_atm(self) -> None:
+        """Test multi-frame atomic evaluation with partial compression."""
+        coords2 = np.concatenate((self.coords, self.coords))
+        box2 = np.concatenate((self.box, self.box))
+        ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(
+            coords2, box2, self.atype, atomic=True
+        )
+        ee1, ff1, vv1, ae1, av1 = self.dp_compressed.eval(
+            coords2, box2, self.atype, atomic=True
+        )
+        # check shape of the returns
+        nframes = 2
+        natoms = len(self.atype)
+        self.assertEqual(ee0.shape, (nframes, 1))
+        self.assertEqual(ff0.shape, (nframes, natoms, 3))
+        self.assertEqual(vv0.shape, (nframes, 9))
+        self.assertEqual(ae0.shape, (nframes, natoms, 1))
+        self.assertEqual(av0.shape, (nframes, natoms, 9))
+        self.assertEqual(ee1.shape, (nframes, 1))
+        self.assertEqual(ff1.shape, (nframes, natoms, 3))
+        self.assertEqual(vv1.shape, (nframes, 9))
+        self.assertEqual(ae1.shape, (nframes, natoms, 1))
+        self.assertEqual(av1.shape, (nframes, natoms, 9))
+
+        # check values - should be identical even with partial compression
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ae0, ae1, default_places)
+        np.testing.assert_almost_equal(av0, av1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
+
+    def test_ase(self) -> None:
+        """Test ASE calculator integration with partial compression."""
+        from ase import (
+            Atoms,
+        )
+
+        from deepmd.calculator import (
+            DP,
+        )
+
+        water0 = Atoms(
+            "OHHOHH",
+            positions=self.coords.reshape((-1, 3)),
+            cell=self.box.reshape((3, 3)),
+            calculator=DP(FROZEN_MODEL_NONZERO_ATTN),
+        )
+        water1 = Atoms(
+            "OHHOHH",
+            positions=self.coords.reshape((-1, 3)),
+            cell=self.box.reshape((3, 3)),
+            calculator=DP(COMPRESSED_MODEL_NONZERO_ATTN),
+        )
+        ee0 = water0.get_potential_energy()
+        ff0 = water0.get_forces()
+        ee1 = water1.get_potential_energy()
+        ff1 = water1.get_forces()
+        # nframes = 1
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
 
 
 if __name__ == "__main__":

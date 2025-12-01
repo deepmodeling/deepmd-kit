@@ -275,9 +275,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
             self.filter_layers_strip = filter_layers_strip
         self.stats = None
 
-        # For geometric compression
-        self.compress = False
+        self.tebd_compress = False
+        self.geo_compress = False
         self.is_sorted = False
+        # For geometric compression
         self.compress_info = nn.ParameterList(
             [nn.Parameter(torch.zeros(0, dtype=self.prec, device="cpu"))]
         )
@@ -452,7 +453,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             device="cpu",
         )
         self.compress_data[0] = table_data[net].to(device=env.DEVICE, dtype=self.prec)
-        self.compress = True
+        self.geo_compress = True
 
     def type_embedding_compression(self, type_embedding_net: TypeEmbedNet) -> None:
         """Enable type embedding compression for strip mode.
@@ -503,6 +504,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 if hasattr(self, "type_embd_data"):
                     del self.type_embd_data
                 self.register_buffer("type_embd_data", embd_tensor)
+
+        self.tebd_compress = True
 
     def forward(
         self,
@@ -630,7 +633,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             # nf x (nl x nnei)
             nei_type = torch.gather(extended_atype, dim=1, index=nlist_index)
             if self.type_one_side:
-                if self.compress:
+                if self.tebd_compress:
                     tt_full = self.type_embd_data
                 else:
                     # (ntypes+1, tebd_dim) -> (ntypes+1, ng)
@@ -644,7 +647,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 idx_j = nei_type.view(-1)
                 # (nf x nl x nnei)
                 idx = (idx_i + idx_j).to(torch.long)
-                if self.compress:
+                if self.tebd_compress:
                     # ((ntypes+1)^2, ng)
                     tt_full = self.type_embd_data
                 else:
@@ -671,7 +674,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             gg_t = gg_t.reshape(nfnl, nnei, ng)
             if self.smooth:
                 gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
-            if self.compress:
+            if self.geo_compress:
                 ss = ss.reshape(-1, 1)
                 gg_t = gg_t.reshape(-1, gg_t.size(-1))
                 xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_atten(
@@ -719,7 +722,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         return (
             result.view(nframes, nloc, self.filter_neuron[-1] * self.axis_neuron),
             gg.view(nframes, nloc, self.nnei, self.filter_neuron[-1])
-            if not self.compress
+            if not self.geo_compress
             else None,
             dmatrix.view(nframes, nloc, self.nnei, 4)[..., 1:],
             rot_mat.view(nframes, nloc, self.filter_neuron[-1], 3),
