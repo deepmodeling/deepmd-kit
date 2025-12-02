@@ -30,6 +30,8 @@ from packaging.version import (
     Version,
 )
 
+from .utils import read_dependencies_from_dependency_group
+
 
 @lru_cache
 def find_pytorch() -> tuple[Optional[str], list[str]]:
@@ -108,15 +110,15 @@ def get_pt_requirement(pt_version: str = "") -> dict:
     """
     if pt_version is None:
         return {"torch": []}
+    cibw_requirement = []
     if (
         os.environ.get("CIBUILDWHEEL", "0") == "1"
-        and platform.system() == "Linux"
-        and platform.machine() == "x86_64"
     ):
         cuda_version = os.environ.get("CUDA_VERSION", "12.2")
         if cuda_version == "" or cuda_version in SpecifierSet(">=12,<13"):
             # CUDA 12.2, cudnn 9
-            pt_version = "2.8.0"
+            # or CPU builds
+            cibw_requirement = read_dependencies_from_dependency_group("pin_pytorch_cpu")
         elif cuda_version in SpecifierSet(">=11,<12"):
             # CUDA 11.8, cudnn 8
             pt_version = "2.3.1"
@@ -141,6 +143,7 @@ def get_pt_requirement(pt_version: str = "") -> dict:
             # https://github.com/pytorch/pytorch/commit/7e0c26d4d80d6602aed95cb680dfc09c9ce533bc
             else "torch>=2.1.0",
             *mpi_requirement,
+            *cibw_requirement,
         ],
     }
 

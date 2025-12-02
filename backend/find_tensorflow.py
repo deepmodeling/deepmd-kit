@@ -26,6 +26,8 @@ from packaging.specifiers import (
     SpecifierSet,
 )
 
+from .utils import read_dependencies_from_dependency_group
+
 
 @lru_cache
 def find_tensorflow() -> tuple[Optional[str], list[str]]:
@@ -91,10 +93,9 @@ def find_tensorflow() -> tuple[Optional[str], list[str]]:
             cuda_version = os.environ.get("CUDA_VERSION", "12.2")
             if cuda_version == "" or cuda_version in SpecifierSet(">=12,<13"):
                 # CUDA 12.2, cudnn 9
+                # or CPU builds
                 requires.extend(
-                    [
-                        "tensorflow-cpu>=2.18.0; platform_machine=='x86_64' and platform_system == 'Linux'",
-                    ]
+                    read_dependencies_from_dependency_group("pin_tensorflow_cpu")
                 )
             elif cuda_version in SpecifierSet(">=11,<12"):
                 # CUDA 11.8, cudnn 8
