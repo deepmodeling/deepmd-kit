@@ -158,6 +158,21 @@ dev = [
   "cmake",
   "mpich",
 ]
+pin_tensorflow_cpu = [
+  "tensorflow-cpu~=2.18.0",
+]
+pin_tensorflow_gpu = [
+  "tensorflow~=2.18.0",
+]
+pin_pytorch_cpu = [
+  "torch~=2.8.0",
+]
+pin_pytorch_gpu = [
+  "torch~=2.7.0",
+]
+pin_jax = [
+  "jax==0.5.0;python_version>='3.10'",
+]
 
 [tool.setuptools_scm]
 
