@@ -361,6 +361,12 @@ class DPTrainer:
                     )
                 else:
                     valid_more_loss = None
+                if step == 0:
+                    self.print_header(
+                        disp_file_fp,
+                        train_results=more_loss,
+                        valid_results=valid_more_loss,
+                    )
                 self.print_on_training(
                     disp_file_fp,
                     train_results=more_loss,
@@ -432,6 +438,27 @@ class DPTrainer:
                     learning_rate=None,
                 )
             )
+        fp.write(print_str)
+        fp.flush()
+
+    @staticmethod
+    def print_header(
+        fp: TextIO,
+        train_results: dict[str, float],
+        valid_results: dict[str, float] | None,
+    ) -> None:
+        print_str = ""
+        print_str += "# {:5s}".format("step")
+        if valid_results is not None:
+            prop_fmt = "   %11s %11s"
+            for k in train_results.keys():
+                print_str += prop_fmt % (k + "_val", k + "_trn")
+        else:
+            prop_fmt = "   %11s"
+            for k in train_results.keys():
+                print_str += prop_fmt % (k + "_trn")
+        print_str += "   {:8s}\n".format("lr")
+        print_str += "# If there is no available reference data, rmse_*_{val,trn} will print nan\n"
         fp.write(print_str)
         fp.flush()
 
