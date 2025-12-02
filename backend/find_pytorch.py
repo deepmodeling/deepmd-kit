@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import importlib
 import os
-import platform
 import site
 from functools import (
     lru_cache,
@@ -30,7 +29,9 @@ from packaging.version import (
     Version,
 )
 
-from .utils import read_dependencies_from_dependency_group
+from .utils import (
+    read_dependencies_from_dependency_group,
+)
 
 
 @lru_cache
@@ -111,14 +112,14 @@ def get_pt_requirement(pt_version: str = "") -> dict:
     if pt_version is None:
         return {"torch": []}
     cibw_requirement = []
-    if (
-        os.environ.get("CIBUILDWHEEL", "0") == "1"
-    ):
+    if os.environ.get("CIBUILDWHEEL", "0") == "1":
         cuda_version = os.environ.get("CUDA_VERSION", "12.2")
         if cuda_version == "" or cuda_version in SpecifierSet(">=12,<13"):
             # CUDA 12.2, cudnn 9
             # or CPU builds
-            cibw_requirement = read_dependencies_from_dependency_group("pin_pytorch_cpu")
+            cibw_requirement = read_dependencies_from_dependency_group(
+                "pin_pytorch_cpu"
+            )
         elif cuda_version in SpecifierSet(">=11,<12"):
             # CUDA 11.8, cudnn 8
             pt_version = "2.3.1"

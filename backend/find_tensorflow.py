@@ -26,7 +26,9 @@ from packaging.specifiers import (
     SpecifierSet,
 )
 
-from .utils import read_dependencies_from_dependency_group
+from .utils import (
+    read_dependencies_from_dependency_group,
+)
 
 
 @lru_cache
