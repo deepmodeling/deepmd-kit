@@ -13,6 +13,7 @@ from typing import (
 import numpy as np
 import optax
 import orbax.checkpoint as ocp
+from packaging.version import Version
 
 from deepmd.common import (
     symlink_prefix_files,
@@ -37,6 +38,7 @@ from deepmd.dpmodel.utils.region import (
 from deepmd.jax.env import (
     jnp,
     nnx,
+    flax_version,
 )
 from deepmd.jax.model.base_model import (
     BaseModel,
@@ -152,7 +154,7 @@ class DPTrainer:
         tx = optax.adam(
             learning_rate=lambda step: self.lr.value(self.start_step + step, xp=jnp),
         )
-        optimizer = nnx.Optimizer(model, tx)
+        optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
 
         # data stat
         if self.init_model is None and self.restart is None:
@@ -268,7 +270,10 @@ class DPTrainer:
                 fp,
                 ap,
             )
-            optimizer.update(grads)
+            if Version(flax_version) >= Version("0.11.0"):
+                optimizer.update(model, grads)
+            else:
+                optimizer.update(grads)
 
         start_time = time.time()
         disp_file_fp = open(self.disp_file, "w")
@@ -311,7 +316,7 @@ class DPTrainer:
                     )
                 )
                 more_loss = loss_fn_more_loss(
-                    optimizer.model,
+                    model,
                     self.lr.value(step),
                     jax_data,
                     extended_coord,
@@ -340,7 +345,7 @@ class DPTrainer:
                         )
                     )
                     valid_more_loss = loss_fn_more_loss(
-                        optimizer.model,
+                        model,
                         self.lr.value(step),
                         jax_valid_data,
                         extended_coord,
