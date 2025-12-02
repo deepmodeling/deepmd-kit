@@ -25,8 +25,8 @@ def read_dependencies_from_dependency_group(group: str) -> tuple[str, ...]:
 
     Returns
     -------
-    list
-        A list of dependencies in the specified group.
+    tuple[str, ...]
+        A tuple of dependencies in the specified group.
     """
     with Path("pyproject.toml").open("rb") as f:
         pyproject = tomllib.load(f)
