@@ -8,6 +8,7 @@ import json
 import logging
 import time
 from typing import (
+    Any,
     Optional,
 )
 
@@ -78,7 +79,7 @@ def train(
     skip_neighbor_stat: bool = False,
     finetune: Optional[str] = None,
     use_pretrain_script: bool = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> None:
     """Run DeePMD model training.
 
@@ -186,7 +187,7 @@ def train(
     log.info(f"wall time: {(end_time - start_time):.3f} s")
 
 
-def update_sel(jdata):
+def update_sel(jdata: dict) -> dict:
     log.info(
         "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
     )

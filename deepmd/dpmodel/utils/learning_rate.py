@@ -50,7 +50,7 @@ class LearningRateExp:
             self.decay_rate = decay_rate
         self.min_lr = stop_lr
 
-    def value(self, step: int, xp=np) -> np.float64:
+    def value(self, step: int, xp: Any = np) -> np.float64:
         """Get the learning rate at the given step."""
         step_lr = self.start_lr * xp.power(self.decay_rate, step // self.decay_steps)
         step_lr = xp.clip(step_lr, self.min_lr, None)

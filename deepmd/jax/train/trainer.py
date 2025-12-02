@@ -8,6 +8,7 @@ from pathlib import (
 )
 from typing import (
     Optional,
+    TextIO,
 )
 
 import numpy as np
@@ -56,6 +57,7 @@ from deepmd.loggers.training import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.utils.model_stat import (
     make_stat_input,
 )
@@ -66,7 +68,7 @@ log = logging.getLogger(__name__)
 class DPTrainer:
     def __init__(
         self,
-        jdata,
+        jdata: dict,
         init_model: Optional[str] = None,
         restart: Optional[str] = None,
     ) -> None:
@@ -87,7 +89,7 @@ class DPTrainer:
         self.training_param = jdata["training"]
         self.num_steps = self.training_param["numb_steps"]
 
-        def get_lr_and_coef(lr_param):
+        def get_lr_and_coef(lr_param: dict) -> LearningRateExp:
             lr_type = lr_param.get("type", "exp")
             if lr_type == "exp":
                 lr = LearningRateExp(
@@ -149,7 +151,9 @@ class DPTrainer:
     def data_requirements(self) -> list[DataRequirementItem]:
         return self.loss.label_requirement
 
-    def train(self, train_data, valid_data=None) -> None:
+    def train(
+        self, train_data: DeepmdDataSystem, valid_data: DeepmdDataSystem | None = None
+    ) -> None:
         model = self.model
         tx = optax.adam(
             learning_rate=lambda step: self.lr.value(self.start_step + step, xp=jnp),
@@ -180,16 +184,16 @@ class DPTrainer:
             )
 
         def loss_fn(
-            model,
-            lr,
-            label_dict,
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping,
-            fp,
-            ap,
-        ):
+            model: BaseModel,
+            lr: float,
+            label_dict: dict[str, jnp.ndarray],
+            extended_coord: jnp.ndarray,
+            extended_atype: jnp.ndarray,
+            nlist: jnp.ndarray,
+            mapping: jnp.ndarray | None,
+            fp: jnp.ndarray | None,
+            ap: jnp.ndarray | None,
+        ) -> jnp.ndarray:
             model_dict_lower = model.call_lower(
                 extended_coord,
                 extended_atype,
@@ -214,16 +218,16 @@ class DPTrainer:
 
         @nnx.jit
         def loss_fn_more_loss(
-            model,
-            lr,
-            label_dict,
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping,
-            fp,
-            ap,
-        ):
+            model: BaseModel,
+            lr: float,
+            label_dict: dict[str, jnp.ndarray],
+            extended_coord: jnp.ndarray,
+            extended_atype: jnp.ndarray,
+            nlist: jnp.ndarray,
+            mapping: jnp.ndarray | None,
+            fp: jnp.ndarray | None,
+            ap: jnp.ndarray | None,
+        ) -> dict[str, jnp.ndarray]:
             model_dict_lower = model.call_lower(
                 extended_coord,
                 extended_atype,
@@ -248,17 +252,17 @@ class DPTrainer:
 
         @nnx.jit
         def train_step(
-            model,
-            optimizer,
-            lr,
-            label_dict,
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping,
-            fp,
-            ap,
-        ):
+            model: BaseModel,
+            optimizer: nnx.Optimizer,
+            lr: float,
+            label_dict: dict[str, jnp.ndarray],
+            extended_coord: jnp.ndarray,
+            extended_atype: jnp.ndarray,
+            nlist: jnp.ndarray,
+            mapping: jnp.ndarray | None,
+            fp: jnp.ndarray | None,
+            ap: jnp.ndarray | None,
+        ) -> None:
             grads = nnx.grad(loss_fn)(
                 model,
                 lr,
@@ -393,11 +397,11 @@ class DPTrainer:
 
     @staticmethod
     def print_on_training(
-        fp,
-        train_results,
-        valid_results,
-        cur_batch,
-        cur_lr,
+        fp: TextIO,
+        train_results: dict[str, float],
+        valid_results: dict[str, float] | None,
+        cur_batch: int,
+        cur_lr: float,
     ) -> None:
         print_str = ""
         print_str += f"{cur_batch:7d}"
@@ -441,7 +445,14 @@ def prepare_input(
     box: Optional[np.ndarray] = None,
     fparam: Optional[np.ndarray] = None,
     aparam: Optional[np.ndarray] = None,
-):
+) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    Optional[np.ndarray],
+    Optional[np.ndarray],
+]:
     nframes, nloc = atype.shape[:2]
     cc, bb, fp, ap = coord, box, fparam, aparam
     del coord, box, fparam, aparam

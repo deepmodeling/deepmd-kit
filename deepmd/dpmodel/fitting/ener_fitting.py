@@ -113,7 +113,9 @@ class EnergyFittingNet(InvarFitting):
             all_stat, rcond=self.rcond, mixed_type=mixed_type
         )
 
-    def _compute_output_stats(self, all_stat, rcond=1e-3, mixed_type=False):
+    def _compute_output_stats(
+        self, all_stat: dict, rcond: float = 1e-3, mixed_type: bool = False
+    ) -> np.ndarray:
         data = all_stat["energy"]
         # data[sys_idx][batch_idx][frame_idx]
         sys_ener = []

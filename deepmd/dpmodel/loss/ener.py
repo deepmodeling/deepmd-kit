@@ -393,10 +393,10 @@ class EnergyLoss(Loss):
 class EnergyHessianLoss(EnergyLoss):
     def __init__(
         self,
-        start_pref_h=0.0,
-        limit_pref_h=0.0,
-        **kwargs,
-    ):
+        start_pref_h: float = 0.0,
+        limit_pref_h: float = 0.0,
+        **kwargs: Any,
+    ) -> None:
         r"""Enable the layer to compute loss on hessian.
 
         Parameters

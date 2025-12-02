@@ -2,6 +2,7 @@
 from pathlib import (
     Path,
 )
+from typing import Any
 
 from deepmd.jax.utils.serialization import (
     deserialize_to_file,
@@ -14,7 +15,7 @@ def freeze(
     checkpoint_folder: str,
     output: str,
     hessian: bool = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> None:
     """Freeze the graph in supplied folder.
 
