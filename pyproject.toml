@@ -5,6 +5,7 @@ requires = [
     "scikit-build-core>=0.5,<0.11,!=0.6.0",
     "packaging",
     'tomli >= 1.1.0 ; python_version < "3.11"',
+    "dependency_groups",
 ]
 build-backend = "backend.dp_backend"
 backend-path = ["."]
@@ -159,13 +160,20 @@ dev = [
   "mpich",
 ]
 pin_tensorflow_cpu = [
-  "tensorflow-cpu~=2.18.0",
+  # https://github.com/tensorflow/tensorflow/issues/75279
+  # macos x86 has been deprecated
+  "tensorflow-cpu~=2.18.0; platform_machine=='x86_64' and platform_system == 'Linux'",
+  "tensorflow~=2.18.0; (platform_machine!='x86_64' or platform_system != 'Linux') and (platform_machine!='x86_64' or platform_system != 'Darwin')",
+  "tensorflow; platform_machine=='x86_64' and platform_system == 'Darwin'",
 ]
 pin_tensorflow_gpu = [
   "tensorflow~=2.18.0",
 ]
 pin_pytorch_cpu = [
-  "torch~=2.8.0",
+  # https://github.com/pytorch/pytorch/issues/114602
+  # macos x86 has been deprecated
+  "torch~=2.8.0; platform_machine!='x86_64' or platform_system != 'Darwin'",
+  "torch; platform_machine=='x86_64' and platform_system == 'Darwin'",
 ]
 pin_pytorch_gpu = [
   "torch~=2.7.0",
