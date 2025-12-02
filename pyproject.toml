@@ -160,7 +160,8 @@ dev = [
   "mpich",
 ]
 pin_tensorflow_cpu = [
-  "tensorflow-cpu~=2.18.0",
+  "tensorflow-cpu~=2.18.0; platform_machine=='x86_64' and platform_system == 'Linux'",
+  "tensorflow~=2.18.0; platform_machine!='x86_64' or platform_system != 'Linux'",
 ]
 pin_tensorflow_gpu = [
   "tensorflow~=2.18.0",
