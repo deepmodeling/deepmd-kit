@@ -14,7 +14,9 @@ from typing import (
 import numpy as np
 import optax
 import orbax.checkpoint as ocp
-from packaging.version import Version
+from packaging.version import (
+    Version,
+)
 
 from deepmd.common import (
     symlink_prefix_files,
@@ -37,9 +39,9 @@ from deepmd.dpmodel.utils.region import (
     normalize_coord,
 )
 from deepmd.jax.env import (
+    flax_version,
     jnp,
     nnx,
-    flax_version,
 )
 from deepmd.jax.model.base_model import (
     BaseModel,
@@ -57,7 +59,9 @@ from deepmd.loggers.training import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
-from deepmd.utils.data_system import DeepmdDataSystem
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 from deepmd.utils.model_stat import (
     make_stat_input,
 )

@@ -2,7 +2,9 @@
 from pathlib import (
     Path,
 )
-from typing import Any
+from typing import (
+    Any,
+)
 
 from deepmd.jax.utils.serialization import (
     deserialize_to_file,
