@@ -10,7 +10,6 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
 )
-
 from deepmd.jax.common import (
     to_jax_array,
 )

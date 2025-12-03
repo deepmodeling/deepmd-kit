@@ -10,7 +10,6 @@ import numpy as np
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
-
 from deepmd.jax.common import (
     to_jax_array,
 )

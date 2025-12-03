@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
+from collections.abc import (
+    Callable,
+)
 from copy import (
     deepcopy,
 )
 from typing import (
     Any,
 )
-from collections.abc import Callable
 
 import torch
 

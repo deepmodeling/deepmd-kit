@@ -3,10 +3,12 @@ import logging
 from collections import (
     defaultdict,
 )
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
 )
-from collections.abc import Callable
 
 import numpy as np
 import paddle

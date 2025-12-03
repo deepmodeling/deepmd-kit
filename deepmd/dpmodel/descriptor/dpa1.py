@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import math
+from collections.abc import (
+    Callable,
+)
 from typing import (
     NoReturn,
     Optional,
     Union,
 )
-from collections.abc import Callable
 
 import array_api_compat
 import numpy as np

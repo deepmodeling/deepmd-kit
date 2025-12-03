@@ -2,6 +2,9 @@
 from abc import (
     abstractmethod,
 )
+from collections.abc import (
+    Callable,
+)
 from enum import (
     Flag,
     auto,
@@ -10,7 +13,6 @@ from typing import (
     TYPE_CHECKING,
     ClassVar,
 )
-from collections.abc import Callable
 
 from deepmd.utils.plugin import (
     PluginVariant,

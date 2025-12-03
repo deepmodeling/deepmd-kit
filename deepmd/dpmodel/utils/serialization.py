@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import datetime
 import json
+from collections.abc import (
+    Callable,
+)
 from pathlib import (
     Path,
 )
 from typing import (
     Any,
 )
-from collections.abc import Callable
 
 import h5py
 import numpy as np

@@ -6,10 +6,12 @@ import difflib
 from abc import (
     ABCMeta,
 )
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
 )
-from collections.abc import Callable
 
 
 class Plugin:

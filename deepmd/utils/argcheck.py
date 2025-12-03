@@ -2,10 +2,12 @@
 import json
 import logging
 import warnings
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
 )
-from collections.abc import Callable
 
 from dargs import (
     Argument,

@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
-from collections.abc import Callable
+from collections.abc import (
+    Callable,
+)
 
 import tensorflow as tf
 import tensorflow.experimental.numpy as tnp

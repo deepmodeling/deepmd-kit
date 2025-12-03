@@ -3,6 +3,9 @@ from abc import (
     ABC,
     abstractmethod,
 )
+from collections.abc import (
+    Callable,
+)
 from functools import (
     wraps,
 )
@@ -12,7 +15,6 @@ from typing import (
     Optional,
     overload,
 )
-from collections.abc import Callable
 
 import array_api_compat
 import ml_dtypes

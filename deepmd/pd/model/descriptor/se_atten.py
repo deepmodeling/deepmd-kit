@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from collections.abc import Callable
+from collections.abc import (
+    Callable,
+)
 
 import paddle
 import paddle.nn as nn

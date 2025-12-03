@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
 import logging
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
     Optional,
 )
-from collections.abc import Callable
 
 import paddle
 

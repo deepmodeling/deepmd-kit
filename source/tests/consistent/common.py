@@ -8,6 +8,9 @@ from abc import (
     ABC,
     abstractmethod,
 )
+from collections.abc import (
+    Callable,
+)
 from enum import (
     Enum,
 )
@@ -18,7 +21,6 @@ from typing import (
     Any,
     ClassVar,
 )
-from collections.abc import Callable
 from uuid import (
     uuid4,
 )

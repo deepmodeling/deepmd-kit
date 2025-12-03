@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from collections.abc import (
+    Callable,
     Generator,
 )
 from typing import (
     Any,
 )
-from collections.abc import Callable
 
 from deepmd.tf.env import (
     tf,

@@ -3,7 +3,9 @@ import logging
 from abc import (
     abstractmethod,
 )
-from collections.abc import Callable
+from collections.abc import (
+    Callable,
+)
 
 import numpy as np
 import paddle

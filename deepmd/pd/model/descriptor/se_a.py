@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
+from collections.abc import (
+    Callable,
+)
 from typing import (
     ClassVar,
 )
-from collections.abc import Callable
 
 import numpy as np
 import paddle

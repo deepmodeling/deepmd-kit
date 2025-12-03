@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
     TYPE_CHECKING,
     ClassVar,
 )
-from collections.abc import Callable
 
 from deepmd.backend.backend import (
     Backend,

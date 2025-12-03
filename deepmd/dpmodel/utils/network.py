@@ -5,11 +5,13 @@ See issue #2982 for more information.
 """
 
 import itertools
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
     ClassVar,
 )
-from collections.abc import Callable
 
 import array_api_compat
 import numpy as np

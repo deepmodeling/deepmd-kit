@@ -3,6 +3,7 @@ import functools
 import logging
 import time
 from collections.abc import (
+    Callable,
     Generator,
     Iterable,
 )
@@ -15,7 +16,6 @@ from pathlib import (
 from typing import (
     Any,
 )
-from collections.abc import Callable
 
 import numpy as np
 import torch

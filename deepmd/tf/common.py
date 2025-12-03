@@ -2,6 +2,9 @@
 """Collection of functions and classes used throughout the whole package."""
 
 import warnings
+from collections.abc import (
+    Callable,
+)
 from functools import (
     wraps,
 )
@@ -10,7 +13,6 @@ from typing import (
     Any,
     Union,
 )
-from collections.abc import Callable
 
 import tensorflow
 from packaging.version import (
