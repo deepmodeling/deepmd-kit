@@ -30,12 +30,6 @@ jobs:
             platform_id: manylinux_x86_64
             dp_variant: cuda
             cuda_version: 12.2
-          - os: ubuntu-latest
-            python: 311
-            platform_id: manylinux_x86_64
-            dp_variant: cuda
-            cuda_version: 11.8
-            dp_pkg_name: deepmd-kit-cu11
           # macos-x86-64
           - os: macos-15-intel
             python: 311
@@ -64,14 +58,6 @@ jobs:
       - name: Install uv
         run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/astral-sh/uv/releases/download/0.2.24/uv-installer.sh | sh
         if: runner.os != 'Linux'
-      - uses: docker/setup-qemu-action@v3
-        name: Setup QEMU
-        if: matrix.platform_id == 'manylinux_aarch64' && matrix.os == 'ubuntu-latest'
-      # detect version in advance. See #3168
-      - run: |
-          echo "SETUPTOOLS_SCM_PRETEND_VERSION=$(pipx run uv tool run --from setuptools_scm python -m setuptools_scm)" >> $GITHUB_ENV
-          rm -rf .git
-        if: matrix.dp_pkg_name == 'deepmd-kit-cu11'
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.3
         env:
@@ -126,8 +112,6 @@ jobs:
         include:
           - variant: ""
             cuda_version: "12"
-          - variant: "_cu11"
-            cuda_version: "11"
     steps:
       - name: Delete huge unnecessary tools folder
         run: rm -rf /opt/hostedtoolcache

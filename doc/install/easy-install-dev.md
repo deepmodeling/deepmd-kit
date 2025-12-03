@@ -12,8 +12,6 @@ The [`devel` tag](https://github.com/deepmodeling/deepmd-kit/pkgs/container/deep
 docker pull ghcr.io/deepmodeling/deepmd-kit:devel
 ```
 
-For CUDA 11.8 support, use the `devel_cu11` tag.
-
 ## Install with pip
 
 Follow [the documentation for the stable version](easy-install.md#install-python-interface-with-pip), but add `--pre` and `--extra-index-url` options like below:
