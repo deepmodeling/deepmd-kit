@@ -275,9 +275,9 @@ class DeepTensor(DeepEval):
         cells: np.ndarray | None,
         atom_types: list[int],
         atomic: bool = False,
-        fparam: np.array | None = None,
-        aparam: np.array | None = None,
-        efield: np.array | None = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        efield: np.ndarray | None = None,
         mixed_type: bool = False,
     ) -> tuple[np.ndarray, ...]:
         """Evaluate the model with interface similar to the energy model.
