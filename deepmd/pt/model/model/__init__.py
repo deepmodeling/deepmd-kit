@@ -15,7 +15,6 @@ import copy
 import json
 from typing import (
     Any,
-    Optional,
 )
 
 import numpy as np

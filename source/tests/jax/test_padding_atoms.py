@@ -11,24 +11,23 @@ from deepmd.dpmodel.common import (
     to_numpy_array,
 )
 
-if sys.version_info >= (3, 10):
-    from deepmd.jax.common import (
-        to_jax_array,
-    )
-    from deepmd.jax.descriptor.se_e2_a import (
-        DescrptSeA,
-    )
-    from deepmd.jax.env import (
-        jnp,
-    )
-    from deepmd.jax.fitting.fitting import (
-        PropertyFittingNet,
-    )
-    from deepmd.jax.model.property_model import (
-        PropertyModel,
-    )
+from deepmd.jax.common import (
+    to_jax_array,
+)
+from deepmd.jax.descriptor.se_e2_a import (
+    DescrptSeA,
+)
+from deepmd.jax.env import (
+    jnp,
+)
+from deepmd.jax.fitting.fitting import (
+    PropertyFittingNet,
+)
+from deepmd.jax.model.property_model import (
+    PropertyModel,
+)
 
-    dtype = jnp.float64
+dtype = jnp.float64
 
 
 @unittest.skipIf(
