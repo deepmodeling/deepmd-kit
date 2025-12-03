@@ -3,10 +3,9 @@
 
 from typing import (
     Any,
-    Callable,
-    Optional,
     Union,
 )
+from collections.abc import Callable
 
 import array_api_compat
 import numpy as np
@@ -125,7 +124,7 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
         return x
 
 
-def xp_bincount(x: Array, weights: Optional[Array] = None, minlength: int = 0) -> Array:
+def xp_bincount(x: Array, weights: Array | None = None, minlength: int = 0) -> Array:
     """Counts the number of occurrences of each value in x."""
     xp = array_api_compat.array_namespace(x)
     if array_api_compat.is_numpy_array(x) or array_api_compat.is_jax_array(x):

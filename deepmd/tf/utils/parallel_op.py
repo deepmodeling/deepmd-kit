@@ -4,9 +4,8 @@ from collections.abc import (
 )
 from typing import (
     Any,
-    Callable,
-    Optional,
 )
+from collections.abc import Callable
 
 from deepmd.tf.env import (
     tf,
@@ -46,8 +45,8 @@ class ParallelOp:
     def __init__(
         self,
         builder: Callable[..., tuple[dict[str, tf.Tensor], tuple[tf.Tensor]]],
-        nthreads: Optional[int] = None,
-        config: Optional[tf.ConfigProto] = None,
+        nthreads: int | None = None,
+        config: tf.ConfigProto | None = None,
     ) -> None:
         if nthreads is not None:
             self.nthreads = nthreads

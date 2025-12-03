@@ -57,7 +57,6 @@ from shutil import (
 )
 from typing import (
     NoReturn,
-    Optional,
 )
 
 # default config
@@ -133,9 +132,9 @@ class OnlineResource:
         self,
         filename: str,
         url: str,
-        sha256: Optional[str] = None,
+        sha256: str | None = None,
         executable: bool = False,
-        gzip: Optional[str] = None,
+        gzip: str | None = None,
     ) -> None:
         self.filename = filename
         self.url = url
@@ -856,7 +855,7 @@ class RawTextArgumentDefaultsHelpFormatter(
     pass
 
 
-def parse_args(args: Optional[list[str]] = None):
+def parse_args(args: list[str] | None = None):
     """TensorFlow C++ Library Installer commandline options argument parser.
 
     Parameters

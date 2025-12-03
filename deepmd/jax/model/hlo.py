@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
 )
 
 from deepmd.dpmodel.model.make_model import (
@@ -57,7 +56,7 @@ class HLO(BaseModel):
         is_aparam_nall: bool,
         model_output_type: str,
         mixed_types: bool,
-        min_nbor_dist: Optional[float],
+        min_nbor_dist: float | None,
         sel: list[int],
     ) -> None:
         self._call_lower = jax_export.deserialize(stablehlo).call
@@ -85,9 +84,9 @@ class HLO(BaseModel):
         self,
         coord: jnp.ndarray,
         atype: jnp.ndarray,
-        box: Optional[jnp.ndarray] = None,
-        fparam: Optional[jnp.ndarray] = None,
-        aparam: Optional[jnp.ndarray] = None,
+        box: jnp.ndarray | None = None,
+        fparam: jnp.ndarray | None = None,
+        aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
     ) -> Any:
         """Return model prediction.
@@ -121,9 +120,9 @@ class HLO(BaseModel):
         self,
         coord: jnp.ndarray,
         atype: jnp.ndarray,
-        box: Optional[jnp.ndarray] = None,
-        fparam: Optional[jnp.ndarray] = None,
-        aparam: Optional[jnp.ndarray] = None,
+        box: jnp.ndarray | None = None,
+        fparam: jnp.ndarray | None = None,
+        aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, jnp.ndarray]:
         """Return model prediction.
@@ -175,9 +174,9 @@ class HLO(BaseModel):
         extended_coord: jnp.ndarray,
         extended_atype: jnp.ndarray,
         nlist: jnp.ndarray,
-        mapping: Optional[jnp.ndarray] = None,
-        fparam: Optional[jnp.ndarray] = None,
-        aparam: Optional[jnp.ndarray] = None,
+        mapping: jnp.ndarray | None = None,
+        fparam: jnp.ndarray | None = None,
+        aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, jnp.ndarray]:
         if extended_coord.shape[1] > nlist.shape[1]:
@@ -265,7 +264,7 @@ class HLO(BaseModel):
         """Get the model definition script."""
         return self.model_def_script
 
-    def get_min_nbor_dist(self) -> Optional[float]:
+    def get_min_nbor_dist(self) -> float | None:
         """Get the minimum distance between two atoms."""
         return self.min_nbor_dist
 
@@ -287,9 +286,9 @@ class HLO(BaseModel):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

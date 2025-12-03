@@ -2,11 +2,10 @@
 
 import logging
 from typing import (
-    Callable,
     NoReturn,
     Optional,
-    Union,
 )
+from collections.abc import Callable
 
 import numpy as np
 import paddle
@@ -77,8 +76,8 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         type_map: list[str],
         atom_exclude_types: list[int] = [],
         pair_exclude_types: list[tuple[int, int]] = [],
-        rcond: Optional[float] = None,
-        preset_out_bias: Optional[dict[str, np.ndarray]] = None,
+        rcond: float | None = None,
+        preset_out_bias: dict[str, np.ndarray] | None = None,
         data_stat_protect: float = 1e-2,
     ) -> None:
         paddle.nn.Layer.__init__(self)
@@ -160,7 +159,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def reinit_atom_exclude(
         self,
-        exclude_types: Optional[list[int]] = None,
+        exclude_types: list[int] | None = None,
     ) -> None:
         if exclude_types is None:
             exclude_types = []
@@ -224,10 +223,10 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         extended_coord: paddle.Tensor,
         extended_atype: paddle.Tensor,
         nlist: paddle.Tensor,
-        mapping: Optional[paddle.Tensor] = None,
-        fparam: Optional[paddle.Tensor] = None,
-        aparam: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[list[paddle.Tensor]] = None,
+        mapping: paddle.Tensor | None = None,
+        fparam: paddle.Tensor | None = None,
+        aparam: paddle.Tensor | None = None,
+        comm_dict: list[paddle.Tensor] | None = None,
     ) -> dict[str, paddle.Tensor]:
         """Common interface for atomic inference.
 
@@ -306,10 +305,10 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         extended_coord: paddle.Tensor,
         extended_atype: paddle.Tensor,
         nlist: paddle.Tensor,
-        mapping: Optional[paddle.Tensor] = None,
-        fparam: Optional[paddle.Tensor] = None,
-        aparam: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[list[paddle.Tensor]] = None,
+        mapping: paddle.Tensor | None = None,
+        fparam: paddle.Tensor | None = None,
+        aparam: paddle.Tensor | None = None,
+        comm_dict: list[paddle.Tensor] | None = None,
     ) -> dict[str, paddle.Tensor]:
         return self.forward_common_atomic(
             extended_coord,
@@ -389,8 +388,8 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def compute_or_load_stat(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
     ) -> NoReturn:
         """
@@ -416,8 +415,8 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def compute_or_load_out_stat(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
     ) -> None:
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -466,8 +465,8 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def change_out_bias(
         self,
-        sample_merged: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        sample_merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
         bias_adjust_mode: str = "change-by-statistic",
     ) -> None:
         """Change the output bias according to the input data and the pretrained model.
@@ -517,7 +516,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def compute_fitting_input_stat(
         self,
-        sample_merged: Union[Callable[[], list[dict]], list[dict]],
+        sample_merged: Callable[[], list[dict]] | list[dict],
     ) -> None:
         """Compute the input statistics (e.g. mean and stddev) for the atomic model from packed data.
 
@@ -539,9 +538,9 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         def model_forward(
             coord: paddle.Tensor,
             atype: paddle.Tensor,
-            box: Optional[paddle.Tensor],
-            fparam: Optional[paddle.Tensor] = None,
-            aparam: Optional[paddle.Tensor] = None,
+            box: paddle.Tensor | None,
+            fparam: paddle.Tensor | None = None,
+            aparam: paddle.Tensor | None = None,
         ) -> dict[str, paddle.Tensor]:
             with (
                 paddle.no_grad()

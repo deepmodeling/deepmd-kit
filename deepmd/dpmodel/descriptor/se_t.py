@@ -2,11 +2,9 @@
 import itertools
 from typing import (
     Any,
-    Callable,
     NoReturn,
-    Optional,
-    Union,
 )
+from collections.abc import Callable
 
 import array_api_compat
 import numpy as np
@@ -111,9 +109,9 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         exclude_types: list[tuple[int, int]] = [],
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
-        type_map: Optional[list[str]] = None,
-        ntypes: Optional[int] = None,  # to be compat with input
+        seed: int | list[int] | None = None,
+        type_map: list[str] | None = None,
+        ntypes: int | None = None,  # to be compat with input
     ) -> None:
         del ntypes
         self.rcut = rcut
@@ -256,8 +254,8 @@ class DescrptSeT(NativeOP, BaseDescriptor):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -320,7 +318,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         coord_ext: Array,
         atype_ext: Array,
         nlist: Array,
-        mapping: Optional[Array] = None,
+        mapping: Array | None = None,
     ) -> tuple[Array, Array]:
         """Compute the descriptor.
 
@@ -458,7 +456,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
     ) -> tuple[Array, Array]:
         """Update the selection and perform neighbor statistics.

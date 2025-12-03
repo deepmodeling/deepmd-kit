@@ -10,7 +10,6 @@ import logging
 import time
 from typing import (
     Any,
-    Optional,
 )
 
 from deepmd.common import (
@@ -55,16 +54,16 @@ log = logging.getLogger(__name__)
 def train(
     *,
     INPUT: str,
-    init_model: Optional[str],
-    restart: Optional[str],
+    init_model: str | None,
+    restart: str | None,
     output: str,
     init_frz_model: str,
     mpi_log: str,
     log_level: int,
-    log_path: Optional[str],
+    log_path: str | None,
     is_compress: bool = False,
     skip_neighbor_stat: bool = False,
-    finetune: Optional[str] = None,
+    finetune: str | None = None,
     use_pretrain_script: bool = False,
     **kwargs,
 ) -> None:
@@ -276,7 +275,7 @@ def _do_work(
 
 
 def get_modifier(modi_data=None):
-    modifier: Optional[BaseModifier]
+    modifier: BaseModifier | None
     if modi_data is not None:
         modifier_params = copy.deepcopy(modi_data)
         modifier_type = modifier_params.pop("type")

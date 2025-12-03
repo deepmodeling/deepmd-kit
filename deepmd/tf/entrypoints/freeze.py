@@ -14,10 +14,6 @@ from os.path import (
 from pathlib import (
     Path,
 )
-from typing import (
-    Optional,
-    Union,
-)
 
 import google.protobuf.message
 
@@ -76,9 +72,9 @@ def _transfer_fitting_net_trainable_variables(sess, old_graph_def, raw_graph_def
 
 def _make_node_names(
     model_type: str,
-    modifier_type: Optional[str] = None,
+    modifier_type: str | None = None,
     out_suffix: str = "",
-    node_names: Optional[Union[str, list]] = None,
+    node_names: str | list | None = None,
 ) -> list[str]:
     """Get node names based on model type.
 
@@ -297,8 +293,8 @@ def freeze(
     *,
     checkpoint_folder: str,
     output: str,
-    node_names: Optional[str] = None,
-    nvnmd_weight: Optional[str] = None,
+    node_names: str | None = None,
+    nvnmd_weight: str | None = None,
     **kwargs,
 ) -> None:
     """Freeze the graph in supplied folder.

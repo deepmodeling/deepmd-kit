@@ -3,7 +3,6 @@ import math
 from typing import (
     Any,
     Optional,
-    Union,
 )
 
 import numpy as np
@@ -44,7 +43,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
 
     def __init__(
         self,
-        list: list[Union[BaseDescriptor, dict[str, Any]]],
+        list: list[BaseDescriptor | dict[str, Any]],
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -200,7 +199,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
             )
 
     def compute_input_stats(
-        self, merged: list[dict], path: Optional[DPPath] = None
+        self, merged: list[dict], path: DPPath | None = None
     ) -> None:
         """Update mean and stddev for descriptor elements."""
         for descrpt in self.descrpt_list:
@@ -208,8 +207,8 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: list[Union[torch.Tensor, list[torch.Tensor]]],
-        stddev: list[Union[torch.Tensor, list[torch.Tensor]]],
+        mean: list[torch.Tensor | list[torch.Tensor]],
+        stddev: list[torch.Tensor | list[torch.Tensor]],
     ) -> None:
         """Update mean and stddev for descriptor."""
         for ii, descrpt in enumerate(self.descrpt_list):
@@ -218,8 +217,8 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
     def get_stat_mean_and_stddev(
         self,
     ) -> tuple[
-        list[Union[torch.Tensor, list[torch.Tensor]]],
-        list[Union[torch.Tensor, list[torch.Tensor]]],
+        list[torch.Tensor | list[torch.Tensor]],
+        list[torch.Tensor | list[torch.Tensor]],
     ]:
         """Get mean and stddev for descriptor."""
         mean_list = []
@@ -267,14 +266,14 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         coord_ext: torch.Tensor,
         atype_ext: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> tuple[
         torch.Tensor,
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
     ]:
         """Compute the descriptor.
 
@@ -309,9 +308,9 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         """
         out_descriptor = []
         out_gr = []
-        out_g2: Optional[torch.Tensor] = None
-        out_h2: Optional[torch.Tensor] = None
-        out_sw: Optional[torch.Tensor] = None
+        out_g2: torch.Tensor | None = None
+        out_h2: torch.Tensor | None = None
+        out_sw: torch.Tensor | None = None
         if self.sel_no_mixed_types is not None:
             nl_distinguish_types = nlist_distinguish_types(
                 nlist,
@@ -344,9 +343,9 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

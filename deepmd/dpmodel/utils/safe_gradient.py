@@ -7,7 +7,6 @@ for more information.
 
 from typing import (
     Any,
-    Optional,
 )
 
 import array_api_compat
@@ -21,7 +20,7 @@ def safe_for_sqrt(x: Any) -> Any:
 
 
 def safe_for_vector_norm(
-    x: Any, /, *, axis: Optional[Any] = None, keepdims: bool = False, ord: Any = 2
+    x: Any, /, *, axis: Any | None = None, keepdims: bool = False, ord: Any = 2
 ) -> Any:
     """Safe version of sqrt that has a gradient of 0 at x = 0."""
     xp = array_api_compat.array_namespace(x)

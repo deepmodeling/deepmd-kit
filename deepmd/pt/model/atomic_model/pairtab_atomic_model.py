@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Callable,
     Optional,
-    Union,
 )
+from collections.abc import Callable
 
 import torch
 
@@ -67,7 +66,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         self,
         tab_file: str,
         rcut: float,
-        sel: Union[int, list[int]],
+        sel: int | list[int],
         type_map: list[str],
         **kwargs: Any,
     ) -> None:
@@ -227,8 +226,8 @@ class PairTabAtomicModel(BaseAtomicModel):
 
     def compute_or_load_stat(
         self,
-        sampled_func: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        sampled_func: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
     ) -> None:
         """
@@ -258,11 +257,11 @@ class PairTabAtomicModel(BaseAtomicModel):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
         nframes, nloc, nnei = nlist.shape
         extended_coord = extended_coord.view(nframes, -1, 3)

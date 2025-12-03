@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Callable,
-    Optional,
 )
+from collections.abc import Callable
 
 import numpy as np
 
@@ -41,11 +40,11 @@ class AtomicModelTestCase:
     """Expected whether having message passing."""
     forward_wrapper: Callable[[Any], Any]
     """Class wrapper for forward method."""
-    aprec_dict: dict[str, Optional[float]]
+    aprec_dict: dict[str, float | None]
     """Dictionary of absolute precision in each test."""
-    rprec_dict: dict[str, Optional[float]]
+    rprec_dict: dict[str, float | None]
     """Dictionary of relative precision in each test."""
-    epsilon_dict: dict[str, Optional[float]]
+    epsilon_dict: dict[str, float | None]
     """Dictionary of epsilons in each test."""
 
     def test_get_type_map(self) -> None:

@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Union,
-)
 
 import tensorflow as tf
 import tensorflow.experimental.numpy as tnp
@@ -17,7 +14,7 @@ def build_neighbor_list(
     atype: tnp.ndarray,
     nloc: int,
     rcut: float,
-    sel: Union[int, list[int]],
+    sel: int | list[int],
     distinguish_types: bool = True,
 ) -> tnp.ndarray:
     """Build neighbor list for a single frame. keeps nsel neighbors.

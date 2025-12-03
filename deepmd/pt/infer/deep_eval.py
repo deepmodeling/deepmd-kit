@@ -4,10 +4,9 @@ import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Optional,
-    Union,
 )
+from collections.abc import Callable
 
 import numpy as np
 import torch
@@ -108,9 +107,9 @@ class DeepEval(DeepEvalBackend):
         model_file: str,
         output_def: ModelOutputDef,
         *args: Any,
-        auto_batch_size: Union[bool, int, AutoBatchSize] = True,
+        auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
-        head: Optional[Union[str, int]] = None,
+        head: str | int | None = None,
         no_jit: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -306,11 +305,11 @@ class DeepEval(DeepEvalBackend):
     def eval(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         **kwargs: Any,
     ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
@@ -467,10 +466,10 @@ class DeepEval(DeepEvalBackend):
     def _eval_model(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray],
-        aparam: Optional[np.ndarray],
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
     ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
@@ -544,11 +543,11 @@ class DeepEval(DeepEvalBackend):
     def _eval_model_spin(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
         spins: np.ndarray,
-        fparam: Optional[np.ndarray],
-        aparam: Optional[np.ndarray],
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
     ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
@@ -740,10 +739,10 @@ class DeepEval(DeepEvalBackend):
     def eval_descriptor(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate descriptors by using this DP.
@@ -795,10 +794,10 @@ class DeepEval(DeepEvalBackend):
     def eval_fitting_last_layer(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate fitting before last layer by using this DP.

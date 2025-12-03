@@ -8,9 +8,9 @@ from functools import (
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Union,
 )
+from collections.abc import Callable
 
 import tensorflow
 from packaging.version import (

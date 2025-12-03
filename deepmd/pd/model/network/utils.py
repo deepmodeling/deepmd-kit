@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-)
 
 import paddle
 
@@ -10,7 +7,7 @@ def aggregate(
     data: paddle.Tensor,
     owners: paddle.Tensor,
     average: bool = True,
-    num_owner: Optional[int] = None,
+    num_owner: int | None = None,
 ) -> paddle.Tensor:
     """
     Aggregate rows in data by specifying the owners.

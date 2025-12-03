@@ -144,7 +144,7 @@ class _MPIHandler(logging.FileHandler):
 
 
 def set_log_handles(
-    level: int, log_path: Optional["Path"] = None, mpi_log: Optional[str] = None
+    level: int, log_path: Optional["Path"] = None, mpi_log: str | None = None
 ) -> None:
     """Set desired level for package loggers and add file handlers.
 

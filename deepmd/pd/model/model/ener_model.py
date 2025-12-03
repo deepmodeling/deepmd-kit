@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-)
 
 import paddle
 
@@ -68,9 +65,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         self,
         coord,
         atype,
-        box: Optional[paddle.Tensor] = None,
-        fparam: Optional[paddle.Tensor] = None,
-        aparam: Optional[paddle.Tensor] = None,
+        box: paddle.Tensor | None = None,
+        fparam: paddle.Tensor | None = None,
+        aparam: paddle.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, paddle.Tensor]:
         model_ret = self.forward_common(
@@ -111,11 +108,11 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         extended_coord,
         extended_atype,
         nlist,
-        mapping: Optional[paddle.Tensor] = None,
-        fparam: Optional[paddle.Tensor] = None,
-        aparam: Optional[paddle.Tensor] = None,
+        mapping: paddle.Tensor | None = None,
+        fparam: paddle.Tensor | None = None,
+        aparam: paddle.Tensor | None = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[list[paddle.Tensor]] = None,
+        comm_dict: list[paddle.Tensor] | None = None,
     ):
         model_ret = self.forward_common_lower(
             extended_coord,

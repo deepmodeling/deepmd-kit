@@ -16,11 +16,9 @@ from importlib.util import (
 )
 from typing import (
     Any,
-    Callable,
     ClassVar,
-    Optional,
-    Union,
 )
+from collections.abc import Callable
 from uuid import (
     uuid4,
 )
@@ -80,18 +78,18 @@ class CommonTest(ABC):
     """Arguments data."""
     additional_data: ClassVar[dict] = {}
     """Additional data that will not be checked."""
-    tf_class: ClassVar[Optional[type]]
+    tf_class: ClassVar[type | None]
     """TensorFlow model class."""
-    dp_class: ClassVar[Optional[type]]
+    dp_class: ClassVar[type | None]
     """Native DP model class."""
-    pt_class: ClassVar[Optional[type]]
+    pt_class: ClassVar[type | None]
     """PyTorch model class."""
-    jax_class: ClassVar[Optional[type]]
+    jax_class: ClassVar[type | None]
     """JAX model class."""
-    pd_class: ClassVar[Optional[type]]
+    pd_class: ClassVar[type | None]
     """Paddle model class."""
-    array_api_strict_class: ClassVar[Optional[type]]
-    args: ClassVar[Optional[Union[Argument, list[Argument]]]]
+    array_api_strict_class: ClassVar[type | None]
+    args: ClassVar[Argument | list[Argument] | None]
     """Arguments that maps to the `data`."""
     skip_dp: ClassVar[bool] = False
     """Whether to skip the native DP model."""

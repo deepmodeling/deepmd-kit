@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-from typing import (
-    Optional,
-    Union,
-)
 
 import torch
 
@@ -48,16 +44,16 @@ class DOSFittingNet(InvarFitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        rcond: Optional[float] = None,
-        bias_dos: Optional[torch.Tensor] = None,
-        trainable: Union[bool, list[bool]] = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        rcond: float | None = None,
+        bias_dos: torch.Tensor | None = None,
+        trainable: bool | list[bool] = True,
+        seed: int | list[int] | None = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         exclude_types: list[int] = [],
         mixed_types: bool = True,
-        type_map: Optional[list[str]] = None,
-        default_fparam: Optional[list] = None,
+        type_map: list[str] | None = None,
+        default_fparam: list | None = None,
     ) -> None:
         if bias_dos is not None:
             self.bias_dos = bias_dos

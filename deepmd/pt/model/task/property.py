@@ -2,8 +2,6 @@
 import logging
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import torch
@@ -81,7 +79,7 @@ class PropertyFittingNet(InvarFitting):
         property_name: str,
         task_dim: int = 1,
         neuron: list[int] = [128, 128, 128],
-        bias_atom_p: Optional[torch.Tensor] = None,
+        bias_atom_p: torch.Tensor | None = None,
         intensive: bool = False,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -90,9 +88,9 @@ class PropertyFittingNet(InvarFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        trainable: Union[bool, list[bool]] = True,
-        seed: Optional[int] = None,
-        default_fparam: Optional[list] = None,
+        trainable: bool | list[bool] = True,
+        seed: int | None = None,
+        default_fparam: list | None = None,
         **kwargs: Any,
     ) -> None:
         self.task_dim = task_dim

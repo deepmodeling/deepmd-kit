@@ -6,11 +6,9 @@ from abc import (
 )
 from typing import (
     Any,
-    Callable,
     NoReturn,
-    Optional,
-    Union,
 )
+from collections.abc import Callable
 
 import numpy as np
 
@@ -86,8 +84,8 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> NoReturn:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -127,9 +125,9 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
         nlist: Array,
         extended_coord: Array,
         extended_atype: Array,
-        extended_atype_embd: Optional[Array] = None,
-        mapping: Optional[Array] = None,
-        type_embedding: Optional[Array] = None,
+        extended_atype_embd: Array | None = None,
+        mapping: Array | None = None,
+        type_embedding: Array | None = None,
     ) -> Any:
         """Calculate DescriptorBlock."""
         pass

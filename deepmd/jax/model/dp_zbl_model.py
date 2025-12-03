@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
 )
 
 from deepmd.dpmodel.model.dp_zbl_model import DPZBLModel as DPZBLModelDP
@@ -34,9 +33,9 @@ class DPZBLModel(DPZBLModelDP):
         extended_coord: jnp.ndarray,
         extended_atype: jnp.ndarray,
         nlist: jnp.ndarray,
-        mapping: Optional[jnp.ndarray] = None,
-        fparam: Optional[jnp.ndarray] = None,
-        aparam: Optional[jnp.ndarray] = None,
+        mapping: jnp.ndarray | None = None,
+        fparam: jnp.ndarray | None = None,
+        aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, jnp.ndarray]:
         return forward_common_atomic(

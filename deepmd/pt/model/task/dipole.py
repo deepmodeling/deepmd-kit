@@ -2,10 +2,8 @@
 import logging
 from typing import (
     Any,
-    Callable,
-    Optional,
-    Union,
 )
+from collections.abc import Callable
 
 import torch
 
@@ -91,13 +89,13 @@ class DipoleFittingNet(GeneralFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        rcond: Optional[float] = None,
-        seed: Optional[Union[int, list[int]]] = None,
+        rcond: float | None = None,
+        seed: int | list[int] | None = None,
         exclude_types: list[int] = [],
         r_differentiable: bool = True,
         c_differentiable: bool = True,
-        type_map: Optional[list[str]] = None,
-        default_fparam: Optional[list] = None,
+        type_map: list[str] | None = None,
+        default_fparam: list | None = None,
         **kwargs: Any,
     ) -> None:
         self.embedding_width = embedding_width
@@ -157,8 +155,8 @@ class DipoleFittingNet(GeneralFitting):
 
     def compute_output_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
     ) -> None:
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -182,11 +180,11 @@ class DipoleFittingNet(GeneralFitting):
         self,
         descriptor: torch.Tensor,
         atype: torch.Tensor,
-        gr: Optional[torch.Tensor] = None,
-        g2: Optional[torch.Tensor] = None,
-        h2: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        gr: torch.Tensor | None = None,
+        g2: torch.Tensor | None = None,
+        h2: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         nframes, nloc, _ = descriptor.shape
         assert gr is not None, "Must provide the rotation matrix for dipole fitting."

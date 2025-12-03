@@ -5,10 +5,8 @@ from collections import (
 )
 from typing import (
     Any,
-    Callable,
-    Optional,
-    Union,
 )
+from collections.abc import Callable
 
 import numpy as np
 import paddle
@@ -97,7 +95,7 @@ def make_stat_input(
 def _restore_from_file(
     stat_file_path: DPPath,
     keys: list[str] = ["energy"],
-) -> Optional[dict]:
+) -> dict | None:
     if stat_file_path is None:
         return None, None
     stat_files = [stat_file_path / f"bias_atom_{kk}" for kk in keys]
@@ -159,7 +157,7 @@ def _post_process_stat(
 
 
 def _compute_model_predict(
-    sampled: Union[Callable[[], list[dict]], list[dict]],
+    sampled: Callable[[], list[dict]] | list[dict],
     keys: list[str],
     model_forward: Callable[..., paddle.Tensor],
 ) -> dict[str, list[paddle.Tensor]]:
@@ -199,8 +197,8 @@ def _compute_model_predict(
 
 def _make_preset_out_bias(
     ntypes: int,
-    ibias: list[Optional[np.ndarray]],
-) -> Optional[np.ndarray]:
+    ibias: list[np.ndarray | None],
+) -> np.ndarray | None:
     """Make preset out bias.
 
     output:
@@ -223,9 +221,9 @@ def _make_preset_out_bias(
 
 
 def _fill_stat_with_global(
-    atomic_stat: Union[np.ndarray, None],
+    atomic_stat: np.ndarray | None,
     global_stat: np.ndarray,
-) -> Union[np.ndarray, None]:
+) -> np.ndarray | None:
     """This function is used to fill atomic stat with global stat.
 
     Parameters
@@ -249,13 +247,13 @@ def _fill_stat_with_global(
 
 
 def compute_output_stats(
-    merged: Union[Callable[[], list[dict]], list[dict]],
+    merged: Callable[[], list[dict]] | list[dict],
     ntypes: int,
-    keys: Union[str, list[str]] = ["energy"],
-    stat_file_path: Optional[DPPath] = None,
-    rcond: Optional[float] = None,
-    preset_bias: Optional[dict[str, list[Optional[np.ndarray]]]] = None,
-    model_forward: Optional[Callable[..., paddle.Tensor]] = None,
+    keys: str | list[str] = ["energy"],
+    stat_file_path: DPPath | None = None,
+    rcond: float | None = None,
+    preset_bias: dict[str, list[np.ndarray | None]] | None = None,
+    model_forward: Callable[..., paddle.Tensor] | None = None,
     stats_distinguish_types: bool = True,
     intensive: bool = False,
 ) -> dict[str, Any]:
@@ -420,9 +418,9 @@ def compute_output_stats_global(
     sampled: list[dict],
     ntypes: int,
     keys: list[str],
-    rcond: Optional[float] = None,
-    preset_bias: Optional[dict[str, list[Optional[paddle.Tensor]]]] = None,
-    model_pred: Optional[dict[str, np.ndarray]] = None,
+    rcond: float | None = None,
+    preset_bias: dict[str, list[paddle.Tensor | None]] | None = None,
+    model_pred: dict[str, np.ndarray] | None = None,
     stats_distinguish_types: bool = True,
     intensive: bool = False,
 ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
@@ -554,7 +552,7 @@ def compute_output_stats_atomic(
     sampled: list[dict],
     ntypes: int,
     keys: list[str],
-    model_pred: Optional[dict[str, np.ndarray]] = None,
+    model_pred: dict[str, np.ndarray] | None = None,
 ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     # get label dict from sample; for each key, only picking the system with atomic labels.
     outputs = {

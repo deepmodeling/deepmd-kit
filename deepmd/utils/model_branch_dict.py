@@ -5,7 +5,6 @@ from collections import (
 )
 from typing import (
     Any,
-    Optional,
 )
 
 
@@ -100,7 +99,7 @@ class OrderedDictTableWrapper:
         # Construct table header: fixed columns + dynamic info keys
         self.headers: list[str] = ["Model Branch", "Alias", *self.info_keys]
 
-    def _wrap_cell(self, text: Any, width: Optional[int] = None) -> list[str]:
+    def _wrap_cell(self, text: Any, width: int | None = None) -> list[str]:
         """
         Convert a cell value into a list of wrapped text lines.
 

@@ -2,7 +2,6 @@
 import math
 from typing import (
     Any,
-    Optional,
 )
 
 import array_api_compat
@@ -45,8 +44,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         type_map: list[str],
         atom_exclude_types: list[int] = [],
         pair_exclude_types: list[tuple[int, int]] = [],
-        rcond: Optional[float] = None,
-        preset_out_bias: Optional[dict[str, Array]] = None,
+        rcond: float | None = None,
+        preset_out_bias: dict[str, Array] | None = None,
     ) -> None:
         super().__init__()
         self.type_map = type_map
@@ -133,7 +132,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         )
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -154,9 +153,9 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         extended_coord: Array,
         extended_atype: Array,
         nlist: Array,
-        mapping: Optional[Array] = None,
-        fparam: Optional[Array] = None,
-        aparam: Optional[Array] = None,
+        mapping: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
     ) -> dict[str, Array]:
         """Common interface for atomic inference.
 
@@ -230,9 +229,9 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         extended_coord: Array,
         extended_atype: Array,
         nlist: Array,
-        mapping: Optional[Array] = None,
-        fparam: Optional[Array] = None,
-        aparam: Optional[Array] = None,
+        mapping: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
     ) -> dict[str, Array]:
         return self.forward_common_atomic(
             extended_coord,

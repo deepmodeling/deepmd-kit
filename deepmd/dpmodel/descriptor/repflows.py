@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Callable,
-    Optional,
-    Union,
-)
+from collections.abc import Callable
 
 import array_api_compat
 import numpy as np
@@ -207,7 +203,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
         use_loc_mapping: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -421,8 +417,8 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -479,8 +475,8 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         nlist: Array,
         coord_ext: Array,
         atype_ext: Array,
-        atype_embd_ext: Optional[Array] = None,
-        mapping: Optional[Array] = None,
+        atype_embd_ext: Array | None = None,
+        mapping: Array | None = None,
     ) -> tuple[Array, Array]:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         nframes, nloc, nnei = nlist.shape
@@ -874,7 +870,7 @@ class RepFlowLayer(NativeOP):
         update_residual: float = 0.1,
         update_residual_init: str = "const",
         precision: str = "float64",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()

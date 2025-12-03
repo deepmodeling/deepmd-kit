@@ -9,10 +9,10 @@ from functools import (
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Optional,
     overload,
 )
+from collections.abc import Callable
 
 import array_api_compat
 import ml_dtypes
@@ -101,7 +101,7 @@ class NativeOP(ABC):
         return self.call(*args, **kwargs)
 
 
-def to_numpy_array(x: Optional["Array"]) -> Optional[np.ndarray]:
+def to_numpy_array(x: Optional["Array"]) -> np.ndarray | None:
     """Convert an array to a NumPy array.
 
     Parameters

@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 import array_api_compat
 
@@ -23,7 +19,7 @@ def extend_input_and_build_neighbor_list(
     rcut: float,
     sel: list[int],
     mixed_types: bool = False,
-    box: Optional[Array] = None,
+    box: Array | None = None,
 ) -> tuple[Array, Array]:
     xp = array_api_compat.array_namespace(coord, atype)
     nframes, nloc = atype.shape[:2]
@@ -55,7 +51,7 @@ def build_neighbor_list(
     atype: Array,
     nloc: int,
     rcut: float,
-    sel: Union[int, list[int]],
+    sel: int | list[int],
     distinguish_types: bool = True,
 ) -> Array:
     """Build neighbor list for a single frame. keeps nsel neighbors.
@@ -249,7 +245,7 @@ def build_multiple_neighbor_list(
 def extend_coord_with_ghosts(
     coord: Array,
     atype: Array,
-    cell: Optional[Array],
+    cell: Array | None,
     rcut: float,
 ) -> tuple[Array, Array]:
     """Extend the coordinates of the atoms by appending peridoc images.

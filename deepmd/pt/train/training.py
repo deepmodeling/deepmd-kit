@@ -14,9 +14,8 @@ from pathlib import (
 )
 from typing import (
     Any,
-    Callable,
-    Optional,
 )
+from collections.abc import Callable
 
 import numpy as np
 import torch
@@ -97,15 +96,15 @@ class Trainer:
         self,
         config: dict[str, Any],
         training_data: DpLoaderSet,
-        stat_file_path: Optional[str] = None,
-        validation_data: Optional[DpLoaderSet] = None,
-        init_model: Optional[str] = None,
-        restart_model: Optional[str] = None,
-        finetune_model: Optional[str] = None,
+        stat_file_path: str | None = None,
+        validation_data: DpLoaderSet | None = None,
+        init_model: str | None = None,
+        restart_model: str | None = None,
+        finetune_model: str | None = None,
         force_load: bool = False,
-        shared_links: Optional[dict[str, str]] = None,
-        finetune_links: Optional[dict[str, str]] = None,
-        init_frz_model: Optional[str] = None,
+        shared_links: dict[str, str] | None = None,
+        finetune_links: dict[str, str] | None = None,
+        init_frz_model: str | None = None,
     ) -> None:
         """Construct a DeePMD trainer.
 
@@ -185,13 +184,13 @@ class Trainer:
 
         def get_data_loader(
             _training_data: DpLoaderSet,
-            _validation_data: Optional[DpLoaderSet],
+            _validation_data: DpLoaderSet | None,
             _training_params: dict[str, Any],
         ) -> tuple[
             DataLoader,
             Generator[Any, None, None],
-            Optional[DataLoader],
-            Optional[Generator[Any, None, None]],
+            DataLoader | None,
+            Generator[Any, None, None] | None,
             int,
         ]:
             def get_dataloader_and_iter(
@@ -246,8 +245,8 @@ class Trainer:
             _model: Any,
             _data_stat_nbatch: int,
             _training_data: DpLoaderSet,
-            _validation_data: Optional[DpLoaderSet],
-            _stat_file_path: Optional[str],
+            _validation_data: DpLoaderSet | None,
+            _stat_file_path: str | None,
             _data_requirement: list[DataRequirementItem],
             finetune_has_new_type: bool = False,
         ) -> Callable[[], Any]:
@@ -1443,7 +1442,7 @@ def get_single_model(
 def get_model_for_wrapper(
     _model_params: dict[str, Any],
     resuming: bool = False,
-    _loss_params: Optional[dict[str, Any]] = None,
+    _loss_params: dict[str, Any] | None = None,
 ) -> Any:
     if "model_dict" not in _model_params:
         if _loss_params is not None and whether_hessian(_loss_params):

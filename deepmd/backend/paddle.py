@@ -4,9 +4,9 @@ from importlib.util import (
 )
 from typing import (
     TYPE_CHECKING,
-    Callable,
     ClassVar,
 )
+from collections.abc import Callable
 
 from deepmd.backend.backend import (
     Backend,

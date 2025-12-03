@@ -6,9 +6,6 @@ import re
 from collections.abc import (
     Sequence,
 )
-from typing import (
-    Optional,
-)
 
 import numpy as np
 
@@ -32,7 +29,7 @@ def convert_number(number: int) -> float:
 
 
 def convert_matrix(
-    matrix: np.ndarray, shape: Sequence[int], dtype: Optional[type] = None
+    matrix: np.ndarray, shape: Sequence[int], dtype: type | None = None
 ) -> np.ndarray:
     """Convert matrix of integers to self defined binary format.
 
@@ -188,7 +185,7 @@ class CopyNodeAttr:
         self.node = node
 
     def from_array(
-        self, tensor: np.ndarray, dtype: type, shape: Optional[Sequence[int]] = None
+        self, tensor: np.ndarray, dtype: type, shape: Sequence[int] | None = None
     ) -> None:
         if shape is None:
             shape = tensor.shape

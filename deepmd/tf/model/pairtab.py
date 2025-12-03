@@ -2,10 +2,6 @@
 from enum import (
     Enum,
 )
-from typing import (
-    Optional,
-    Union,
-)
 
 import numpy as np
 
@@ -67,7 +63,7 @@ class PairTabModel(Model):
     model_type = "ener"
 
     def __init__(
-        self, tab_file: str, rcut: float, sel: Union[int, list[int]], **kwargs
+        self, tab_file: str, rcut: float, sel: int | list[int], **kwargs
     ) -> None:
         super().__init__()
         self.tab_file = tab_file
@@ -89,10 +85,10 @@ class PairTabModel(Model):
         box: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        frz_model: Optional[str] = None,
-        ckpt_meta: Optional[str] = None,
+        frz_model: str | None = None,
+        ckpt_meta: str | None = None,
         suffix: str = "",
-        reuse: Optional[Union[bool, Enum]] = None,
+        reuse: bool | Enum | None = None,
     ):
         """Build the model.
 
@@ -237,12 +233,12 @@ class PairTabModel(Model):
         """
         # skip. table can be initialized from the file
 
-    def get_fitting(self) -> Union[Fitting, dict]:
+    def get_fitting(self) -> Fitting | dict:
         """Get the fitting(s)."""
         # nothing needs to do
         return {}
 
-    def get_loss(self, loss: dict, lr) -> Optional[Union[Loss, dict]]:
+    def get_loss(self, loss: dict, lr) -> Loss | dict | None:
         """Get the loss function(s)."""
         # nothing needs to do
         return
@@ -273,9 +269,9 @@ class PairTabModel(Model):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Notes

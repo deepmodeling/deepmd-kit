@@ -3,10 +3,9 @@ import functools
 import logging
 from typing import (
     Any,
-    Callable,
     Optional,
-    Union,
 )
+from collections.abc import Callable
 
 import paddle
 
@@ -70,7 +69,7 @@ class DPAtomicModel(BaseAtomicModel):
         self.eval_fitting_last_layer_list = []
 
         # register 'type_map' as buffer
-        def _string_to_array(s: Union[str, list[str]]) -> list[int]:
+        def _string_to_array(s: str | list[str]) -> list[int]:
             return [ord(c) for c in s]
 
         if type_map is not None:
@@ -290,10 +289,10 @@ class DPAtomicModel(BaseAtomicModel):
         extended_coord: paddle.Tensor,
         extended_atype: paddle.Tensor,
         nlist: paddle.Tensor,
-        mapping: Optional[paddle.Tensor] = None,
-        fparam: Optional[paddle.Tensor] = None,
-        aparam: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+        mapping: paddle.Tensor | None = None,
+        fparam: paddle.Tensor | None = None,
+        aparam: paddle.Tensor | None = None,
+        comm_dict: dict[str, paddle.Tensor] | None = None,
     ) -> dict[str, paddle.Tensor]:
         """Return atomic prediction.
 
@@ -357,7 +356,7 @@ class DPAtomicModel(BaseAtomicModel):
     def compute_or_load_stat(
         self,
         sampled_func: Callable[[], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
     ) -> None:
         """
@@ -403,8 +402,8 @@ class DPAtomicModel(BaseAtomicModel):
 
     def compute_fitting_input_stat(
         self,
-        sample_merged: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        sample_merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
     ) -> None:
         """Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
 

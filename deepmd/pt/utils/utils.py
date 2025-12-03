@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
-    Union,
     overload,
 )
 
@@ -173,7 +171,7 @@ class SiLUT(torch.nn.Module):
 
 
 class ActivationFn(torch.nn.Module):
-    def __init__(self, activation: Optional[str]) -> None:
+    def __init__(self, activation: str | None) -> None:
         super().__init__()
         self.activation: str = activation if activation is not None else "linear"
         if self.activation.lower().startswith(
@@ -229,8 +227,8 @@ def to_numpy_array(xx: None) -> None: ...
 
 
 def to_numpy_array(
-    xx: Optional[torch.Tensor],
-) -> Optional[np.ndarray]:
+    xx: torch.Tensor | None,
+) -> np.ndarray | None:
     if xx is None:
         return None
     assert xx is not None
@@ -256,8 +254,8 @@ def to_torch_tensor(xx: None) -> None: ...
 
 
 def to_torch_tensor(
-    xx: Optional[np.ndarray],
-) -> Optional[torch.Tensor]:
+    xx: np.ndarray | None,
+) -> torch.Tensor | None:
     if xx is None:
         return None
     assert xx is not None
@@ -326,8 +324,8 @@ def mix_entropy(entropy_array: list[int]) -> int:
 
 
 def get_generator(
-    seed: Optional[Union[int, list[int]]] = None,
-) -> Optional[torch.Generator]:
+    seed: int | list[int] | None = None,
+) -> torch.Generator | None:
     if seed is not None:
         if isinstance(seed, list):
             seed = mix_entropy(seed)

@@ -6,8 +6,8 @@ from pathlib import (
 )
 from typing import (
     Any,
-    Callable,
 )
+from collections.abc import Callable
 
 import h5py
 import numpy as np

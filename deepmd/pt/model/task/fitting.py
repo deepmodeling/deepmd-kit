@@ -5,10 +5,9 @@ from abc import (
 )
 from typing import (
     Any,
-    Callable,
     Optional,
-    Union,
 )
+from collections.abc import Callable
 
 import numpy as np
 import torch
@@ -235,9 +234,9 @@ class Fitting(torch.nn.Module, BaseFitting):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
+        merged: Callable[[], list[dict]] | list[dict],
         protection: float = 1e-2,
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
@@ -411,7 +410,7 @@ class GeneralFitting(Fitting):
         ntypes: int,
         dim_descrpt: int,
         neuron: list[int] = [128, 128, 128],
-        bias_atom_e: Optional[torch.Tensor] = None,
+        bias_atom_e: torch.Tensor | None = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -419,14 +418,14 @@ class GeneralFitting(Fitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        rcond: Optional[float] = None,
-        seed: Optional[Union[int, list[int]]] = None,
+        rcond: float | None = None,
+        seed: int | list[int] | None = None,
         exclude_types: list[int] = [],
-        trainable: Union[bool, list[bool]] = True,
-        remove_vaccum_contribution: Optional[list[bool]] = None,
-        type_map: Optional[list[str]] = None,
+        trainable: bool | list[bool] = True,
+        remove_vaccum_contribution: list[bool] | None = None,
+        type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
-        default_fparam: Optional[list[float]] = None,
+        default_fparam: list[float] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -640,7 +639,7 @@ class GeneralFitting(Fitting):
         """Check if the fitting has default frame parameters."""
         return self.default_fparam is not None
 
-    def get_default_fparam(self) -> Optional[torch.Tensor]:
+    def get_default_fparam(self) -> torch.Tensor | None:
         return self.default_fparam_tensor
 
     def get_dim_aparam(self) -> int:
@@ -736,11 +735,11 @@ class GeneralFitting(Fitting):
         self,
         descriptor: torch.Tensor,
         atype: torch.Tensor,
-        gr: Optional[torch.Tensor] = None,
-        g2: Optional[torch.Tensor] = None,
-        h2: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        gr: torch.Tensor | None = None,
+        g2: torch.Tensor | None = None,
+        h2: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         # cast the input to internal precsion
         xx = descriptor.to(self.prec)

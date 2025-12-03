@@ -4,7 +4,6 @@ from collections.abc import (
 )
 from typing import (
     TYPE_CHECKING,
-    Union,
 )
 
 import numpy as np
@@ -77,7 +76,7 @@ class EnvMatStatSe(EnvMatStat):
         )  # se_r=1, se_a=4
 
     def iter(
-        self, data: list[dict[str, Union[paddle.Tensor, list[tuple[int, int]]]]]
+        self, data: list[dict[str, paddle.Tensor | list[tuple[int, int]]]]
     ) -> Iterator[dict[str, StatItem]]:
         """Get the iterator of the environment matrix.
 

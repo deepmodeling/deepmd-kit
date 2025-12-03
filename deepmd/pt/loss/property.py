@@ -2,7 +2,6 @@
 import logging
 from typing import (
     Any,
-    Union,
 )
 
 import torch
@@ -29,8 +28,8 @@ class PropertyLoss(TaskLoss):
         loss_func: str = "smooth_mae",
         metric: list[str] = ["mae"],
         beta: float = 1.00,
-        out_bias: Union[list, None] = None,
-        out_std: Union[list, None] = None,
+        out_bias: list | None = None,
+        out_std: list | None = None,
         intensive: bool = False,
         **kwargs: Any,
     ) -> None:

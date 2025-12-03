@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Callable,
-    Optional,
-    Union,
 )
+from collections.abc import Callable
 
 import torch
 import torch.nn as nn
@@ -79,7 +77,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list = [25, 50, 100],
         axis_neuron: int = 16,
@@ -95,15 +93,15 @@ class DescrptBlockSeAtten(DescriptorBlock):
         resnet_dt: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         smooth: bool = True,
         type_one_side: bool = False,
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
-        seed: Optional[Union[int, list[int]]] = None,
-        type: Optional[str] = None,
+        ln_eps: float | None = 1e-5,
+        seed: int | list[int] | None = None,
+        type: str | None = None,
         trainable: bool = True,
     ) -> None:
         r"""Construct an embedding net of type `se_atten`.
@@ -375,8 +373,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -512,15 +510,15 @@ class DescrptBlockSeAtten(DescriptorBlock):
         nlist: torch.Tensor,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
-        type_embedding: Optional[torch.Tensor] = None,
+        extended_atype_embd: torch.Tensor | None = None,
+        mapping: torch.Tensor | None = None,
+        type_embedding: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
     ]:
         """Compute the descriptor.
 
@@ -749,12 +747,12 @@ class NeighborGatedAttention(nn.Module):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         trainable_ln: bool = True,
         ln_eps: float = 1e-5,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         """Construct a neighbor-wise attention net."""
@@ -800,8 +798,8 @@ class NeighborGatedAttention(nn.Module):
         self,
         input_G: torch.Tensor,
         nei_mask: torch.Tensor,
-        input_r: Optional[torch.Tensor] = None,
-        sw: Optional[torch.Tensor] = None,
+        input_r: torch.Tensor | None = None,
+        sw: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Compute the multi-layer gated self-attention.
 
@@ -894,12 +892,12 @@ class NeighborGatedAttentionLayer(nn.Module):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         smooth: bool = True,
         trainable_ln: bool = True,
         ln_eps: float = 1e-5,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         """Construct a neighbor-wise attention layer."""
@@ -942,8 +940,8 @@ class NeighborGatedAttentionLayer(nn.Module):
         self,
         x: torch.Tensor,
         nei_mask: torch.Tensor,
-        input_r: Optional[torch.Tensor] = None,
-        sw: Optional[torch.Tensor] = None,
+        input_r: torch.Tensor | None = None,
+        sw: torch.Tensor | None = None,
     ) -> torch.Tensor:
         residual = x
         x, _ = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)
@@ -1004,11 +1002,11 @@ class GatedAttentionLayer(nn.Module):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         bias: bool = True,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         """Construct a multi-head neighbor-wise attention net."""
@@ -1060,8 +1058,8 @@ class GatedAttentionLayer(nn.Module):
         self,
         query: torch.Tensor,
         nei_mask: torch.Tensor,
-        input_r: Optional[torch.Tensor] = None,
-        sw: Optional[torch.Tensor] = None,
+        input_r: torch.Tensor | None = None,
+        sw: torch.Tensor | None = None,
         attnw_shift: float = 20.0,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute the multi-head gated self-attention.

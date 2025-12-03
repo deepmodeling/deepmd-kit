@@ -8,9 +8,8 @@ from abc import (
 )
 from typing import (
     Any,
-    Callable,
-    Optional,
 )
+from collections.abc import Callable
 
 
 class Plugin:
@@ -98,7 +97,7 @@ class PluginVariant(metaclass=VariantABCMeta):
     pass
 
 
-def make_plugin_registry(name: Optional[str] = None) -> type[object]:
+def make_plugin_registry(name: str | None = None) -> type[object]:
     """Make a plugin registry.
 
     Parameters

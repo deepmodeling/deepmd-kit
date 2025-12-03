@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Callable,
-    Optional,
-    Union,
-)
+from collections.abc import Callable
 
 import paddle
 
@@ -113,8 +109,8 @@ class DescrptBlockRepformers(DescriptorBlock):
         env_protection: float = 0.0,
         precision: str = "float64",
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
-        seed: Optional[Union[int, list[int]]] = None,
+        ln_eps: float | None = 1e-5,
+        seed: int | list[int] | None = None,
         use_sqrt_nnei: bool = True,
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
@@ -420,10 +416,10 @@ class DescrptBlockRepformers(DescriptorBlock):
         nlist: paddle.Tensor,
         extended_coord: paddle.Tensor,
         extended_atype: paddle.Tensor,
-        extended_atype_embd: Optional[paddle.Tensor] = None,
-        mapping: Optional[paddle.Tensor] = None,
-        type_embedding: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[list[paddle.Tensor]] = None,
+        extended_atype_embd: paddle.Tensor | None = None,
+        mapping: paddle.Tensor | None = None,
+        type_embedding: paddle.Tensor | None = None,
+        comm_dict: list[paddle.Tensor] | None = None,
     ):
         if (comm_dict is None or len(comm_dict) == 0) and paddle.in_dynamic_mode():
             assert mapping is not None
@@ -599,8 +595,8 @@ class DescrptBlockRepformers(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.

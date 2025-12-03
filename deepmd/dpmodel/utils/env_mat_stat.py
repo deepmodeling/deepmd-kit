@@ -82,7 +82,7 @@ class EnvMatStatSe(EnvMatStat):
         )  # se_r=1, se_a=4
 
     def iter(
-        self, data: list[dict[str, Union[np.ndarray, list[tuple[int, int]]]]]
+        self, data: list[dict[str, np.ndarray | list[tuple[int, int]]]]
     ) -> Iterator[dict[str, StatItem]]:
         """Get the iterator of the environment matrix.
 

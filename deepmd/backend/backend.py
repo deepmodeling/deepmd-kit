@@ -8,9 +8,9 @@ from enum import (
 )
 from typing import (
     TYPE_CHECKING,
-    Callable,
     ClassVar,
 )
+from collections.abc import Callable
 
 from deepmd.utils.plugin import (
     PluginVariant,

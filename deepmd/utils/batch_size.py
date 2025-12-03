@@ -7,8 +7,8 @@ from abc import (
 )
 from typing import (
     Any,
-    Callable,
 )
+from collections.abc import Callable
 
 import array_api_compat
 import numpy as np

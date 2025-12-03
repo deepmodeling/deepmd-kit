@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Callable,
-    Optional,
-    Union,
-)
+from collections.abc import Callable
 
 import paddle
 
@@ -213,7 +209,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list = [25, 50, 100],
         axis_neuron: int = 16,
@@ -235,17 +231,17 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         concat_output_tebd: bool = True,
         trainable: bool = True,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
+        ln_eps: float | None = 1e-5,
         smooth_type_embedding: bool = True,
         type_one_side: bool = False,
-        stripped_type_embedding: Optional[bool] = None,
-        seed: Optional[Union[int, list[int]]] = None,
+        stripped_type_embedding: bool | None = None,
+        seed: int | list[int] | None = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[list[str]] = None,
+        type_map: list[str] | None = None,
         # not implemented
         spin=None,
-        type: Optional[str] = None,
+        type: str | None = None,
     ) -> None:
         super().__init__()
         # Ensure compatibility with the deprecated stripped_type_embedding option.
@@ -436,8 +432,8 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ):
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -620,8 +616,8 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         extended_coord: paddle.Tensor,
         extended_atype: paddle.Tensor,
         nlist: paddle.Tensor,
-        mapping: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[list[paddle.Tensor]] = None,
+        mapping: paddle.Tensor | None = None,
+        comm_dict: list[paddle.Tensor] | None = None,
     ):
         """Compute the descriptor.
 
@@ -689,9 +685,9 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

@@ -4,10 +4,8 @@ import logging
 import warnings
 from typing import (
     Any,
-    Callable,
-    Optional,
-    Union,
 )
+from collections.abc import Callable
 
 from dargs import (
     Argument,
@@ -89,7 +87,7 @@ def deprecate_argument_extra_check(key: str) -> Callable[[dict], bool]:
         The name of the deprecated argument.
     """
 
-    def deprecate_something(data: Optional[dict]) -> bool:
+    def deprecate_something(data: dict | None) -> bool:
         if data is not None and key in data:
             warnings.warn(f"{key} has been removed and takes no effect.", FutureWarning)
             data.pop(key)
@@ -183,10 +181,10 @@ class ArgsPlugin:
         self.__plugin = Plugin()
 
     def register(
-        self, name: str, alias: Optional[list[str]] = None, doc: str = ""
+        self, name: str, alias: list[str] | None = None, doc: str = ""
     ) -> Callable[
-        [Union[Callable[[], Argument], Callable[[], list[Argument]]]],
-        Union[Callable[[], Argument], Callable[[], list[Argument]]],
+        [Callable[[], Argument] | Callable[[], list[Argument]]],
+        Callable[[], Argument] | Callable[[], list[Argument]],
     ]:
         """Register a descriptor argument plugin.
 
@@ -1820,7 +1818,7 @@ def fitting_ener() -> list[Argument]:
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument(
             "atom_ener",
-            list[Optional[float]],
+            list[float | None],
             optional=True,
             default=[],
             doc=doc_atom_ener,
@@ -2284,7 +2282,7 @@ def model_args(exclude_hybrid: bool = False) -> list[Argument]:
             ),
             Argument(
                 "preset_out_bias",
-                dict[str, list[Optional[Union[float, list[float]]]]],
+                dict[str, list[float | list[float] | None]],
                 optional=True,
                 default=None,
                 doc=doc_only_pt_supported + doc_preset_out_bias,
@@ -2544,9 +2542,7 @@ def learning_rate_args(fold_subdoc: bool = False) -> Argument:
 
 
 #  --- Loss configurations: --- #
-def start_pref(
-    item: str, label: Optional[str] = None, abbr: Optional[str] = None
-) -> str:
+def start_pref(item: str, label: str | None = None, abbr: str | None = None) -> str:
     if label is None:
         label = item
     if abbr is None:

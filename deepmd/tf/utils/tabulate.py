@@ -3,9 +3,7 @@ import logging
 from functools import (
     cached_property,
 )
-from typing import (
-    Callable,
-)
+from collections.abc import Callable
 
 import numpy as np
 from scipy.special import (

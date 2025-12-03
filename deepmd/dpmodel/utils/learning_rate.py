@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
 )
 
 import numpy as np
@@ -14,7 +13,7 @@ class LearningRateExp:
         stop_lr: float,
         decay_steps: int,
         stop_steps: int,
-        decay_rate: Optional[float] = None,
+        decay_rate: float | None = None,
         **kwargs: Any,
     ) -> None:
         """
