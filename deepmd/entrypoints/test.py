@@ -1136,14 +1136,6 @@ def test_polar(
         high_prec=False,
         type_sel=dp.get_sel_type(),
     )
-    # for TF compatibility, need to add type_sel to coord, so that the atom order is aligned with the label
-    data.add(
-        "coord",
-        3,
-        atomic=True,
-        must=True,
-        type_sel=dp.get_sel_type(),
-    )
 
     test_data = data.get_test()
     polar, numb_test, atype = run_test(dp, test_data, numb_test, data)
@@ -1285,14 +1277,7 @@ def test_dipole(
         high_prec=False,
         type_sel=dp.get_sel_type(),
     )
-    # for TF compatibility, need to add type_sel to coord, so that the atom order is aligned with the label
-    data.add(
-        "coord",
-        3,
-        atomic=True,
-        must=True,
-        type_sel=dp.get_sel_type(),
-    )
+
     test_data = data.get_test()
     dipole, numb_test, atype = run_test(dp, test_data, numb_test, data)
 
