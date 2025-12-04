@@ -28,6 +28,16 @@ jobs:
             tensorflow_version: ">=2.5.0,<2.15"
             filename: libdeepmd_c_cu11.tar.gz
     steps:
+      - name: Free Disk Space (Ubuntu)
+        uses: insightsengineering/disk-space-reclaimer@v1
+        with:
+          tools-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+          docker-images: true
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
