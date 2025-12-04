@@ -2,6 +2,7 @@
 import logging
 import multiprocessing
 import os
+import sys
 
 import numpy as np
 import torch
@@ -16,6 +17,17 @@ from deepmd.env import (
     set_default_nthreads,
 )
 
+log = logging.getLogger(__name__)
+
+if sys.platform != "win32":
+    try:
+        multiprocessing.set_start_method("fork", force=True)
+        log.debug("Successfully set multiprocessing start method to 'fork'.")
+    except (RuntimeError, ValueError) as err:
+        log.warning(f"Could not set multiprocessing start method: {err}")
+else:
+    log.debug("Skipping fork start method on Windows (not supported).")
+
 SAMPLER_RECORD = os.environ.get("SAMPLER_RECORD", False)
 DP_DTYPE_PROMOTION_STRICT = os.environ.get("DP_DTYPE_PROMOTION_STRICT", "0") == "1"
 try:
@@ -26,7 +38,6 @@ except AttributeError:
 NUM_WORKERS = int(os.environ.get("NUM_WORKERS", min(4, ncpus)))
 if multiprocessing.get_start_method() != "fork":
     # spawn or forkserver does not support NUM_WORKERS > 0 for DataLoader
-    log = logging.getLogger(__name__)
     log.warning(
         "NUM_WORKERS > 0 is not supported with spawn or forkserver start method. "
         "Setting NUM_WORKERS to 0."

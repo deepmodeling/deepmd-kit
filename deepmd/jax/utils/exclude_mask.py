@@ -3,12 +3,20 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.utils.exclude_mask import AtomExcludeMask as AtomExcludeMaskDP
 from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask as PairExcludeMaskDP
 from deepmd.jax.common import (
     ArrayAPIVariable,
     flax_module,
     to_jax_array,
+)
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
 )
 
 
@@ -19,6 +27,8 @@ class AtomExcludeMask(AtomExcludeMaskDP):
             value = to_jax_array(value)
             if value is not None:
                 value = ArrayAPIVariable(value)
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         return super().__setattr__(name, value)
 
 
@@ -29,4 +39,6 @@ class PairExcludeMask(PairExcludeMaskDP):
             value = to_jax_array(value)
             if value is not None:
                 value = ArrayAPIVariable(value)
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         return super().__setattr__(name, value)

@@ -197,6 +197,48 @@ class BaseTabulate(ABC):
                         nspline[ii][0] if self.is_pt else nspline[ii],
                     )
                     idx += 1
+        elif self.descrpt_type == "T_TEBD":
+            # 1. Find the global range [ll, uu] of cos(theta) across all types
+            uu = np.max(upper)
+            ll = np.min(lower)
+
+            # 2. Create a unique input grid xx for this shared geometric network based on the global range
+            xx = np.arange(extrapolate * ll, ll, stride1, dtype=self.data_type)
+            xx = np.append(
+                xx,
+                np.arange(ll, uu, stride0, dtype=self.data_type),
+            )
+            xx = np.append(
+                xx,
+                np.arange(
+                    uu,
+                    extrapolate * uu,
+                    stride1,
+                    dtype=self.data_type,
+                ),
+            )
+            xx = np.append(xx, np.array([extrapolate * uu], dtype=self.data_type))
+
+            # 3. Calculate the number of spline points
+            nspline = (
+                (uu - ll) / stride0
+                + ((extrapolate * uu - uu) / stride1)
+                + ((ll - extrapolate * ll) / stride1)
+            ).astype(int)
+
+            # 4. Call _build_lower only once to generate the table for this shared network
+            geometric_net_name = "filter_net"
+            self._build_lower(
+                geometric_net_name,
+                xx,
+                0,
+                uu,
+                ll,
+                stride0,
+                stride1,
+                extrapolate,
+                nspline,
+            )
         elif self.descrpt_type == "R":
             for ii in range(self.table_size):
                 if (self.type_one_side and not self._all_excluded(ii)) or (
@@ -242,9 +284,10 @@ class BaseTabulate(ABC):
             self._convert_numpy_float_to_int()
         return self.lower, self.upper
 
+    # generate_spline_table
     def _build_lower(
         self,
-        net: int,
+        net: str,
         xx: np.ndarray,
         idx: int,
         upper: float,
@@ -260,21 +303,14 @@ class BaseTabulate(ABC):
         )
 
         # tt.shape: [nspline, self.last_layer_size]
-        if self.descrpt_type in ("Atten", "A", "AEbdV2"):
+        if self.descrpt_type in ("Atten", "A", "AEbdV2", "R"):
             tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
             tt[: int((upper - lower) / stride0), :] = stride0
-        elif self.descrpt_type == "T":
+        elif self.descrpt_type in ("T", "T_TEBD"):
             tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
-            tt[
-                int((lower - extrapolate * lower) / stride1) + 1 : (
-                    int((lower - extrapolate * lower) / stride1)
-                    + int((upper - lower) / stride0)
-                ),
-                :,
-            ] = stride0
-        elif self.descrpt_type == "R":
-            tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
-            tt[: int((upper - lower) / stride0), :] = stride0
+            start_index = int((lower - extrapolate * lower) / stride1) + 1
+            end_index = start_index + int((upper - lower) / stride0)
+            tt[start_index:end_index, :] = stride0
         else:
             raise RuntimeError("Unsupported descriptor")
 
@@ -394,7 +430,7 @@ class BaseTabulate(ABC):
 
     def _get_table_size(self) -> int:
         table_size = 0
-        if self.descrpt_type in ("Atten", "AEbdV2"):
+        if self.descrpt_type in ("Atten", "AEbdV2", "T_TEBD"):
             table_size = 1
         elif self.descrpt_type == "A":
             table_size = self.ntypes * self.ntypes
@@ -448,7 +484,7 @@ class BaseTabulate(ABC):
         if self.descrpt_type in ("Atten", "A", "AEbdV2"):
             lower = -self.davg[:, 0] / self.dstd[:, 0]
             upper = ((1 / min_nbor_dist) * sw - self.davg[:, 0]) / self.dstd[:, 0]
-        elif self.descrpt_type == "T":
+        elif self.descrpt_type in ("T", "T_TEBD"):
             var = np.square(sw / (min_nbor_dist * self.dstd[:, 1:4]))
             lower = np.min(-var, axis=1)
             upper = np.max(var, axis=1)

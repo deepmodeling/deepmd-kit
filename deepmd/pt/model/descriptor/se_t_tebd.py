@@ -7,6 +7,7 @@ from typing import (
 )
 
 import torch
+import torch.nn as nn
 
 from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.dpmodel.utils.seed import (
@@ -39,8 +40,14 @@ from deepmd.pt.utils.env_mat_stat import (
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
+from deepmd.pt.utils.tabulate import (
+    DPTabulate,
+)
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
+)
+from deepmd.pt.utils.utils import (
+    ActivationFn,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -181,6 +188,7 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
         self.tebd_input_mode = tebd_input_mode
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable
+        self.compress = False
         # set trainable
         for param in self.parameters():
             param.requires_grad = trainable
@@ -516,6 +524,86 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
         local_jdata_cpy["sel"] = sel[0]
         return local_jdata_cpy, min_nbor_dist
 
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        # do some checks before the model compression process
+        if self.compress:
+            raise ValueError("Compression is already enabled.")
+        assert not self.se_ttebd.resnet_dt, (
+            "Model compression error: descriptor resnet_dt must be false!"
+        )
+        if self.tebd_input_mode != "strip":
+            raise RuntimeError("Cannot compress model when tebd_input_mode != 'strip'")
+        for tt in self.se_ttebd.exclude_types:
+            if (tt[0] not in range(self.se_ttebd.ntypes)) or (
+                tt[1] not in range(self.se_ttebd.ntypes)
+            ):
+                raise RuntimeError(
+                    "exclude types"
+                    + str(tt)
+                    + " must within the number of atomic types "
+                    + str(self.se_ttebd.ntypes)
+                    + "!"
+                )
+        if (
+            self.se_ttebd.ntypes * self.se_ttebd.ntypes
+            - len(self.se_ttebd.exclude_types)
+            == 0
+        ):
+            raise RuntimeError(
+                "Empty embedding-nets are not supported in model compression!"
+            )
+
+        data = self.serialize()
+        self.table = DPTabulate(
+            self,
+            data["neuron"],
+            exclude_types=data["exclude_types"],
+            activation_fn=ActivationFn(data["activation_function"]),
+        )
+        # Scale the stride values for SE_T descriptor
+        stride_1_scaled = table_stride_1 * 10
+        stride_2_scaled = table_stride_2 * 10
+        self.table_config = [
+            table_extrapolate,
+            stride_1_scaled,
+            stride_2_scaled,
+            check_frequency,
+        ]
+        self.lower, self.upper = self.table.build(
+            min_nbor_dist, table_extrapolate, stride_1_scaled, stride_2_scaled
+        )
+
+        self.se_ttebd.enable_compression(
+            self.type_embedding,
+            self.table.data,
+            self.table_config,
+            self.lower,
+            self.upper,
+        )
+        self.compress = True
+
 
 @DescriptorBlock.register("se_ttebd")
 class DescrptBlockSeTTebd(DescriptorBlock):
@@ -607,6 +695,19 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             )
             self.filter_layers_strip = filter_layers_strip
         self.stats = None
+        # compression related variables
+        self.compress = False
+        # For geometric compression
+        self.compress_info = nn.ParameterList(
+            [nn.Parameter(torch.zeros(0, dtype=self.prec, device="cpu"))]
+        )
+        self.compress_data = nn.ParameterList(
+            [nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))]
+        )
+        # For type embedding compression
+        self.register_buffer(
+            "type_embd_data", torch.zeros(0, dtype=self.prec, device=env.DEVICE)
+        )
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -811,6 +912,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             self.rcut_smth,
             protection=self.env_protection,
         )
+        # dmatrix: [1/r, dx/r^2, dy/r^2, dz/r^2], sw: distance weighting
         # nb x nloc x nnei
         exclude_mask = self.emask(nlist, extended_atype)
         nlist = torch.where(exclude_mask != 0, nlist, -1)
@@ -831,11 +933,13 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         rr = dmatrix
         rr = rr * exclude_mask[:, :, None]
 
-        # nfnl x nt_i x 3
+        # nfnl x nt_i x 3: direction vectors
+        # nt_i = nnei
+        # nt_j = nnei
         rr_i = rr[:, :, 1:]
         # nfnl x nt_j x 3
         rr_j = rr[:, :, 1:]
-        # nfnl x nt_i x nt_j
+        # nfnl x nt_i x nt_j: three-body angular correlations (cos theta_ij)
         env_ij = torch.einsum("ijm,ikm->ijk", rr_i, rr_j)
         # nfnl x nt_i x nt_j x 1
         ss = env_ij.unsqueeze(-1)
@@ -857,8 +961,24 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             # nfnl x nt_i x nt_j x ng
             gg = self.filter_layers.networks[0](ss)
         elif self.tebd_input_mode in ["strip"]:
-            # nfnl x nt_i x nt_j x ng
-            gg_s = self.filter_layers.networks[0](ss)
+            if self.compress:
+                # Tabulated geometric embedding from angular features
+                # using SE_T_TEBD specific function
+                ebd_env_ij = env_ij.view(-1, 1)
+                gg_s = torch.ops.deepmd.tabulate_fusion_se_t_tebd(
+                    self.compress_data[0].contiguous(),
+                    self.compress_info[0].cpu().contiguous(),
+                    ebd_env_ij.contiguous(),  # em_x: (nfnl * nt_i * nt_j, 1)
+                    env_ij.contiguous(),  # em: (nfnl, nt_i, nt_j)
+                    self.filter_neuron[-1],
+                )[0]
+                # SE_T_TEBD tabulation preserves the full neighbor structure
+                # nfnl x nt_i x nt_j x ng
+                gg_s = gg_s.view(nfnl, nnei, nnei, self.filter_neuron[-1])
+            else:
+                # nfnl x nt_i x nt_j x ng
+                gg_s = self.filter_layers.networks[0](ss)
+
             assert self.filter_layers_strip is not None
             assert type_embedding is not None
             ng = self.filter_neuron[-1]
@@ -874,44 +994,40 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             nei_type_j = nei_type.unsqueeze(1).expand([-1, nnei, -1])
             idx_i = nei_type_i * ntypes_with_padding
             idx_j = nei_type_j
-            # (nf x nl x nt_i x nt_j) x ng
-            idx = (
-                (idx_i + idx_j)
-                .view(-1, 1)
-                .expand(-1, ng)
-                .type(torch.long)
-                .to(torch.long)
-            )
-            # ntypes * (ntypes) * nt
-            type_embedding_i = torch.tile(
-                type_embedding.view(ntypes_with_padding, 1, nt),
-                [1, ntypes_with_padding, 1],
-            )
-            # (ntypes) * ntypes * nt
-            type_embedding_j = torch.tile(
-                type_embedding.view(1, ntypes_with_padding, nt),
-                [ntypes_with_padding, 1, 1],
-            )
-            # (ntypes * ntypes) * (nt+nt)
-            two_side_type_embedding = torch.cat(
-                [type_embedding_i, type_embedding_j], -1
-            ).reshape(-1, nt * 2)
-            tt_full = self.filter_layers_strip.networks[0](two_side_type_embedding)
+            idx = (idx_i + idx_j).reshape(-1).to(torch.long)
+            if self.compress:
+                tt_full = self.type_embd_data
+            else:
+                type_embedding_i = torch.tile(
+                    type_embedding.view(ntypes_with_padding, 1, nt),
+                    [1, ntypes_with_padding, 1],
+                )
+                type_embedding_j = torch.tile(
+                    type_embedding.view(1, ntypes_with_padding, nt),
+                    [ntypes_with_padding, 1, 1],
+                )
+                two_side_type_embedding = torch.cat(
+                    [type_embedding_i, type_embedding_j], -1
+                ).reshape(-1, nt * 2)
+                tt_full = self.filter_layers_strip.networks[0](two_side_type_embedding)
             # (nfnl x nt_i x nt_j) x ng
-            gg_t = torch.gather(tt_full, dim=0, index=idx)
+            gg_t = tt_full[idx]
             # (nfnl x nt_i x nt_j) x ng
             gg_t = gg_t.reshape(nfnl, nnei, nnei, ng)
             if self.smooth:
+                # Apply distance weighting to type features
                 gg_t = (
                     gg_t
                     * sw.reshape(nfnl, self.nnei, 1, 1)
                     * sw.reshape(nfnl, 1, self.nnei, 1)
                 )
+            # Combine geometric and type embeddings: gg_s * (1 + gg_t)
             # nfnl x nt_i x nt_j x ng
             gg = gg_s * gg_t + gg_s
         else:
             raise NotImplementedError
 
+        # Contract angular correlations with learned features
         # nfnl x ng
         res_ij = torch.einsum("ijk,ijkm->im", env_ij, gg)
         res_ij = res_ij * (1.0 / float(self.nnei) / float(self.nnei))
@@ -924,6 +1040,72 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             None,
             sw,
         )
+
+    def enable_compression(
+        self,
+        type_embedding_net: TypeEmbedNet,
+        table_data: dict,
+        table_config: dict,
+        lower: dict,
+        upper: dict,
+    ) -> None:
+        """Enable compression for the SE_T_TEBD descriptor block.
+
+        Parameters
+        ----------
+        type_embedding_net : TypeEmbedNet
+            The type embedding network
+        table_data : dict
+            The tabulated data from DPTabulate
+        table_config : dict
+            Configuration for table compression
+        lower : dict
+            Lower bounds for compression
+        upper : dict
+            Upper bounds for compression
+        """
+        if self.tebd_input_mode != "strip":
+            raise RuntimeError("Type embedding compression only works in strip mode")
+        if self.filter_layers_strip is None:
+            raise RuntimeError(
+                "filter_layers_strip must exist for type embedding compression"
+            )
+
+        # Compress the main geometric embedding network (self.filter_layers)
+        net_key = "filter_net"
+        self.compress_info[0] = torch.as_tensor(
+            [
+                lower[net_key],
+                upper[net_key],
+                upper[net_key] * table_config[0],
+                table_config[1],
+                table_config[2],
+                table_config[3],
+            ],
+            dtype=self.prec,
+            device="cpu",
+        )
+        self.compress_data[0] = table_data[net_key].to(
+            device=env.DEVICE, dtype=self.prec
+        )
+
+        # Compress the type embedding network (self.filter_layers_strip)
+        with torch.no_grad():
+            full_embd = type_embedding_net.get_full_embedding(env.DEVICE)
+            nt, t_dim = full_embd.shape
+            type_embedding_i = full_embd.view(nt, 1, t_dim).expand(nt, nt, t_dim)
+            type_embedding_j = full_embd.view(1, nt, t_dim).expand(nt, nt, t_dim)
+            two_side_type_embedding = torch.cat(
+                [type_embedding_i, type_embedding_j], dim=-1
+            ).reshape(-1, t_dim * 2)
+            embd_tensor = self.filter_layers_strip.networks[0](
+                two_side_type_embedding
+            ).detach()
+            if hasattr(self, "type_embd_data"):
+                del self.type_embd_data
+            self.register_buffer("type_embd_data", embd_tensor)
+
+        self.compress = True
 
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
