@@ -1134,7 +1134,7 @@ def test_polar(
         atomic=atomic,
         must=True,
         high_prec=False,
-        type_sel=dp.get_sel_type(),
+        # type_sel=dp.get_sel_type(),
     )
 
     test_data = data.get_test()
@@ -1275,7 +1275,7 @@ def test_dipole(
         atomic=atomic,
         must=True,
         high_prec=False,
-        type_sel=dp.get_sel_type(),
+        # type_sel=dp.get_sel_type(),
     )
     test_data = data.get_test()
     dipole, numb_test, atype = run_test(dp, test_data, numb_test, data)
