@@ -232,6 +232,7 @@ class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
         self.config["model"], self.shared_links = preprocess_shared_params(
             self.config["model"]
         )
+        self.config["learning_rate"]["start_lr"] = 1e-5
 
     def tearDown(self) -> None:
         MultiTaskTrainTest.tearDown(self)
@@ -271,6 +272,7 @@ class TestMultiTaskSeASharefit(unittest.TestCase, MultiTaskTrainTest):
         self.config["model"], self.shared_links = preprocess_shared_params(
             self.config["model"]
         )
+        self.config["learning_rate"]["start_lr"] = 1e-5
         self.share_fitting = True
 
     def tearDown(self) -> None:
