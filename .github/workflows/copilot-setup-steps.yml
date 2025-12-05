@@ -30,7 +30,7 @@ jobs:
     # If you do not check out your code, Copilot will do this for you.
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -49,10 +49,7 @@ jobs:
         run: echo "VIRTUAL_ENV=$PWD/venv" >> $GITHUB_ENV && echo "$PWD/venv/bin" >> $GITHUB_PATH
 
       - name: Install base dependencies
-        run: uv pip install tensorflow-cpu
-
-      - name: Install PyTorch
-        run: uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+        run: uv pip install --group pin_tensorflow_cpu --group pin_pytorch_cpu --torch-backend cpu
 
       - name: Build Python package
         run: uv pip install -e .[cpu,test]

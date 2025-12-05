@@ -40,6 +40,9 @@ from deepmd.utils.finetune import (
     get_index_between_two_maps,
     map_atom_exclude_types,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 dtype = env.GLOBAL_PD_FLOAT_PRECISION
 device = env.DEVICE
@@ -76,6 +79,7 @@ class Fitting(paddle.nn.Layer, BaseFitting):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         protection: float = 1e-2,
+        stat_file_path: Optional[DPPath] = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
@@ -91,6 +95,8 @@ class Fitting(paddle.nn.Layer, BaseFitting):
                 the lazy function helps by only sampling once.
         protection : float
             Divided-by-zero protection
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
         """
         if self.numb_fparam == 0 and self.numb_aparam == 0:
             # skip data statistics

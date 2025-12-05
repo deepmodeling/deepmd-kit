@@ -7,6 +7,9 @@ import numpy as np
 from deepmd.tf.descriptor.se_a import (
     DescrptSeA,
 )
+from deepmd.tf.env import (
+    tf,
+)
 from deepmd.tf.fit.dipole import (
     DipoleFittingSeA,
 )
@@ -20,6 +23,16 @@ from deepmd.tf.model.model import (
 
 class TestOutBiasStd(unittest.TestCase):
     """Test out_bias and out_std functionality in TensorFlow backend."""
+
+    def setUp(self):
+        """Resets the default graph before each test."""
+        super().setUp()
+        tf.reset_default_graph()
+
+    def tearDown(self):
+        """Resets the default graph after each test."""
+        tf.reset_default_graph()
+        super().tearDown()
 
     def test_init_out_stat_basic(self):
         """Test basic init_out_stat functionality."""

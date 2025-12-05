@@ -5,6 +5,7 @@ from typing import (
     Any,
     Callable,
     Optional,
+    Union,
 )
 
 import torch
@@ -325,14 +326,46 @@ class DPAtomicModel(BaseAtomicModel):
                 atom_exclude_types = self.atom_excl.get_exclude_types()
                 for sample in sampled:
                     sample["atom_exclude_types"] = list(atom_exclude_types)
+            if (
+                "find_fparam" not in sampled[0]
+                and "fparam" not in sampled[0]
+                and self.has_default_fparam()
+            ):
+                default_fparam = self.get_default_fparam()
+                for sample in sampled:
+                    nframe = sample["atype"].shape[0]
+                    sample["fparam"] = default_fparam.repeat(nframe, 1)
             return sampled
 
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
-        self.fitting_net.compute_input_stats(
-            wrapped_sampler, protection=self.data_stat_protect
-        )
+        self.compute_fitting_input_stat(wrapped_sampler, stat_file_path)
         if compute_or_load_out_stat:
             self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
+
+    def compute_fitting_input_stat(
+        self,
+        sample_merged: Union[Callable[[], list[dict]], list[dict]],
+        stat_file_path: Optional[DPPath] = None,
+    ) -> None:
+        """Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
+
+        Parameters
+        ----------
+        sample_merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        stat_file_path : Optional[DPPath]
+            The dictionary of paths to the statistics files.
+        """
+        self.fitting_net.compute_input_stats(
+            sample_merged,
+            protection=self.data_stat_protect,
+            stat_file_path=stat_file_path,
+        )
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
@@ -341,6 +374,9 @@ class DPAtomicModel(BaseAtomicModel):
     def has_default_fparam(self) -> bool:
         """Check if the model has default frame parameters."""
         return self.fitting_net.has_default_fparam()
+
+    def get_default_fparam(self) -> Optional[torch.Tensor]:
+        return self.fitting_net.get_default_fparam()
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""

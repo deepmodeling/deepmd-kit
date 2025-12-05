@@ -248,7 +248,7 @@ class DeepEval(DeepEvalBackend):
             return DeepDOS
         elif "dipole" in model_output_type:
             return DeepDipole
-        elif "polar" in model_output_type:
+        elif "polar" in model_output_type or "polarizability" in model_output_type:
             return DeepPolar
         elif "global_polar" in model_output_type:
             return DeepGlobalPolar
@@ -397,9 +397,9 @@ class DeepEval(DeepEvalBackend):
             The requested output definitions.
         """
         if atomic:
-            return list(self.output_def.var_defs.values())
+            output_defs = list(self.output_def.var_defs.values())
         else:
-            return [
+            output_defs = [
                 x
                 for x in self.output_def.var_defs.values()
                 if x.category
@@ -411,6 +411,13 @@ class DeepEval(DeepEvalBackend):
                     OutputVariableCategory.DERV_R_DERV_R,
                 )
             ]
+        if not self.get_has_hessian():
+            output_defs = [
+                x
+                for x in output_defs
+                if x.category != OutputVariableCategory.DERV_R_DERV_R
+            ]
+        return output_defs
 
     def _eval_func(self, inner_func: Callable, numb_test: int, natoms: int) -> Callable:
         """Wrapper method with auto batch size.

@@ -3,6 +3,10 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.descriptor.dpa2 import DescrptDPA2 as DescrptDPA2DP
 from deepmd.dpmodel.utils.network import Identity as IdentityDP
 from deepmd.dpmodel.utils.network import NativeLayer as NativeLayerDP
@@ -23,6 +27,10 @@ from deepmd.jax.descriptor.repformers import (
 from deepmd.jax.descriptor.se_t_tebd import (
     DescrptBlockSeTTebd,
 )
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
+)
 from deepmd.jax.utils.network import (
     NativeLayer,
 )
@@ -39,18 +47,23 @@ class DescrptDPA2(DescrptDPA2DP):
             value = to_jax_array(value)
             if value is not None:
                 value = ArrayAPIVariable(value)
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name in {"repinit"}:
             value = DescrptBlockSeAtten.deserialize(value.serialize())
         elif name in {"repinit_three_body"}:
             if value is not None:
                 value = DescrptBlockSeTTebd.deserialize(value.serialize())
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name in {"repformers"}:
             value = DescrptBlockRepformers.deserialize(value.serialize())
         elif name in {"type_embedding"}:
             value = TypeEmbedNet.deserialize(value.serialize())
         elif name in {"g1_shape_tranform", "tebd_transform"}:
             if value is None:
-                pass
+                if Version(flax_version) >= Version("0.12.0"):
+                    value = nnx.data(value)
             elif isinstance(value, NativeLayerDP):
                 value = NativeLayer.deserialize(value.serialize())
             elif isinstance(value, IdentityDP):
