@@ -54,7 +54,7 @@ class TestDipoleCharge : public ::testing::Test {
   deepmd::hpp::DipoleChargeModifier dm;
 
   void SetUp() override {
-    if(NOT BUILD_TENSORFLOW) {
+    if (NOT BUILD_TENSORFLOW) {
       GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
     }
     std::string file_name = "../../tests/infer/dipolecharge_e.pbtxt";

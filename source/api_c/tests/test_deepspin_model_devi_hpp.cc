@@ -26,7 +26,7 @@ class TestInferDeepSpinModeDevi : public ::testing::Test {
   deepmd::hpp::DeepSpinModelDevi dp_md;
 
   void SetUp() override {
-    if(NOT BUILD_PYTORCH) {
+    if (NOT BUILD_PYTORCH) {
       GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
     }
     {

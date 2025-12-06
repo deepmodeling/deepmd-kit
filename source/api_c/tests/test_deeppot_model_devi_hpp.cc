@@ -24,7 +24,7 @@ class TestInferDeepPotModeDevi : public ::testing::Test {
   deepmd::hpp::DeepPotModelDevi dp_md;
 
   void SetUp() override {
-    if(NOT BUILD_TENSORFLOW) {
+    if (NOT BUILD_TENSORFLOW) {
       GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
     }
     {
@@ -77,7 +77,7 @@ class TestInferDeepPotModeDeviPython : public ::testing::Test {
   deepmd::hpp::DeepPotModelDevi dp_md;
 
   void SetUp() override {
-    if(NOT BUILD_TENSORFLOW) {
+    if (NOT BUILD_TENSORFLOW) {
       GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
     }
     {

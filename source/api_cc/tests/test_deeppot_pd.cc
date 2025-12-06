@@ -61,7 +61,7 @@ class TestInferDeepPotAPd : public ::testing::Test {
   deepmd::DeepPot dp;
 
   void SetUp() override {
-    if(NOT BUILD_PADDLE) {
+    if (NOT BUILD_PADDLE) {
       GTEST_SKIP() << "Skip because Paddle support is not enabled.";
     }
     std::string file_name = "../../tests/infer/deeppot_sea.json";
@@ -581,7 +581,7 @@ class TestInferDeepPotAPdNoPbc : public ::testing::Test {
   deepmd::DeepPot dp;
 
   void SetUp() override {
-    if(NOT BUILD_PADDLE) {
+    if (NOT BUILD_PADDLE) {
       GTEST_SKIP() << "Skip because Paddle support is not enabled.";
     }
     std::string file_name = "../../tests/infer/deeppot_sea.json";

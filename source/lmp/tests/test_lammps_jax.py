@@ -228,7 +228,10 @@ sp.check_output(
 
 
 def setup_module():
-    pytest.skipIf(os.environ.get("ENABLE_JAX", "1") != "1", "Skip test because JAX support is not enabled.")
+    pytest.skipIf(
+        os.environ.get("ENABLE_JAX", "1") != "1",
+        "Skip test because JAX support is not enabled.",
+    )
     write_lmp_data(box, coord, type_OH, data_file)
     write_lmp_data(box, coord, type_HO, data_type_map_file)
     write_lmp_data(

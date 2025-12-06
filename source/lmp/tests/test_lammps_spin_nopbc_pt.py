@@ -96,7 +96,10 @@ sp.check_output(
 
 
 def setup_module() -> None:
-    pytest.skipIf(os.environ.get("ENABLE_PYTORCH", "1") != "1", "Skip test because PyTorch support is not enabled.")
+    pytest.skipIf(
+        os.environ.get("ENABLE_PYTORCH", "1") != "1",
+        "Skip test because PyTorch support is not enabled.",
+    )
     write_lmp_data_spin(box, coord, spin, type_NiO, data_file)
 
 

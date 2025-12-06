@@ -85,7 +85,7 @@ class TestInferDeepSpinDpaPt : public ::testing::Test {
   deepmd::DeepSpin dp;
 
   void SetUp() override {
-    if(NOT BUILD_PYTORCH) {
+    if (NOT BUILD_PYTORCH) {
       GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
     }
     dp.init("../../tests/infer/deeppot_dpa_spin.pth");
@@ -251,7 +251,7 @@ class TestInferDeepSpinDpaPtNopbc : public ::testing::Test {
   deepmd::DeepSpin dp;
 
   void SetUp() override {
-    if(NOT BUILD_PYTORCH) {
+    if (NOT BUILD_PYTORCH) {
       GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
     }
     dp.init("../../tests/infer/deeppot_dpa_spin.pth");

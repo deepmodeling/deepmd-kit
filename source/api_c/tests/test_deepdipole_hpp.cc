@@ -221,7 +221,7 @@ class TestInferDeepDipoleNew : public ::testing::Test {
   deepmd::hpp::DeepTensor dp;
 
   void SetUp() override {
-    if(NOT BUILD_TENSORFLOW) {
+    if (NOT BUILD_TENSORFLOW) {
       GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
     }
     std::string file_name = "../../tests/infer/deepdipole_new.pbtxt";
