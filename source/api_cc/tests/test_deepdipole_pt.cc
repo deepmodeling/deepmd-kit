@@ -53,6 +53,9 @@ class TestInferDeepTensorPt : public ::testing::Test {
   deepmd::DeepTensor dt;
 
   void SetUp() override {
+    if(NOT BUILD_PYTORCH) {
+      GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+    }
     std::string file_name = "../../tests/infer/deepdipole_pt.pth";
     dt.init(file_name);
   };

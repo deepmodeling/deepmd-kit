@@ -18,6 +18,13 @@ jobs:
     strategy:
       matrix:
         check_memleak: [true, false]
+        include:
+          - enable_tensorflow: true
+            enable_pytorch: true
+            enable_paddle: false
+          - enable_tensorflow: false
+            enable_pytorch: false
+            enable_paddle: true
     steps:
     - uses: actions/checkout@v6
     - uses: actions/setup-python@v6
@@ -46,6 +53,9 @@ jobs:
         CMAKE_GENERATOR: Ninja
         CXXFLAGS: ${{ matrix.check_memleak && '-fsanitize=leak' || '' }}
         LSAN_OPTIONS: suppressions=${{ github.workspace }}/.github/workflows/suppr.txt
+        ENABLE_TENSORFLOW: ${{ matrix.enable_tensorflow && 'TRUE' || 'FALSE' }}
+        ENABLE_PYTORCH: ${{ matrix.enable_pytorch && 'TRUE' || 'FALSE' }}
+        ENABLE_PADDLE: ${{ matrix.enable_paddle && 'TRUE' || 'FALSE' }}
     # test lammps
     - run: |
         cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/paddle/lib/*.so ${{ github.workspace }}/dp_test/lib/
@@ -58,6 +68,9 @@ jobs:
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
         LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
+        ENABLE_TENSORFLOW: ${{ matrix.enable_tensorflow && '1' || '0' }}
+        ENABLE_PYTORCH: ${{ matrix.enable_pytorch && '1' || '0' }}
+        ENABLE_PADDLE: ${{ matrix.enable_paddle && '1' || '0' }}
       if: ${{ !matrix.check_memleak }}
     # test ipi
     - run: |
@@ -71,6 +84,9 @@ jobs:
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
         LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib
+        ENABLE_TENSORFLOW: ${{ matrix.enable_tensorflow && '1' || '0' }}
+        ENABLE_PYTORCH: ${{ matrix.enable_pytorch && '1' || '0' }}
+        ENABLE_PADDLE: ${{ matrix.enable_paddle && '1' || '0' }}
       if: ${{ !matrix.check_memleak }}
     - uses: codecov/codecov-action@v5
       env:

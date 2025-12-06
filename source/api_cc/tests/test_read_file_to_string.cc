@@ -13,6 +13,9 @@
 
 #include "common.h"
 TEST(TestReadFileToString, readfiletostring) {
+    if(NOT BUILD_TENSORFLOW) {
+      GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
+    }
   std::string file_content;
   deepmd::read_file_to_string("../../tests/infer/deeppot.txt", file_content);
 

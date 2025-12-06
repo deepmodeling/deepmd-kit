@@ -30,6 +30,9 @@ class TestInferDeepPotModeDeviFparamAparam : public ::testing::Test {
   deepmd::hpp::DeepPotModelDevi dp_md;
 
   void SetUp() override {
+    if(NOT BUILD_TENSORFLOW) {
+      GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
+    }
     {
       std::string file_name = "../../tests/infer/fparam_aparam.pbtxt";
       deepmd::hpp::convert_pbtxt_to_pb("../../tests/infer/fparam_aparam.pbtxt",

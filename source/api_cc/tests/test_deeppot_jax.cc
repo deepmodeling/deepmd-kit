@@ -69,6 +69,9 @@ class TestInferDeepPotAJAX : public ::testing::Test {
   deepmd::DeepPot dp;
 
   void SetUp() override {
+    if(NOT BUILD_JAX) {
+      GTEST_SKIP() << "Skip because JAX support is not enabled.";
+    }
     std::string file_name = "../../tests/infer/deeppot_sea.savedmodel";
 
     dp.init(file_name);
