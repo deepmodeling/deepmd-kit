@@ -60,6 +60,7 @@ jobs:
     - run: pytest --cov=deepmd source/tests  --splits 6 --group ${{ matrix.group }} --store-durations --clean-durations --durations-path=.test_durations --splitting-algorithm least_duration
       env:
         NUM_WORKERS: 0
+        DP_CI_IMPORT_PADDLE_BEFORE_TF: 1
     - name: Test TF2 eager mode
       run: pytest --cov=deepmd --cov-append source/tests/consistent/io/test_io.py source/jax2tf_tests
       env:
