@@ -77,9 +77,9 @@ class TestInferDeepPotAFParamAParamPt : public ::testing::Test {
   deepmd::DeepPot dp;
 
   void SetUp() override {
-    #ifndef BUILD_PYTORCH
-      GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
-    #endif
+#ifndef BUILD_PYTORCH
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
     dp.init("../../tests/infer/fparam_aparam.pth");
 
     natoms = expected_e.size();

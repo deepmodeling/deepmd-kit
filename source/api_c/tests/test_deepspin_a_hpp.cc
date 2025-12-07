@@ -56,9 +56,9 @@ class TestInferDeepSpinAHPP : public ::testing::Test {
   deepmd::hpp::DeepSpin dp;
 
   void SetUp() override {
-    #ifndef BUILD_PYTORCH
-      GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
-    #endif
+#ifndef BUILD_PYTORCH
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
     dp.init("../../tests/infer/deeppot_dpa_spin.pth");
 
     natoms = expected_e.size();
@@ -211,9 +211,9 @@ class TestInferDeepSpinANoPbcHPP : public ::testing::Test {
   deepmd::hpp::DeepSpin dp;
 
   void SetUp() override {
-    #ifndef BUILD_PYTORCH
-      GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
-    #endif
+#ifndef BUILD_PYTORCH
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
     dp.init("../../tests/infer/deeppot_dpa_spin.pth");
 
     natoms = expected_e.size();

@@ -54,9 +54,9 @@ class TestInferDeepPotAPt : public ::testing::Test {
   deepmd::DeepPot dp;
 
   void SetUp() override {
-    #ifndef BUILD_PYTORCH
-      GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
-    #endif
+#ifndef BUILD_PYTORCH
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
     std::string file_name = "../../tests/infer/deeppot_sea.pth";
 
     dp.init(file_name);
@@ -573,9 +573,9 @@ class TestInferDeepPotAPtNoPbc : public ::testing::Test {
   deepmd::DeepPot dp;
 
   void SetUp() override {
-    #ifndef BUILD_PYTORCH
-      GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
-   #endif
+#ifndef BUILD_PYTORCH
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
     std::string file_name = "../../tests/infer/deeppot_sea.pth";
     dp.init(file_name);
 

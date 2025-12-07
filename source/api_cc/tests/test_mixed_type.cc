@@ -30,9 +30,9 @@ class TestInferMixedType : public ::testing::Test {
   deepmd::DeepPot dp;
 
   void SetUp() override {
-    #ifndef BUILD_TENSORFLOW
-      GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
-    #endif
+#ifndef BUILD_TENSORFLOW
+    GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
+#endif
     std::string file_name = "../../tests/infer/virtual_type.pbtxt";
     deepmd::convert_pbtxt_to_pb("../../tests/infer/virtual_type.pbtxt",
                                 "virtual_type.pb");
@@ -140,9 +140,9 @@ class TestInferVirtualType : public ::testing::Test {
   deepmd::DeepPot dp;
 
   void SetUp() override {
-    #ifndef BUILD_TENSORFLOW
-      GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
-    #endif
+#ifndef BUILD_TENSORFLOW
+    GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
+#endif
     std::string file_name = "../../tests/infer/virtual_type.pbtxt";
     deepmd::convert_pbtxt_to_pb("../../tests/infer/virtual_type.pbtxt",
                                 "virtual_type.pb");
