@@ -17,12 +17,21 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        check_memleak: [true, false]
         include:
-          - enable_tensorflow: true
+          - check_memleak: true
+            enable_tensorflow: true
             enable_pytorch: true
             enable_paddle: false
-          - enable_tensorflow: false
+          - check_memleak: true
+            enable_tensorflow: false
+            enable_pytorch: false
+            enable_paddle: true
+          - check_memleak: false
+            enable_tensorflow: true
+            enable_pytorch: true
+            enable_paddle: false
+          - check_memleak: false
+            enable_tensorflow: false
             enable_pytorch: false
             enable_paddle: true
     steps:
