@@ -36,9 +36,9 @@ class TestInferDeepPolar : public ::testing::Test {
   deepmd::DeepTensor dp;
 
   void SetUp() override {
-    if (NOT BUILD_TENSORFLOW) {
+    #ifndef BUILD_TENSORFLOW
       GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
-    }
+    #endif
     std::string file_name = "../../tests/infer/deeppolar.pbtxt";
     deepmd::convert_pbtxt_to_pb("../../tests/infer/deeppolar.pbtxt",
                                 "deeppolar.pb");
@@ -460,9 +460,9 @@ class TestInferDeepPolarNew : public ::testing::Test {
   deepmd::DeepTensor dp;
 
   void SetUp() override {
-    if (NOT BUILD_TENSORFLOW) {
+    #ifndef BUILD_TENSORFLOW
       GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
-    }
+    #endif
     std::string file_name = "../../tests/infer/deeppolar_new.pbtxt";
     deepmd::convert_pbtxt_to_pb("../../tests/infer/deeppolar_new.pbtxt",
                                 "deeppolar_new.pb");

@@ -30,9 +30,9 @@ class TestInferDeepSpinModeDevi : public ::testing::Test {
   deepmd::DeepSpinModelDevi dp_md;
 
   void SetUp() override {
-    if (NOT BUILD_PYTORCH) {
+    #ifndef BUILD_PYTORCH
       GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
-    }
+    #endif
     {
       dp0.init("../../tests/infer/deeppot_dpa_spin.pth");
     }

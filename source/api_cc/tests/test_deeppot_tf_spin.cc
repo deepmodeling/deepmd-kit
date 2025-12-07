@@ -41,9 +41,9 @@ class TestInferDeepSpin : public ::testing::Test {
   deepmd::DeepSpin dp;
 
   void SetUp() override {
-    if (NOT BUILD_TENSORFLOW) {
+    #ifndef BUILD_TENSORFLOW
       GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
-    }
+   #endif
     std::string file_name = "../../tests/infer/deepspin_nlist.pbtxt";
     deepmd::convert_pbtxt_to_pb("../../tests/infer/deepspin_nlist.pbtxt",
                                 "deepspin_nlist.pb");
@@ -171,9 +171,9 @@ class TestInferDeepSpinNopbc : public ::testing::Test {
   deepmd::DeepSpin dp;
 
   void SetUp() override {
-    if (NOT BUILD_TENSORFLOW) {
+    #ifndef BUILD_TENSORFLOW
       GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
-    }
+    #endif
     std::string file_name = "../../tests/infer/deepspin_nlist.pbtxt";
     deepmd::convert_pbtxt_to_pb("../../tests/infer/deepspin_nlist.pbtxt",
                                 "deepspin_nlist.pb");
