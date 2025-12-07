@@ -53,7 +53,7 @@ class TestInferDeepSpinA : public ::testing::Test {
   double expected_tot_e;
   // std::vector<double> expected_tot_v;
 
-  DP_DeepSpin* dp;
+  DP_DeepSpin* dp = nullptr;
 
   void SetUp() override {
 #ifndef BUILD_PYTORCH
@@ -236,7 +236,7 @@ class TestInferDeepSpinANoPBC : public ::testing::Test {
   double expected_tot_e;
   // std::vector<double> expected_tot_v;
 
-  DP_DeepSpin* dp;
+  DP_DeepSpin* dp = nullptr;
 
   void SetUp() override {
 #ifndef BUILD_PYTORCH

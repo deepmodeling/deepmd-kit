@@ -61,7 +61,7 @@ class TestInferDeepPotA : public ::testing::Test {
   double expected_tot_e;
   std::vector<double> expected_tot_v;
 
-  DP_DeepPot* dp;
+  DP_DeepPot* dp = nullptr;
 
   void SetUp() override {
 #ifndef BUILD_TENSORFLOW
@@ -245,7 +245,7 @@ class TestInferDeepPotANoPBC : public ::testing::Test {
   double expected_tot_e;
   std::vector<double> expected_tot_v;
 
-  DP_DeepPot* dp;
+  DP_DeepPot* dp = nullptr;
 
   void SetUp() override {
 #ifndef BUILD_TENSORFLOW
