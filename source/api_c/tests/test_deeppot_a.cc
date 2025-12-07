@@ -64,6 +64,9 @@ class TestInferDeepPotA : public ::testing::Test {
   DP_DeepPot* dp;
 
   void SetUp() override {
+#ifndef BUILD_TENSORFLOW
+    GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
+#endif
     const char* file_name = "../../tests/infer/deeppot.pbtxt";
     const char* model_file = "deeppot.pb";
     DP_ConvertPbtxtToPb(file_name, model_file);
@@ -245,6 +248,9 @@ class TestInferDeepPotANoPBC : public ::testing::Test {
   DP_DeepPot* dp;
 
   void SetUp() override {
+#ifndef BUILD_TENSORFLOW
+    GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
+#endif
     const char* file_name = "../../tests/infer/deeppot.pbtxt";
     const char* model_file = "deeppot.pb";
     DP_ConvertPbtxtToPb(file_name, model_file);
