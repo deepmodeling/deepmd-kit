@@ -77,6 +77,9 @@ class TestInferDeepPotDpaJAX : public ::testing::Test {
   deepmd::DeepPot dp;
 
   void SetUp() override {
+#ifndef BUILD_JAX
+    GTEST_SKIP() << "Skip because JAX support is not enabled.";
+#endif
     dp.init("../../tests/infer/deeppot_dpa.savedmodel");
 
     natoms = expected_e.size();
@@ -224,6 +227,9 @@ class TestInferDeepPotDpaJAXNopbc : public ::testing::Test {
   deepmd::DeepPot dp;
 
   void SetUp() override {
+#ifndef BUILD_JAX
+    GTEST_SKIP() << "Skip because JAX support is not enabled.";
+#endif
     dp.init("../../tests/infer/deeppot_dpa.savedmodel");
 
     natoms = expected_e.size();
