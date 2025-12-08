@@ -63,6 +63,7 @@ jobs:
       env:
         NUM_WORKERS: 0
         FLAGS_use_stride_compute_kernel: 0
+        FLAGS_use_stride_kernel: 0
     - name: Test TF2 eager mode
       run: pytest --cov=deepmd --cov-append source/tests/consistent/io/test_io.py source/jax2tf_tests
       env:
