@@ -55,7 +55,7 @@ class DPiPICalculator(FileIOCalculator):
 
 @unittest.skipIf(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
-    "Skip test because TensorFlow support is not enabled.",
+    reason="Skip test because TensorFlow support is not enabled.",
 )
 class TestDPIPI(unittest.TestCase):
     # copy from test_deeppot_a.py
@@ -259,7 +259,7 @@ class TestDPIPI(unittest.TestCase):
 
 @unittest.skipIf(
     os.environ.get("ENABLE_PYTORCH", "1") != "1",
-    "Skip test because PyTorch support is not enabled.",
+    reason="Skip test because PyTorch support is not enabled.",
 )
 class TestDPIPIPt(TestDPIPI):
     @classmethod

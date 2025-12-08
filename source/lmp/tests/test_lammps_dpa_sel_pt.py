@@ -344,9 +344,9 @@ def test_pair_deepmd_virial(lammps) -> None:
         ) / constants.nktv2p == pytest.approx(expected_v[idx_map, ii])
 
 
-@pytest.mark.skipIf(
+@pytest.mark.skipif(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
-    "Skip test because TensorFlow support is not enabled.",
+    reason="Skip test because TensorFlow support is not enabled.",
 )
 def test_pair_deepmd_model_devi(lammps) -> None:
     lammps.pair_style(
@@ -374,9 +374,9 @@ def test_pair_deepmd_model_devi(lammps) -> None:
     assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
 
 
-@pytest.mark.skipIf(
+@pytest.mark.skipif(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
-    "Skip test because TensorFlow support is not enabled.",
+    reason="Skip test because TensorFlow support is not enabled.",
 )
 def test_pair_deepmd_model_devi_virial(lammps) -> None:
     lammps.pair_style(
@@ -416,9 +416,9 @@ def test_pair_deepmd_model_devi_virial(lammps) -> None:
     assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
 
 
-@pytest.mark.skipIf(
+@pytest.mark.skipif(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
-    "Skip test because TensorFlow support is not enabled.",
+    reason="Skip test because TensorFlow support is not enabled.",
 )
 def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
     relative = 1.0
@@ -449,9 +449,9 @@ def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
     assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
 
 
-@pytest.mark.skipIf(
+@pytest.mark.skipif(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
-    "Skip test because TensorFlow support is not enabled.",
+    reason="Skip test because TensorFlow support is not enabled.",
 )
 def test_pair_deepmd_model_devi_atomic_relative_v(lammps) -> None:
     relative = 1.0
@@ -539,9 +539,9 @@ def test_pair_deepmd_virial_real(lammps_real) -> None:
         )
 
 
-@pytest.mark.skipIf(
+@pytest.mark.skipif(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
-    "Skip test because TensorFlow support is not enabled.",
+    reason="Skip test because TensorFlow support is not enabled.",
 )
 def test_pair_deepmd_model_devi_real(lammps_real) -> None:
     lammps_real.pair_style(
@@ -573,9 +573,9 @@ def test_pair_deepmd_model_devi_real(lammps_real) -> None:
     )
 
 
-@pytest.mark.skipIf(
+@pytest.mark.skipif(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
-    "Skip test because TensorFlow support is not enabled.",
+    reason="Skip test because TensorFlow support is not enabled.",
 )
 def test_pair_deepmd_model_devi_virial_real(lammps_real) -> None:
     lammps_real.pair_style(
@@ -621,9 +621,9 @@ def test_pair_deepmd_model_devi_virial_real(lammps_real) -> None:
     )
 
 
-@pytest.mark.skipIf(
+@pytest.mark.skipif(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
-    "Skip test because TensorFlow support is not enabled.",
+    reason="Skip test because TensorFlow support is not enabled.",
 )
 def test_pair_deepmd_model_devi_atomic_relative_real(lammps_real) -> None:
     relative = 1.0
@@ -658,9 +658,9 @@ def test_pair_deepmd_model_devi_atomic_relative_real(lammps_real) -> None:
     )
 
 
-@pytest.mark.skipIf(
+@pytest.mark.skipif(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
-    "Skip test because TensorFlow support is not enabled.",
+    reason="Skip test because TensorFlow support is not enabled.",
 )
 def test_pair_deepmd_model_devi_atomic_relative_v_real(lammps_real) -> None:
     relative = 1.0
