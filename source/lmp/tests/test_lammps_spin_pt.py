@@ -189,7 +189,10 @@ def test_pair_deepmd_virial(lammps) -> None:
     #         lammps.variables[f"virial{ii}"].value
     #     ) / constants.nktv2p == pytest.approx(expected_v[idx_map, ii])
 
-
+@pytest.mark.skipIf(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    "Skip test because TensorFlow support is not enabled.",
+)
 def test_pair_deepmd_model_devi(lammps) -> None:
     lammps.pair_style(
         f"deepspin {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1"
@@ -212,7 +215,10 @@ def test_pair_deepmd_model_devi(lammps) -> None:
     assert md[8] == pytest.approx(np.min(expected_md_fm))
     assert md[9] == pytest.approx(np.mean(expected_md_fm))
 
-
+@pytest.mark.skipIf(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    "Skip test because TensorFlow support is not enabled.",
+)
 def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
     relative = 1.0
     lammps.pair_style(
@@ -250,6 +256,10 @@ def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
 @pytest.mark.parametrize(
     ("balance_args",),
     [(["--balance"],), ([],)],
+)
+@pytest.mark.skipIf(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    "Skip test because TensorFlow support is not enabled.",
 )
 def test_pair_deepmd_mpi(balance_args: list) -> None:
     with tempfile.NamedTemporaryFile() as f:
