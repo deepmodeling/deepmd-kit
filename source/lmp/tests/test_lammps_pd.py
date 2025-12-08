@@ -373,6 +373,7 @@ def test_pair_deepmd_model_devi(lammps):
     assert md[2] == pytest.approx(np.min(expected_md_v))
     assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
 
+
 @pytest.mark.skipIf(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
     "Skip test because TensorFlow support is not enabled.",
@@ -416,6 +417,7 @@ def test_pair_deepmd_model_devi_virial(lammps):
         np.sqrt(np.mean(np.square(expected_md_v))), RTOL, ATOL
     )
 
+
 @pytest.mark.skipIf(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
     "Skip test because TensorFlow support is not enabled.",
@@ -447,6 +449,7 @@ def test_pair_deepmd_model_devi_atomic_relative(lammps):
     assert md[1] == pytest.approx(np.max(expected_md_v))
     assert md[2] == pytest.approx(np.min(expected_md_v))
     assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
+
 
 @pytest.mark.skipIf(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
@@ -543,6 +546,7 @@ def test_pair_deepmd_virial_real(lammps_real):
             ATOL,
         )
 
+
 @pytest.mark.skipIf(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
     "Skip test because TensorFlow support is not enabled.",
@@ -575,6 +579,7 @@ def test_pair_deepmd_model_devi_real(lammps_real):
     assert md[3] == pytest.approx(
         np.sqrt(np.mean(np.square(expected_md_v))) * constants.ener_metal2real
     )
+
 
 @pytest.mark.skipIf(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
@@ -643,6 +648,7 @@ def test_pair_deepmd_model_devi_virial_real(lammps_real):
         ATOL,
     )
 
+
 @pytest.mark.skipIf(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
     "Skip test because TensorFlow support is not enabled.",
@@ -678,6 +684,7 @@ def test_pair_deepmd_model_devi_atomic_relative_real(lammps_real):
     assert md[3] == pytest.approx(
         np.sqrt(np.mean(np.square(expected_md_v))) * constants.ener_metal2real
     )
+
 
 @pytest.mark.skipIf(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",

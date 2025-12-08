@@ -149,6 +149,7 @@ def test_pair_deepmd(lammps) -> None:
         )
     lammps.run(1)
 
+
 @pytest.mark.skipIf(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
     "Skip test because TensorFlow support is not enabled.",
@@ -174,6 +175,7 @@ def test_pair_deepmd_model_devi(lammps) -> None:
     assert md[7] == pytest.approx(np.max(expected_md_fm))
     assert md[8] == pytest.approx(np.min(expected_md_fm))
     assert md[9] == pytest.approx(np.mean(expected_md_fm))
+
 
 @pytest.mark.skipIf(
     os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
