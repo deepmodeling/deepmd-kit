@@ -1,1 +1,5 @@
 leak:libpaddle_inference
+# TensorFlow 2.20
+leak:xla::
+leak:mlir::
+leak:llvm::
