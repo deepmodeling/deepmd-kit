@@ -32,7 +32,7 @@ jobs:
         export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
         export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
         source/install/uv_with_retry.sh pip install --system -e .[test,jax] mpi4py --group pin_jax
-        source/install/uv_with_retry.sh pip install --system --pre "paddlepaddle" -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/
+        source/install/uv_with_retry.sh pip install --system --pre "paddlepaddle==3.2.2" -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
       env:
         # Please note that uv has some issues with finding
         # existing TensorFlow package. Currently, it uses
