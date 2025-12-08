@@ -62,7 +62,6 @@ jobs:
         XLA_PYTHON_CLIENT_PREALLOCATE: false
         XLA_PYTHON_CLIENT_ALLOCATOR: platform
         FLAGS_use_stride_compute_kernel: 0
-        FLAGS_use_stride_kernel: 0
     - name: Convert models
       run: source/tests/infer/convert-models.sh
     - run: |

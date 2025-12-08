@@ -11,6 +11,7 @@ from pathlib import (
 )
 
 import numpy as np
+import paddle
 
 from deepmd.pd.entrypoints.main import (
     get_trainer,
@@ -232,9 +233,13 @@ class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
         self.config["model"], self.shared_links = preprocess_shared_params(
             self.config["model"]
         )
-        self.config["learning_rate"]["start_lr"] = 1e-5
+        self.FLAGS_use_stride_kernel = paddle.get_flags("FLAGS_use_stride_kernel")[
+            "FLAGS_use_stride_kernel"
+        ]
+        paddle.set_flags({"FLAGS_use_stride_kernel": False})
 
     def tearDown(self) -> None:
+        paddle.set_flags({"FLAGS_use_stride_kernel": self.FLAGS_use_stride_kernel})
         MultiTaskTrainTest.tearDown(self)
 
 
@@ -274,8 +279,13 @@ class TestMultiTaskSeASharefit(unittest.TestCase, MultiTaskTrainTest):
         )
         self.config["learning_rate"]["start_lr"] = 1e-5
         self.share_fitting = True
+        self.FLAGS_use_stride_kernel = paddle.get_flags("FLAGS_use_stride_kernel")[
+            "FLAGS_use_stride_kernel"
+        ]
+        paddle.set_flags({"FLAGS_use_stride_kernel": False})
 
     def tearDown(self) -> None:
+        paddle.set_flags({"FLAGS_use_stride_kernel": self.FLAGS_use_stride_kernel})
         MultiTaskTrainTest.tearDown(self)
 
 
