@@ -357,6 +357,7 @@ def get_generator(
             warnings.warn(
                 f"DEVICE is {DEVICE}, which is not supported. Returning None.",
                 category=UserWarning,
+                stacklevel=2,
             )
             return None
             # raise ValueError("DEVICE should be cpu or gpu or gpu:x or xpu or xpu:x")
