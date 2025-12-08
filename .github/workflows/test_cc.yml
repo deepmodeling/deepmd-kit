@@ -79,6 +79,7 @@ jobs:
         LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
         ENABLE_TENSORFLOW: ${{ matrix.enable_tensorflow && '1' || '0' }}
         ENABLE_PYTORCH: ${{ matrix.enable_pytorch && '1' || '0' }}
+        ENABLE_JAX: ${{ matrix.enable_tensorflow && '1' || '0' }}
         ENABLE_PADDLE: ${{ matrix.enable_paddle && '1' || '0' }}
       if: ${{ !matrix.check_memleak }}
     # test ipi
@@ -95,6 +96,7 @@ jobs:
         LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib
         ENABLE_TENSORFLOW: ${{ matrix.enable_tensorflow && '1' || '0' }}
         ENABLE_PYTORCH: ${{ matrix.enable_pytorch && '1' || '0' }}
+        ENABLE_JAX: ${{ matrix.enable_tensorflow && '1' || '0' }}
         ENABLE_PADDLE: ${{ matrix.enable_paddle && '1' || '0' }}
       if: ${{ !matrix.check_memleak }}
     - uses: codecov/codecov-action@v5
