@@ -32,7 +32,7 @@ jobs:
         export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
         export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
         source/install/uv_with_retry.sh pip install --system -e .[test,jax] mpi4py --group pin_jax
-        source/install/uv_with_retry.sh pip install --system --pre "paddlepaddle==3.0.0" -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+        source/install/uv_with_retry.sh pip install --system --find-links "https://www.paddlepaddle.org.cn/packages/nightly/cpu/paddlepaddle/" --index-url https://pypi.org/simple paddlepaddle==3.3.0.dev20251204
       env:
         # Please note that uv has some issues with finding
         # existing TensorFlow package. Currently, it uses
@@ -60,6 +60,7 @@ jobs:
     - run: pytest --cov=deepmd source/tests  --splits 6 --group ${{ matrix.group }} --store-durations --clean-durations --durations-path=.test_durations --splitting-algorithm least_duration
       env:
         NUM_WORKERS: 0
+        FLAGS_use_stride_compute_kernel: 0
     - name: Test TF2 eager mode
       run: pytest --cov=deepmd --cov-append source/tests/consistent/io/test_io.py source/jax2tf_tests
       env:
