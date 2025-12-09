@@ -3,6 +3,7 @@ from __future__ import (
     annotations,
 )
 
+import warnings
 from contextlib import (
     contextmanager,
 )
@@ -345,8 +346,21 @@ def get_generator(
             generator = paddle.framework.core.default_cuda_generator(
                 int(DEVICE.split("gpu:")[1])
             )
+        elif DEVICE == "xpu":
+            generator = paddle.framework.core.default_xpu_generator(0)
+        elif DEVICE.startswith("xpu:"):
+            generator = paddle.framework.core.default_xpu_generator(
+                int(DEVICE.split("xpu:")[1])
+            )
         else:
-            raise ValueError("DEVICE should be cpu or gpu or gpu:x")
+            # return none for compability in different devices
+            warnings.warn(
+                f"DEVICE is {DEVICE}, which is not supported. Returning None.",
+                category=UserWarning,
+                stacklevel=2,
+            )
+            return None
+            # raise ValueError("DEVICE should be cpu or gpu or gpu:x or xpu or xpu:x")
         generator.manual_seed(seed)
         return generator
     else:
