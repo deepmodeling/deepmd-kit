@@ -85,7 +85,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.9", "3.12"]
+        python: ["3.9", "3.13"]
     needs: testpython
     steps:
     - name: Get durations from cache
