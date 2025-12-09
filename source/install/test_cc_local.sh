@@ -1,3 +1,4 @@
+#!/bin/bash
 set -ex
 
 if [ "$DP_VARIANT" = "cuda" ]; then
@@ -32,7 +33,7 @@ cmake \
 	${CUDA_ARGS} ..
 cmake --build . -j${NPROC}
 cmake --install .
-if [[ "${ENABLE_PADDLE:-TRUE}" == "TRUE" ]]; then
+if [ "${ENABLE_PADDLE:-TRUE}" == "TRUE" ]; then
 	PADDLE_INFERENCE_DIR=${BUILD_TMP_DIR}/paddle_inference_install_dir
 	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib:${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib
 fi
