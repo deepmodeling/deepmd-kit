@@ -60,7 +60,11 @@ class JAXBackend(Backend):
         Callable[[Namespace], None]
             The entry point hook of the backend.
         """
-        raise NotImplementedError
+        from deepmd.jax.entrypoints.main import (
+            main,
+        )
+
+        return main
 
     @property
     def deep_eval(self) -> type["DeepEvalBackend"]:

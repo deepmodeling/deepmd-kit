@@ -22,7 +22,7 @@ from deepmd.jax.model.model import (
 )
 
 
-def deserialize_to_file(model_file: str, data: dict) -> None:
+def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> None:
     """Deserialize the dictionary to a model file.
 
     Parameters
@@ -31,10 +31,15 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         The model file to be saved.
     data : dict
         The dictionary to be deserialized.
+    hessian : bool
+        Add the Hessian to the model output.
     """
     if model_file.endswith(".jax"):
         model = BaseModel.deserialize(data["model"])
         model_def_script = data["model_def_script"]
+        if hessian:
+            model.enable_hessian()
+            model_def_script["hessian_mode"] = True
         _, state = nnx.split(model)
         with ocp.Checkpointer(
             ocp.CompositeCheckpointHandler("state", "model_def_script")
@@ -49,6 +54,9 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     elif model_file.endswith(".hlo"):
         model = BaseModel.deserialize(data["model"])
         model_def_script = data["model_def_script"]
+        if hessian:
+            model.enable_hessian()
+            model_def_script["hessian_mode"] = True
         call_lower = model.call_lower
 
         nf, nloc, nghost = jax_export.symbolic_shape("nf, nloc, nghost")
@@ -182,6 +190,7 @@ def serialize_from_file(model_file: str) -> dict:
         convert_str_to_int_key(state)
 
         model_def_script = data.model_def_script
+        current_step = model_def_script.pop("current_step", 0)
         abstract_model = get_model(model_def_script)
         graphdef, abstract_state = nnx.split(abstract_model)
         abstract_state.replace_by_pure_dict(state)
@@ -192,7 +201,9 @@ def serialize_from_file(model_file: str) -> dict:
             "jax_version": jax.__version__,
             "model": model_dict,
             "model_def_script": model_def_script,
-            "@variables": {},
+            "@variables": {
+                "current_step": current_step,
+            },
         }
         return data
     elif model_file.endswith(".hlo"):

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import json
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -279,6 +278,7 @@ class DeepEval(DeepEvalBackend):
                     OutputVariableCategory.REDU,
                     OutputVariableCategory.DERV_R,
                     OutputVariableCategory.DERV_C_REDU,
+                    OutputVariableCategory.DERV_R_DERV_R,
                 )
             ]
 
@@ -421,7 +421,11 @@ class DeepEval(DeepEvalBackend):
 
     def get_model_def_script(self) -> dict:
         """Get model definition script."""
-        return json.loads(self.dp.get_model_def_script())
+        return self.dp.get_model_def_script()
+
+    def get_has_hessian(self) -> bool:
+        model_def_script = self.get_model_def_script()
+        return model_def_script.get("hessian_mode", False)
 
     def get_model(self) -> Any:
         """Get the JAX model as BaseModel.

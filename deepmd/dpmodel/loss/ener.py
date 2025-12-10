@@ -180,7 +180,9 @@ class EnergyLoss(Loss):
                     delta=self.huber_delta,
                 )
                 loss += pref_e * l_huber_loss
-            more_loss["rmse_e"] = self.display_if_exist(l2_ener_loss, find_energy)
+            more_loss["rmse_e"] = self.display_if_exist(
+                xp.sqrt(l2_ener_loss) * atom_norm_ener, find_energy
+            )
         if self.has_f:
             l2_force_loss = xp.mean(xp.square(diff_f))
             if not self.use_huber:
@@ -192,7 +194,9 @@ class EnergyLoss(Loss):
                     delta=self.huber_delta,
                 )
                 loss += pref_f * l_huber_loss
-            more_loss["rmse_f"] = self.display_if_exist(l2_force_loss, find_force)
+            more_loss["rmse_f"] = self.display_if_exist(
+                xp.sqrt(l2_force_loss), find_force
+            )
         if self.has_v:
             virial_reshape = xp.reshape(virial, (-1,))
             virial_hat_reshape = xp.reshape(virial_hat, (-1,))
@@ -384,3 +388,79 @@ class EnergyLoss(Loss):
         check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         return cls(**data)
+
+
+class EnergyHessianLoss(EnergyLoss):
+    def __init__(
+        self,
+        start_pref_h: float = 0.0,
+        limit_pref_h: float = 0.0,
+        **kwargs: Any,
+    ) -> None:
+        r"""Enable the layer to compute loss on hessian.
+
+        Parameters
+        ----------
+        start_pref_h : float
+            The prefactor of hessian loss at the start of the training.
+        limit_pref_h : float
+            The prefactor of hessian loss at the end of the training.
+        **kwargs
+            Other keyword arguments.
+        """
+        EnergyLoss.__init__(self, **kwargs)
+        self.has_h = start_pref_h != 0.0 and limit_pref_h != 0.0
+
+        self.start_pref_h = start_pref_h
+        self.limit_pref_h = limit_pref_h
+
+    def call(
+        self,
+        learning_rate: float,
+        natoms: int,
+        model_dict: dict[str, Array],
+        label_dict: dict[str, Array],
+    ) -> dict[str, Array]:
+        """Calculate loss from model results and labeled results."""
+        loss, more_loss = EnergyLoss.call(
+            self, learning_rate, natoms, model_dict, label_dict
+        )
+        xp = array_api_compat.array_namespace(model_dict["energy"])
+        coef = learning_rate / self.starter_learning_rate
+        pref_h = self.limit_pref_h + (self.start_pref_h - self.limit_pref_h) * coef
+
+        if (
+            self.has_h
+            and "energy_derv_r_derv_r" in model_dict
+            and "hessian" in label_dict
+        ):
+            find_hessian = label_dict.get("find_hessian", 0.0)
+            pref_h = pref_h * find_hessian
+            diff_h = label_dict["hessian"].reshape(
+                -1,
+            ) - model_dict["energy_derv_r_derv_r"].reshape(
+                -1,
+            )
+            l2_hessian_loss = xp.mean(xp.square(diff_h))
+            loss += pref_h * l2_hessian_loss
+            rmse_h = xp.sqrt(l2_hessian_loss)
+            more_loss["rmse_h"] = self.display_if_exist(rmse_h, find_hessian)
+
+        more_loss["rmse"] = xp.sqrt(loss)
+        return loss, more_loss
+
+    @property
+    def label_requirement(self) -> list[DataRequirementItem]:
+        """Add hessian label requirement needed for this loss calculation."""
+        label_requirement = super().label_requirement
+        if self.has_h:
+            label_requirement.append(
+                DataRequirementItem(
+                    "hessian",
+                    ndof=1,  # 9=3*3 --> 3N*3N=ndof*natoms*natoms
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                )
+            )
+        return label_requirement
