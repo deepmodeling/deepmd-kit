@@ -95,7 +95,7 @@ def get_trainer(
     # Initialize DDP
     world_size = dist.get_world_size()
     if world_size > 1:
-        assert paddle.version.nccl() != "0"
+        assert not paddle.core.is_compiled_with_nccl() or paddle.version.nccl() != "0"
         fleet.init(is_collective=True)
 
     def prepare_trainer_input_single(
@@ -214,7 +214,7 @@ class SummaryPrinter(BaseSummaryPrinter):
 
     def get_ngpus(self) -> int:
         """Get the number of GPUs."""
-        return paddle.device.cuda.device_count()
+        return paddle.device.device_count()
 
     def get_backend_info(self) -> dict:
         """Get backend information."""

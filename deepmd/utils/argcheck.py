@@ -505,7 +505,7 @@ def descrpt_se_atten_common_args() -> list[Argument]:
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
     doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
     doc_attn = "The length of hidden vectors in attention layers"
-    doc_attn_layer = "The number of attention layers. Note that model compression of `se_atten` is only enabled when attn_layer==0 and tebd_input_mode=='strip'"
+    doc_attn_layer = "The number of attention layers. Note that model compression of `se_atten` works for any attn_layer value (for pytorch backend only, for other backends, attn_layer=0 is still needed to compress) when tebd_input_mode=='strip'. When attn_layer!=0, only type embedding is compressed, geometric parts are not compressed."
     doc_attn_dotr = "Whether to do dot product with the normalized relative coordinates"
     doc_attn_mask = "Whether to do mask on the diagonal in the attention matrix"
 
@@ -2993,8 +2993,9 @@ def training_data_args() -> list[
     link_sys = make_link("systems", "training/training_data/systems")
     doc_systems = (
         "The data systems for training. "
-        "This key can be provided with a list that specifies the systems, or be provided with a string "
-        "by which the prefix of all systems are given and the list of the systems is automatically generated."
+        "This key can be a list or a str. "
+        "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
+        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all training systems. "
@@ -3074,8 +3075,9 @@ def validation_data_args() -> list[
     link_sys = make_link("systems", "training/validation_data/systems")
     doc_systems = (
         "The data systems for validation. "
-        "This key can be provided with a list that specifies the systems, or be provided with a string "
-        "by which the prefix of all systems are given and the list of the systems is automatically generated."
+        "This key can be a list or a str. "
+        "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
+        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all validation systems. "

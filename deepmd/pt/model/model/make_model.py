@@ -232,6 +232,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 merged,
                 bias_adjust_mode=bias_adjust_mode,
             )
+            if bias_adjust_mode == "set-by-statistic":
+                self.atomic_model.compute_fitting_input_stat(merged)
 
         def forward_common_lower(
             self,
@@ -529,6 +531,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
         def has_default_fparam(self) -> bool:
             """Check if the model has default frame parameters."""
             return self.atomic_model.has_default_fparam()
+
+        def get_default_fparam(self) -> Optional[torch.Tensor]:
+            return self.atomic_model.get_default_fparam()
 
         @torch.jit.export
         def get_dim_aparam(self) -> int:

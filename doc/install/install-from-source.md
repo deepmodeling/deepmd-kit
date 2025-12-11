@@ -273,6 +273,12 @@ It will print the help information like
 
 ### Install horovod and mpi4py {{ tensorflow_icon }}
 
+:::{warning}
+Horovod has not released a new version for a long time.
+As of December 2025, the latest Horovod release does not support the latest TensorFlow versions.
+You can check the patches required to support the latest TensorFlow at [conda-forge/horovod-feedstock](https://github.com/conda-forge/horovod-feedstock/blob/main/recipe/meta.yaml).
+:::
+
 [Horovod](https://github.com/horovod/horovod) and [mpi4py](https://github.com/mpi4py/mpi4py) are used for parallel training. For better performance on GPU, please follow the tuning steps in [Horovod on GPU](https://github.com/horovod/horovod/blob/master/docs/gpus.rst).
 
 ```bash
@@ -377,7 +383,7 @@ mkdir build
 cd build
 ```
 
-The installation requires CMake 3.16 or later for the CPU version, CMake 3.23 or later for the CUDA support, and CMake 3.21 or later for the ROCM support. One can install CMake via `pip` if it is not installed or the installed version does not satisfy the requirement:
+The installation requires CMake 3.25.2 or later for all platforms (CPU, CUDA, and ROCM). One can install CMake via `pip` if it is not installed or the installed version does not satisfy the requirement:
 
 ```sh
 pip install -U cmake
