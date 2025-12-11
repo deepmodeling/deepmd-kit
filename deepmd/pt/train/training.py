@@ -613,7 +613,15 @@ class Trainer:
 
         if init_frz_model is not None:
             frz_model = torch.jit.load(init_frz_model, map_location=DEVICE)
-            self.model.load_state_dict(frz_model.state_dict())
+            try:
+                self.model.load_state_dict(frz_model.state_dict())
+            except RuntimeError as e:
+                if "Missing key(s) in state_dict" in str(e):
+                    self.model.load_state_dict(frz_model.state_dict(), strict=False)
+                    log.warning("Use strict=False to ignore non-matching keys.")
+                    log.warning(f"Model state_dict mismatch detected: {e}")
+                else:
+                    raise e
 
         # Get model prob for multi-task
         if self.multi_task:
