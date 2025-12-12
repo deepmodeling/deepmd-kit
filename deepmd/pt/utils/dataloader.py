@@ -6,8 +6,6 @@ from multiprocessing.dummy import (
 )
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import h5py
@@ -50,7 +48,7 @@ log = logging.getLogger(__name__)
 torch.multiprocessing.set_sharing_strategy("file_system")
 
 
-def setup_seed(seed: Union[int, list[int], tuple[int, ...]]) -> None:
+def setup_seed(seed: int | list[int] | tuple[int, ...]) -> None:
     if isinstance(seed, (list, tuple)):
         mixed_seed = mix_entropy(seed)
     else:
@@ -80,10 +78,10 @@ class DpLoaderSet(Dataset):
 
     def __init__(
         self,
-        systems: Union[str, list[str]],
+        systems: str | list[str],
         batch_size: int,
-        type_map: Optional[list[str]],
-        seed: Optional[int] = None,
+        type_map: list[str] | None,
+        seed: int | None = None,
         shuffle: bool = True,
     ) -> None:
         if seed is not None:

@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 import paddle
 import paddle.nn as nn
@@ -41,7 +37,7 @@ class TypeEmbedNet(nn.Layer):
         bavg=0.0,
         stddev=1.0,
         precision="default",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         use_econf_tebd=False,
         use_tebd_bias: bool = False,
         type_map=None,
@@ -162,11 +158,11 @@ class TypeEmbedNetConsistent(nn.Layer):
         activation_function: str = "tanh",
         precision: str = "default",
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         padding: bool = False,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[list[str]] = None,
+        type_map: list[str] | None = None,
     ) -> None:
         """Construct a type embedding net."""
         super().__init__()

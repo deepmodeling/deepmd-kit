@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
 import logging
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
     Optional,
-    Union,
 )
 
 import torch
@@ -222,10 +223,10 @@ class DPAtomicModel(BaseAtomicModel):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -289,7 +290,7 @@ class DPAtomicModel(BaseAtomicModel):
     def compute_or_load_stat(
         self,
         sampled_func: Callable[[], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
     ) -> None:
         """
@@ -344,8 +345,8 @@ class DPAtomicModel(BaseAtomicModel):
 
     def compute_fitting_input_stat(
         self,
-        sample_merged: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        sample_merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
     ) -> None:
         """Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
 
@@ -375,7 +376,7 @@ class DPAtomicModel(BaseAtomicModel):
         """Check if the model has default frame parameters."""
         return self.fitting_net.has_default_fparam()
 
-    def get_default_fparam(self) -> Optional[torch.Tensor]:
+    def get_default_fparam(self) -> torch.Tensor | None:
         return self.fitting_net.get_default_fparam()
 
     def get_dim_aparam(self) -> int:

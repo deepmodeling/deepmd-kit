@@ -4,7 +4,6 @@ from abc import (
 )
 from typing import (
     Any,
-    Optional,
 )
 
 import numpy as np
@@ -173,7 +172,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict[str, Any],
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -253,7 +252,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
             f"Descriptor {type(self).__name__} doesn't support compression!"
         )
 
-    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: dict | None = None) -> None:
         """Receive the mixed precision setting.
 
         Parameters
@@ -466,9 +465,9 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

@@ -2,8 +2,6 @@
 import logging
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import torch
@@ -93,7 +91,7 @@ class InvarFitting(GeneralFitting):
         dim_descrpt: int,
         dim_out: int,
         neuron: list[int] = [128, 128, 128],
-        bias_atom_e: Optional[torch.Tensor] = None,
+        bias_atom_e: torch.Tensor | None = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -101,13 +99,13 @@ class InvarFitting(GeneralFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        rcond: Optional[float] = None,
-        seed: Optional[Union[int, list[int]]] = None,
+        rcond: float | None = None,
+        seed: int | list[int] | None = None,
         exclude_types: list[int] = [],
-        atom_ener: Optional[list[Optional[torch.Tensor]]] = None,
-        type_map: Optional[list[str]] = None,
+        atom_ener: list[torch.Tensor | None] | None = None,
+        type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
-        default_fparam: Optional[list[float]] = None,
+        default_fparam: list[float] | None = None,
         **kwargs: Any,
     ) -> None:
         self.dim_out = dim_out
@@ -171,11 +169,11 @@ class InvarFitting(GeneralFitting):
         self,
         descriptor: torch.Tensor,
         atype: torch.Tensor,
-        gr: Optional[torch.Tensor] = None,
-        g2: Optional[torch.Tensor] = None,
-        h2: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        gr: torch.Tensor | None = None,
+        g2: torch.Tensor | None = None,
+        h2: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Based on embedding net output, alculate total energy.
 

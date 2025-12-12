@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
 )
 
 import torch
@@ -59,9 +58,9 @@ class DPZBLModel(DPZBLModel_):
         self,
         coord: torch.Tensor,
         atype: torch.Tensor,
-        box: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common(
@@ -94,11 +93,11 @@ class DPZBLModel(DPZBLModel_):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,
@@ -132,9 +131,9 @@ class DPZBLModel(DPZBLModel_):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

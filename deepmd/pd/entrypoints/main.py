@@ -8,8 +8,6 @@ from pathlib import (
 )
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import h5py
@@ -82,13 +80,13 @@ log = logging.getLogger(__name__)
 
 def get_trainer(
     config: dict[str, Any],
-    init_model: Optional[str] = None,
-    restart_model: Optional[str] = None,
-    finetune_model: Optional[str] = None,
+    init_model: str | None = None,
+    restart_model: str | None = None,
+    finetune_model: str | None = None,
     force_load: bool = False,
-    init_frz_model: Optional[str] = None,
-    shared_links: Optional[dict[str, Any]] = None,
-    finetune_links: Optional[dict[str, Any]] = None,
+    init_frz_model: str | None = None,
+    shared_links: dict[str, Any] | None = None,
+    finetune_links: dict[str, Any] | None = None,
 ) -> training.Trainer:
     multi_task = "model_dict" in config.get("model", {})
 
@@ -102,8 +100,8 @@ def get_trainer(
         model_params_single: dict[str, Any],
         data_dict_single: dict[str, Any],
         rank: int = 0,
-        seed: Optional[int] = None,
-    ) -> tuple[DpLoaderSet, Optional[DpLoaderSet], Optional[DPPath]]:
+        seed: int | None = None,
+    ) -> tuple[DpLoaderSet, DpLoaderSet | None, DPPath | None]:
         training_dataset_params = data_dict_single["training_data"]
         validation_dataset_params = data_dict_single.get("validation_data", None)
         validation_systems = (
@@ -229,10 +227,10 @@ class SummaryPrinter(BaseSummaryPrinter):
 
 def train(
     input_file: str,
-    init_model: Optional[str],
-    restart: Optional[str],
-    finetune: Optional[str],
-    init_frz_model: Optional[str],
+    init_model: str | None,
+    restart: str | None,
+    finetune: str | None,
+    init_frz_model: str | None,
     model_branch: str,
     skip_neighbor_stat: bool = False,
     use_pretrain_script: bool = False,
@@ -347,7 +345,7 @@ def train(
 def freeze(
     model: str,
     output: str = "frozen_model.json",
-    head: Optional[str] = None,
+    head: str | None = None,
     do_atomic_virial: bool = False,
 ) -> None:
     paddle.set_flags(
@@ -451,12 +449,12 @@ def freeze(
 def change_bias(
     input_file: str,
     mode: str = "change",
-    bias_value: Optional[list] = None,
-    datafile: Optional[str] = None,
+    bias_value: list | None = None,
+    datafile: str | None = None,
     system: str = ".",
     numb_batch: int = 0,
-    model_branch: Optional[str] = None,
-    output: Optional[str] = None,
+    model_branch: str | None = None,
+    output: str | None = None,
 ) -> None:
     if input_file.endswith(".pd"):
         old_state_dict = paddle.load(input_file)
@@ -562,7 +560,7 @@ def change_bias(
     log.info(f"Saved model to {output_path}")
 
 
-def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
+def main(args: list[str] | argparse.Namespace | None = None):
     if not isinstance(args, argparse.Namespace):
         FLAGS = parse_args(args=args)
     else:

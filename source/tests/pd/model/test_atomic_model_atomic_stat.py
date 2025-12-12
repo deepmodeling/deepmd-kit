@@ -6,7 +6,6 @@ from pathlib import (
 )
 from typing import (
     NoReturn,
-    Optional,
 )
 
 import h5py
@@ -81,11 +80,11 @@ class FooFitting(paddle.nn.Layer, BaseFitting):
         self,
         descriptor: paddle.Tensor,
         atype: paddle.Tensor,
-        gr: Optional[paddle.Tensor] = None,
-        g2: Optional[paddle.Tensor] = None,
-        h2: Optional[paddle.Tensor] = None,
-        fparam: Optional[paddle.Tensor] = None,
-        aparam: Optional[paddle.Tensor] = None,
+        gr: paddle.Tensor | None = None,
+        g2: paddle.Tensor | None = None,
+        h2: paddle.Tensor | None = None,
+        fparam: paddle.Tensor | None = None,
+        aparam: paddle.Tensor | None = None,
     ):
         nf, nloc, _ = descriptor.shape
         ret = {}

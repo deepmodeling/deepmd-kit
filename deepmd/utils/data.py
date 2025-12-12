@@ -13,8 +13,6 @@ from pathlib import (
 )
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -64,9 +62,9 @@ class DeepmdData:
         sys_path: str,
         set_prefix: str = "set",
         shuffle_test: bool = True,
-        type_map: Optional[list[str]] = None,
+        type_map: list[str] | None = None,
         optional_type_map: bool = True,
-        modifier: Optional[Any] = None,
+        modifier: Any | None = None,
         trn_all_set: bool = False,
         sort_atoms: bool = True,
     ) -> None:
@@ -148,10 +146,10 @@ class DeepmdData:
         atomic: bool = False,
         must: bool = False,
         high_prec: bool = False,
-        type_sel: Optional[list[int]] = None,
+        type_sel: list[int] | None = None,
         repeat: int = 1,
         default: float = 0.0,
-        dtype: Optional[np.dtype] = None,
+        dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
     ) -> "DeepmdData":
         """Add a data item that to be loaded.
@@ -518,7 +516,7 @@ class DeepmdData:
         return self._create_memmap(str(abs_path), str(file_mtime))
 
     def _get_subdata(
-        self, data: dict[str, Any], idx: Optional[np.ndarray] = None
+        self, data: dict[str, Any], idx: np.ndarray | None = None
     ) -> dict[str, Any]:
         new_data = {}
         for ii in data:
@@ -580,7 +578,7 @@ class DeepmdData:
                 ret[kk] = data[kk]
         return ret, idx
 
-    def _get_nframes(self, set_name: Union[DPPath, str]) -> int:
+    def _get_nframes(self, set_name: DPPath | str) -> int:
         if not isinstance(set_name, DPPath):
             set_name = DPPath(set_name)
         path = set_name / "coord.npy"
@@ -717,9 +715,9 @@ class DeepmdData:
         must: bool = True,
         repeat: int = 1,
         high_prec: bool = False,
-        type_sel: Optional[list[int]] = None,
+        type_sel: list[int] | None = None,
         default: float = 0.0,
-        dtype: Optional[np.dtype] = None,
+        dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
     ) -> np.ndarray:
         if atomic:
@@ -977,7 +975,7 @@ class DeepmdData:
             idx_map = idx
         return idx_map
 
-    def _load_type_map(self, sys_path: DPPath) -> Optional[list[str]]:
+    def _load_type_map(self, sys_path: DPPath) -> list[str] | None:
         fname = sys_path / "type_map.raw"
         if fname.is_file():
             return fname.load_txt(dtype=str, ndmin=1).tolist()
@@ -1059,10 +1057,10 @@ class DataRequirementItem:
         atomic: bool = False,
         must: bool = False,
         high_prec: bool = False,
-        type_sel: Optional[list[int]] = None,
+        type_sel: list[int] | None = None,
         repeat: int = 1,
         default: float = 0.0,
-        dtype: Optional[np.dtype] = None,
+        dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
     ) -> None:
         self.key = key

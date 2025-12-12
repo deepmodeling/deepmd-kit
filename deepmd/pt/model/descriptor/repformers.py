@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
-    Optional,
-    Union,
 )
 
 import torch
@@ -107,8 +107,8 @@ class DescrptBlockRepformers(DescriptorBlock):
         env_protection: float = 0.0,
         precision: str = "float64",
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
-        seed: Optional[Union[int, list[int]]] = None,
+        ln_eps: float | None = 1e-5,
+        seed: int | list[int] | None = None,
         use_sqrt_nnei: bool = True,
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
@@ -396,16 +396,16 @@ class DescrptBlockRepformers(DescriptorBlock):
         nlist: torch.Tensor,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
-        type_embedding: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        extended_atype_embd: torch.Tensor | None = None,
+        mapping: torch.Tensor | None = None,
+        type_embedding: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> tuple[
         torch.Tensor,
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
     ]:
         if comm_dict is None:
             assert mapping is not None
@@ -546,8 +546,8 @@ class DescrptBlockRepformers(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.

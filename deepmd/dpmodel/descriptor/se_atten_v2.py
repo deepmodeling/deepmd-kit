@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -39,7 +37,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
@@ -58,17 +56,17 @@ class DescrptSeAttenV2(DescrptDPA1):
         precision: str = DEFAULT_PRECISION,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
+        ln_eps: float | None = 1e-5,
         concat_output_tebd: bool = True,
-        spin: Optional[Any] = None,
-        stripped_type_embedding: Optional[bool] = None,
+        spin: Any | None = None,
+        stripped_type_embedding: bool | None = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[list[str]] = None,
+        type_map: list[str] | None = None,
         # consistent with argcheck, not used though
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
     ) -> None:
         DescrptDPA1.__init__(
             self,

@@ -30,7 +30,7 @@ Rules
 -----
 
 The code must be compatible with the oldest supported version of python
-which is 3.9.
+which is 3.10.
 
 The project follows the generic coding conventions as
 specified in the `Style Guide for Python Code`_, `Docstring

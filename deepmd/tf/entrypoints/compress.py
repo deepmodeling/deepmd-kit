@@ -4,9 +4,6 @@
 import json
 import logging
 import os
-from typing import (
-    Optional,
-)
 
 from deepmd.tf.common import (
     j_loader,
@@ -58,7 +55,7 @@ def compress(
     checkpoint_folder: str,
     training_script: str,
     mpi_log: str,
-    log_path: Optional[str],
+    log_path: str | None,
     log_level: int,
     **kwargs,
 ) -> None:

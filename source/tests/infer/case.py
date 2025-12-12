@@ -26,9 +26,6 @@ from functools import (
 from pathlib import (
     Path,
 )
-from typing import (
-    Optional,
-)
 
 import numpy as np
 import yaml
@@ -156,7 +153,7 @@ class Case:
         self.model_def_script = config.get("model_def_script")
 
     @lru_cache
-    def get_model(self, suffix: str, out_file: Optional[str] = None) -> str:
+    def get_model(self, suffix: str, out_file: str | None = None) -> str:
         """Get the model file with the specified suffix.
 
         Parameters

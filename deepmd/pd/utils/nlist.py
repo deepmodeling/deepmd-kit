@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 import paddle
 
@@ -22,7 +18,7 @@ def extend_input_and_build_neighbor_list(
     rcut: float,
     sel: list[int],
     mixed_types: bool = False,
-    box: Optional[paddle.Tensor] = None,
+    box: paddle.Tensor | None = None,
 ):
     nframes, nloc = atype.shape[:2]
     if box is not None:
@@ -54,7 +50,7 @@ def build_neighbor_list(
     atype: paddle.Tensor,
     nloc: int,
     rcut: float,
-    sel: Union[int, list[int]],
+    sel: int | list[int],
     distinguish_types: bool = True,
 ) -> paddle.Tensor:
     """Build neighbor list for a single frame. keeps nsel neighbors.
@@ -181,7 +177,7 @@ def build_directional_neighbor_list(
     coord_neig: paddle.Tensor,
     atype_neig: paddle.Tensor,
     rcut: float,
-    sel: Union[int, list[int]],
+    sel: int | list[int],
     distinguish_types: bool = True,
 ) -> paddle.Tensor:
     """Build directional neighbor list.
@@ -417,9 +413,9 @@ def build_multiple_neighbor_list(
 def extend_coord_with_ghosts(
     coord: paddle.Tensor,
     atype: paddle.Tensor,
-    cell: Optional[paddle.Tensor],
+    cell: paddle.Tensor | None,
     rcut: float,
-    cell_cpu: Optional[paddle.Tensor] = None,
+    cell_cpu: paddle.Tensor | None = None,
 ) -> tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
     """Extend the coordinates of the atoms by appending peridoc images.
     The number of images is large enough to ensure all the neighbors

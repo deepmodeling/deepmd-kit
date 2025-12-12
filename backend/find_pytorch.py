@@ -17,10 +17,6 @@ from pathlib import (
 from sysconfig import (
     get_path,
 )
-from typing import (
-    Optional,
-    Union,
-)
 
 from packaging.specifiers import (
     SpecifierSet,
@@ -35,7 +31,7 @@ from .utils import (
 
 
 @lru_cache
-def find_pytorch() -> tuple[Optional[str], list[str]]:
+def find_pytorch() -> tuple[str | None, list[str]]:
     """Find PyTorch library.
 
     Tries to find PyTorch in the order of:
@@ -150,7 +146,7 @@ def get_pt_requirement(pt_version: str = "") -> dict:
 
 
 @lru_cache
-def get_pt_version(pt_path: Optional[Union[str, Path]]) -> str:
+def get_pt_version(pt_path: str | Path | None) -> str:
     """Get TF version from a TF Python library path.
 
     Parameters

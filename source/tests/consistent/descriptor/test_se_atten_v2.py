@@ -2,7 +2,6 @@
 import unittest
 from typing import (
     Any,
-    Optional,
 )
 
 import numpy as np
@@ -132,7 +131,7 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
         attn_layer: int,
         attn_dotr: bool,
         normalize: bool,
-        temperature: Optional[float],
+        temperature: float | None,
     ) -> bool:
         return attn_layer == 0 and (attn_dotr or normalize or temperature is not None)
 

@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
-from typing import (
+from collections.abc import (
     Callable,
-    Optional,
 )
 
 import tensorflow as tf
@@ -155,9 +154,9 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             def call(
                 coord: tnp.ndarray,
                 atype: tnp.ndarray,
-                box: Optional[tnp.ndarray] = None,
-                fparam: Optional[tnp.ndarray] = None,
-                aparam: Optional[tnp.ndarray] = None,
+                box: tnp.ndarray | None = None,
+                fparam: tnp.ndarray | None = None,
+                aparam: tnp.ndarray | None = None,
             ) -> dict[str, tnp.ndarray]:
                 """Return model prediction.
 

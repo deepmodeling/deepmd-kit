@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-from typing import (
-    Union,
-)
 
 import numpy as np
 from mendeleev import (
@@ -273,7 +270,7 @@ def print_econf_embedding(res: dict[str, np.ndarray]) -> None:
 def sort_element_type(elements: list[str]) -> list[str]:
     """Sort element types based on their atomic number."""
 
-    def get_atomic_number(symbol: str) -> Union[int, float]:
+    def get_atomic_number(symbol: str) -> int | float:
         try:
             return element(symbol).atomic_number
         except ValueError:

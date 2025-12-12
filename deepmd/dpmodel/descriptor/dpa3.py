@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import array_api_compat
@@ -297,7 +295,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         self,
         ntypes: int,
         # args for repflow
-        repflow: Union[RepFlowArgs, dict],
+        repflow: RepFlowArgs | dict,
         # kwargs for descriptor
         concat_output_tebd: bool = False,
         activation_function: str = "silu",
@@ -305,15 +303,15 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
         use_loc_mapping: bool = True,
-        type_map: Optional[list[str]] = None,
+        type_map: list[str] | None = None,
     ) -> None:
         super().__init__()
 
-        def init_subclass_params(sub_data: Union[dict, Any], sub_class: type) -> Any:
+        def init_subclass_params(sub_data: dict | Any, sub_class: type) -> Any:
             if isinstance(sub_data, dict):
                 return sub_class(**sub_data)
             elif isinstance(sub_data, sub_class):
@@ -502,7 +500,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         return self.get_dim_emb()
 
     def compute_input_stats(
-        self, merged: list[dict], path: Optional[DPPath] = None
+        self, merged: list[dict], path: DPPath | None = None
     ) -> None:
         """Update mean and stddev for descriptor elements."""
         descrpt_list = [self.repflows]
@@ -532,7 +530,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         coord_ext: Array,
         atype_ext: Array,
         nlist: Array,
-        mapping: Optional[Array] = None,
+        mapping: Array | None = None,
     ) -> tuple[Array, Array]:
         """Compute the descriptor.
 
@@ -663,7 +661,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
     ) -> tuple[Array, Array]:
         """Update the selection and perform neighbor statistics.
