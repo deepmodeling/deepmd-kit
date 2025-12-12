@@ -95,14 +95,6 @@ def find_tensorflow() -> tuple[str | None, list[str]]:
                 requires.extend(
                     read_dependencies_from_dependency_group("pin_tensorflow_cpu")
                 )
-            elif cuda_version in SpecifierSet(">=11,<12"):
-                # CUDA 11.8, cudnn 8
-                requires.extend(
-                    [
-                        "tensorflow-cpu>=2.5.0,<2.15; platform_machine=='x86_64' and platform_system == 'Linux'",
-                    ]
-                )
-                tf_version = "2.14.1"
             else:
                 raise RuntimeError("Unsupported CUDA version") from None
         requires.extend(get_tf_requirement(tf_version)["cpu"])

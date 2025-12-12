@@ -116,16 +116,6 @@ ipi = [
 gui = [
     "dpgui",
 ]
-cu11 = [
-    "nvidia-cuda-runtime-cu11",
-    "nvidia-cublas-cu11",
-    "nvidia-cufft-cu11",
-    "nvidia-curand-cu11",
-    "nvidia-cusolver-cu11",
-    "nvidia-cusparse-cu11",
-    "nvidia-cudnn-cu11<9",
-    "nvidia-cuda-nvcc-cu11",
-]
 cu12 = [
     "nvidia-cuda-runtime-cu12",
     "nvidia-cublas-cu12",
@@ -254,9 +244,7 @@ test-command = [
 test-extras = ["cpu", "test", "lmp", "ipi", "torch", "paddle"]
 build = ["cp311-*"]
 skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
-# TODO: uncomment to use the latest image when CUDA 11 is deprecated
-# manylinux-x86_64-image = "manylinux_2_28"
-manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64:2022-11-19-1b19e81"
+manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
 
 [tool.cibuildwheel.macos]
@@ -288,15 +276,9 @@ environment-pass = [
 ]
 before-all = [
     """if [ ! -z "${DP_PKG_NAME}" ]; then sed -i "s/name = \\"deepmd-kit\\"/name = \\"${DP_PKG_NAME}\\"/g" pyproject.toml; fi""",
-    # https://almalinux.org/blog/2023-12-20-almalinux-8-key-update/
-    """rpm --import https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux""",
     """{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-nvcc-${CUDA_VERSION/./-} cuda-cudart-devel-${CUDA_VERSION/./-}; fi }""",
-    # uv is not available in the old manylinux image
-    """{ if [ "$(uname -m)" = "x86_64" ] ; then pipx install uv; fi }""",
 ]
 before-build = [
-    # old build doesn't support uv
-    """{ if [ "$(uname -m)" = "x86_64" ] ; then uv pip install --system -U build; fi }""",
 ]
 [tool.cibuildwheel.linux.environment]
 PIP_PREFER_BINARY = "1"

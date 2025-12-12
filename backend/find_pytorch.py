@@ -116,9 +116,6 @@ def get_pt_requirement(pt_version: str = "") -> dict:
             cibw_requirement = read_dependencies_from_dependency_group(
                 "pin_pytorch_cpu"
             )
-        elif cuda_version in SpecifierSet(">=11,<12"):
-            # CUDA 11.8, cudnn 8
-            pt_version = "2.3.1"
         else:
             raise RuntimeError("Unsupported CUDA version") from None
     if pt_version == "":

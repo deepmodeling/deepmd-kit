@@ -104,12 +104,6 @@ pip install paddlepaddle-gpu==3.1.1 -i https://www.paddlepaddle.org.cn/packages/
 # nightly-build version
 # pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/cu126/
 
-# cu118
-# release version
-pip install paddlepaddle-gpu==3.1.1 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/
-# nightly-build version
-# pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/cu118/
-
 # cpu
 # release version
 pip install paddlepaddle==3.1.1 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
@@ -361,9 +355,7 @@ download the TensorFlow C library from [this page](https://www.tensorflow.org/in
 
 If you want to use C++ interface of Paddle, you need to compile the Paddle inference library(C++ interface) manually from the [linux-compile-by-make](https://www.paddlepaddle.org.cn/documentation/docs/zh/develop/install/compile/linux-compile-by-make.html), then use the `.so` and `.a` files in `Paddle/build/paddle_inference_install_dir/`.
 
-We also provide a weekly-build Paddle C++ inference library for Linux x86_64 with CUDA 11.8/12.3/CPU below:
-
-CUDA 11.8: [Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz](https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz)
+We also provide a weekly-build Paddle C++ inference library for Linux x86_64 with CUDA 12.3/CPU below:
 
 CUDA 12.3: [Cuda123_cudnn900_Trt8616_D1/latest/paddle_inference.tgz](https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda123_cudnn900_Trt8616_D1/latest/paddle_inference.tgz)
 
