@@ -104,7 +104,7 @@ class DeepEval(DeepEvalBackend):
                 stablehlo_atomic_virial_no_ghost=model_data["@variables"][
                     "stablehlo_atomic_virial_no_ghost"
                 ].tobytes(),
-                model_def_script=model_data["model_def_script"],
+                model_def_script=json.dumps(model_data["model_def_script"]),
                 **model_data["constants"],
             )
         elif model_file.endswith(".savedmodel"):
