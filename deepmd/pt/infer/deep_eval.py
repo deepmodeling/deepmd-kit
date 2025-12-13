@@ -684,7 +684,7 @@ class DeepEval(DeepEvalBackend):
         typeebd = torch.cat(out, dim=1)
         return to_numpy_array(typeebd)
 
-    def get_model_def_script(self) -> str:
+    def get_model_def_script(self) -> dict:
         """Get model definition script."""
         return self.model_def_script
 
