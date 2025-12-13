@@ -90,6 +90,7 @@ class DeepEval(DeepEvalBackend):
 
         model_data = load_dp_model(model_file)
         self.dp = BaseModel.deserialize(model_data["model"])
+        self.dp.model_def_script = json.dumps(model_data.get("model_def_script", {}))
         self.rcut = self.dp.get_rcut()
         self.type_map = self.dp.get_type_map()
         if isinstance(auto_batch_size, bool):

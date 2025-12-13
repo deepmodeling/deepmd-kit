@@ -158,6 +158,7 @@ class IOTest:
                 prefix + backend.suffixes[suffix_idx], reference_data
             )
             deep_eval = DeepEval(prefix + backend.suffixes[suffix_idx])
+            self.assertIsInstance(deep_eval.get_model_def_script(), dict)
             if deep_eval.get_dim_fparam() > 0:
                 fparam = np.ones((nframes, deep_eval.get_dim_fparam()))
             else:
