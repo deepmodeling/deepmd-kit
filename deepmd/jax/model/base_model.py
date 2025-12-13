@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-)
 
 from deepmd.dpmodel.model.base_model import (
     make_base_model,
@@ -24,9 +21,9 @@ def forward_common_atomic(
     extended_coord: jnp.ndarray,
     extended_atype: jnp.ndarray,
     nlist: jnp.ndarray,
-    mapping: Optional[jnp.ndarray] = None,
-    fparam: Optional[jnp.ndarray] = None,
-    aparam: Optional[jnp.ndarray] = None,
+    mapping: jnp.ndarray | None = None,
+    fparam: jnp.ndarray | None = None,
+    aparam: jnp.ndarray | None = None,
     do_atomic_virial: bool = False,
 ) -> dict[str, jnp.ndarray]:
     atomic_ret = self.atomic_model.forward_common_atomic(
@@ -63,9 +60,9 @@ def forward_common_atomic(
                     cc_ext: jnp.ndarray,
                     extended_atype: jnp.ndarray,
                     nlist: jnp.ndarray,
-                    mapping: Optional[jnp.ndarray],
-                    fparam: Optional[jnp.ndarray],
-                    aparam: Optional[jnp.ndarray],
+                    mapping: jnp.ndarray | None,
+                    fparam: jnp.ndarray | None,
+                    aparam: jnp.ndarray | None,
                     *,
                     _kk: str = kk,
                     _atom_axis: int = atom_axis,
@@ -120,9 +117,9 @@ def forward_common_atomic(
                         cc_ext: jnp.ndarray,
                         extended_atype: jnp.ndarray,
                         nlist: jnp.ndarray,
-                        mapping: Optional[jnp.ndarray],
-                        fparam: Optional[jnp.ndarray],
-                        aparam: Optional[jnp.ndarray],
+                        mapping: jnp.ndarray | None,
+                        fparam: jnp.ndarray | None,
+                        aparam: jnp.ndarray | None,
                         *,
                         _kk: str = kk,
                         _atom_axis: int = atom_axis - 1,

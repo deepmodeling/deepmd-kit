@@ -17,10 +17,6 @@ from pathlib import (
 from sysconfig import (
     get_path,
 )
-from typing import (
-    Optional,
-    Union,
-)
 
 from packaging.specifiers import (
     SpecifierSet,
@@ -32,7 +28,7 @@ from .utils import (
 
 
 @lru_cache
-def find_tensorflow() -> tuple[Optional[str], list[str]]:
+def find_tensorflow() -> tuple[str | None, list[str]]:
     """Find TensorFlow library.
 
     Tries to find TensorFlow in the order of:
@@ -99,14 +95,6 @@ def find_tensorflow() -> tuple[Optional[str], list[str]]:
                 requires.extend(
                     read_dependencies_from_dependency_group("pin_tensorflow_cpu")
                 )
-            elif cuda_version in SpecifierSet(">=11,<12"):
-                # CUDA 11.8, cudnn 8
-                requires.extend(
-                    [
-                        "tensorflow-cpu>=2.5.0,<2.15; platform_machine=='x86_64' and platform_system == 'Linux'",
-                    ]
-                )
-                tf_version = "2.14.1"
             else:
                 raise RuntimeError("Unsupported CUDA version") from None
         requires.extend(get_tf_requirement(tf_version)["cpu"])
@@ -208,7 +196,7 @@ def get_tf_requirement(tf_version: str = "") -> dict:
 
 
 @lru_cache
-def get_tf_version(tf_path: Optional[Union[str, Path]]) -> str:
+def get_tf_version(tf_path: str | Path | None) -> str:
     """Get TF version from a TF Python library path.
 
     Parameters

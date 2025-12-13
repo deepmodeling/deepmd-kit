@@ -2,7 +2,6 @@
 from typing import (
     Any,
     NoReturn,
-    Optional,
 )
 
 import torch
@@ -30,7 +29,7 @@ class BaseModel(torch.nn.Module, make_base_model()):
     def compute_or_load_stat(
         self,
         sampled_func: Any,
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: DPPath | None = None,
     ) -> NoReturn:
         """
         Compute or load the statistics parameters of the model,
@@ -65,7 +64,7 @@ class BaseModel(torch.nn.Module, make_base_model()):
         return self.model_def_script
 
     @torch.jit.export
-    def get_min_nbor_dist(self) -> Optional[float]:
+    def get_min_nbor_dist(self) -> float | None:
         """Get the minimum distance between two atoms."""
         if self.min_nbor_dist.item() == -1.0:
             return None

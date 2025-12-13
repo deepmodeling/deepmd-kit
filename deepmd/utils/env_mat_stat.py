@@ -10,9 +10,6 @@ from collections import (
 from collections.abc import (
     Iterator,
 )
-from typing import (
-    Optional,
-)
 
 import numpy as np
 
@@ -169,7 +166,7 @@ class EnvMatStat(ABC):
             )
 
     def load_or_compute_stats(
-        self, data: list[dict[str, np.ndarray]], path: Optional[DPPath] = None
+        self, data: list[dict[str, np.ndarray]], path: DPPath | None = None
     ) -> None:
         """Load the statistics of the environment matrix if it exists, otherwise compute and save it.
 

@@ -2,9 +2,6 @@
 from collections.abc import (
     Iterator,
 )
-from typing import (
-    Optional,
-)
 
 import array_api_compat
 import numpy as np
@@ -51,7 +48,7 @@ class NeighborStatOP(NativeOP):
         self,
         coord: Array,
         atype: Array,
-        cell: Optional[Array],
+        cell: Array | None,
     ) -> tuple[Array, Array]:
         """Calculate the neareest neighbor distance between atoms, maximum nbor size of
         atoms and the output data range of the environment matrix.

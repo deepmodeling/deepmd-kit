@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
-from typing import (
+from collections.abc import (
     Callable,
+)
+from typing import (
     ClassVar,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -84,9 +84,9 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         env_protection: float = 0.0,
         type_one_side: bool = True,
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
-        ntypes: Optional[int] = None,  # to be compat with input
-        type_map: Optional[list[str]] = None,
+        seed: int | list[int] | None = None,
+        ntypes: int | None = None,  # to be compat with input
+        type_map: list[str] | None = None,
         # not implemented
         spin=None,
     ) -> None:
@@ -226,8 +226,8 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ):
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -284,8 +284,8 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         coord_ext: paddle.Tensor,
         atype_ext: paddle.Tensor,
         nlist: paddle.Tensor,
-        mapping: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[list[paddle.Tensor]] = None,
+        mapping: paddle.Tensor | None = None,
+        comm_dict: list[paddle.Tensor] | None = None,
     ):
         """Compute the descriptor.
 
@@ -401,9 +401,9 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -449,7 +449,7 @@ class DescrptBlockSeA(DescriptorBlock):
         env_protection: float = 0.0,
         type_one_side: bool = True,
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         **kwargs,
     ) -> None:
         """Construct an embedding net of type `se_a`.
@@ -623,8 +623,8 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -684,7 +684,7 @@ class DescrptBlockSeA(DescriptorBlock):
     def enable_compression(
         self,
         table_data: dict[str, paddle.Tensor],
-        table_config: list[Union[int, float]],
+        table_config: list[int | float],
         lower: dict[str, int],
         upper: dict[str, int],
     ) -> None:
@@ -722,9 +722,9 @@ class DescrptBlockSeA(DescriptorBlock):
         nlist: paddle.Tensor,
         extended_coord: paddle.Tensor,
         extended_atype: paddle.Tensor,
-        extended_atype_embd: Optional[paddle.Tensor] = None,
-        mapping: Optional[paddle.Tensor] = None,
-        type_embedding: Optional[paddle.Tensor] = None,
+        extended_atype_embd: paddle.Tensor | None = None,
+        mapping: paddle.Tensor | None = None,
+        type_embedding: paddle.Tensor | None = None,
     ):
         """Calculate decoded embedding for each atom.
 

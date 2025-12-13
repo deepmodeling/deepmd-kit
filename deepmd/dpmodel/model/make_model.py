@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
-    Optional,
 )
 
 import array_api_compat
@@ -51,8 +52,8 @@ def model_call_from_call_lower(
             np.ndarray,
             np.ndarray,
             np.ndarray,
-            Optional[np.ndarray],
-            Optional[np.ndarray],
+            np.ndarray | None,
+            np.ndarray | None,
             bool,
         ],
         dict[str, Array],
@@ -63,9 +64,9 @@ def model_call_from_call_lower(
     model_output_def: ModelOutputDef,
     coord: Array,
     atype: Array,
-    box: Optional[Array] = None,
-    fparam: Optional[Array] = None,
-    aparam: Optional[Array] = None,
+    box: Array | None = None,
+    fparam: Array | None = None,
+    aparam: Array | None = None,
     do_atomic_virial: bool = False,
 ) -> dict[str, Array]:
     """Return model prediction from lower interface.
@@ -163,7 +164,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             self,
             *args: Any,
             # underscore to prevent conflict with normal inputs
-            atomic_model_: Optional[T_AtomicModel] = None,
+            atomic_model_: T_AtomicModel | None = None,
             **kwargs: Any,
         ) -> None:
             BaseModel.__init__(self)
@@ -224,9 +225,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             self,
             coord: Array,
             atype: Array,
-            box: Optional[Array] = None,
-            fparam: Optional[Array] = None,
-            aparam: Optional[Array] = None,
+            box: Array | None = None,
+            fparam: Array | None = None,
+            aparam: Array | None = None,
             do_atomic_virial: bool = False,
         ) -> dict[str, Array]:
             """Return model prediction.
@@ -279,9 +280,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             extended_coord: Array,
             extended_atype: Array,
             nlist: Array,
-            mapping: Optional[Array] = None,
-            fparam: Optional[Array] = None,
-            aparam: Optional[Array] = None,
+            mapping: Array | None = None,
+            fparam: Array | None = None,
+            aparam: Array | None = None,
             do_atomic_virial: bool = False,
         ) -> dict[str, Array]:
             """Return model prediction. Lower interface that takes
@@ -341,9 +342,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             extended_coord: Array,
             extended_atype: Array,
             nlist: Array,
-            mapping: Optional[Array] = None,
-            fparam: Optional[Array] = None,
-            aparam: Optional[Array] = None,
+            mapping: Array | None = None,
+            fparam: Array | None = None,
+            aparam: Array | None = None,
             do_atomic_virial: bool = False,
         ) -> dict[str, Array]:
             atomic_ret = self.atomic_model.forward_common_atomic(
@@ -367,16 +368,16 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
         def input_type_cast(
             self,
             coord: Array,
-            box: Optional[Array] = None,
-            fparam: Optional[Array] = None,
-            aparam: Optional[Array] = None,
-        ) -> tuple[Array, Array, Optional[np.ndarray], Optional[np.ndarray], str]:
+            box: Array | None = None,
+            fparam: Array | None = None,
+            aparam: Array | None = None,
+        ) -> tuple[Array, Array, np.ndarray | None, np.ndarray | None, str]:
             """Cast the input data to global float type."""
             input_prec = RESERVED_PRECISION_DICT[self.precision_dict[coord.dtype.name]]
             ###
             ### type checking would not pass jit, convert to coord prec anyway
             ###
-            _lst: list[Optional[np.ndarray]] = [
+            _lst: list[np.ndarray | None] = [
                 vv.astype(coord.dtype) if vv is not None else None
                 for vv in [box, fparam, aparam]
             ]
@@ -520,7 +521,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
 
         def do_grad_r(
             self,
-            var_name: Optional[str] = None,
+            var_name: str | None = None,
         ) -> bool:
             """Tell if the output variable `var_name` is r_differentiable.
             if var_name is None, returns if any of the variable is r_differentiable.
@@ -529,7 +530,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
 
         def do_grad_c(
             self,
-            var_name: Optional[str] = None,
+            var_name: str | None = None,
         ) -> bool:
             """Tell if the output variable `var_name` is c_differentiable.
             if var_name is None, returns if any of the variable is c_differentiable.

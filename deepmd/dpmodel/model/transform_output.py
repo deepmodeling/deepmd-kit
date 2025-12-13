@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-from typing import (
-    Optional,
-)
 
 import array_api_compat
 import numpy as np
@@ -29,7 +26,7 @@ def fit_output_to_model_output(
     fit_output_def: FittingOutputDef,
     coord_ext: Array,
     do_atomic_virial: bool = False,
-    mask: Optional[Array] = None,
+    mask: Array | None = None,
 ) -> dict[str, Array]:
     """Transform the output of the fitting network to
     the model output.

@@ -2,8 +2,6 @@
 from typing import (
     Any,
     ClassVar,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -77,13 +75,13 @@ class MLPLayer(nn.Module):
         num_out: int,
         bias: bool = True,
         use_timestep: bool = False,
-        activation_function: Optional[str] = None,
+        activation_function: str | None = None,
         resnet: bool = False,
         bavg: float = 0.0,
         stddev: float = 1.0,
         precision: str = DEFAULT_PRECISION,
         init: str = "default",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -133,7 +131,7 @@ class MLPLayer(nn.Module):
     def check_type_consistency(self) -> None:
         precision = self.precision
 
-        def check_var(var: Optional[torch.Tensor]) -> None:
+        def check_var(var: torch.Tensor | None) -> None:
             if var is not None:
                 # assertion "float64" == "double" would fail
                 assert PRECISION_DICT[var.dtype.name] is PRECISION_DICT[precision]
@@ -152,7 +150,7 @@ class MLPLayer(nn.Module):
         self,
         bavg: float = 0.0,
         stddev: float = 1.0,
-        generator: Optional[torch.Generator] = None,
+        generator: torch.Generator | None = None,
     ) -> None:
         normal_(
             self.matrix.data,
@@ -165,7 +163,7 @@ class MLPLayer(nn.Module):
             normal_(self.idt.data, mean=0.1, std=0.001, generator=generator)
 
     def _trunc_normal_init(
-        self, scale: float = 1.0, generator: Optional[torch.Generator] = None
+        self, scale: float = 1.0, generator: torch.Generator | None = None
     ) -> None:
         # Constant from scipy.stats.truncnorm.std(a=-2, b=2, loc=0., scale=1.)
         TRUNCATED_NORMAL_STDDEV_FACTOR = 0.87962566103423978
@@ -174,7 +172,7 @@ class MLPLayer(nn.Module):
         std = (scale**0.5) / TRUNCATED_NORMAL_STDDEV_FACTOR
         trunc_normal_(self.matrix, mean=0.0, std=std, generator=generator)
 
-    def _glorot_uniform_init(self, generator: Optional[torch.Generator] = None) -> None:
+    def _glorot_uniform_init(self, generator: torch.Generator | None = None) -> None:
         xavier_uniform_(self.matrix, gain=1, generator=generator)
 
     def _zero_init(self, use_bias: bool = True) -> None:
@@ -184,7 +182,7 @@ class MLPLayer(nn.Module):
                 with torch.no_grad():
                     self.bias.fill_(1.0)
 
-    def _normal_init(self, generator: Optional[torch.Generator] = None) -> None:
+    def _normal_init(self, generator: torch.Generator | None = None) -> None:
         kaiming_normal_(self.matrix, nonlinearity="linear", generator=generator)
 
     def forward(
@@ -267,7 +265,7 @@ class MLPLayer(nn.Module):
         )
         prec = PRECISION_DICT[obj.precision]
 
-        def check_load_param(ss: str) -> Optional[nn.Parameter]:
+        def check_load_param(ss: str) -> nn.Parameter | None:
             return (
                 nn.Parameter(data=to_torch_tensor(nl[ss]))
                 if nl[ss] is not None

@@ -9,7 +9,6 @@ from functools import (
 )
 from typing import (
     Any,
-    Optional,
 )
 
 import numpy as np
@@ -446,7 +445,7 @@ class BaseTabulate(ABC):
             raise RuntimeError("Unsupported descriptor")
         return table_size
 
-    def _get_data_type(self) -> Optional[type]:
+    def _get_data_type(self) -> type | None:
         for item in self.matrix["layer_" + str(self.layer_size)]:
             if len(item) != 0:
                 return type(item[0][0])

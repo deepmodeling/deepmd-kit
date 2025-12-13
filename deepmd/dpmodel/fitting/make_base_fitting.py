@@ -6,7 +6,6 @@ from abc import (
 from typing import (
     Any,
     NoReturn,
-    Optional,
 )
 
 from deepmd.common import (
@@ -55,11 +54,11 @@ def make_base_fitting(
             self,
             descriptor: t_tensor,
             atype: t_tensor,
-            gr: Optional[t_tensor] = None,
-            g2: Optional[t_tensor] = None,
-            h2: Optional[t_tensor] = None,
-            fparam: Optional[t_tensor] = None,
-            aparam: Optional[t_tensor] = None,
+            gr: t_tensor | None = None,
+            g2: t_tensor | None = None,
+            h2: t_tensor | None = None,
+            fparam: t_tensor | None = None,
+            aparam: t_tensor | None = None,
         ) -> dict[str, t_tensor]:
             """Calculate fitting."""
             pass
@@ -75,7 +74,7 @@ def make_base_fitting(
 
         @abstractmethod
         def change_type_map(
-            self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+            self, type_map: list[str], model_with_new_type_stat: Any | None = None
         ) -> None:
             """Change the type related params to new ones, according to `type_map` and the original one in the model.
             If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.

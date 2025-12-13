@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
-from typing import (
-    Optional,
-)
 
 import paddle
 
@@ -101,9 +98,9 @@ class FrozenModel(BaseModel):
         self,
         coord,
         atype,
-        box: Optional[paddle.Tensor] = None,
-        fparam: Optional[paddle.Tensor] = None,
-        aparam: Optional[paddle.Tensor] = None,
+        box: paddle.Tensor | None = None,
+        fparam: paddle.Tensor | None = None,
+        aparam: paddle.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, paddle.Tensor]:
         return self.model.forward(
@@ -123,7 +120,7 @@ class FrozenModel(BaseModel):
         # be a problem
         return self.model.get_model_def_script()
 
-    def get_min_nbor_dist(self) -> Optional[float]:
+    def get_min_nbor_dist(self) -> float | None:
         """Get the minimum neighbor distance."""
         return self.model.get_min_nbor_dist()
 
@@ -154,9 +151,9 @@ class FrozenModel(BaseModel):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

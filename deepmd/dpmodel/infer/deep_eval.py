@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+from collections.abc import (
+    Callable,
+)
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Optional,
-    Union,
 )
 
 import numpy as np
@@ -80,7 +81,7 @@ class DeepEval(DeepEvalBackend):
         model_file: str,
         output_def: ModelOutputDef,
         *args: Any,
-        auto_batch_size: Union[bool, int, AutoBatchSize] = True,
+        auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         **kwargs: Any,
     ) -> None:
@@ -168,11 +169,11 @@ class DeepEval(DeepEvalBackend):
     def eval(
         self,
         coords: Array,
-        cells: Optional[Array],
+        cells: Array | None,
         atom_types: Array,
         atomic: bool = False,
-        fparam: Optional[Array] = None,
-        aparam: Optional[Array] = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
         **kwargs: Any,
     ) -> dict[str, Array]:
         """Evaluate the energy, force and virial by using this DP.
@@ -309,10 +310,10 @@ class DeepEval(DeepEvalBackend):
     def _eval_model(
         self,
         coords: Array,
-        cells: Optional[Array],
+        cells: Array | None,
         atom_types: Array,
-        fparam: Optional[Array],
-        aparam: Optional[Array],
+        fparam: Array | None,
+        aparam: Array | None,
         request_defs: list[OutputVariableDef],
     ) -> dict[str, Array]:
         model = self.dp

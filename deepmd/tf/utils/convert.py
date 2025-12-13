@@ -2,9 +2,6 @@
 import logging
 import os
 import textwrap
-from typing import (
-    Optional,
-)
 
 from google.protobuf import (
     text_format,
@@ -60,7 +57,7 @@ def detect_model_version(input_model: str):
 
 
 def convert_to_21(
-    input_model: str, output_model: str, version: Optional[str] = None
+    input_model: str, output_model: str, version: str | None = None
 ) -> None:
     """Convert DP graph to 2.1 graph.
 

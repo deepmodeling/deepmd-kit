@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -45,9 +43,9 @@ class DescrptHybrid(Descriptor):
 
     def __init__(
         self,
-        list: list[Union[Descriptor, dict[str, Any]]],
-        ntypes: Optional[int] = None,
-        spin: Optional[Spin] = None,
+        list: list[Descriptor | dict[str, Any]],
+        ntypes: int | None = None,
+        spin: Spin | None = None,
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -143,7 +141,7 @@ class DescrptHybrid(Descriptor):
         mesh: list,
         input_dict: dict,
         mixed_type: bool = False,
-        real_natoms_vec: Optional[list] = None,
+        real_natoms_vec: list | None = None,
         **kwargs,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
@@ -213,7 +211,7 @@ class DescrptHybrid(Descriptor):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -351,7 +349,7 @@ class DescrptHybrid(Descriptor):
                 suffix=f"{suffix}_{idx}",
             )
 
-    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: dict | None = None) -> None:
         """Receive the mixed precision setting.
 
         Parameters
@@ -426,9 +424,9 @@ class DescrptHybrid(Descriptor):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

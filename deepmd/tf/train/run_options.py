@@ -96,7 +96,7 @@ class RunOptions:
         device type - gpu or cpu
     """
 
-    gpus: Optional[list[int]]
+    gpus: list[int] | None
     world_size: int
     my_rank: int
     nodename: str
@@ -108,11 +108,11 @@ class RunOptions:
 
     def __init__(
         self,
-        init_model: Optional[str] = None,
-        init_frz_model: Optional[str] = None,
-        finetune: Optional[str] = None,
-        restart: Optional[str] = None,
-        log_path: Optional[str] = None,
+        init_model: str | None = None,
+        init_frz_model: str | None = None,
+        finetune: str | None = None,
+        restart: str | None = None,
+        log_path: str | None = None,
         log_level: int = 0,
         mpi_log: str = "master",
     ) -> None:
@@ -151,9 +151,9 @@ class RunOptions:
 
     def _setup_logger(
         self,
-        log_path: Optional[Path],
+        log_path: Path | None,
         log_level: int,
-        mpi_log: Optional[str],
+        mpi_log: str | None,
     ) -> None:
         """Set up package loggers.
 

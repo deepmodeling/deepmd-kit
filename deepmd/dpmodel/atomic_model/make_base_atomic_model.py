@@ -5,7 +5,6 @@ from abc import (
 )
 from typing import (
     Any,
-    Optional,
 )
 
 from deepmd.dpmodel.output_def import (
@@ -136,9 +135,9 @@ def make_base_atomic_model(
             extended_coord: t_tensor,
             extended_atype: t_tensor,
             nlist: t_tensor,
-            mapping: Optional[t_tensor] = None,
-            fparam: Optional[t_tensor] = None,
-            aparam: Optional[t_tensor] = None,
+            mapping: t_tensor | None = None,
+            fparam: t_tensor | None = None,
+            aparam: t_tensor | None = None,
         ) -> dict[str, t_tensor]:
             pass
 
@@ -153,7 +152,7 @@ def make_base_atomic_model(
 
         @abstractmethod
         def change_type_map(
-            self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+            self, type_map: list[str], model_with_new_type_stat: Any | None = None
         ) -> None:
             pass
 
@@ -206,7 +205,7 @@ def make_base_atomic_model(
 
         def do_grad_r(
             self,
-            var_name: Optional[str] = None,
+            var_name: str | None = None,
         ) -> bool:
             """Tell if the output variable `var_name` is r_differentiable.
             if var_name is None, returns if any of the variable is r_differentiable.
@@ -223,7 +222,7 @@ def make_base_atomic_model(
 
         def do_grad_c(
             self,
-            var_name: Optional[str] = None,
+            var_name: str | None = None,
         ) -> bool:
             """Tell if the output variable `var_name` is c_differentiable.
             if var_name is None, returns if any of the variable is c_differentiable.

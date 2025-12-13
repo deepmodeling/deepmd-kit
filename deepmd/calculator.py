@@ -88,9 +88,9 @@ class DP(Calculator):
         self,
         model: Union[str, "Path"],
         label: str = "DP",
-        type_dict: Optional[dict[str, int]] = None,
+        type_dict: dict[str, int] | None = None,
         neighbor_list: Optional["NeighborList"] = None,
-        head: Optional[str] = None,
+        head: str | None = None,
         **kwargs: Any,
     ) -> None:
         Calculator.__init__(self, label=label, **kwargs)

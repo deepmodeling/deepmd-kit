@@ -2,7 +2,6 @@
 import unittest
 from typing import (
     Any,
-    Optional,
 )
 
 import numpy as np
@@ -133,7 +132,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
     def is_meaningless_zero_attention_layer_tests(
         self,
         attn_layer: int,
-        temperature: Optional[float],
+        temperature: float | None,
     ) -> bool:
         return attn_layer == 0 and (temperature is not None)
 

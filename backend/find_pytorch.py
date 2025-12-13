@@ -17,10 +17,6 @@ from pathlib import (
 from sysconfig import (
     get_path,
 )
-from typing import (
-    Optional,
-    Union,
-)
 
 from packaging.specifiers import (
     SpecifierSet,
@@ -35,7 +31,7 @@ from .utils import (
 
 
 @lru_cache
-def find_pytorch() -> tuple[Optional[str], list[str]]:
+def find_pytorch() -> tuple[str | None, list[str]]:
     """Find PyTorch library.
 
     Tries to find PyTorch in the order of:
@@ -120,9 +116,6 @@ def get_pt_requirement(pt_version: str = "") -> dict:
             cibw_requirement = read_dependencies_from_dependency_group(
                 "pin_pytorch_cpu"
             )
-        elif cuda_version in SpecifierSet(">=11,<12"):
-            # CUDA 11.8, cudnn 8
-            pt_version = "2.3.1"
         else:
             raise RuntimeError("Unsupported CUDA version") from None
     if pt_version == "":
@@ -150,7 +143,7 @@ def get_pt_requirement(pt_version: str = "") -> dict:
 
 
 @lru_cache
-def get_pt_version(pt_path: Optional[Union[str, Path]]) -> str:
+def get_pt_version(pt_path: str | Path | None) -> str:
     """Get TF version from a TF Python library path.
 
     Parameters

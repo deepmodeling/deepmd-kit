@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 from deepmd.dpmodel.array_api import (
     Array,
@@ -77,9 +73,9 @@ class PropertyFittingNet(InvarFitting):
         dim_descrpt: int,
         task_dim: int = 1,
         neuron: list[int] = [128, 128, 128],
-        bias_atom_p: Optional[Array] = None,
-        rcond: Optional[float] = None,
-        trainable: Union[bool, list[bool]] = True,
+        bias_atom_p: Array | None = None,
+        rcond: float | None = None,
+        trainable: bool | list[bool] = True,
         intensive: bool = False,
         property_name: str = "property",
         resnet_dt: bool = True,
@@ -90,10 +86,10 @@ class PropertyFittingNet(InvarFitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
         exclude_types: list[int] = [],
-        type_map: Optional[list[str]] = None,
-        default_fparam: Optional[list] = None,
+        type_map: list[str] | None = None,
+        default_fparam: list | None = None,
         # not used
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> None:
         self.task_dim = task_dim
         self.intensive = intensive

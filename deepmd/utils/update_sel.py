@@ -6,8 +6,6 @@ from abc import (
 )
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 from deepmd.utils.data_system import (
@@ -26,9 +24,9 @@ class BaseUpdateSel(ABC):
     def update_one_sel(
         self,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         rcut: float,
-        sel: Union[int, list[int], str],
+        sel: int | list[int] | str,
         mixed_type: bool = False,
     ) -> tuple[float, list[int]]:
         min_nbor_dist, tmp_sel = self.get_nbor_stat(
@@ -84,10 +82,10 @@ class BaseUpdateSel(ABC):
     def get_nbor_stat(
         self,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         rcut: float,
         mixed_type: bool = False,
-    ) -> tuple[float, Union[int, list[int]]]:
+    ) -> tuple[float, int | list[int]]:
         """Get the neighbor statistics of the data.
 
         Parameters

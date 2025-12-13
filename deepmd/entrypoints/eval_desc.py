@@ -8,7 +8,6 @@ from pathlib import (
 )
 from typing import (
     Any,
-    Optional,
 )
 
 import numpy as np
@@ -34,7 +33,7 @@ def eval_desc(
     system: str,
     datafile: str,
     output: str = "desc",
-    head: Optional[str] = None,
+    head: str | None = None,
     **kwargs: Any,
 ) -> None:
     """Evaluate descriptors for given systems.
