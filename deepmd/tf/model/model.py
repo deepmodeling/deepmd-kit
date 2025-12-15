@@ -1011,7 +1011,7 @@ class StandardModel(Model):
             sel_type = np.setdiff1d(
                 full_type_list, atom_exclude_types, assume_unique=True
             )
-            fitting_dict["sel_type"] = sel_type
+            fitting_dict["sel_type"] = sel_type.tolist()
         fitting = Fitting.deserialize(fitting_dict, suffix=suffix)
         # pass descriptor type embedding to model
         if descriptor.explicit_ntypes:
