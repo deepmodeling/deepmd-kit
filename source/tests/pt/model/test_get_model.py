@@ -60,6 +60,9 @@ class TestGetModel(unittest.TestCase):
                 ]
             },
         )
+        full_type_list = np.arange(len(atomic_model.type_map), dtype=int)
+        atom_exclude_types = np.setdiff1d(full_type_list, self.model.get_sel_type())
+        self.assertEqual(atom_exclude_types, [1])
         self.assertEqual(atomic_model.atom_exclude_types, [1])
         self.assertEqual(atomic_model.pair_exclude_types, [[1, 2]])
 

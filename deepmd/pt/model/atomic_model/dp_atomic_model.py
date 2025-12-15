@@ -64,6 +64,7 @@ class DPAtomicModel(BaseAtomicModel):
         self.rcut = self.descriptor.get_rcut()
         self.sel = self.descriptor.get_sel()
         self.fitting_net = fitting
+        self.fitting_net.reinit_exclude(self.atom_exclude_types)
         super().init_out_stat()
         self.enable_eval_descriptor_hook = False
         self.enable_eval_fitting_last_layer_hook = False
