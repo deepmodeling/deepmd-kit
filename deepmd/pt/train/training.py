@@ -613,16 +613,13 @@ class Trainer:
 
         if init_frz_model is not None:
             frz_model = torch.jit.load(init_frz_model, map_location=DEVICE)
-            try:
-                self.model.load_state_dict(frz_model.state_dict())
-            except RuntimeError as err_msg:
-                if "Missing key(s) in state_dict" in str(
-                    err_msg
-                ) or "Unexpected key(s) in state_dict" in str(err_msg):
-                    self.model.load_state_dict(frz_model.state_dict(), strict=False)
-                    log.warning("Loaded with strict=False to ignore non-matching keys.")
-                else:
-                    raise
+            state = frz_model.state_dict()
+            missing, unexpected = self.model.load_state_dict(state, strict=False)
+            if missing or unexpected:
+                log.warning(
+                    "Checkpoint loaded non-strictly. "
+                    f"Missing keys: {missing}, Unexpected keys: {unexpected}"
+                )
 
         # Get model prob for multi-task
         if self.multi_task:
