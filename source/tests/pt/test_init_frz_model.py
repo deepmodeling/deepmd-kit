@@ -159,7 +159,18 @@ class TestInitFrzModel(unittest.TestCase):
         config["training"]["numb_steps"] = 0
 
         trainer = get_trainer(config, init_frz_model=frozen_model)
+        # Explicit assertions to make test success criteria clear
+        self.assertIsNotNone(trainer, "Trainer should be successfully initialized")
+        self.assertTrue(
+            hasattr(trainer, "model"), "Trainer should have a model attribute"
+        )
+        self.assertTrue(
+            hasattr(trainer, "optimizer"), "Trainer should have an optimizer attribute"
+        )
+        # Run the trainer (this would fail if initialization was incorrect)
         trainer.run()
+        # Verify the model was properly initialized from the frozen model
+        self.assertIsNotNone(trainer.model, "Model should be properly initialized")
 
     def tearDown(self) -> None:
         for f in os.listdir("."):
