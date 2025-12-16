@@ -200,6 +200,10 @@ class TestPolar(CommonTest, ModelTest, unittest.TestCase):
         raise ValueError(f"Unknown backend: {backend}")
 
     def test_atom_exclude_types(self):
+        if self.skip_pt:
+            self.skipTest("Unsupported backend")
+        if self.skip_tf:
+            self.skipTest("Unsupported backend")
         _ret, data = self.get_reference_ret_serialization(self.RefBackend.PT)
         data["atom_exclude_types"] = [1]
         self.reset_unique_id()
