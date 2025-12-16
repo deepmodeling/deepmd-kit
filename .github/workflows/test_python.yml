@@ -98,7 +98,7 @@ jobs:
         key: test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
         restore-keys: test2-durations-combined-${{ matrix.python }}
     - name: Download artifacts
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: split-${{ matrix.python }}-*
         merge-multiple: true
