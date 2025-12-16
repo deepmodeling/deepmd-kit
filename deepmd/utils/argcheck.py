@@ -2741,6 +2741,12 @@ def loss_ener():
             doc=doc_use_huber,
         ),
         Argument(
+            "f_use_norm",
+            bool,
+            optional=True,
+            default=False,
+        ),
+        Argument(
             "huber_delta",
             float,
             optional=True,

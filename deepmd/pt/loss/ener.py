@@ -52,11 +52,11 @@ class EnergyStdLoss(TaskLoss):
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
         use_l1_all: bool = False,
-        inference=False,
-        use_huber=False,
-        use_default_pf=False,
-        huber_delta=0.01,
-        **kwargs,
+        inference: bool = False,
+        use_huber: bool = False,
+        use_default_pf: bool = False,
+        f_use_norm: bool = False,
+        huber_delta: float = 0.01,
     ) -> None:
         r"""Construct a layer to compute loss on energy, force and virial.
 
@@ -144,6 +144,9 @@ class EnergyStdLoss(TaskLoss):
         self.inference = inference
         self.use_huber = use_huber
         self.huber_delta = huber_delta
+        self.f_use_norm = f_use_norm
+        if self.f_use_norm:
+            assert self.use_huber, "f_use_norm can only be True when use_huber is True."
         if self.use_huber and (
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
@@ -278,9 +281,20 @@ class EnergyStdLoss(TaskLoss):
                     if not self.use_huber:
                         loss += (pref_f * l2_force_loss).to(GLOBAL_PT_FLOAT_PRECISION)
                     else:
+                        if not self.f_use_norm:
+                            huber_f_input1 = force_pred.reshape(-1)
+                            huber_f_input2 = force_label.reshape(-1)
+                        else:
+                            huber_f_input1 = torch.linalg.vector_norm(
+                                (force_label - force_pred).reshape(-1, 3),
+                                ord=2,
+                                dim=1,
+                                keepdim=True,
+                            )  # l2 norm mae
+                            huber_f_input2 = torch.zeros_like(huber_f_input1)
                         l_huber_loss = custom_huber_loss(
-                            force_pred.reshape(-1),
-                            force_label.reshape(-1),
+                            huber_f_input1,
+                            huber_f_input2,
                             delta=self.huber_delta,
                         )
                         loss += pref_f * l_huber_loss
