@@ -154,7 +154,8 @@ class DPAtomicModel(BaseAtomicModel):
         )
         self.fitting_net.change_type_map(type_map=type_map)
         # Reinitialize fitting to get correct sel_type
-        self.fitting_net.reinit_exclude(self.atom_exclude_types)
+        if hasattr(self.fitting_net, "reinit_exclude"):
+            self.fitting_net.reinit_exclude(self.atom_exclude_types)
 
     def has_message_passing(self) -> bool:
         """Returns whether the atomic model has message passing."""
