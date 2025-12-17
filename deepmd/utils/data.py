@@ -512,15 +512,6 @@ class DeepmdData:
                     log.info(f"Processed {i + 1}/{self.nframes} frames")
         log.info("All frames preloaded and modified.")
 
-    # def clear_modified_frame_cache(self) -> None:
-    #     """Clear the modified frame cache.
-
-    #     This method is useful when you want to free up memory or force
-    #     recomputation of modified frames.
-    #     """
-    #     self._modified_frame_cache.clear()
-    #     log.info("Modified frame cache cleared.")
-
     def avg(self, key: str) -> float:
         """Return the average value of an item."""
         if key not in self.data_dict.keys():

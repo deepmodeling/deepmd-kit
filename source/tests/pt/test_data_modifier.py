@@ -7,6 +7,7 @@ from pathlib import (
 )
 
 import numpy as np
+import torch
 
 from deepmd.pt.entrypoints.main import (
     get_trainer,
@@ -23,7 +24,9 @@ from deepmd.utils.argcheck import (
 from deepmd.utils.data import (
     DeepmdData,
 )
-
+from deepmd.dpmodel.array_api import (
+    Array,
+)
 
 @modifier_args_plugin.register("random_tester")
 def modifier_random_tester() -> list:
@@ -43,42 +46,19 @@ class ModifierRandomTester(BaseModifier):
     def __init__(self) -> None:
         """Construct a basic model for different tasks."""
         super().__init__()
-        self.modifier_type = "tester"
+        self.modifier_type = "random_tester"
 
-    def serialize(self) -> dict:
-        """Serialize the modifier.
+    def forward(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        return {"coord": coord}
 
-        Returns
-        -------
-        dict
-            The serialized data
-        """
-        data = {
-            "@class": "Modifier",
-            "type": self.modifier_type,
-            "@version": 3,
-        }
-        return data
-
-    @classmethod
-    def deserialize(cls, data: dict) -> "BaseModifier":
-        """Deserialize the modifier.
-
-        Parameters
-        ----------
-        data : dict
-            The serialized data
-
-        Returns
-        -------
-        BaseModifier
-            The deserialized modifier
-        """
-        data = data.copy()
-        modifier = cls(**data)
-        return modifier
-
-    def modify_data(self, data: dict, data_sys: DeepmdData) -> None:
+    def modify_data(self, data: dict[str, Array | float], data_sys: DeepmdData) -> None:
         """Multiply by a random factor."""
         if (
             "find_energy" not in data
@@ -86,7 +66,7 @@ class ModifierRandomTester(BaseModifier):
             and "find_virial" not in data
         ):
             return
-
+        
         if "find_energy" in data and data["find_energy"] == 1.0:
             data["energy"] = data["energy"] * np.random.default_rng().random()
         if "find_force" in data and data["find_force"] == 1.0:
@@ -103,42 +83,19 @@ class ModifierZeroTester(BaseModifier):
     def __init__(self) -> None:
         """Construct a basic model for different tasks."""
         super().__init__()
-        self.modifier_type = "tester"
+        self.modifier_type = "zero_tester"
 
-    def serialize(self) -> dict:
-        """Serialize the modifier.
+    def forward(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        return {"coord": coord}
 
-        Returns
-        -------
-        dict
-            The serialized data
-        """
-        data = {
-            "@class": "Modifier",
-            "type": self.modifier_type,
-            "@version": 3,
-        }
-        return data
-
-    @classmethod
-    def deserialize(cls, data: dict) -> "BaseModifier":
-        """Deserialize the modifier.
-
-        Parameters
-        ----------
-        data : dict
-            The serialized data
-
-        Returns
-        -------
-        BaseModifier
-            The deserialized modifier
-        """
-        data = data.copy()
-        modifier = cls(**data)
-        return modifier
-
-    def modify_data(self, data: dict, data_sys: DeepmdData) -> None:
+    def modify_data(self, data: dict[str, Array | float], data_sys: DeepmdData) -> None:
         """Multiply by a random factor."""
         if (
             "find_energy" not in data

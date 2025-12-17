@@ -1,9 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from abc import (
+    abstractmethod,
+)
+
 import torch
 
 from deepmd.dpmodel.modifier.base_modifier import (
     make_base_modifier,
 )
+from deepmd.dpmodel.array_api import (
+    Array,
+)
+from deepmd.pt.utils.utils import to_torch_tensor, to_numpy_array
 from deepmd.utils.data import (
     DeepmdData,
 )
@@ -13,9 +21,55 @@ class BaseModifier(torch.nn.Module, make_base_modifier()):
     def __init__(self) -> None:
         """Construct a basic model for different tasks."""
         torch.nn.Module.__init__(self)
+        self.modifier_type = "base"
 
-    def modify_data(self, data: dict, data_sys: DeepmdData) -> None:
-        # TODO: data_sys parameter is currently unused but may be needed by subclasses in the future
+    def serialize(self) -> dict:
+        """Serialize the modifier.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        data = {
+            "@class": "Modifier",
+            "type": self.modifier_type,
+            "@version": 3,
+        }
+        return data
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "BaseModifier":
+        """Deserialize the modifier.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        BaseModifier
+            The deserialized modifier
+        """
+        data = data.copy()
+        modifier = cls(**data)
+        return modifier
+
+    @abstractmethod
+    @torch.jit.export
+    def forward(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Compute energy, force, and virial corrections."""
+
+    @torch.jit.unused
+    def modify_data(self, data: dict[str, Array | float], data_sys: DeepmdData) -> None:
         """Modify data.
 
         Parameters
@@ -25,7 +79,9 @@ class BaseModifier(torch.nn.Module, make_base_modifier()):
             Be a dict, has the following keys
             - coord         coordinates
             - box           simulation box
-            - atype          atom types
+            - atype         atom types
+            - fparam        frame parameter
+            - aparam        atom parameter
             - find_energy   tells if data has energy
             - find_force    tells if data has force
             - find_virial   tells if data has virial
@@ -41,19 +97,28 @@ class BaseModifier(torch.nn.Module, make_base_modifier()):
             return
 
         get_nframes = None
-        coord = data["coord"][:get_nframes, :]
+        t_coord = to_torch_tensor(data["coord"][:get_nframes, :])
+        t_atype = to_torch_tensor(data["atype"][:get_nframes, :])
         if data["box"] is None:
-            box = None
+            t_box = None
         else:
-            box = data["box"][:get_nframes, :]
-        atype = data["atype"][:get_nframes, :]
-
+            t_box = to_torch_tensor(data["box"][:get_nframes, :])
+        if data["fparam"] is None:
+            t_fparam = None
+        else:
+            t_fparam = to_torch_tensor(data["fparam"][:get_nframes, :])
+        if data["aparam"] is None:
+            t_aparam = None
+        else:
+            t_aparam = to_torch_tensor(data["aparam"][:get_nframes, :])
+        # 
+        
         # implement data modification method in forward
-        tot_e, tot_f, tot_v = self.forward(coord, atype, box, False, None, None)
+        modifier_data = self.forward(t_coord, t_atype, t_box, t_fparam, t_aparam)
 
         if "find_energy" in data and data["find_energy"] == 1.0:
-            data["energy"] -= tot_e.reshape(data["energy"].shape)
+            data["energy"] -= to_numpy_array(modifier_data["energy"]).reshape(data["energy"].shape)
         if "find_force" in data and data["find_force"] == 1.0:
-            data["force"] -= tot_f.reshape(data["force"].shape)
+            data["force"] -= to_numpy_array(modifier_data["force"]).reshape(data["force"].shape)
         if "find_virial" in data and data["find_virial"] == 1.0:
-            data["virial"] -= tot_v.reshape(data["virial"].shape)
+            data["virial"] -= to_numpy_array(modifier_data["virial"]).reshape(data["virial"].shape)
