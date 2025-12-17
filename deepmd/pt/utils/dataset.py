@@ -70,6 +70,3 @@ class DeepmdDataSetForLoader(Dataset):
 
     def preload_and_modify_all_data(self) -> None:
         self._data_system.preload_and_modify_all_data()
-
-    # def clear_modified_frame_cache(self) -> None:
-    #     self._data_system.clear_modified_frame_cache()

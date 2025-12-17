@@ -88,11 +88,11 @@ class ModifierRandomTester(BaseModifier):
             return
 
         if "find_energy" in data and data["find_energy"] == 1.0:
-            data["energy"] = data["energy"] * np.random.Generator()
+            data["energy"] = data["energy"] * np.random.default_rng().random()
         if "find_force" in data and data["find_force"] == 1.0:
-            data["force"] = data["force"] * np.random.Generator()
+            data["force"] = data["force"] * np.random.default_rng().random()
         if "find_virial" in data and data["find_virial"] == 1.0:
-            data["virial"] = data["virial"] * np.random.Generator()
+            data["virial"] = data["virial"] * np.random.default_rng().random()
 
 
 @BaseModifier.register("zero_tester")

@@ -242,10 +242,6 @@ class DpLoaderSet(Dataset):
         for system in self.systems:
             system.preload_and_modify_all_data()
 
-    # def clear_modified_frame_cache(self) -> None:
-    #     for system in self.systems:
-    #         system.clear_modified_frame_cache()
-
 
 def collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
     example = batch[0]

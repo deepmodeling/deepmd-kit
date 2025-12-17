@@ -15,6 +15,7 @@ class BaseModifier(torch.nn.Module, make_base_modifier()):
         torch.nn.Module.__init__(self)
 
     def modify_data(self, data: dict, data_sys: DeepmdData) -> None:
+        # TODO: data_sys parameter is currently unused but may be needed by subclasses in the future
         """Modify data.
 
         Parameters
@@ -46,10 +47,8 @@ class BaseModifier(torch.nn.Module, make_base_modifier()):
         else:
             box = data["box"][:get_nframes, :]
         atype = data["atype"][:get_nframes, :]
-        atype = atype[0]
-        # nframes = coord.shape[0]
 
-        # implement data modification method in forwrad
+        # implement data modification method in forward
         tot_e, tot_f, tot_v = self.forward(coord, atype, box, False, None, None)
 
         if "find_energy" in data and data["find_energy"] == 1.0:
