@@ -5,13 +5,16 @@ from abc import (
 
 import torch
 
-from deepmd.dpmodel.modifier.base_modifier import (
-    make_base_modifier,
-)
 from deepmd.dpmodel.array_api import (
     Array,
 )
-from deepmd.pt.utils.utils import to_torch_tensor, to_numpy_array
+from deepmd.dpmodel.modifier.base_modifier import (
+    make_base_modifier,
+)
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+    to_torch_tensor,
+)
 from deepmd.utils.data import (
     DeepmdData,
 )
@@ -111,14 +114,20 @@ class BaseModifier(torch.nn.Module, make_base_modifier()):
             t_aparam = None
         else:
             t_aparam = to_torch_tensor(data["aparam"][:get_nframes, :])
-        # 
-        
+        #
+
         # implement data modification method in forward
         modifier_data = self.forward(t_coord, t_atype, t_box, t_fparam, t_aparam)
 
         if "find_energy" in data and data["find_energy"] == 1.0:
-            data["energy"] -= to_numpy_array(modifier_data["energy"]).reshape(data["energy"].shape)
+            data["energy"] -= to_numpy_array(modifier_data["energy"]).reshape(
+                data["energy"].shape
+            )
         if "find_force" in data and data["find_force"] == 1.0:
-            data["force"] -= to_numpy_array(modifier_data["force"]).reshape(data["force"].shape)
+            data["force"] -= to_numpy_array(modifier_data["force"]).reshape(
+                data["force"].shape
+            )
         if "find_virial" in data and data["find_virial"] == 1.0:
-            data["virial"] -= to_numpy_array(modifier_data["virial"]).reshape(data["virial"].shape)
+            data["virial"] -= to_numpy_array(modifier_data["virial"]).reshape(
+                data["virial"].shape
+            )

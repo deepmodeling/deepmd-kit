@@ -9,6 +9,9 @@ from pathlib import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.array_api import (
+    Array,
+)
 from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
@@ -24,9 +27,7 @@ from deepmd.utils.argcheck import (
 from deepmd.utils.data import (
     DeepmdData,
 )
-from deepmd.dpmodel.array_api import (
-    Array,
-)
+
 
 @modifier_args_plugin.register("random_tester")
 def modifier_random_tester() -> list:
@@ -66,7 +67,7 @@ class ModifierRandomTester(BaseModifier):
             and "find_virial" not in data
         ):
             return
-        
+
         if "find_energy" in data and data["find_energy"] == 1.0:
             data["energy"] = data["energy"] * np.random.default_rng().random()
         if "find_force" in data and data["find_force"] == 1.0:

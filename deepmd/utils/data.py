@@ -2,6 +2,7 @@
 
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import bisect
+import copy
 import functools
 import logging
 from concurrent.futures import (
@@ -491,7 +492,7 @@ class DeepmdData:
             self.modifier.modify_data(frame_data, self)
             if self.apply_modifier_at_load:
                 # Cache the modified frame to avoid recomputation
-                self._modified_frame_cache[index] = frame_data.copy()
+                self._modified_frame_cache[index] = copy.deepcopy(frame_data)
 
         return frame_data
 
