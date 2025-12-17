@@ -139,6 +139,13 @@ class DeepmdData:
         # The prefix sum stores the range of indices contained in each directory, which is needed by get_item method
         self.prefix_sum = np.cumsum(frames_list).tolist()
 
+        self.apply_modifier_at_load = True
+        if self.modifier is not None:
+            if hasattr(self.modifier, "apply_modifier_at_load"):
+                self.apply_modifier_at_load = self.modifier.apply_modifier_at_load
+            # Cache for modified frames when apply_modifier_at_load is True
+            self._modified_frame_cache = {}
+
     def add(
         self,
         key: str,
@@ -377,6 +384,14 @@ class DeepmdData:
 
     def get_single_frame(self, index: int) -> dict:
         """Orchestrates loading a single frame efficiently using memmap."""
+        # Check if we have a cached modified frame and apply_modifier_at_load is True
+        if (
+            self.apply_modifier_at_load
+            and self.modifier is not None
+            and index in self._modified_frame_cache
+        ):
+            return self._modified_frame_cache[index]
+
         if index < 0 or index >= self.nframes:
             raise IndexError(f"Frame index {index} out of range [0, {self.nframes})")
         # 1. Find the correct set directory and local frame index
@@ -470,7 +485,41 @@ class DeepmdData:
             frame_data["box"] = None
 
         frame_data["fid"] = index
+
+        if self.modifier is not None:
+            # Apply modifier if it exists
+            self.modifier.modify_data(frame_data, self)
+            if self.apply_modifier_at_load:
+                # Cache the modified frame to avoid recomputation
+                self._modified_frame_cache[index] = frame_data.copy()
+
         return frame_data
+
+    def preload_and_modify_all_data(self) -> None:
+        """Preload all frames and apply modifier to cache them.
+
+        This method is useful when apply_modifier_at_load is True and you want to
+        avoid applying the modifier repeatedly during training.
+        """
+        if not self.apply_modifier_at_load or self.modifier is None:
+            return
+
+        log.info("Preloading and modifying all data frames...")
+        for i in range(self.nframes):
+            if i not in self._modified_frame_cache:
+                self.get_single_frame(i)
+                if (i + 1) % 100 == 0:
+                    log.info(f"Processed {i + 1}/{self.nframes} frames")
+        log.info("All frames preloaded and modified.")
+
+    # def clear_modified_frame_cache(self) -> None:
+    #     """Clear the modified frame cache.
+
+    #     This method is useful when you want to free up memory or force
+    #     recomputation of modified frames.
+    #     """
+    #     self._modified_frame_cache.clear()
+    #     log.info("Modified frame cache cleared.")
 
     def avg(self, key: str) -> float:
         """Return the average value of an item."""

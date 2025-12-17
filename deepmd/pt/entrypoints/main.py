@@ -47,6 +47,9 @@ from deepmd.pt.infer import (
 from deepmd.pt.model.model import (
     BaseModel,
 )
+from deepmd.pt.modifier import (
+    BaseModifier,
+)
 from deepmd.pt.train import (
     training,
 )
@@ -105,12 +108,30 @@ def get_trainer(
 ) -> training.Trainer:
     multi_task = "model_dict" in config.get("model", {})
 
+    def get_data_modifier(_modifier_params: dict[str, Any]) -> BaseModifier:
+        modifier_params = copy.deepcopy(_modifier_params)
+        try:
+            modifier_type = modifier_params.pop("type")
+        except KeyError:
+            raise ValueError("Data modifier type not specified!") from None
+        return (
+            BaseModifier.get_class_by_type(modifier_type)
+            .get_modifier(modifier_params)
+            .to(DEVICE)
+        )
+
     def prepare_trainer_input_single(
         model_params_single: dict[str, Any],
         data_dict_single: dict[str, Any],
         rank: int = 0,
         seed: int | None = None,
     ) -> tuple[DpLoaderSet, DpLoaderSet | None, DPPath | None]:
+        # get data modifier
+        modifier = None
+        modifier_params = model_params_single.get("modifier", None)
+        if modifier_params is not None:
+            modifier = get_data_modifier(modifier_params)
+
         training_dataset_params = data_dict_single["training_data"]
         validation_dataset_params = data_dict_single.get("validation_data", None)
         validation_systems = (
@@ -145,6 +166,7 @@ def get_trainer(
                 validation_dataset_params["batch_size"],
                 model_params_single["type_map"],
                 seed=rank_seed,
+                modifier=modifier,
             )
             if validation_systems
             else None
@@ -154,6 +176,7 @@ def get_trainer(
             training_dataset_params["batch_size"],
             model_params_single["type_map"],
             seed=rank_seed,
+            modifier=modifier,
         )
         return (
             train_data_single,

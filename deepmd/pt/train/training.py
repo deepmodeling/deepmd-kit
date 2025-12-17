@@ -350,6 +350,9 @@ class Trainer:
                 if self.finetune_links is not None
                 else False,
             )
+            training_data.preload_and_modify_all_data()
+            if validation_data is not None:
+                validation_data.preload_and_modify_all_data()
             (
                 self.training_dataloader,
                 self.training_data,
@@ -388,6 +391,9 @@ class Trainer:
                     if self.finetune_links is not None
                     else False,
                 )
+                training_data[model_key].preload_and_modify_all_data()
+                if validation_data[model_key] is not None:
+                    validation_data[model_key].preload_and_modify_all_data()
                 (
                     self.training_dataloader[model_key],
                     self.training_data[model_key],
