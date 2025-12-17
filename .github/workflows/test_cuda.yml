@@ -19,7 +19,7 @@ jobs:
     runs-on: nvidia
     # https://github.com/deepmodeling/deepmd-kit/pull/2884#issuecomment-1744216845
     container:
-      image: nvidia/cuda:12.6.2-cudnn-devel-ubuntu22.04
+      image: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
       options: --gpus all
     if: github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && github.event.label && github.event.label.name == 'Test CUDA' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')
     steps:
@@ -36,12 +36,6 @@ jobs:
       with:
         useLocalCache: true
         useCloudCache: false
-    - run: |
-         wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
-         && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
-         && sudo apt-get update \
-         && sudo apt-get -y install cuda-12-3 libcudnn8=8.9.5.*-1+cuda12.3
-      if: false  # skip as we use nvidia image
     - run: python -m pip install -U uv
     - run: source/install/uv_with_retry.sh pip install --system --group pin_tensorflow_gpu --group pin_pytorch_gpu --group pin_jax "jax[cuda12]"
     - run: |
