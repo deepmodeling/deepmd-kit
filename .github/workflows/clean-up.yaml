@@ -1,0 +1,14 @@
+# clean up github actions runner
+on:
+  workflow_dispatch:
+  push:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+name: Clean up GitHub Actions self-hosted GPU runner
+jobs:
+  cleanup:
+    name: Clean up GitHub Actions self-hosted GPU runner
+    steps:
+    - name: Remove tool cache
+      run: rm -rf /root/actions-runner/_work/_tool
