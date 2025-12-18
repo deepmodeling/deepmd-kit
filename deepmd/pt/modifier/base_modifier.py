@@ -101,7 +101,7 @@ class BaseModifier(torch.nn.Module, make_base_modifier()):
 
         get_nframes = None
         t_coord = to_torch_tensor(data["coord"][:get_nframes, :])
-        t_atype = to_torch_tensor(data["atype"][:get_nframes, :])
+        t_atype = to_torch_tensor(data["atype"])
         if data["box"] is None:
             t_box = None
         else:
