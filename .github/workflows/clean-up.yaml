@@ -9,6 +9,7 @@ name: Clean up GitHub Actions self-hosted GPU runner
 jobs:
   cleanup:
     name: Clean up GitHub Actions self-hosted GPU runner
+    runs-on: nvidia
     steps:
     - name: Remove tool cache
       run: rm -rf /root/actions-runner/_work/_tool
