@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Test data modification functionality in DeepMD.
+"""Test data modification functionality.
 
-This module tests the data modification capabilities of DeepMD, specifically
+This module tests the data modification functionality, specifically
 testing the BaseModifier implementations and their effects on training and
 validation data. It includes:
 
@@ -98,9 +98,10 @@ class ModifierRandomTester(BaseModifier):
         box: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Implementation of abstractmethod."""
-        return {"coord": coord}
+        return {}
 
     def modify_data(self, data: dict[str, Array | float], data_sys: DeepmdData) -> None:
         """Multiply by a deterministic factor for testing."""
@@ -142,9 +143,10 @@ class ModifierZeroTester(BaseModifier):
         box: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Implementation of abstractmethod."""
-        return {"coord": coord}
+        return {}
 
     def modify_data(self, data: dict[str, Array | float], data_sys: DeepmdData) -> None:
         """Zero out energy, force, and virial data."""
@@ -228,7 +230,7 @@ class TestDataModifier(unittest.TestCase):
 
         # Continue collecting data until we've gone through all batches
         for _ in range(nbatch):
-            input_dict, label_dict, log_dict = trainer.get_data(is_train=is_train)
+            _, label_dict, log_dict = trainer.get_data(is_train=is_train)
 
             system_id = log_dict["sid"]
             frame_ids = log_dict["fid"]

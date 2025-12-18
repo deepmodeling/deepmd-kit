@@ -3,13 +3,20 @@ from abc import (
     abstractmethod,
 )
 
+import numpy as np
 import torch
 
 from deepmd.dpmodel.array_api import (
     Array,
 )
+from deepmd.dpmodel.common import PRECISION_DICT as NP_PRECISION_DICT
 from deepmd.dpmodel.modifier.base_modifier import (
     make_base_modifier,
+)
+from deepmd.pt.utils.env import (
+    DEVICE,
+    GLOBAL_PT_FLOAT_PRECISION,
+    RESERVED_PRECISION_DICT,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
@@ -25,6 +32,7 @@ class BaseModifier(torch.nn.Module, make_base_modifier()):
         """Construct a basic model for different tasks."""
         torch.nn.Module.__init__(self)
         self.modifier_type = "base"
+        self.jitable = True
 
     def serialize(self) -> dict:
         """Serialize the modifier.
@@ -56,6 +64,10 @@ class BaseModifier(torch.nn.Module, make_base_modifier()):
             The deserialized modifier
         """
         data = data.copy()
+        # Remove serialization metadata before passing to constructor
+        data.pop("@class", None)
+        data.pop("type", None)
+        data.pop("@version", None)
         modifier = cls(**data)
         return modifier
 
@@ -68,29 +80,30 @@ class BaseModifier(torch.nn.Module, make_base_modifier()):
         box: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Compute energy, force, and virial corrections."""
 
     @torch.jit.unused
     def modify_data(self, data: dict[str, Array | float], data_sys: DeepmdData) -> None:
-        """Modify data.
+        """Modify data of single frame.
 
         Parameters
         ----------
         data
             Internal data of DeepmdData.
             Be a dict, has the following keys
-            - coord         coordinates
-            - box           simulation box
-            - atype         atom types
-            - fparam        frame parameter
-            - aparam        atom parameter
+            - coord         coordinates (nat, 3)
+            - box           simulation box (9,)
+            - atype         atom types (nat,)
+            - fparam        frame parameter (nfp,)
+            - aparam        atom parameter (nat, nap)
             - find_energy   tells if data has energy
             - find_force    tells if data has force
             - find_virial   tells if data has virial
-            - energy        energy
-            - force         force
-            - virial        virial
+            - energy        energy (1,)
+            - force         force (nat, 3)
+            - virial        virial (9,)
         """
         if (
             "find_energy" not in data
@@ -99,25 +112,50 @@ class BaseModifier(torch.nn.Module, make_base_modifier()):
         ):
             return
 
-        get_nframes = None
-        t_coord = to_torch_tensor(data["coord"][:get_nframes, :])
-        t_atype = to_torch_tensor(data["atype"])
-        if data["box"] is None:
-            t_box = None
+        # model = self.dp.to(DEVICE)
+        prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
+
+        nframes = 1
+        natoms = len(data["atype"])
+        atom_types = np.tile(data["atype"], nframes).reshape(nframes, -1)
+
+        coord_input = torch.tensor(
+            data["coord"].reshape([nframes, natoms, 3]).astype(prec),
+            dtype=GLOBAL_PT_FLOAT_PRECISION,
+            device=DEVICE,
+        )
+        type_input = torch.tensor(
+            atom_types.astype(NP_PRECISION_DICT[RESERVED_PRECISION_DICT[torch.long]]),
+            dtype=torch.long,
+            device=DEVICE,
+        )
+        if data["box"] is not None:
+            box_input = torch.tensor(
+                data["box"].reshape([nframes, 3, 3]).astype(prec),
+                dtype=GLOBAL_PT_FLOAT_PRECISION,
+                device=DEVICE,
+            )
         else:
-            t_box = to_torch_tensor(data["box"][:get_nframes, :])
-        if data["fparam"] is None:
-            t_fparam = None
+            box_input = None
+        if "fparam" in data:
+            fparam_input = to_torch_tensor(data["fparam"].reshape(nframes, -1))
         else:
-            t_fparam = to_torch_tensor(data["fparam"][:get_nframes, :])
-        if data["aparam"] is None:
-            t_aparam = None
+            fparam_input = None
+        if "aparam" in data:
+            aparam_input = to_torch_tensor(data["aparam"].reshape(nframes, natoms, -1))
         else:
-            t_aparam = to_torch_tensor(data["aparam"][:get_nframes, :])
-        #
+            aparam_input = None
+        do_atomic_virial = False
 
         # implement data modification method in forward
-        modifier_data = self.forward(t_coord, t_atype, t_box, t_fparam, t_aparam)
+        modifier_data = self.forward(
+            coord_input,
+            type_input,
+            box_input,
+            fparam_input,
+            aparam_input,
+            do_atomic_virial,
+        )
 
         if "find_energy" in data and data["find_energy"] == 1.0:
             data["energy"] -= to_numpy_array(modifier_data["energy"]).reshape(
