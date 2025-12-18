@@ -47,7 +47,7 @@ jobs:
         CMAKE_POLICY_VERSION_MINIMUM: 3.5
     - run: dp --version
     - name: Get durations from cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: .test_durations
         # the key must never match, even when restarting workflows, as that
@@ -71,7 +71,7 @@ jobs:
       if: matrix.group == 1
     - run: mv .test_durations .test_durations_${{ matrix.group }}
     - name: Upload partial durations
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: split-${{ matrix.python }}-${{ matrix.group }}
         path: .test_durations_${{ matrix.group }}
@@ -89,7 +89,7 @@ jobs:
     needs: testpython
     steps:
     - name: Get durations from cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: .test_durations
         # key won't match during the first run for the given commit, but
@@ -98,7 +98,7 @@ jobs:
         key: test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
         restore-keys: test2-durations-combined-${{ matrix.python }}
     - name: Download artifacts
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: split-${{ matrix.python }}-*
         merge-multiple: true
