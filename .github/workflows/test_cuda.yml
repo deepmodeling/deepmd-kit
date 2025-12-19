@@ -50,7 +50,7 @@ jobs:
         pip install --find-links "https://www.paddlepaddle.org.cn/packages/nightly/cu126/paddlepaddle-gpu/" --index-url https://pypi.org/simple "paddlepaddle-gpu==3.3.0.dev20251204"
         source/install/uv_with_retry.sh pip install --system -v -e .[gpu,test,lmp,cu12,torch,jax] mpi4py --reinstall-package deepmd-kit
         # See https://github.com/jax-ml/jax/issues/29042
-        source/install/uv_with_retry.sh pip install -U nvidia-cublas-cu12>=12.9.0.13
+        source/install/uv_with_retry.sh pip install --system -U 'nvidia-cublas-cu12>=12.9.0.13'
       env:
         DP_VARIANT: cuda
         DP_ENABLE_NATIVE_OPTIMIZATION: 1
