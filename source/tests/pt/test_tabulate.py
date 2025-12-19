@@ -41,6 +41,7 @@ def get_activation_function(functype: int):
 
 
 def setUpModule() -> None:
+    tf.reset_default_graph()
     tf.compat.v1.enable_eager_execution()
 
 
@@ -48,7 +49,6 @@ def tearDownModule() -> None:
     tf.compat.v1.disable_eager_execution()
 
 
-@unittest.skip("See https://github.com/deepmodeling/deepmd-kit/issues/5110")
 class TestDPTabulate(unittest.TestCase):
     def setUp(self) -> None:
         self.w = np.array(
