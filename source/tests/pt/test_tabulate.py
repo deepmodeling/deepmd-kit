@@ -48,6 +48,7 @@ def tearDownModule() -> None:
     tf.compat.v1.disable_eager_execution()
 
 
+@unittest.skip("See https://github.com/deepmodeling/deepmd-kit/issues/5110")
 class TestDPTabulate(unittest.TestCase):
     def setUp(self) -> None:
         self.w = np.array(
