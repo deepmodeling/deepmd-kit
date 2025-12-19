@@ -4,6 +4,7 @@ import copy
 import json
 import logging
 import os
+import tempfile
 from pathlib import (
     Path,
 )
@@ -383,10 +384,24 @@ def freeze(
     output: str = "frozen_model.pth",
     head: str | None = None,
 ) -> None:
-    model = inference.Tester(model, head=head).model
+    tester = inference.Tester(model, head=head)
+    model = tester.model
     model.eval()
     model = torch.jit.script(model)
-    extra_files = {}
+
+    dm_output = "data_modifier.pth"
+    extra_files = {dm_output: ""}
+    if tester.modifier is not None:
+        dm = tester.modifier
+        dm.eval()
+        with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as tmp_file:
+            torch.jit.save(
+                torch.jit.script(dm),
+                tmp_file,
+            )
+        with open(tmp_file.name, "rb") as f:
+            extra_files = {dm_output: f.read()}
+        os.unlink(tmp_file.name)  # Clean up the temporary file
     torch.jit.save(
         model,
         output,

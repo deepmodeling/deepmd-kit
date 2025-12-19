@@ -20,6 +20,7 @@ class ModelWrapper(torch.nn.Module):
         loss: torch.nn.Module | dict = None,
         model_params: dict[str, Any] | None = None,
         shared_links: dict[str, Any] | None = None,
+        modifier: torch.nn.Module | None = None,
     ) -> None:
         """Construct a DeePMD model wrapper.
 
@@ -57,6 +58,8 @@ class ModelWrapper(torch.nn.Module):
                     )
                     self.loss[task_key] = loss[task_key]
         self.inference_only = self.loss is None
+        # Modifier
+        self.modifier = modifier
 
     def share_params(
         self,
@@ -185,6 +188,10 @@ class ModelWrapper(torch.nn.Module):
 
         if self.inference_only or inference_only:
             model_pred = self.model[task_key](**input_dict)
+            if self.modifier is not None:
+                modifier_pred = self.modifier(**input_dict)
+                for k, v in modifier_pred.items():
+                    model_pred[k] = model_pred[k] - v
             return model_pred, None, None
         else:
             natoms = atype.shape[-1]

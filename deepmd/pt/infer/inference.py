@@ -9,6 +9,9 @@ import torch
 from deepmd.pt.model.model import (
     get_model,
 )
+from deepmd.pt.modifier import (
+    get_data_modifier,
+)
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
 )
@@ -60,9 +63,15 @@ class Tester:
         )  # wrapper Hessian to Energy model due to JIT limit
         self.model_params = deepcopy(model_params)
         self.model = get_model(model_params).to(DEVICE)
+        self.modifier = None
+        if "modifier" in model_params:
+            modifier = get_data_modifier(model_params["modifier"]).to(DEVICE)
+            if modifier.jitable:
+                self.modifier = modifier
 
         # Model Wrapper
         self.wrapper = ModelWrapper(self.model)  # inference only
+        # , modifier=self.modifier
         if JIT:
             self.wrapper = torch.jit.script(self.wrapper)
         self.wrapper.load_state_dict(state_dict)

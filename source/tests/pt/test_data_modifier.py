@@ -22,15 +22,25 @@ from pathlib import (
 
 import numpy as np
 import torch
+from dargs import (
+    Argument,
+)
 
 from deepmd.dpmodel.array_api import (
     Array,
 )
+from deepmd.infer import (
+    DeepEval,
+)
 from deepmd.pt.entrypoints.main import (
+    freeze,
     get_trainer,
 )
 from deepmd.pt.modifier.base_modifier import (
     BaseModifier,
+)
+from deepmd.pt.utils import (
+    env,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
@@ -46,50 +56,48 @@ from ..consistent.common import (
     parameterized,
 )
 
+doc_random_tester = "A test modifier that multiplies energy, force, and virial data by a deterministic random factor."
+doc_zero_tester = "A test modifier that zeros out energy, force, and virial data by subtracting their original values."
+doc_scaling_tester = "A test modifier that applies scaled model predictions as data modification using a frozen model."
 
-@modifier_args_plugin.register("random_tester")
+
+@modifier_args_plugin.register("random_tester", doc=doc_random_tester)
 def modifier_random_tester() -> list:
-    """Return empty argument list for random_tester modifier.
-
-    This function registers the argument schema for the random_tester modifier.
-
-    Returns
-    -------
-    list: Empty list indicating no additional arguments required
-    """
-    return []
+    doc_seed = "Random seed used as the scaling factor."
+    return [
+        Argument("seed", int, optional=True, doc=doc_seed),
+    ]
 
 
-@modifier_args_plugin.register("zero_tester")
+@modifier_args_plugin.register("zero_tester", doc=doc_zero_tester)
 def modifier_zero_tester() -> list:
-    """Return empty argument list for zero_tester modifier.
-
-    This function registers the argument schema for the zero_tester modifier.
-
-    Returns
-    -------
-    list: Empty list indicating no additional arguments required
-    """
     return []
+
+
+@modifier_args_plugin.register("scaling_tester", doc=doc_scaling_tester)
+def modifier_scaling_tester() -> list[Argument]:
+    doc_model_name = "The name of the frozen energy model file."
+    doc_sfactor = "The scaling factor for correction."
+    return [
+        Argument("model_name", str, optional=False, doc=doc_model_name),
+        Argument("sfactor", float, optional=False, doc=doc_sfactor),
+    ]
 
 
 @BaseModifier.register("random_tester")
 class ModifierRandomTester(BaseModifier):
-    def __new__(cls) -> BaseModifier:
-        """Create a new instance of ModifierRandomTester.
-
-        Returns
-        -------
-        BaseModifier: New instance of the modifier
-        """
+    def __new__(cls, *args, **kwargs):
         return super().__new__(cls)
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        seed: int = 1,
+    ) -> None:
         """Construct a basic model for different tasks."""
         super().__init__()
         self.modifier_type = "random_tester"
         # Use a fixed seed for deterministic behavior
-        self.rng = np.random.default_rng(12345)  # Fixed seed for reproducibility
+        self.rng = np.random.default_rng(seed)
 
     def forward(
         self,
@@ -122,13 +130,7 @@ class ModifierRandomTester(BaseModifier):
 
 @BaseModifier.register("zero_tester")
 class ModifierZeroTester(BaseModifier):
-    def __new__(cls) -> BaseModifier:
-        """Create a new instance of ModifierZeroTester.
-
-        Returns
-        -------
-        BaseModifier: New instance of the modifier
-        """
+    def __new__(cls, *args, **kwargs):
         return super().__new__(cls)
 
     def __init__(self) -> None:
@@ -165,6 +167,48 @@ class ModifierZeroTester(BaseModifier):
             data["virial"] -= data["virial"]
 
 
+@BaseModifier.register("scaling_tester")
+class ModifierScalingTester(BaseModifier):
+    def __new__(cls, *args, **kwargs):
+        return super().__new__(cls)
+
+    def __init__(
+        self,
+        model_name: str,
+        sfactor: float = 1.0,
+    ) -> None:
+        """Construct a basic model for different tasks."""
+        super().__init__()
+        self.modifier_type = "scaling_tester"
+        self.model_name = model_name
+        self.sfactor = sfactor
+        self.model = torch.jit.load(model_name, map_location=env.DEVICE)
+
+    def forward(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
+    ) -> dict[str, torch.Tensor]:
+        """Take scaled model prediction as data modification."""
+        model_pred = self.model(
+            coord=coord,
+            atype=atype,
+            box=box,
+            do_atomic_virial=do_atomic_virial,
+            fparam=fparam,
+            aparam=aparam,
+        )
+        if isinstance(model_pred, tuple):
+            model_pred = model_pred[0]
+        for k in ["energy", "force", "virial"]:
+            model_pred[k] = model_pred[k] * self.sfactor
+        return model_pred
+
+
 @parameterized(
     (1, 2),  # training data batch_size
     (1, 2),  # validation data batch_size
@@ -191,6 +235,144 @@ class TestDataModifier(unittest.TestCase):
 
         self.training_nframes = self.get_dataset_nframes(training_data)
         self.validation_nframes = self.get_dataset_nframes(validation_data)
+
+    def test_init_modify_data(self):
+        """Ensure modify_data applied."""
+        tmp_config = self.config.copy()
+        # add tester data modifier
+        tmp_config["model"]["modifier"] = {"type": "zero_tester"}
+
+        # data modification is finished in __init__
+        trainer = get_trainer(tmp_config)
+
+        # training data
+        training_data = trainer.get_data(is_train=True)
+        # validation data
+        validation_data = trainer.get_data(is_train=False)
+
+        for dataset in [training_data, validation_data]:
+            for kw in ["energy", "force"]:
+                data = to_numpy_array(dataset[1][kw])
+                np.testing.assert_allclose(data, np.zeros_like(data))
+
+    def test_full_modify_data(self):
+        """Ensure modify_data only applied once."""
+        tmp_config = self.config.copy()
+        # add tester data modifier
+        tmp_config["model"]["modifier"] = {
+            "type": "random_tester",
+            "seed": 1024,
+        }
+
+        # data modification is finished in __init__
+        trainer = get_trainer(tmp_config)
+
+        # training data
+        training_data_before = self.get_sampled_data(
+            trainer, self.training_nframes, True
+        )
+        # validation data
+        validation_data_before = self.get_sampled_data(
+            trainer, self.validation_nframes, False
+        )
+
+        trainer.run()
+
+        # training data
+        training_data_after = self.get_sampled_data(
+            trainer, self.training_nframes, True
+        )
+        # validation data
+        validation_data_after = self.get_sampled_data(
+            trainer, self.validation_nframes, False
+        )
+
+        for label_kw in ["energy", "force"]:
+            self.check_sampled_data(training_data_before, training_data_after, label_kw)
+            self.check_sampled_data(
+                validation_data_before, validation_data_after, label_kw
+            )
+
+    def test_inference(self):
+        """Test the inference with data modification by verifying scaled model predictions are properly applied."""
+        # Generate frozen energy model used in modifier
+        trainer = get_trainer(self.config)
+        trainer.run()
+        freeze("model.ckpt.pt", "frozen_model_dm.pth")
+
+        tmp_config = self.config.copy()
+        sfactor = np.random.default_rng(1).random()
+        # add tester data modifier
+        tmp_config["model"]["modifier"] = {
+            "type": "scaling_tester",
+            "model_name": "frozen_model_dm.pth",
+            "sfactor": sfactor,
+        }
+
+        trainer = get_trainer(tmp_config)
+        trainer.run()
+        freeze("model.ckpt.pt", "frozen_model.pth")
+
+        cell = np.array(
+            [
+                5.122106549439247480e00,
+                4.016537340154059388e-01,
+                6.951654033828678081e-01,
+                4.016537340154059388e-01,
+                6.112136112297989143e00,
+                8.178091365465004481e-01,
+                6.951654033828678081e-01,
+                8.178091365465004481e-01,
+                6.159552512682983760e00,
+            ]
+        ).reshape(1, 3, 3)
+        coord = np.array(
+            [
+                2.978060152121375648e00,
+                3.588469695887098077e00,
+                2.792459820604495491e00,
+                3.895592322591093115e00,
+                2.712091020667753760e00,
+                1.366836847133650501e00,
+                9.955616170888935690e-01,
+                4.121324820711413039e00,
+                1.817239061889086571e00,
+                3.553661462345699906e00,
+                5.313046969500791583e00,
+                6.635182659098815883e00,
+                6.088601018589653080e00,
+                6.575011420004332585e00,
+                6.825240650611076099e00,
+            ]
+        ).reshape(1, -1, 3)
+        atype = np.array([0, 0, 0, 1, 1]).reshape(1, -1)
+
+        model = DeepEval("frozen_model.pth")
+        modifier = DeepEval("frozen_model_dm.pth")
+        # model inference without modifier
+        model_ref = DeepEval("model.ckpt.pt")
+
+        model_pred = model.eval(coord, cell, atype)
+        modifier_pred = modifier.eval(coord, cell, atype)
+        model_pred_ref = model_ref.eval(coord, cell, atype)
+        # expected: output_model - sfactor * output_modifier
+        for ii in range(3):
+            np.testing.assert_allclose(
+                model_pred[ii], model_pred_ref[ii] - sfactor * modifier_pred[ii]
+            )
+
+    def tearDown(self) -> None:
+        """Clean up test artifacts after each test.
+
+        Removes model files and other artifacts created during testing.
+        """
+        for f in os.listdir("."):
+            if f.startswith("frozen_model") and f.endswith(".pth"):
+                os.remove(f)
+            if f.startswith("model") and f.endswith(".pt"):
+                os.remove(f)
+            if f in ["lcurve.out", "checkpoint"]:
+                os.remove(f)
 
     @staticmethod
     def get_dataset_nframes(dataset: list[str]) -> int:
@@ -292,70 +474,3 @@ class TestDataModifier(unittest.TestCase):
                 except KeyError:
                     continue
                 np.testing.assert_allclose(ref_label, test_label)
-
-    def test_init_modify_data(self):
-        """Ensure modify_data applied."""
-        tmp_config = self.config.copy()
-        # add tester data modifier
-        tmp_config["model"]["modifier"] = {"type": "zero_tester"}
-
-        # data modification is finished in __init__
-        trainer = get_trainer(tmp_config)
-
-        # training data
-        training_data = trainer.get_data(is_train=True)
-        # validation data
-        validation_data = trainer.get_data(is_train=False)
-
-        for dataset in [training_data, validation_data]:
-            for kw in ["energy", "force"]:
-                data = to_numpy_array(dataset[1][kw])
-                np.testing.assert_allclose(data, np.zeros_like(data))
-
-    def test_full_modify_data(self):
-        """Ensure modify_data only applied once."""
-        tmp_config = self.config.copy()
-        # add tester data modifier
-        tmp_config["model"]["modifier"] = {"type": "random_tester"}
-
-        # data modification is finished in __init__
-        trainer = get_trainer(tmp_config)
-
-        # training data
-        training_data_before = self.get_sampled_data(
-            trainer, self.training_nframes, True
-        )
-        # validation data
-        validation_data_before = self.get_sampled_data(
-            trainer, self.validation_nframes, False
-        )
-
-        trainer.run()
-
-        # training data
-        training_data_after = self.get_sampled_data(
-            trainer, self.training_nframes, True
-        )
-        # validation data
-        validation_data_after = self.get_sampled_data(
-            trainer, self.validation_nframes, False
-        )
-
-        for label_kw in ["energy", "force"]:
-            self.check_sampled_data(training_data_before, training_data_after, label_kw)
-            self.check_sampled_data(
-                validation_data_before, validation_data_after, label_kw
-            )
-
-    def tearDown(self) -> None:
-        """Clean up test artifacts after each test.
-
-        Removes model files and other artifacts created during testing.
-        """
-        for f in os.listdir("."):
-            if f.startswith("frozen_model") and f.endswith(".pth"):
-                os.remove(f)
-            if f.startswith("model") and f.endswith(".pt"):
-                os.remove(f)
-            if f in ["lcurve.out", "checkpoint"]:
-                os.remove(f)
