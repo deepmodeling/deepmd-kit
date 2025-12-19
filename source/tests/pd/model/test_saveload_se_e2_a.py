@@ -13,6 +13,9 @@ from paddle.io import (
     DataLoader,
 )
 
+from deepmd.common import (
+    expand_sys_str,
+)
 from deepmd.pd.loss import (
     EnergyStdLoss,
 )
@@ -31,9 +34,6 @@ from deepmd.pd.utils.dataloader import (
 )
 from deepmd.pd.utils.stat import (
     make_stat_input,
-)
-from deepmd.tf.common import (
-    expand_sys_str,
 )
 
 
