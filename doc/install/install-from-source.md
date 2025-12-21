@@ -52,7 +52,7 @@ If one does not need the GPU support of DeePMD-kit and is concerned about packag
 pip install --upgrade tensorflow-cpu
 ```
 
-One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to install TensorFlow from [conda-forge](https://conda-forge.org).
+One can also [use conda](https://docs.deepmodeling.com/faq/conda.html) to install TensorFlow from [conda-forge](https://conda-forge.org).
 
 To verify the installation, run
 
@@ -74,7 +74,7 @@ pip install torch
 
 Follow [PyTorch documentation](https://pytorch.org/get-started/locally/) to install PyTorch built against different CUDA versions or without CUDA.
 
-One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to install PyTorch from [conda-forge](https://conda-forge.org).
+One can also [use conda](https://docs.deepmodeling.com/faq/conda.html) to install PyTorch from [conda-forge](https://conda-forge.org).
 
 :::
 
@@ -89,7 +89,7 @@ pip install jax-ai-stack
 One can also install packages in JAX AI Stack manually.
 Follow [JAX documentation](https://jax.readthedocs.io/en/latest/installation.html) to install JAX built against different CUDA versions or without CUDA.
 
-One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to install JAX from [conda-forge](https://conda-forge.org).
+One can also [use conda](https://docs.deepmodeling.com/faq/conda.html) to install JAX from [conda-forge](https://conda-forge.org).
 
 :::
 
@@ -383,7 +383,7 @@ pip install -U cmake
 
 You must enable at least one backend.
 If you enable two or more backends, these backend libraries must be built in a compatible way, e.g. using the same `_GLIBCXX_USE_CXX11_ABI` flag.
-We recommend using [conda packages](https://docs.deepmodeling.org/faq/conda.html) from [conda-forge](https://conda-forge.org), which are usually compatible to each other.
+We recommend using [conda packages](https://docs.deepmodeling.com/faq/conda.html) from [conda-forge](https://conda-forge.org), which are usually compatible to each other.
 
 ::::{tab-set}
 
