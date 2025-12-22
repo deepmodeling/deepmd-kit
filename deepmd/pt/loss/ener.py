@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Optional,
 )
 
@@ -57,6 +58,7 @@ class EnergyStdLoss(TaskLoss):
         use_default_pf: bool = False,
         f_use_norm: bool = False,
         huber_delta: float = 0.01,
+        **kwargs: Any,
     ) -> None:
         r"""Construct a layer to compute loss on energy, force and virial.
 
