@@ -64,6 +64,8 @@ class DPAtomicModel(BaseAtomicModel):
         self.rcut = self.descriptor.get_rcut()
         self.sel = self.descriptor.get_sel()
         self.fitting_net = fitting
+        if hasattr(self.fitting_net, "reinit_exclude"):
+            self.fitting_net.reinit_exclude(self.atom_exclude_types)
         super().init_out_stat()
         self.enable_eval_descriptor_hook = False
         self.enable_eval_fitting_last_layer_hook = False
@@ -151,6 +153,9 @@ class DPAtomicModel(BaseAtomicModel):
             else None,
         )
         self.fitting_net.change_type_map(type_map=type_map)
+        # Reinitialize fitting to get correct sel_type
+        if hasattr(self.fitting_net, "reinit_exclude"):
+            self.fitting_net.reinit_exclude(self.atom_exclude_types)
 
     def has_message_passing(self) -> bool:
         """Returns whether the atomic model has message passing."""

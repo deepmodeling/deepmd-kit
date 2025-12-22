@@ -43,6 +43,7 @@ def setattr_for_general_fitting(name: str, value: Any) -> Any:
         "fparam_inv_std",
         "aparam_avg",
         "aparam_inv_std",
+        "case_embd",
         "default_fparam_tensor",
     }:
         value = to_jax_array(value)

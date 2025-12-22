@@ -1003,7 +1003,16 @@ class StandardModel(Model):
         check_version_compatibility(data.pop("@version", 2), 2, 1)
         descriptor = Descriptor.deserialize(data.pop("descriptor"), suffix=suffix)
         # bias_atom_e and out_bias are now completely independent - no conversion needed
-        fitting = Fitting.deserialize(data.pop("fitting"), suffix=suffix)
+        fitting_dict = data.pop("fitting", {})
+        atom_exclude_types = data.pop("atom_exclude_types", [])
+        if len(atom_exclude_types) > 0:
+            # get sel_type from complement of atom_exclude_types
+            full_type_list = np.arange(len(data["type_map"]), dtype=int)
+            sel_type = np.setdiff1d(
+                full_type_list, atom_exclude_types, assume_unique=True
+            )
+            fitting_dict["sel_type"] = sel_type.tolist()
+        fitting = Fitting.deserialize(fitting_dict, suffix=suffix)
         # pass descriptor type embedding to model
         if descriptor.explicit_ntypes:
             type_embedding = descriptor.type_embedding
@@ -1011,8 +1020,6 @@ class StandardModel(Model):
         else:
             type_embedding = None
         # BEGINE not supported keys
-        if len(data.pop("atom_exclude_types")) > 0:
-            raise NotImplementedError("atom_exclude_types is not supported")
         if len(data.pop("pair_exclude_types")) > 0:
             raise NotImplementedError("pair_exclude_types is not supported")
         data.pop("rcond", None)

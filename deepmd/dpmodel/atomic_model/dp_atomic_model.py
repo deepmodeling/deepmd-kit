@@ -51,6 +51,8 @@ class DPAtomicModel(BaseAtomicModel):
         self.type_map = type_map
         self.descriptor = descriptor
         self.fitting = fitting
+        if hasattr(self.fitting, "reinit_exclude"):
+            self.fitting.reinit_exclude(self.atom_exclude_types)
         self.type_map = type_map
         super().init_out_stat()
 
@@ -191,7 +193,7 @@ class DPAtomicModel(BaseAtomicModel):
             if model_with_new_type_stat is not None
             else None,
         )
-        self.fitting_net.change_type_map(type_map=type_map)
+        self.fitting.change_type_map(type_map=type_map)
 
     def serialize(self) -> dict:
         dd = super().serialize()
