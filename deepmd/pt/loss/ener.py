@@ -330,16 +330,42 @@ class EnergyStdLoss(TaskLoss):
                 )
                 pref_pf = pref_pf * find_atom_pref
                 atom_pref_reshape = atom_pref.reshape(-1)
-                l2_pref_force_loss = (torch.square(diff_f) * atom_pref_reshape).mean()
-                if not self.inference:
-                    more_loss["l2_pref_force_loss"] = self.display_if_exist(
-                        l2_pref_force_loss.detach(), find_atom_pref
+                if not self.use_l1_all:
+                    l2_pref_force_loss = (
+                        torch.square(diff_f) * atom_pref_reshape
+                    ).mean()
+                    if not self.inference:
+                        more_loss["l2_pref_force_loss"] = self.display_if_exist(
+                            l2_pref_force_loss.detach(), find_atom_pref
+                        )
+                    if not self.use_huber:
+                        loss += (pref_pf * l2_pref_force_loss).to(
+                            GLOBAL_PT_FLOAT_PRECISION
+                        )
+                    else:
+                        l_huber_loss = custom_huber_loss(
+                            (atom_pref * force_pred).reshape(-1),
+                            (atom_pref * force_label).reshape(-1),
+                            delta=self.huber_delta,
+                        )
+                        loss += pref_pf * l_huber_loss
+                    rmse_pf = l2_pref_force_loss.sqrt()
+                    more_loss["rmse_pf"] = self.display_if_exist(
+                        rmse_pf.detach(), find_atom_pref
                     )
-                loss += (pref_pf * l2_pref_force_loss).to(GLOBAL_PT_FLOAT_PRECISION)
-                rmse_pf = l2_pref_force_loss.sqrt()
-                more_loss["rmse_pf"] = self.display_if_exist(
-                    rmse_pf.detach(), find_atom_pref
-                )
+                else:
+                    l1_pref_force_loss = (torch.abs(diff_f) * atom_pref_reshape).mean()
+                    more_loss["mae_f"] = self.display_if_exist(
+                        l1_pref_force_loss.detach(), find_atom_pref
+                    )
+                    if self.f_use_norm:
+                        l1_pref_force_loss = torch.linalg.vector_norm(
+                            (diff_f * atom_pref_reshape).reshape(-1, 3),
+                            ord=2,
+                            dim=1,
+                            keepdim=True,
+                        ).mean()  # l2 norm mae
+                    loss += (pref_pf * l1_pref_force_loss).to(GLOBAL_PT_FLOAT_PRECISION)
 
             if self.has_gf and "drdq" in label:
                 drdq = label["drdq"]
