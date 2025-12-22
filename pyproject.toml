@@ -153,7 +153,7 @@ pin_tensorflow_cpu = [
   # https://github.com/tensorflow/tensorflow/issues/75279
   # macos x86 has been deprecated
   "tensorflow-cpu>=2.18,<2.21; platform_machine=='x86_64' and platform_system == 'Linux'",
-  "tensorflow~=2.18.0; (platform_machine!='x86_64' or platform_system != 'Linux') and (platform_machine!='x86_64' or platform_system != 'Darwin')",
+  "tensorflow>=2.18,<2.21; (platform_machine!='x86_64' or platform_system != 'Linux') and (platform_machine!='x86_64' or platform_system != 'Darwin')",
   "tensorflow; platform_machine=='x86_64' and platform_system == 'Darwin'",
 ]
 pin_tensorflow_gpu = [
