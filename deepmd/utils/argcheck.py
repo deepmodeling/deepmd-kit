@@ -1810,7 +1810,6 @@ def fitting_ener():
     return [
         Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
         Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
-        Argument("default_fparam", list, optional=True, default=None),
         Argument(
             "default_fparam",
             list[float],
