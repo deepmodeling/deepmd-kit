@@ -354,6 +354,11 @@ ignore = "D413, D416, D203, D107, D213"
 profile = "black"
 force_grid_wrap = 1
 
+[tool.ruff]
+extend-exclude = [
+    "source/3rdparty/**",
+]
+
 [tool.ruff.format]
 docstring-code-format = true
 
@@ -395,10 +400,6 @@ ignore = [
     "D205", # 1 blank line required between summary line and description
     "D401", # TODO: first line should be in imperative mood
     "D404", # TODO: first word of the docstring should not be This
-]
-
-exclude = [
-    "source/3rdparty/**",
 ]
 
 [tool.ruff.lint.pydocstyle]
