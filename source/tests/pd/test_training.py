@@ -136,11 +136,14 @@ class DPTrainTest:
     def tearDown(self) -> None:
         for f in os.listdir("."):
             if f.startswith("model") and f.endswith(".pd"):
-                os.remove(f)
+                if os.path.exists(f):
+                    os.remove(f)
             if f in ["lcurve.out"]:
-                os.remove(f)
+                if os.path.exists(f):
+                    os.remove(f)
             if f in ["stat_files"]:
-                shutil.rmtree(f)
+                if os.path.exists(f):
+                    shutil.rmtree(f)
 
 
 class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
