@@ -162,7 +162,7 @@ pin_tensorflow_gpu = [
 pin_pytorch_cpu = [
   # https://github.com/pytorch/pytorch/issues/114602
   # macos x86 has been deprecated
-  "torch~=2.8.0; platform_machine!='x86_64' or platform_system != 'Darwin'",
+  "torch>=2.8,<2.10; platform_machine!='x86_64' or platform_system != 'Darwin'",
   "torch; platform_machine=='x86_64' and platform_system == 'Darwin'",
 ]
 pin_pytorch_gpu = [
