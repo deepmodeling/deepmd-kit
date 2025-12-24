@@ -338,7 +338,7 @@ class Trainer:
             training_data.add_data_requirement(data_requirement)
             if validation_data is not None:
                 validation_data.add_data_requirement(data_requirement)
-            # data modification
+            # Preload and apply modifiers to all data before computing statistics
             training_data.preload_and_modify_all_data()
             if validation_data is not None:
                 validation_data.preload_and_modify_all_data()
@@ -384,7 +384,7 @@ class Trainer:
                 training_data[model_key].add_data_requirement(data_requirement)
                 if validation_data[model_key] is not None:
                     validation_data[model_key].add_data_requirement(data_requirement)
-                # data modification
+                # Preload and apply modifiers to all data before computing statistics
                 training_data[model_key].preload_and_modify_all_data()
                 if validation_data[model_key] is not None:
                     validation_data[model_key].preload_and_modify_all_data()
