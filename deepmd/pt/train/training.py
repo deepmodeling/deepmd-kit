@@ -248,11 +248,6 @@ class Trainer:
             _stat_file_path: str | None,
             finetune_has_new_type: bool = False,
         ) -> Callable[[], Any]:
-            # _data_requirement += get_additional_data_requirement(_model)
-            # _training_data.add_data_requirement(_data_requirement)
-            # if _validation_data is not None:
-            #     _validation_data.add_data_requirement(_data_requirement)
-
             @functools.lru_cache
             def get_sample() -> Any:
                 sampled = make_stat_input(

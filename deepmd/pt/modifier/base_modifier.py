@@ -112,7 +112,6 @@ class BaseModifier(torch.nn.Module, make_base_modifier()):
         ):
             return
 
-        # model = self.dp.to(DEVICE)
         prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
 
         nframes = 1
