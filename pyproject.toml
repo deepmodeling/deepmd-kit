@@ -157,7 +157,7 @@ pin_tensorflow_cpu = [
   "tensorflow; platform_machine=='x86_64' and platform_system == 'Darwin'",
 ]
 pin_tensorflow_gpu = [
-  "tensorflow~=2.18.0",
+  "tensorflow==2.19.1",
 ]
 pin_pytorch_cpu = [
   # https://github.com/pytorch/pytorch/issues/114602
