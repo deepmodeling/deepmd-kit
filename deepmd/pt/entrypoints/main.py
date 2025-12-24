@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import argparse
 import copy
+import io
 import json
 import logging
 import os
-import tempfile
 from pathlib import (
     Path,
 )
@@ -394,14 +394,12 @@ def freeze(
     if tester.modifier is not None:
         dm = tester.modifier
         dm.eval()
-        with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as tmp_file:
-            torch.jit.save(
-                torch.jit.script(dm),
-                tmp_file,
-            )
-        with open(tmp_file.name, "rb") as f:
-            extra_files = {dm_output: f.read()}
-        os.unlink(tmp_file.name)  # Clean up the temporary file
+        buffer = io.BytesIO()
+        torch.jit.save(
+            torch.jit.script(dm),
+            buffer,
+        )
+        extra_files = {dm_output: buffer.getvalue()}
     torch.jit.save(
         model,
         output,

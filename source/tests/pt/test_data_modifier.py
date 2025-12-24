@@ -63,7 +63,7 @@ doc_scaling_tester = "A test modifier that applies scaled model predictions as d
 
 @modifier_args_plugin.register("random_tester", doc=doc_random_tester)
 def modifier_random_tester() -> list:
-    doc_seed = "Random seed used as the scaling factor."
+    doc_seed = "Random seed used to initialize the random number generator for deterministic scaling factors."
     return [
         Argument("seed", int, optional=True, doc=doc_seed),
     ]
@@ -93,7 +93,7 @@ class ModifierRandomTester(BaseModifier):
         self,
         seed: int = 1,
     ) -> None:
-        """Construct a basic model for different tasks."""
+        """Construct a random_tester modifier that scales data by deterministic random factors for testing."""
         super().__init__()
         self.modifier_type = "random_tester"
         # Use a fixed seed for deterministic behavior
@@ -134,7 +134,7 @@ class ModifierZeroTester(BaseModifier):
         return super().__new__(cls)
 
     def __init__(self) -> None:
-        """Construct a basic model for different tasks."""
+        """Construct a modifier that zeros out data for testing."""
         super().__init__()
         self.modifier_type = "zero_tester"
 
@@ -177,7 +177,7 @@ class ModifierScalingTester(BaseModifier):
         model_name: str,
         sfactor: float = 1.0,
     ) -> None:
-        """Construct a basic model for different tasks."""
+        """Initialize a test modifier that applies scaled model predictions using a frozen model."""
         super().__init__()
         self.modifier_type = "scaling_tester"
         self.model_name = model_name
@@ -367,12 +367,16 @@ class TestDataModifier(unittest.TestCase):
         Removes model files and other artifacts created during testing.
         """
         for f in os.listdir("."):
-            if f.startswith("frozen_model") and f.endswith(".pth"):
-                os.remove(f)
-            if f.startswith("model") and f.endswith(".pt"):
-                os.remove(f)
-            if f in ["lcurve.out", "checkpoint"]:
-                os.remove(f)
+            try:
+                if f.startswith("frozen_model") and f.endswith(".pth"):
+                    os.remove(f)
+                elif f.startswith("model") and f.endswith(".pt"):
+                    os.remove(f)
+                elif f in ["lcurve.out", "checkpoint"]:
+                    os.remove(f)
+            except OSError:
+                # Ignore failures during cleanup to allow remaining files to be processed
+                pass
 
     @staticmethod
     def get_dataset_nframes(dataset: list[str]) -> int:

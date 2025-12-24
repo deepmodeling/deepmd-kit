@@ -29,7 +29,7 @@ from deepmd.utils.data import (
 
 class BaseModifier(torch.nn.Module, make_base_modifier()):
     def __init__(self) -> None:
-        """Construct a basic model for different tasks."""
+        """Construct a base modifier for data modification tasks."""
         torch.nn.Module.__init__(self)
         self.modifier_type = "base"
         self.jitable = True
@@ -157,15 +157,30 @@ class BaseModifier(torch.nn.Module, make_base_modifier()):
             do_atomic_virial,
         )
 
-        if "find_energy" in data and data["find_energy"] == 1.0:
+        if data.get("find_energy") == 1.0:
+            if "energy" not in modifier_data:
+                raise KeyError(
+                    f"Modifier {self.__class__.__name__} did not provide 'energy' "
+                    "in its output while 'find_energy' is set."
+                )
             data["energy"] -= to_numpy_array(modifier_data["energy"]).reshape(
                 data["energy"].shape
             )
-        if "find_force" in data and data["find_force"] == 1.0:
+        if data.get("find_force") == 1.0:
+            if "force" not in modifier_data:
+                raise KeyError(
+                    f"Modifier {self.__class__.__name__} did not provide 'force' "
+                    "in its output while 'find_force' is set."
+                )
             data["force"] -= to_numpy_array(modifier_data["force"]).reshape(
                 data["force"].shape
             )
-        if "find_virial" in data and data["find_virial"] == 1.0:
+        if data.get("find_virial") == 1.0:
+            if "virial" not in modifier_data:
+                raise KeyError(
+                    f"Modifier {self.__class__.__name__} did not provide 'virial' "
+                    "in its output while 'find_virial' is set."
+                )
             data["virial"] -= to_numpy_array(modifier_data["virial"]).reshape(
                 data["virial"].shape
             )

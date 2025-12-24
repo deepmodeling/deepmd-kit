@@ -245,15 +245,13 @@ class Trainer:
             _model: Any,
             _data_stat_nbatch: int,
             _training_data: DpLoaderSet,
-            _validation_data: DpLoaderSet | None,
             _stat_file_path: str | None,
-            _data_requirement: list[DataRequirementItem],
             finetune_has_new_type: bool = False,
         ) -> Callable[[], Any]:
-            _data_requirement += get_additional_data_requirement(_model)
-            _training_data.add_data_requirement(_data_requirement)
-            if _validation_data is not None:
-                _validation_data.add_data_requirement(_data_requirement)
+            # _data_requirement += get_additional_data_requirement(_model)
+            # _training_data.add_data_requirement(_data_requirement)
+            # if _validation_data is not None:
+            #     _validation_data.add_data_requirement(_data_requirement)
 
             @functools.lru_cache
             def get_sample() -> Any:
@@ -339,20 +337,25 @@ class Trainer:
 
         # Data
         if not self.multi_task:
+            # add data requirement for labels
+            data_requirement = self.loss.label_requirement
+            data_requirement += get_additional_data_requirement(self.model)
+            training_data.add_data_requirement(data_requirement)
+            if validation_data is not None:
+                validation_data.add_data_requirement(data_requirement)
+            # data modification
+            training_data.preload_and_modify_all_data()
+            if validation_data is not None:
+                validation_data.preload_and_modify_all_data()
             self.get_sample_func = single_model_stat(
                 self.model,
                 model_params.get("data_stat_nbatch", 10),
                 training_data,
-                validation_data,
                 stat_file_path,
-                self.loss.label_requirement,
                 finetune_has_new_type=self.finetune_links["Default"].get_has_new_type()
                 if self.finetune_links is not None
                 else False,
             )
-            training_data.preload_and_modify_all_data()
-            if validation_data is not None:
-                validation_data.preload_and_modify_all_data()
             (
                 self.training_dataloader,
                 self.training_data,
@@ -378,22 +381,30 @@ class Trainer:
                 self.get_sample_func,
             ) = {}, {}, {}, {}, {}, {}
             for model_key in self.model_keys:
+                # add data requirement for labels
+                data_requirement = self.loss[model_key].label_requirement
+                data_requirement += get_additional_data_requirement(
+                    self.model[model_key]
+                )
+                training_data[model_key].add_data_requirement(data_requirement)
+                if validation_data[model_key] is not None:
+                    validation_data[model_key].add_data_requirement(data_requirement)
+                # data modification
+                training_data[model_key].preload_and_modify_all_data()
+                if validation_data[model_key] is not None:
+                    validation_data[model_key].preload_and_modify_all_data()
                 self.get_sample_func[model_key] = single_model_stat(
                     self.model[model_key],
                     model_params["model_dict"][model_key].get("data_stat_nbatch", 10),
                     training_data[model_key],
-                    validation_data[model_key],
                     stat_file_path[model_key],
-                    self.loss[model_key].label_requirement,
                     finetune_has_new_type=self.finetune_links[
                         model_key
                     ].get_has_new_type()
                     if self.finetune_links is not None
                     else False,
                 )
-                training_data[model_key].preload_and_modify_all_data()
-                if validation_data[model_key] is not None:
-                    validation_data[model_key].preload_and_modify_all_data()
+
                 (
                     self.training_dataloader[model_key],
                     self.training_data[model_key],
