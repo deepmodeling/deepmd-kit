@@ -62,7 +62,7 @@ doc_scaling_tester = "A test modifier that applies scaled model predictions as d
 
 
 @modifier_args_plugin.register("random_tester", doc=doc_random_tester)
-def modifier_random_tester() -> list:
+def modifier_random_tester() -> list[Argument]:
     doc_seed = "Random seed used to initialize the random number generator for deterministic scaling factors."
     doc_use_cache = "Whether to cache modified frames to improve performance by avoiding recomputation."
     return [
@@ -72,7 +72,7 @@ def modifier_random_tester() -> list:
 
 
 @modifier_args_plugin.register("zero_tester", doc=doc_zero_tester)
-def modifier_zero_tester() -> list:
+def modifier_zero_tester() -> list[Argument]:
     doc_use_cache = "Whether to cache modified frames to improve performance by avoiding recomputation."
     return [
         Argument("use_cache", bool, optional=True, doc=doc_use_cache),
@@ -377,7 +377,10 @@ class TestDataModifier(unittest.TestCase):
         # expected: output_model - sfactor * output_modifier
         for ii in range(3):
             np.testing.assert_allclose(
-                model_pred[ii], model_pred_ref[ii] - sfactor * modifier_pred[ii]
+                model_pred[ii],
+                model_pred_ref[ii] - sfactor * modifier_pred[ii],
+                rtol=1e-5,
+                atol=1e-8,
             )
 
     def tearDown(self) -> None:

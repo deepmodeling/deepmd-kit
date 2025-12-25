@@ -502,11 +502,13 @@ class DeepmdData:
         if self.modifier is not None:
             with ThreadPoolExecutor(max_workers=num_worker) as executor:
                 # Apply modifier if it exists
-                executor.submit(
+                future = executor.submit(
                     self.modifier.modify_data,
                     frame_data,
                     self,
                 )
+            # Wait for completion and propagate any exceptions
+            future.result()
             if self.use_modifier_cache:
                 # Cache the modified frame to avoid recomputation
                 self._modified_frame_cache[index] = copy.deepcopy(frame_data)
