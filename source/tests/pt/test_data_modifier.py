@@ -64,23 +64,30 @@ doc_scaling_tester = "A test modifier that applies scaled model predictions as d
 @modifier_args_plugin.register("random_tester", doc=doc_random_tester)
 def modifier_random_tester() -> list:
     doc_seed = "Random seed used to initialize the random number generator for deterministic scaling factors."
+    doc_use_cache = "Whether to cache modified frames to improve performance by avoiding recomputation."
     return [
         Argument("seed", int, optional=True, doc=doc_seed),
+        Argument("use_cache", bool, optional=True, doc=doc_use_cache),
     ]
 
 
 @modifier_args_plugin.register("zero_tester", doc=doc_zero_tester)
 def modifier_zero_tester() -> list:
-    return []
+    doc_use_cache = "Whether to cache modified frames to improve performance by avoiding recomputation."
+    return [
+        Argument("use_cache", bool, optional=True, doc=doc_use_cache),
+    ]
 
 
 @modifier_args_plugin.register("scaling_tester", doc=doc_scaling_tester)
 def modifier_scaling_tester() -> list[Argument]:
     doc_model_name = "The name of the frozen energy model file."
     doc_sfactor = "The scaling factor for correction."
+    doc_use_cache = "Whether to cache modified frames to improve performance by avoiding recomputation."
     return [
         Argument("model_name", str, optional=False, doc=doc_model_name),
         Argument("sfactor", float, optional=False, doc=doc_sfactor),
+        Argument("use_cache", bool, optional=True, doc=doc_use_cache),
     ]
 
 
@@ -92,12 +99,14 @@ class ModifierRandomTester(BaseModifier):
     def __init__(
         self,
         seed: int = 1,
+        use_cache: bool = True,
     ) -> None:
         """Construct a random_tester modifier that scales data by deterministic random factors for testing."""
-        super().__init__()
+        super().__init__(use_cache)
         self.modifier_type = "random_tester"
         # Use a fixed seed for deterministic behavior
         self.rng = np.random.default_rng(seed)
+        self.sfactor = self.rng.random()
 
     def forward(
         self,
@@ -121,11 +130,11 @@ class ModifierRandomTester(BaseModifier):
             return
 
         if "find_energy" in data and data["find_energy"] == 1.0:
-            data["energy"] = data["energy"] * self.rng.random()
+            data["energy"] = data["energy"] * self.sfactor
         if "find_force" in data and data["find_force"] == 1.0:
-            data["force"] = data["force"] * self.rng.random()
+            data["force"] = data["force"] * self.sfactor
         if "find_virial" in data and data["find_virial"] == 1.0:
-            data["virial"] = data["virial"] * self.rng.random()
+            data["virial"] = data["virial"] * self.sfactor
 
 
 @BaseModifier.register("zero_tester")
@@ -133,9 +142,12 @@ class ModifierZeroTester(BaseModifier):
     def __new__(cls, *args, **kwargs):
         return super().__new__(cls)
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        use_cache: bool = True,
+    ) -> None:
         """Construct a modifier that zeros out data for testing."""
-        super().__init__()
+        super().__init__(use_cache)
         self.modifier_type = "zero_tester"
 
     def forward(
@@ -176,9 +188,10 @@ class ModifierScalingTester(BaseModifier):
         self,
         model_name: str,
         sfactor: float = 1.0,
+        use_cache: bool = True,
     ) -> None:
         """Initialize a test modifier that applies scaled model predictions using a frozen model."""
-        super().__init__()
+        super().__init__(use_cache)
         self.modifier_type = "scaling_tester"
         self.model_name = model_name
         self.sfactor = sfactor
@@ -212,6 +225,7 @@ class ModifierScalingTester(BaseModifier):
 @parameterized(
     (1, 2),  # training data batch_size
     (1, 2),  # validation data batch_size
+    (True, False),  # use_cache
 )
 class TestDataModifier(unittest.TestCase):
     def setUp(self) -> None:
@@ -240,7 +254,10 @@ class TestDataModifier(unittest.TestCase):
         """Ensure modify_data applied."""
         tmp_config = self.config.copy()
         # add tester data modifier
-        tmp_config["model"]["modifier"] = {"type": "zero_tester"}
+        tmp_config["model"]["modifier"] = {
+            "type": "zero_tester",
+            "use_cache": self.param[2],
+        }
 
         # data modification is finished in __init__
         trainer = get_trainer(tmp_config)
@@ -262,6 +279,7 @@ class TestDataModifier(unittest.TestCase):
         tmp_config["model"]["modifier"] = {
             "type": "random_tester",
             "seed": 1024,
+            "use_cache": self.param[2],
         }
 
         # data modification is finished in __init__
@@ -307,6 +325,7 @@ class TestDataModifier(unittest.TestCase):
             "type": "scaling_tester",
             "model_name": "frozen_model_dm.pth",
             "sfactor": sfactor,
+            "use_cache": True,
         }
 
         trainer = get_trainer(tmp_config)

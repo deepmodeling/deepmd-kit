@@ -140,11 +140,11 @@ class DeepmdData:
         # The prefix sum stores the range of indices contained in each directory, which is needed by get_item method
         self.prefix_sum = np.cumsum(frames_list).tolist()
 
-        self.apply_modifier_at_load = True
+        self.use_modifier_cache = True
         if self.modifier is not None:
-            if hasattr(self.modifier, "apply_modifier_at_load"):
-                self.apply_modifier_at_load = self.modifier.apply_modifier_at_load
-            # Cache for modified frames when apply_modifier_at_load is True
+            if hasattr(self.modifier, "use_cache"):
+                self.use_modifier_cache = self.modifier.use_cache
+            # Cache for modified frames when use_modifier_cache is True
             self._modified_frame_cache = {}
 
     def add(
@@ -385,9 +385,9 @@ class DeepmdData:
 
     def get_single_frame(self, index: int) -> dict:
         """Orchestrates loading a single frame efficiently using memmap."""
-        # Check if we have a cached modified frame and apply_modifier_at_load is True
+        # Check if we have a cached modified frame and use_modifier_cache is True
         if (
-            self.apply_modifier_at_load
+            self.use_modifier_cache
             and self.modifier is not None
             and index in self._modified_frame_cache
         ):
@@ -490,19 +490,18 @@ class DeepmdData:
         if self.modifier is not None:
             # Apply modifier if it exists
             self.modifier.modify_data(frame_data, self)
-            if self.apply_modifier_at_load:
+            if self.use_modifier_cache:
                 # Cache the modified frame to avoid recomputation
                 self._modified_frame_cache[index] = copy.deepcopy(frame_data)
-
         return frame_data
 
     def preload_and_modify_all_data(self) -> None:
         """Preload all frames and apply modifier to cache them.
 
-        This method is useful when apply_modifier_at_load is True and you want to
+        This method is useful when use_modifier_cache is True and you want to
         avoid applying the modifier repeatedly during training.
         """
-        if not self.apply_modifier_at_load or self.modifier is None:
+        if not self.use_modifier_cache or self.modifier is None:
             return
 
         log.info("Preloading and modifying all data frames...")

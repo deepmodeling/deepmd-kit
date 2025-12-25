@@ -28,11 +28,13 @@ from deepmd.utils.data import (
 
 
 class BaseModifier(torch.nn.Module, make_base_modifier()):
-    def __init__(self) -> None:
+    def __init__(self, use_cache: bool = True) -> None:
         """Construct a base modifier for data modification tasks."""
         torch.nn.Module.__init__(self)
         self.modifier_type = "base"
         self.jitable = True
+
+        self.use_cache = use_cache
 
     def serialize(self) -> dict:
         """Serialize the modifier.
