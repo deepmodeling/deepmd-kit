@@ -12,6 +12,9 @@ from torch.utils.data import (
 from deepmd.pt.modifier import (
     BaseModifier,
 )
+from deepmd.pt.utils.env import (
+    NUM_WORKERS,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
     DeepmdData,
@@ -48,7 +51,7 @@ class DeepmdDataSetForLoader(Dataset):
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         """Get a frame from the selected system."""
-        b_data = self._data_system.get_item_torch(index)
+        b_data = self._data_system.get_item_torch(index, NUM_WORKERS)
         b_data["natoms"] = self._natoms_vec
         return b_data
 
@@ -68,5 +71,5 @@ class DeepmdDataSetForLoader(Dataset):
                 output_natoms_for_type_sel=data_item["output_natoms_for_type_sel"],
             )
 
-    def preload_and_modify_all_data(self) -> None:
-        self._data_system.preload_and_modify_all_data()
+    def preload_and_modify_all_data_torch(self) -> None:
+        self._data_system.preload_and_modify_all_data_torch(NUM_WORKERS)

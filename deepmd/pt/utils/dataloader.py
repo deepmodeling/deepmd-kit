@@ -238,9 +238,9 @@ class DpLoaderSet(Dataset):
                 [ss._data_system.pbc for ss in self.systems],
             )
 
-    def preload_and_modify_all_data(self) -> None:
+    def preload_and_modify_all_data_torch(self) -> None:
         for system in self.systems:
-            system.preload_and_modify_all_data()
+            system.preload_and_modify_all_data_torch()
 
 
 def collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:

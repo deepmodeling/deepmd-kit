@@ -339,9 +339,9 @@ class Trainer:
             if validation_data is not None:
                 validation_data.add_data_requirement(data_requirement)
             # Preload and apply modifiers to all data before computing statistics
-            training_data.preload_and_modify_all_data()
+            training_data.preload_and_modify_all_data_torch()
             if validation_data is not None:
-                validation_data.preload_and_modify_all_data()
+                validation_data.preload_and_modify_all_data_torch()
             self.get_sample_func = single_model_stat(
                 self.model,
                 model_params.get("data_stat_nbatch", 10),
@@ -385,9 +385,9 @@ class Trainer:
                 if validation_data[model_key] is not None:
                     validation_data[model_key].add_data_requirement(data_requirement)
                 # Preload and apply modifiers to all data before computing statistics
-                training_data[model_key].preload_and_modify_all_data()
+                training_data[model_key].preload_and_modify_all_data_torch()
                 if validation_data[model_key] is not None:
-                    validation_data[model_key].preload_and_modify_all_data()
+                    validation_data[model_key].preload_and_modify_all_data_torch()
                 self.get_sample_func[model_key] = single_model_stat(
                     self.model[model_key],
                     model_params["model_dict"][model_key].get("data_stat_nbatch", 10),

@@ -325,7 +325,7 @@ class TestDataModifier(unittest.TestCase):
             "type": "scaling_tester",
             "model_name": "frozen_model_dm.pth",
             "sfactor": sfactor,
-            "use_cache": True,
+            "use_cache": self.param[2],
         }
 
         trainer = get_trainer(tmp_config)
