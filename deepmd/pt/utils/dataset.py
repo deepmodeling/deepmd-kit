@@ -51,7 +51,7 @@ class DeepmdDataSetForLoader(Dataset):
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         """Get a frame from the selected system."""
-        b_data = self._data_system.get_item_torch(index, NUM_WORKERS)
+        b_data = self._data_system.get_item_torch(index, max(1, NUM_WORKERS))
         b_data["natoms"] = self._natoms_vec
         return b_data
 
@@ -72,4 +72,4 @@ class DeepmdDataSetForLoader(Dataset):
             )
 
     def preload_and_modify_all_data_torch(self) -> None:
-        self._data_system.preload_and_modify_all_data_torch(NUM_WORKERS)
+        self._data_system.preload_and_modify_all_data_torch(max(1, NUM_WORKERS))
