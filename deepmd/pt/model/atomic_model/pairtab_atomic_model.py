@@ -398,7 +398,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         When nlist contains padding indices that have been masked to 0, the
         corresponding diff vectors may become zero (if atom 0 happens to be the
         center atom itself). To avoid NaN gradients during backpropagation,
-        Use a safe norm computation with an epsilon floor on the squared sum.
+        use a safe norm computation with an epsilon floor on the squared sum.
         """
         nframes, nloc, nnei = nlist.shape
         coord_l = coords[:, :nloc].view(nframes, -1, 1, 3)
