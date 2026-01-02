@@ -8,5 +8,8 @@ from .KFWrapper import (
 from .LKF import (
     LKFOptimizer,
 )
+from .muon import (
+    MuonOptimizer,
+)
 
-__all__ = ["AdaMuonOptimizer", "KFOptimizerWrapper", "LKFOptimizer"]
+__all__ = ["AdaMuonOptimizer", "KFOptimizerWrapper", "LKFOptimizer", "MuonOptimizer"]

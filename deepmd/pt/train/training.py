@@ -45,6 +45,7 @@ from deepmd.pt.optimizer import (
     AdaMuonOptimizer,
     KFOptimizerWrapper,
     LKFOptimizer,
+    MuonOptimizer,
 )
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
@@ -158,6 +159,7 @@ class Trainer:
         def get_opt_param(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
             opt_type = params.get("opt_type", "Adam")
             opt_param = {
+                # LKF parameters
                 "kf_blocksize": params.get("kf_blocksize", 5120),
                 "kf_start_pref_e": params.get("kf_start_pref_e", 1),
                 "kf_limit_pref_e": params.get("kf_limit_pref_e", 1),
@@ -741,6 +743,17 @@ class Trainer:
                     float(self.opt_param.get("adam_beta1", 0.9)),
                     float(self.opt_param.get("adam_beta2", 0.95)),
                 ),
+            )
+        elif self.opt_type == "Muon":
+            self.optimizer = MuonOptimizer(
+                self.wrapper.parameters(),
+                lr=self.lr_exp.start_lr,
+                momentum=float(self.opt_param.get("muon_momentum", 0.95)),
+                weight_decay=float(self.opt_param.get("weight_decay", 0.001)),
+                adam_betas=(
+                    float(self.opt_param.get("adam_beta1", 0.9)),
+                    float(self.opt_param.get("adam_beta2", 0.95)),
+                ),
                 lr_adjust=float(self.opt_param.get("lr_adjust", 10.0)),
                 lr_adjust_coeff=float(self.opt_param.get("lr_adjust_coeff", 0.2)),
             )
@@ -820,7 +833,7 @@ class Trainer:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
                 fout1.flush()
-            if self.opt_type in ["Adam", "AdamW", "AdaMuon"]:
+            if self.opt_type in ["Adam", "AdamW", "AdaMuon", "Muon"]:
                 cur_lr = self.scheduler.get_last_lr()[0]
                 if _step_id < self.warmup_steps:
                     pref_lr = _lr.start_lr
