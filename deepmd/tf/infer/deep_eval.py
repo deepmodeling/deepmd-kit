@@ -137,37 +137,15 @@ class DeepEval(DeepEvalBackend):
         self.has_aparam = self.tensors["aparam"] is not None
         self.has_spin = self.ntypes_spin > 0
 
-        # looks ugly...
-        if self.modifier_type == "dipole_charge":
-            from deepmd.tf.modifier import (
-                DipoleChargeModifier,
-            )
+        from deepmd.tf.modifier import (
+            BaseModifier,
+        )
 
-            t_mdl_name = self._get_tensor("modifier_attr/mdl_name:0")
-            t_mdl_charge_map = self._get_tensor("modifier_attr/mdl_charge_map:0")
-            t_sys_charge_map = self._get_tensor("modifier_attr/sys_charge_map:0")
-            t_ewald_h = self._get_tensor("modifier_attr/ewald_h:0")
-            t_ewald_beta = self._get_tensor("modifier_attr/ewald_beta:0")
-            [mdl_name, mdl_charge_map, sys_charge_map, ewald_h, ewald_beta] = run_sess(
-                self.sess,
-                [
-                    t_mdl_name,
-                    t_mdl_charge_map,
-                    t_sys_charge_map,
-                    t_ewald_h,
-                    t_ewald_beta,
-                ],
-            )
-            mdl_name = mdl_name.decode("UTF-8")
-            mdl_charge_map = [int(ii) for ii in mdl_charge_map.decode("UTF-8").split()]
-            sys_charge_map = [int(ii) for ii in sys_charge_map.decode("UTF-8").split()]
-            self.dm = DipoleChargeModifier(
-                mdl_name,
-                mdl_charge_map,
-                sys_charge_map,
-                ewald_h=ewald_h,
-                ewald_beta=ewald_beta,
-            )
+        self.dm = None
+        if self.modifier_type is not None:
+            modifier = BaseModifier.get_class_by_type(self.modifier_type)
+            modifier_params = modifier.get_params(self)
+            self.dm = modifier.get_modifier(modifier_params)
 
     def _init_tensors(self) -> None:
         tensor_names = {
@@ -684,7 +662,8 @@ class DeepEval(DeepEvalBackend):
         coords: np.ndarray,
         atom_types: list[int] | np.ndarray,
     ) -> tuple[int, int]:
-        natoms = len(atom_types[0])
+        atom_types = np.reshape(atom_types, (-1))
+        natoms = len(atom_types)
         if natoms == 0:
             assert coords.size == 0
         else:

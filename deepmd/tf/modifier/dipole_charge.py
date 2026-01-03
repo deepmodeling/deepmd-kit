@@ -13,6 +13,9 @@ from deepmd.tf.env import (
     op_module,
     tf,
 )
+from deepmd.tf.infer import (
+    DeepEval,
+)
 from deepmd.tf.infer.deep_dipole import DeepDipoleOld as DeepDipole
 from deepmd.tf.infer.ewald_recp import (
     EwaldRecp,
@@ -487,3 +490,35 @@ class DipoleChargeModifier(DeepDipole, BaseModifier):
             data["force"] -= tot_f.reshape(data["force"].shape)
         if "find_virial" in data and data["find_virial"] == 1.0:
             data["virial"] -= tot_v.reshape(data["virial"].shape)
+
+    @staticmethod
+    def get_params(model: DeepEval):
+        t_mdl_name = model._get_tensor("modifier_attr/mdl_name:0")
+        t_mdl_charge_map = model._get_tensor("modifier_attr/mdl_charge_map:0")
+        t_sys_charge_map = model._get_tensor("modifier_attr/sys_charge_map:0")
+        t_ewald_h = model._get_tensor("modifier_attr/ewald_h:0")
+        t_ewald_beta = model._get_tensor("modifier_attr/ewald_beta:0")
+        [mdl_name, mdl_charge_map, sys_charge_map, ewald_h, ewald_beta] = run_sess(
+            model.sess,
+            [
+                t_mdl_name,
+                t_mdl_charge_map,
+                t_sys_charge_map,
+                t_ewald_h,
+                t_ewald_beta,
+            ],
+        )
+        model_charge_map = [
+            int(float(ii)) for ii in mdl_charge_map.decode("UTF-8").split()
+        ]
+        sys_charge_map = [
+            int(float(ii)) for ii in sys_charge_map.decode("UTF-8").split()
+        ]
+        modifier_params = {
+            "model_name": mdl_name.decode("UTF-8"),
+            "model_charge_map": model_charge_map,
+            "sys_charge_map": sys_charge_map,
+            "ewald_h": ewald_h,
+            "ewald_beta": ewald_beta,
+        }
+        return modifier_params
