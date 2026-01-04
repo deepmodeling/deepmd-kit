@@ -42,6 +42,7 @@ from deepmd.pt.model.model import (
     get_zbl_model,
 )
 from deepmd.pt.optimizer import (
+    AdaMuonOptimizer,
     KFOptimizerWrapper,
     LKFOptimizer,
 )
@@ -162,7 +163,14 @@ class Trainer:
                 "kf_limit_pref_e": params.get("kf_limit_pref_e", 1),
                 "kf_start_pref_f": params.get("kf_start_pref_f", 1),
                 "kf_limit_pref_f": params.get("kf_limit_pref_f", 1),
+                # Common parameters
                 "weight_decay": params.get("weight_decay", 0.001),
+                # Muon/AdaMuon parameters
+                "muon_momentum": params.get("muon_momentum", 0.95),
+                "adam_beta1": params.get("adam_beta1", 0.9),
+                "adam_beta2": params.get("adam_beta2", 0.95),
+                "adam_eps": params.get("adam_eps", 1e-7),
+                "nesterov": params.get("nesterov", True),
             }
             return opt_type, opt_param
 
@@ -698,6 +706,25 @@ class Trainer:
             self.optimizer = LKFOptimizer(
                 self.wrapper.parameters(), 0.98, 0.99870, self.opt_param["kf_blocksize"]
             )
+        elif self.opt_type == "AdaMuon":
+            self.optimizer = AdaMuonOptimizer(
+                self.wrapper.parameters(),
+                lr=self.lr_exp.start_lr,
+                momentum=float(self.opt_param.get("muon_momentum", 0.95)),
+                weight_decay=float(self.opt_param.get("weight_decay", 0.0)),
+                adam_betas=(
+                    float(self.opt_param.get("adam_beta1", 0.9)),
+                    float(self.opt_param.get("adam_beta2", 0.95)),
+                ),
+                lr_adjust=float(self.opt_param.get("lr_adjust", 10.0)),
+                lr_adjust_coeff=float(self.opt_param.get("lr_adjust_coeff", 0.2)),
+            )
+            if optimizer_state_dict is not None and self.restart_training:
+                self.optimizer.load_state_dict(optimizer_state_dict)
+            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
+                self.optimizer,
+                lambda step: warm_up_linear(step + self.start_step, self.warmup_steps),
+            )
         else:
             raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
@@ -768,7 +795,7 @@ class Trainer:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
                 fout1.flush()
-            if self.opt_type in ["Adam", "AdamW"]:
+            if self.opt_type in ["Adam", "AdamW", "AdaMuon"]:
                 cur_lr = self.scheduler.get_last_lr()[0]
                 if _step_id < self.warmup_steps:
                     pref_lr = _lr.start_lr

@@ -3370,6 +3370,64 @@ def training_args(
                     [],
                     optional=True,
                 ),
+                Argument(
+                    "AdaMuon",
+                    dict,
+                    [
+                        Argument(
+                            "muon_momentum",
+                            float,
+                            optional=True,
+                            default=0.95,
+                            doc=doc_only_pt_supported
+                            + "Momentum coefficient for AdaMuon optimizer.",
+                        ),
+                        Argument(
+                            "adam_beta1",
+                            float,
+                            optional=True,
+                            default=0.9,
+                            doc=doc_only_pt_supported
+                            + "Adam beta1 coefficient for AdaMuon optimizer.",
+                        ),
+                        Argument(
+                            "adam_beta2",
+                            float,
+                            optional=True,
+                            default=0.95,
+                            doc=doc_only_pt_supported
+                            + "Adam beta2 coefficient for AdaMuon optimizer.",
+                        ),
+                        Argument(
+                            "weight_decay",
+                            float,
+                            optional=True,
+                            default=0.001,
+                            doc=doc_only_pt_supported
+                            + "Weight decay coefficient. Applied only to >=2D parameters (AdaMuon path).",
+                        ),
+                        Argument(
+                            "lr_adjust",
+                            float,
+                            optional=True,
+                            default=10.0,
+                            doc=doc_only_pt_supported
+                            + "Learning rate adjustment factor for Adam (1D params). "
+                            "If lr_adjust <= 0: use match-RMS scaling for AdaMuon, Adam uses lr directly. "
+                            "If lr_adjust > 0: use rectangular correction for AdaMuon, Adam uses lr/lr_adjust.",
+                        ),
+                        Argument(
+                            "lr_adjust_coeff",
+                            float,
+                            optional=True,
+                            default=0.2,
+                            doc=doc_only_pt_supported
+                            + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
+                        ),
+                    ],
+                    [],
+                    optional=True,
+                ),
             ],
             optional=True,
             default_tag="Adam",
