@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import logging
 import json
+import logging
 from collections.abc import (
     Callable,
 )
