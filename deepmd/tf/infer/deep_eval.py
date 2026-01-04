@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
 import json
 from collections.abc import (
     Callable,
@@ -50,6 +51,8 @@ from deepmd.tf.utils.batch_size import (
 from deepmd.tf.utils.sess import (
     run_sess,
 )
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from pathlib import (
@@ -143,9 +146,17 @@ class DeepEval(DeepEvalBackend):
 
         self.dm = None
         if self.modifier_type is not None:
-            modifier = BaseModifier.get_class_by_type(self.modifier_type)
-            modifier_params = modifier.get_params_from_frozen_model(self)
-            self.dm = modifier.get_modifier(modifier_params)
+            try:
+                modifier = BaseModifier.get_class_by_type(self.modifier_type)
+                modifier_params = modifier.get_params_from_frozen_model(self)
+                self.dm = modifier.get_modifier(modifier_params)
+            except Exception as exc:
+                log.warning(
+                    f"Failed to load data modifier '{self.modifier_type}'. "
+                    "The model will be loaded without the data modifier. "
+                    f"Error details: {exc}"
+                )
+                self.modifier_type = None
 
     def _init_tensors(self) -> None:
         tensor_names = {
