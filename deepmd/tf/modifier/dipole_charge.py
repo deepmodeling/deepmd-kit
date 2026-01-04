@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
+from typing import (
+    TYPE_CHECKING,
+)
 
 import numpy as np
 
@@ -12,9 +15,6 @@ from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     op_module,
     tf,
-)
-from deepmd.tf.infer import (
-    DeepEval,
 )
 from deepmd.tf.infer.deep_dipole import DeepDipoleOld as DeepDipole
 from deepmd.tf.infer.ewald_recp import (
@@ -29,6 +29,11 @@ from deepmd.tf.utils.data import (
 from deepmd.tf.utils.sess import (
     run_sess,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.infer import (
+        DeepEval,
+    )
 
 
 @BaseModifier.register("dipole_charge")
@@ -492,7 +497,24 @@ class DipoleChargeModifier(DeepDipole, BaseModifier):
             data["virial"] -= tot_v.reshape(data["virial"].shape)
 
     @staticmethod
-    def get_params(model: DeepEval):
+    def get_params_from_frozen_model(model: "DeepEval") -> dict:
+        """Extract modifier parameters from a DeepEval model.
+
+        Parameters
+        ----------
+        model : DeepEval
+            The DeepEval model instance containing the modifier tensors.
+
+        Returns
+        -------
+        dict
+            Dictionary containing modifier parameters:
+            - model_name : str
+            - model_charge_map : list[int]
+            - sys_charge_map : list[int]
+            - ewald_h : float
+            - ewald_beta : float
+        """
         t_mdl_name = model._get_tensor("modifier_attr/mdl_name:0")
         t_mdl_charge_map = model._get_tensor("modifier_attr/mdl_charge_map:0")
         t_sys_charge_map = model._get_tensor("modifier_attr/sys_charge_map:0")

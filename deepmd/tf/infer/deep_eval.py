@@ -144,7 +144,7 @@ class DeepEval(DeepEvalBackend):
         self.dm = None
         if self.modifier_type is not None:
             modifier = BaseModifier.get_class_by_type(self.modifier_type)
-            modifier_params = modifier.get_params(self)
+            modifier_params = modifier.get_params_from_frozen_model(self)
             self.dm = modifier.get_modifier(modifier_params)
 
     def _init_tensors(self) -> None:
@@ -662,8 +662,8 @@ class DeepEval(DeepEvalBackend):
         coords: np.ndarray,
         atom_types: list[int] | np.ndarray,
     ) -> tuple[int, int]:
-        atom_types = np.reshape(atom_types, (-1))
-        natoms = len(atom_types)
+        # (natoms,) or (nframes, natoms,)
+        natoms = np.shape(atom_types)[-1]
         if natoms == 0:
             assert coords.size == 0
         else:
