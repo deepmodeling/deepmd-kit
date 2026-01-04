@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 def zeropower_via_newtonschulz5(
     G: torch.Tensor,
     steps: int = 5,
-    eps: float = 1e-7,
+    eps: float = 1e-8,
 ) -> torch.Tensor:
     """
     Compute the zeroth power (orthogonalization) of a matrix via Newton-Schulz iteration.
@@ -58,7 +58,7 @@ def zeropower_via_newtonschulz5(
     steps : int
         Number of Newton-Schulz iterations with default 5.
     eps : float
-        Numerical stability epsilon for norm clamping with default 1e-7.
+        Numerical stability epsilon for norm clamping with default 1e-8.
 
     Returns
     -------
@@ -177,7 +177,7 @@ class AdaMuonOptimizer(Optimizer):
     adam_betas : tuple[float, float]
         Adam beta coefficients with default (0.9, 0.95).
     adam_eps : float
-        Adam epsilon with default 1e-7.
+        Adam epsilon with default 1e-8.
     nesterov : bool
         Whether to use Nesterov momentum for AdaMuon with default True.
     lr_adjust : float
@@ -210,7 +210,7 @@ class AdaMuonOptimizer(Optimizer):
         weight_decay: float = 0.001,
         ns_steps: int = 5,
         adam_betas: tuple[float, float] = (0.9, 0.95),
-        adam_eps: float = 1e-7,
+        adam_eps: float = 1e-8,
         nesterov: bool = True,
         lr_adjust: float = 10.0,
         lr_adjust_coeff: float = 0.2,

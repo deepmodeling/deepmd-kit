@@ -711,7 +711,7 @@ class Trainer:
                 self.wrapper.parameters(),
                 lr=self.lr_exp.start_lr,
                 momentum=float(self.opt_param.get("muon_momentum", 0.95)),
-                weight_decay=float(self.opt_param.get("weight_decay", 0.0)),
+                weight_decay=float(self.opt_param.get("weight_decay", 0.001)),
                 adam_betas=(
                     float(self.opt_param.get("adam_beta1", 0.9)),
                     float(self.opt_param.get("adam_beta2", 0.95)),
