@@ -159,5 +159,3 @@ repos:
       - id: pylint
         entry: env PYTHONPATH=source/checker pylint
         files: ^deepmd/
-ci:
-  autoupdate_branch: devel

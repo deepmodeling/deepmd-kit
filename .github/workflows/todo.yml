@@ -2,7 +2,7 @@ name: TODO workflow
 on:
   push:
     branches:
-      - devel
+      - master
 jobs:
   build:
     if: github.repository_owner == 'deepmodeling'
