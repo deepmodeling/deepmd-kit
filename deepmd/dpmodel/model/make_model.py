@@ -567,7 +567,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             """Check if the model has default frame parameters."""
             return self.atomic_model.has_default_fparam()
 
-        def get_default_fparam(self) -> list[int] | None:
+        def get_default_fparam(self) -> list[float] | None:
             """Get the default frame parameters."""
             return self.atomic_model.get_default_fparam()
 

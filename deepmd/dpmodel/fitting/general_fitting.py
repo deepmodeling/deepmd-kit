@@ -304,7 +304,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Check if the fitting has default frame parameters."""
         return self.default_fparam is not None
 
-    def get_default_fparam(self) -> list[int] | None:
+    def get_default_fparam(self) -> list[float] | None:
         """Get the default frame parameters."""
         return self.default_fparam
 

@@ -60,7 +60,7 @@ class HLO(BaseModel):
         sel: list[int],
         # new in v3.1.1
         has_default_fparam: bool = False,
-        default_fparam: list[int] | None = None,
+        default_fparam: list[float] | None = None,
     ) -> None:
         self._call_lower = jax_export.deserialize(stablehlo).call
         self._call_lower_atomic_virial = jax_export.deserialize(
@@ -337,6 +337,6 @@ class HLO(BaseModel):
         """Check whether the model has default frame parameters."""
         return self._has_default_fparam
 
-    def get_default_fparam(self) -> list[int] | None:
+    def get_default_fparam(self) -> list[float] | None:
         """Get the default frame parameters."""
         return self.default_fparam

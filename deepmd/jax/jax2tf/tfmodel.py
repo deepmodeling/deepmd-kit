@@ -345,6 +345,6 @@ class TFModelWrapper(tf.Module):
         """Check whether the model has default frame parameters."""
         return self._has_default_fparam
 
-    def get_default_fparam(self) -> list[int] | None:
+    def get_default_fparam(self) -> list[float] | None:
         """Get the default frame parameters."""
         return self.default_fparam
