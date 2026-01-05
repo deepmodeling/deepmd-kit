@@ -149,9 +149,16 @@ class DeepEval(DeepEvalBackend):
 
         self.dm = None
         if self.modifier_type is not None:
-            modifier = BaseModifier.get_class_by_type(self.modifier_type)
-            modifier_params = modifier.get_params_from_frozen_model(self)
-            self.dm = modifier.get_modifier(modifier_params)
+            try:
+                modifier = BaseModifier.get_class_by_type(self.modifier_type)
+                modifier_params = modifier.get_params_from_frozen_model(self)
+                self.dm = modifier.get_modifier(modifier_params)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Failed to load data modifier '{self.modifier_type}'. "
+                    f"Use skip_modifier=True to load the model without the modifier. "
+                    f"Error: {exc}"
+                ) from exc
 
     def _init_tensors(self) -> None:
         tensor_names = {
