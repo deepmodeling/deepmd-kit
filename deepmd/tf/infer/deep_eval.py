@@ -140,23 +140,18 @@ class DeepEval(DeepEvalBackend):
         self.has_aparam = self.tensors["aparam"] is not None
         self.has_spin = self.ntypes_spin > 0
 
+        if kwargs.get("skip_modifier", False):
+            self.modifier_type = None
+
         from deepmd.tf.modifier import (
             BaseModifier,
         )
 
         self.dm = None
         if self.modifier_type is not None:
-            try:
-                modifier = BaseModifier.get_class_by_type(self.modifier_type)
-                modifier_params = modifier.get_params_from_frozen_model(self)
-                self.dm = modifier.get_modifier(modifier_params)
-            except Exception as exc:
-                log.warning(
-                    f"Failed to load data modifier '{self.modifier_type}'. "
-                    "The model will be loaded without the data modifier. "
-                    f"Error details: {exc}"
-                )
-                self.modifier_type = None
+            modifier = BaseModifier.get_class_by_type(self.modifier_type)
+            modifier_params = modifier.get_params_from_frozen_model(self)
+            self.dm = modifier.get_modifier(modifier_params)
 
     def _init_tensors(self) -> None:
         tensor_names = {
