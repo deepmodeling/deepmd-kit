@@ -304,6 +304,10 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Check if the fitting has default frame parameters."""
         return self.default_fparam is not None
 
+    def get_default_fparam(self) -> list[int] | None:
+        """Get the default frame parameters."""
+        return self.default_fparam
+
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 

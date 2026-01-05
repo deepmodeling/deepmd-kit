@@ -69,6 +69,15 @@ class TFModelWrapper(tf.Module):
             self.min_nbor_dist = None
         self.sel = self.model.get_sel().numpy().tolist()
         self.model_def_script = self.model.get_model_def_script().numpy().decode()
+        if hasattr(self.model, "has_default_fparam"):
+            # No attrs before v3.1.2
+            self._has_default_fparam = self.model.has_default_fparam().numpy().item()
+        else:
+            self._has_default_fparam = False
+        if hasattr(self.model, "get_default_fparam"):
+            self.default_fparam = self.model.get_default_fparam().numpy().tolist()
+        else:
+            self.default_fparam = None
 
     def __call__(
         self,
@@ -331,3 +340,11 @@ class TFModelWrapper(tf.Module):
             The model
         """
         raise NotImplementedError("Not implemented")
+
+    def has_default_fparam(self) -> bool:
+        """Check whether the model has default frame parameters."""
+        return self._has_default_fparam
+
+    def get_default_fparam(self) -> list[int] | None:
+        """Get the default frame parameters."""
+        return self.default_fparam
