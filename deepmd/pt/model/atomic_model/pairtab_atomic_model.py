@@ -395,10 +395,8 @@ class PairTabAtomicModel(BaseAtomicModel):
 
         Notes
         -----
-        When nlist contains padding indices that have been masked to 0, the
-        corresponding diff vectors may become zero (if atom 0 happens to be the
-        center atom itself). To avoid NaN gradients during backpropagation,
-        use a safe norm computation with an epsilon floor on the squared sum.
+        Safe gradient implementation: when diff is zero (padding entries),
+            both distance and gradient are zero.
         """
         nframes, nloc, nnei = nlist.shape
         coord_l = coords[:, :nloc].view(nframes, -1, 1, 3)
@@ -406,12 +404,16 @@ class PairTabAtomicModel(BaseAtomicModel):
         coord_r = torch.gather(coords, 1, index)
         coord_r = coord_r.view(nframes, nloc, nnei, 3)
         diff = coord_r - coord_l
-        # Use safe norm to avoid NaN gradients when diff is zero (e.g., for
-        # padding entries where masked nlist index 0 points to self).
-        # The epsilon 1e-14 is small enough to not affect physical distances
-        # (atomic distances are typically > 0.1 Å) while preventing NaN.
-        pairwise_rr = torch.sqrt(
-            torch.sum(diff * diff, dim=-1, keepdim=True).clamp(min=1e-14)
+        diff_sq = torch.sum(diff * diff, dim=-1, keepdim=True)
+
+        # When diff is zero, output is zero and gradient is also zero
+        mask = diff_sq.squeeze(-1) > 0
+        pairwise_rr = torch.where(
+            mask.unsqueeze(-1),
+            torch.sqrt(
+                torch.where(mask.unsqueeze(-1), diff_sq, torch.ones_like(diff_sq))
+            ),
+            torch.zeros_like(diff_sq),
         ).squeeze(-1)
         return pairwise_rr
 
