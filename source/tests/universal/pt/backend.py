@@ -12,7 +12,7 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 
-from ....tests import (
+from ... import (
     utils,
 )
 from ..common.backend import (
