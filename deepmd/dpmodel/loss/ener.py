@@ -180,7 +180,7 @@ class EnergyLoss(Loss):
                 )
                 loss += pref_e * l_huber_loss
             more_loss["rmse_e"] = self.display_if_exist(
-                xp.sqrt(l2_ener_loss), find_energy
+                xp.sqrt(l2_ener_loss) * atom_norm_ener, find_energy
             )
         if self.has_f:
             l2_force_loss = xp.mean(xp.square(diff_f))
