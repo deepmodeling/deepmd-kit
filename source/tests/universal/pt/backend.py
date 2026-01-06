@@ -12,6 +12,9 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 
+from ....tests import (
+    utils,
+)
 from ..common.backend import (
     BackendTestCase,
 )
@@ -62,7 +65,10 @@ class PTTestCase(BackendTestCase):
         cls._get_deserialized_module.cache_clear()
         cls._get_script_module.cache_clear()
         torch.cuda.empty_cache()
-        gc.collect()
+        if utils.CPU_MEM_CLEAN_COUNT % 100 == 0:
+            gc.collect()
+        else:
+            utils.CPU_MEM_CLEAN_COUNT += 1
 
     def test_jit(self) -> None:
         if getattr(self, "skip_test_jit", False):
