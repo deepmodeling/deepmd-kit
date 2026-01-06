@@ -354,6 +354,14 @@ class DeepEval(DeepEvalBackend):
             box_input = None
         if fparam is not None:
             fparam_input = fparam.reshape(nframes, self.get_dim_fparam())
+        elif self.dp.has_default_fparam():
+            # JAX (XLA) requires static shapes, so default must be implemented here
+            default_fparam = self.dp.get_default_fparam()
+            assert default_fparam is not None
+            fparam_input = np.tile(
+                np.array(default_fparam, dtype=GLOBAL_NP_FLOAT_PRECISION),
+                (nframes, 1),
+            )
         else:
             fparam_input = None
         if aparam is not None:
@@ -433,3 +441,7 @@ class DeepEval(DeepEvalBackend):
             The JAX model as BaseModel instance.
         """
         return self.dp
+
+    def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
+        return self.dp.has_default_fparam()
