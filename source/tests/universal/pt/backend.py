@@ -67,8 +67,7 @@ class PTTestCase(BackendTestCase):
         torch.cuda.empty_cache()
         if utils.CPU_MEM_CLEAN_COUNT % 100 == 0:
             gc.collect()
-        else:
-            utils.CPU_MEM_CLEAN_COUNT += 1
+        utils.CPU_MEM_CLEAN_COUNT += 1
 
     def test_jit(self) -> None:
         if getattr(self, "skip_test_jit", False):
