@@ -191,7 +191,7 @@ class ModelWrapper(torch.nn.Module):
             if self.modifier is not None:
                 modifier_pred = self.modifier(**input_dict)
                 for k, v in modifier_pred.items():
-                    model_pred[k] = model_pred[k] - v
+                    model_pred[k] = model_pred[k] + v
             return model_pred, None, None
         else:
             natoms = atype.shape[-1]

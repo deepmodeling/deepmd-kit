@@ -507,8 +507,6 @@ class DeepmdData:
                     frame_data,
                     self,
                 )
-            # Wait for completion and propagate any exceptions
-            future.result()
             if self.use_modifier_cache:
                 # Cache the modified frame to avoid recomputation
                 self._modified_frame_cache[index] = copy.deepcopy(frame_data)

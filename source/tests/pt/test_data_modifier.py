@@ -374,11 +374,11 @@ class TestDataModifier(unittest.TestCase):
         model_pred = model.eval(coord, cell, atype)
         modifier_pred = modifier.eval(coord, cell, atype)
         model_pred_ref = model_ref.eval(coord, cell, atype)
-        # expected: output_model - sfactor * output_modifier
+        # expected: output_model = output_model_ref + sfactor * output_modifier
         for ii in range(3):
             np.testing.assert_allclose(
                 model_pred[ii],
-                model_pred_ref[ii] - sfactor * modifier_pred[ii],
+                model_pred_ref[ii] + sfactor * modifier_pred[ii],
                 rtol=1e-5,
                 atol=1e-8,
             )
