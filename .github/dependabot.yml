@@ -4,9 +4,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    target-branch: "devel"
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
-    target-branch: "devel"
