@@ -424,6 +424,7 @@ class Trainer:
             self.warmup_steps = int(warmup_ratio * self.num_steps)
         else:
             self.warmup_steps = 0
+        self.warmup_start_factor = training_params.get("warmup_start_factor", 0.0)
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
         assert self.num_steps - self.warmup_steps > 0 or self.warmup_steps == 0, (
             "Warm up steps must be less than total training steps!"
@@ -675,7 +676,9 @@ class Trainer:
         # author: iProzd
         def warm_up_linear(step: int, warmup_steps: int) -> float:
             if step < warmup_steps:
-                return step / warmup_steps
+                return self.warmup_start_factor + (1.0 - self.warmup_start_factor) * (
+                    step / warmup_steps
+                )
             else:
                 return self.lr_exp.value(step - warmup_steps) / self.lr_exp.start_lr
 
