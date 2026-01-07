@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [1, 2, 3, 4, 5, 6]
+        group: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
         python: ["3.10", "3.13"]
 
     steps:
@@ -57,7 +57,7 @@ jobs:
         restore-keys: |
           test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
           test2-durations-combined-${{ matrix.python }}
-    - run: pytest --cov=deepmd source/tests  --splits 6 --group ${{ matrix.group }} --store-durations --clean-durations --durations-path=.test_durations --splitting-algorithm least_duration
+    - run: pytest --cov=deepmd source/tests  --splits 12 --group ${{ matrix.group }} --store-durations --clean-durations --durations-path=.test_durations --splitting-algorithm least_duration
       env:
         NUM_WORKERS: 0
         DP_CI_IMPORT_PADDLE_BEFORE_TF: 1
