@@ -228,7 +228,8 @@ class DeepEval(DeepEvalBackend):
         return dict(
             zip(
                 [x.name for x in request_defs],
-                out, strict=False,
+                out,
+                strict=False,
             )
         )
 

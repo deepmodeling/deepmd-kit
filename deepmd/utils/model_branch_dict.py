@@ -187,7 +187,8 @@ class OrderedDictTableWrapper:
             return (
                 "| "
                 + " | ".join(
-                    part.ljust(width) for part, width in zip(cells_parts, col_widths, strict=False)
+                    part.ljust(width)
+                    for part, width in zip(cells_parts, col_widths, strict=False)
                 )
                 + " |"
             )
