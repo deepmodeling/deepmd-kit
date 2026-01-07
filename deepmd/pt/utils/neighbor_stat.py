@@ -6,6 +6,9 @@ from collections.abc import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.utils.neighbor_stat import (
+    NeighborStatOP,
+)
 from deepmd.pt.utils.auto_batch_size import (
     AutoBatchSize,
 )
@@ -16,9 +19,6 @@ from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
 from deepmd.utils.neighbor_stat import NeighborStat as BaseNeighborStat
-from deepmd.dpmodel.utils.neighbor_stat import (
-    NeighborStatOP,
-)
 
 
 class NeighborStat(BaseNeighborStat):
