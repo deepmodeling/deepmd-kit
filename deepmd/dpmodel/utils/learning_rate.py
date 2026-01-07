@@ -61,8 +61,9 @@ class LearningRateCosine:
     def __init__(
         self,
         start_lr: float,
-        stop_lr: float,
         stop_steps: int,
+        stop_lr: float | None = None,
+        stop_lr_factor: float | None = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -72,13 +73,25 @@ class LearningRateCosine:
         ----------
         start_lr
             The learning rate at the start of the training.
-        stop_lr
-            The desired learning rate at the end of the training.
         stop_steps
             The total training steps for learning rate scheduler.
+        stop_lr
+            The desired learning rate at the end of the training.
+            If provided, this value will be used directly.
+        stop_lr_factor
+            The factor to scale the learning rate at the end of the training.
+            If stop_lr is not provided, the stop_lr will be calculated as
+            start_lr * stop_lr_factor.
         """
         self.start_lr = start_lr
-        self.stop_lr = stop_lr
+        if stop_lr is not None:
+            self.stop_lr = stop_lr
+        elif stop_lr_factor is not None:
+            self.stop_lr = start_lr * stop_lr_factor
+        else:
+            raise ValueError(
+                "Either stop_lr or stop_lr_factor must be provided for LearningRateCosine"
+            )
         self.stop_steps = max(1, stop_steps)
 
     def value(self, step: int) -> np.float64:

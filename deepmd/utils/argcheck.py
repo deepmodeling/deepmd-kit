@@ -2512,10 +2512,33 @@ def learning_rate_exp() -> list[Argument]:
 def learning_rate_cosine() -> list[Argument]:
     doc_start_lr = "The learning rate at the start of the training."
     doc_stop_lr = "The desired learning rate at the end of the training."
+    doc_stop_lr_factor = (
+        "The factor to scale the learning rate at the end of the training. "
+        "The actual stop_lr is calculated as `start_lr * stop_lr_factor`. "
+        "If `stop_lr` is not provided, this option will be used."
+    )
 
     args = [
-        Argument("start_lr", float, optional=True, default=1e-3, doc=doc_start_lr),
-        Argument("stop_lr", float, optional=True, default=1e-7, doc=doc_stop_lr),
+        Argument(
+            "start_lr",
+            float,
+            optional=True,
+            default=1e-3,
+            doc=doc_only_pt_supported + doc_start_lr,
+        ),
+        Argument(
+            "stop_lr",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_stop_lr,
+        ),
+        Argument(
+            "stop_lr_factor",
+            float,
+            optional=True,
+            doc=doc_only_pt_supported + doc_stop_lr_factor,
+        ),
     ]
     return args
 
