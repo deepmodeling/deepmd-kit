@@ -5,6 +5,7 @@ import math
 
 log = logging.getLogger(__name__)
 
+
 def format_training_message(
     batch: int,
     wall_time: float,
