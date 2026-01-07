@@ -38,7 +38,7 @@ def format_training_message_per_task(
     learning_rate : float | None
         The learning rate
     check_total_rmse_nan : bool
-        Whether throw the error if the total RMSE is NaN
+        Whether to throw an error if the total RMSE is NaN
     """
     if task_name:
         task_name += ": "
