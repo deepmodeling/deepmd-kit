@@ -382,6 +382,7 @@ select = [
     "TCH", # flake8-type-checking
     "PYI", # flake8-pyi
     "ANN", # type annotations
+    "B905", # zip-without-explicit-strict
 ]
 
 ignore = [
