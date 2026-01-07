@@ -70,11 +70,11 @@ class LearningRateCosine:
 
         Parameters
         ----------
-        start_lr : float
+        start_lr
             The learning rate at the start of the training.
-        stop_lr : float
+        stop_lr
             The desired learning rate at the end of the training.
-        stop_steps : int
+        stop_steps
             The total training steps for learning rate scheduler.
         """
         self.start_lr = start_lr
