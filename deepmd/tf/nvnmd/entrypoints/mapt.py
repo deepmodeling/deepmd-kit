@@ -439,11 +439,11 @@ class MapTable:
 
         u = N2 * np.reshape(np.arange(0, N + 1) / N, [-1, 1])  # pylint: disable=no-explicit-dtype
         res_lst = run_sess(sess, vals, feed_dict={dic_ph["u"]: u})
-        res_dic = dict(zip(keys, res_lst))
+        res_dic = dict(zip(keys, res_lst, strict=False))
 
         u2 = N2 * np.reshape(np.arange(0, N * 16 + 1) / (N * 16), [-1, 1])  # pylint: disable=no-explicit-dtype
         res_lst2 = run_sess(sess, vals, feed_dict={dic_ph["u"]: u2})
-        res_dic2 = dict(zip(keys, res_lst2))  # reference for compare
+        res_dic2 = dict(zip(keys, res_lst2, strict=False))  # reference for compare
 
         # change value
         for tt in range(ndim):
@@ -536,11 +536,11 @@ class MapTable:
 
         s = N2 * np.reshape(np.arange(0, N + 1) / N, [-1, 1]) + smin_  # pylint: disable=no-explicit-dtype
         res_lst = run_sess(sess, vals, feed_dict={dic_ph["s"]: s})
-        res_dic = dict(zip(keys, res_lst))
+        res_dic = dict(zip(keys, res_lst, strict=False))
 
         s2 = N2 * np.reshape(np.arange(0, N * 16 + 1) / (N * 16), [-1, 1]) + smin_  # pylint: disable=no-explicit-dtype
         res_lst2 = run_sess(sess, vals, feed_dict={dic_ph["s"]: s2})
-        res_dic2 = dict(zip(keys, res_lst2))
+        res_dic2 = dict(zip(keys, res_lst2, strict=False))
 
         sess.close()
         return res_dic, res_dic2
@@ -601,7 +601,7 @@ class MapTable:
         vals = list(dic_ph.values())
         #
         res_lst = run_sess(sess, vals, feed_dict={})
-        res_dic = dict(zip(keys, res_lst))
+        res_dic = dict(zip(keys, res_lst, strict=False))
 
         sess.close()
         return res_dic

@@ -172,7 +172,7 @@ class DeepmdDataSystem:
                 rule = int(words[1])
                 filtered_data_systems = []
                 filtered_system_dirs = []
-                for sys_dir, data_sys in zip(self.system_dirs, self.data_systems):
+                for sys_dir, data_sys in zip(self.system_dirs, self.data_systems, strict=False):
                     if data_sys.get_natoms() <= rule:
                         filtered_data_systems.append(data_sys)
                         filtered_system_dirs.append(sys_dir)

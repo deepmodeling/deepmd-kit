@@ -41,7 +41,7 @@ class TestMakeModelDevi(unittest.TestCase):
             os.path.join(infer_path, "deeppot-1.pbtxt"),
         ]
         self.graph_dirs = [pbtxt.replace("pbtxt", "pb") for pbtxt in self.pbtxts]
-        for pbtxt, pb in zip(self.pbtxts, self.graph_dirs):
+        for pbtxt, pb in zip(self.pbtxts, self.graph_dirs, strict=False):
             convert_pbtxt_to_pb(pbtxt, pb)
         self.graphs = [DeepPotential(pb) for pb in self.graph_dirs]
         self.output = os.path.join(tests_path, "model_devi.out")
@@ -216,7 +216,7 @@ class TestMakeModelDeviFparamAparam(unittest.TestCase):
             os.path.join(infer_path, "fparam_aparam.pbtxt"),
         ]
         cls.graph_dirs = [pbtxt.replace("pbtxt", "pb") for pbtxt in cls.pbtxts]
-        for pbtxt, pb in zip(cls.pbtxts, cls.graph_dirs):
+        for pbtxt, pb in zip(cls.pbtxts, cls.graph_dirs, strict=False):
             convert_pbtxt_to_pb(pbtxt, pb)
         cls.graphs = [DeepPotential(pb) for pb in cls.graph_dirs]
 

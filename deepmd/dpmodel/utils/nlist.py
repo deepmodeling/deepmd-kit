@@ -234,7 +234,7 @@ def build_multiple_neighbor_list(
     rr = xp.where(nlist_mask, xp.full_like(rr, float("inf")), rr)
     nlist0 = nlist
     ret = {}
-    for rc, ns in zip(rcuts[::-1], nsels[::-1]):
+    for rc, ns in zip(rcuts[::-1], nsels[::-1], strict=False):
         tnlist_1 = nlist0[:, :, :ns]
         tnlist_1 = xp.where(rr[:, :, :ns] > rc, xp.full_like(tnlist_1, -1), tnlist_1)
         ret[get_multiple_nlist_key(rc, ns)] = tnlist_1

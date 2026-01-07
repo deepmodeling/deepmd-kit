@@ -274,12 +274,12 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
         raw_nlists = [
             nlists[get_multiple_nlist_key(rcut, sel)]
-            for rcut, sel in zip(self.get_model_rcuts(), self.get_model_nsels())
+            for rcut, sel in zip(self.get_model_rcuts(), self.get_model_nsels(), strict=False)
         ]
         nlists_ = [
             nl if mt else nlist_distinguish_types(nl, extended_atype, sel)
             for mt, nl, sel in zip(
-                self.mixed_types_list, raw_nlists, self.get_model_sels()
+                self.mixed_types_list, raw_nlists, self.get_model_sels(), strict=False
             )
         ]
         ener_list = []

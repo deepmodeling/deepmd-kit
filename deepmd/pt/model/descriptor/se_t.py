@@ -845,7 +845,7 @@ class DescrptBlockSeT(DescriptorBlock):
         # nfnl x nnei
         exclude_mask = self.emask(nlist, extended_atype).view(nfnl, self.nnei)
         for embedding_idx, (ll, compress_data_ii, compress_info_ii) in enumerate(
-            zip(self.filter_layers.networks, self.compress_data, self.compress_info)
+            zip(self.filter_layers.networks, self.compress_data, self.compress_info, strict=False)
         ):
             ti = embedding_idx % self.ntypes
             nei_type_j = self.sel[ti]

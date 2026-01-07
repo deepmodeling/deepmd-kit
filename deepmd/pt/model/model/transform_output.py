@@ -122,7 +122,7 @@ def take_deriv(
     split_vv1 = torch.split(vv1, [1] * size, dim=-1)
     split_svv1 = torch.split(svv1, [1] * size, dim=-1)
     split_ff, split_avir = [], []
-    for vvi, svvi in zip(split_vv1, split_svv1):
+    for vvi, svvi in zip(split_vv1, split_svv1, strict=False):
         # nf x nloc x 3, nf x nloc x 9
         ffi, aviri = task_deriv_one(
             vvi,

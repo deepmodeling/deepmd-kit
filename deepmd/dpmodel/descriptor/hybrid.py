@@ -101,7 +101,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             start_idx = np.cumsum(np.pad(hybrid_sel, (1, 0), "constant"))[:-1]
             end_idx = start_idx + np.array(sub_sel)
             cut_idx = np.concatenate(
-                [range(ss, ee) for ss, ee in zip(start_idx, end_idx)]
+                [range(ss, ee) for ss, ee in zip(start_idx, end_idx, strict=False)]
             )
             nlist_cut_idx.append(cut_idx)
         self.nlist_cut_idx = nlist_cut_idx
@@ -310,7 +310,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             )
         else:
             nl_distinguish_types = None
-        for descrpt, nci in zip(self.descrpt_list, self.nlist_cut_idx):
+        for descrpt, nci in zip(self.descrpt_list, self.nlist_cut_idx, strict=False):
             # cut the nlist to the correct length
             if self.mixed_types() == descrpt.mixed_types():
                 nl = xp.take(nlist, nci, axis=2)

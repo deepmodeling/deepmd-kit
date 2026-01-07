@@ -292,7 +292,7 @@ class LKFOptimizer(Optimizer):
             tmp = self.__split_weights(tmp)
             tmp_grad = self.__split_weights(tmp_grad)
 
-            for split_grad, split_weight in zip(tmp_grad, tmp):
+            for split_grad, split_weight in zip(tmp_grad, tmp, strict=False):
                 nelement = split_grad.nelement()
 
                 if param_sum == 0:

@@ -355,7 +355,7 @@ class CommonTest(ABC):
         data2.pop("@version")
 
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=False):
             np.testing.assert_allclose(
                 rr1.ravel(), rr2.ravel(), rtol=self.rtol, atol=self.atol
             )
@@ -372,7 +372,7 @@ class CommonTest(ABC):
         obj2 = self.tf_class.deserialize(data1, suffix=self.unique_id)
         ret2, data2 = self.get_tf_ret_serialization_from_cls(obj2)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=False):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
             assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
@@ -391,7 +391,7 @@ class CommonTest(ABC):
         ret2 = self.extract_ret(ret2, self.RefBackend.DP)
         data2 = dp_obj.serialize()
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=False):
             if rr1 is SKIP_FLAG or rr2 is SKIP_FLAG:
                 continue
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
@@ -407,7 +407,7 @@ class CommonTest(ABC):
         obj1 = self.dp_class.deserialize(data1)
         ret2, data2 = self.get_dp_ret_serialization_from_cls(obj1)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=False):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
                 np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
                 assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
@@ -436,7 +436,7 @@ class CommonTest(ABC):
         data1.pop("@variables", None)
         data2.pop("@variables", None)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=False):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
             assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
@@ -449,7 +449,7 @@ class CommonTest(ABC):
         obj2 = self.pt_class.deserialize(data1)
         ret2, data2 = self.get_pt_ret_serialization_from_cls(obj2)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=False):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
                 np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
                 assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
@@ -473,7 +473,7 @@ class CommonTest(ABC):
         data1.pop("@variables", None)
         data2.pop("@variables", None)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=False):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
             assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
@@ -486,7 +486,7 @@ class CommonTest(ABC):
         obj1 = self.jax_class.deserialize(data1)
         ret2, data2 = self.get_jax_ret_serialization_from_cls(obj1)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=False):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
                 np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
                 assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
@@ -515,7 +515,7 @@ class CommonTest(ABC):
         data1.pop("@variables", None)
         data2.pop("@variables", None)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=False):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
             assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
@@ -528,7 +528,7 @@ class CommonTest(ABC):
         obj2 = self.pd_class.deserialize(data1)
         ret2, data2 = self.get_pd_ret_serialization_from_cls(obj2)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=False):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
                 np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
                 assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
@@ -550,7 +550,7 @@ class CommonTest(ABC):
         ret2 = self.extract_ret(ret2, self.RefBackend.ARRAY_API_STRICT)
         data2 = array_api_strict_obj.serialize()
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=False):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
             assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
@@ -564,7 +564,7 @@ class CommonTest(ABC):
         obj1 = self.array_api_strict_class.deserialize(data1)
         ret2, data2 = self.get_array_api_strict_ret_serialization_from_cls(obj1)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=False):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
                 np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
                 assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"

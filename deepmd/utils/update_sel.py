@@ -43,7 +43,7 @@ class BaseUpdateSel(ABC):
             sel = [int(self.wrap_up_4(ii * ratio)) for ii in tmp_sel]
         else:
             # sel is set by user
-            for ii, (tt, dd) in enumerate(zip(tmp_sel, sel)):
+            for ii, (tt, dd) in enumerate(zip(tmp_sel, sel, strict=False)):
                 if dd and tt > dd:
                     # we may skip warning for sel=0, where the user is likely
                     # to exclude such type in the descriptor

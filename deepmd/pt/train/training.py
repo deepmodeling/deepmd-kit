@@ -650,7 +650,7 @@ class Trainer:
             self.wrapper.share_params(
                 shared_links,
                 resume=(resuming and not self.finetune_update_stat) or self.rank != 0,
-                model_key_prob_map=dict(zip(self.model_keys, self.model_prob)),
+                model_key_prob_map=dict(zip(self.model_keys, self.model_prob, strict=False)),
                 data_stat_protect=_data_stat_protect[0],
             )
 

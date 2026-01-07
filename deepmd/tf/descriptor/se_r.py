@@ -271,7 +271,7 @@ class DescrptSeR(DescrptSe):
         sumn = []
         sumr2 = []
         for cc, bb, tt, nn, mm in zip(
-            data_coord, data_box, data_atype, natoms_vec, mesh
+            data_coord, data_box, data_atype, natoms_vec, mesh, strict=False
         ):
             sysr, sysr2, sysn = self._compute_dstats_sys_se_r(cc, bb, tt, nn, mm)
             sumr.append(sysr)

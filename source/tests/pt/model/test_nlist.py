@@ -245,7 +245,7 @@ class TestNeighList(unittest.TestCase):
         ecoord, eatype, mapping = extend_coord_with_ghosts(
             self.coord, self.atype, self.cell, self.rcut
         )
-        for distinguish_types, mysel in zip([True, False], [sum(self.nsel), 300]):
+        for distinguish_types, mysel in zip([True, False], [sum(self.nsel), 300], strict=False):
             # full neighbor list
             nlist_full = build_neighbor_list(
                 ecoord,
