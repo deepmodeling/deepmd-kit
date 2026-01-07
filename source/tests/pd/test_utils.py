@@ -20,7 +20,8 @@ class TestCvt(unittest.TestCase):
         foo = rng.normal([3, 4])
         for ptp, npp in zip(
             [paddle.float16, paddle.float32, paddle.float64],
-            [np.float16, np.float32, np.float64], strict=False,
+            [np.float16, np.float32, np.float64],
+            strict=False,
         ):
             foo = foo.astype(npp)
             bar = to_paddle_tensor(foo)

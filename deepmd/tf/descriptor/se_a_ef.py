@@ -419,7 +419,13 @@ class DescrptSeAEfLower(DescrptSeA):
             sumr2 = []
             suma2 = []
             for cc, bb, tt, nn, mm, ee in zip(
-                data_coord, data_box, data_atype, natoms_vec, mesh, data_efield, strict=False
+                data_coord,
+                data_box,
+                data_atype,
+                natoms_vec,
+                mesh,
+                data_efield,
+                strict=False,
             ):
                 sysr, sysr2, sysa, sysa2, sysn = self._compute_dstats_sys_smth(
                     cc, bb, tt, nn, mm, ee

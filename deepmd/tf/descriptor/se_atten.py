@@ -379,7 +379,13 @@ class DescrptSeAtten(DescrptSeA):
             if mixed_type:
                 sys_num = 0
                 for cc, bb, tt, nn, mm, r_n in zip(
-                    data_coord, data_box, data_atype, natoms_vec, mesh, real_natoms_vec, strict=False
+                    data_coord,
+                    data_box,
+                    data_atype,
+                    natoms_vec,
+                    mesh,
+                    real_natoms_vec,
+                    strict=False,
                 ):
                     sysr, sysr2, sysa, sysa2, sysn = self._compute_dstats_sys_smth(
                         cc, bb, tt, nn, mm, mixed_type, r_n
