@@ -240,6 +240,10 @@ class DPAtomicModel(BaseAtomicModel):
         """Check if the model has default frame parameters."""
         return self.fitting.has_default_fparam()
 
+    def get_default_fparam(self) -> list[float] | None:
+        """Get the default frame parameters."""
+        return self.fitting.get_default_fparam()
+
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
