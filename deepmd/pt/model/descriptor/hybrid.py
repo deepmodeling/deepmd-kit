@@ -95,7 +95,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
             start_idx = np.cumsum(np.pad(hybrid_sel, (1, 0), "constant"))[:-1]
             end_idx = start_idx + np.array(sub_sel)
             cut_idx = np.concatenate(
-                [range(ss, ee) for ss, ee in zip(start_idx, end_idx, strict=False)]
+                [range(ss, ee) for ss, ee in zip(start_idx, end_idx)]
             ).astype(np.int64)
             self.nlist_cut_idx.append(to_torch_tensor(cut_idx))
 
