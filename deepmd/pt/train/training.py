@@ -63,6 +63,7 @@ from deepmd.pt.utils.env import (
     SAMPLER_RECORD,
 )
 from deepmd.pt.utils.learning_rate import (
+    LearningRateCosine,
     LearningRateExp,
 )
 from deepmd.pt.utils.stat import (
@@ -273,13 +274,17 @@ class Trainer:
                     _stat_file_path.root.close()
             return get_sample
 
-        def get_lr(lr_params: dict[str, Any]) -> LearningRateExp:
-            assert lr_params.get("type", "exp") == "exp", (
-                "Only learning rate `exp` is supported!"
-            )
-            lr_params["stop_steps"] = self.num_steps - self.warmup_steps
-            lr_exp = LearningRateExp(**lr_params)
-            return lr_exp
+        def get_lr(
+            lr_params: dict[str, Any],
+        ) -> LearningRateExp | LearningRateCosine:
+            lr_type = lr_params.get("type", "exp")
+            lr_config = lr_params.copy()
+            lr_config["stop_steps"] = self.num_steps - self.warmup_steps
+            if lr_type == "exp":
+                return LearningRateExp(**lr_config)
+            if lr_type == "cosine":
+                return LearningRateCosine(**lr_config)
+            raise ValueError(f"Unsupported learning rate type '{lr_type}'")
 
         # Optimizer
         if self.multi_task and training_params.get("optim_dict", None) is not None:

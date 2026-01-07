@@ -55,3 +55,34 @@ class LearningRateExp:
         if step_lr < self.min_lr:
             step_lr = self.min_lr
         return step_lr
+
+
+class LearningRateCosine:
+    def __init__(
+        self,
+        start_lr: float,
+        stop_lr: float,
+        stop_steps: int,
+        **kwargs: Any,
+    ) -> None:
+        """
+        Construct a cosine-annealed learning rate.
+
+        Parameters
+        ----------
+        start_lr : float
+            The learning rate at the start of the training.
+        stop_lr : float
+            The desired learning rate at the end of the training.
+        stop_steps : int
+            The total training steps for learning rate scheduler.
+        """
+        self.start_lr = start_lr
+        self.stop_lr = stop_lr
+        self.stop_steps = max(1, stop_steps)
+
+    def value(self, step: int) -> np.float64:
+        """Get the learning rate at the given step."""
+        clamped_step = min(step, self.stop_steps)
+        cosine = 0.5 * (1.0 + np.cos(np.pi * clamped_step / self.stop_steps))
+        return np.float64(self.stop_lr + (self.start_lr - self.stop_lr) * cosine)
