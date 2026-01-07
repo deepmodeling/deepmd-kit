@@ -416,7 +416,14 @@ class Trainer:
                     )
 
         # Learning rate
-        self.warmup_steps = training_params.get("warmup_steps", 0)
+        warmup_steps = training_params.get("warmup_steps", None)
+        warmup_ratio = training_params.get("warmup_ratio", None)
+        if warmup_steps is not None:
+            self.warmup_steps = warmup_steps
+        elif warmup_ratio is not None:
+            self.warmup_steps = int(warmup_ratio * self.num_steps)
+        else:
+            self.warmup_steps = 0
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
         assert self.num_steps - self.warmup_steps > 0 or self.warmup_steps == 0, (
             "Warm up steps must be less than total training steps!"

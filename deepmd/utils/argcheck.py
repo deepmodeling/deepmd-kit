@@ -3223,6 +3223,11 @@ def training_args(
         "the learning rate begins at zero and progressively increases linearly to `start_lr`, "
         "rather than starting directly from `start_lr`"
     )
+    doc_warmup_ratio = (
+        "The ratio of warmup steps to total training steps. "
+        "The actual number of warmup steps is calculated as `warmup_ratio * numb_steps`. "
+        "If `warmup_steps` is set, this option will be ignored."
+    )
     doc_gradient_max_norm = (
         "Clips the gradient norm to a maximum value. "
         "If the gradient norm exceeds this value, it will be clipped to this limit. "
@@ -3335,6 +3340,12 @@ def training_args(
             int,
             optional=True,
             doc=doc_only_pt_supported + doc_warmup_steps,
+        ),
+        Argument(
+            "warmup_ratio",
+            float,
+            optional=True,
+            doc=doc_only_pt_supported + doc_warmup_ratio,
         ),
         Argument(
             "gradient_max_norm",
