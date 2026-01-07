@@ -430,7 +430,7 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "backend/**" = ["ANN"]
 "data/**" = ["ANN"]
 "deepmd/tf/**" = ["TID253", "ANN"]
-"deepmd/pt/**" = ["TID253"]
+"deepmd/pt/**" = ["TID253", "B905"]
 "deepmd/jax/**" = ["TID253"]
 "deepmd/pd/**" = ["TID253", "ANN"]
 
