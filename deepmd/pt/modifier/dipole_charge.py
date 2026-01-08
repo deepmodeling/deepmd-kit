@@ -63,6 +63,13 @@ class DipoleChargeModifier(BaseModifier):
         self._model_charge_map = model_charge_map
         self._sys_charge_map = sys_charge_map
 
+        # Validate that model_charge_map and sel_type have matching lengths
+        if len(model_charge_map) != len(sel_type):
+            raise ValueError(
+                f"model_charge_map length ({len(model_charge_map)}) must match "
+                f"sel_type length ({len(sel_type)})"
+            )
+
         # init ewald recp
         self.ewald_h = ewald_h
         self.ewald_beta = ewald_beta
@@ -344,8 +351,6 @@ def make_mask(
     sel_type = sel_type.to(torch.long)
     atype = atype.to(torch.long)
 
-    # Create mask using broadcasting
-    mask = torch.zeros_like(atype, dtype=torch.bool)
-    for t in sel_type:
-        mask = mask | (atype == t)
+    # Create mask using broadcasting for JIT compatibility
+    mask = (atype.unsqueeze(-1) == sel_type).any(dim=-1)
     return mask
