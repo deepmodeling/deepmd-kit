@@ -171,17 +171,17 @@ class TestDipoleChargeModifier(unittest.TestCase):
         )
 
     def test_box_none_warning(self):
-        """Test that a RuntimeWarning is raised when box is None."""
-        coord, box, atype = ref_data()
+        """Test that a RuntimeError is raised when box is None."""
+        coord, _b, atype = ref_data()
         # consistent with the input shape from BaseModifier.modify_data
         t_coord = to_torch_tensor(coord).to(DTYPE).reshape(1, -1, 3)
         t_atype = to_torch_tensor(atype).to(torch.long)
 
-        with self.assertRaises(RuntimeWarning) as context:
+        with self.assertRaises(RuntimeError) as context:
             self.dm_pt(
                 coord=t_coord,
                 atype=t_atype,
-                box=None,  # Pass None to trigger the warning
+                box=None,  # Pass None to trigger the error
             )
 
         self.assertIn(
