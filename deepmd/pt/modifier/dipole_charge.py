@@ -139,7 +139,7 @@ class DipoleChargeModifier(BaseModifier):
             - virial: Virial correction tensor with shape (nframes, 3, 3)
         """
         if box is None:
-            raise RuntimeWarning(
+            raise RuntimeError(
                 "dipole_charge data modifier can only be applied for periodic systems."
             )
         else:
