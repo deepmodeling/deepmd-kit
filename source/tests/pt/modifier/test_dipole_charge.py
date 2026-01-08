@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import os
+import tempfile
 import unittest
 from pathlib import (
     Path,
@@ -50,6 +51,9 @@ def ref_data():
 
 class TestDipoleChargeModifier(unittest.TestCase):
     def setUp(self) -> None:
+        self.test_dir = tempfile.TemporaryDirectory()
+        self.orig_dir = os.getcwd()
+        os.chdir(self.test_dir.name)
         # setup parameter
         # numerical consistency can only be achieved with high prec
         self.ewald_h = 0.1
@@ -170,7 +174,7 @@ class TestDipoleChargeModifier(unittest.TestCase):
             to_numpy_array(ret0["virial"]), to_numpy_array(ret1["virial"])
         )
 
-    def test_box_none_warning(self):
+    def test_box_none_error(self):
         """Test that a RuntimeError is raised when box is None."""
         coord, _b, atype = ref_data()
         # consistent with the input shape from BaseModifier.modify_data
@@ -209,12 +213,5 @@ class TestDipoleChargeModifier(unittest.TestCase):
         trainer.run()
 
     def tearDown(self) -> None:
-        for f in os.listdir("."):
-            if f.startswith("frozen_model") and f.endswith(".pth"):
-                os.remove(f)
-            if f.startswith("dw_model") and (f.endswith(".pth") or f.endswith(".pb")):
-                os.remove(f)
-            if f.startswith("model.ckpt") and f.endswith(".pt"):
-                os.remove(f)
-            if f in ["lcurve.out", "checkpoint"]:
-                os.remove(f)
+        os.chdir(self.orig_dir)
+        self.test_dir.cleanup()

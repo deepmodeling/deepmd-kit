@@ -129,13 +129,14 @@ class DipoleChargeModifier(BaseModifier):
             Atom parameters with shape (nframes, natoms, nap), by default None
         do_atomic_virial : bool, optional
             Whether to compute atomic virial, by default False
+            Note: This parameter is currently not implemented and is ignored
 
         Returns
         -------
         dict[str, torch.Tensor]
             Dictionary containing the correction terms:
             - energy: Energy correction tensor with shape (nframes, 1)
-            - force: Force correction tensor with shape (nframes, natoms+nsel, 3)
+            - force: Force correction tensor with shape (nframes, natoms, 3)
             - virial: Virial correction tensor with shape (nframes, 3, 3)
         """
         if box is None:
@@ -305,7 +306,10 @@ class DipoleChargeModifier(BaseModifier):
 
         # nframe x natoms x 3
         dipole = torch.cat(all_dipole, dim=0)
-        assert dipole.shape[0] == nframes
+        if dipole.shape[0] != nframes:
+            raise RuntimeError(
+                f"Dipole shape mismatch: expected {nframes} frames, got {dipole.shape[0]}"
+            )
 
         dipole_reshaped = dipole.reshape(nframes, natoms, 3)
         coord_reshaped = coord.reshape(nframes, natoms, 3)
