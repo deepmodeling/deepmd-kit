@@ -52,7 +52,7 @@ from deepmd.utils.data import (
     DeepmdData,
 )
 
-from ..consistent.common import (
+from ...consistent.common import (
     parameterized,
 )
 

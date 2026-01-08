@@ -7,9 +7,13 @@ from typing import (
 from .base_modifier import (
     BaseModifier,
 )
+from .dipole_charge import (
+    DipoleChargeModifier,
+)
 
 __all__ = [
     "BaseModifier",
+    "DipoleChargeModifier",
     "get_data_modifier",
 ]
 
