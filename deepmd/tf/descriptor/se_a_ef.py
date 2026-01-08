@@ -425,7 +425,7 @@ class DescrptSeAEfLower(DescrptSeA):
                 natoms_vec,
                 mesh,
                 data_efield,
-                strict=False,
+                strict=True,
             ):
                 sysr, sysr2, sysa, sysa2, sysn = self._compute_dstats_sys_smth(
                     cc, bb, tt, nn, mm, ee

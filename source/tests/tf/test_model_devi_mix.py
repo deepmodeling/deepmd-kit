@@ -58,7 +58,7 @@ class TestMakeModelDeviMix(unittest.TestCase):
             os.path.join(infer_path, "se_atten_no_atten_2.pbtxt"),
         ]
         self.graph_dirs = [pbtxt.replace("pbtxt", "pb") for pbtxt in self.pbtxts]
-        for pbtxt, pb in zip(self.pbtxts, self.graph_dirs, strict=False):
+        for pbtxt, pb in zip(self.pbtxts, self.graph_dirs, strict=True):
             convert_pbtxt_to_pb(pbtxt, pb)
         self.graphs = [DeepPotential(pb) for pb in self.graph_dirs]
         self.output = os.path.join(tests_path, "model_devi.out")

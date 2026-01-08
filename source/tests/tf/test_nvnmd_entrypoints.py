@@ -466,7 +466,7 @@ class TestNvnmdEntrypointsV0(tf.test.TestCase):
             tensordic[key] = graph.get_tensor_by_name(key + ":0")
         # get value
         valuelist = sess.run(list(tensordic.values()), feed_dict=feed_dict)
-        valuedic = dict(zip(tensordic.keys(), valuelist, strict=False))
+        valuedic = dict(zip(tensordic.keys(), valuelist, strict=True))
         # test
         # o_descriptor
         idx = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192])
@@ -783,7 +783,7 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
             tensordic[key] = graph.get_tensor_by_name(key + ":0")
         # get value
         valuelist = sess.run(list(tensordic.values()), feed_dict=feed_dict)
-        valuedic = dict(zip(tensordic.keys(), valuelist, strict=False))
+        valuedic = dict(zip(tensordic.keys(), valuelist, strict=True))
         # test
         # o_descriptor
         idx = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192])

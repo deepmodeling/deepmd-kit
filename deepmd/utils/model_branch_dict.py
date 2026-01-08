@@ -169,7 +169,7 @@ class OrderedDictTableWrapper:
         # Step 3: Determine actual width for each column
         # For the first two columns, we already decided the exact widths above.
         col_widths: list[int] = []
-        for idx, col in enumerate(zip(*wrapped_rows, strict=False)):
+        for idx, col in enumerate(zip(*wrapped_rows, strict=True)):
             if idx == 0:
                 col_widths.append(branch_col_width)
             elif idx == 1:
@@ -188,7 +188,7 @@ class OrderedDictTableWrapper:
                 "| "
                 + " | ".join(
                     part.ljust(width)
-                    for part, width in zip(cells_parts, col_widths, strict=False)
+                    for part, width in zip(cells_parts, col_widths, strict=True)
                 )
                 + " |"
             )

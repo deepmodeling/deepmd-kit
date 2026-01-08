@@ -202,14 +202,14 @@ class IOTest:
             )
             rets_nopbc.append(ret)
         for ret in rets[1:]:
-            for vv1, vv2 in zip(rets[0], ret, strict=False):
+            for vv1, vv2 in zip(rets[0], ret, strict=True):
                 if np.isnan(vv2).all():
                     # expect all nan if not supported
                     continue
                 np.testing.assert_allclose(vv1, vv2, rtol=1e-12, atol=1e-12)
 
         for idx, ret in enumerate(rets_nopbc[1:]):
-            for vv1, vv2 in zip(rets_nopbc[0], ret, strict=False):
+            for vv1, vv2 in zip(rets_nopbc[0], ret, strict=True):
                 if np.isnan(vv2).all():
                     # expect all nan if not supported
                     continue

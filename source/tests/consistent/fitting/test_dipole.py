@@ -285,7 +285,7 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
             if networks is None:
                 data1["nets"]["networks"][ii] = None
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2, strict=False):
+        for rr1, rr2 in zip(ret1, ret2, strict=True):
             np.testing.assert_allclose(
                 rr1.ravel()[: rr2.size], rr2.ravel(), rtol=self.rtol, atol=self.atol
             )

@@ -248,7 +248,7 @@ class AutoBatchSize(ABC):
             return ret
 
         if not returned_dict:
-            r_list = [concate_result(r) for r in zip(*results, strict=False)]
+            r_list = [concate_result(r) for r in zip(*results, strict=True)]
             r = tuple(r_list)
             if len(r) == 1:
                 # avoid returning tuple if callable doesn't return tuple

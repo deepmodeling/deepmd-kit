@@ -258,7 +258,7 @@ class DescrptSeT(DescrptSe):
             sumr2 = []
             suma2 = []
             for cc, bb, tt, nn, mm in zip(
-                data_coord, data_box, data_atype, natoms_vec, mesh, strict=False
+                data_coord, data_box, data_atype, natoms_vec, mesh, strict=True
             ):
                 sysr, sysr2, sysa, sysa2, sysn = self._compute_dstats_sys_smth(
                     cc, bb, tt, nn, mm

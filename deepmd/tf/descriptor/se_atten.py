@@ -385,7 +385,7 @@ class DescrptSeAtten(DescrptSeA):
                     natoms_vec,
                     mesh,
                     real_natoms_vec,
-                    strict=False,
+                    strict=True,
                 ):
                     sysr, sysr2, sysa, sysa2, sysn = self._compute_dstats_sys_smth(
                         cc, bb, tt, nn, mm, mixed_type, r_n
@@ -398,7 +398,7 @@ class DescrptSeAtten(DescrptSeA):
                     suma2.append(sysa2)
             else:
                 for cc, bb, tt, nn, mm in zip(
-                    data_coord, data_box, data_atype, natoms_vec, mesh, strict=False
+                    data_coord, data_box, data_atype, natoms_vec, mesh, strict=True
                 ):
                     sysr, sysr2, sysa, sysa2, sysn = self._compute_dstats_sys_smth(
                         cc, bb, tt, nn, mm

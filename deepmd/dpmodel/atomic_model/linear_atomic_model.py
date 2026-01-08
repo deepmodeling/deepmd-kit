@@ -155,7 +155,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     def _sort_rcuts_sels(self) -> tuple[tuple[Array, Array], list[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = sorted(
-            zip(self.get_model_rcuts(), self.get_model_nsels(), strict=False),
+            zip(self.get_model_rcuts(), self.get_model_nsels(), strict=True),
             key=lambda x: (x[1], x[0]),
         )
         return [p[0] for p in zipped], [p[1] for p in zipped]
@@ -236,13 +236,13 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         raw_nlists = [
             nlists[get_multiple_nlist_key(rcut, sel)]
             for rcut, sel in zip(
-                self.get_model_rcuts(), self.get_model_nsels(), strict=False
+                self.get_model_rcuts(), self.get_model_nsels(), strict=True
             )
         ]
         nlists_ = [
             nl if mt else nlist_distinguish_types(nl, extended_atype, sel)
             for mt, nl, sel in zip(
-                self.mixed_types_list, raw_nlists, self.get_model_sels(), strict=False
+                self.mixed_types_list, raw_nlists, self.get_model_sels(), strict=True
             )
         ]
         ener_list = []
