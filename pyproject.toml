@@ -165,7 +165,7 @@ pin_pytorch_cpu = [
   # macos x86 has been deprecated
   "torch>=2.8,<2.10; platform_machine!='x86_64' or platform_system != 'Darwin'",
   "torch; platform_machine=='x86_64' and platform_system == 'Darwin'",
-  "torch_admp @ git+https://github.com/chiahsinchu/torch-admp.git@v1.1.1",
+  "torch-admp==1.1.1",
 ]
 pin_pytorch_gpu = [
   "torch==2.10.0",
