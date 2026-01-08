@@ -6,7 +6,6 @@ from deepmd.dpmodel.utils.env_mat_stat import (
     EnvMatStatSe,
 )
 
-
 __all__ = [
     "EnvMatStat",
     "EnvMatStatSe",
