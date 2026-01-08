@@ -58,7 +58,7 @@ class EnvMatStat(BaseEnvMatStat):
         for kk, vv in env_mat.items():
             xp = array_api_compat.array_namespace(vv)
             stats[kk] = StatItem(
-                number=vv.size,
+                number=array_api_compat.size(vv),
                 sum=float(xp.sum(vv)),
                 squared_sum=float(xp.sum(xp.square(vv))),
             )
@@ -104,6 +104,7 @@ class EnvMatStatSe(EnvMatStat):
                 self.last_dim,
             ),
             dtype=get_xp_precision(xp, "global"),
+            device=array_api_compat.device(data[0]["coord"]),
         )
         one_stddev = xp.ones(
             (
@@ -112,6 +113,7 @@ class EnvMatStatSe(EnvMatStat):
                 self.last_dim,
             ),
             dtype=get_xp_precision(xp, "global"),
+            device=array_api_compat.device(data[0]["coord"]),
         )
         if self.last_dim == 4:
             radial_only = False
@@ -175,7 +177,11 @@ class EnvMatStatSe(EnvMatStat):
             type_idx = xp.equal(
                 xp.reshape(atype, (1, -1)),
                 xp.reshape(
-                    xp.arange(self.descriptor.get_ntypes(), dtype=xp.int32),
+                    xp.arange(
+                        self.descriptor.get_ntypes(),
+                        dtype=xp.int32,
+                        device=array_api_compat.device(atype),
+                    ),
                     (-1, 1),
                 ),
             )
