@@ -79,16 +79,19 @@ class SummaryPrinter(ABC):
         try:
             if backend == "PyTorch":
                 import torch
+
                 if torch.cuda.is_available():
                     device_name = torch.cuda.get_device_name(0)
             elif backend == "TensorFlow":
                 import tensorflow as tf
+
                 gpus = tf.config.list_physical_devices("GPU")
                 if gpus:
                     # Use the first physical GPU device identifier as the device name
                     device_name = gpus[0].name
             elif backend == "Paddle":
                 import paddle
+
                 # Use Paddle's current device string (e.g., "gpu:0") as a device identifier
                 device_name = paddle.get_device()
         except Exception:
