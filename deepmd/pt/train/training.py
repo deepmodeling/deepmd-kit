@@ -721,6 +721,45 @@ class Trainer:
         self.profiling = training_params.get("profiling", False)
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
 
+        # Log model summary info (descriptor type and parameter count)
+        if self.rank == 0:
+            self._log_model_summary()
+
+    def _log_model_summary(self) -> None:
+        """Log model summary information including descriptor type and parameter count."""
+
+        def get_descriptor_type(model: Any) -> str:
+            """Get the descriptor type name from model."""
+            # Standard models have get_descriptor method
+            if hasattr(model, "get_descriptor"):
+                descriptor = model.get_descriptor()
+                return descriptor.serialize()["type"].upper()
+            # ZBL models: descriptor is in atomic_model.models[0]
+            if hasattr(model, "atomic_model") and hasattr(model.atomic_model, "models"):
+                dp_model = model.atomic_model.models[0]
+                if hasattr(dp_model, "descriptor"):
+                    return (
+                        dp_model.descriptor.serialize()["type"].upper() + " (with ZBL)"
+                    )
+            return "UNKNOWN"
+
+        def count_parameters(model: Any) -> int:
+            """Count the total number of trainable parameters."""
+            return sum(p.numel() for p in model.parameters())
+
+        if not self.multi_task:
+            desc_type = get_descriptor_type(self.model)
+            num_params = count_parameters(self.model)
+            log.info(f"Descriptor:    {desc_type}")
+            log.info(f"Model params:  {num_params / 1e6:.3f} M")
+        else:
+            # For multi-task, log each model's info
+            for model_key in self.model_keys:
+                desc_type = get_descriptor_type(self.model[model_key])
+                num_params = count_parameters(self.model[model_key])
+                log.info(f"Descriptor [{model_key}]:  {desc_type}")
+                log.info(f"Model params [{model_key}]: {num_params / 1e6:.3f} M")
+
     def run(self) -> None:
         fout = (
             open(
