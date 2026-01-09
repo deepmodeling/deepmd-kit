@@ -68,12 +68,23 @@ class SummaryPrinter(ABC):
                     "node list": ", ".join(set(nodelist)),
                 }
             )
-        build_info.update(
-            {
-                "running on": nodename,
-                "computing device": self.get_compute_device(),
-            }
-        )
+        if build_info["Backend"] == "PyTorch":
+            import torch
+
+            build_info.update(
+                {
+                    "running on": nodename,
+                    "computing device": self.get_compute_device(),
+                    "device name": torch.cuda.get_device_name(0),
+                }
+            )
+        else:
+            build_info.update(
+                {
+                    "running on": nodename,
+                    "computing device": self.get_compute_device(),
+                }
+            )
         if self.is_built_with_cuda():
             env_value = os.environ.get("CUDA_VISIBLE_DEVICES", "unset")
             build_info["CUDA_VISIBLE_DEVICES"] = env_value
