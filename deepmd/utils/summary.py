@@ -74,11 +74,28 @@ class SummaryPrinter(ABC):
                 "Computing Device": self.get_compute_device().upper(),
             }
         )
-        if build_info["Backend"] == "PyTorch":
-            import torch
-
-            if torch.cuda.is_available():
-                build_info["Device Name"] = torch.cuda.get_device_name(0)
+        backend = build_info.get("Backend")
+        device_name = None
+        try:
+            if backend == "PyTorch":
+                import torch
+                if torch.cuda.is_available():
+                    device_name = torch.cuda.get_device_name(0)
+            elif backend == "TensorFlow":
+                import tensorflow as tf
+                gpus = tf.config.list_physical_devices("GPU")
+                if gpus:
+                    # Use the first physical GPU device identifier as the device name
+                    device_name = gpus[0].name
+            elif backend == "Paddle":
+                import paddle
+                # Use Paddle's current device string (e.g., "gpu:0") as a device identifier
+                device_name = paddle.get_device()
+        except Exception:
+            # Best-effort device name detection; ignore failures silently
+            pass
+        if device_name:
+            build_info["Device Name"] = device_name
         if self.is_built_with_cuda():
             env_value = os.environ.get("CUDA_VISIBLE_DEVICES", "unset")
             build_info["CUDA_VISIBLE_DEVICES"] = env_value
