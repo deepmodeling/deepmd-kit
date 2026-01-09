@@ -421,7 +421,15 @@ class Trainer:
         if warmup_steps is not None:
             self.warmup_steps = warmup_steps
         elif warmup_ratio is not None:
+            if not 0 <= warmup_ratio < 1:
+                raise ValueError(f"warmup_ratio must be in [0, 1), got {warmup_ratio}")
             self.warmup_steps = int(warmup_ratio * self.num_steps)
+            if self.warmup_steps == 0 and warmup_ratio > 0:
+                log.warning(
+                    f"warmup_ratio {warmup_ratio} results in 0 warmup steps "
+                    f"due to truncation. Consider using a larger ratio or "
+                    f"specify warmup_steps directly."
+                )
         else:
             self.warmup_steps = 0
         self.warmup_start_factor = training_params.get("warmup_start_factor", 0.0)

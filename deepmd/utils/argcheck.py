@@ -3226,6 +3226,7 @@ def training_args(
     doc_warmup_ratio = (
         "The ratio of warmup steps to total training steps. "
         "The actual number of warmup steps is calculated as `warmup_ratio * numb_steps`. "
+        "Valid values are in the range [0.0, 1.0). "
         "If `warmup_steps` is set, this option will be ignored."
     )
     doc_warmup_start_factor = (
