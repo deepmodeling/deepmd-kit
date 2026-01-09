@@ -63,8 +63,7 @@ from deepmd.pt.utils.env import (
     SAMPLER_RECORD,
 )
 from deepmd.pt.utils.learning_rate import (
-    LearningRateCosine,
-    LearningRateExp,
+    BaseLR,
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
@@ -267,15 +266,9 @@ class Trainer:
                     _stat_file_path.root.close()
             return get_sample
 
-        def get_lr(lr_params: dict[str, Any]) -> LearningRateExp:
-            lr_type = lr_params.get("type", "exp")
+        def get_lr(lr_params: dict[str, Any]) -> BaseLR:
             lr_params["stop_steps"] = self.num_steps - self.warmup_steps
-            if lr_type == "exp":
-                lr_schedule = LearningRateExp(**lr_params)
-            elif lr_type == "cosine":
-                lr_schedule = LearningRateCosine(**lr_params)
-            else:
-                raise ValueError(f"Not supported learning rate type '{lr_type}'!")
+            lr_schedule = BaseLR(**lr_params)
             return lr_schedule
 
         # Optimizer
