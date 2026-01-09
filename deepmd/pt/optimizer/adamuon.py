@@ -160,7 +160,7 @@ class AdaMuonOptimizer(Optimizer):
     Key AdaMuon features:
     - Sign-stabilized orthogonal direction: Applies sign() before orthogonalization.
     - Per-element second-moment normalization using momentum coefficient.
-    - RMS-aligned global scaling: 0.2 * sqrt(min * max) / norm.
+    - RMS-aligned global scaling: 0.2 * sqrt(m * n) / norm.
 
     Parameters
     ----------
@@ -245,7 +245,7 @@ class AdaMuonOptimizer(Optimizer):
 
         Returns
         -------
-        loss : float, optional
+        loss : torch.Tensor, optional
             The loss value if closure is provided.
         """
         loss = None

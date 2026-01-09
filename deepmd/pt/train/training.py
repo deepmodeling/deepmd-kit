@@ -166,11 +166,9 @@ class Trainer:
                 # Common parameters
                 "weight_decay": params.get("weight_decay", 0.001),
                 # Muon/AdaMuon parameters
-                "muon_momentum": params.get("muon_momentum", 0.95),
+                "momentum": params.get("momentum", 0.95),
                 "adam_beta1": params.get("adam_beta1", 0.9),
                 "adam_beta2": params.get("adam_beta2", 0.95),
-                "adam_eps": params.get("adam_eps", 1e-7),
-                "nesterov": params.get("nesterov", True),
             }
             return opt_type, opt_param
 
@@ -710,7 +708,7 @@ class Trainer:
             self.optimizer = AdaMuonOptimizer(
                 self.wrapper.parameters(),
                 lr=self.lr_exp.start_lr,
-                momentum=float(self.opt_param.get("muon_momentum", 0.95)),
+                momentum=float(self.opt_param.get("momentum", 0.95)),
                 weight_decay=float(self.opt_param.get("weight_decay", 0.001)),
                 adam_betas=(
                     float(self.opt_param.get("adam_beta1", 0.9)),

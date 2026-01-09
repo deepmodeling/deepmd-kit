@@ -3375,7 +3375,7 @@ def training_args(
                     dict,
                     [
                         Argument(
-                            "muon_momentum",
+                            "momentum",
                             float,
                             optional=True,
                             default=0.95,
@@ -3413,8 +3413,8 @@ def training_args(
                             default=10.0,
                             doc=doc_only_pt_supported
                             + "Learning rate adjustment factor for Adam (1D params). "
-                            "If lr_adjust <= 0: use match-RMS scaling for AdaMuon, Adam uses lr directly. "
-                            "If lr_adjust > 0: use rectangular correction for AdaMuon, Adam uses lr/lr_adjust.",
+                            "If lr_adjust <= 0: use match-RMS scaling (scale = lr_adjust_coeff * sqrt(max(m, n))), Adam uses lr directly. "
+                            "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1.0, m/n))), Adam uses lr/lr_adjust.",
                         ),
                         Argument(
                             "lr_adjust_coeff",
