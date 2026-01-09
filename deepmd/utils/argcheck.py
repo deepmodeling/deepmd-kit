@@ -2533,7 +2533,7 @@ def learning_rate_variant_type_args() -> Variant:
         "type",
         [
             Argument("exp", dict, learning_rate_exp()),
-            Argument("cosine", dict, learning_rate_cosine()),
+            Argument("cosine", dict, learning_rate_cosine(), doc=doc_only_pt_supported),
         ],
         optional=True,
         default_tag="exp",
