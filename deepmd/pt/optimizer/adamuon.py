@@ -11,8 +11,12 @@ Key improvements over vanilla Muon:
 - Per-element second-moment (v_buffer) normalization
 - RMS-aligned global scaling
 
-Reference:
-    https://github.com/ethansmith2000/AdaMuon
+References
+----------
+.. [1] Ethan Smith et al., "AdaMuon: Adaptive Muon Optimizer," arXiv:2507.11005, 2025.
+       https://arxiv.org/abs/2507.11005
+.. [2] AdaMuon GitHub Repository.
+       https://github.com/ethansmith2000/AdaMuon
 """
 
 from __future__ import (
