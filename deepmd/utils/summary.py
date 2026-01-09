@@ -47,13 +47,13 @@ class SummaryPrinter(ABC):
     )
 
     BUILD: ClassVar = {
-        "installed to": "\n".join(deepmd.__path__),
-        "source": GLOBAL_CONFIG["git_summ"],
-        "source branch": GLOBAL_CONFIG["git_branch"],
-        "source commit": GLOBAL_CONFIG["git_hash"],
-        "source commit at": GLOBAL_CONFIG["git_date"],
-        "use float prec": global_float_prec,
-        "build variant": GLOBAL_CONFIG["dp_variant"],
+        "Installed To": "\n".join(deepmd.__path__),
+        "Source": GLOBAL_CONFIG["git_summ"],
+        "Source Branch": GLOBAL_CONFIG["git_branch"],
+        "Source Commit": GLOBAL_CONFIG["git_hash"],
+        "Source Commit At": GLOBAL_CONFIG["git_date"],
+        "Float Precision": global_float_prec.capitalize(),
+        "Build Variant": GLOBAL_CONFIG["dp_variant"].upper(),
     }
 
     def __call__(self) -> None:
@@ -64,21 +64,21 @@ class SummaryPrinter(ABC):
         if len(nodelist) > 1:
             build_info.update(
                 {
-                    "world size": str(len(nodelist)),
-                    "node list": ", ".join(set(nodelist)),
+                    "World Size": str(len(nodelist)),
+                    "Node List": ", ".join(set(nodelist)),
                 }
             )
         build_info.update(
             {
-                "running on": nodename,
-                "computing device": self.get_compute_device(),
+                "Running On": nodename,
+                "Computing Device": self.get_compute_device().upper(),
             }
         )
         if build_info["Backend"] == "PyTorch":
             import torch
 
             if torch.cuda.is_available():
-                build_info["device name"] = torch.cuda.get_device_name(0)
+                build_info["Device Name"] = torch.cuda.get_device_name(0)
         if self.is_built_with_cuda():
             env_value = os.environ.get("CUDA_VISIBLE_DEVICES", "unset")
             build_info["CUDA_VISIBLE_DEVICES"] = env_value
@@ -86,13 +86,13 @@ class SummaryPrinter(ABC):
             env_value = os.environ.get("HIP_VISIBLE_DEVICES", "unset")
             build_info["HIP_VISIBLE_DEVICES"] = env_value
         if self.is_built_with_cuda() or self.is_built_with_rocm():
-            build_info["Count of visible GPUs"] = str(self.get_ngpus())
+            build_info["Visible GPU Count"] = str(self.get_ngpus())
 
         intra, inter = get_default_nthreads()
         build_info.update(
             {
-                "num_intra_threads": str(intra),
-                "num_inter_threads": str(inter),
+                "NUM_INTRA_THREADS": str(intra),
+                "NUM_INTER_THREADS": str(inter),
             }
         )
         # count the maximum characters in the keys and values
