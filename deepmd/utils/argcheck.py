@@ -2509,12 +2509,32 @@ def learning_rate_exp() -> list[Argument]:
     return args
 
 
+def learning_rate_cosine() -> list[Argument]:
+    """
+    Defines a cosine annealing learning rate schedule.
+
+    The learning rate starts at `start_lr` and gradually decreases to `stop_lr`
+    following a cosine curve over the training steps.
+    """
+    doc_start_lr = "The learning rate at the start of the training."
+    doc_stop_lr = "The desired learning rate at the end of the training. "
+
+    args = [
+        Argument("start_lr", float, optional=True, default=1e-3, doc=doc_start_lr),
+        Argument("stop_lr", float, optional=True, default=1e-5, doc=doc_stop_lr),
+    ]
+    return args
+
+
 def learning_rate_variant_type_args() -> Variant:
     doc_lr = "The type of the learning rate."
 
     return Variant(
         "type",
-        [Argument("exp", dict, learning_rate_exp())],
+        [
+            Argument("exp", dict, learning_rate_exp()),
+            Argument("cosine", dict, learning_rate_cosine()),
+        ],
         optional=True,
         default_tag="exp",
         doc=doc_lr,
