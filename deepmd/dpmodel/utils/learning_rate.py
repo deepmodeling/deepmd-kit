@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from abc import (
+    ABC,
+    abstractmethod,
+)
 from typing import (
     Any,
 )
@@ -6,7 +10,33 @@ from typing import (
 import numpy as np
 
 
-class LearningRateExp:
+class LearningRateSchedule(ABC):
+    def __init__(
+        self, start_lr: float, stop_lr: float, stop_steps: int, **kwargs: Any
+    ) -> None:
+        """
+        Base class for learning rate schedules.
+
+        Parameters
+        ----------
+        start_lr
+            The initial learning rate.
+        stop_lr
+            The final learning rate.
+        stop_steps
+            The total training steps for learning rate scheduler.
+        """
+        self.start_lr = start_lr
+        self.stop_lr = stop_lr
+        self.stop_steps = stop_steps
+
+    @abstractmethod
+    def value(self, step: int) -> np.float64:
+        """Get the learning rate at the given step."""
+        pass
+
+
+class LearningRateExp(LearningRateSchedule):
     def __init__(
         self,
         start_lr: float,
@@ -37,7 +67,7 @@ class LearningRateExp:
             If provided, the decay rate will be set instead of
             calculating it through interpolation between start_lr and stop_lr.
         """
-        self.start_lr = start_lr
+        super().__init__(start_lr, stop_lr, stop_steps, **kwargs)
         default_ds = 100 if stop_steps // 10 > 100 else stop_steps // 100 + 1
         self.decay_steps = decay_steps
         if self.decay_steps >= stop_steps:
@@ -47,7 +77,7 @@ class LearningRateExp:
         )
         if decay_rate is not None:
             self.decay_rate = decay_rate
-        self.min_lr = stop_lr
+        self.min_lr = self.stop_lr
 
     def value(self, step: int) -> np.float64:
         """Get the learning rate at the given step."""
@@ -57,7 +87,7 @@ class LearningRateExp:
         return step_lr
 
 
-class LearningRateCosine:
+class LearningRateCosine(LearningRateSchedule):
     def __init__(
         self,
         start_lr: float,
@@ -80,9 +110,8 @@ class LearningRateCosine:
             The total number of training steps over which the learning rate
             will be annealed from start_lr to stop_lr.
         """
-        self.start_lr = start_lr
+        super().__init__(start_lr, stop_lr, stop_steps, **kwargs)
         self.lr_min_factor = stop_lr / start_lr
-        self.stop_steps = stop_steps
 
     def value(self, step: int) -> np.float64:
         if step >= self.stop_steps:
