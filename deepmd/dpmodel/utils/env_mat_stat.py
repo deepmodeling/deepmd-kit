@@ -96,6 +96,14 @@ class EnvMatStatSe(EnvMatStat):
         dict[str, StatItem]
             The statistics of the environment matrix.
         """
+        if self.last_dim == 4:
+            radial_only = False
+        elif self.last_dim == 1:
+            radial_only = True
+        else:
+            raise ValueError(
+                "last_dim should be 1 for raial-only or 4 for full descriptor."
+            )
         if len(data) == 0:
             # workaround to fix IndexError: list index out of range
             yield from ()
@@ -119,14 +127,6 @@ class EnvMatStatSe(EnvMatStat):
             dtype=get_xp_precision(xp, "global"),
             device=array_api_compat.device(data[0]["coord"]),
         )
-        if self.last_dim == 4:
-            radial_only = False
-        elif self.last_dim == 1:
-            radial_only = True
-        else:
-            raise ValueError(
-                "last_dim should be 1 for raial-only or 4 for full descriptor."
-            )
         for system in data:
             coord, atype, box, natoms = (
                 system["coord"],
