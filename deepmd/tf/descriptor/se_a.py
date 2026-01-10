@@ -374,7 +374,7 @@ class DescrptSeA(DescrptSe):
             sumr2 = []
             suma2 = []
             for cc, bb, tt, nn, mm in zip(
-                data_coord, data_box, data_atype, natoms_vec, mesh
+                data_coord, data_box, data_atype, natoms_vec, mesh, strict=True
             ):
                 sysr, sysr2, sysa, sysa2, sysn = self._compute_dstats_sys_smth(
                     cc, bb, tt, nn, mm
@@ -1331,7 +1331,7 @@ class DescrptSeA(DescrptSe):
                 start_index_old[0] = 0
 
                 for nn, oo, ii, jj in zip(
-                    n_descpt, n_descpt_old, start_index, start_index_old
+                    n_descpt, n_descpt_old, start_index, start_index_old, strict=True
                 ):
                     if nn < oo:
                         # new size is smaller, copy part of std

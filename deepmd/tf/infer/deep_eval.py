@@ -752,7 +752,8 @@ class DeepEval(DeepEvalBackend):
             output = (output,)
 
         output_dict = {
-            odef.name: oo for oo, odef in zip(output, self.output_def.var_defs.values())
+            odef.name: oo
+            for oo, odef in zip(output, self.output_def.var_defs.values(), strict=True)
         }
         # ugly!!
         if self.modifier_type is not None and issubclass(self.model_type, DeepPot):

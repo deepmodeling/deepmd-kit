@@ -187,7 +187,7 @@ class DescrptLocFrame(Descriptor):
             sumn = []
             sumv2 = []
             for cc, bb, tt, nn, mm in zip(
-                data_coord, data_box, data_atype, natoms_vec, mesh
+                data_coord, data_box, data_atype, natoms_vec, mesh, strict=True
             ):
                 sysv, sysv2, sysn = self._compute_dstats_sys_nonsmth(cc, bb, tt, nn, mm)
                 sumv.append(sysv)
