@@ -140,6 +140,9 @@ jax = [
     # The pinning of ml_dtypes may conflict with TF
     # 'jax-ai-stack;python_version>="3.10"',
 ]
+torch = [
+    "torch-admp",
+]
 
 [tool.deepmd_build_backend.scripts]
 dp = "deepmd.main:main"
