@@ -12,7 +12,9 @@ import numpy as np
 from deepmd.common import (
     j_get_type,
 )
-from deepmd.dpmodel.array_api import Array
+from deepmd.dpmodel.array_api import (
+    Array,
+)
 from deepmd.utils.plugin import (
     PluginVariant,
     make_plugin_registry,
