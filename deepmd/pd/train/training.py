@@ -14,7 +14,6 @@ from typing import (
 )
 
 import numpy as np
-from deepmd.dpmodel.utils.learning_rate import BaseLR
 import paddle
 import paddle.distributed as dist
 from paddle.distributed import (
@@ -30,6 +29,9 @@ from paddle.io import (
 
 from deepmd.common import (
     symlink_prefix_files,
+)
+from deepmd.dpmodel.utils.learning_rate import (
+    BaseLR,
 )
 from deepmd.loggers.training import (
     format_training_message,
@@ -62,9 +64,6 @@ from deepmd.pd.utils.env import (
     NUM_WORKERS,
     SAMPLER_RECORD,
     enable_prim,
-)
-from deepmd.pd.utils.learning_rate import (
-    LearningRateExp,
 )
 from deepmd.pd.utils.stat import (
     make_stat_input,
