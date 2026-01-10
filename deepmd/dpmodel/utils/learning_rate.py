@@ -12,6 +12,7 @@ import numpy as np
 from deepmd.common import (
     j_get_type,
 )
+from deepmd.dpmodel.array_api import Array
 from deepmd.utils.plugin import (
     PluginVariant,
     make_plugin_registry,
@@ -44,7 +45,7 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
         self.stop_steps = stop_steps
 
     @abstractmethod
-    def value(self, step: int, xp: Any = np) -> np.float64:
+    def value(self, step: int, xp: Any = np) -> Array:
         """Get the learning rate at the given step."""
         pass
 
@@ -93,7 +94,7 @@ class LearningRateExp(BaseLR):
             self.decay_rate = decay_rate
         self.min_lr = self.stop_lr
 
-    def value(self, step: int, xp: Any = np) -> np.float64:
+    def value(self, step: int, xp: Any = np) -> Array:
         """Get the learning rate at the given step."""
         step_lr = self.start_lr * xp.pow(
             xp.asarray(self.decay_rate), step // self.decay_steps
@@ -131,7 +132,7 @@ class LearningRateCosine(BaseLR):
         super().__init__(start_lr, stop_lr, stop_steps, **kwargs)
         self.lr_min_factor = stop_lr / start_lr
 
-    def value(self, step: int, xp: Any = np) -> np.float64:
+    def value(self, step: int, xp: Any = np) -> Array:
         min_lr = self.start_lr * self.lr_min_factor
         step_lr = self.start_lr * (
             self.lr_min_factor
