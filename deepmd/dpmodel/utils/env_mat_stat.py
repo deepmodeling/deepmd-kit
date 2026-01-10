@@ -99,6 +99,7 @@ class EnvMatStatSe(EnvMatStat):
         if len(data) == 0:
             # workaround to fix IndexError: list index out of range
             yield from ()
+            return
         xp = array_api_compat.array_namespace(data[0]["coord"])
         zero_mean = xp.zeros(
             (
