@@ -72,7 +72,7 @@ class TestActivationFunctionConsistent(unittest.TestCase):
     @unittest.skipUnless(
         sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
     )
-    def test_arary_api_strict(self) -> None:
+    def test_array_api_strict(self) -> None:
         self.compare_test_with_ref(xp)
 
     @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
