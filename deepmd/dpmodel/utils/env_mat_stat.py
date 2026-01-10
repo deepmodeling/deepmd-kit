@@ -96,6 +96,9 @@ class EnvMatStatSe(EnvMatStat):
         dict[str, StatItem]
             The statistics of the environment matrix.
         """
+        if len(data) == 0:
+            # workaround to fix IndexError: list index out of range
+            return
         xp = array_api_compat.array_namespace(data[0]["coord"])
         zero_mean = xp.zeros(
             (
