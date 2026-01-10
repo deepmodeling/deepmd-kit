@@ -140,7 +140,9 @@ class IOTest:
         nframes = self.atype.shape[0]
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         rets = []
+        rets_atomic = []
         rets_nopbc = []
+        rets_nopbc_atomic = []
         for backend_name, suffix_idx in (
             # unfortunately, jax2tf cannot work with tf v1 behaviors
             ("jax", 2) if DP_TEST_TF2_ONLY else ("tensorflow", 0),
@@ -183,7 +185,8 @@ class IOTest:
                 aparam=aparam,
                 atomic=True,
             )
-            rets.append(ret)
+            rets.append(ret[:3])
+            rets_atomic.append(ret[3:])
             ret = deep_eval.eval(
                 self.coords,
                 None,
@@ -200,22 +203,24 @@ class IOTest:
                 aparam=aparam,
                 atomic=True,
             )
-            rets_nopbc.append(ret)
-        for ret in rets[1:]:
-            for vv1, vv2 in zip(rets[0], ret, strict=True):
-                if np.isnan(vv2).all():
-                    # expect all nan if not supported
-                    continue
-                np.testing.assert_allclose(vv1, vv2, rtol=1e-12, atol=1e-12)
+            rets_nopbc.append(ret[:3])
+            rets_nopbc_atomic.append(ret[3:])
 
-        for idx, ret in enumerate(rets_nopbc[1:]):
-            for vv1, vv2 in zip(rets_nopbc[0], ret, strict=True):
-                if np.isnan(vv2).all():
-                    # expect all nan if not supported
-                    continue
-                np.testing.assert_allclose(
-                    vv1, vv2, rtol=1e-12, atol=1e-12, err_msg=f"backend {idx + 1}"
-                )
+        for rets_idx, rets_x in enumerate(
+            (rets, rets_atomic, rets_nopbc, rets_nopbc_atomic)
+        ):
+            for idx, ret in enumerate(rets_x[1:]):
+                for vv1, vv2 in zip(rets_x[0], ret, strict=True):
+                    if np.isnan(vv2).all():
+                        # expect all nan if not supported
+                        continue
+                    np.testing.assert_allclose(
+                        vv1,
+                        vv2,
+                        rtol=1e-12,
+                        atol=1e-12,
+                        err_msg=f"backend {idx + 1} for rets_idx {rets_idx}",
+                    )
 
 
 class TestDeepPot(unittest.TestCase, IOTest):
