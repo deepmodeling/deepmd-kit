@@ -3,10 +3,15 @@ from abc import (
     ABC,
     abstractmethod,
 )
+from types import ModuleType
 from typing import (
     Any,
+    overload,
+    override,
 )
 
+import array_api_compat
+import array_api_compat
 import numpy as np
 
 from deepmd.common import (
@@ -45,9 +50,25 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
         self.stop_steps = stop_steps
 
     @abstractmethod
-    def value(self, step: int, xp: Any = np) -> Array:
+    def value(self, step: int | Array) -> Array:
         """Get the learning rate at the given step."""
+        # in optax, step will be a jnp.ndarray passed in JIT mode
         pass
+
+    @overload
+    def array_namespace(self, step: int) -> ModuleType: ...
+    @overload
+    def array_namespace(self, step: Array) -> Any: ...
+
+    def array_namespace(self, step: int | Array) -> Any:
+        """Get the array API namespace based on the type of step.
+
+        If the step is int, use NumPy.
+        """
+        if array_api_compat.is_array_api_obj(step):
+            xp = array_api_compat.array_namespace(step)
+            return xp
+        return np
 
 
 @BaseLR.register("exp")
@@ -94,8 +115,9 @@ class LearningRateExp(BaseLR):
             self.decay_rate = decay_rate
         self.min_lr = self.stop_lr
 
-    def value(self, step: int, xp: Any = np) -> Array:
+    def value(self, step: int | Array) -> Array:
         """Get the learning rate at the given step."""
+        xp = self.array_namespace(step)
         step_lr = self.start_lr * xp.pow(
             xp.asarray(self.decay_rate), step // self.decay_steps
         )
@@ -132,7 +154,8 @@ class LearningRateCosine(BaseLR):
         super().__init__(start_lr, stop_lr, stop_steps, **kwargs)
         self.lr_min_factor = stop_lr / start_lr
 
-    def value(self, step: int, xp: Any = np) -> Array:
+    def value(self, step: int | Array) -> Array:
+        xp = self.array_namespace(step)
         min_lr = self.start_lr * self.lr_min_factor
         step_lr = self.start_lr * (
             self.lr_min_factor
