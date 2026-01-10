@@ -57,21 +57,6 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
         # in optax, step will be a jnp.ndarray passed in JIT mode
         pass
 
-    @overload
-    def array_namespace(self, step: int) -> ModuleType: ...
-    @overload
-    def array_namespace(self, step: Array) -> Any: ...
-
-    def array_namespace(self, step: int | Array) -> Any:
-        """Get the array API namespace based on the type of step.
-
-        If the step is int, use NumPy.
-        """
-        if array_api_compat.is_array_api_obj(step):
-            xp = array_api_compat.array_namespace(step)
-            return xp
-        return np
-
 
 @BaseLR.register("exp")
 class LearningRateExp(BaseLR):
@@ -119,9 +104,12 @@ class LearningRateExp(BaseLR):
 
     def value(self, step: int | Array) -> Array:
         """Get the learning rate at the given step."""
-        xp = self.array_namespace(step)
+        if not array_api_compat.is_array_api_obj(step):
+            step = np.asarray(step)
+        xp = array_api_compat.array_namespace(step)
         step_lr = self.start_lr * xp.pow(
-            xp.asarray(self.decay_rate), step // self.decay_steps
+            xp.asarray(self.decay_rate, device=array_api_compat.device(step)),
+            xp.astype(step // self.decay_steps, xp.float64),
         )
         # the original implementation `if step_lr < self.min_lr:`
         # will cause a dynamic graph which is unsupported in JAX JIT
@@ -157,13 +145,23 @@ class LearningRateCosine(BaseLR):
         self.lr_min_factor = stop_lr / start_lr
 
     def value(self, step: int | Array) -> Array:
-        xp = self.array_namespace(step)
+        if not array_api_compat.is_array_api_obj(step):
+            step = np.asarray(step)
+        xp = array_api_compat.array_namespace(step)
         min_lr = self.start_lr * self.lr_min_factor
         step_lr = self.start_lr * (
             self.lr_min_factor
             + 0.5
             * (1 - self.lr_min_factor)
-            * (1 + xp.cos(xp.asarray(xp.pi * (step / self.stop_steps))))
+            * (
+                1
+                + xp.cos(
+                    xp.asarray(
+                        xp.pi * (xp.astype(step, xp.float64) / self.stop_steps),
+                        device=array_api_compat.device(step),
+                    )
+                )
+            )
         )
-        step_lr = xp.where(xp.asarray(step) >= self.stop_steps, min_lr, step_lr)
+        step_lr = xp.where(step >= self.stop_steps, min_lr, step_lr)
         return step_lr

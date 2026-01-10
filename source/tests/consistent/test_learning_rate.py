@@ -7,6 +7,7 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.array_api import Array
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
@@ -24,6 +25,8 @@ from .common import (
 if INSTALLED_PT:
     import array_api_compat.torch as torch_xp
     import torch
+    from deepmd.pt.utils.utils import to_torch_tensor
+
 if INSTALLED_JAX:
     from deepmd.jax.env import (
         jnp,
@@ -55,16 +58,18 @@ class TestLearningRateConsistent(unittest.TestCase):
         (lr_param,) = self.param
         self.lr = BaseLR(**lr_param)
         self.step = 500000
-        self.ref = self.lr.value(self.step, xp=np)
+        self.ref = self.lr.value(self.step)
 
-    def compare_test_with_ref(self, xp: Any) -> None:
-        test = self.lr.value(self.step, xp=xp)
+    def compare_test_with_ref(self, step: Array) -> None:
+        test = self.lr.value(step)
         np.testing.assert_allclose(self.ref, to_numpy_array(test), atol=1e-10)
+
+    def compare_numpy_with_ref(self, step: Array) -> None:
+        self.compare_test_with_ref(np.asarray(step))
 
     @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
     def test_pt_consistent_with_ref(self) -> None:
-        with torch.device("cpu"):
-            self.compare_test_with_ref(torch_xp)
+        self.compare_test_with_ref(to_torch_tensor(self.step))
 
     @unittest.skipUnless(
         INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed"
@@ -73,8 +78,8 @@ class TestLearningRateConsistent(unittest.TestCase):
         sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
     )
     def test_array_api_strict(self) -> None:
-        self.compare_test_with_ref(xp)
+        self.compare_test_with_ref(xp.asarray(self.step))
 
     @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
     def test_jax_consistent_with_ref(self) -> None:
-        self.compare_test_with_ref(jnp)
+        self.compare_test_with_ref(jnp.array(self.step))
