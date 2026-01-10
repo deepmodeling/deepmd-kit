@@ -98,7 +98,7 @@ class EnvMatStatSe(EnvMatStat):
         """
         if len(data) == 0:
             # workaround to fix IndexError: list index out of range
-            return
+            yield from ()
         xp = array_api_compat.array_namespace(data[0]["coord"])
         zero_mean = xp.zeros(
             (
@@ -189,11 +189,16 @@ class EnvMatStatSe(EnvMatStat):
                 ),
             )
             if "pair_exclude_types" in system:
+                pair_exclude_mask = PairExcludeMask(
+                    self.descriptor.get_ntypes(), system["pair_exclude_types"]
+                )
+                pair_exclude_mask.type_mask = xp.asarray(
+                    pair_exclude_mask.type_mask,
+                    device=array_api_compat.device(atype),
+                )
                 # shape: (1, nloc, nnei)
                 exclude_mask = xp.reshape(
-                    PairExcludeMask(
-                        self.descriptor.get_ntypes(), system["pair_exclude_types"]
-                    ).build_type_exclude_mask(nlist, extended_atype),
+                    pair_exclude_mask.build_type_exclude_mask(nlist, extended_atype),
                     (1, coord.shape[0] * coord.shape[1], -1),
                 )
                 # shape: (ntypes, nloc, nnei)
