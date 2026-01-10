@@ -3,14 +3,14 @@ from abc import (
     ABC,
     abstractmethod,
 )
-from types import ModuleType
+from types import (
+    ModuleType,
+)
 from typing import (
     Any,
     overload,
-    override,
 )
 
-import array_api_compat
 import array_api_compat
 import numpy as np
 
