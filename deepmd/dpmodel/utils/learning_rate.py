@@ -44,7 +44,7 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
         self.stop_steps = stop_steps
 
     @abstractmethod
-    def value(self, step: int) -> np.float64:
+    def value(self, step: int, xp: Any = np) -> np.float64:
         """Get the learning rate at the given step."""
         pass
 
@@ -88,16 +88,19 @@ class LearningRateExp(BaseLR):
             self.decay_steps = default_ds
         self.decay_rate = np.exp(
             np.log(stop_lr / self.start_lr) / (stop_steps / self.decay_steps)
-        )
+        ).item()
         if decay_rate is not None:
             self.decay_rate = decay_rate
         self.min_lr = self.stop_lr
 
-    def value(self, step: int) -> np.float64:
+    def value(self, step: int, xp: Any = np) -> np.float64:
         """Get the learning rate at the given step."""
-        step_lr = self.start_lr * np.power(self.decay_rate, step // self.decay_steps)
-        if step_lr < self.min_lr:
-            step_lr = self.min_lr
+        step_lr = self.start_lr * xp.pow(
+            xp.asarray(self.decay_rate), step // self.decay_steps
+        )
+        # the original implementation `if step_lr < self.min_lr:`
+        # will cause a dynamic graph which is unsupported in JAX JIT
+        step_lr = xp.clip(step_lr, self.min_lr, None)
         return step_lr
 
 
@@ -128,12 +131,13 @@ class LearningRateCosine(BaseLR):
         super().__init__(start_lr, stop_lr, stop_steps, **kwargs)
         self.lr_min_factor = stop_lr / start_lr
 
-    def value(self, step: int) -> np.float64:
-        if step >= self.stop_steps:
-            return self.start_lr * self.lr_min_factor
-        return self.start_lr * (
+    def value(self, step: int, xp: Any = np) -> np.float64:
+        min_lr = self.start_lr * self.lr_min_factor
+        step_lr = self.start_lr * (
             self.lr_min_factor
             + 0.5
             * (1 - self.lr_min_factor)
-            * (1 + np.cos(np.pi * (step / self.stop_steps)))
+            * (1 + xp.cos(xp.asarray(xp.pi * (step / self.stop_steps))))
         )
+        step_lr = xp.where(xp.asarray(step) >= self.stop_steps, min_lr, step_lr)
+        return step_lr
