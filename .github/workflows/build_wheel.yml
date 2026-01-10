@@ -175,7 +175,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/devel' && github.repository_owner == 'deepmodeling'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && github.repository_owner == 'deepmodeling'
     steps:
       - name: Deploy to GitHub Pages
         id: deployment

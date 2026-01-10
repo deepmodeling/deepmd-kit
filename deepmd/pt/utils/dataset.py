@@ -9,6 +9,12 @@ from torch.utils.data import (
     Dataset,
 )
 
+from deepmd.pt.modifier import (
+    BaseModifier,
+)
+from deepmd.pt.utils.env import (
+    NUM_WORKERS,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
     DeepmdData,
@@ -16,16 +22,25 @@ from deepmd.utils.data import (
 
 
 class DeepmdDataSetForLoader(Dataset):
-    def __init__(self, system: str, type_map: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        system: str,
+        type_map: list[str] | None = None,
+        modifier: BaseModifier | None = None,
+    ) -> None:
         """Construct DeePMD-style dataset containing frames cross different systems.
 
         Args:
         - systems: Paths to systems.
         - type_map: Atom types.
+        - modifier: Data modifier.
         """
         self.system = system
         self._type_map = type_map
-        self._data_system = DeepmdData(sys_path=system, type_map=self._type_map)
+        self.modifier = modifier
+        self._data_system = DeepmdData(
+            sys_path=system, type_map=self._type_map, modifier=self.modifier
+        )
         self.mixed_type = self._data_system.mixed_type
         self._ntypes = self._data_system.get_ntypes()
         self._natoms = self._data_system.get_natoms()
@@ -36,7 +51,7 @@ class DeepmdDataSetForLoader(Dataset):
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         """Get a frame from the selected system."""
-        b_data = self._data_system.get_item_torch(index)
+        b_data = self._data_system.get_item_torch(index, max(1, NUM_WORKERS))
         b_data["natoms"] = self._natoms_vec
         return b_data
 
@@ -55,3 +70,6 @@ class DeepmdDataSetForLoader(Dataset):
                 dtype=data_item["dtype"],
                 output_natoms_for_type_sel=data_item["output_natoms_for_type_sel"],
             )
+
+    def preload_and_modify_all_data_torch(self) -> None:
+        self._data_system.preload_and_modify_all_data_torch(max(1, NUM_WORKERS))

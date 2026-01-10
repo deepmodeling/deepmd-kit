@@ -1,6 +1,6 @@
 # Install from source code
 
-Please follow our [GitHub](https://github.com/deepmodeling/deepmd-kit) webpage to download the [latest released version](https://github.com/deepmodeling/deepmd-kit/tree/master) and [development version](https://github.com/deepmodeling/deepmd-kit/tree/devel).
+Please follow our [GitHub](https://github.com/deepmodeling/deepmd-kit) webpage to download the source code of a specific version or the [development version](https://github.com/deepmodeling/deepmd-kit/tree/master).
 
 Or get the DeePMD-kit source code by `git clone`
 
