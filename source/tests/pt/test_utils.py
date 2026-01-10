@@ -21,7 +21,7 @@ class TestCvt(unittest.TestCase):
         for ptp, npp in zip(
             [torch.float16, torch.float32, torch.float64],
             [np.float16, np.float32, np.float64],
-            strict=False,
+            strict=True,
         ):
             foo = foo.astype(npp)
             bar = to_torch_tensor(foo)
