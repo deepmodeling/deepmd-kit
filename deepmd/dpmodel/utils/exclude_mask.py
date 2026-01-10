@@ -120,7 +120,16 @@ class PairExcludeMask:
         nall = atype_ext.shape[1]
         # add virtual atom of type ntypes. nf x nall+1
         ae = xp.concat(
-            [atype_ext, self.ntypes * xp.ones([nf, 1], dtype=atype_ext.dtype)], axis=-1
+            [
+                atype_ext,
+                self.ntypes
+                * xp.ones(
+                    [nf, 1],
+                    dtype=atype_ext.dtype,
+                    device=array_api_compat.device(atype_ext),
+                ),
+            ],
+            axis=-1,
         )
         type_i = xp.reshape(atype_ext[:, :nloc], (nf, nloc)) * (self.ntypes + 1)
         # nf x nloc x nnei
