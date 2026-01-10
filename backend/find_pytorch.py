@@ -92,7 +92,7 @@ def find_pytorch() -> tuple[str | None, list[str]]:
 @lru_cache
 def get_pt_requirement(
     pt_version: str = "",
-    static_requirement: list[str] | None = None,
+    static_requirement: tuple[str] | None = None,
 ) -> dict:
     """Get PyTorch requirement when PT is not installed.
 
@@ -102,7 +102,7 @@ def get_pt_requirement(
     ----------
     pt_version : str, optional
         PT version
-    static_requirement : list[str] or None, optional
+    static_requirement : tuple[str] or None, optional
         Static requirements
 
     Returns
@@ -131,7 +131,7 @@ def get_pt_requirement(
     else:
         mpi_requirement = []
     if static_requirement is None:
-        static_requirement = []
+        static_requirement = ()
 
     return {
         "torch": [

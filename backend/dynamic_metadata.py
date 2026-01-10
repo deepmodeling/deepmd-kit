@@ -53,6 +53,6 @@ def dynamic_metadata(
             **optional_dependencies,
             **get_tf_requirement(tf_version),
             **get_pt_requirement(
-                pt_version, static_requirement=torch_static_requirement
+                pt_version, static_requirement=tuple(torch_static_requirement)
             ),
         }
