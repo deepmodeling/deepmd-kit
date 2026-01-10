@@ -1,12 +1,56 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from abc import (
+    ABC,
+    abstractmethod,
+)
 from typing import (
     Any,
 )
 
 import numpy as np
 
+from deepmd.common import (
+    j_get_type,
+)
+from deepmd.utils.plugin import (
+    PluginVariant,
+    make_plugin_registry,
+)
 
-class LearningRateExp:
+
+class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
+    def __new__(cls: type, *args: Any, **kwargs: Any) -> Any:
+        if cls is BaseLR:
+            cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
+        return super().__new__(cls)
+
+    def __init__(
+        self, start_lr: float, stop_lr: float, stop_steps: int, **kwargs: Any
+    ) -> None:
+        """
+        Base class for learning rate schedules.
+
+        Parameters
+        ----------
+        start_lr
+            The initial learning rate.
+        stop_lr
+            The final learning rate.
+        stop_steps
+            The total training steps for learning rate scheduler.
+        """
+        self.start_lr = start_lr
+        self.stop_lr = stop_lr
+        self.stop_steps = stop_steps
+
+    @abstractmethod
+    def value(self, step: int) -> np.float64:
+        """Get the learning rate at the given step."""
+        pass
+
+
+@BaseLR.register("exp")
+class LearningRateExp(BaseLR):
     def __init__(
         self,
         start_lr: float,
@@ -37,7 +81,7 @@ class LearningRateExp:
             If provided, the decay rate will be set instead of
             calculating it through interpolation between start_lr and stop_lr.
         """
-        self.start_lr = start_lr
+        super().__init__(start_lr, stop_lr, stop_steps, **kwargs)
         default_ds = 100 if stop_steps // 10 > 100 else stop_steps // 100 + 1
         self.decay_steps = decay_steps
         if self.decay_steps >= stop_steps:
@@ -47,7 +91,7 @@ class LearningRateExp:
         )
         if decay_rate is not None:
             self.decay_rate = decay_rate
-        self.min_lr = stop_lr
+        self.min_lr = self.stop_lr
 
     def value(self, step: int) -> np.float64:
         """Get the learning rate at the given step."""
@@ -55,3 +99,41 @@ class LearningRateExp:
         if step_lr < self.min_lr:
             step_lr = self.min_lr
         return step_lr
+
+
+@BaseLR.register("cosine")
+class LearningRateCosine(BaseLR):
+    def __init__(
+        self,
+        start_lr: float,
+        stop_lr: float,
+        stop_steps: int,
+        **kwargs: Any,
+    ) -> None:
+        """
+        Defines a cosine annealing learning rate schedule.
+        The learning rate starts at `start_lr` and gradually decreases to `stop_lr`
+        following a cosine curve over the training steps.
+
+        Parameters
+        ----------
+        start_lr
+            The initial learning rate at the beginning of training.
+        stop_lr
+            The final learning rate at the end of training.
+        stop_steps
+            The total number of training steps over which the learning rate
+            will be annealed from start_lr to stop_lr.
+        """
+        super().__init__(start_lr, stop_lr, stop_steps, **kwargs)
+        self.lr_min_factor = stop_lr / start_lr
+
+    def value(self, step: int) -> np.float64:
+        if step >= self.stop_steps:
+            return self.start_lr * self.lr_min_factor
+        return self.start_lr * (
+            self.lr_min_factor
+            + 0.5
+            * (1 - self.lr_min_factor)
+            * (1 + np.cos(np.pi * (step / self.stop_steps)))
+        )

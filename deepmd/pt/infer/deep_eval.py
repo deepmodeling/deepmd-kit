@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import io
 import json
 import logging
 from collections.abc import (
@@ -171,8 +172,21 @@ class DeepEval(DeepEvalBackend):
             self.dp = ModelWrapper(model)
             self.dp.load_state_dict(state_dict)
         elif str(self.model_path).endswith(".pth"):
-            model = torch.jit.load(model_file, map_location=env.DEVICE)
-            self.dp = ModelWrapper(model)
+            extra_files = {"data_modifier.pth": ""}
+            model = torch.jit.load(
+                model_file, map_location=env.DEVICE, _extra_files=extra_files
+            )
+            modifier = None
+            # Load modifier if it exists in extra_files
+            if len(extra_files["data_modifier.pth"]) > 0:
+                # Create a file-like object from the in-memory data
+                modifier_data = extra_files["data_modifier.pth"]
+                if isinstance(modifier_data, bytes):
+                    modifier_data = io.BytesIO(modifier_data)
+                # Load the modifier directly from the file-like object
+                modifier = torch.jit.load(modifier_data, map_location=env.DEVICE)
+            self.dp = ModelWrapper(model, modifier=modifier)
+            self.modifier = modifier
             model_def_script = self.dp.model["Default"].get_model_def_script()
             if model_def_script:
                 self.model_def_script = json.loads(model_def_script)

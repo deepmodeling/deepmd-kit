@@ -2,6 +2,7 @@
 
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import bisect
+import copy
 import functools
 import logging
 from concurrent.futures import (
@@ -139,6 +140,13 @@ class DeepmdData:
         # The prefix sum stores the range of indices contained in each directory, which is needed by get_item method
         self.prefix_sum = np.cumsum(frames_list).tolist()
 
+        self.use_modifier_cache = True
+        if self.modifier is not None:
+            if hasattr(self.modifier, "use_cache"):
+                self.use_modifier_cache = self.modifier.use_cache
+            # Cache for modified frames when use_modifier_cache is True
+            self._modified_frame_cache = {}
+
     def add(
         self,
         key: str,
@@ -245,17 +253,27 @@ class DeepmdData:
         """Check if the system can get a test dataset with `test_size` frames."""
         return self.check_batch_size(test_size)
 
-    def get_item_torch(self, index: int) -> dict:
+    def get_item_torch(
+        self,
+        index: int,
+        num_worker: int = 1,
+    ) -> dict:
         """Get a single frame data . The frame is picked from the data system by index. The index is coded across all the sets.
 
         Parameters
         ----------
         index
             index of the frame
+        num_worker
+            number of workers for parallel data modification
         """
-        return self.get_single_frame(index)
+        return self.get_single_frame(index, num_worker)
 
-    def get_item_paddle(self, index: int) -> dict:
+    def get_item_paddle(
+        self,
+        index: int,
+        num_worker: int = 1,
+    ) -> dict:
         """Get a single frame data . The frame is picked from the data system by index. The index is coded across all the sets.
         Same with PyTorch backend.
 
@@ -263,8 +281,10 @@ class DeepmdData:
         ----------
         index
             index of the frame
+        num_worker
+            number of workers for parallel data modification
         """
-        return self.get_single_frame(index)
+        return self.get_single_frame(index, num_worker)
 
     def get_batch(self, batch_size: int) -> dict:
         """Get a batch of data with `batch_size` frames. The frames are randomly picked from the data system.
@@ -375,8 +395,16 @@ class DeepmdData:
         tmp = np.append(tmp, natoms_vec)
         return tmp.astype(np.int32)
 
-    def get_single_frame(self, index: int) -> dict:
+    def get_single_frame(self, index: int, num_worker: int) -> dict:
         """Orchestrates loading a single frame efficiently using memmap."""
+        # Check if we have a cached modified frame and use_modifier_cache is True
+        if (
+            self.use_modifier_cache
+            and self.modifier is not None
+            and index in self._modified_frame_cache
+        ):
+            return self._modified_frame_cache[index]
+
         if index < 0 or index >= self.nframes:
             raise IndexError(f"Frame index {index} out of range [0, {self.nframes})")
         # 1. Find the correct set directory and local frame index
@@ -470,7 +498,36 @@ class DeepmdData:
             frame_data["box"] = None
 
         frame_data["fid"] = index
+
+        if self.modifier is not None:
+            with ThreadPoolExecutor(max_workers=num_worker) as executor:
+                # Apply modifier if it exists
+                future = executor.submit(
+                    self.modifier.modify_data,
+                    frame_data,
+                    self,
+                )
+            if self.use_modifier_cache:
+                # Cache the modified frame to avoid recomputation
+                self._modified_frame_cache[index] = copy.deepcopy(frame_data)
         return frame_data
+
+    def preload_and_modify_all_data_torch(self, num_worker: int) -> None:
+        """Preload all frames and apply modifier to cache them.
+
+        This method is useful when use_modifier_cache is True and you want to
+        avoid applying the modifier repeatedly during training.
+        """
+        if not self.use_modifier_cache or self.modifier is None:
+            return
+
+        log.info("Preloading and modifying all data frames...")
+        for i in range(self.nframes):
+            if i not in self._modified_frame_cache:
+                self.get_single_frame(i, num_worker)
+                if (i + 1) % 100 == 0:
+                    log.info(f"Processed {i + 1}/{self.nframes} frames")
+        log.info("All frames preloaded and modified.")
 
     def avg(self, key: str) -> float:
         """Return the average value of an item."""
