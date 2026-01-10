@@ -3,12 +3,8 @@ from abc import (
     ABC,
     abstractmethod,
 )
-from types import (
-    ModuleType,
-)
 from typing import (
     Any,
-    overload,
 )
 
 import array_api_compat
