@@ -1,14 +1,18 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import sys
-from typing import Any
 import unittest
+from typing import (
+    Any,
+)
 
 import numpy as np
 
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
-from deepmd.dpmodel.utils.learning_rate import BaseLR
+from deepmd.dpmodel.utils.learning_rate import (
+    BaseLR,
+)
 
 from .common import (
     INSTALLED_ARRAY_API_STRICT,
@@ -18,8 +22,8 @@ from .common import (
 )
 
 if INSTALLED_PT:
-    import torch
     import array_api_compat.torch as torch_xp
+    import torch
 if INSTALLED_JAX:
     from deepmd.jax.env import (
         jnp,
