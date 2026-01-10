@@ -50,7 +50,7 @@ if INSTALLED_ARRAY_API_STRICT:
         },
     ),
 )
-class TestActivationFunctionConsistent(unittest.TestCase):
+class TestLearningRateConsistent(unittest.TestCase):
     def setUp(self) -> None:
         (lr_param,) = self.param
         self.lr = BaseLR(**lr_param)
