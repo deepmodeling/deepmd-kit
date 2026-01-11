@@ -3471,6 +3471,67 @@ def training_args(
                             doc=doc_only_pt_supported
                             + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
                         ),
+                    ],
+                    [],
+                    optional=True,
+                ),
+                Argument(
+                    "Muon",
+                    dict,
+                    [
+                        Argument(
+                            "momentum",
+                            float,
+                            optional=True,
+                            default=0.95,
+                            alias=["muon_momentum"],
+                            doc=doc_only_pt_supported
+                            + "Momentum coefficient for Muon optimizer (>=2D params). "
+                            "Used in Nesterov momentum update: m_t = beta*m_{t-1} + (1-beta)*g_t.",
+                        ),
+                        Argument(
+                            "adam_beta1",
+                            float,
+                            optional=True,
+                            default=0.9,
+                            doc=doc_only_pt_supported
+                            + "Adam beta1 coefficient for 1D parameters (biases, norms).",
+                        ),
+                        Argument(
+                            "adam_beta2",
+                            float,
+                            optional=True,
+                            default=0.95,
+                            doc=doc_only_pt_supported
+                            + "Adam beta2 coefficient for 1D parameters (biases, norms).",
+                        ),
+                        Argument(
+                            "weight_decay",
+                            float,
+                            optional=True,
+                            default=0.001,
+                            doc=doc_only_pt_supported
+                            + "Weight decay coefficient. Applied only to >=2D parameters (Muon path).",
+                        ),
+                        Argument(
+                            "lr_adjust",
+                            float,
+                            optional=True,
+                            default=10.0,
+                            doc=doc_only_pt_supported
+                            + "Learning rate adjustment mode for Muon scaling and Adam learning rate. "
+                            "If lr_adjust <= 0: use match-RMS scaling (scale = coeff*sqrt(max(m,n))), Adam uses lr directly. "
+                            "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1, m/n))), Adam uses lr/lr_adjust. "
+                            "Default is 10.0 (Adam lr = lr/10).",
+                        ),
+                        Argument(
+                            "lr_adjust_coeff",
+                            float,
+                            optional=True,
+                            default=0.2,
+                            doc=doc_only_pt_supported
+                            + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
+                        ),
                         Argument(
                             "min_2d_dim",
                             int,
