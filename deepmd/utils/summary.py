@@ -89,8 +89,8 @@ class SummaryPrinter(ABC):
         intra, inter = get_default_nthreads()
         build_info.update(
             {
-                "NUM_INTRA_THREADS": str(intra),
-                "NUM_INTER_THREADS": str(inter),
+                "Num Intra Threads": str(intra),
+                "Num Inter Threads": str(inter),
             }
         )
         # count the maximum characters in the keys and values
