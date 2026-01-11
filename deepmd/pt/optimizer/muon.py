@@ -30,7 +30,8 @@ Dtype Behavior
 --------------
 - Newton-Schulz iterations: always bfloat16 (matches official Muon)
 - Adam state (exp_avg, exp_avg_sq): always float32 for numerical stability
-- Gradients: cast to parameter dtype before momentum update
+- Muon gradients: cast to parameter dtype before momentum update
+- Adam gradients: cast to float32 for update computation
 
 Reference
 ---------
@@ -67,113 +68,117 @@ NS_STEPS: int = 5
 NS_EPS: float = 1e-7
 # Adam epsilon for numerical stability
 ADAM_EPS: float = 1e-7
+# Quintic Newton-Schulz polynomial coefficients
+NS_COEFF_A: float = 3.4445
+NS_COEFF_B: float = -4.7750
+NS_COEFF_C: float = 2.0315
+
+
+def _maybe_compile(
+    fn: callable,
+) -> callable:
+    """Compile a function if torch.compile is available."""
+    if hasattr(torch, "compile"):
+        return torch.compile(fn, fullgraph=True, dynamic=True)
+    return fn
+
+
+@_maybe_compile
+def _zeropower_via_newtonschulz5_2d(
+    G: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Orthogonalize a 2D matrix via quintic Newton-Schulz iteration.
+
+    Mathematical formulation:
+        X_0 = G / ||G||_F
+        X_{k+1} = a*X_k + (b*A_k + c*A_k^2) @ X_k,  where A_k = X_k @ X_k^T
+        Coefficients: a=3.4445, b=-4.7750, c=2.0315
+    """
+    # === Step 1. Cast to bf16 and transpose tall matrices ===
+    X = G.to(dtype=torch.bfloat16)
+    transposed = X.size(-2) > X.size(-1)
+    if transposed:
+        X = X.transpose(-2, -1)
+
+    # === Step 2. Normalize Frobenius norm to at most 1 ===
+    X = X / X.norm(dim=(-2, -1), keepdim=True).clamp(min=NS_EPS)
+
+    # === Step 3. Newton-Schulz iterations with fused GEMM ===
+    for _ in range(NS_STEPS):
+        A = torch.mm(X, X.transpose(-2, -1))
+        gram_update = torch.addmm(A, A, A, beta=NS_COEFF_B, alpha=NS_COEFF_C)
+        X = torch.addmm(X, gram_update, X, beta=NS_COEFF_A, alpha=1.0)
+
+    # === Step 4. Transpose back if needed ===
+    if transposed:
+        X = X.transpose(-2, -1)
+
+    return X
+
+
+@_maybe_compile
+def _zeropower_via_newtonschulz5_3d(
+    G: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Orthogonalize a 3D batch of matrices via quintic Newton-Schulz iteration.
+
+    Mathematical formulation:
+        X_0 = G / ||G||_F
+        X_{k+1} = a*X_k + (b*A_k + c*A_k^2) @ X_k,  where A_k = X_k @ X_k^T
+        Coefficients: a=3.4445, b=-4.7750, c=2.0315
+    """
+    # === Step 1. Cast to bf16 and transpose tall matrices ===
+    X = G.to(dtype=torch.bfloat16)
+    transposed = X.size(-2) > X.size(-1)
+    if transposed:
+        X = X.transpose(-2, -1)
+
+    # === Step 2. Normalize Frobenius norm to at most 1 ===
+    X = X / X.norm(dim=(-2, -1), keepdim=True).clamp(min=NS_EPS)
+
+    # === Step 3. Newton-Schulz iterations with batched fused GEMM ===
+    for _ in range(NS_STEPS):
+        A = torch.bmm(X, X.transpose(-2, -1))
+        gram_update = torch.baddbmm(A, A, A, beta=NS_COEFF_B, alpha=NS_COEFF_C)
+        X = torch.baddbmm(X, gram_update, X, beta=NS_COEFF_A, alpha=1.0)
+
+    # === Step 4. Transpose back if needed ===
+    if transposed:
+        X = X.transpose(-2, -1)
+
+    return X
 
 
 def zeropower_via_newtonschulz5(
     G: torch.Tensor,
 ) -> torch.Tensor:
     """
-    Compute the zeroth power (orthogonalization) of a matrix via Newton-Schulz iteration.
+    Compute the zeroth power (orthogonalization) via Newton-Schulz iteration.
 
-    Uses quintic Newton-Schulz iteration to compute the orthogonal component of the
-    input matrix. This is equivalent to computing U from the SVD decomposition G = USV^T.
-
-    Mathematical formulation:
-        X_0 = G / ||G||_F
-        X_{k+1} = a*X_k + (b*A_k + c*A_k^2) @ X_k,  where A_k = X_k @ X_k^T
-        Coefficients: a=3.4445, b=-4.7750, c=2.0315
-
-    This implementation matches PyTorch official Muon behavior: it always performs
-    Newton-Schulz in bfloat16 and returns a bfloat16 tensor.
+    Dispatches to compiled 2D or 3D kernels for best performance.
 
     Parameters
     ----------
     G : torch.Tensor
-        Input matrix to orthogonalize with shape (..., M, N).
+        Input matrix with shape (M, N) or batched input with shape (B, M, N).
 
     Returns
     -------
     torch.Tensor
-        Orthogonalized matrix in bfloat16 with same shape as input.
+        Orthogonalized tensor in bfloat16 with same shape as input.
 
     Raises
     ------
     ValueError
-        If G has fewer than 2 dimensions.
+        If input is not 2D or 3D.
     """
-    # === Step 1. Validate ===
-    if G.ndim < 2:
-        raise ValueError("Input must have at least 2 dimensions (..., M, N).")
-
-    a, b, c = (3.4445, -4.7750, 2.0315)
-
-    # === Step 2. Cast to bf16 (match official Muon) ===
-    X = G.to(dtype=torch.bfloat16)
-
-    # === Step 3. Transpose tall matrices ===
-    if X.size(-2) > X.size(-1):
-        X = X.mT
-
-    # === Step 4. Normalize Frobenius norm to at most 1 ===
-    X = X / X.norm(dim=(-2, -1), keepdim=True).clamp(min=NS_EPS)
-
-    # === Step 5. Newton-Schulz iterations with fused GEMM ===
-    for _ in range(NS_STEPS):
-        A = X @ X.mT
-        # gram_update = b*A + c*(A@A) via addmm/baddbmm
-        # X = a*X + gram_update@X via addmm/baddbmm
-        if X.ndim == 2:
-            gram_update = torch.addmm(A, A, A, beta=b, alpha=c)
-            X = torch.addmm(X, gram_update, X, beta=a, alpha=1.0)
-        else:
-            gram_update = torch.baddbmm(A, A, A, beta=b, alpha=c)
-            X = torch.baddbmm(X, gram_update, X, beta=a, alpha=1.0)
-
-    # === Step 6. Transpose back if needed ===
-    if G.size(-2) > G.size(-1):
-        X = X.mT
-
-    return X
-
-
-def _prepare_muon_momentum(
-    grad: torch.Tensor,
-    momentum_buffer: torch.Tensor,
-    beta: float,
-) -> tuple[torch.Tensor, tuple[int, ...]]:
-    """
-    Prepare momentum update and reshape for batched Newton-Schulz.
-
-    Uses Nesterov momentum: update = beta*m_t + (1-beta)*g_t, where m_t is
-    the updated momentum buffer.
-
-    Parameters
-    ----------
-    grad : torch.Tensor
-        Gradient tensor.
-    momentum_buffer : torch.Tensor
-        Momentum buffer (will be updated in-place).
-    beta : float
-        Momentum coefficient.
-
-    Returns
-    -------
-    update : torch.Tensor
-        Reshaped update tensor with shape (M, N).
-    original_shape : tuple[int, ...]
-        Original shape before reshape.
-    """
-    # === Step 1. Update momentum buffer ===
-    momentum_buffer.lerp_(grad, 1 - beta)
-    # Nesterov lookahead
-    update = grad.lerp(momentum_buffer, beta)
-
-    # === Step 2. Handle tensor -> matrix reshape ===
-    original_shape = update.shape
-    if update.ndim > 2:
-        update = update.reshape(update.shape[0], -1)
-
-    return update, original_shape
+    if G.ndim == 2:
+        return _zeropower_via_newtonschulz5_2d(G)
+    if G.ndim == 3:
+        return _zeropower_via_newtonschulz5_3d(G)
+    raise ValueError("Input must be 2D or 3D for Newton-Schulz orthogonalization.")
 
 
 class MuonOptimizer(Optimizer):
@@ -217,7 +222,7 @@ class MuonOptimizer(Optimizer):
           scale = lr_adjust_coeff * sqrt(max(m, n)). Adam uses lr directly.
         - If lr_adjust > 0: use rectangular correction for Muon,
           scale = sqrt(max(1.0, m/n)). Adam uses lr/lr_adjust.
-        Default is 0.0 (match-RMS scaling).
+        Default is 10.0 (Adam lr = lr/10).
     lr_adjust_coeff : float
         Coefficient for match-RMS scaling with default 0.2.
         Only effective when lr_adjust <= 0.
@@ -238,7 +243,7 @@ class MuonOptimizer(Optimizer):
         momentum: float = 0.95,
         weight_decay: float = 0.001,
         adam_betas: tuple[float, float] = (0.9, 0.95),
-        lr_adjust: float = 0.0,
+        lr_adjust: float = 10.0,
         lr_adjust_coeff: float = 0.2,
     ) -> None:
         defaults = {
@@ -250,6 +255,46 @@ class MuonOptimizer(Optimizer):
             "lr_adjust_coeff": lr_adjust_coeff,
         }
         super().__init__(params, defaults)
+        # Static parameter routing: built once on first step() call.
+        self._routing_built = False
+        self._routing: list[dict[str, Any]] = []
+
+    def _build_param_routing(self) -> None:
+        """
+        Classify parameters into Muon and Adam routes (static routing).
+
+        Routing logic:
+        - >=2D parameters → Muon path (Newton-Schulz + momentum)
+        - 1D parameters → Adam path (standard Adam update)
+        """
+        if self._routing_built:
+            return
+
+        self._routing = []
+        for group in self.param_groups:
+            muon_params: list[dict[str, Any]] = []
+            adam_params: list[dict[str, Any]] = []
+
+            for p in group["params"]:
+                if p.ndim >= 2:
+                    muon_params.append(
+                        {
+                            "param": p,
+                            "rows": int(p.shape[0]),
+                            "cols": int(p.numel() // p.shape[0]),
+                        }
+                    )
+                else:
+                    adam_params.append({"param": p})
+
+            self._routing.append(
+                {
+                    "muon_params": muon_params,
+                    "adam_params": adam_params,
+                }
+            )
+
+        self._routing_built = True
 
     @torch.no_grad()
     def step(
@@ -274,7 +319,11 @@ class MuonOptimizer(Optimizer):
             with torch.enable_grad():
                 loss = closure()
 
-        for group in self.param_groups:
+        # Build static parameter routing on first call.
+        self._build_param_routing()
+
+        for group_idx, group in enumerate(self.param_groups):
+            route = self._routing[group_idx]
             lr = group["lr"]
             momentum = group["momentum"]
             weight_decay = group["weight_decay"]
@@ -282,119 +331,150 @@ class MuonOptimizer(Optimizer):
             lr_adjust = group["lr_adjust"]
             lr_adjust_coeff = group["lr_adjust_coeff"]
 
-            # === Step 1. Collect params with gradients and separate by type ===
-            muon_params: list[torch.Tensor] = []  # For weight decay (>=2D only)
-            muon_entries: list[tuple[torch.nn.Parameter, torch.Tensor, tuple]] = []
-            # Adam batch lists
+            # === Step 1. Adam update for 1D parameters (biases, norms, etc.) ===
             adam_params: list[torch.Tensor] = []
             adam_grads_fp32: list[torch.Tensor] = []
             adam_exp_avgs: list[torch.Tensor] = []
             adam_exp_avg_sqs: list[torch.Tensor] = []
+            adam_states: list[dict[str, Any]] = []
 
-            for p in group["params"]:
-                if p.grad is None:
+            for entry in route["adam_params"]:
+                p = entry["param"]
+                grad = p.grad
+                if grad is None:
                     continue
 
-                grad = p.grad
-                if grad.dtype != p.dtype:
-                    grad = grad.to(dtype=p.dtype)
+                grad_fp32 = grad.float()
 
                 state = self.state[p]
+                if "exp_avg" not in state:
+                    state["exp_avg"] = torch.zeros_like(p, dtype=torch.float32)
+                    state["exp_avg_sq"] = torch.zeros_like(p, dtype=torch.float32)
+                    state["beta1_pow"] = 1.0
+                    state["beta2_pow"] = 1.0
 
-                if p.ndim >= 2:
-                    # Muon path: collect for weight decay
-                    muon_params.append(p)
-                    if "momentum_buffer" not in state:
-                        state["momentum_buffer"] = torch.zeros_like(grad)
-                    update, orig_shape = _prepare_muon_momentum(
-                        grad, state["momentum_buffer"], momentum
-                    )
-                    muon_entries.append((p, update, orig_shape))
-                else:
-                    # Adam path: state tensors forced to FP32
-                    if "exp_avg" not in state:
-                        state["exp_avg"] = torch.zeros_like(p, dtype=torch.float32)
-                        state["exp_avg_sq"] = torch.zeros_like(p, dtype=torch.float32)
-                        state["beta1_pow"] = 1.0
-                        state["beta2_pow"] = 1.0
-                    state["beta1_pow"] *= adam_betas[0]
-                    state["beta2_pow"] *= adam_betas[1]
-                    adam_params.append(p)
-                    # Cast grad to FP32 for Adam computation
-                    adam_grads_fp32.append(grad.float())
-                    adam_exp_avgs.append(state["exp_avg"])
-                    adam_exp_avg_sqs.append(state["exp_avg_sq"])
+                state["beta1_pow"] *= adam_betas[0]
+                state["beta2_pow"] *= adam_betas[1]
 
-            # === Step 2. Foreach weight decay (only >=2D params) ===
-            if weight_decay > 0 and muon_params:
-                torch._foreach_mul_(muon_params, 1.0 - lr * weight_decay)
+                adam_params.append(p)
+                adam_grads_fp32.append(grad_fp32)
+                adam_exp_avgs.append(state["exp_avg"])
+                adam_exp_avg_sqs.append(state["exp_avg_sq"])
+                adam_states.append(state)
 
-            # === Step 3. Adam update for 1D params (FP32 computation) ===
             if adam_params:
-                # Determine Adam learning rate
                 adam_lr = lr if lr_adjust <= 0 else lr / lr_adjust
 
-                # Update momentum estimates in FP32
+                # exp_avg = beta1 * exp_avg + (1 - beta1) * grad
+                # exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad^2
                 torch._foreach_lerp_(adam_exp_avgs, adam_grads_fp32, 1 - adam_betas[0])
                 grad_sq = torch._foreach_mul(adam_grads_fp32, adam_grads_fp32)
                 torch._foreach_lerp_(adam_exp_avg_sqs, grad_sq, 1 - adam_betas[1])
 
-                # Compute updates with bias correction (per-param beta_pow)
                 for i, p in enumerate(adam_params):
-                    state = self.state[p]
+                    state = adam_states[i]
                     bias_corr1 = 1 - state["beta1_pow"]
                     bias_corr2 = 1 - state["beta2_pow"]
                     step_size = adam_lr / bias_corr1
-                    # FP32 computation: compute full delta in FP32, then cast once
+                    # delta = -step_size * m_hat / (sqrt(v_hat) + eps)
                     denom = (adam_exp_avg_sqs[i] / bias_corr2).sqrt().add_(ADAM_EPS)
                     delta_fp32 = -step_size * (adam_exp_avgs[i] / denom)
                     p.add_(delta_fp32.to(p.dtype))
 
-            # === Step 4. Batched Newton-Schulz for Muon parameters ===
-            if not muon_entries:
+            # === Step 2. Muon update for >=2D parameters (weight matrices) ===
+            muon_params_for_decay: list[torch.Tensor] = []
+            muon_grads: list[torch.Tensor] = []
+            muon_momentum_buffers: list[torch.Tensor] = []
+            active_entries: list[tuple[dict[str, Any], torch.Tensor]] = []
+
+            for entry in route["muon_params"]:
+                p = entry["param"]
+                grad = p.grad
+                if grad is None:
+                    continue
+
+                state = self.state[p]
+                if "momentum_buffer" not in state:
+                    state["momentum_buffer"] = torch.zeros_like(grad)
+
+                buf = state["momentum_buffer"]
+                if grad.dtype != buf.dtype:
+                    grad = grad.to(dtype=buf.dtype)
+
+                muon_params_for_decay.append(p)
+                muon_grads.append(grad)
+                muon_momentum_buffers.append(buf)
+                active_entries.append((entry, grad))
+
+            if weight_decay > 0 and muon_params_for_decay:
+                torch._foreach_mul_(muon_params_for_decay, 1.0 - lr * weight_decay)
+
+            if not active_entries:
                 continue
 
-            # Group by (rows, cols, device) for batched processing
-            # Note: dtype is not included since NS internally converts to bf16
+            # m_t = beta * m_{t-1} + (1 - beta) * g_t
+            torch._foreach_lerp_(muon_momentum_buffers, muon_grads, 1 - momentum)
+            # update = beta * m_t + (1 - beta) * g_t
+            muon_updates = torch._foreach_lerp(
+                muon_grads, muon_momentum_buffers, momentum
+            )
+
             buckets: dict[
-                tuple[int, int, torch.device],
-                list[tuple[torch.nn.Parameter, torch.Tensor, tuple]],
+                tuple[int, int, torch.device, torch.dtype],
+                list[tuple[dict[str, Any], torch.Tensor]],
             ] = {}
-            for entry in muon_entries:
-                p, update, orig_shape = entry
-                key = (update.shape[0], update.shape[1], update.device)
-                if key not in buckets:
-                    buckets[key] = []
-                buckets[key].append(entry)
 
-            # Process each bucket
-            for bucket in buckets.values():
-                # === Pre-compute bucket-level scaling constants ===
-                # Get matrix dimensions from first entry
-                m, n = bucket[0][1].shape[-2], bucket[0][1].shape[-1]
-                # Scaling: match-RMS (lr_adjust<=0) or rectangular correction
+            for idx, entry_info in enumerate(active_entries):
+                entry, _ = entry_info
+                p = entry["param"]
+                bucket_key = (entry["rows"], entry["cols"], p.device, p.dtype)
+                if bucket_key not in buckets:
+                    buckets[bucket_key] = []
+                buckets[bucket_key].append((entry, muon_updates[idx]))
+
+            for (rows, cols, _device, dtype), bucket_entries in buckets.items():
+                # scale = coeff * sqrt(max(m, n))  [match-RMS mode]
+                # scale = sqrt(max(1, m/n))        [rectangular mode]
                 if lr_adjust <= 0:
-                    scale = lr_adjust_coeff * math.sqrt(float(max(m, n)))
+                    scale = lr_adjust_coeff * math.sqrt(float(max(rows, cols)))
                 else:
-                    scale = max(1.0, m / n) ** 0.5
+                    scale = max(1.0, rows / cols) ** 0.5
 
-                # === Stack and orthogonalize ===
-                if len(bucket) == 1:
-                    # Single parameter: 2D path with addmm (faster, correct behavior)
-                    p, update, orig_shape = bucket[0]
-                    orth = zeropower_via_newtonschulz5(update)
-                    # === Apply scaling and update parameters ===
+                if len(bucket_entries) == 1:
+                    entry, update_tensor = bucket_entries[0]
+                    update_matrix = update_tensor.reshape(rows, cols)
+                    if not update_matrix.is_contiguous():
+                        update_matrix = update_matrix.contiguous()
+
+                    orth = _zeropower_via_newtonschulz5_2d(update_matrix)
                     orth.mul_(scale)
-                    p.add_(orth.reshape(orig_shape), alpha=-lr)
-                else:
-                    # Multiple parameters: 3D batched path with baddbmm
-                    stacked = torch.stack(
-                        [item[1].contiguous() for item in bucket], dim=0
+                    delta = orth.reshape(entry["param"].shape)
+                    if delta.dtype != dtype:
+                        delta = delta.to(dtype)
+                    entry["param"].add_(delta, alpha=-lr)
+                    continue
+
+                matrices: list[torch.Tensor] = []
+                params: list[torch.Tensor] = []
+                orig_shapes: list[tuple[int, ...]] = []
+
+                for entry, update_tensor in bucket_entries:
+                    update_matrix = update_tensor.reshape(rows, cols)
+                    matrices.append(
+                        update_matrix
+                        if update_matrix.is_contiguous()
+                        else update_matrix.contiguous()
                     )
-                    orth_stacked = zeropower_via_newtonschulz5(stacked)
-                    # === Apply scaling and update parameters ===
-                    orth_stacked.mul_(scale)
-                    for i, (p, _, orig_shape) in enumerate(bucket):
-                        p.add_(orth_stacked[i].reshape(orig_shape), alpha=-lr)
+                    params.append(entry["param"])
+                    orig_shapes.append(entry["param"].shape)
+
+                stacked = torch.stack(matrices, dim=0)
+                orth = _zeropower_via_newtonschulz5_3d(stacked)
+                orth.mul_(scale)
+                if orth.dtype != dtype:
+                    orth = orth.to(dtype)
+
+                for i, _ in enumerate(bucket_entries):
+                    params[i].add_(orth[i].reshape(orig_shapes[i]), alpha=-lr)
 
         return loss

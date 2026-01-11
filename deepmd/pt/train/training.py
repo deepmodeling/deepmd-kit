@@ -171,7 +171,7 @@ class Trainer:
                 "momentum": params.get("momentum", 0.95),
                 "adam_beta1": params.get("adam_beta1", 0.9),
                 "adam_beta2": params.get("adam_beta2", 0.95),
-                "lr_adjust": params.get("lr_adjust", 0.0),
+                "lr_adjust": params.get("lr_adjust", 10.0),
                 "lr_adjust_coeff": params.get("lr_adjust_coeff", 0.2),
             }
             return opt_type, opt_param
@@ -756,7 +756,7 @@ class Trainer:
                     float(self.opt_param.get("adam_beta1", 0.9)),
                     float(self.opt_param.get("adam_beta2", 0.95)),
                 ),
-                lr_adjust=float(self.opt_param.get("lr_adjust", 0.0)),
+                lr_adjust=float(self.opt_param.get("lr_adjust", 10.0)),
                 lr_adjust_coeff=float(self.opt_param.get("lr_adjust_coeff", 0.2)),
             )
             if optimizer_state_dict is not None and self.restart_training:
