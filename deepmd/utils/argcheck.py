@@ -3213,7 +3213,16 @@ def mixed_precision_args() -> list[Argument]:  # ! added by Denghui.
 def training_args(
     multi_task: bool = False,
 ) -> list[Argument]:  # ! modified by Ziyao: data configuration isolated.
-    doc_numb_steps = "Number of training batch. Each training uses one batch of data."
+    doc_numb_steps = "Number of training batches. Each training uses one batch of data. If set, this value takes precedence over num_epoch."
+    doc_num_epoch = (
+        "Number of training epochs. "
+        "When numb_steps is not set, the total steps are computed as "
+        "ceil(num_epoch * total_numb_batch). For each training dataset, "
+        "total_numb_batch is computed as ceil(max_i(n_bch_i / p_i)), where p_i "
+        "is the sampling probability of system i after sys_probs/auto_prob. "
+        "In multi-task mode, total_numb_batch is the model_prob-weighted sum "
+        "over tasks."
+    )
     doc_seed = "The random seed for getting frames from the training data set."
     doc_disp_file = "The file for printing learning curve."
     doc_disp_freq = "The frequency of printing learning curve."
@@ -3297,7 +3306,13 @@ def training_args(
     args += [
         mixed_precision_data,
         Argument(
-            "numb_steps", int, optional=False, doc=doc_numb_steps, alias=["stop_batch"]
+            "numb_steps", int, optional=True, doc=doc_numb_steps, alias=["stop_batch"]
+        ),
+        Argument(
+            "num_epoch",
+            [int, float],
+            optional=True,
+            doc=doc_only_pt_supported + doc_num_epoch,
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument(

@@ -140,9 +140,11 @@ class Trainer:
             else 1
         )
         self.num_model = len(self.model_keys)
+        self.model_prob = None
 
         # Iteration config
-        self.num_steps = training_params["numb_steps"]
+        self.num_steps = training_params.get("numb_steps")
+        self.num_epoch = training_params.get("num_epoch")
         self.disp_file = training_params.get("disp_file", "lcurve.out")
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.disp_avg = training_params.get("disp_avg", False)
@@ -252,6 +254,47 @@ class Trainer:
                 validation_data_iter,
                 valid_numb_batch,
             )
+
+        def compute_total_numb_batch(
+            numb_batches: Iterable[int],
+            sampler_weights: np.ndarray,
+        ) -> int:
+            weights = np.asarray(sampler_weights, dtype=np.float64)
+            if weights.ndim != 1:
+                raise ValueError("Sampler weights must be 1D.")
+            if weights.size == 0:
+                raise ValueError("Sampler weights are empty.")
+            weight_sum = float(np.sum(weights))
+            if weight_sum <= 0.0:
+                raise ValueError("Sampler weights must sum to a positive value.")
+            probs = weights / weight_sum
+            nbatches = np.asarray(numb_batches, dtype=np.float64)
+            if nbatches.shape[0] != probs.shape[0]:
+                raise ValueError("Number of batches and sampler weights must match.")
+            valid = probs > 0.0
+            if not np.any(valid):
+                raise ValueError(
+                    "Sampler probabilities must contain at least one positive entry."
+                )
+            return int(np.ceil(np.max(nbatches[valid] / probs[valid])))
+
+        def resolve_model_prob(
+            model_keys: list[str],
+            model_prob_config: dict[str, Any] | None,
+            model_training_data: dict[str, DpLoaderSet],
+        ) -> np.ndarray:
+            model_prob = np.zeros(len(model_keys), dtype=np.float64)
+            if model_prob_config is not None:
+                for ii, model_key in enumerate(model_keys):
+                    if model_key in model_prob_config:
+                        model_prob[ii] = float(model_prob_config[model_key])
+            else:
+                for ii, model_key in enumerate(model_keys):
+                    model_prob[ii] = float(len(model_training_data[model_key]))
+            sum_prob = float(np.sum(model_prob))
+            if sum_prob <= 0.0:
+                raise ValueError("Sum of model prob must be larger than 0!")
+            return model_prob / sum_prob
 
         def single_model_stat(
             _model: Any,
@@ -435,6 +478,56 @@ class Trainer:
                             self.validation_dataloader[model_key].sampler.weights
                         ),
                     )
+
+        # Resolve training steps
+        if not self.multi_task:
+            sampler_weights = to_numpy_array(self.training_dataloader.sampler.weights)
+            total_numb_batch = compute_total_numb_batch(
+                training_data.index,
+                sampler_weights,
+            )
+        else:
+            per_task_total = []
+            for model_key in self.model_keys:
+                sampler_weights = to_numpy_array(
+                    self.training_dataloader[model_key].sampler.weights
+                )
+                per_task_total.append(
+                    compute_total_numb_batch(
+                        training_data[model_key].index,
+                        sampler_weights,
+                    )
+                )
+            self.model_prob = resolve_model_prob(
+                self.model_keys,
+                training_params.get("model_prob"),
+                training_data,
+            )
+            total_numb_batch = int(
+                np.ceil(np.sum(np.asarray(per_task_total) * self.model_prob))
+            )
+        if self.num_steps is None:
+            if self.num_epoch is None:
+                raise ValueError(
+                    "Either training.numb_steps or training.num_epoch must be set."
+                )
+            if self.num_epoch <= 0:
+                raise ValueError("training.num_epoch must be positive.")
+            if total_numb_batch <= 0:
+                raise ValueError("Total number of training batches must be positive.")
+            self.num_steps = int(np.ceil(self.num_epoch * total_numb_batch))
+            log.info(
+                "Computed num_steps=%d from num_epoch=%s and total_numb_batch=%d.",
+                self.num_steps,
+                self.num_epoch,
+                total_numb_batch,
+            )
+        elif self.num_epoch is not None:
+            log.warning(
+                "Both training.numb_steps and training.num_epoch are set; "
+                "using numb_steps=%d.",
+                self.num_steps,
+            )
 
         # Learning rate
         warmup_steps = training_params.get("warmup_steps", None)
@@ -658,19 +751,12 @@ class Trainer:
                 )
 
         # Get model prob for multi-task
-        if self.multi_task:
-            self.model_prob = np.array([0.0 for key in self.model_keys])
-            if training_params.get("model_prob", None) is not None:
-                model_prob = training_params["model_prob"]
-                for ii, model_key in enumerate(self.model_keys):
-                    if model_key in model_prob:
-                        self.model_prob[ii] += float(model_prob[model_key])
-            else:
-                for ii, model_key in enumerate(self.model_keys):
-                    self.model_prob[ii] += float(len(self.training_data[model_key]))
-            sum_prob = np.sum(self.model_prob)
-            assert sum_prob > 0.0, "Sum of model prob must be larger than 0!"
-            self.model_prob = self.model_prob / sum_prob
+        if self.multi_task and self.model_prob is None:
+            self.model_prob = resolve_model_prob(
+                self.model_keys,
+                training_params.get("model_prob"),
+                training_data,
+            )
 
         # Multi-task share params
         if shared_links is not None:
