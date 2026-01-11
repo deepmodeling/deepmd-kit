@@ -73,6 +73,21 @@ class SummaryPrinter(BaseSummaryPrinter):
             "build with TF lib": GLOBAL_CONFIG["tf_libs"].replace(";", "\n"),
         }
 
+    def get_device_name(self) -> str | None:
+        """Prefer the hardware device name if available, fall back to identifier.
+
+        Returns
+        -------
+        str or None
+            The device name if available, otherwise None.
+        """
+        gpus = tf.config.list_physical_devices("GPU")
+        if gpus:
+            # Use the first physical GPU device identifier as the device name
+            details = tf.config.experimental.get_device_details(gpus[0])
+            return details.get("device_name") or gpus[0].name
+        return None
+
 
 class RunOptions:
     """Class with info on how to run training (cluster, MPI and GPU config).
