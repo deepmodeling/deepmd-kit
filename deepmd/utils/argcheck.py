@@ -3425,6 +3425,7 @@ def training_args(
                             float,
                             optional=True,
                             default=0.95,
+                            alias=["muon_momentum"],
                             doc=doc_only_pt_supported
                             + "Momentum coefficient for AdaMuon optimizer.",
                         ),
@@ -3456,7 +3457,7 @@ def training_args(
                             "lr_adjust",
                             float,
                             optional=True,
-                            default=10.0,
+                            default=0.0,
                             doc=doc_only_pt_supported
                             + "Learning rate adjustment factor for Adam (1D params). "
                             "If lr_adjust <= 0: use match-RMS scaling (scale = lr_adjust_coeff * sqrt(max(m, n))), Adam uses lr directly. "

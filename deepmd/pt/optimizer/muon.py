@@ -6,8 +6,35 @@ Muon is an optimizer that applies Newton-Schulz orthogonalization to the gradien
 before using momentum, resulting in orthogonalized updates for weight matrices.
 This can improve training stability and convergence for certain architectures.
 
-Reference:
-    https://github.com/KellerJordan/Muon
+Algorithm
+---------
+For >=2D parameters (weight matrices), the Muon update is:
+
+    1. Momentum update (Nesterov):
+       m_t = beta * m_{t-1} + (1 - beta) * g_t
+       update = beta * m_t + (1 - beta) * g_t
+
+    2. Newton-Schulz orthogonalization (quintic iteration):
+       X_0 = G / ||G||_F
+       X_{k+1} = a*X_k + (b*A_k + c*A_k^2) @ X_k,  where A_k = X_k @ X_k^T
+       Coefficients: a=3.4445, b=-4.7750, c=2.0315
+
+    3. Scaling: scale = coeff * sqrt(max(m, n))  [match-RMS mode]
+                scale = sqrt(max(1, m/n))        [rectangular mode]
+
+    4. Parameter update: theta -= lr * scale * orth(update)
+
+For 1D parameters (biases, norms), standard Adam is used.
+
+Dtype Behavior
+--------------
+- Newton-Schulz iterations: always bfloat16 (matches official Muon)
+- Adam state (exp_avg, exp_avg_sq): always float32 for numerical stability
+- Gradients: cast to parameter dtype before momentum update
+
+Reference
+---------
+https://github.com/KellerJordan/Muon
 """
 
 from __future__ import (
@@ -30,17 +57,31 @@ if TYPE_CHECKING:
         Iterable,
     )
 
+# ============================================================================
+# Constants
+# ============================================================================
+
+# Newton-Schulz iteration count
+NS_STEPS: int = 5
+# Numerical stability epsilon for norm clamping
+NS_EPS: float = 1e-7
+# Adam epsilon for numerical stability
+ADAM_EPS: float = 1e-7
+
 
 def zeropower_via_newtonschulz5(
     G: torch.Tensor,
-    steps: int = 5,
-    eps: float = 1e-7,
 ) -> torch.Tensor:
     """
     Compute the zeroth power (orthogonalization) of a matrix via Newton-Schulz iteration.
 
     Uses quintic Newton-Schulz iteration to compute the orthogonal component of the
     input matrix. This is equivalent to computing U from the SVD decomposition G = USV^T.
+
+    Mathematical formulation:
+        X_0 = G / ||G||_F
+        X_{k+1} = a*X_k + (b*A_k + c*A_k^2) @ X_k,  where A_k = X_k @ X_k^T
+        Coefficients: a=3.4445, b=-4.7750, c=2.0315
 
     This implementation matches PyTorch official Muon behavior: it always performs
     Newton-Schulz in bfloat16 and returns a bfloat16 tensor.
@@ -49,10 +90,6 @@ def zeropower_via_newtonschulz5(
     ----------
     G : torch.Tensor
         Input matrix to orthogonalize with shape (..., M, N).
-    steps : int
-        Number of Newton-Schulz iterations with default 5.
-    eps : float
-        Numerical stability epsilon for norm clamping with default 1e-7.
 
     Returns
     -------
@@ -63,14 +100,10 @@ def zeropower_via_newtonschulz5(
     ------
     ValueError
         If G has fewer than 2 dimensions.
-    ValueError
-        If steps >= 100 (guard for efficiency).
     """
     # === Step 1. Validate ===
     if G.ndim < 2:
         raise ValueError("Input must have at least 2 dimensions (..., M, N).")
-    if steps >= 100:
-        raise ValueError("Number of steps must be less than 100 for efficiency.")
 
     a, b, c = (3.4445, -4.7750, 2.0315)
 
@@ -82,10 +115,10 @@ def zeropower_via_newtonschulz5(
         X = X.mT
 
     # === Step 4. Normalize Frobenius norm to at most 1 ===
-    X = X / X.norm(dim=(-2, -1), keepdim=True).clamp(min=eps)
+    X = X / X.norm(dim=(-2, -1), keepdim=True).clamp(min=NS_EPS)
 
     # === Step 5. Newton-Schulz iterations with fused GEMM ===
-    for _ in range(steps):
+    for _ in range(NS_STEPS):
         A = X @ X.mT
         # gram_update = b*A + c*(A@A) via addmm/baddbmm
         # X = a*X + gram_update@X via addmm/baddbmm
@@ -107,10 +140,12 @@ def _prepare_muon_momentum(
     grad: torch.Tensor,
     momentum_buffer: torch.Tensor,
     beta: float,
-    nesterov: bool,
 ) -> tuple[torch.Tensor, tuple[int, ...]]:
     """
     Prepare momentum update and reshape for batched Newton-Schulz.
+
+    Uses Nesterov momentum: update = beta*m_t + (1-beta)*g_t, where m_t is
+    the updated momentum buffer.
 
     Parameters
     ----------
@@ -120,8 +155,6 @@ def _prepare_muon_momentum(
         Momentum buffer (will be updated in-place).
     beta : float
         Momentum coefficient.
-    nesterov : bool
-        Whether to use Nesterov momentum.
 
     Returns
     -------
@@ -132,7 +165,8 @@ def _prepare_muon_momentum(
     """
     # === Step 1. Update momentum buffer ===
     momentum_buffer.lerp_(grad, 1 - beta)
-    update = grad.lerp(momentum_buffer, beta) if nesterov else momentum_buffer
+    # Nesterov lookahead
+    update = grad.lerp(momentum_buffer, beta)
 
     # === Step 2. Handle tensor -> matrix reshape ===
     original_shape = update.shape
@@ -147,11 +181,23 @@ class MuonOptimizer(Optimizer):
     Muon optimizer with auxiliary Adam for non-matrix parameters.
 
     This optimizer applies different update rules based on parameter dimensionality:
-    - For 2D+ parameters (weight matrices): Muon update with Newton-Schulz orthogonalization
+    - For >=2D parameters (weight matrices): Muon update with Newton-Schulz orthogonalization
     - For 1D parameters (biases, layer norms): Standard Adam update
 
     This hybrid approach is effective because Muon's orthogonalization is designed
     for weight matrices, while Adam is more suitable for biases and normalization params.
+
+    Update Rules
+    ------------
+    Muon (>=2D params):
+        1. Momentum update: m_t = beta*m_{t-1} + (1-beta)*g_t
+        2. Nesterov lookahead: update = beta*m_t + (1-beta)*g_t
+        3. Newton-Schulz orthogonalization: orth = NS(update)
+        4. Scaling: scale = coeff*sqrt(max(m,n)) or sqrt(max(1, m/n))
+        5. Parameter update: theta -= lr * scale * orth
+
+    Adam (1D params):
+        Standard Adam with bias correction, all computations in float32.
 
     Parameters
     ----------
@@ -163,21 +209,15 @@ class MuonOptimizer(Optimizer):
         Momentum coefficient for Muon with default 0.95.
     weight_decay : float
         Weight decay coefficient (applied only to >=2D params) with default 0.001.
-    ns_steps : int
-        Number of Newton-Schulz iterations with default 5.
     adam_betas : tuple[float, float]
         Adam beta coefficients with default (0.9, 0.95).
-    adam_eps : float
-        Adam epsilon with default 1e-7.
-    nesterov : bool
-        Whether to use Nesterov momentum for Muon with default True.
     lr_adjust : float
-        Learning rate adjustment factor for Adam (1D params).
-        - If lr_adjust <= 0: use match-RMS scaling for Muon update,
+        Learning rate adjustment mode for Muon scaling and Adam learning rate.
+        - If lr_adjust <= 0: use match-RMS scaling for Muon,
           scale = lr_adjust_coeff * sqrt(max(m, n)). Adam uses lr directly.
-        - If lr_adjust > 0: use rectangular correction for Muon update,
-          scale = sqrt(max(1.0, m/n)). Adam uses lr/lr_adjust as learning rate.
-        Default is 10.0 (Adam lr = lr/10).
+        - If lr_adjust > 0: use rectangular correction for Muon,
+          scale = sqrt(max(1.0, m/n)). Adam uses lr/lr_adjust.
+        Default is 0.0 (match-RMS scaling).
     lr_adjust_coeff : float
         Coefficient for match-RMS scaling with default 0.2.
         Only effective when lr_adjust <= 0.
@@ -197,21 +237,15 @@ class MuonOptimizer(Optimizer):
         lr: float = 1e-3,
         momentum: float = 0.95,
         weight_decay: float = 0.001,
-        ns_steps: int = 5,
         adam_betas: tuple[float, float] = (0.9, 0.95),
-        adam_eps: float = 1e-7,
-        nesterov: bool = True,
-        lr_adjust: float = 10.0,
+        lr_adjust: float = 0.0,
         lr_adjust_coeff: float = 0.2,
     ) -> None:
         defaults = {
             "lr": lr,
             "momentum": momentum,
             "weight_decay": weight_decay,
-            "ns_steps": ns_steps,
             "adam_betas": adam_betas,
-            "adam_eps": adam_eps,
-            "nesterov": nesterov,
             "lr_adjust": lr_adjust,
             "lr_adjust_coeff": lr_adjust_coeff,
         }
@@ -232,8 +266,8 @@ class MuonOptimizer(Optimizer):
 
         Returns
         -------
-        loss : float, optional
-            The loss value if closure is provided.
+        torch.Tensor | None
+            The loss value if closure is provided, otherwise None.
         """
         loss = None
         if closure is not None:
@@ -244,10 +278,7 @@ class MuonOptimizer(Optimizer):
             lr = group["lr"]
             momentum = group["momentum"]
             weight_decay = group["weight_decay"]
-            ns_steps = group["ns_steps"]
             adam_betas = group["adam_betas"]
-            adam_eps = group["adam_eps"]
-            nesterov = group["nesterov"]
             lr_adjust = group["lr_adjust"]
             lr_adjust_coeff = group["lr_adjust_coeff"]
 
@@ -276,7 +307,7 @@ class MuonOptimizer(Optimizer):
                     if "momentum_buffer" not in state:
                         state["momentum_buffer"] = torch.zeros_like(grad)
                     update, orig_shape = _prepare_muon_momentum(
-                        grad, state["momentum_buffer"], momentum, nesterov
+                        grad, state["momentum_buffer"], momentum
                     )
                     muon_entries.append((p, update, orig_shape))
                 else:
@@ -315,7 +346,7 @@ class MuonOptimizer(Optimizer):
                     bias_corr2 = 1 - state["beta2_pow"]
                     step_size = adam_lr / bias_corr1
                     # FP32 computation: compute full delta in FP32, then cast once
-                    denom = (adam_exp_avg_sqs[i] / bias_corr2).sqrt().add_(adam_eps)
+                    denom = (adam_exp_avg_sqs[i] / bias_corr2).sqrt().add_(ADAM_EPS)
                     delta_fp32 = -step_size * (adam_exp_avgs[i] / denom)
                     p.add_(delta_fp32.to(p.dtype))
 
@@ -351,7 +382,7 @@ class MuonOptimizer(Optimizer):
                 if len(bucket) == 1:
                     # Single parameter: 2D path with addmm (faster, correct behavior)
                     p, update, orig_shape = bucket[0]
-                    orth = zeropower_via_newtonschulz5(update, steps=ns_steps)
+                    orth = zeropower_via_newtonschulz5(update)
                     # === Apply scaling and update parameters ===
                     orth.mul_(scale)
                     p.add_(orth.reshape(orig_shape), alpha=-lr)
@@ -360,7 +391,7 @@ class MuonOptimizer(Optimizer):
                     stacked = torch.stack(
                         [item[1].contiguous() for item in bucket], dim=0
                     )
-                    orth_stacked = zeropower_via_newtonschulz5(stacked, steps=ns_steps)
+                    orth_stacked = zeropower_via_newtonschulz5(stacked)
                     # === Apply scaling and update parameters ===
                     orth_stacked.mul_(scale)
                     for i, (p, _, orig_shape) in enumerate(bucket):
