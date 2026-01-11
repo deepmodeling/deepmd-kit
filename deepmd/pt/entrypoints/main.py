@@ -252,6 +252,18 @@ class SummaryPrinter(BaseSummaryPrinter):
             **op_info,
         }
 
+    def get_device_name(self) -> str | None:
+        """Use PyTorch's current device name as the device identifier.
+
+        Returns
+        -------
+        str or None
+            The device name if available, otherwise None.
+        """
+        if torch.cuda.is_available():
+            return torch.cuda.get_device_name(torch.cuda.current_device())
+        return None
+
 
 def train(
     input_file: str,

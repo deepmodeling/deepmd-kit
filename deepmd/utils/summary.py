@@ -74,53 +74,7 @@ class SummaryPrinter(ABC):
                 "computing device": self.get_compute_device(),
             }
         )
-        backend = build_info.get("Backend")
-        device_name = None
-        try:
-            if backend == "PyTorch":
-                import torch
-
-                if torch.cuda.is_available():
-                    # Use PyTorch's current device name as the device identifier
-                    device_name = torch.cuda.get_device_name(
-                        torch.cuda.current_device()
-                    )
-            elif backend == "TensorFlow":
-                import tensorflow as tf
-
-                gpus = tf.config.list_physical_devices("GPU")
-                if gpus:
-                    # Use the first physical GPU device identifier as the device name
-                    details = tf.config.experimental.get_device_details(gpus[0])
-                    # Prefer the hardware device name if available, fall back to identifier
-                    device_name = details.get("device_name") or gpus[0].name
-            elif backend == "Paddle":
-                import paddle
-
-                # Use Paddle's CUDA device properties to get the underlying GPU name
-                if hasattr(paddle, "device") and hasattr(
-                    paddle.device, "is_compiled_with_cuda"
-                ):
-                    if paddle.device.is_compiled_with_cuda():
-                        cuda_mod = getattr(paddle.device, "cuda", None)
-                        if cuda_mod is not None and callable(
-                            getattr(cuda_mod, "device_count", None)
-                        ):
-                            if cuda_mod.device_count() > 0 and callable(
-                                getattr(cuda_mod, "get_device_properties", None)
-                            ):
-                                props = cuda_mod.get_device_properties(0)
-                                device_name = getattr(props, "name", None)
-            elif backend == "JAX":
-                import jax
-
-                if jax.devices():
-                    # Use the first JAX device's kind as the device name
-                    jax_device = jax.devices()[0]
-                    device_name = f"{jax_device.device_kind}"
-        except Exception:
-            # Best-effort device name detection; ignore failures silently
-            pass
+        device_name = self.get_device_name()
         if device_name:
             build_info["Device Name"] = device_name
         if self.is_built_with_cuda():
@@ -175,3 +129,13 @@ class SummaryPrinter(ABC):
     def get_backend_info(self) -> dict:
         """Get backend information."""
         return {}
+
+    def get_device_name(self) -> str | None:
+        """Get the device name (e.g., NVIDIA A800-SXM4-80GB).
+
+        Returns
+        -------
+        str or None
+            The device name if available, otherwise None.
+        """
+        return None
