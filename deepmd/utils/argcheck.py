@@ -3471,6 +3471,18 @@ def training_args(
                             doc=doc_only_pt_supported
                             + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
                         ),
+                        Argument(
+                            "min_2d_dim",
+                            int,
+                            optional=True,
+                            default=1,
+                            alias=["muon_min_2d_dim"],
+                            doc=doc_only_pt_supported
+                            + "Minimum min(m, n) threshold for Muon on 2D matrices. "
+                            "Matrices with min(m, n) >= min_2d_dim use Muon; "
+                            "those with min(m, n) < min_2d_dim use Adam fallback. "
+                            "Set to 1 to disable fallback.",
+                        ),
                     ],
                     [],
                     optional=True,

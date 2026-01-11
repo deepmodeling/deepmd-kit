@@ -78,9 +78,14 @@ def _maybe_compile(
     fn: callable,
 ) -> callable:
     """Compile a function if torch.compile is available."""
-    if hasattr(torch, "compile"):
-        return torch.compile(fn, fullgraph=True, dynamic=True)
-    return fn
+    if not hasattr(torch, "compile"):
+        return fn
+    # Skip compile if default device is CUDA but CUDA is unavailable.
+    if hasattr(torch, "get_default_device"):
+        default_device = torch.get_default_device()
+        if default_device.type == "cuda" and not torch.cuda.is_available():
+            return fn
+    return torch.compile(fn, fullgraph=True, dynamic=True)
 
 
 @_maybe_compile
@@ -181,13 +186,54 @@ def zeropower_via_newtonschulz5(
     raise ValueError("Input must be 2D or 3D for Newton-Schulz orthogonalization.")
 
 
+def should_fallback_to_adam_for_matrix(
+    p: torch.Tensor,
+    min_2d_dim: int,
+) -> bool:
+    """
+    Check if a 2D matrix should fallback to Adam due to small dimensions.
+
+    Parameters
+    ----------
+    p : torch.Tensor
+        Parameter tensor with ndim >= 2.
+    min_2d_dim : int
+        Minimum min(m, n) threshold for Muon. Matrices with min(m, n) >=
+        min_2d_dim use Muon; those with min(m, n) < min_2d_dim use Adam.
+
+    Returns
+    -------
+    bool
+        True if min(m, n) < min_2d_dim, False otherwise.
+
+    Raises
+    ------
+    ValueError
+        If tensor has ndim < 2.
+    """
+    # === Step 1. Validate ===
+    if p.ndim < 2:
+        raise ValueError("Parameter must have ndim >= 2 for Muon suitability check.")
+
+    # === Step 2. Derive matrix shape consistent with Muon reshape ===
+    m = int(p.shape[0])
+    n = int(p.numel() // p.shape[0])
+
+    # === Step 3. Check if any dimension too small for Muon ===
+    return min(m, n) < min_2d_dim
+
+
 class MuonOptimizer(Optimizer):
     """
-    Muon optimizer with auxiliary Adam for non-matrix parameters.
+    Muon optimizer with small-2D Adam fallback and 1D Adam path.
 
     This optimizer applies different update rules based on parameter dimensionality:
-    - For >=2D parameters (weight matrices): Muon update with Newton-Schulz orthogonalization
-    - For 1D parameters (biases, layer norms): Standard Adam update
+    - For >=2D parameters with min(m, n) >= min_2d_dim:
+      Muon update with Newton-Schulz orthogonalization.
+    - For 2D parameters with min(m, n) < min_2d_dim (small matrices):
+      Adam update with scaled learning rate and update clipping.
+    - For 1D parameters (biases, layer norms):
+      Standard Adam update.
 
     This hybrid approach is effective because Muon's orthogonalization is designed
     for weight matrices, while Adam is more suitable for biases and normalization params.
@@ -224,8 +270,19 @@ class MuonOptimizer(Optimizer):
           scale = sqrt(max(1.0, m/n)). Adam uses lr/lr_adjust.
         Default is 10.0 (Adam lr = lr/10).
     lr_adjust_coeff : float
-        Coefficient for match-RMS scaling with default 0.2.
-        Only effective when lr_adjust <= 0.
+        Dual-purpose coefficient with default 0.2:
+        1. For Muon (when lr_adjust <= 0): match-RMS scaling factor,
+           scale = lr_adjust_coeff * sqrt(max(m, n)).
+        2. For 2D Adam fallback: learning rate multiplier,
+           adam_lr_matrix = adam_lr * min(lr_adjust_coeff, 0.1).
+           The min(., 0.1) cap ensures conservative updates for small matrices.
+    min_2d_dim : int
+        Minimum min(m, n) threshold for Muon on 2D matrices.
+        Matrices with min(m, n) >= min_2d_dim use Muon;
+        those with min(m, n) < min_2d_dim use Adam fallback.
+        Must be >= 1.
+        Set to 1 to disable fallback.
+        Default is 1.
 
     Examples
     --------
@@ -245,7 +302,11 @@ class MuonOptimizer(Optimizer):
         adam_betas: tuple[float, float] = (0.9, 0.95),
         lr_adjust: float = 10.0,
         lr_adjust_coeff: float = 0.2,
+        min_2d_dim: int = 1,
     ) -> None:
+        if min_2d_dim < 1:
+            raise ValueError("min_2d_dim must be >= 1.")
+
         defaults = {
             "lr": lr,
             "momentum": momentum,
@@ -253,6 +314,7 @@ class MuonOptimizer(Optimizer):
             "adam_betas": adam_betas,
             "lr_adjust": lr_adjust,
             "lr_adjust_coeff": lr_adjust_coeff,
+            "min_2d_dim": min_2d_dim,
         }
         super().__init__(params, defaults)
         # Static parameter routing: built once on first step() call.
@@ -264,8 +326,9 @@ class MuonOptimizer(Optimizer):
         Classify parameters into Muon and Adam routes (static routing).
 
         Routing logic:
-        - >=2D parameters → Muon path (Newton-Schulz + momentum)
-        - 1D parameters → Adam path (standard Adam update)
+        - >=2D parameters with min(m, n) >= min_2d_dim → Muon path
+        - 2D parameters with min(m, n) < min_2d_dim → Adam fallback path
+        - 1D parameters → Adam path
         """
         if self._routing_built:
             return
@@ -273,24 +336,40 @@ class MuonOptimizer(Optimizer):
         self._routing = []
         for group in self.param_groups:
             muon_params: list[dict[str, Any]] = []
-            adam_params: list[dict[str, Any]] = []
+            adam_1d: list[dict[str, Any]] = []
+            adam_matrix: list[dict[str, Any]] = []
+
+            min_2d_dim = group["min_2d_dim"]
 
             for p in group["params"]:
-                if p.ndim >= 2:
-                    muon_params.append(
+                if p.ndim < 2:
+                    adam_1d.append({"param": p})
+                    continue
+
+                if (p.ndim == 2) and should_fallback_to_adam_for_matrix(
+                    p, min_2d_dim=min_2d_dim
+                ):
+                    adam_matrix.append(
                         {
                             "param": p,
-                            "rows": int(p.shape[0]),
-                            "cols": int(p.numel() // p.shape[0]),
+                            "abs_floor": 1e-3 * math.sqrt(float(p.numel())),
                         }
                     )
-                else:
-                    adam_params.append({"param": p})
+                    continue
+
+                muon_params.append(
+                    {
+                        "param": p,
+                        "rows": int(p.shape[0]),
+                        "cols": int(p.numel() // p.shape[0]),
+                    }
+                )
 
             self._routing.append(
                 {
                     "muon_params": muon_params,
-                    "adam_params": adam_params,
+                    "adam_1d": adam_1d,
+                    "adam_matrix": adam_matrix,
                 }
             )
 
@@ -332,13 +411,14 @@ class MuonOptimizer(Optimizer):
             lr_adjust_coeff = group["lr_adjust_coeff"]
 
             # === Step 1. Adam update for 1D parameters (biases, norms, etc.) ===
+            # === Step 1.1. Collect gradients and initialize state ===
             adam_params: list[torch.Tensor] = []
             adam_grads_fp32: list[torch.Tensor] = []
             adam_exp_avgs: list[torch.Tensor] = []
             adam_exp_avg_sqs: list[torch.Tensor] = []
             adam_states: list[dict[str, Any]] = []
 
-            for entry in route["adam_params"]:
+            for entry in route["adam_1d"]:
                 p = entry["param"]
                 grad = p.grad
                 if grad is None:
@@ -363,6 +443,7 @@ class MuonOptimizer(Optimizer):
                 adam_states.append(state)
 
             if adam_params:
+                # === Step 1.2. Update exp_avg / exp_avg_sq ===
                 adam_lr = lr if lr_adjust <= 0 else lr / lr_adjust
 
                 # exp_avg = beta1 * exp_avg + (1 - beta1) * grad
@@ -371,6 +452,7 @@ class MuonOptimizer(Optimizer):
                 grad_sq = torch._foreach_mul(adam_grads_fp32, adam_grads_fp32)
                 torch._foreach_lerp_(adam_exp_avg_sqs, grad_sq, 1 - adam_betas[1])
 
+                # === Step 1.3. Bias correction and parameter update ===
                 for i, p in enumerate(adam_params):
                     state = adam_states[i]
                     bias_corr1 = 1 - state["beta1_pow"]
@@ -381,7 +463,87 @@ class MuonOptimizer(Optimizer):
                     delta_fp32 = -step_size * (adam_exp_avgs[i] / denom)
                     p.add_(delta_fp32.to(p.dtype))
 
-            # === Step 2. Muon update for >=2D parameters (weight matrices) ===
+            # === Step 2. Adam update for small 2D matrices (fallback path) ===
+            # === Step 2.1. Collect gradients and initialize state ===
+            adam_matrix_params: list[torch.Tensor] = []
+            adam_matrix_grads_fp32: list[torch.Tensor] = []
+            adam_matrix_exp_avgs: list[torch.Tensor] = []
+            adam_matrix_exp_avg_sqs: list[torch.Tensor] = []
+            adam_matrix_states: list[dict[str, Any]] = []
+            adam_matrix_abs_floor: list[float] = []
+
+            for entry in route["adam_matrix"]:
+                p = entry["param"]
+                grad = p.grad
+                if grad is None:
+                    continue
+
+                grad_fp32 = grad.float()
+
+                state = self.state[p]
+                if "exp_avg" not in state:
+                    state["exp_avg"] = torch.zeros_like(p, dtype=torch.float32)
+                    state["exp_avg_sq"] = torch.zeros_like(p, dtype=torch.float32)
+                    state["beta1_pow"] = 1.0
+                    state["beta2_pow"] = 1.0
+
+                state["beta1_pow"] *= adam_betas[0]
+                state["beta2_pow"] *= adam_betas[1]
+
+                adam_matrix_params.append(p)
+                adam_matrix_grads_fp32.append(grad_fp32)
+                adam_matrix_exp_avgs.append(state["exp_avg"])
+                adam_matrix_exp_avg_sqs.append(state["exp_avg_sq"])
+                adam_matrix_states.append(state)
+                adam_matrix_abs_floor.append(entry["abs_floor"])
+
+            if adam_matrix_params:
+                # === Step 2.2. Update exp_avg / exp_avg_sq with scaled lr ===
+                adam_lr = lr if lr_adjust <= 0 else lr / lr_adjust
+                adam_lr_matrix = adam_lr * min(lr_adjust_coeff, 0.1)
+
+                # exp_avg = beta1 * exp_avg + (1 - beta1) * grad
+                # exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad^2
+                torch._foreach_lerp_(
+                    adam_matrix_exp_avgs, adam_matrix_grads_fp32, 1 - adam_betas[0]
+                )
+                grad_sq_m = torch._foreach_mul(
+                    adam_matrix_grads_fp32, adam_matrix_grads_fp32
+                )
+                torch._foreach_lerp_(
+                    adam_matrix_exp_avg_sqs, grad_sq_m, 1 - adam_betas[1]
+                )
+
+                # === Step 2.3. Compute unclipped deltas ===
+                raw_deltas: list[torch.Tensor] = []
+                for i in range(len(adam_matrix_params)):
+                    state = adam_matrix_states[i]
+                    bias_corr1 = 1 - state["beta1_pow"]
+                    bias_corr2 = 1 - state["beta2_pow"]
+                    step_size = adam_lr_matrix / bias_corr1
+                    denom = (
+                        (adam_matrix_exp_avg_sqs[i] / bias_corr2).sqrt().add_(ADAM_EPS)
+                    )
+                    raw_deltas.append(-step_size * (adam_matrix_exp_avgs[i] / denom))
+
+                # === Step 2.4. Clip updates by relative norm and apply ===
+                max_rel_change = 0.05
+                p_norms = torch.stack(torch._foreach_norm(adam_matrix_params))
+                delta_norms = torch.stack(torch._foreach_norm(raw_deltas))
+                floors = torch.tensor(
+                    adam_matrix_abs_floor,
+                    device=p_norms.device,
+                    dtype=p_norms.dtype,
+                )
+                max_delta = torch.maximum(max_rel_change * p_norms, floors)
+                scales_tensor = torch.clamp(max_delta / (delta_norms + 1e-12), max=1.0)
+                for i, delta in enumerate(raw_deltas):
+                    delta.mul_(scales_tensor[i])
+
+                torch._foreach_add_(adam_matrix_params, raw_deltas)
+
+            # === Step 3. Muon update for >=2D parameters (weight matrices) ===
+            # === Step 3.1. Collect gradients and initialize momentum ===
             muon_params_for_decay: list[torch.Tensor] = []
             muon_grads: list[torch.Tensor] = []
             muon_momentum_buffers: list[torch.Tensor] = []
@@ -406,12 +568,14 @@ class MuonOptimizer(Optimizer):
                 muon_momentum_buffers.append(buf)
                 active_entries.append((entry, grad))
 
+            # === Step 3.2. Apply weight decay (Muon path only) ===
             if weight_decay > 0 and muon_params_for_decay:
                 torch._foreach_mul_(muon_params_for_decay, 1.0 - lr * weight_decay)
 
             if not active_entries:
                 continue
 
+            # === Step 3.3. Momentum update (Nesterov) ===
             # m_t = beta * m_{t-1} + (1 - beta) * g_t
             torch._foreach_lerp_(muon_momentum_buffers, muon_grads, 1 - momentum)
             # update = beta * m_t + (1 - beta) * g_t
@@ -419,6 +583,7 @@ class MuonOptimizer(Optimizer):
                 muon_grads, muon_momentum_buffers, momentum
             )
 
+            # === Step 3.4. Bucket by shape/device/dtype for batched NS ===
             buckets: dict[
                 tuple[int, int, torch.device, torch.dtype],
                 list[tuple[dict[str, Any], torch.Tensor]],
@@ -432,6 +597,7 @@ class MuonOptimizer(Optimizer):
                     buckets[bucket_key] = []
                 buckets[bucket_key].append((entry, muon_updates[idx]))
 
+            # === Step 3.5. Newton-Schulz orthogonalization and update ===
             for (rows, cols, _device, dtype), bucket_entries in buckets.items():
                 # scale = coeff * sqrt(max(m, n))  [match-RMS mode]
                 # scale = sqrt(max(1, m/n))        [rectangular mode]

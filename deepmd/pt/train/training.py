@@ -173,6 +173,7 @@ class Trainer:
                 "adam_beta2": params.get("adam_beta2", 0.95),
                 "lr_adjust": params.get("lr_adjust", 10.0),
                 "lr_adjust_coeff": params.get("lr_adjust_coeff", 0.2),
+                "min_2d_dim": params.get("min_2d_dim", 1),
             }
             return opt_type, opt_param
 
@@ -652,8 +653,7 @@ class Trainer:
             missing, unexpected = self.model.load_state_dict(state, strict=False)
             if missing or unexpected:
                 log.warning(
-                    "Checkpoint loaded non-strictly. "
-                    f"Missing keys: {missing}, Unexpected keys: {unexpected}"
+                    f"Checkpoint loaded non-strictly. Missing keys: {missing}, Unexpected keys: {unexpected}"
                 )
 
         # Get model prob for multi-task
@@ -758,6 +758,7 @@ class Trainer:
                 ),
                 lr_adjust=float(self.opt_param.get("lr_adjust", 10.0)),
                 lr_adjust_coeff=float(self.opt_param.get("lr_adjust_coeff", 0.2)),
+                min_2d_dim=int(self.opt_param.get("min_2d_dim", 1)),
             )
             if optimizer_state_dict is not None and self.restart_training:
                 self.optimizer.load_state_dict(optimizer_state_dict)
@@ -1577,8 +1578,6 @@ def model_change_out_bias(
 
     model_type_map = _model.get_type_map()
     log.info(
-        f"Change output bias of {model_type_map!s} "
-        f"from {to_numpy_array(old_bias).reshape(-1)!s} "
-        f"to {to_numpy_array(new_bias).reshape(-1)!s}."
+        f"Change output bias of {model_type_map!s} from {to_numpy_array(old_bias).reshape(-1)!s} to {to_numpy_array(new_bias).reshape(-1)!s}."
     )
     return _model

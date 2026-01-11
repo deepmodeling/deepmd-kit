@@ -113,6 +113,30 @@ class TestMuonOptimizer(unittest.TestCase):
         self.assertIn("exp_avg_sq", optimizer.state[model.bias])
         self.assertNotIn("momentum_buffer", optimizer.state[model.bias])
 
+    def test_muon_adam_fallback_small_2d(self) -> None:
+        """Test Adam fallback for small 2D matrices when min_2d_dim is set."""
+        torch.manual_seed(42)
+        linear_small = torch.nn.Linear(10, 1, bias=False, device=self.device)
+        linear_large = torch.nn.Linear(10, 10, bias=False, device=self.device)
+        optimizer = MuonOptimizer(
+            list(linear_small.parameters()) + list(linear_large.parameters()),
+            lr=0.02,
+            min_2d_dim=2,
+        )
+
+        x = torch.randn(4, 10, device=self.device)
+        loss = linear_small(x).sum() + linear_large(x).sum()
+        loss.backward()
+        optimizer.step()
+
+        # Small 2D weight should use Adam fallback.
+        self.assertIn("exp_avg", optimizer.state[linear_small.weight])
+        self.assertNotIn("momentum_buffer", optimizer.state[linear_small.weight])
+
+        # Large 2D weight should use Muon.
+        self.assertIn("momentum_buffer", optimizer.state[linear_large.weight])
+        self.assertNotIn("exp_avg", optimizer.state[linear_large.weight])
+
     def test_lr_adjust_modes(self) -> None:
         """Test lr_adjust modes: match-RMS (<=0) vs rectangular (>0)."""
         torch.manual_seed(42)
