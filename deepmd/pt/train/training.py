@@ -743,6 +743,55 @@ class Trainer:
         self.profiling = training_params.get("profiling", False)
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
 
+        # Log model summary info (descriptor type and parameter count)
+        if self.rank == 0:
+            self._log_model_summary()
+
+    def _log_model_summary(self) -> None:
+        """Log model summary information including descriptor type and parameter count."""
+
+        def get_descriptor_type(model: torch.nn.Module) -> str:
+            """Get the descriptor type name from model."""
+            # Standard models have get_descriptor method
+            if hasattr(model, "get_descriptor"):
+                descriptor = model.get_descriptor()
+                if descriptor is not None:
+                    serialized = descriptor.serialize()
+                    if isinstance(serialized, dict) and "type" in serialized:
+                        return serialized["type"].upper()
+            # ZBL and other models: use serialize() API
+            if hasattr(model, "serialize"):
+                serialized = model.serialize()
+                if isinstance(serialized, dict):
+                    model_type = serialized.get("type", "")
+                    if model_type == "zbl":
+                        # ZBL model: get descriptor type from the DP sub-model
+                        models_data = serialized.get("models", [])
+                        if models_data:
+                            descriptor_data = models_data[0].get("descriptor", {})
+                            if isinstance(descriptor_data, dict):
+                                desc_type = descriptor_data.get("type", "UNKNOWN")
+                                return f"{desc_type.upper()} (with ZBL)"
+                        return "UNKNOWN (with ZBL)"
+            return "UNKNOWN"
+
+        def count_parameters(model: torch.nn.Module) -> int:
+            """Count the total number of trainable parameters."""
+            return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+        if not self.multi_task:
+            desc_type = get_descriptor_type(self.model)
+            num_params = count_parameters(self.model)
+            log.info(f"Descriptor:    {desc_type}")
+            log.info(f"Model Params:  {num_params / 1e6:.3f} M")
+        else:
+            # For multi-task, log each model's info
+            for model_key in self.model_keys:
+                desc_type = get_descriptor_type(self.model[model_key])
+                num_params = count_parameters(self.model[model_key])
+                log.info(f"Descriptor [{model_key}]:  {desc_type}")
+                log.info(f"Model Params [{model_key}]: {num_params / 1e6:.3f} M")
+
     def run(self) -> None:
         fout = (
             open(
