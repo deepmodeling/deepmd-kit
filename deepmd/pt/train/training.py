@@ -768,26 +768,32 @@ class Trainer:
     def _log_model_summary(self) -> None:
         """Log model summary information including descriptor type and parameter count."""
 
-        def get_descriptor_type(model: Any) -> str:
+        def get_descriptor_type(model: torch.nn.Module) -> str:
             """Get the descriptor type name from model."""
             # Standard models have get_descriptor method
             if hasattr(model, "get_descriptor"):
                 descriptor = model.get_descriptor()
-                serialized = descriptor.serialize()
-                if isinstance(serialized, dict) and "type" in serialized:
-                    return serialized["type"].upper()
-            # ZBL models: descriptor is in atomic_model.models[0]
-            if hasattr(model, "atomic_model") and hasattr(model.atomic_model, "models"):
-                models = model.atomic_model.models
-                if models:  # Check non-empty
-                    dp_model = models[0]
-                    if hasattr(dp_model, "descriptor"):
-                        serialized = dp_model.descriptor.serialize()
-                        if isinstance(serialized, dict) and "type" in serialized:
-                            return serialized["type"].upper() + " (with ZBL)"
+                if descriptor is not None:
+                    serialized = descriptor.serialize()
+                    if isinstance(serialized, dict) and "type" in serialized:
+                        return serialized["type"].upper()
+            # ZBL and other models: use serialize() API
+            if hasattr(model, "serialize"):
+                serialized = model.serialize()
+                if isinstance(serialized, dict):
+                    model_type = serialized.get("type", "")
+                    if model_type == "zbl":
+                        # ZBL model: get descriptor type from the DP sub-model
+                        models_data = serialized.get("models", [])
+                        if models_data:
+                            descriptor_data = models_data[0].get("descriptor", {})
+                            if isinstance(descriptor_data, dict):
+                                desc_type = descriptor_data.get("type", "UNKNOWN")
+                                return f"{desc_type.upper()} (with ZBL)"
+                        return "UNKNOWN (with ZBL)"
             return "UNKNOWN"
 
-        def count_parameters(model: Any) -> int:
+        def count_parameters(model: torch.nn.Module) -> int:
             """Count the total number of trainable parameters."""
             return sum(p.numel() for p in model.parameters() if p.requires_grad)
 

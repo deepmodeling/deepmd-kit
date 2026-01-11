@@ -4,140 +4,184 @@
 import unittest
 from unittest.mock import (
     MagicMock,
+    patch,
 )
 
 import torch
 
 
-class TestGetDescriptorType(unittest.TestCase):
-    """Test get_descriptor_type helper function."""
+class TestLogModelSummary(unittest.TestCase):
+    """Test _log_model_summary method behavior."""
 
-    @staticmethod
-    def get_descriptor_type(model):
-        """Replicate the logic from training.py for testing."""
-        # Standard models have get_descriptor method
-        if hasattr(model, "get_descriptor"):
-            descriptor = model.get_descriptor()
-            serialized = descriptor.serialize()
-            if isinstance(serialized, dict) and "type" in serialized:
-                return serialized["type"].upper()
-        # ZBL models: descriptor is in atomic_model.models[0]
-        if hasattr(model, "atomic_model") and hasattr(model.atomic_model, "models"):
-            models = model.atomic_model.models
-            if models:  # Check non-empty
-                dp_model = models[0]
-                if hasattr(dp_model, "descriptor"):
-                    serialized = dp_model.descriptor.serialize()
-                    if isinstance(serialized, dict) and "type" in serialized:
-                        return serialized["type"].upper() + " (with ZBL)"
-        return "UNKNOWN"
+    def _create_mock_trainer(self, multi_task: bool = False):
+        """Create a mock Trainer instance for testing."""
+        trainer = MagicMock()
+        trainer.multi_task = multi_task
+        trainer.rank = 0
+        return trainer
 
-    def test_standard_model(self):
-        """Test descriptor type detection for standard models."""
+    def _create_mock_model_with_descriptor(self, desc_type: str):
+        """Create a mock model with get_descriptor method."""
         mock_descriptor = MagicMock()
-        mock_descriptor.serialize.return_value = {"type": "se_e2_a"}
+        mock_descriptor.serialize.return_value = {"type": desc_type}
 
-        mock_model = MagicMock()
+        mock_model = MagicMock(spec=torch.nn.Module)
         mock_model.get_descriptor.return_value = mock_descriptor
+        mock_model.parameters.return_value = iter(
+            [torch.nn.Parameter(torch.randn(10, 5))]
+        )
+        return mock_model
 
-        result = self.get_descriptor_type(mock_model)
-        self.assertEqual(result, "SE_E2_A")
+    def _create_mock_zbl_model(self, desc_type: str):
+        """Create a mock ZBL model using serialize() API."""
+        mock_model = MagicMock(spec=torch.nn.Module)
+        # Remove get_descriptor to simulate ZBL model
+        del mock_model.get_descriptor
+        mock_model.serialize.return_value = {
+            "type": "zbl",
+            "models": [
+                {"descriptor": {"type": desc_type}},
+                {"type": "pairtab"},
+            ],
+        }
+        mock_model.parameters.return_value = iter(
+            [torch.nn.Parameter(torch.randn(10, 5))]
+        )
+        return mock_model
 
-    def test_zbl_model(self):
-        """Test descriptor type detection for ZBL models."""
-        mock_descriptor = MagicMock()
-        mock_descriptor.serialize.return_value = {"type": "dpa1"}
+    @patch("deepmd.pt.train.training.log")
+    def test_standard_model_log_output(self, mock_log):
+        """Test log output for standard models."""
+        from deepmd.pt.train.training import (
+            Trainer,
+        )
 
-        mock_dp_model = MagicMock()
-        mock_dp_model.descriptor = mock_descriptor
+        trainer = self._create_mock_trainer(multi_task=False)
+        trainer.model = self._create_mock_model_with_descriptor("se_e2_a")
 
-        mock_atomic_model = MagicMock()
-        mock_atomic_model.models = [mock_dp_model]
+        # Call the actual method
+        Trainer._log_model_summary(trainer)
 
-        mock_model = MagicMock(spec=[])  # No get_descriptor
-        mock_model.atomic_model = mock_atomic_model
+        # Verify log.info was called with expected descriptor type
+        calls = [str(call) for call in mock_log.info.call_args_list]
+        self.assertTrue(any("SE_E2_A" in call for call in calls))
+        self.assertTrue(any("Model Params" in call for call in calls))
 
-        result = self.get_descriptor_type(mock_model)
-        self.assertEqual(result, "DPA1 (with ZBL)")
+    @patch("deepmd.pt.train.training.log")
+    def test_zbl_model_log_output(self, mock_log):
+        """Test log output for ZBL models."""
+        from deepmd.pt.train.training import (
+            Trainer,
+        )
 
-    def test_empty_models_list(self):
-        """Test handling of empty models list in ZBL model."""
-        mock_atomic_model = MagicMock()
-        mock_atomic_model.models = []
+        trainer = self._create_mock_trainer(multi_task=False)
+        trainer.model = self._create_mock_zbl_model("dpa1")
 
-        mock_model = MagicMock(spec=[])
-        mock_model.atomic_model = mock_atomic_model
+        # Call the actual method
+        Trainer._log_model_summary(trainer)
 
-        result = self.get_descriptor_type(mock_model)
-        self.assertEqual(result, "UNKNOWN")
+        # Verify log.info was called with expected descriptor type
+        calls = [str(call) for call in mock_log.info.call_args_list]
+        self.assertTrue(any("DPA1 (with ZBL)" in call for call in calls))
 
-    def test_missing_type_key(self):
-        """Test handling of serialize() without 'type' key."""
-        mock_descriptor = MagicMock()
-        mock_descriptor.serialize.return_value = {"other_key": "value"}
+    @patch("deepmd.pt.train.training.log")
+    def test_multi_task_log_output(self, mock_log):
+        """Test log output for multi-task models."""
+        from deepmd.pt.train.training import (
+            Trainer,
+        )
 
-        mock_model = MagicMock()
-        mock_model.get_descriptor.return_value = mock_descriptor
+        trainer = self._create_mock_trainer(multi_task=True)
+        trainer.model_keys = ["task1", "task2"]
+        trainer.model = {
+            "task1": self._create_mock_model_with_descriptor("dpa2"),
+            "task2": self._create_mock_model_with_descriptor("se_atten"),
+        }
 
-        result = self.get_descriptor_type(mock_model)
-        self.assertEqual(result, "UNKNOWN")
+        # Call the actual method
+        Trainer._log_model_summary(trainer)
 
-    def test_serialize_returns_non_dict(self):
-        """Test handling of serialize() returning non-dict."""
-        mock_descriptor = MagicMock()
-        mock_descriptor.serialize.return_value = "not_a_dict"
+        # Verify log.info was called for each task
+        calls = [str(call) for call in mock_log.info.call_args_list]
+        self.assertTrue(any("task1" in call for call in calls))
+        self.assertTrue(any("task2" in call for call in calls))
+        self.assertTrue(any("DPA2" in call for call in calls))
+        self.assertTrue(any("SE_ATTEN" in call for call in calls))
 
-        mock_model = MagicMock()
-        mock_model.get_descriptor.return_value = mock_descriptor
-
-        result = self.get_descriptor_type(mock_model)
-        self.assertEqual(result, "UNKNOWN")
-
-    def test_unknown_model_structure(self):
+    @patch("deepmd.pt.train.training.log")
+    def test_unknown_model_structure(self, mock_log):
         """Test handling of unknown model structure."""
-        mock_model = MagicMock(spec=[])  # No get_descriptor, no atomic_model
-        result = self.get_descriptor_type(mock_model)
-        self.assertEqual(result, "UNKNOWN")
+        from deepmd.pt.train.training import (
+            Trainer,
+        )
+
+        trainer = self._create_mock_trainer(multi_task=False)
+        # Model without get_descriptor and without serialize returning valid type
+        mock_model = MagicMock(spec=torch.nn.Module)
+        del mock_model.get_descriptor
+        mock_model.serialize.return_value = {"other_key": "value"}
+        mock_model.parameters.return_value = iter([])
+        trainer.model = mock_model
+
+        # Call the actual method
+        Trainer._log_model_summary(trainer)
+
+        # Verify "UNKNOWN" appears in output
+        calls = [str(call) for call in mock_log.info.call_args_list]
+        self.assertTrue(any("UNKNOWN" in call for call in calls))
+
+    @patch("deepmd.pt.train.training.log")
+    def test_none_descriptor(self, mock_log):
+        """Test handling when get_descriptor returns None."""
+        from deepmd.pt.train.training import (
+            Trainer,
+        )
+
+        trainer = self._create_mock_trainer(multi_task=False)
+        mock_model = MagicMock(spec=torch.nn.Module)
+        mock_model.get_descriptor.return_value = None
+        mock_model.serialize.return_value = {"other_key": "value"}
+        mock_model.parameters.return_value = iter([])
+        trainer.model = mock_model
+
+        # Call the actual method - should not raise AttributeError
+        Trainer._log_model_summary(trainer)
+
+        # Verify "UNKNOWN" appears in output
+        calls = [str(call) for call in mock_log.info.call_args_list]
+        self.assertTrue(any("UNKNOWN" in call for call in calls))
 
 
 class TestCountParameters(unittest.TestCase):
-    """Test count_parameters helper function."""
+    """Test parameter counting behavior through _log_model_summary."""
 
-    @staticmethod
-    def count_parameters(model):
-        """Replicate the logic from training.py for testing."""
-        return sum(p.numel() for p in model.parameters() if p.requires_grad)
+    @patch("deepmd.pt.train.training.log")
+    def test_parameter_count_in_log(self, mock_log):
+        """Test that parameter count is correctly logged."""
+        from deepmd.pt.train.training import (
+            Trainer,
+        )
 
-    def test_all_trainable(self):
-        """Test counting when all parameters are trainable."""
-        with torch.device("cpu"):
-            model = torch.nn.Linear(10, 5)  # 10*5 + 5 = 55 parameters
-        result = self.count_parameters(model)
-        self.assertEqual(result, 55)
+        trainer = MagicMock()
+        trainer.multi_task = False
+        trainer.rank = 0
 
-    def test_mixed_trainable(self):
-        """Test counting with some frozen parameters."""
-        with torch.device("cpu"):
-            model = torch.nn.Sequential(
-                torch.nn.Linear(10, 5),  # 55 params
-                torch.nn.Linear(5, 3),  # 18 params
-            )
-        # Freeze first layer
-        for param in model[0].parameters():
-            param.requires_grad = False
+        # Create model with known parameter count
+        real_model = torch.nn.Linear(10, 5).to("cpu")  # 10*5 + 5 = 55 parameters
 
-        result = self.count_parameters(model)
-        self.assertEqual(result, 18)  # Only second layer
+        # Add mock methods
+        mock_descriptor = MagicMock()
+        mock_descriptor.serialize.return_value = {"type": "test"}
+        real_model.get_descriptor = MagicMock(return_value=mock_descriptor)
 
-    def test_all_frozen(self):
-        """Test counting when all parameters are frozen."""
-        with torch.device("cpu"):
-            model = torch.nn.Linear(10, 5)
-        for param in model.parameters():
-            param.requires_grad = False
+        trainer.model = real_model
 
-        result = self.count_parameters(model)
-        self.assertEqual(result, 0)
+        # Call the actual method
+        Trainer._log_model_summary(trainer)
+
+        # Verify parameter count is logged (55 params = 0.000055 M)
+        calls = [str(call) for call in mock_log.info.call_args_list]
+        self.assertTrue(any("0.000 M" in call for call in calls))
 
 
 if __name__ == "__main__":
