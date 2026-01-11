@@ -25,17 +25,18 @@ class TestLogModelSummary(unittest.TestCase):
         mock_descriptor = MagicMock()
         mock_descriptor.serialize.return_value = {"type": desc_type}
 
-        mock_model = MagicMock(spec=torch.nn.Module)
+        mock_model = MagicMock()
         mock_model.get_descriptor.return_value = mock_descriptor
         mock_model.parameters.return_value = iter(
-            [torch.nn.Parameter(torch.randn(10, 5))]
+            [torch.nn.Parameter(torch.randn(10, 5, device="cpu"))]
         )
         return mock_model
 
     def _create_mock_zbl_model(self, desc_type: str):
         """Create a mock ZBL model using serialize() API."""
-        mock_model = MagicMock(spec=torch.nn.Module)
-        # Remove get_descriptor to simulate ZBL model
+        # Use spec as list to only allow specific attributes (no get_descriptor)
+        mock_model = MagicMock()
+        # Delete get_descriptor so hasattr returns False
         del mock_model.get_descriptor
         mock_model.serialize.return_value = {
             "type": "zbl",
@@ -45,7 +46,7 @@ class TestLogModelSummary(unittest.TestCase):
             ],
         }
         mock_model.parameters.return_value = iter(
-            [torch.nn.Parameter(torch.randn(10, 5))]
+            [torch.nn.Parameter(torch.randn(10, 5, device="cpu"))]
         )
         return mock_model
 
@@ -117,7 +118,7 @@ class TestLogModelSummary(unittest.TestCase):
 
         trainer = self._create_mock_trainer(multi_task=False)
         # Model without get_descriptor and without serialize returning valid type
-        mock_model = MagicMock(spec=torch.nn.Module)
+        mock_model = MagicMock()
         del mock_model.get_descriptor
         mock_model.serialize.return_value = {"other_key": "value"}
         mock_model.parameters.return_value = iter([])
@@ -138,7 +139,7 @@ class TestLogModelSummary(unittest.TestCase):
         )
 
         trainer = self._create_mock_trainer(multi_task=False)
-        mock_model = MagicMock(spec=torch.nn.Module)
+        mock_model = MagicMock()
         mock_model.get_descriptor.return_value = None
         mock_model.serialize.return_value = {"other_key": "value"}
         mock_model.parameters.return_value = iter([])
@@ -167,7 +168,7 @@ class TestCountParameters(unittest.TestCase):
         trainer.rank = 0
 
         # Create model with known parameter count
-        real_model = torch.nn.Linear(10, 5).to("cpu")  # 10*5 + 5 = 55 parameters
+        real_model = torch.nn.Linear(10, 5, device="cpu")  # 10*5 + 5 = 55 parameters
 
         # Add mock methods
         mock_descriptor = MagicMock()
