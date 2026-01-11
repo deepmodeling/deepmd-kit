@@ -96,7 +96,7 @@ def build_neighbor_list(
     nall = coord.shape[1] // 3
     # fill virtual atoms with large coords so they are not neighbors of any
     # real atom.
-    if coord.size > 0:
+    if array_api_compat.size(coord) > 0:
         xmax = xp.max(coord) + 2.0 * rcut
     else:
         xmax = 2.0 * rcut
