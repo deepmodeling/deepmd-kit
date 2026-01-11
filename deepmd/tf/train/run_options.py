@@ -67,10 +67,10 @@ class SummaryPrinter(BaseSummaryPrinter):
         """Get backend information."""
         return {
             "Backend": "TensorFlow",
-            "TF ver": tf.version.GIT_VERSION,
-            "build with TF ver": TF_VERSION,
-            "build with TF inc": GLOBAL_CONFIG["tf_include_dir"].replace(";", "\n"),
-            "build with TF lib": GLOBAL_CONFIG["tf_libs"].replace(";", "\n"),
+            "TF Ver": tf.version.GIT_VERSION,
+            "Built With TF Ver": TF_VERSION,
+            "Built With TF Inc": GLOBAL_CONFIG["tf_include_dir"].replace(";", "\n"),
+            "Built With TF Lib": GLOBAL_CONFIG["tf_libs"].replace(";", "\n"),
         }
 
 
