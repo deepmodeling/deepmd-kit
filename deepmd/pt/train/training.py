@@ -289,6 +289,11 @@ class Trainer:
         ) -> np.ndarray:
             model_prob = np.zeros(len(model_keys), dtype=np.float64)
             if model_prob_config:
+                missing = [k for k in model_keys if k not in model_prob_config]
+                if missing:
+                    raise ValueError(
+                        f"training.model_prob must specify all tasks; missing: {missing}"
+                    )
                 for ii, model_key in enumerate(model_keys):
                     if model_key in model_prob_config:
                         model_prob[ii] = float(model_prob_config[model_key])
