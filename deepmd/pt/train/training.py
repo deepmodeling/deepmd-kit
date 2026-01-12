@@ -264,6 +264,10 @@ class Trainer:
                 raise ValueError("Sampler weights must be 1D.")
             if weights.size == 0:
                 raise ValueError("Sampler weights are empty.")
+            if not np.all(np.isfinite(weights)):
+                raise ValueError("Sampler weights must be finite.")
+            if np.any(weights < 0.0):
+                raise ValueError("Sampler weights must be non-negative.")
             weight_sum = float(np.sum(weights))
             if weight_sum <= 0.0:
                 raise ValueError("Sampler weights must sum to a positive value.")
@@ -289,6 +293,11 @@ class Trainer:
                     if model_key in model_prob_config:
                         model_prob[ii] = float(model_prob_config[model_key])
             else:
+                if self.rank == 0:
+                    log.info(
+                        "training.model_prob is not set or empty; defaulting to the "
+                        "number of systems per task."
+                    )
                 for ii, model_key in enumerate(model_keys):
                     model_prob[ii] = float(len(model_training_data[model_key]))
             if not np.all(np.isfinite(model_prob)):
