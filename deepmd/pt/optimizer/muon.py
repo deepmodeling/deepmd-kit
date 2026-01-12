@@ -537,10 +537,10 @@ class MuonOptimizer(Optimizer):
                 )
                 max_delta = torch.maximum(max_rel_change * p_norms, floors)
                 scales_tensor = torch.clamp(max_delta / (delta_norms + 1e-12), max=1.0)
-                for i, delta in enumerate(raw_deltas):
-                    delta.mul_(scales_tensor[i])
-
-                torch._foreach_add_(adam_matrix_params, raw_deltas)
+                for i, (p, delta) in enumerate(
+                    zip(adam_matrix_params, raw_deltas, strict=False)
+                ):
+                    p.add_(delta.mul_(scales_tensor[i]).to(p.dtype))
 
             # === Step 3. Muon update for >=2D parameters (weight matrices) ===
             # === Step 3.1. Collect gradients and initialize momentum ===

@@ -12,6 +12,32 @@ from deepmd.pt.utils import (
 )
 
 
+def _bf16_matmul_supported(device: torch.device) -> bool:
+    """Check if bf16 matmul is reliably supported on the given device."""
+    if device.type == "cuda":
+        if not torch.cuda.is_available():
+            return False
+        # bf16 requires compute capability >= 8.0 (Ampere+) for native support
+        # or >= 7.0 (Volta) with tensor cores, but may have precision issues
+        if hasattr(torch.cuda, "is_bf16_supported"):
+            return torch.cuda.is_bf16_supported()
+        # Fallback: check compute capability directly
+        cap = torch.cuda.get_device_capability(device)
+        return cap[0] >= 8
+    # CPU bf16 support: available on x86 with AVX-512 BF16 or ARM with BF16 extension
+    # Since it's hard to detect reliably, try a small matmul and check for errors
+    try:
+        a = torch.randn(4, 4, dtype=torch.bfloat16, device=device)
+        _ = torch.mm(a, a.T)
+        return True
+    except (RuntimeError, TypeError):
+        return False
+
+
+BF16_SUPPORTED = _bf16_matmul_supported(env.DEVICE)
+
+
+@unittest.skipIf(not BF16_SUPPORTED, "bf16 matmul not supported on this device")
 class TestNewtonSchulzOrthogonalization(unittest.TestCase):
     """Test Newton-Schulz orthogonalization algorithm."""
 
@@ -55,6 +81,7 @@ class TestNewtonSchulzOrthogonalization(unittest.TestCase):
             zeropower_via_newtonschulz5(G_1d)
 
 
+@unittest.skipIf(not BF16_SUPPORTED, "bf16 matmul not supported on this device")
 class TestMuonOptimizer(unittest.TestCase):
     """Test MuonOptimizer class."""
 
@@ -164,6 +191,7 @@ class TestMuonOptimizer(unittest.TestCase):
         )
 
 
+@unittest.skipIf(not BF16_SUPPORTED, "bf16 matmul not supported on this device")
 class TestMuonOptimizerStateDict(unittest.TestCase):
     """Test optimizer state dict save/load."""
 
