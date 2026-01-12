@@ -17,11 +17,6 @@ import deepmd.pt.utils.dataloader as pt_dataloader
 from deepmd.pt.utils import (
     dp_random,
 )
-from deepmd.pt.utils.dataloader import (
-    DpLoaderSet,
-    get_sampler_from_params,
-    get_weighted_sampler,
-)
 from deepmd.tf.common import (
     expand_sys_str,
 )
@@ -67,7 +62,7 @@ class TestSampler(unittest.TestCase):
         self.systems = config["training"]["validation_data"]["systems"]
         if isinstance(self.systems, str):
             self.systems = expand_sys_str(self.systems)
-        self.my_dataset = DpLoaderSet(
+        self.my_dataset = pt_dataloader.DpLoaderSet(
             self.systems,
             self.batch_size,
             self.type_map,
@@ -81,7 +76,9 @@ class TestSampler(unittest.TestCase):
     def tearDown(self) -> None:
         self._monkeypatch.undo()
 
-    def _make_dataloader(self, dataset: DpLoaderSet, sampler) -> DataLoader:
+    def _make_dataloader(
+        self, dataset: pt_dataloader.DpLoaderSet, sampler
+    ) -> DataLoader:
         return DataLoader(
             dataset,
             sampler=sampler,
@@ -96,6 +93,18 @@ class TestSampler(unittest.TestCase):
         return weights / np.sum(weights)
 
     def _compute_total_numb_batch(self, nbatches: np.ndarray, probs: np.ndarray) -> int:
+        # NOTE: This is a simplified test-only variant of training.py logic.
+        nbatches = np.asarray(nbatches, dtype=np.float64)
+        probs = np.asarray(probs, dtype=np.float64)
+        if nbatches.shape != probs.shape:
+            raise ValueError(
+                "nbatches and probs must have the same shape in this test helper."
+            )
+        if not np.all(probs > 0.0):
+            raise ValueError(
+                "Zero or negative sampling probabilities are not supported in this "
+                "test helper."
+            )
         return int(np.ceil(np.max(nbatches / probs)))
 
     def _sample_sid_counts(
@@ -156,7 +165,9 @@ class TestSampler(unittest.TestCase):
     def test_sampler_debug_info(self) -> None:
         dataloader = DataLoader(
             self.my_dataset,
-            sampler=get_weighted_sampler(self.my_dataset, prob_style="prob_sys_size"),
+            sampler=pt_dataloader.get_weighted_sampler(
+                self.my_dataset, prob_style="prob_sys_size"
+            ),
             batch_size=None,
             num_workers=0,  # setting to 0 diverges the behavior of its iterator; should be >=1
             drop_last=False,
@@ -171,7 +182,9 @@ class TestSampler(unittest.TestCase):
 
     def test_auto_prob_uniform(self) -> None:
         auto_prob_style = "prob_uniform"
-        sampler = get_weighted_sampler(self.my_dataset, prob_style=auto_prob_style)
+        sampler = pt_dataloader.get_weighted_sampler(
+            self.my_dataset, prob_style=auto_prob_style
+        )
         my_probs = np.array(sampler.weights)
         self.dp_dataset.set_sys_probs(auto_prob_style=auto_prob_style)
         dp_probs = np.array(self.dp_dataset.sys_probs)
@@ -179,7 +192,9 @@ class TestSampler(unittest.TestCase):
 
     def test_auto_prob_sys_size(self) -> None:
         auto_prob_style = "prob_sys_size"
-        sampler = get_weighted_sampler(self.my_dataset, prob_style=auto_prob_style)
+        sampler = pt_dataloader.get_weighted_sampler(
+            self.my_dataset, prob_style=auto_prob_style
+        )
         my_probs = np.array(sampler.weights)
         self.dp_dataset.set_sys_probs(auto_prob_style=auto_prob_style)
         dp_probs = np.array(self.dp_dataset.sys_probs)
@@ -187,7 +202,9 @@ class TestSampler(unittest.TestCase):
 
     def test_auto_prob_sys_size_ext(self) -> None:
         auto_prob_style = "prob_sys_size;0:1:0.2;1:3:0.8"
-        sampler = get_weighted_sampler(self.my_dataset, prob_style=auto_prob_style)
+        sampler = pt_dataloader.get_weighted_sampler(
+            self.my_dataset, prob_style=auto_prob_style
+        )
         my_probs = np.array(sampler.weights)
         self.dp_dataset.set_sys_probs(auto_prob_style=auto_prob_style)
         dp_probs = np.array(self.dp_dataset.sys_probs)
@@ -195,7 +212,7 @@ class TestSampler(unittest.TestCase):
 
     def test_sys_probs(self) -> None:
         sys_probs = [0.1, 0.4, 0.5]
-        sampler = get_weighted_sampler(
+        sampler = pt_dataloader.get_weighted_sampler(
             self.my_dataset, prob_style=sys_probs, sys_prob=True
         )
         my_probs = np.array(sampler.weights)
@@ -209,7 +226,7 @@ class TestSampler(unittest.TestCase):
             "sys_probs": sys_probs,
             "auto_prob": "prob_sys_size",
         }  # use sys_probs first
-        sampler = get_sampler_from_params(self.my_dataset, _params)
+        sampler = pt_dataloader.get_sampler_from_params(self.my_dataset, _params)
         my_probs = np.array(sampler.weights)
         self.dp_dataset.set_sys_probs(sys_probs=sys_probs)
         dp_probs = np.array(self.dp_dataset.sys_probs)
@@ -218,7 +235,7 @@ class TestSampler(unittest.TestCase):
     def test_auto_prob_sys_size_ext_end2end(self):
         auto_prob_style = "prob_sys_size;0:1:0.2;1:3:0.8"
         _params = {"sys_probs": None, "auto_prob": auto_prob_style}  # use auto_prob
-        sampler = get_sampler_from_params(self.my_dataset, _params)
+        sampler = pt_dataloader.get_sampler_from_params(self.my_dataset, _params)
         my_probs = np.array(sampler.weights)
         self.dp_dataset.set_sys_probs(auto_prob_style=auto_prob_style)
         dp_probs = np.array(self.dp_dataset.sys_probs)
@@ -231,7 +248,7 @@ class TestSampler(unittest.TestCase):
             str(Path(__file__).parent / "water/data/data_1"),
             str(Path(__file__).parent / "water/data/single"),
         ]
-        dataset_epoch = DpLoaderSet(
+        dataset_epoch = pt_dataloader.DpLoaderSet(
             systems,
             self.batch_size,
             self.type_map,
@@ -240,7 +257,7 @@ class TestSampler(unittest.TestCase):
         )
         sys_probs = [0.2, 0.3, 0.5]
         params = {"sys_probs": sys_probs, "auto_prob": "prob_sys_size"}
-        sampler_epoch = get_sampler_from_params(dataset_epoch, params)
+        sampler_epoch = pt_dataloader.get_sampler_from_params(dataset_epoch, params)
         probs = self._normalize_probs(np.asarray(sampler_epoch.weights))
         nbatches = np.asarray(dataset_epoch.index, dtype=np.float64)
         total_numb_batch = self._compute_total_numb_batch(nbatches, probs)
@@ -257,14 +274,14 @@ class TestSampler(unittest.TestCase):
         self.assertTrue(np.allclose(empirical_epoch, probs, atol=0.1))
 
         # === Step 3. Sample Using Explicit Steps ===
-        dataset_steps = DpLoaderSet(
+        dataset_steps = pt_dataloader.DpLoaderSet(
             systems,
             self.batch_size,
             self.type_map,
             seed=10,
             shuffle=False,
         )
-        sampler_steps = get_sampler_from_params(dataset_steps, params)
+        sampler_steps = pt_dataloader.get_sampler_from_params(dataset_steps, params)
         torch.manual_seed(123)
         dataloader_steps = self._make_dataloader(dataset_steps, sampler_steps)
         counts_steps = self._sample_sid_counts(
@@ -283,24 +300,24 @@ class TestSampler(unittest.TestCase):
             str(Path(__file__).parent / "water/data/data_1"),
             str(Path(__file__).parent / "water/data/single"),
         ]
-        dataset_1 = DpLoaderSet(
+        dataset_1 = pt_dataloader.DpLoaderSet(
             systems_1,
             self.batch_size,
             self.type_map,
             seed=10,
             shuffle=False,
         )
-        dataset_2 = DpLoaderSet(
+        dataset_2 = pt_dataloader.DpLoaderSet(
             systems_2,
             self.batch_size,
             self.type_map,
             seed=10,
             shuffle=False,
         )
-        sampler_1 = get_sampler_from_params(
+        sampler_1 = pt_dataloader.get_sampler_from_params(
             dataset_1, {"sys_probs": [0.7, 0.3], "auto_prob": "prob_sys_size"}
         )
-        sampler_2 = get_sampler_from_params(
+        sampler_2 = pt_dataloader.get_sampler_from_params(
             dataset_2, {"sys_probs": [0.4, 0.6], "auto_prob": "prob_sys_size"}
         )
         probs_1 = self._normalize_probs(np.asarray(sampler_1.weights))
@@ -352,24 +369,24 @@ class TestSampler(unittest.TestCase):
         )
 
         # === Step 3. Sample Using Explicit Steps ===
-        dataset_1b = DpLoaderSet(
+        dataset_1b = pt_dataloader.DpLoaderSet(
             systems_1,
             self.batch_size,
             self.type_map,
             seed=10,
             shuffle=False,
         )
-        dataset_2b = DpLoaderSet(
+        dataset_2b = pt_dataloader.DpLoaderSet(
             systems_2,
             self.batch_size,
             self.type_map,
             seed=10,
             shuffle=False,
         )
-        sampler_1b = get_sampler_from_params(
+        sampler_1b = pt_dataloader.get_sampler_from_params(
             dataset_1b, {"sys_probs": [0.7, 0.3], "auto_prob": "prob_sys_size"}
         )
-        sampler_2b = get_sampler_from_params(
+        sampler_2b = pt_dataloader.get_sampler_from_params(
             dataset_2b, {"sys_probs": [0.4, 0.6], "auto_prob": "prob_sys_size"}
         )
         dataloaders_steps = {

@@ -3213,15 +3213,22 @@ def mixed_precision_args() -> list[Argument]:  # ! added by Denghui.
 def training_args(
     multi_task: bool = False,
 ) -> list[Argument]:  # ! modified by Ziyao: data configuration isolated.
-    doc_numb_steps = "Number of training batches. Each training uses one batch of data. If set, this value takes precedence over num_epoch."
+    doc_numb_steps = (
+        "Number of training batches. Each training uses one batch of data. "
+        "If set, this value takes precedence over num_epoch. If both numb_steps "
+        "and num_epoch are not set, a ValueError is raised."
+    )
     doc_num_epoch = (
-        "Number of training epochs. "
+        "Number of training epochs (can be fractional). "
         "When numb_steps is not set, the total steps are computed as "
-        "ceil(num_epoch * total_numb_batch). For each training dataset, "
-        "total_numb_batch is computed as ceil(max_i(n_bch_i / p_i)), where p_i "
-        "is the sampling probability of system i after sys_probs/auto_prob. "
-        "In multi-task mode, total_numb_batch is the model_prob-weighted sum "
-        "over tasks."
+        "ceil(num_epoch * total_numb_batch). For each task, total_numb_batch "
+        "is computed as ceil(max_i(n_bch_i / p_i)), where n_bch_i is the number "
+        "of batches for system i and p_i is the sampling probability after "
+        "sys_probs/auto_prob normalization. In multi-task mode, model_prob is "
+        "normalized to sum to 1, per-task total_numb_batch values are computed "
+        "as above, and the final total_numb_batch is their model_prob-weighted "
+        "sum. At least one of numb_steps or num_epoch must be set; otherwise a "
+        "ValueError is raised."
     )
     doc_seed = "The random seed for getting frames from the training data set."
     doc_disp_file = "The file for printing learning curve."
@@ -3306,7 +3313,11 @@ def training_args(
     args += [
         mixed_precision_data,
         Argument(
-            "numb_steps", int, optional=True, doc=doc_numb_steps, alias=["stop_batch"]
+            "numb_steps",
+            int,
+            optional=True,
+            doc=doc_numb_steps,
+            alias=["stop_batch", "num_steps"],
         ),
         Argument(
             "num_epoch",
