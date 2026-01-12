@@ -284,13 +284,17 @@ class Trainer:
             model_training_data: dict[str, DpLoaderSet],
         ) -> np.ndarray:
             model_prob = np.zeros(len(model_keys), dtype=np.float64)
-            if model_prob_config is not None:
+            if model_prob_config:
                 for ii, model_key in enumerate(model_keys):
                     if model_key in model_prob_config:
                         model_prob[ii] = float(model_prob_config[model_key])
             else:
                 for ii, model_key in enumerate(model_keys):
                     model_prob[ii] = float(len(model_training_data[model_key]))
+            if not np.all(np.isfinite(model_prob)):
+                raise ValueError("Model prob must be finite.")
+            if np.any(model_prob < 0.0):
+                raise ValueError("Model prob must be non-negative.")
             sum_prob = float(np.sum(model_prob))
             if sum_prob <= 0.0:
                 raise ValueError("Sum of model prob must be larger than 0!")
