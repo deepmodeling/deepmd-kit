@@ -74,19 +74,18 @@ class SummaryPrinter(BaseSummaryPrinter):
         }
 
     def get_device_name(self) -> str | None:
-        """Prefer the hardware device name if available, fall back to identifier.
+        """Get the hardware device name if available.
 
         Returns
         -------
         str or None
-            The device name if available, otherwise None.
+            The device name (e.g., NVIDIA A100) if available, otherwise None.
         """
         try:
             gpus = tf.config.get_visible_devices("GPU")
             if gpus:
-                # Use the first visible GPU device identifier as the device name
                 details = tf.config.experimental.get_device_details(gpus[0])
-                return details.get("device_name") or gpus[0].name
+                return details.get("device_name")
         except (AttributeError, RuntimeError):
             # Experimental API may not exist or fail in some TF versions
             pass
