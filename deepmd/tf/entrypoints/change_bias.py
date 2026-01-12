@@ -190,7 +190,48 @@ def _change_bias_checkpoint_file(
     data = _load_data_systems(datafile, system, trainer)
 
     # Get stop_batch and origin_type_map like in train.py
-    stop_batch = jdata.get("training", {}).get("numb_steps", 0)
+    def compute_total_numb_batch(nbatches, sys_probs) -> int:
+        weights = np.asarray(sys_probs, dtype=np.float64)
+        if weights.ndim != 1:
+            raise ValueError("Sampler probabilities must be 1D.")
+        if weights.size == 0:
+            raise ValueError("Sampler probabilities are empty.")
+        if not np.all(np.isfinite(weights)):
+            raise ValueError("Sampler probabilities must be finite.")
+        if np.any(weights < 0.0):
+            raise ValueError("Sampler probabilities must be non-negative.")
+        weight_sum = float(np.sum(weights))
+        if weight_sum <= 0.0:
+            raise ValueError("Sampler probabilities must sum to a positive value.")
+        probs = weights / weight_sum
+        nbatches = np.asarray(nbatches, dtype=np.float64)
+        if nbatches.shape[0] != probs.shape[0]:
+            raise ValueError("Number of batches and sampler probabilities must match.")
+        valid = probs > 0.0
+        if not np.any(valid):
+            raise ValueError(
+                "Sampler probabilities must contain at least one positive entry."
+            )
+        return int(np.ceil(np.max(nbatches[valid] / probs[valid])))
+
+    training_params = jdata.get("training", {})
+    stop_batch = training_params.get("numb_steps")
+    num_epoch = training_params.get("num_epoch")
+    if stop_batch is None and num_epoch is not None:
+        if num_epoch <= 0:
+            raise ValueError("training.num_epoch must be positive.")
+        total_numb_batch = compute_total_numb_batch(data.nbatches, data.sys_probs)
+        if total_numb_batch <= 0:
+            raise ValueError("Total number of training batches must be positive.")
+        stop_batch = int(np.ceil(num_epoch * total_numb_batch))
+        log.info(
+            "Computed numb_steps=%d from num_epoch=%s and total_numb_batch=%d.",
+            stop_batch,
+            num_epoch,
+            total_numb_batch,
+        )
+    if stop_batch is None:
+        stop_batch = 0
     origin_type_map = jdata["model"].get("origin_type_map", None)
     if origin_type_map is not None and not origin_type_map:
         # get the type_map from data if not provided

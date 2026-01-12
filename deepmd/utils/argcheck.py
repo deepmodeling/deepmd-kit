@@ -3286,7 +3286,11 @@ def training_args(
     )
     doc_opt_type = "The type of optimizer to use."
     doc_kf_blocksize = "The blocksize for the Kalman filter."
-    doc_model_prob = "The visiting probability of each model for each training step in the multi-task mode."
+    doc_model_prob = (
+        "The visiting probability of each model for each training step in the "
+        "multi-task mode. If not set or an empty dict, defaults to weights "
+        "proportional to the number of systems per task."
+    )
     doc_data_dict = "The multiple definition of the data, used in the multi-task mode."
     doc_acc_freq = "Gradient accumulation steps (number of steps to accumulate gradients before performing an update)."
 
@@ -3323,7 +3327,7 @@ def training_args(
             "num_epoch",
             [int, float],
             optional=True,
-            doc=doc_only_pt_supported + doc_num_epoch,
+            doc=doc_num_epoch,
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument(

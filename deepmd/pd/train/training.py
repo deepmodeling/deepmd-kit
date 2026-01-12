@@ -132,7 +132,8 @@ class Trainer:
         self.num_model = len(self.model_keys)
 
         # Iteration config
-        self.num_steps = training_params["numb_steps"]
+        self.num_steps = training_params.get("numb_steps")
+        self.num_epoch = training_params.get("num_epoch")
         self.acc_freq: int = training_params.get(
             "acc_freq", 1
         )  # gradient accumulation steps
@@ -209,6 +210,52 @@ class Trainer:
                 validation_data_buffered,
                 valid_numb_batch,
             )
+
+        def compute_total_numb_batch(numb_batches, sampler_weights) -> int:
+            weights = np.asarray(sampler_weights, dtype=np.float64)
+            if weights.ndim != 1:
+                raise ValueError("Sampler weights must be 1D.")
+            if weights.size == 0:
+                raise ValueError("Sampler weights are empty.")
+            if not np.all(np.isfinite(weights)):
+                raise ValueError("Sampler weights must be finite.")
+            if np.any(weights < 0.0):
+                raise ValueError("Sampler weights must be non-negative.")
+            weight_sum = float(np.sum(weights))
+            if weight_sum <= 0.0:
+                raise ValueError("Sampler weights must sum to a positive value.")
+            probs = weights / weight_sum
+            nbatches = np.asarray(numb_batches, dtype=np.float64)
+            if nbatches.shape[0] != probs.shape[0]:
+                raise ValueError("Number of batches and sampler weights must match.")
+            valid = probs > 0.0
+            if not np.any(valid):
+                raise ValueError(
+                    "Sampler probabilities must contain at least one positive entry."
+                )
+            return int(np.ceil(np.max(nbatches[valid] / probs[valid])))
+
+        def resolve_model_prob(
+            model_keys,
+            model_prob_config,
+            model_training_data,
+        ) -> np.ndarray:
+            model_prob = np.zeros(len(model_keys), dtype=np.float64)
+            if model_prob_config:
+                for ii, model_key in enumerate(model_keys):
+                    if model_key in model_prob_config:
+                        model_prob[ii] = float(model_prob_config[model_key])
+            else:
+                for ii, model_key in enumerate(model_keys):
+                    model_prob[ii] = float(len(model_training_data[model_key]))
+            if not np.all(np.isfinite(model_prob)):
+                raise ValueError("Model prob must be finite.")
+            if np.any(model_prob < 0.0):
+                raise ValueError("Model prob must be non-negative.")
+            sum_prob = float(np.sum(model_prob))
+            if sum_prob <= 0.0:
+                raise ValueError("Sum of model prob must be larger than 0!")
+            return model_prob / sum_prob
 
         def single_model_stat(
             _model: Any,
@@ -389,6 +436,57 @@ class Trainer:
                             ].batch_sampler.sampler.weights
                         ),
                     )
+
+        if not self.multi_task:
+            sampler_weights = to_numpy_array(
+                self.training_dataloader.batch_sampler.sampler.weights
+            )
+            total_numb_batch = compute_total_numb_batch(
+                training_data.index,
+                sampler_weights,
+            )
+        else:
+            per_task_total = []
+            for model_key in self.model_keys:
+                sampler_weights = to_numpy_array(
+                    self.training_dataloader[model_key].batch_sampler.sampler.weights
+                )
+                per_task_total.append(
+                    compute_total_numb_batch(
+                        training_data[model_key].index,
+                        sampler_weights,
+                    )
+                )
+            self.model_prob = resolve_model_prob(
+                self.model_keys,
+                training_params.get("model_prob"),
+                training_data,
+            )
+            total_numb_batch = int(
+                np.ceil(np.sum(np.asarray(per_task_total) * self.model_prob))
+            )
+        if self.num_steps is None:
+            if self.num_epoch is None:
+                raise ValueError(
+                    "Either training.numb_steps or training.num_epoch must be set."
+                )
+            if self.num_epoch <= 0:
+                raise ValueError("training.num_epoch must be positive.")
+            if total_numb_batch <= 0:
+                raise ValueError("Total number of training batches must be positive.")
+            self.num_steps = int(np.ceil(self.num_epoch * total_numb_batch))
+            log.info(
+                "Computed num_steps=%d from num_epoch=%s and total_numb_batch=%d.",
+                self.num_steps,
+                self.num_epoch,
+                total_numb_batch,
+            )
+        elif self.num_epoch is not None:
+            log.warning(
+                "Both training.numb_steps and training.num_epoch are set; "
+                "using numb_steps=%d.",
+                self.num_steps,
+            )
 
         # Learning rate
         self.warmup_steps = training_params.get("warmup_steps", 0)
@@ -681,21 +779,6 @@ class Trainer:
                 # find_unused_parameters=True,
             )
             self.optimizer = fleet.distributed_optimizer(self.optimizer)
-
-        # Get model prob for multi-task
-        if self.multi_task:
-            self.model_prob = np.array([0.0 for key in self.model_keys])
-            if training_params.get("model_prob", None) is not None:
-                model_prob = training_params["model_prob"]
-                for ii, model_key in enumerate(self.model_keys):
-                    if model_key in model_prob:
-                        self.model_prob[ii] += float(model_prob[model_key])
-            else:
-                for ii, model_key in enumerate(self.model_keys):
-                    self.model_prob[ii] += float(len(self.training_data[model_key]))
-            sum_prob = np.sum(self.model_prob)
-            assert sum_prob > 0.0, "Sum of model prob must be larger than 0!"
-            self.model_prob = self.model_prob / sum_prob
 
         # Tensorboard
         self.enable_tensorboard = training_params.get("tensorboard", False)
