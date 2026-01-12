@@ -97,7 +97,9 @@ class TestAdaMuonOptimizerBasic(unittest.TestCase):
         optimizer.step()
 
         # Verify all parameters with gradients changed
-        for i, (p, init_p) in enumerate(zip(model.parameters(), initial_params)):
+        for i, (p, init_p) in enumerate(
+            zip(model.parameters(), initial_params, strict=True)
+        ):
             if p.grad is not None:
                 self.assertFalse(
                     torch.allclose(p, init_p),
@@ -369,7 +371,7 @@ class TestAdaMuonOptimizerStateDict(unittest.TestCase):
         params1 = list(optimizer.param_groups[0]["params"])
         params2 = list(optimizer2.param_groups[0]["params"])
 
-        for p1, p2 in zip(params1, params2):
+        for p1, p2 in zip(params1, params2, strict=True):
             s1 = optimizer.state[p1]
             s2 = optimizer2.state[p2]
             self.assertEqual(set(s1.keys()), set(s2.keys()))

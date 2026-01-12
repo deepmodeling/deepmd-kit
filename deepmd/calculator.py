@@ -103,7 +103,7 @@ class DP(Calculator):
             self.type_dict = type_dict
         else:
             self.type_dict = dict(
-                zip(self.dp.get_type_map(), range(self.dp.get_ntypes()))
+                zip(self.dp.get_type_map(), range(self.dp.get_ntypes()), strict=True)
             )
 
     def calculate(
