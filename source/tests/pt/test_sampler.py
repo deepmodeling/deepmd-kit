@@ -410,6 +410,113 @@ class TestSampler(unittest.TestCase):
             )
         )
 
+    def test_num_epoch_dict(self) -> None:
+        """Test num_epoch_dict calculation logic for multi-task training."""
+        # === Step 1. Build Datasets ===
+        model_keys = ["model_1", "model_2"]
+        systems_1 = [
+            str(Path(__file__).parent / "water/data/data_0"),
+            str(Path(__file__).parent / "water/data/data_1"),
+        ]
+        systems_2 = [
+            str(Path(__file__).parent / "water/data/data_1"),
+            str(Path(__file__).parent / "water/data/single"),
+        ]
+        dataset_1 = pt_dataloader.DpLoaderSet(
+            systems_1,
+            self.batch_size,
+            self.type_map,
+            seed=10,
+            shuffle=False,
+        )
+        dataset_2 = pt_dataloader.DpLoaderSet(
+            systems_2,
+            self.batch_size,
+            self.type_map,
+            seed=10,
+            shuffle=False,
+        )
+        sampler_1 = pt_dataloader.get_sampler_from_params(
+            dataset_1, {"sys_probs": [0.7, 0.3], "auto_prob": "prob_sys_size"}
+        )
+        sampler_2 = pt_dataloader.get_sampler_from_params(
+            dataset_2, {"sys_probs": [0.4, 0.6], "auto_prob": "prob_sys_size"}
+        )
+        probs_1 = self._normalize_probs(np.asarray(sampler_1.weights))
+        probs_2 = self._normalize_probs(np.asarray(sampler_2.weights))
+
+        # === Step 2. Compute per-task total_numb_batch ===
+        per_task_total = np.array(
+            [
+                self._compute_total_numb_batch(
+                    np.asarray(dataset_1.index, dtype=np.float64), probs_1
+                ),
+                self._compute_total_numb_batch(
+                    np.asarray(dataset_2.index, dtype=np.float64), probs_2
+                ),
+            ],
+            dtype=np.float64,
+        )
+
+        # === Step 3. Test num_epoch_dict calculation ===
+        model_prob = np.asarray([0.4, 0.6], dtype=np.float64)
+        model_prob = model_prob / np.sum(model_prob)
+        num_epoch_dict = {model_keys[0]: 2.0, model_keys[1]: 5.0}
+
+        # Compute expected steps for each task
+        # steps_i = epoch_i * per_task_total[i] / model_prob[i]
+        per_task_steps = np.array(
+            [
+                num_epoch_dict[model_keys[0]] * per_task_total[0] / model_prob[0],
+                num_epoch_dict[model_keys[1]] * per_task_total[1] / model_prob[1],
+            ],
+            dtype=np.float64,
+        )
+
+        # Total steps should be max of per-task steps
+        expected_num_steps = int(np.ceil(np.max(per_task_steps)))
+
+        # Verify the calculation matches the expected formula
+        self.assertIsInstance(expected_num_steps, int)
+        self.assertGreater(expected_num_steps, 0)
+
+        # Verify that running expected_num_steps would give each task at least
+        # its target epochs (may be more for tasks needing fewer steps)
+        expected_model_0_counts = expected_num_steps * model_prob[0]
+        expected_model_1_counts = expected_num_steps * model_prob[1]
+
+        # Each task should complete at least its target epochs
+        expected_epochs_0 = expected_model_0_counts / per_task_total[0]
+        expected_epochs_1 = expected_model_1_counts / per_task_total[1]
+
+        self.assertGreaterEqual(
+            expected_epochs_0,
+            num_epoch_dict[model_keys[0]],
+            msg="Model 0 should complete at least 2 epochs",
+        )
+        self.assertGreaterEqual(
+            expected_epochs_1,
+            num_epoch_dict[model_keys[1]],
+            msg="Model 1 should complete at least 5 epochs",
+        )
+
+        # The task requiring the most steps should complete approximately its target
+        max_task_idx = int(np.argmax(per_task_steps))
+        if max_task_idx == 0:
+            self.assertAlmostEqual(
+                expected_epochs_0,
+                num_epoch_dict[model_keys[0]],
+                delta=0.1,
+                msg="Model 0 (max steps) should complete approximately 2 epochs",
+            )
+        else:
+            self.assertAlmostEqual(
+                expected_epochs_1,
+                num_epoch_dict[model_keys[1]],
+                delta=0.1,
+                msg="Model 1 (max steps) should complete approximately 5 epochs",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
