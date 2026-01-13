@@ -2,14 +2,19 @@
 from .adamuon import (
     AdaMuonOptimizer,
 )
+from .hybrid_muon import (
+    HybridMuonOptimizer,
+)
 from .KFWrapper import (
     KFOptimizerWrapper,
 )
 from .LKF import (
     LKFOptimizer,
 )
-from .muon import (
-    MuonOptimizer,
-)
 
-__all__ = ["AdaMuonOptimizer", "KFOptimizerWrapper", "LKFOptimizer", "MuonOptimizer"]
+__all__ = [
+    "AdaMuonOptimizer",
+    "HybridMuonOptimizer",
+    "KFOptimizerWrapper",
+    "LKFOptimizer",
+]

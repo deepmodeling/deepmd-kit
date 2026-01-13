@@ -1,10 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """
-Muon optimizer for DeePMD-kit PyTorch backend.
+HybridMuon optimizer for DeePMD-kit PyTorch backend.
 
-Muon is an optimizer that applies Newton-Schulz orthogonalization to the gradient
-before using momentum, resulting in orthogonalized updates for weight matrices.
-This can improve training stability and convergence for certain architectures.
+HybridMuon is a HYBRID optimizer that automatically combines Muon and Adam:
+- For >=2D parameters with min(m,n) >= min_2d_dim: Muon update with Newton-Schulz
+- For 2D parameters with min(m,n) < min_2d_dim: Adam fallback with update clipping
+- For 1D parameters (biases, layer norms): Standard Adam
+
+This is different from PyTorch's torch.optim.Muon, which ONLY supports 2D parameters
+and requires manual configuration of AdamW for 1D parameters. HybridMuon provides
+automatic routing based on parameter dimensionality.
 
 Algorithm
 ---------
@@ -33,9 +38,15 @@ Dtype Behavior
 - Muon gradients: cast to parameter dtype before momentum update
 - Adam gradients: cast to float32 for update computation
 
-Reference
----------
-https://github.com/KellerJordan/Muon
+References
+----------
+.. [1] Keller Jordan, "Muon: An optimizer for hidden layers in neural networks."
+       https://kellerjordan.github.io/posts/muon/
+       https://github.com/KellerJordan/Muon
+.. [2] Moonshot team, "Muon is Scalable for LLM Training," arXiv:2502.16982, 2025.
+       https://arxiv.org/abs/2502.16982
+.. [3] Moonlight GitHub Repository.
+       https://github.com/MoonshotAI/Moonlight
 """
 
 from __future__ import (
@@ -223,9 +234,9 @@ def should_fallback_to_adam_for_matrix(
     return min(m, n) < min_2d_dim
 
 
-class MuonOptimizer(Optimizer):
+class HybridMuonOptimizer(Optimizer):
     """
-    Muon optimizer with small-2D Adam fallback and 1D Adam path.
+    HybridMuon optimizer with small-2D Adam fallback and 1D Adam path.
 
     This optimizer applies different update rules based on parameter dimensionality:
     - For >=2D parameters with min(m, n) >= min_2d_dim:
@@ -286,7 +297,7 @@ class MuonOptimizer(Optimizer):
 
     Examples
     --------
-    >>> optimizer = MuonOptimizer(model.parameters(), lr=1e-3)
+    >>> optimizer = HybridMuonOptimizer(model.parameters(), lr=1e-3)
     >>> for epoch in range(epochs):
     ...     optimizer.zero_grad()
     ...     loss.backward()

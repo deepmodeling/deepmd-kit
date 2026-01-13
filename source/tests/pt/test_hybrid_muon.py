@@ -3,8 +3,8 @@ import unittest
 
 import torch
 
-from deepmd.pt.optimizer.muon import (
-    MuonOptimizer,
+from deepmd.pt.optimizer.hybrid_muon import (
+    HybridMuonOptimizer,
     zeropower_via_newtonschulz5,
 )
 from deepmd.pt.utils import (
@@ -82,8 +82,8 @@ class TestNewtonSchulzOrthogonalization(unittest.TestCase):
 
 
 @unittest.skipIf(not BF16_SUPPORTED, "bf16 matmul not supported on this device")
-class TestMuonOptimizer(unittest.TestCase):
-    """Test MuonOptimizer class."""
+class TestHybridMuonOptimizer(unittest.TestCase):
+    """Test HybridMuonOptimizer class."""
 
     def setUp(self) -> None:
         self.device = env.DEVICE
@@ -96,7 +96,7 @@ class TestMuonOptimizer(unittest.TestCase):
             torch.nn.ReLU(),
             torch.nn.Linear(20, 5, device=self.device),
         )
-        optimizer = MuonOptimizer(model.parameters(), lr=0.02)
+        optimizer = HybridMuonOptimizer(model.parameters(), lr=0.02)
 
         x = torch.randn(4, 10, device=self.device)
         model(x).sum().backward()
@@ -111,7 +111,7 @@ class TestMuonOptimizer(unittest.TestCase):
         """Test weight decay reduces parameter norm."""
         torch.manual_seed(42)
         model = torch.nn.Linear(10, 10, device=self.device)
-        optimizer = MuonOptimizer(model.parameters(), lr=0.02, weight_decay=0.1)
+        optimizer = HybridMuonOptimizer(model.parameters(), lr=0.02, weight_decay=0.1)
 
         initial_norm = model.weight.norm().item()
         for _ in range(10):
@@ -126,7 +126,7 @@ class TestMuonOptimizer(unittest.TestCase):
         """Test Muon for 2D params, Adam for 1D params."""
         torch.manual_seed(42)
         model = torch.nn.Linear(10, 10, device=self.device)
-        optimizer = MuonOptimizer(model.parameters(), lr=0.02)
+        optimizer = HybridMuonOptimizer(model.parameters(), lr=0.02)
 
         x = torch.randn(4, 10, device=self.device)
         model(x).sum().backward()
@@ -145,7 +145,7 @@ class TestMuonOptimizer(unittest.TestCase):
         torch.manual_seed(42)
         linear_small = torch.nn.Linear(10, 1, bias=False, device=self.device)
         linear_large = torch.nn.Linear(10, 10, bias=False, device=self.device)
-        optimizer = MuonOptimizer(
+        optimizer = HybridMuonOptimizer(
             list(linear_small.parameters()) + list(linear_large.parameters()),
             lr=0.02,
             min_2d_dim=2,
@@ -172,8 +172,8 @@ class TestMuonOptimizer(unittest.TestCase):
         model2 = torch.nn.Linear(10, 20, bias=False, device=self.device)
         model2.load_state_dict(model1.state_dict())
 
-        opt1 = MuonOptimizer(model1.parameters(), lr=0.02, lr_adjust=0.0)
-        opt2 = MuonOptimizer(model2.parameters(), lr=0.02, lr_adjust=10.0)
+        opt1 = HybridMuonOptimizer(model1.parameters(), lr=0.02, lr_adjust=0.0)
+        opt2 = HybridMuonOptimizer(model2.parameters(), lr=0.02, lr_adjust=10.0)
 
         x = torch.randn(4, 10, device=self.device)
 
@@ -192,7 +192,7 @@ class TestMuonOptimizer(unittest.TestCase):
 
 
 @unittest.skipIf(not BF16_SUPPORTED, "bf16 matmul not supported on this device")
-class TestMuonOptimizerStateDict(unittest.TestCase):
+class TestHybridMuonOptimizerStateDict(unittest.TestCase):
     """Test optimizer state dict save/load."""
 
     def setUp(self) -> None:
@@ -202,7 +202,7 @@ class TestMuonOptimizerStateDict(unittest.TestCase):
         """Test saving and loading optimizer state."""
         torch.manual_seed(42)
         model = torch.nn.Linear(10, 10, device=self.device)
-        optimizer = MuonOptimizer(model.parameters(), lr=0.02)
+        optimizer = HybridMuonOptimizer(model.parameters(), lr=0.02)
 
         for _ in range(3):
             optimizer.zero_grad()
@@ -212,7 +212,7 @@ class TestMuonOptimizerStateDict(unittest.TestCase):
 
         state_dict = optimizer.state_dict()
 
-        optimizer2 = MuonOptimizer(model.parameters(), lr=0.02)
+        optimizer2 = HybridMuonOptimizer(model.parameters(), lr=0.02)
         optimizer2.load_state_dict(state_dict)
 
         # Verify state matches by param id, not iteration order

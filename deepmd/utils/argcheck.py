@@ -3476,7 +3476,7 @@ def training_args(
                     optional=True,
                 ),
                 Argument(
-                    "Muon",
+                    "HybridMuon",
                     dict,
                     [
                         Argument(
@@ -3486,7 +3486,7 @@ def training_args(
                             default=0.95,
                             alias=["muon_momentum"],
                             doc=doc_only_pt_supported
-                            + "Momentum coefficient for Muon optimizer (>=2D params). "
+                            + "Momentum coefficient for HybridMuon optimizer (>=2D params). "
                             "Used in Nesterov momentum update: m_t = beta*m_{t-1} + (1-beta)*g_t.",
                         ),
                         Argument(
@@ -3511,7 +3511,7 @@ def training_args(
                             optional=True,
                             default=0.001,
                             doc=doc_only_pt_supported
-                            + "Weight decay coefficient. Applied only to >=2D parameters (Muon path).",
+                            + "Weight decay coefficient. Applied only to >=2D parameters (HybridMuon path).",
                         ),
                         Argument(
                             "lr_adjust",
@@ -3519,7 +3519,7 @@ def training_args(
                             optional=True,
                             default=10.0,
                             doc=doc_only_pt_supported
-                            + "Learning rate adjustment mode for Muon scaling and Adam learning rate. "
+                            + "Learning rate adjustment mode for HybridMuon scaling and Adam learning rate. "
                             "If lr_adjust <= 0: use match-RMS scaling (scale = coeff*sqrt(max(m,n))), Adam uses lr directly. "
                             "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1, m/n))), Adam uses lr/lr_adjust. "
                             "Default is 10.0 (Adam lr = lr/10).",
@@ -3539,14 +3539,20 @@ def training_args(
                             default=1,
                             alias=["muon_min_2d_dim"],
                             doc=doc_only_pt_supported
-                            + "Minimum min(m, n) threshold for Muon on 2D matrices. "
-                            "Matrices with min(m, n) >= min_2d_dim use Muon; "
+                            + "Minimum min(m, n) threshold for HybridMuon on 2D matrices. "
+                            "Matrices with min(m, n) >= min_2d_dim use HybridMuon; "
                             "those with min(m, n) < min_2d_dim use Adam fallback. "
                             "Set to 1 to disable fallback.",
                         ),
                     ],
                     [],
                     optional=True,
+                    doc=doc_only_pt_supported
+                    + "HybridMuon optimizer (DeePMD-kit custom implementation). "
+                    + "This is a Hybrid optimizer that automatically combines Muon and Adam. "
+                    + "For >=2D params: Muon update with Newton-Schulz. "
+                    + "For 1D params: Standard Adam. "
+                    + "This is DIFFERENT from PyTorch's torch.optim.Muon which ONLY supports 2D parameters.",
                 ),
             ],
             optional=True,

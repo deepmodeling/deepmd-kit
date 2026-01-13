@@ -43,9 +43,9 @@ from deepmd.pt.model.model import (
 )
 from deepmd.pt.optimizer import (
     AdaMuonOptimizer,
+    HybridMuonOptimizer,
     KFOptimizerWrapper,
     LKFOptimizer,
-    MuonOptimizer,
 )
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
@@ -748,8 +748,8 @@ class Trainer:
                 lr_adjust=float(self.opt_param.get("lr_adjust", 10.0)),
                 lr_adjust_coeff=float(self.opt_param.get("lr_adjust_coeff", 0.2)),
             )
-        elif self.opt_type == "Muon":
-            self.optimizer = MuonOptimizer(
+        elif self.opt_type == "HybridMuon":
+            self.optimizer = HybridMuonOptimizer(
                 self.wrapper.parameters(),
                 lr=self.lr_exp.start_lr,
                 momentum=float(self.opt_param.get("momentum", 0.95)),
@@ -838,7 +838,7 @@ class Trainer:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
                 fout1.flush()
-            if self.opt_type in ["Adam", "AdamW", "AdaMuon", "Muon"]:
+            if self.opt_type in ["Adam", "AdamW", "AdaMuon", "HybridMuon"]:
                 cur_lr = self.scheduler.get_last_lr()[0]
                 if _step_id < self.warmup_steps:
                     pref_lr = _lr.start_lr
