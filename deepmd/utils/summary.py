@@ -129,3 +129,7 @@ class SummaryPrinter(ABC):
     @abstractmethod
     def get_device_name(self) -> str | None:
         """Get the device name (e.g., NVIDIA A800-SXM4-80GB) if available."""
+
+    def get_backend_info(self) -> dict:
+        """Get backend information."""
+        return {}
