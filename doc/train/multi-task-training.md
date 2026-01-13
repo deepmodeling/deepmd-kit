@@ -81,6 +81,14 @@ Specifically, there are several parts that need to be modified:
   You can specify any positive real number weight for each task. The higher the weight, the higher the probability of being sampled in each training.
   This setting is optional, and if not set, tasks will be sampled with equal weights.
 
+- (Optional) {ref}`training/num_epoch_dict <training/num_epoch_dict>`: The number of training epochs for each model branch, specified as a dictionary mapping `model_key` to epoch values.
+  This allows different tasks to train for different numbers of epochs, which is particularly useful for multi-task fine-tuning scenarios
+  where a data-rich pretrained model is jointly trained with a data-scarce downstream task.
+  When set, the total training steps are computed as `max_i(num_epoch_dict[i] * per_task_total[i] / model_prob[i])`,
+  ensuring each model completes at least its specified number of epochs.
+  The model requiring the most steps will complete approximately its target epochs, while other models may complete more epochs.
+  In multi-task mode, this parameter takes precedence over `num_epoch` if both are set.
+
 An example input for multi-task training two models in water system is shown as following:
 
 ```{literalinclude} ../../examples/water_multi_task/pytorch_example/input_torch.json

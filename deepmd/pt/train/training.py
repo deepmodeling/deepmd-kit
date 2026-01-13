@@ -145,6 +145,7 @@ class Trainer:
         # Iteration config
         self.num_steps = training_params.get("numb_steps")
         self.num_epoch = training_params.get("num_epoch")
+        self.num_epoch_dict = training_params.get("num_epoch_dict")
         self.disp_file = training_params.get("disp_file", "lcurve.out")
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.disp_avg = training_params.get("disp_avg", False)
@@ -525,24 +526,63 @@ class Trainer:
                 np.ceil(np.sum(np.asarray(per_task_total) * self.model_prob))
             )
         if self.num_steps is None:
-            if self.num_epoch is None:
-                raise ValueError(
-                    "Either training.numb_steps or training.num_epoch must be set."
+            # === Step 1. Check num_epoch_dict first (multi-task only) ===
+            if self.multi_task and self.num_epoch_dict:
+                missing = [k for k in self.model_keys if k not in self.num_epoch_dict]
+                if missing:
+                    raise ValueError(
+                        f"training.num_epoch_dict must specify all tasks; missing: {missing}"
+                    )
+                # Validate epoch values
+                for model_key in self.model_keys:
+                    epoch_value = self.num_epoch_dict[model_key]
+                    if epoch_value is not None and epoch_value <= 0:
+                        raise ValueError(
+                            f"training.num_epoch_dict['{model_key}'] must be positive, got {epoch_value}."
+                        )
+                # Compute steps needed for each task to complete its epochs
+                per_task_steps = []
+                for ii, model_key in enumerate(self.model_keys):
+                    epoch_value = self.num_epoch_dict[model_key]
+                    if epoch_value is not None:
+                        # steps_i = epoch_i * per_task_total[i] / model_prob[i]
+                        steps_i = epoch_value * per_task_total[ii] / self.model_prob[ii]
+                        per_task_steps.append(steps_i)
+                self.num_steps = int(np.ceil(np.max(per_task_steps)))
+                log.info(
+                    "Computed num_steps=%d from num_epoch_dict=%s with per-task steps: %s.",
+                    self.num_steps,
+                    self.num_epoch_dict,
+                    {
+                        k: int(np.ceil(v))
+                        for k, v in zip(self.model_keys, per_task_steps)
+                    },
                 )
-            if self.num_epoch <= 0:
-                raise ValueError("training.num_epoch must be positive.")
-            if total_numb_batch <= 0:
-                raise ValueError("Total number of training batches must be positive.")
-            self.num_steps = int(np.ceil(self.num_epoch * total_numb_batch))
-            log.info(
-                "Computed num_steps=%d from num_epoch=%s and total_numb_batch=%d.",
-                self.num_steps,
-                self.num_epoch,
-                total_numb_batch,
-            )
-        elif self.num_epoch is not None:
+            # === Step 2. Fall back to num_epoch ===
+            elif self.num_epoch is None:
+                raise ValueError(
+                    "Either training.numb_steps, training.num_epoch, or "
+                    "training.num_epoch_dict (multi-task only) must be set."
+                )
+            else:
+                if self.num_epoch <= 0:
+                    raise ValueError("training.num_epoch must be positive.")
+                if total_numb_batch <= 0:
+                    raise ValueError(
+                        "Total number of training batches must be positive."
+                    )
+                self.num_steps = int(np.ceil(self.num_epoch * total_numb_batch))
+                log.info(
+                    "Computed num_steps=%d from num_epoch=%s and total_numb_batch=%d.",
+                    self.num_steps,
+                    self.num_epoch,
+                    total_numb_batch,
+                )
+        elif self.num_epoch is not None or (
+            self.multi_task and self.num_epoch_dict is not None
+        ):
             log.warning(
-                "Both training.numb_steps and training.num_epoch are set; "
+                "Both training.numb_steps and training.num_epoch (or num_epoch_dict) are set; "
                 "using numb_steps=%d.",
                 self.num_steps,
             )
