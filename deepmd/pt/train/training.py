@@ -793,22 +793,34 @@ class Trainer:
                         return "UNKNOWN (with ZBL)"
             return "UNKNOWN"
 
-        def count_parameters(model: torch.nn.Module) -> int:
-            """Count the total number of trainable parameters."""
-            return sum(p.numel() for p in model.parameters() if p.requires_grad)
+        def count_parameters(model: torch.nn.Module) -> tuple[int, int]:
+            """Count the number of trainable and total parameters.
+
+            Returns
+            -------
+            tuple[int, int]
+                (trainable_count, total_count)
+            """
+            trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            total = sum(p.numel() for p in model.parameters())
+            return trainable, total
 
         if not self.multi_task:
             desc_type = get_descriptor_type(self.model)
-            num_params = count_parameters(self.model)
+            trainable, total = count_parameters(self.model)
             log.info(f"Descriptor:    {desc_type}")
-            log.info(f"Model Params:  {num_params / 1e6:.3f} M")
+            log.info(
+                f"Model Params:  {total / 1e6:.3f} M   (Trainable: {trainable / 1e6:.3f} M)"
+            )
         else:
             # For multi-task, log each model's info
             for model_key in self.model_keys:
                 desc_type = get_descriptor_type(self.model[model_key])
-                num_params = count_parameters(self.model[model_key])
-                log.info(f"Descriptor [{model_key}]:  {desc_type}")
-                log.info(f"Model Params [{model_key}]: {num_params / 1e6:.3f} M")
+                trainable, total = count_parameters(self.model[model_key])
+                log.info(f"Descriptor [{model_key}]:   {desc_type}")
+                log.info(
+                    f"Model Params [{model_key}]: {total / 1e6:.3f} M   (Trainable: {trainable / 1e6:.3f} M)"
+                )
 
     def run(self) -> None:
         fout = (
