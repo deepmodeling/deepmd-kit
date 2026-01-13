@@ -14,6 +14,9 @@ from torch.utils.data import (
 )
 
 import deepmd.pt.utils.dataloader as pt_dataloader
+from deepmd.dpmodel.utils import (
+    compute_total_numb_batch,
+)
 from deepmd.pt.utils import (
     dp_random,
 )
@@ -91,21 +94,6 @@ class TestSampler(unittest.TestCase):
     def _normalize_probs(self, weights: np.ndarray) -> np.ndarray:
         weights = np.asarray(weights, dtype=np.float64)
         return weights / np.sum(weights)
-
-    def _compute_total_numb_batch(self, nbatches: np.ndarray, probs: np.ndarray) -> int:
-        # NOTE: This is a simplified test-only variant of training.py logic.
-        nbatches = np.asarray(nbatches, dtype=np.float64)
-        probs = np.asarray(probs, dtype=np.float64)
-        if nbatches.shape != probs.shape:
-            raise ValueError(
-                "nbatches and probs must have the same shape in this test helper."
-            )
-        if not np.all(probs > 0.0):
-            raise ValueError(
-                "Zero or negative sampling probabilities are not supported in this "
-                "test helper."
-            )
-        return int(np.ceil(np.max(nbatches / probs)))
 
     def _sample_sid_counts(
         self, dataloader: DataLoader, num_steps: int, nsystems: int
@@ -258,11 +246,13 @@ class TestSampler(unittest.TestCase):
         sys_probs = [0.2, 0.3, 0.5]
         params = {"sys_probs": sys_probs, "auto_prob": "prob_sys_size"}
         sampler_epoch = pt_dataloader.get_sampler_from_params(dataset_epoch, params)
-        probs = self._normalize_probs(np.asarray(sampler_epoch.weights))
         nbatches = np.asarray(dataset_epoch.index, dtype=np.float64)
-        total_numb_batch = self._compute_total_numb_batch(nbatches, probs)
+        total_numb_batch = compute_total_numb_batch(
+            nbatches, np.asarray(sampler_epoch.weights)
+        )
         num_epoch = 1.5
         num_steps = int(np.ceil(num_epoch * total_numb_batch))
+        probs = self._normalize_probs(np.asarray(sampler_epoch.weights))
 
         # === Step 2. Sample Using Derived Steps ===
         torch.manual_seed(123)
@@ -324,11 +314,13 @@ class TestSampler(unittest.TestCase):
         probs_2 = self._normalize_probs(np.asarray(sampler_2.weights))
         per_task_total = np.array(
             [
-                self._compute_total_numb_batch(
-                    np.asarray(dataset_1.index, dtype=np.float64), probs_1
+                compute_total_numb_batch(
+                    np.asarray(dataset_1.index, dtype=np.float64),
+                    np.asarray(sampler_1.weights),
                 ),
-                self._compute_total_numb_batch(
-                    np.asarray(dataset_2.index, dtype=np.float64), probs_2
+                compute_total_numb_batch(
+                    np.asarray(dataset_2.index, dtype=np.float64),
+                    np.asarray(sampler_2.weights),
                 ),
             ],
             dtype=np.float64,
@@ -454,11 +446,13 @@ class TestSampler(unittest.TestCase):
         # === Step 2. Compute per-task total_numb_batch ===
         per_task_total = np.array(
             [
-                self._compute_total_numb_batch(
-                    np.asarray(dataset_1.index, dtype=np.float64), probs_1
+                compute_total_numb_batch(
+                    np.asarray(dataset_1.index, dtype=np.float64),
+                    np.asarray(sampler_1.weights),
                 ),
-                self._compute_total_numb_batch(
-                    np.asarray(dataset_2.index, dtype=np.float64), probs_2
+                compute_total_numb_batch(
+                    np.asarray(dataset_2.index, dtype=np.float64),
+                    np.asarray(sampler_2.weights),
                 ),
             ],
             dtype=np.float64,
