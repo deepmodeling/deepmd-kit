@@ -68,9 +68,9 @@ class SummaryPrinter(BaseSummaryPrinter):
         return {
             "Backend": "TensorFlow",
             "TF Ver": tf.version.GIT_VERSION,
-            "Built With TF Ver": TF_VERSION,
-            "Built With TF Inc": GLOBAL_CONFIG["tf_include_dir"].replace(";", "\n"),
-            "Built With TF Lib": GLOBAL_CONFIG["tf_libs"].replace(";", "\n"),
+            "Built with TF Ver": TF_VERSION,
+            "Built with TF Inc": GLOBAL_CONFIG["tf_include_dir"].replace(";", "\n"),
+            "Built with TF Lib": GLOBAL_CONFIG["tf_libs"].replace(";", "\n"),
         }
 
     def get_device_name(self) -> str | None:
