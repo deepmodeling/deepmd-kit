@@ -3345,6 +3345,7 @@ def training_args(
             [int, float],
             optional=True,
             doc=doc_num_epoch,
+            alias=["numb_epoch"],
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument(
