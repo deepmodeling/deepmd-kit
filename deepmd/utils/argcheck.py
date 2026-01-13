@@ -3511,7 +3511,7 @@ def training_args(
                             optional=True,
                             default=0.001,
                             doc=doc_only_pt_supported
-                            + "Weight decay coefficient. Applied only to >=2D parameters (HybridMuon path).",
+                            + "Weight decay coefficient. Applied only to Muon-routed parameters",
                         ),
                         Argument(
                             "lr_adjust",
@@ -3531,6 +3531,16 @@ def training_args(
                             default=0.2,
                             doc=doc_only_pt_supported
                             + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
+                        ),
+                        Argument(
+                            "muon_2d_only",
+                            bool,
+                            optional=True,
+                            default=True,
+                            doc=doc_only_pt_supported
+                            + "If True, only 2D parameters use Muon (matching PyTorch's torch.optim.Muon). "
+                            + "Parameters with ndim > 2 use Adam without weight decay. "
+                            + "If False, all >=2D parameters use Muon.",
                         ),
                         Argument(
                             "min_2d_dim",

@@ -34,8 +34,9 @@ For 1D parameters (biases, norms), standard Adam is used.
 Dtype Behavior
 --------------
 - Newton-Schulz iterations: always bfloat16 (matches official Muon)
+- NS output (bfloat16) directly applied to parameters (PyTorch handles mixed precision)
 - Adam state (exp_avg, exp_avg_sq): always float32 for numerical stability
-- Muon gradients: cast to parameter dtype before momentum update
+- Muon momentum buffer: follows gradient dtype (grad -> buffer -> update)
 - Adam gradients: cast to float32 for update computation
 
 References
@@ -75,10 +76,8 @@ if TYPE_CHECKING:
 
 # Newton-Schulz iteration count
 NS_STEPS: int = 5
-# Numerical stability epsilon for norm clamping
-NS_EPS: float = 1e-7
-# Adam epsilon for numerical stability
-ADAM_EPS: float = 1e-7
+# Numerical stability epsilon for norm clamping and Adam
+EPS: float = 1e-7
 # Quintic Newton-Schulz polynomial coefficients
 NS_COEFF_A: float = 3.4445
 NS_COEFF_B: float = -4.7750
@@ -118,7 +117,7 @@ def _zeropower_via_newtonschulz5_2d(
         X = X.transpose(-2, -1)
 
     # === Step 2. Normalize Frobenius norm to at most 1 ===
-    X = X / X.norm(dim=(-2, -1), keepdim=True).clamp(min=NS_EPS)
+    X = X / X.norm(dim=(-2, -1), keepdim=True).clamp(min=EPS)
 
     # === Step 3. Newton-Schulz iterations with fused GEMM ===
     for _ in range(NS_STEPS):
@@ -152,7 +151,7 @@ def _zeropower_via_newtonschulz5_3d(
         X = X.transpose(-2, -1)
 
     # === Step 2. Normalize Frobenius norm to at most 1 ===
-    X = X / X.norm(dim=(-2, -1), keepdim=True).clamp(min=NS_EPS)
+    X = X / X.norm(dim=(-2, -1), keepdim=True).clamp(min=EPS)
 
     # === Step 3. Newton-Schulz iterations with batched fused GEMM ===
     for _ in range(NS_STEPS):
@@ -270,7 +269,7 @@ class HybridMuonOptimizer(Optimizer):
     momentum : float
         Momentum coefficient for Muon with default 0.95.
     weight_decay : float
-        Weight decay coefficient (applied only to >=2D params) with default 0.001.
+        Weight decay coefficient (applied only to Muon-routed parameters) with default 0.001.
     adam_betas : tuple[float, float]
         Adam beta coefficients with default (0.9, 0.95).
     lr_adjust : float
@@ -287,6 +286,11 @@ class HybridMuonOptimizer(Optimizer):
         2. For 2D Adam fallback: learning rate multiplier,
            adam_lr_matrix = adam_lr * min(lr_adjust_coeff, 0.1).
            The min(., 0.1) cap ensures conservative updates for small matrices.
+    muon_2d_only : bool
+        If True, only 2D parameters use Muon (matching PyTorch's torch.optim.Muon).
+        Parameters with ndim > 2 use Adam without weight decay.
+        If False, all >=2D parameters use Muon (default behavior).
+        Default is True.
     min_2d_dim : int
         Minimum min(m, n) threshold for Muon on 2D matrices.
         Matrices with min(m, n) >= min_2d_dim use Muon;
@@ -313,6 +317,7 @@ class HybridMuonOptimizer(Optimizer):
         adam_betas: tuple[float, float] = (0.9, 0.95),
         lr_adjust: float = 10.0,
         lr_adjust_coeff: float = 0.2,
+        muon_2d_only: bool = True,
         min_2d_dim: int = 1,
     ) -> None:
         if min_2d_dim < 1:
@@ -325,6 +330,7 @@ class HybridMuonOptimizer(Optimizer):
             "adam_betas": adam_betas,
             "lr_adjust": lr_adjust,
             "lr_adjust_coeff": lr_adjust_coeff,
+            "muon_2d_only": muon_2d_only,
             "min_2d_dim": min_2d_dim,
         }
         super().__init__(params, defaults)
@@ -337,9 +343,11 @@ class HybridMuonOptimizer(Optimizer):
         Classify parameters into Muon and Adam routes (static routing).
 
         Routing logic:
-        - >=2D parameters with min(m, n) >= min_2d_dim → Muon path
-        - 2D parameters with min(m, n) < min_2d_dim → Adam fallback path
         - 1D parameters → Adam path
+        - >2D parameters (when muon_2d_only=True) → Adam path
+        - 2D parameters with min(m, n) < min_2d_dim → Adam fallback path
+        - 2D parameters with min(m, n) >= min_2d_dim → Muon path
+        - >=2D parameters (when muon_2d_only=False) → Muon path
         """
         if self._routing_built:
             return
@@ -349,14 +357,23 @@ class HybridMuonOptimizer(Optimizer):
             muon_params: list[dict[str, Any]] = []
             adam_1d: list[dict[str, Any]] = []
             adam_matrix: list[dict[str, Any]] = []
+            adam_nd: list[dict[str, Any]] = []
 
             min_2d_dim = group["min_2d_dim"]
+            muon_2d_only = group["muon_2d_only"]
 
             for p in group["params"]:
+                # === Step 1. 1D parameters → Adam ===
                 if p.ndim < 2:
                     adam_1d.append({"param": p})
                     continue
 
+                # === Step 2. >2D parameters (when muon_2d_only=True) → Adam ===
+                if muon_2d_only and p.ndim > 2:
+                    adam_nd.append({"param": p})
+                    continue
+
+                # === Step 3. 2D small matrices → Adam fallback ===
                 if (p.ndim == 2) and should_fallback_to_adam_for_matrix(
                     p, min_2d_dim=min_2d_dim
                 ):
@@ -368,6 +385,7 @@ class HybridMuonOptimizer(Optimizer):
                     )
                     continue
 
+                # === Step 4. >=2D (or 2D only when muon_2d_only=True) → Muon ===
                 muon_params.append(
                     {
                         "param": p,
@@ -381,6 +399,7 @@ class HybridMuonOptimizer(Optimizer):
                     "muon_params": muon_params,
                     "adam_1d": adam_1d,
                     "adam_matrix": adam_matrix,
+                    "adam_nd": adam_nd,
                 }
             )
 
@@ -470,12 +489,67 @@ class HybridMuonOptimizer(Optimizer):
                     bias_corr2 = 1 - state["beta2_pow"]
                     step_size = adam_lr / bias_corr1
                     # delta = -step_size * m_hat / (sqrt(v_hat) + eps)
-                    denom = (adam_exp_avg_sqs[i] / bias_corr2).sqrt().add_(ADAM_EPS)
+                    denom = (adam_exp_avg_sqs[i] / bias_corr2).sqrt().add_(EPS)
                     delta_fp32 = -step_size * (adam_exp_avgs[i] / denom)
                     p.add_(delta_fp32.to(p.dtype))
 
-            # === Step 2. Adam update for small 2D matrices (fallback path) ===
+            # === Step 2. Adam update for >2D parameters (when muon_2d_only=True) ===
             # === Step 2.1. Collect gradients and initialize state ===
+            adam_nd_params: list[torch.Tensor] = []
+            adam_nd_grads_fp32: list[torch.Tensor] = []
+            adam_nd_exp_avgs: list[torch.Tensor] = []
+            adam_nd_exp_avg_sqs: list[torch.Tensor] = []
+            adam_nd_states: list[dict[str, Any]] = []
+
+            for entry in route.get("adam_nd", []):
+                p = entry["param"]
+                grad = p.grad
+                if grad is None:
+                    continue
+
+                grad_fp32 = grad.float()
+
+                state = self.state[p]
+                if "exp_avg" not in state:
+                    state["exp_avg"] = torch.zeros_like(p, dtype=torch.float32)
+                    state["exp_avg_sq"] = torch.zeros_like(p, dtype=torch.float32)
+                    state["beta1_pow"] = 1.0
+                    state["beta2_pow"] = 1.0
+
+                state["beta1_pow"] *= adam_betas[0]
+                state["beta2_pow"] *= adam_betas[1]
+
+                adam_nd_params.append(p)
+                adam_nd_grads_fp32.append(grad_fp32)
+                adam_nd_exp_avgs.append(state["exp_avg"])
+                adam_nd_exp_avg_sqs.append(state["exp_avg_sq"])
+                adam_nd_states.append(state)
+
+            if adam_nd_params:
+                # === Step 2.2. Update exp_avg / exp_avg_sq ===
+                adam_lr = lr if lr_adjust <= 0 else lr / lr_adjust
+
+                # exp_avg = beta1 * exp_avg + (1 - beta1) * grad
+                # exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad^2
+                torch._foreach_lerp_(
+                    adam_nd_exp_avgs, adam_nd_grads_fp32, 1 - adam_betas[0]
+                )
+                grad_sq = torch._foreach_mul(adam_nd_grads_fp32, adam_nd_grads_fp32)
+                torch._foreach_lerp_(adam_nd_exp_avg_sqs, grad_sq, 1 - adam_betas[1])
+
+                # === Step 2.3. Bias correction and parameter update ===
+                for i, p in enumerate(adam_nd_params):
+                    state = adam_nd_states[i]
+                    bias_corr1 = 1 - state["beta1_pow"]
+                    bias_corr2 = 1 - state["beta2_pow"]
+                    step_size = adam_lr / bias_corr1
+                    # delta = -step_size * m_hat / (sqrt(v_hat) + eps)
+                    denom = (adam_nd_exp_avg_sqs[i] / bias_corr2).sqrt().add_(EPS)
+                    delta_fp32 = -step_size * (adam_nd_exp_avgs[i] / denom)
+                    p.add_(delta_fp32.to(p.dtype))
+
+            # === Step 3. Adam update for small 2D matrices (fallback path) ===
+            # === Step 3.1. Collect gradients and initialize state ===
             adam_matrix_params: list[torch.Tensor] = []
             adam_matrix_grads_fp32: list[torch.Tensor] = []
             adam_matrix_exp_avgs: list[torch.Tensor] = []
@@ -509,7 +583,7 @@ class HybridMuonOptimizer(Optimizer):
                 adam_matrix_abs_floor.append(entry["abs_floor"])
 
             if adam_matrix_params:
-                # === Step 2.2. Update exp_avg / exp_avg_sq with scaled lr ===
+                # === Step 3.2. Update exp_avg / exp_avg_sq with scaled lr ===
                 adam_lr = lr if lr_adjust <= 0 else lr / lr_adjust
                 adam_lr_matrix = adam_lr * min(lr_adjust_coeff, 0.1)
 
@@ -525,19 +599,17 @@ class HybridMuonOptimizer(Optimizer):
                     adam_matrix_exp_avg_sqs, grad_sq_m, 1 - adam_betas[1]
                 )
 
-                # === Step 2.3. Compute unclipped deltas ===
+                # === Step 3.3. Compute unclipped deltas ===
                 raw_deltas: list[torch.Tensor] = []
                 for i in range(len(adam_matrix_params)):
                     state = adam_matrix_states[i]
                     bias_corr1 = 1 - state["beta1_pow"]
                     bias_corr2 = 1 - state["beta2_pow"]
                     step_size = adam_lr_matrix / bias_corr1
-                    denom = (
-                        (adam_matrix_exp_avg_sqs[i] / bias_corr2).sqrt().add_(ADAM_EPS)
-                    )
+                    denom = (adam_matrix_exp_avg_sqs[i] / bias_corr2).sqrt().add_(EPS)
                     raw_deltas.append(-step_size * (adam_matrix_exp_avgs[i] / denom))
 
-                # === Step 2.4. Clip updates by relative norm and apply ===
+                # === Step 3.4. Clip updates by relative norm and apply ===
                 max_rel_change = 0.05
                 p_norms = torch.stack(torch._foreach_norm(adam_matrix_params))
                 delta_norms = torch.stack(torch._foreach_norm(raw_deltas))
@@ -553,8 +625,8 @@ class HybridMuonOptimizer(Optimizer):
                 ):
                     p.add_(delta.mul_(scales_tensor[i]).to(p.dtype))
 
-            # === Step 3. Muon update for >=2D parameters (weight matrices) ===
-            # === Step 3.1. Collect gradients and initialize momentum ===
+            # === Step 4. Muon update for >=2D parameters (weight matrices) ===
+            # === Step 4.1. Collect gradients and initialize momentum ===
             muon_params_for_decay: list[torch.Tensor] = []
             muon_grads: list[torch.Tensor] = []
             muon_momentum_buffers: list[torch.Tensor] = []
@@ -579,14 +651,14 @@ class HybridMuonOptimizer(Optimizer):
                 muon_momentum_buffers.append(buf)
                 active_entries.append((entry, grad))
 
-            # === Step 3.2. Apply weight decay (Muon path only) ===
+            # === Step 4.2. Apply weight decay (Muon path only) ===
             if weight_decay > 0 and muon_params_for_decay:
                 torch._foreach_mul_(muon_params_for_decay, 1.0 - lr * weight_decay)
 
             if not active_entries:
                 continue
 
-            # === Step 3.3. Momentum update (Nesterov) ===
+            # === Step 4.3. Momentum update (Nesterov) ===
             # m_t = beta * m_{t-1} + (1 - beta) * g_t
             torch._foreach_lerp_(muon_momentum_buffers, muon_grads, 1 - momentum)
             # update = beta * m_t + (1 - beta) * g_t
@@ -594,7 +666,7 @@ class HybridMuonOptimizer(Optimizer):
                 muon_grads, muon_momentum_buffers, momentum
             )
 
-            # === Step 3.4. Bucket by shape/device/dtype for batched NS ===
+            # === Step 4.4. Bucket by shape/device/dtype for batched NS ===
             buckets: dict[
                 tuple[int, int, torch.device, torch.dtype],
                 list[tuple[dict[str, Any], torch.Tensor]],
@@ -608,8 +680,8 @@ class HybridMuonOptimizer(Optimizer):
                     buckets[bucket_key] = []
                 buckets[bucket_key].append((entry, muon_updates[idx]))
 
-            # === Step 3.5. Newton-Schulz orthogonalization and update ===
-            for (rows, cols, _device, dtype), bucket_entries in buckets.items():
+            # === Step 4.5. Newton-Schulz orthogonalization and update ===
+            for (rows, cols, _device, _), bucket_entries in buckets.items():
                 # scale = coeff * sqrt(max(m, n))  [match-RMS mode]
                 # scale = sqrt(max(1, m/n))        [rectangular mode]
                 if lr_adjust <= 0:
@@ -626,8 +698,6 @@ class HybridMuonOptimizer(Optimizer):
                     orth = _zeropower_via_newtonschulz5_2d(update_matrix)
                     orth.mul_(scale)
                     delta = orth.reshape(entry["param"].shape)
-                    if delta.dtype != dtype:
-                        delta = delta.to(dtype)
                     entry["param"].add_(delta, alpha=-lr)
                     continue
 
@@ -648,8 +718,6 @@ class HybridMuonOptimizer(Optimizer):
                 stacked = torch.stack(matrices, dim=0)
                 orth = _zeropower_via_newtonschulz5_3d(stacked)
                 orth.mul_(scale)
-                if orth.dtype != dtype:
-                    orth = orth.to(dtype)
 
                 for i, _ in enumerate(bucket_entries):
                     params[i].add_(orth[i].reshape(orig_shapes[i]), alpha=-lr)
