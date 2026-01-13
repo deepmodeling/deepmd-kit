@@ -3214,41 +3214,33 @@ def training_args(
     multi_task: bool = False,
 ) -> list[Argument]:  # ! modified by Ziyao: data configuration isolated.
     doc_numb_steps = (
-        "Number of training batches. Each training uses one batch of data. "
-        "If set, this value takes precedence over num_epoch. If both numb_steps "
-        "and num_epoch are not set, a ValueError is raised."
+        "Number of training steps (num_step). Each training uses one batch of data. "
+        "Mutually exclusive with num_epoch in single-task mode. In multi-task "
+        "mode, this is mutually exclusive with num_epoch_dict. "
+        "Accepted names: num_step, num_steps, numb_step, numb_steps."
     )
     doc_num_epoch = (
-        "Number of training epochs (can be fractional). "
-        "When numb_steps is not set, the total steps are computed as "
-        "ceil(num_epoch * total_numb_batch). For each task, total_numb_batch "
-        "is computed as ceil(max_i(n_bch_i / p_i)), where n_bch_i is the number "
-        "of batches for system i and p_i is the sampling probability after "
-        "sys_probs/auto_prob normalization. In multi-task mode, model_prob is "
-        "normalized to sum to 1, per-task total_numb_batch values are computed "
-        "as above, and the final total_numb_batch is their model_prob-weighted sum. "
-        "Note that in multi-task mode, this defines an 'expected epoch' where each "
-        "sample is visited once in expectation across all tasks, rather than a "
-        "full epoch for each individual task. In multi-task mode, num_epoch_dict "
-        "takes precedence over num_epoch if both are set. For multi-task pretraining "
-        "scenarios where different tasks require different numbers of visits, using "
-        "numb_steps directly is recommended for more explicit control. At least one "
-        "of numb_steps or num_epoch (or num_epoch_dict in multi-task mode) must be "
-        "set; otherwise a ValueError is raised."
+        "Number of training epochs (num_epoch; can be fractional) for single-task "
+        "mode only. Because each step samples the dataset stochastically, this "
+        "corresponds to an expected epoch count rather than a deterministic full "
+        "pass. When num_step is not set, the total steps are computed as "
+        "ceil(num_epoch * total_numb_batch). total_numb_batch is computed as "
+        "ceil(max_i(n_bch_i / p_i)), where n_bch_i is the number of batches for "
+        "system i and p_i is the sampling probability after sys_probs/auto_prob "
+        "normalization. Mutually exclusive with num_step. For multi-task mode, "
+        "use num_epoch_dict instead. Accepted names: num_epoch, num_epochs, "
+        "numb_epoch, numb_epochs."
     )
     doc_num_epoch_dict = (
         "Number of training epochs for each model branch in multi-task mode "
         "(can be fractional). This is a dictionary mapping model keys to the "
-        "number of epochs to train that specific model. When set, the total "
-        "training steps are computed as max_i(num_epoch_dict[i] * per_task_total[i] / model_prob[i]), "
-        "ensuring each model completes at least its specified number of epochs. "
-        "The model requiring the most steps will complete approximately its target "
-        "epochs, while other models may complete more epochs. This is particularly "
-        "useful for multi-task fine-tuning scenarios where a data-rich pretrained model "
-        "is jointly trained with a data-scarce downstream task, and only the downstream "
-        "task's epoch count is of interest. In multi-task mode, this parameter takes "
-        "precedence over num_epoch if both are set. All model keys must be specified "
-        "in the dictionary."
+        "number of epochs to train that specific model. When set, model_prob "
+        "is derived from the epoch targets and per-task total_numb_batch values: "
+        "model_prob[i] = num_epoch_dict[i] * per_task_total[i] / sum_j(num_epoch_dict[j] * per_task_total[j]). "
+        "Total training steps are computed as "
+        "ceil(sum_i(num_epoch_dict[i] * per_task_total[i])). "
+        "This parameter is mutually exclusive with training.model_prob and "
+        "training.num_step. All model keys must be specified in the dictionary."
     )
     doc_seed = "The random seed for getting frames from the training data set."
     doc_disp_file = "The file for printing learning curve."
@@ -3308,8 +3300,9 @@ def training_args(
     doc_kf_blocksize = "The blocksize for the Kalman filter."
     doc_model_prob = (
         "The visiting probability of each model for each training step in the "
-        "multi-task mode. If not set or an empty dict, defaults to weights "
-        "proportional to the number of systems per task."
+        "multi-task mode. Only used when num_epoch_dict is not set. If not set "
+        "or an empty dict, defaults to weights proportional to the number of "
+        "systems per task."
     )
     doc_data_dict = "The multiple definition of the data, used in the multi-task mode."
     doc_acc_freq = "Gradient accumulation steps (number of steps to accumulate gradients before performing an update)."
@@ -3348,14 +3341,19 @@ def training_args(
             int,
             optional=True,
             doc=doc_numb_steps,
-            alias=["stop_batch", "num_steps"],
+            alias=[
+                "stop_batch",
+                "num_step",
+                "num_steps",
+                "numb_step",
+            ],
         ),
         Argument(
             "num_epoch",
             [int, float],
             optional=True,
             doc=doc_num_epoch,
-            alias=["numb_epoch"],
+            alias=["num_epochs", "numb_epoch", "numb_epochs"],
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument(
@@ -3629,8 +3627,43 @@ def training_args(
         )
     ]
 
+    def training_extra_check(data: dict | None) -> bool:
+        if data is None:
+            return True
+        num_steps = data.get("numb_steps")
+        num_epoch = data.get("num_epoch")
+        num_epoch_dict = data.get("num_epoch_dict", {})
+        model_prob = data.get("model_prob", {})
+        if multi_task:
+            if num_epoch is not None:
+                raise ValueError(
+                    "training.num_epoch is only supported in single-task mode."
+                )
+            if num_epoch_dict:
+                if num_steps is not None:
+                    raise ValueError(
+                        "training.num_epoch_dict is mutually exclusive with training.num_step."
+                    )
+                if model_prob:
+                    raise ValueError(
+                        "training.num_epoch_dict is mutually exclusive with training.model_prob."
+                    )
+        else:
+            if num_steps is not None and num_epoch is not None:
+                raise ValueError(
+                    "training.num_step and training.num_epoch are mutually exclusive."
+                )
+        return True
+
     doc_training = "The training options."
-    return Argument("training", dict, args, variants, doc=doc_training)
+    return Argument(
+        "training",
+        dict,
+        args,
+        variants,
+        doc=doc_training,
+        extra_check=training_extra_check,
+    )
 
 
 def multi_model_args() -> list[Argument]:

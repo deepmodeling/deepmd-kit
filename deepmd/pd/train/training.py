@@ -271,6 +271,55 @@ class Trainer:
                 raise ValueError("Sum of model prob must be larger than 0!")
             return model_prob / sum_prob
 
+        def resolve_model_prob_from_epochs(
+            model_keys,
+            num_epoch_dict_config,
+            per_task_total,
+        ) -> tuple[np.ndarray, int, dict[str, float]]:
+            if not num_epoch_dict_config:
+                raise ValueError(
+                    "training.num_epoch_dict must be set for multi-task epochs."
+                )
+            missing = [k for k in model_keys if k not in num_epoch_dict_config]
+            if missing:
+                raise ValueError(
+                    "training.num_epoch_dict must specify all tasks; "
+                    f"missing: {missing}"
+                )
+            epoch_targets = np.zeros(len(model_keys), dtype=np.float64)
+            for ii, model_key in enumerate(model_keys):
+                epoch_value = num_epoch_dict_config[model_key]
+                if epoch_value is None:
+                    raise ValueError(
+                        f"training.num_epoch_dict['{model_key}'] must be positive."
+                    )
+                epoch_value = float(epoch_value)
+                if not np.isfinite(epoch_value) or epoch_value <= 0.0:
+                    raise ValueError(
+                        f"training.num_epoch_dict['{model_key}'] must be positive, got {epoch_value}."
+                    )
+                epoch_targets[ii] = epoch_value
+            per_task_total = np.asarray(per_task_total, dtype=np.float64)
+            if per_task_total.ndim != 1:
+                raise ValueError("Per-task total batches must be 1D.")
+            if per_task_total.shape[0] != epoch_targets.shape[0]:
+                raise ValueError("Per-task totals and epoch targets must match.")
+            if not np.all(np.isfinite(per_task_total)):
+                raise ValueError("Per-task total batches must be finite.")
+            if np.any(per_task_total <= 0.0):
+                raise ValueError("Per-task total batches must be positive.")
+            per_task_steps = per_task_total * epoch_targets
+            total_target_steps = float(np.sum(per_task_steps))
+            if total_target_steps <= 0.0:
+                raise ValueError("Sum of target steps must be positive.")
+            model_prob = per_task_steps / total_target_steps
+            num_steps = int(np.ceil(total_target_steps))
+            per_task_steps_map = {
+                model_key: float(per_task_steps[ii])
+                for ii, model_key in enumerate(model_keys)
+            }
+            return model_prob, num_steps, per_task_steps_map
+
         def single_model_stat(
             _model: Any,
             _data_stat_nbatch: int,
@@ -460,70 +509,11 @@ class Trainer:
                 training_data.index,
                 sampler_weights,
             )
-        else:
-            for model_key in self.model_keys:
-                sampler_weights = to_numpy_array(
-                    self.training_dataloader[model_key].batch_sampler.sampler.weights
-                )
-                per_task_total.append(
-                    compute_total_numb_batch(
-                        training_data[model_key].index,
-                        sampler_weights,
-                    )
-                )
-            self.model_prob = resolve_model_prob(
-                self.model_keys,
-                training_params.get("model_prob"),
-                training_data,
-            )
-            total_numb_batch = int(
-                np.ceil(np.sum(np.asarray(per_task_total) * self.model_prob))
-            )
-        if self.num_steps is None:
-            # === Step 1. Check num_epoch_dict first (multi-task only) ===
-            if self.multi_task and self.num_epoch_dict:
-                missing = [k for k in self.model_keys if k not in self.num_epoch_dict]
-                if missing:
+            if self.num_steps is None:
+                if self.num_epoch is None:
                     raise ValueError(
-                        f"training.num_epoch_dict must specify all tasks; missing: {missing}"
+                        "Either training.numb_steps or training.num_epoch must be set."
                     )
-                # Validate epoch values
-                for model_key in self.model_keys:
-                    epoch_value = self.num_epoch_dict[model_key]
-                    if epoch_value is not None and epoch_value <= 0:
-                        raise ValueError(
-                            f"training.num_epoch_dict['{model_key}'] must be positive, got {epoch_value}."
-                        )
-                # Compute steps needed for each task to complete its epochs
-                per_task_steps: dict[str, float] = {}
-                for ii, model_key in enumerate(self.model_keys):
-                    epoch_value = self.num_epoch_dict[model_key]
-                    if epoch_value is not None:
-                        if self.model_prob[ii] <= 0.0:
-                            raise ValueError(
-                                f"training.model_prob['{model_key}'] must be positive when num_epoch_dict targets it."
-                            )
-                        # steps_i = epoch_i * per_task_total[i] / model_prob[i]
-                        steps_i = epoch_value * per_task_total[ii] / self.model_prob[ii]
-                        per_task_steps[model_key] = float(steps_i)
-                if not per_task_steps:
-                    raise ValueError(
-                        "training.num_epoch_dict must have at least one non-null epoch target."
-                    )
-                self.num_steps = int(np.ceil(np.max(list(per_task_steps.values()))))
-                log.info(
-                    "Computed num_steps=%d from num_epoch_dict=%s with per-task steps: %s.",
-                    self.num_steps,
-                    self.num_epoch_dict,
-                    {k: int(np.ceil(v)) for k, v in per_task_steps.items()},
-                )
-            # === Step 2. Fall back to num_epoch ===
-            elif self.num_epoch is None:
-                raise ValueError(
-                    "Either training.numb_steps, training.num_epoch, or "
-                    "training.num_epoch_dict (multi-task only) must be set."
-                )
-            else:
                 if self.num_epoch <= 0:
                     raise ValueError("training.num_epoch must be positive.")
                 if total_numb_batch <= 0:
@@ -537,14 +527,46 @@ class Trainer:
                     self.num_epoch,
                     total_numb_batch,
                 )
-        elif self.num_epoch is not None or (
-            self.multi_task and self.num_epoch_dict is not None
-        ):
-            log.warning(
-                "Both training.numb_steps and training.num_epoch (or num_epoch_dict) are set; "
-                "using numb_steps=%d.",
-                self.num_steps,
-            )
+        else:
+            for model_key in self.model_keys:
+                sampler_weights = to_numpy_array(
+                    self.training_dataloader[model_key].batch_sampler.sampler.weights
+                )
+                per_task_total.append(
+                    compute_total_numb_batch(
+                        training_data[model_key].index,
+                        sampler_weights,
+                    )
+                )
+            if self.num_epoch_dict:
+                (
+                    self.model_prob,
+                    self.num_steps,
+                    per_task_steps,
+                ) = resolve_model_prob_from_epochs(
+                    self.model_keys,
+                    self.num_epoch_dict,
+                    np.asarray(per_task_total, dtype=np.float64),
+                )
+                log.info(
+                    "Computed model_prob=%s and num_steps=%d from num_epoch_dict=%s "
+                    "with per-task target steps: %s.",
+                    self.model_prob,
+                    self.num_steps,
+                    self.num_epoch_dict,
+                    {k: int(np.ceil(v)) for k, v in per_task_steps.items()},
+                )
+            else:
+                if self.num_steps is None:
+                    raise ValueError(
+                        "Either training.numb_steps (multi-task only) or "
+                        "training.num_epoch_dict must be set."
+                    )
+                self.model_prob = resolve_model_prob(
+                    self.model_keys,
+                    training_params.get("model_prob"),
+                    training_data,
+                )
 
         # Learning rate
         self.warmup_steps = training_params.get("warmup_steps", 0)
