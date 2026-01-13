@@ -239,9 +239,9 @@ class SummaryPrinter(BaseSummaryPrinter):
         """Get backend information."""
         if ENABLE_CUSTOMIZED_OP:
             op_info = {
-                "Built With PT Ver": GLOBAL_CONFIG["pt_version"],
-                "Built With PT Inc": GLOBAL_CONFIG["pt_include_dir"].replace(";", "\n"),
-                "Built With PT Lib": GLOBAL_CONFIG["pt_libs"].replace(";", "\n"),
+                "Built with PT Ver": GLOBAL_CONFIG["pt_version"],
+                "Built with PT Inc": GLOBAL_CONFIG["pt_include_dir"].replace(";", "\n"),
+                "Built with PT Lib": GLOBAL_CONFIG["pt_libs"].replace(";", "\n"),
             }
         else:
             op_info = {}
