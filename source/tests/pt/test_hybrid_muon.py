@@ -104,7 +104,9 @@ class TestHybridMuonOptimizer(unittest.TestCase):
         initial_params = [p.clone() for p in model.parameters()]
         optimizer.step()
 
-        for i, (p, init_p) in enumerate(zip(model.parameters(), initial_params)):
+        for i, (p, init_p) in enumerate(
+            zip(model.parameters(), initial_params, strict=True)
+        ):
             self.assertFalse(torch.allclose(p, init_p), f"Parameter {i} did not change")
 
     def test_weight_decay(self) -> None:
