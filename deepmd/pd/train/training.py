@@ -227,6 +227,14 @@ class Trainer:
                 raise ValueError("Sampler weights must sum to a positive value.")
             probs = weights / weight_sum
             nbatches = np.asarray(numb_batches, dtype=np.float64)
+            if nbatches.ndim != 1:
+                raise ValueError("Number of batches must be 1D.")
+            if nbatches.size == 0:
+                raise ValueError("Number of batches is empty.")
+            if not np.all(np.isfinite(nbatches)):
+                raise ValueError("Number of batches must be finite.")
+            if np.any(nbatches < 0.0):
+                raise ValueError("Number of batches must be non-negative.")
             if nbatches.shape[0] != probs.shape[0]:
                 raise ValueError("Number of batches and sampler weights must match.")
             valid = probs > 0.0
@@ -243,6 +251,11 @@ class Trainer:
         ) -> np.ndarray:
             model_prob = np.zeros(len(model_keys), dtype=np.float64)
             if model_prob_config:
+                missing = [k for k in model_keys if k not in model_prob_config]
+                if missing:
+                    raise ValueError(
+                        f"training.model_prob must specify all tasks; missing: {missing}"
+                    )
                 for ii, model_key in enumerate(model_keys):
                     if model_key in model_prob_config:
                         model_prob[ii] = float(model_prob_config[model_key])
@@ -438,6 +451,7 @@ class Trainer:
                         ),
                     )
 
+        per_task_total = []
         if not self.multi_task:
             sampler_weights = to_numpy_array(
                 self.training_dataloader.batch_sampler.sampler.weights
@@ -447,7 +461,6 @@ class Trainer:
                 sampler_weights,
             )
         else:
-            per_task_total = []
             for model_key in self.model_keys:
                 sampler_weights = to_numpy_array(
                     self.training_dataloader[model_key].batch_sampler.sampler.weights
@@ -482,22 +495,27 @@ class Trainer:
                             f"training.num_epoch_dict['{model_key}'] must be positive, got {epoch_value}."
                         )
                 # Compute steps needed for each task to complete its epochs
-                per_task_steps = []
+                per_task_steps: dict[str, float] = {}
                 for ii, model_key in enumerate(self.model_keys):
                     epoch_value = self.num_epoch_dict[model_key]
                     if epoch_value is not None:
+                        if self.model_prob[ii] <= 0.0:
+                            raise ValueError(
+                                f"training.model_prob['{model_key}'] must be positive when num_epoch_dict targets it."
+                            )
                         # steps_i = epoch_i * per_task_total[i] / model_prob[i]
                         steps_i = epoch_value * per_task_total[ii] / self.model_prob[ii]
-                        per_task_steps.append(steps_i)
-                self.num_steps = int(np.ceil(np.max(per_task_steps)))
+                        per_task_steps[model_key] = float(steps_i)
+                if not per_task_steps:
+                    raise ValueError(
+                        "training.num_epoch_dict must have at least one non-null epoch target."
+                    )
+                self.num_steps = int(np.ceil(np.max(list(per_task_steps.values()))))
                 log.info(
                     "Computed num_steps=%d from num_epoch_dict=%s with per-task steps: %s.",
                     self.num_steps,
                     self.num_epoch_dict,
-                    {
-                        k: int(np.ceil(v))
-                        for k, v in zip(self.model_keys, per_task_steps)
-                    },
+                    {k: int(np.ceil(v)) for k, v in per_task_steps.items()},
                 )
             # === Step 2. Fall back to num_epoch ===
             elif self.num_epoch is None:
