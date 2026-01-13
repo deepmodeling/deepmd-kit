@@ -130,6 +130,7 @@ class Trainer:
             else 1
         )
         self.num_model = len(self.model_keys)
+        self.model_prob = None
 
         # Iteration config
         self.num_steps = training_params.get("numb_steps")
@@ -752,6 +753,14 @@ class Trainer:
         if init_frz_model is not None:
             frz_model = paddle.jit.load(init_frz_model)
             self.model.set_state_dict(frz_model.state_dict())
+
+        # Get model prob for multi-task
+        if self.multi_task and self.model_prob is None:
+            self.model_prob = resolve_model_prob(
+                self.model_keys,
+                training_params.get("model_prob"),
+                training_data,
+            )
 
         # Multi-task share params
         if shared_links is not None:
