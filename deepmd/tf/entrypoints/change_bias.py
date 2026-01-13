@@ -18,6 +18,9 @@ from deepmd.common import (
     expand_sys_str,
     j_loader,
 )
+from deepmd.dpmodel.utils import (
+    compute_total_numb_batch,
+)
 from deepmd.tf.entrypoints.freeze import (
     freeze,
 )
@@ -190,30 +193,6 @@ def _change_bias_checkpoint_file(
     data = _load_data_systems(datafile, system, trainer)
 
     # Get stop_batch and origin_type_map like in train.py
-    def compute_total_numb_batch(nbatches, sys_probs) -> int:
-        weights = np.asarray(sys_probs, dtype=np.float64)
-        if weights.ndim != 1:
-            raise ValueError("Sampler probabilities must be 1D.")
-        if weights.size == 0:
-            raise ValueError("Sampler probabilities are empty.")
-        if not np.all(np.isfinite(weights)):
-            raise ValueError("Sampler probabilities must be finite.")
-        if np.any(weights < 0.0):
-            raise ValueError("Sampler probabilities must be non-negative.")
-        weight_sum = float(np.sum(weights))
-        if weight_sum <= 0.0:
-            raise ValueError("Sampler probabilities must sum to a positive value.")
-        probs = weights / weight_sum
-        nbatches = np.asarray(nbatches, dtype=np.float64)
-        if nbatches.shape[0] != probs.shape[0]:
-            raise ValueError("Number of batches and sampler probabilities must match.")
-        valid = probs > 0.0
-        if not np.any(valid):
-            raise ValueError(
-                "Sampler probabilities must contain at least one positive entry."
-            )
-        return int(np.ceil(np.max(nbatches[valid] / probs[valid])))
-
     training_params = jdata.get("training", {})
     stop_batch = training_params.get("numb_steps")
     num_epoch = training_params.get("num_epoch")
