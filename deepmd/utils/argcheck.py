@@ -3229,10 +3229,26 @@ def training_args(
         "as above, and the final total_numb_batch is their model_prob-weighted sum. "
         "Note that in multi-task mode, this defines an 'expected epoch' where each "
         "sample is visited once in expectation across all tasks, rather than a "
-        "full epoch for each individual task. For multi-task pretraining scenarios "
-        "where different tasks require different numbers of visits, using numb_steps "
-        "directly is recommended for more explicit control. At least one of numb_steps "
-        "or num_epoch must be set; otherwise a ValueError is raised."
+        "full epoch for each individual task. In multi-task mode, num_epoch_dict "
+        "takes precedence over num_epoch if both are set. For multi-task pretraining "
+        "scenarios where different tasks require different numbers of visits, using "
+        "numb_steps directly is recommended for more explicit control. At least one "
+        "of numb_steps or num_epoch (or num_epoch_dict in multi-task mode) must be "
+        "set; otherwise a ValueError is raised."
+    )
+    doc_num_epoch_dict = (
+        "Number of training epochs for each model branch in multi-task mode "
+        "(can be fractional). This is a dictionary mapping model keys to the "
+        "number of epochs to train that specific model. When set, the total "
+        "training steps are computed as max_i(num_epoch_dict[i] * per_task_total[i] / model_prob[i]), "
+        "ensuring each model completes at least its specified number of epochs. "
+        "The model requiring the most steps will complete approximately its target "
+        "epochs, while other models may complete more epochs. This is particularly "
+        "useful for multi-task fine-tuning scenarios where a data-rich pretrained model "
+        "is jointly trained with a data-scarce downstream task, and only the downstream "
+        "task's epoch count is of interest. In multi-task mode, this parameter takes "
+        "precedence over num_epoch if both are set. All model keys must be specified "
+        "in the dictionary."
     )
     doc_seed = "The random seed for getting frames from the training data set."
     doc_disp_file = "The file for printing learning curve."
@@ -3314,6 +3330,13 @@ def training_args(
         if not multi_task
         else [
             Argument("model_prob", dict, optional=True, default={}, doc=doc_model_prob),
+            Argument(
+                "num_epoch_dict",
+                dict,
+                optional=True,
+                default={},
+                doc=doc_num_epoch_dict,
+            ),
             Argument("data_dict", dict, data_args, repeat=True, doc=doc_data_dict),
         ]
     )
