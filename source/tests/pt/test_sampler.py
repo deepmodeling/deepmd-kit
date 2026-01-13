@@ -333,11 +333,17 @@ class TestSampler(unittest.TestCase):
             ],
             dtype=np.float64,
         )
-        model_prob = np.asarray([0.4, 0.6], dtype=np.float64)
-        model_prob = model_prob / np.sum(model_prob)
-        total_numb_batch = int(np.ceil(np.sum(per_task_total * model_prob)))
-        num_epoch = 1.5
-        num_steps = int(np.ceil(num_epoch * total_numb_batch))
+        num_epoch_dict = {model_keys[0]: 1.5, model_keys[1]: 0.8}
+        target_steps = np.array(
+            [
+                num_epoch_dict[model_keys[0]] * per_task_total[0],
+                num_epoch_dict[model_keys[1]] * per_task_total[1],
+            ],
+            dtype=np.float64,
+        )
+        total_target_steps = float(np.sum(target_steps))
+        model_prob = target_steps / total_target_steps
+        num_steps = int(np.ceil(total_target_steps))
 
         # === Step 2. Sample Using Derived Steps ===
         dataloaders_epoch = {
@@ -459,22 +465,19 @@ class TestSampler(unittest.TestCase):
         )
 
         # === Step 3. Test num_epoch_dict calculation ===
-        model_prob = np.asarray([0.4, 0.6], dtype=np.float64)
-        model_prob = model_prob / np.sum(model_prob)
         num_epoch_dict = {model_keys[0]: 2.0, model_keys[1]: 5.0}
 
-        # Compute expected steps for each task
-        # steps_i = epoch_i * per_task_total[i] / model_prob[i]
+        # Compute expected steps and model_prob from epoch targets
         per_task_steps = np.array(
             [
-                num_epoch_dict[model_keys[0]] * per_task_total[0] / model_prob[0],
-                num_epoch_dict[model_keys[1]] * per_task_total[1] / model_prob[1],
+                num_epoch_dict[model_keys[0]] * per_task_total[0],
+                num_epoch_dict[model_keys[1]] * per_task_total[1],
             ],
             dtype=np.float64,
         )
-
-        # Total steps should be max of per-task steps
-        expected_num_steps = int(np.ceil(np.max(per_task_steps)))
+        total_target_steps = float(np.sum(per_task_steps))
+        model_prob = per_task_steps / total_target_steps
+        expected_num_steps = int(np.ceil(total_target_steps))
 
         # Verify the calculation matches the expected formula
         self.assertIsInstance(expected_num_steps, int)
@@ -500,22 +503,20 @@ class TestSampler(unittest.TestCase):
             msg="Model 1 should complete at least 5 epochs",
         )
 
-        # The task requiring the most steps should complete approximately its target
-        max_task_idx = int(np.argmax(per_task_steps))
-        if max_task_idx == 0:
-            self.assertAlmostEqual(
-                expected_epochs_0,
-                num_epoch_dict[model_keys[0]],
-                delta=0.1,
-                msg="Model 0 (max steps) should complete approximately 2 epochs",
-            )
-        else:
-            self.assertAlmostEqual(
-                expected_epochs_1,
-                num_epoch_dict[model_keys[1]],
-                delta=0.1,
-                msg="Model 1 (max steps) should complete approximately 5 epochs",
-            )
+        # All tasks should be scaled by the same rounding factor.
+        scale_0 = expected_epochs_0 / num_epoch_dict[model_keys[0]]
+        scale_1 = expected_epochs_1 / num_epoch_dict[model_keys[1]]
+        self.assertGreaterEqual(
+            scale_0,
+            1.0,
+            msg="Rounding should not reduce expected epochs.",
+        )
+        self.assertAlmostEqual(
+            scale_0,
+            scale_1,
+            delta=0.1,
+            msg="Rounding should scale all tasks consistently.",
+        )
 
 
 if __name__ == "__main__":

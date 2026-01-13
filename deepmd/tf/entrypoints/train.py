@@ -304,12 +304,6 @@ def _do_work(
             num_epoch,
             total_numb_batch,
         )
-    elif num_epoch is not None:
-        log.warning(
-            "Both training.numb_steps and training.num_epoch are set; "
-            "using numb_steps=%d.",
-            stop_batch,
-        )
     origin_type_map = jdata["model"].get("origin_type_map", None)
     if (
         origin_type_map is not None and not origin_type_map

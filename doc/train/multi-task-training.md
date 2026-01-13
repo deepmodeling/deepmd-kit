@@ -79,15 +79,15 @@ Specifically, there are several parts that need to be modified:
 
 - (Optional) {ref}`training/model_prob <training/model_prob>`: The sampling weight settings corresponding to each `model_key`, i.e., the probability weight in the training step.
   You can specify any positive real number weight for each task. The higher the weight, the higher the probability of being sampled in each training.
-  This setting is optional, and if not set, tasks will be sampled with equal weights.
+  This setting is optional, and if not set, tasks will be sampled with equal weights. It is only used when `num_epoch_dict` is not set.
 
-- (Optional) {ref}`training/num_epoch_dict <training/num_epoch_dict>`: The number of training epochs for each model branch, specified as a dictionary mapping `model_key` to epoch values.
+- (Optional) {ref}`training/num_epoch_dict <training/num_epoch_dict>`: The number of training epochs for each model branch, specified as a dictionary mapping `model_key` to epoch values (can be fractional).
   This allows different tasks to train for different numbers of epochs, which is particularly useful for multi-task fine-tuning scenarios
   where a data-rich pretrained model is jointly trained with a data-scarce downstream task.
-  When set, the total training steps are computed as `max_i(num_epoch_dict[i] * per_task_total[i] / model_prob[i])`,
-  ensuring each model completes at least its specified number of epochs.
-  The model requiring the most steps will complete approximately its target epochs, while other models may complete more epochs.
-  In multi-task mode, this parameter takes precedence over `num_epoch` if both are set.
+  When set, `model_prob` is derived from the epoch targets and per-task totals:
+  `model_prob[i] = num_epoch_dict[i] * per_task_total[i] / sum_j(num_epoch_dict[j] * per_task_total[j])`.
+  The total training steps are computed as `ceil(sum_i(num_epoch_dict[i] * per_task_total[i]))`.
+  This parameter is mutually exclusive with `training/model_prob` and `training/num_steps`.
 
 An example input for multi-task training two models in water system is shown as following:
 
