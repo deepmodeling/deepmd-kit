@@ -126,16 +126,6 @@ class SummaryPrinter(ABC):
     def get_ngpus(self) -> int:
         """Get the number of GPUs."""
 
-    def get_backend_info(self) -> dict:
-        """Get backend information."""
-        return {}
-
+    @abstractmethod
     def get_device_name(self) -> str | None:
-        """Get the device name (e.g., NVIDIA A800-SXM4-80GB).
-
-        Returns
-        -------
-        str or None
-            The device name if available, otherwise None.
-        """
-        return None
+        """Get the device name (e.g., NVIDIA A800-SXM4-80GB) if available."""
