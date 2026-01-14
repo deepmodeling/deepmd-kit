@@ -74,6 +74,9 @@ class SummaryPrinter(ABC):
                 "computing device": self.get_compute_device(),
             }
         )
+        device_name = self.get_device_name()
+        if device_name:
+            build_info["Device Name"] = device_name
         if self.is_built_with_cuda():
             env_value = os.environ.get("CUDA_VISIBLE_DEVICES", "unset")
             build_info["CUDA_VISIBLE_DEVICES"] = env_value
@@ -122,6 +125,10 @@ class SummaryPrinter(ABC):
     @abstractmethod
     def get_ngpus(self) -> int:
         """Get the number of GPUs."""
+
+    @abstractmethod
+    def get_device_name(self) -> str | None:
+        """Get the device name (e.g., NVIDIA A800-SXM4-80GB) if available."""
 
     def get_backend_info(self) -> dict:
         """Get backend information."""

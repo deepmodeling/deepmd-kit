@@ -224,6 +224,20 @@ class SummaryPrinter(BaseSummaryPrinter):
             **op_info,
         }
 
+    def get_device_name(self) -> str | None:
+        """Get the underlying GPU name.
+
+        Returns
+        -------
+        str or None
+            The device name if available, otherwise None.
+        """
+        if paddle.device.is_compiled_with_cuda():
+            cuda = paddle.device.cuda
+            if cuda.device_count() > 0:
+                return cuda.get_device_name()
+        return None
+
 
 def train(
     input_file: str,

@@ -73,6 +73,24 @@ class SummaryPrinter(BaseSummaryPrinter):
             "build with TF lib": GLOBAL_CONFIG["tf_libs"].replace(";", "\n"),
         }
 
+    def get_device_name(self) -> str | None:
+        """Get the hardware device name if available.
+
+        Returns
+        -------
+        str or None
+            The device name (e.g., NVIDIA A100) if available, otherwise None.
+        """
+        try:
+            gpus = tf.config.get_visible_devices("GPU")
+            if gpus:
+                details = tf.config.experimental.get_device_details(gpus[0])
+                return details.get("device_name")
+        except (AttributeError, RuntimeError):
+            # Experimental API may not exist or fail in some TF versions
+            pass
+        return None
+
 
 class RunOptions:
     """Class with info on how to run training (cluster, MPI and GPU config).
