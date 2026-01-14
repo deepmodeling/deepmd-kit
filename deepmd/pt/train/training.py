@@ -740,29 +740,29 @@ class Trainer:
             self.optimizer = AdaMuonOptimizer(
                 self.wrapper.parameters(),
                 lr=self.lr_exp.start_lr,
-                momentum=float(self.opt_param.get("momentum", 0.95)),
-                weight_decay=float(self.opt_param.get("weight_decay", 0.001)),
+                momentum=float(self.opt_param["momentum"]),
+                weight_decay=float(self.opt_param["weight_decay"]),
                 adam_betas=(
-                    float(self.opt_param.get("adam_beta1", 0.9)),
-                    float(self.opt_param.get("adam_beta2", 0.95)),
+                    float(self.opt_param["adam_beta1"]),
+                    float(self.opt_param["adam_beta2"]),
                 ),
-                lr_adjust=float(self.opt_param.get("lr_adjust", 10.0)),
-                lr_adjust_coeff=float(self.opt_param.get("lr_adjust_coeff", 0.2)),
+                lr_adjust=float(self.opt_param["lr_adjust"]),
+                lr_adjust_coeff=float(self.opt_param["lr_adjust_coeff"]),
             )
         elif self.opt_type == "HybridMuon":
             self.optimizer = HybridMuonOptimizer(
                 self.wrapper.parameters(),
                 lr=self.lr_exp.start_lr,
-                momentum=float(self.opt_param.get("momentum", 0.95)),
-                weight_decay=float(self.opt_param.get("weight_decay", 0.001)),
+                momentum=float(self.opt_param["momentum"]),
+                weight_decay=float(self.opt_param["weight_decay"]),
                 adam_betas=(
-                    float(self.opt_param.get("adam_beta1", 0.9)),
-                    float(self.opt_param.get("adam_beta2", 0.95)),
+                    float(self.opt_param["adam_beta1"]),
+                    float(self.opt_param["adam_beta2"]),
                 ),
-                lr_adjust=float(self.opt_param.get("lr_adjust", 10.0)),
-                lr_adjust_coeff=float(self.opt_param.get("lr_adjust_coeff", 0.2)),
-                muon_2d_only=bool(self.opt_param.get("muon_2d_only", True)),
-                min_2d_dim=int(self.opt_param.get("min_2d_dim", 1)),
+                lr_adjust=float(self.opt_param["lr_adjust"]),
+                lr_adjust_coeff=float(self.opt_param["lr_adjust_coeff"]),
+                muon_2d_only=bool(self.opt_param["muon_2d_only"]),
+                min_2d_dim=int(self.opt_param["min_2d_dim"]),
             )
             if optimizer_state_dict is not None and self.restart_training:
                 self.optimizer.load_state_dict(optimizer_state_dict)
