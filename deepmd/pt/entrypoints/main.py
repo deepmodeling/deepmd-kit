@@ -239,16 +239,16 @@ class SummaryPrinter(BaseSummaryPrinter):
         """Get backend information."""
         if ENABLE_CUSTOMIZED_OP:
             op_info = {
-                "build with PT ver": GLOBAL_CONFIG["pt_version"],
-                "build with PT inc": GLOBAL_CONFIG["pt_include_dir"].replace(";", "\n"),
-                "build with PT lib": GLOBAL_CONFIG["pt_libs"].replace(";", "\n"),
+                "Built with PT Ver": GLOBAL_CONFIG["pt_version"],
+                "Built with PT Inc": GLOBAL_CONFIG["pt_include_dir"].replace(";", "\n"),
+                "Built with PT Lib": GLOBAL_CONFIG["pt_libs"].replace(";", "\n"),
             }
         else:
             op_info = {}
         return {
             "Backend": "PyTorch",
-            "PT ver": f"v{torch.__version__}-g{torch.version.git_version[:11]}",
-            "Enable custom OP": ENABLE_CUSTOMIZED_OP,
+            "PT Ver": f"v{torch.__version__}-g{torch.version.git_version[:11]}",
+            "Custom OP Enabled": ENABLE_CUSTOMIZED_OP,
             **op_info,
         }
 
