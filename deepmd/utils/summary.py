@@ -47,11 +47,11 @@ class SummaryPrinter(ABC):
     )
 
     BUILD: ClassVar = {
-        "Installed To": "\n".join(deepmd.__path__),
+        "Installed to": "\n".join(deepmd.__path__),
         "Source": GLOBAL_CONFIG["git_summ"],
         "Source Branch": GLOBAL_CONFIG["git_branch"],
         "Source Commit": GLOBAL_CONFIG["git_hash"],
-        "Source Commit At": GLOBAL_CONFIG["git_date"],
+        "Source Commit at": GLOBAL_CONFIG["git_date"],
         "Float Precision": global_float_prec.capitalize(),
         "Build Variant": GLOBAL_CONFIG["dp_variant"].upper(),
     }
@@ -70,7 +70,7 @@ class SummaryPrinter(ABC):
             )
         build_info.update(
             {
-                "Running On": nodename,
+                "Running on": nodename,
                 "Computing Device": self.get_compute_device().upper(),
             }
         )
