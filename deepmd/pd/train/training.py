@@ -30,11 +30,13 @@ from paddle.io import (
 from deepmd.common import (
     symlink_prefix_files,
 )
-from deepmd.dpmodel.utils.learning_rate import BaseLR
 from deepmd.dpmodel.utils import (
     compute_total_numb_batch,
     resolve_model_prob,
     resolve_model_prob_from_epochs,
+)
+from deepmd.dpmodel.utils.learning_rate import (
+    BaseLR,
 )
 from deepmd.loggers.training import (
     format_training_message,
