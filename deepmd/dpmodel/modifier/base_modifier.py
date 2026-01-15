@@ -36,7 +36,6 @@ def make_base_modifier() -> type[object]:
             dict
                 The serialized data
             """
-            pass
 
         @classmethod
         def deserialize(cls, data: dict) -> "BaseModifier":
