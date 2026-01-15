@@ -274,7 +274,7 @@ class Trainer:
             return get_sample
 
         def get_lr(lr_params: dict[str, Any]) -> BaseLR:
-            lr_params["stop_steps"] = self.num_steps - self.warmup_steps
+            lr_params["stop_steps"] = self.num_steps
             lr_schedule = BaseLR(**lr_params)
             return lr_schedule
 
@@ -432,27 +432,7 @@ class Trainer:
                     )
 
         # Learning rate
-        warmup_steps = training_params.get("warmup_steps", None)
-        warmup_ratio = training_params.get("warmup_ratio", None)
-        if warmup_steps is not None:
-            self.warmup_steps = warmup_steps
-        elif warmup_ratio is not None:
-            if not 0 <= warmup_ratio < 1:
-                raise ValueError(f"warmup_ratio must be in [0, 1), got {warmup_ratio}")
-            self.warmup_steps = int(warmup_ratio * self.num_steps)
-            if self.warmup_steps == 0 and warmup_ratio > 0:
-                log.warning(
-                    f"warmup_ratio {warmup_ratio} results in 0 warmup steps "
-                    f"due to truncation. Consider using a larger ratio or "
-                    f"specify warmup_steps directly."
-                )
-        else:
-            self.warmup_steps = 0
-        self.warmup_start_factor = training_params.get("warmup_start_factor", 0.0)
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
-        assert self.num_steps - self.warmup_steps > 0 or self.warmup_steps == 0, (
-            "Warm up steps must be less than total training steps!"
-        )
         if self.multi_task and config.get("learning_rate_dict", None) is not None:
             self.lr_exp = {}
             for model_key in self.model_keys:
@@ -698,14 +678,6 @@ class Trainer:
 
         # TODO add lr warmups for multitask
         # author: iProzd
-        def warm_up_linear(step: int, warmup_steps: int) -> float:
-            if step < warmup_steps:
-                return self.warmup_start_factor + (1.0 - self.warmup_start_factor) * (
-                    step / warmup_steps
-                )
-            else:
-                return self.lr_exp.value(step - warmup_steps) / self.lr_exp.start_lr
-
         # TODO add optimizers for multitask
         # author: iProzd
         if self.opt_type in ["Adam", "AdamW"]:
@@ -726,7 +698,8 @@ class Trainer:
                 self.optimizer.load_state_dict(optimizer_state_dict)
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self.optimizer,
-                lambda step: warm_up_linear(step + self.start_step, self.warmup_steps),
+                lambda step: self.lr_exp.value(step + self.start_step)
+                / self.lr_exp.start_lr,
             )
         elif self.opt_type == "LKF":
             self.optimizer = LKFOptimizer(
@@ -749,7 +722,8 @@ class Trainer:
                 self.optimizer.load_state_dict(optimizer_state_dict)
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self.optimizer,
-                lambda step: warm_up_linear(step + self.start_step, self.warmup_steps),
+                lambda step: self.lr_exp.value(step + self.start_step)
+                / self.lr_exp.start_lr,
             )
         else:
             raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
@@ -823,10 +797,7 @@ class Trainer:
                 fout1.flush()
             if self.opt_type in ["Adam", "AdamW", "AdaMuon"]:
                 cur_lr = self.scheduler.get_last_lr()[0]
-                if _step_id < self.warmup_steps:
-                    pref_lr = _lr.start_lr
-                else:
-                    pref_lr = cur_lr
+                pref_lr = cur_lr
                 model_pred, loss, more_loss = self.wrapper(
                     **input_dict, cur_lr=pref_lr, label=label_dict, task_key=task_key
                 )

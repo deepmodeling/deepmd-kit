@@ -49,7 +49,7 @@ from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
 from deepmd.tf.utils.learning_rate import (
-    LearningRateExp,
+    LearningRateSchedule,
 )
 
 from ..test_finetune import (
@@ -226,8 +226,13 @@ class DpTrainer:
         )
 
     def _get_dp_lr(self):
-        return LearningRateExp(
-            start_lr=self.start_lr, stop_lr=self.stop_lr, decay_steps=self.decay_steps
+        return LearningRateSchedule(
+            {
+                "type": "exp",
+                "start_lr": self.start_lr,
+                "stop_lr": self.stop_lr,
+                "decay_steps": self.decay_steps,
+            }
         )
 
     def _get_dp_placeholders(self, dataset):

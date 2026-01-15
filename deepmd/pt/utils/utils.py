@@ -227,10 +227,14 @@ def to_numpy_array(xx: None) -> None: ...
 
 
 def to_numpy_array(
-    xx: torch.Tensor | None,
+    xx: torch.Tensor | np.ndarray | float | None,
 ) -> np.ndarray | None:
     if xx is None:
         return None
+    if isinstance(xx, (float, int)):
+        return np.array(xx)
+    if isinstance(xx, np.ndarray):
+        return xx
     assert xx is not None
     # Create a reverse mapping of PT_PRECISION_DICT
     reverse_precision_dict = {v: k for k, v in PT_PRECISION_DICT.items()}

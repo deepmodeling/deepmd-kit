@@ -239,7 +239,7 @@ class Trainer:
             return get_sample
 
         def get_lr(lr_params: dict[str, Any]) -> BaseLR:
-            lr_params["stop_steps"] = self.num_steps - self.warmup_steps
+            lr_params["stop_steps"] = self.num_steps
             lr_schedule = BaseLR(**lr_params)
             return lr_schedule
 
@@ -387,11 +387,7 @@ class Trainer:
                     )
 
         # Learning rate
-        self.warmup_steps = training_params.get("warmup_steps", 0)
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
-        assert self.num_steps - self.warmup_steps > 0 or self.warmup_steps == 0, (
-            "Warm up steps must be less than total training steps!"
-        )
         if self.multi_task and config.get("learning_rate_dict", None) is not None:
             self.lr_exp = {}
             for model_key in self.model_keys:
@@ -580,18 +576,13 @@ class Trainer:
 
         # TODO add lr warmups for multitask
         # author: iProzd
-        def warm_up_linear(step, warmup_steps):
-            if step < warmup_steps:
-                return step / warmup_steps
-            else:
-                return self.lr_exp.value(step - warmup_steps) / self.lr_exp.start_lr
-
         # TODO add optimizers for multitask
         # author: iProzd
         if self.opt_type == "Adam":
             self.scheduler = paddle.optimizer.lr.LambdaDecay(
                 learning_rate=self.lr_exp.start_lr,
-                lr_lambda=lambda step: warm_up_linear(step, self.warmup_steps),
+                lr_lambda=lambda step: self.lr_exp.value(step + self.start_step)
+                / self.lr_exp.start_lr,
             )
             self.optimizer = paddle.optimizer.Adam(
                 learning_rate=self.scheduler, parameters=self.wrapper.parameters()
@@ -755,10 +746,7 @@ class Trainer:
                 fout1.flush()
             if self.opt_type == "Adam":
                 cur_lr = self.scheduler.get_lr()
-                if _step_id < self.warmup_steps:
-                    pref_lr = _lr.start_lr
-                else:
-                    pref_lr = cur_lr
+                pref_lr = cur_lr
 
                 # disable synchronization in forward-backward manually
                 # as derivatives exist in model forward

@@ -1,102 +1,128 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
+from typing import (
+    Any,
+)
 
 import numpy as np
 
+from deepmd.dpmodel.utils.learning_rate import (
+    BaseLR,
+)
 from deepmd.tf.env import (
     tf,
 )
 
 
-class LearningRateExp:
-    r"""The exponentially decaying learning rate.
-
-    The learning rate at step :math:`t` is given by
-
-    .. math::
-
-        \alpha(t) = \alpha_0 \lambda ^ { t / \tau }
-
-    where :math:`\alpha` is the learning rate, :math:`\alpha_0` is the starting learning rate,
-    :math:`\lambda` is the decay rate, and :math:`\tau` is the decay steps.
+class LearningRateSchedule:
+    """
+    TensorFlow wrapper for BaseLR.
 
     Parameters
     ----------
-    start_lr
-            Starting learning rate :math:`\alpha_0`
-    stop_lr
-            Stop learning rate :math:`\alpha_1`
-    decay_steps
-            Learning rate decay every this number of steps :math:`\tau`
-    decay_rate
-            The decay rate :math:`\lambda`.
-            If `stop_step` is provided in `build`, then it will be determined automatically and overwritten.
+    params : dict[str, Any]
+        Learning rate configuration dictionary.
     """
 
-    def __init__(
-        self,
-        start_lr: float,
-        stop_lr: float = 5e-8,
-        decay_steps: int = 5000,
-        decay_rate: float = 0.95,
-    ) -> None:
-        """Constructor."""
-        self.cd = {}
-        self.cd["start_lr"] = start_lr
-        self.cd["stop_lr"] = stop_lr
-        self.cd["decay_steps"] = decay_steps
-        self.cd["decay_rate"] = decay_rate
-        self.start_lr_ = self.cd["start_lr"]
+    def __init__(self, params: dict[str, Any]) -> None:
+        # === Step 1. Store configuration ===
+        self._params = dict(params)
+        if "start_lr" not in self._params:
+            raise ValueError("start_lr must be provided")
+        self._start_lr = float(self._params["start_lr"])
+        self._base_lr: BaseLR | None = None
 
-    def build(self, global_step: tf.Tensor, stop_step: int | None = None) -> tf.Tensor:
-        """Build the learning rate.
-
-        Parameters
-        ----------
-        global_step
-            The tf Tensor providing the global training step
-        stop_step
-            The stop step. If provided, the decay_rate will be determined automatically and overwritten.
+    def start_lr(self) -> float:
+        """
+        Get the starting learning rate.
 
         Returns
         -------
-        learning_rate
-            The learning rate
+        float
+            The starting learning rate.
         """
-        if stop_step is None:
-            self.decay_steps_ = (
-                self.cd["decay_steps"] if self.cd["decay_steps"] is not None else 5000
-            )
-            self.decay_rate_ = (
-                self.cd["decay_rate"] if self.cd["decay_rate"] is not None else 0.95
-            )
-        else:
-            self.stop_lr_ = (
-                self.cd["stop_lr"] if self.cd["stop_lr"] is not None else 5e-8
-            )
-            default_ds = 100 if stop_step // 10 > 100 else stop_step // 100 + 1
-            self.decay_steps_ = (
-                self.cd["decay_steps"]
-                if self.cd["decay_steps"] is not None
-                else default_ds
-            )
-            if self.decay_steps_ >= stop_step:
-                self.decay_steps_ = default_ds
-            self.decay_rate_ = np.exp(
-                np.log(self.stop_lr_ / self.start_lr_) / (stop_step / self.decay_steps_)
-            )
+        return self._start_lr
 
-        return tf.train.exponential_decay(
-            self.start_lr_,
-            global_step,
-            self.decay_steps_,
-            self.decay_rate_,
-            staircase=True,
+    @property
+    def base_lr(self) -> BaseLR:
+        """
+        Get the built BaseLR instance.
+
+        Returns
+        -------
+        BaseLR
+            The built learning rate schedule.
+
+        Raises
+        ------
+        RuntimeError
+            If the schedule has not been built.
+        """
+        if self._base_lr is None:
+            raise RuntimeError("Learning rate schedule is not built yet.")
+        return self._base_lr
+
+    def build(self, global_step: tf.Tensor, stop_steps: int) -> tf.Tensor:
+        """
+        Build a TensorFlow learning rate tensor.
+
+        Parameters
+        ----------
+        global_step : tf.Tensor
+            The global training step tensor.
+        stop_steps : int
+            The total training steps.
+
+        Returns
+        -------
+        tf.Tensor
+            The learning rate tensor.
+        """
+        # === Step 1. Instantiate backend-agnostic schedule ===
+        params = dict(self._params)
+        params["stop_steps"] = stop_steps
+        # Default to 'exp' type if not specified
+        if "type" not in params:
+            params["type"] = "exp"
+        self._base_lr = BaseLR(**params)
+
+        # === Step 2. Bind a numpy_function for runtime evaluation ===
+        def _lr_value(step: np.ndarray) -> np.ndarray:
+            return np.asarray(self._base_lr.value(step), dtype=np.float64)
+
+        lr = tf.numpy_function(
+            _lr_value, [global_step], Tout=tf.float64, name="lr_schedule"
         )
-
-    def start_lr(self) -> float:
-        """Get the start lr."""
-        return self.start_lr_
+        lr.set_shape(global_step.get_shape())
+        return tf.cast(lr, tf.float32)
 
     def value(self, step: int) -> float:
-        """Get the lr at a certain step."""
-        return self.start_lr_ * np.power(self.decay_rate_, (step // self.decay_steps_))
+        """
+        Get the learning rate at the given step.
+
+        Parameters
+        ----------
+        step : int
+            The step index.
+
+        Returns
+        -------
+        float
+            The learning rate value.
+
+        Raises
+        ------
+        RuntimeError
+            If the schedule has not been built.
+        """
+        if self._base_lr is None:
+            raise RuntimeError("Learning rate schedule is not built yet.")
+        return float(np.asarray(self._base_lr.value(step)))
+
+
+__all__ = [
+    "LearningRateSchedule",
+]

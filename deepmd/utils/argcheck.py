@@ -2480,14 +2480,159 @@ def linear_ener_model_args() -> Argument:
 lr_args_plugin = ArgsPlugin()
 
 
+def _check_lr_stop_args(data: dict[str, Any]) -> bool:
+    """
+    Check that stop_lr and stop_ratio are mutually exclusive and at least one is provided.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        The learning rate configuration dictionary.
+
+    Returns
+    -------
+    bool
+        True if validation passes.
+
+    Raises
+    ------
+    ValueError
+        If both stop_lr and stop_ratio are provided, or neither is provided.
+    """
+    has_stop_lr = "stop_lr" in data and data["stop_lr"] is not None
+    has_stop_ratio = "stop_ratio" in data and data["stop_ratio"] is not None
+
+    if has_stop_lr and has_stop_ratio:
+        raise ValueError(
+            "stop_lr and stop_ratio are mutually exclusive. "
+            f"Got stop_lr={data['stop_lr']}, stop_ratio={data['stop_ratio']}"
+        )
+    if not has_stop_lr and not has_stop_ratio:
+        raise ValueError(
+            "Either stop_lr or stop_ratio must be provided. "
+            "Got stop_lr=None, stop_ratio=None"
+        )
+    return True
+
+
+def _check_warmup_args(data: dict[str, Any]) -> bool:
+    """
+    Check that warmup_steps and warmup_ratio are mutually exclusive.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        The learning rate configuration dictionary.
+
+    Returns
+    -------
+    bool
+        True if validation passes.
+
+    Raises
+    ------
+    ValueError
+        If both warmup_steps (non-zero) and warmup_ratio are provided.
+    """
+    # warmup_steps default is 0, so check for non-zero value
+    has_warmup_steps = "warmup_steps" in data and data["warmup_steps"] != 0
+    has_warmup_ratio = "warmup_ratio" in data and data["warmup_ratio"] is not None
+
+    if has_warmup_steps and has_warmup_ratio:
+        raise ValueError(
+            "warmup_steps and warmup_ratio are mutually exclusive. "
+            f"Got warmup_steps={data['warmup_steps']}, warmup_ratio={data['warmup_ratio']}"
+        )
+    return True
+
+
+def _learning_rate_common_args(
+    doc_stop_lr: str,
+    extra_args: list[Argument] | None = None,
+) -> list[Argument]:
+    doc_start_lr = "The learning rate at the start of the training (after warmup)."
+    doc_stop_ratio = (
+        "The ratio of stop_lr to start_lr. stop_lr = start_lr * stop_ratio. "
+        "Mutually exclusive with stop_lr."
+    )
+    doc_warmup_steps = (
+        "The number of steps for learning rate warmup. "
+        "During warmup, the learning rate increases linearly from "
+        "warmup_start_factor * start_lr to start_lr. "
+        "Mutually exclusive with warmup_ratio. Default is 0 (no warmup)."
+    )
+    doc_warmup_ratio = (
+        "The ratio of warmup steps to total training steps. "
+        "The actual number of warmup steps is int(warmup_ratio * stop_steps). "
+        "Mutually exclusive with warmup_steps."
+    )
+    doc_warmup_start_factor = (
+        "The factor of start_lr for the initial warmup learning rate. "
+        "The warmup learning rate starts from warmup_start_factor * start_lr. "
+        "Default is 0.0, meaning the learning rate starts from zero."
+    )
+
+    args = [
+        Argument("start_lr", float, optional=False, doc=doc_start_lr),
+        Argument(
+            "stop_lr",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_stop_lr,
+        ),
+        Argument(
+            "stop_ratio",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_stop_ratio,
+        ),
+    ]
+    if extra_args:
+        args.extend(extra_args)
+    args.extend(
+        [
+            Argument(
+                "warmup_steps",
+                int,
+                optional=True,
+                default=0,
+                doc=doc_warmup_steps,
+            ),
+            Argument(
+                "warmup_ratio",
+                float,
+                optional=True,
+                default=None,
+                doc=doc_warmup_ratio,
+            ),
+            Argument(
+                "warmup_start_factor",
+                float,
+                optional=True,
+                default=0.0,
+                doc=doc_warmup_start_factor,
+            ),
+        ]
+    )
+    return args
+
+
 @lr_args_plugin.register("exp")
 def learning_rate_exp() -> list[Argument]:
-    doc_start_lr = "The learning rate at the start of the training."
+    """
+    Defines an exponential-decayed learning rate schedule with optional warmup.
+
+    The learning rate starts at `start_lr` (after warmup) and decays exponentially
+    to `stop_lr` over the training steps.
+    """
     doc_stop_lr = (
         "The desired learning rate at the end of the training. "
-        f"When decay_rate {doc_only_pt_supported}is explicitly set, "
+        "When decay_rate is explicitly set, "
         "this value will serve as the minimum learning rate during training. "
-        "In other words, if the learning rate decays below stop_lr, stop_lr will be applied instead."
+        "In other words, if the learning rate decays below stop_lr, stop_lr will be applied instead. "
+        "Mutually exclusive with stop_ratio."
     )
     doc_decay_steps = (
         "The learning rate is decaying every this number of training steps."
@@ -2498,37 +2643,32 @@ def learning_rate_exp() -> list[Argument]:
         "instead of calculating it through interpolation between start_lr and stop_lr."
     )
 
-    args = [
-        Argument("start_lr", float, optional=True, default=1e-3, doc=doc_start_lr),
-        Argument("stop_lr", float, optional=True, default=1e-8, doc=doc_stop_lr),
+    extra_args = [
         Argument("decay_steps", int, optional=True, default=5000, doc=doc_decay_steps),
         Argument(
             "decay_rate",
             float,
             optional=True,
             default=None,
-            doc=doc_only_pt_supported + doc_decay_rate,
+            doc=doc_decay_rate,
         ),
     ]
-    return args
+    return _learning_rate_common_args(doc_stop_lr, extra_args=extra_args)
 
 
-@lr_args_plugin.register("cosine", doc=doc_only_pt_supported)
+@lr_args_plugin.register("cosine")
 def learning_rate_cosine() -> list[Argument]:
     """
-    Defines a cosine annealing learning rate schedule.
+    Defines a cosine annealing learning rate schedule with optional warmup.
 
-    The learning rate starts at `start_lr` and gradually decreases to `stop_lr`
-    following a cosine curve over the training steps.
+    The learning rate starts at `start_lr` (after warmup) and gradually
+    decreases to `stop_lr` following a cosine curve over the training steps.
     """
-    doc_start_lr = "The learning rate at the start of the training."
-    doc_stop_lr = "The desired learning rate at the end of the training. "
-
-    args = [
-        Argument("start_lr", float, optional=True, default=1e-3, doc=doc_start_lr),
-        Argument("stop_lr", float, optional=True, default=1e-5, doc=doc_stop_lr),
-    ]
-    return args
+    doc_stop_lr = (
+        "The desired learning rate at the end of training. "
+        "Mutually exclusive with stop_ratio."
+    )
+    return _learning_rate_common_args(doc_stop_lr)
 
 
 def learning_rate_variant_type_args() -> Variant:
@@ -2546,6 +2686,15 @@ def learning_rate_variant_type_args() -> Variant:
 def learning_rate_args(fold_subdoc: bool = False) -> Argument:
     doc_scale_by_worker = "When parallel training or batch size scaled, how to alter learning rate. Valid values are `linear`(default), `sqrt` or `none`."
     doc_lr = "The definition of learning rate"
+
+    def _check_lr_args(data: dict[str, Any]) -> bool:
+        """Check learning rate argument constraints."""
+        # Check stop_lr and stop_ratio
+        _check_lr_stop_args(data)
+        # Check warmup_steps and warmup_ratio
+        _check_warmup_args(data)
+        return True
+
     return Argument(
         "learning_rate",
         dict,
@@ -2562,6 +2711,7 @@ def learning_rate_args(fold_subdoc: bool = False) -> Argument:
         optional=True,
         doc=doc_lr,
         fold_subdoc=fold_subdoc,
+        extra_check=_check_lr_args,
     )
 
 
@@ -3240,22 +3390,6 @@ def training_args(
     doc_tensorboard = "Enable tensorboard"
     doc_tensorboard_log_dir = "The log directory of tensorboard outputs"
     doc_tensorboard_freq = "The frequency of writing tensorboard events."
-    doc_warmup_steps = (
-        "The number of steps for learning rate warmup. During warmup, "
-        "the learning rate begins at zero and progressively increases linearly to `start_lr`, "
-        "rather than starting directly from `start_lr`"
-    )
-    doc_warmup_ratio = (
-        "The ratio of warmup steps to total training steps. "
-        "The actual number of warmup steps is calculated as `warmup_ratio * numb_steps`. "
-        "Valid values are in the range [0.0, 1.0). "
-        "If `warmup_steps` is set, this option will be ignored."
-    )
-    doc_warmup_start_factor = (
-        "The factor of start learning rate to the target learning rate during warmup. "
-        "The warmup learning rate will linearly increase from `warmup_start_factor * start_lr` to `start_lr`. "
-        "Default is 0.0, meaning the learning rate starts from zero."
-    )
     doc_gradient_max_norm = (
         "Clips the gradient norm to a maximum value. "
         "If the gradient norm exceeds this value, it will be clipped to this limit. "
@@ -3362,25 +3496,6 @@ def training_args(
         ),
         Argument(
             "tensorboard_freq", int, optional=True, default=1, doc=doc_tensorboard_freq
-        ),
-        Argument(
-            "warmup_steps",
-            int,
-            optional=True,
-            doc=doc_only_pt_supported + doc_warmup_steps,
-        ),
-        Argument(
-            "warmup_ratio",
-            float,
-            optional=True,
-            doc=doc_only_pt_supported + doc_warmup_ratio,
-        ),
-        Argument(
-            "warmup_start_factor",
-            float,
-            optional=True,
-            default=0.0,
-            doc=doc_only_pt_supported + doc_warmup_start_factor,
         ),
         Argument(
             "gradient_max_norm",

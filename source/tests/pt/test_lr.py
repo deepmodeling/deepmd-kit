@@ -10,8 +10,8 @@ from deepmd.pt.utils.learning_rate import (
     LearningRateCosine,
     LearningRateExp,
 )
-from deepmd.tf.utils import (
-    learning_rate,
+from deepmd.tf.utils.learning_rate import (
+    LearningRateSchedule,
 )
 
 
@@ -19,7 +19,8 @@ class TestLearningRate(unittest.TestCase):
     def setUp(self) -> None:
         self.start_lr = 0.001
         self.stop_lr = 3.51e-8
-        self.decay_steps = np.arange(400, 601, 100)
+        # decay_steps must not exceed stop_steps
+        self.decay_steps = np.arange(400, 501, 100)
         self.stop_steps = np.arange(500, 1600, 500)
 
     def test_consistency(self) -> None:
@@ -31,8 +32,13 @@ class TestLearningRate(unittest.TestCase):
                 self.decay_rate_pt()
 
     def judge_it(self) -> None:
-        base_lr = learning_rate.LearningRateExp(
-            self.start_lr, self.stop_lr, self.decay_step
+        base_lr = LearningRateSchedule(
+            {
+                "type": "exp",
+                "start_lr": self.start_lr,
+                "stop_lr": self.stop_lr,
+                "decay_steps": self.decay_step,
+            }
         )
         g = tf.Graph()
         with g.as_default():
@@ -40,7 +46,10 @@ class TestLearningRate(unittest.TestCase):
             t_lr = base_lr.build(global_step, self.stop_step)
 
         my_lr = LearningRateExp(
-            self.start_lr, self.stop_lr, self.decay_step, self.stop_step
+            start_lr=self.start_lr,
+            stop_lr=self.stop_lr,
+            decay_steps=self.decay_step,
+            stop_steps=self.stop_step,
         )
         with tf.Session(graph=g) as sess:
             base_vals = [
@@ -58,28 +67,34 @@ class TestLearningRate(unittest.TestCase):
 
     def decay_rate_pt(self) -> None:
         my_lr = LearningRateExp(
-            self.start_lr, self.stop_lr, self.decay_step, self.stop_step
+            start_lr=self.start_lr,
+            stop_lr=self.stop_lr,
+            decay_steps=self.decay_step,
+            stop_steps=self.stop_step,
         )
 
         default_ds = 100 if self.stop_step // 10 > 100 else self.stop_step // 100 + 1
-        if self.decay_step >= self.stop_step:
-            self.decay_step = default_ds
+        # Use local variable to avoid modifying instance state
+        decay_step_for_rate = self.decay_step
+        if decay_step_for_rate >= self.stop_step:
+            decay_step_for_rate = default_ds
         decay_rate = np.exp(
-            np.log(self.stop_lr / self.start_lr) / (self.stop_step / self.decay_step)
+            np.log(self.stop_lr / self.start_lr)
+            / (self.stop_step / decay_step_for_rate)
         )
         my_lr_decay = LearningRateExp(
-            self.start_lr,
-            1e-10,
-            self.decay_step,
-            self.stop_step,
+            start_lr=self.start_lr,
+            stop_lr=1e-10,
+            decay_steps=self.decay_step,
+            stop_steps=self.stop_step,
             decay_rate=decay_rate,
         )
         min_lr = 1e-5
         my_lr_decay_trunc = LearningRateExp(
-            self.start_lr,
-            min_lr,
-            self.decay_step,
-            self.stop_step,
+            start_lr=self.start_lr,
+            stop_lr=min_lr,
+            decay_steps=self.decay_step,
+            stop_steps=self.stop_step,
             decay_rate=decay_rate,
         )
         my_vals = [
@@ -108,7 +123,11 @@ class TestLearningRateCosine(unittest.TestCase):
         start_lr = 1.0
         stop_lr = 0.1
         stop_steps = 10
-        lr = LearningRateCosine(start_lr, stop_lr, stop_steps)
+        lr = LearningRateCosine(
+            start_lr=start_lr,
+            stop_lr=stop_lr,
+            stop_steps=stop_steps,
+        )
 
         self.assertTrue(np.allclose(lr.value(0), start_lr))
         self.assertTrue(np.allclose(lr.value(stop_steps), stop_lr))
