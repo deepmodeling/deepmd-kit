@@ -149,14 +149,14 @@ class EnerStdLoss(Loss):
         virial_hat = label_dict["virial"]
         atom_ener_hat = label_dict["atom_ener"]
         atom_pref = label_dict["atom_pref"]
-        find_energy = global_cvt_2_ener_float(label_dict["find_energy"])
-        find_force = global_cvt_2_tf_float(label_dict["find_force"])
-        find_virial = global_cvt_2_tf_float(label_dict["find_virial"])
-        find_atom_ener = global_cvt_2_tf_float(label_dict["find_atom_ener"])
-        find_atom_pref = global_cvt_2_tf_float(label_dict["find_atom_pref"])
+        find_energy = label_dict["find_energy"]
+        find_force = label_dict["find_force"]
+        find_virial = label_dict["find_virial"]
+        find_atom_ener = label_dict["find_atom_ener"]
+        find_atom_pref = label_dict["find_atom_pref"]
         if self.has_gf:
             drdq = label_dict["drdq"]
-            find_drdq = global_cvt_2_tf_float(label_dict["find_drdq"])
+            find_drdq = label_dict["find_drdq"]
         else:
             find_drdq = 0.0
 
@@ -589,10 +589,10 @@ class EnerSpinLoss(Loss):
         virial_label = label_dict["virial"]
         atom_ener_label = label_dict["atom_ener"]
         atom_pref = label_dict["atom_pref"]
-        find_energy = global_cvt_2_ener_float(label_dict["find_energy"])
-        find_force = global_cvt_2_tf_float(label_dict["find_force"])
-        find_virial = global_cvt_2_tf_float(label_dict["find_virial"])
-        find_atom_ener = global_cvt_2_tf_float(label_dict["find_atom_ener"])
+        find_energy = label_dict["find_energy"]
+        find_force = label_dict["find_force"]
+        find_virial = label_dict["find_virial"]
+        find_atom_ener = label_dict["find_atom_ener"]
 
         if self.enable_atom_ener_coeff:
             # when ener_coeff (\nu) is defined, the energy is defined as
@@ -932,8 +932,8 @@ class EnerDipoleLoss(Loss):
 
         energy_hat = label_dict["energy"]
         ener_dipole_hat = label_dict["energy_dipole"]
-        find_energy = global_cvt_2_ener_float(label_dict["find_energy"])
-        find_ener_dipole = global_cvt_2_ener_float(label_dict["find_energy_dipole"])
+        find_energy = label_dict["find_energy"]
+        find_ener_dipole = label_dict["find_energy_dipole"]
 
         l2_ener_loss = tf.reduce_mean(
             tf.square(energy - energy_hat), name="l2_" + suffix

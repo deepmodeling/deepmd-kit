@@ -65,8 +65,8 @@ class DOSLoss(Loss):
         dos_hat = label_dict["dos"]
         atom_dos_hat = label_dict["atom_dos"]
 
-        find_dos = global_cvt_2_tf_float(label_dict["find_dos"])
-        find_atom_dos = global_cvt_2_tf_float(label_dict["find_atom_dos"])
+        find_dos = label_dict["find_dos"]
+        find_atom_dos = label_dict["find_atom_dos"]
 
         dos_reshape = tf.reshape(dos, [-1, self.numb_dos])
         dos_hat_reshape = tf.reshape(dos_hat, [-1, self.numb_dos])
