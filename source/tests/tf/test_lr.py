@@ -42,13 +42,13 @@ class TestLearningRateScheduleBuild(unittest.TestCase):
     """Test TF tensor building and integration."""
 
     def test_build_returns_tensor(self) -> None:
-        """Test that build() returns a float32 TF tensor (consistent with PT/PD backends)."""
+        """Test that build() returns a float64 TF tensor (consistent with GLOBAL_TF_FLOAT_PRECISION)."""
         lr_schedule = LearningRateSchedule({"start_lr": 1e-3, "stop_lr": 1e-5})
         global_step = tf.constant(0, dtype=tf.int64)
         lr_tensor = lr_schedule.build(global_step, num_steps=10000)
 
         self.assertIsInstance(lr_tensor, tf.Tensor)
-        self.assertEqual(lr_tensor.dtype, tf.float32)
+        self.assertEqual(lr_tensor.dtype, tf.float64)
 
     def test_default_type_exp(self) -> None:
         """Test that default type is 'exp' when not specified."""

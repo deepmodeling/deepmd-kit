@@ -13,6 +13,7 @@ from deepmd.dpmodel.utils.learning_rate import (
     BaseLR,
 )
 from deepmd.tf.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
     tf,
 )
 
@@ -93,14 +94,15 @@ class LearningRateSchedule:
         base_lr = self._base_lr
 
         def _lr_value(step: np.ndarray) -> np.ndarray:
-            # Use float32 for learning rate, consistent with PyTorch/Paddle backends
+            # Use GLOBAL_TF_FLOAT_PRECISION (float64) for learning rate,
+            # consistent with energy precision in TF backend
             return np.asarray(
                 base_lr.value(step),
-                dtype=np.float32,
+                dtype=GLOBAL_TF_FLOAT_PRECISION.as_numpy_dtype,
             )
 
         lr = tf.numpy_function(
-            _lr_value, [global_step], Tout=tf.float32, name="lr_schedule"
+            _lr_value, [global_step], Tout=GLOBAL_TF_FLOAT_PRECISION, name="lr_schedule"
         )
         lr.set_shape(global_step.get_shape())
         return lr
