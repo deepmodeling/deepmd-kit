@@ -402,7 +402,7 @@ class DipoleFittingSeA(Fitting):
         ----------
         loss : dict
             the loss dict
-        lr : LearningRateExp
+        lr : LearningRateSchedule
             the learning rate
 
         Returns

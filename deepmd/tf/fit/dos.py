@@ -50,7 +50,7 @@ from deepmd.utils.out_stat import (
 )
 
 if TYPE_CHECKING:
-    from deepmd.tf.train.learning_rate import (
+    from deepmd.tf.utils.learning_rate import (
         LearningRateExp,
     )
 from deepmd.utils.version import (
@@ -668,7 +668,7 @@ class DOSFitting(Fitting):
         ----------
         loss : dict
             the loss dict
-        lr : LearningRateExp
+        lr : LearningRateSchedule
             the learning rate
 
         Returns

@@ -16,6 +16,7 @@ from deepmd.pt.utils import (
 
 from .env import (
     DEVICE,
+    GLOBAL_NP_FLOAT_PRECISION,
 )
 from .env import PRECISION_DICT as PT_PRECISION_DICT
 
@@ -219,6 +220,14 @@ class ActivationFn(torch.nn.Module):
 
 
 @overload
+def to_numpy_array(xx: np.ndarray) -> np.ndarray: ...
+
+
+@overload
+def to_numpy_array(xx: float) -> np.ndarray: ...
+
+
+@overload
 def to_numpy_array(xx: torch.Tensor) -> np.ndarray: ...
 
 
@@ -227,11 +236,14 @@ def to_numpy_array(xx: None) -> None: ...
 
 
 def to_numpy_array(
-    xx: torch.Tensor | None,
+    xx: torch.Tensor | np.ndarray | float | None,
 ) -> np.ndarray | None:
     if xx is None:
         return None
-    assert xx is not None
+    if isinstance(xx, (float, int)):
+        return np.array(xx, dtype=GLOBAL_NP_FLOAT_PRECISION)
+    if isinstance(xx, np.ndarray):
+        return xx.astype(GLOBAL_NP_FLOAT_PRECISION)
     # Create a reverse mapping of PT_PRECISION_DICT
     reverse_precision_dict = {v: k for k, v in PT_PRECISION_DICT.items()}
     # Use the reverse mapping to find keys with the desired value
@@ -239,6 +251,7 @@ def to_numpy_array(
     prec = NP_PRECISION_DICT.get(prec, None)
     if prec is None:
         raise ValueError(f"unknown precision {xx.dtype}")
+    assert isinstance(xx, torch.Tensor)
     if xx.dtype == torch.bfloat16:
         # https://github.com/pytorch/pytorch/issues/109873
         xx = xx.float()

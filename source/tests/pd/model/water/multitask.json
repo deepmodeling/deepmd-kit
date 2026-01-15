@@ -130,7 +130,6 @@
       }
     },
     "numb_steps": 100000,
-    "warmup_steps": 0,
     "gradient_max_norm": 5.0,
     "seed": 10,
     "disp_file": "lcurve.out",
