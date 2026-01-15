@@ -13,6 +13,7 @@ from deepmd.dpmodel.utils.learning_rate import (
     BaseLR,
 )
 from deepmd.tf.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
     tf,
 )
 
@@ -90,13 +91,11 @@ class LearningRateSchedule:
         self._base_lr = BaseLR(**params)
 
         # === Step 2. Bind a numpy_function for runtime evaluation ===
-        from deepmd.tf.env import (
-            GLOBAL_TF_FLOAT_PRECISION,
-        )
+        base_lr = self._base_lr
 
         def _lr_value(step: np.ndarray) -> np.ndarray:
             return np.asarray(
-                self._base_lr.value(step),
+                base_lr.value(step),
                 dtype=GLOBAL_TF_FLOAT_PRECISION.as_numpy_dtype,
             )
 
