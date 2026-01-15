@@ -81,7 +81,7 @@ The {ref}`learning_rate <learning_rate>` section for exponential decay in `input
 
 **Additional parameters for `exp` type only:**
 
-- {ref}`decay_steps <learning_rate[exp]/decay_steps>` specifies the interval (in training steps) at which the learning rate is decayed. The learning rate is updated every {ref}`decay_steps <learning_rate[exp]/decay_steps>` steps during the decay phase.
+- {ref}`decay_steps <learning_rate[exp]/decay_steps>` specifies the interval (in training steps) at which the learning rate is decayed. The learning rate is updated every {ref}`decay_steps <learning_rate[exp]/decay_steps>` steps during the decay phase. If `decay_steps` exceeds the decay phase steps (num_steps - warmup_steps) and `decay_rate` is not explicitly provided, it will be automatically adjusted to a sensible default value.
 - {ref}`smooth <learning_rate[exp]/smooth>` (optional, default: `false`) controls the decay behavior. When set to `false`, the learning rate decays in a stepped manner (updated every `decay_steps` steps). When set to `true`, the learning rate decays smoothly at every step.
 
 **Learning rate formula for `exp` type:**

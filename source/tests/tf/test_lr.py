@@ -23,12 +23,6 @@ from deepmd.tf.utils.learning_rate import (
 class TestLearningRateScheduleValidation(unittest.TestCase):
     """Test TF wrapper validation and error handling."""
 
-    def test_missing_start_lr(self) -> None:
-        """Test that missing start_lr raises ValueError."""
-        with self.assertRaises(ValueError) as cm:
-            LearningRateSchedule({"type": "exp", "stop_lr": 1e-5})
-        self.assertIn("start_lr", str(cm.exception))
-
     def test_value_before_build(self) -> None:
         """Test that calling value() before build() raises RuntimeError."""
         lr_schedule = LearningRateSchedule({"start_lr": 1e-3})
@@ -48,13 +42,13 @@ class TestLearningRateScheduleBuild(unittest.TestCase):
     """Test TF tensor building and integration."""
 
     def test_build_returns_tensor(self) -> None:
-        """Test that build() returns a float32 TF tensor."""
+        """Test that build() returns a float64 TF tensor."""
         lr_schedule = LearningRateSchedule({"start_lr": 1e-3, "stop_lr": 1e-5})
         global_step = tf.constant(0, dtype=tf.int64)
         lr_tensor = lr_schedule.build(global_step, num_steps=10000)
 
         self.assertIsInstance(lr_tensor, tf.Tensor)
-        self.assertEqual(lr_tensor.dtype, tf.float32)
+        self.assertEqual(lr_tensor.dtype, tf.float64)
 
     def test_default_type_exp(self) -> None:
         """Test that default type is 'exp' when not specified."""

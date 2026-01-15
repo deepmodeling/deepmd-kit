@@ -2669,7 +2669,10 @@ def learning_rate_exp() -> list[Argument]:
         "Mutually exclusive with stop_lr_ratio."
     )
     doc_decay_steps = (
-        "The learning rate is decaying every this number of training steps."
+        "The learning rate is decaying every this number of training steps. "
+        "If decay_steps exceeds the decay phase steps (num_steps - warmup_steps) "
+        "and decay_rate is not provided, it will be automatically adjusted to a "
+        "sensible default value."
     )
     doc_decay_rate = (
         "The decay rate for the learning rate. "

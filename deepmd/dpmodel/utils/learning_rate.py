@@ -288,7 +288,6 @@ class LearningRateExp(BaseLR):
             If both stop_lr and stop_lr_ratio are provided, or neither is provided.
             If both warmup_steps and warmup_ratio are provided.
             If decay_steps is not positive.
-            If decay_steps is larger than the decay phase total steps when decay_rate is not provided.
         """
         super().__init__(
             start_lr=start_lr,
@@ -307,12 +306,12 @@ class LearningRateExp(BaseLR):
 
         if self.decay_steps <= 0:
             raise ValueError(f"decay_steps ({self.decay_steps}) must be positive.")
-        # Only validate decay_steps <= decay_total when computing decay_rate from start_lr/stop_lr
-        if decay_rate is None and self.decay_steps > decay_total:
-            raise ValueError(
-                f"decay_steps ({self.decay_steps}) must not exceed decay phase steps ({decay_total}) "
-                "when decay_rate is not explicitly provided."
-            )
+
+        # Auto-adjust decay_steps if it exceeds decay_total and decay_rate is not provided
+        if decay_rate is None and self.decay_steps >= decay_total:
+            # Compute sensible default: cap at 100, but ensure at least 1 for small decay_total
+            default_ds = 100 if decay_total // 10 > 100 else decay_total // 100 + 1
+            self.decay_steps = default_ds
 
         # Avoid log(0) issues by clamping stop_lr for computation
         clamped_stop_lr = max(self.stop_lr, 1e-10)

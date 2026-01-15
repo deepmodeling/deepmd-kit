@@ -18,7 +18,7 @@ class TestLearningRate(unittest.TestCase):
     def setUp(self):
         self.start_lr = 0.001
         self.stop_lr = 3.51e-8
-        # decay_steps must not exceed num_steps
+        # decay_steps will be auto-adjusted if >= num_steps
         self.decay_steps = np.arange(400, 501, 100)
         self.num_steps = np.arange(500, 1600, 500)
 
@@ -72,19 +72,15 @@ class TestLearningRate(unittest.TestCase):
             num_steps=self.stop_step,
         )
 
-        default_ds = 100 if self.stop_step // 10 > 100 else self.stop_step // 100 + 1
-        # Use local variable to avoid modifying instance state
-        decay_step_for_rate = self.decay_step
-        if decay_step_for_rate >= self.stop_step:
-            decay_step_for_rate = default_ds
+        # Use the auto-adjusted decay_steps from my_lr for consistency
+        actual_decay_steps = my_lr.decay_steps
         decay_rate = np.exp(
-            np.log(self.stop_lr / self.start_lr)
-            / (self.stop_step / decay_step_for_rate)
+            np.log(self.stop_lr / self.start_lr) / (self.stop_step / actual_decay_steps)
         )
         my_lr_decay = LearningRateExp(
             start_lr=self.start_lr,
             stop_lr=1e-10,
-            decay_steps=self.decay_step,
+            decay_steps=actual_decay_steps,
             num_steps=self.stop_step,
             decay_rate=decay_rate,
         )
@@ -92,24 +88,24 @@ class TestLearningRate(unittest.TestCase):
         my_lr_decay_trunc = LearningRateExp(
             start_lr=self.start_lr,
             stop_lr=min_lr,
-            decay_steps=self.decay_step,
+            decay_steps=actual_decay_steps,
             num_steps=self.stop_step,
             decay_rate=decay_rate,
         )
         my_vals = [
             my_lr.value(step_id)
             for step_id in range(self.stop_step)
-            if step_id % self.decay_step != 0
+            if step_id % actual_decay_steps != 0
         ]
         my_vals_decay = [
             my_lr_decay.value(step_id)
             for step_id in range(self.stop_step)
-            if step_id % self.decay_step != 0
+            if step_id % actual_decay_steps != 0
         ]
         my_vals_decay_trunc = [
             my_lr_decay_trunc.value(step_id)
             for step_id in range(self.stop_step)
-            if step_id % self.decay_step != 0
+            if step_id % actual_decay_steps != 0
         ]
         self.assertTrue(np.allclose(my_vals_decay, my_vals))
         self.assertTrue(
