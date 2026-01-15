@@ -105,12 +105,14 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
             self.warmup_steps = warmup_steps
 
         # === Step 5. Validate step ranges (runtime check) ===
-        if num_steps <= 0:
-            raise ValueError("num_steps must be positive")
+        if num_steps < 0:
+            raise ValueError("num_steps must be non-negative")
         if self.warmup_steps < 0:
             raise ValueError("warmup_steps must be non-negative")
-        if self.warmup_steps >= num_steps:
+        if num_steps > 0 and self.warmup_steps >= num_steps:
             raise ValueError("warmup_steps must be smaller than num_steps")
+        if num_steps == 0 and self.warmup_steps != 0:
+            raise ValueError("warmup_steps must be 0 when num_steps is 0")
 
         # === Step 6. Compute warmup_start_lr ===
         self.warmup_start_lr = warmup_start_factor * start_lr
@@ -457,6 +459,9 @@ class LearningRateCosine(BaseLR):
             step = np.asarray(step)
         xp = array_api_compat.array_namespace(step)
         min_lr = self.start_lr * self.lr_min_factor
+        # Handle decay_num_steps=0 (no training steps) - return start_lr
+        if self.decay_num_steps == 0:
+            return xp.full_like(step, self.start_lr, dtype=xp.float64)
         step_lr = self.start_lr * (
             self.lr_min_factor
             + 0.5
