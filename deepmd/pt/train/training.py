@@ -43,6 +43,7 @@ from deepmd.pt.model.model import (
 )
 from deepmd.pt.optimizer import (
     AdaMuonOptimizer,
+    HybridMuonOptimizer,
     KFOptimizerWrapper,
     LKFOptimizer,
 )
@@ -158,6 +159,7 @@ class Trainer:
         def get_opt_param(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
             opt_type = params.get("opt_type", "Adam")
             opt_param = {
+                # LKF parameters
                 "kf_blocksize": params.get("kf_blocksize", 5120),
                 "kf_start_pref_e": params.get("kf_start_pref_e", 1),
                 "kf_limit_pref_e": params.get("kf_limit_pref_e", 1),
@@ -169,6 +171,10 @@ class Trainer:
                 "momentum": params.get("momentum", 0.95),
                 "adam_beta1": params.get("adam_beta1", 0.9),
                 "adam_beta2": params.get("adam_beta2", 0.95),
+                "lr_adjust": params.get("lr_adjust", 10.0),
+                "lr_adjust_coeff": params.get("lr_adjust_coeff", 0.2),
+                "muon_2d_only": params.get("muon_2d_only", True),
+                "min_2d_dim": params.get("min_2d_dim", 1),
             }
             return opt_type, opt_param
 
@@ -648,8 +654,7 @@ class Trainer:
             missing, unexpected = self.model.load_state_dict(state, strict=False)
             if missing or unexpected:
                 log.warning(
-                    "Checkpoint loaded non-strictly. "
-                    f"Missing keys: {missing}, Unexpected keys: {unexpected}"
+                    f"Checkpoint loaded non-strictly. Missing keys: {missing}, Unexpected keys: {unexpected}"
                 )
 
         # Get model prob for multi-task
@@ -735,14 +740,29 @@ class Trainer:
             self.optimizer = AdaMuonOptimizer(
                 self.wrapper.parameters(),
                 lr=self.lr_exp.start_lr,
-                momentum=float(self.opt_param.get("momentum", 0.95)),
-                weight_decay=float(self.opt_param.get("weight_decay", 0.001)),
+                momentum=float(self.opt_param["momentum"]),
+                weight_decay=float(self.opt_param["weight_decay"]),
                 adam_betas=(
-                    float(self.opt_param.get("adam_beta1", 0.9)),
-                    float(self.opt_param.get("adam_beta2", 0.95)),
+                    float(self.opt_param["adam_beta1"]),
+                    float(self.opt_param["adam_beta2"]),
                 ),
-                lr_adjust=float(self.opt_param.get("lr_adjust", 10.0)),
-                lr_adjust_coeff=float(self.opt_param.get("lr_adjust_coeff", 0.2)),
+                lr_adjust=float(self.opt_param["lr_adjust"]),
+                lr_adjust_coeff=float(self.opt_param["lr_adjust_coeff"]),
+            )
+        elif self.opt_type == "HybridMuon":
+            self.optimizer = HybridMuonOptimizer(
+                self.wrapper.parameters(),
+                lr=self.lr_exp.start_lr,
+                momentum=float(self.opt_param["momentum"]),
+                weight_decay=float(self.opt_param["weight_decay"]),
+                adam_betas=(
+                    float(self.opt_param["adam_beta1"]),
+                    float(self.opt_param["adam_beta2"]),
+                ),
+                lr_adjust=float(self.opt_param["lr_adjust"]),
+                lr_adjust_coeff=float(self.opt_param["lr_adjust_coeff"]),
+                muon_2d_only=bool(self.opt_param["muon_2d_only"]),
+                min_2d_dim=int(self.opt_param["min_2d_dim"]),
             )
             if optimizer_state_dict is not None and self.restart_training:
                 self.optimizer.load_state_dict(optimizer_state_dict)
@@ -820,7 +840,7 @@ class Trainer:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
                 fout1.flush()
-            if self.opt_type in ["Adam", "AdamW", "AdaMuon"]:
+            if self.opt_type in ["Adam", "AdamW", "AdaMuon", "HybridMuon"]:
                 cur_lr = self.scheduler.get_last_lr()[0]
                 if _step_id < self.warmup_steps:
                     pref_lr = _lr.start_lr
@@ -1562,8 +1582,6 @@ def model_change_out_bias(
 
     model_type_map = _model.get_type_map()
     log.info(
-        f"Change output bias of {model_type_map!s} "
-        f"from {to_numpy_array(old_bias).reshape(-1)!s} "
-        f"to {to_numpy_array(new_bias).reshape(-1)!s}."
+        f"Change output bias of {model_type_map!s} from {to_numpy_array(old_bias).reshape(-1)!s} to {to_numpy_array(new_bias).reshape(-1)!s}."
     )
     return _model
