@@ -864,7 +864,7 @@ class EnerFitting(Fitting):
         ----------
         loss : dict
             The loss function parameters.
-        lr : LearningRateExp
+        lr : LearningRateSchedule
             The learning rate.
 
         Returns

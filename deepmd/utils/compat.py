@@ -370,6 +370,73 @@ def deprecate_numb_test(
     return jdata
 
 
+def migrate_training_warmup(
+    jdata: dict[str, Any], warning: bool = True
+) -> dict[str, Any]:
+    """
+    Migrate legacy warmup settings from training to learning_rate.
+
+    Parameters
+    ----------
+    jdata : dict[str, Any]
+        Input configuration dictionary.
+    warning : bool, optional
+        Whether to show a deprecation warning, by default True.
+
+    Returns
+    -------
+    dict[str, Any]
+        Updated configuration dictionary.
+    """
+    training = jdata.get("training")
+    if not isinstance(training, dict):
+        return jdata
+
+    warmup_keys = ("warmup_steps", "warmup_ratio", "warmup_start_factor")
+    legacy_keys = [key for key in warmup_keys if key in training]
+    if not legacy_keys:
+        return jdata
+
+    lr = jdata.get("learning_rate")
+    if not isinstance(lr, dict):
+        for key in legacy_keys:
+            training.pop(key)
+        if warning:
+            warnings.warn(
+                "Found legacy warmup settings under training, but learning_rate "
+                "is missing or invalid. The warmup keys were removed from training."
+            )
+        return jdata
+
+    moved_keys = []
+    conflict_keys = []
+    # === Step 1. Check for conflicts first (read-only pass) ===
+    for key in legacy_keys:
+        if key in lr:
+            conflict_keys.append(key)
+
+    # Raise error if there are conflicting definitions before mutating
+    if conflict_keys:
+        raise ValueError(
+            "Conflicting warmup settings found in both 'training' and "
+            f"'learning_rate': {', '.join(conflict_keys)}. "
+            "Please define warmup settings only in 'learning_rate'."
+        )
+
+    # === Step 2. Move legacy warmup keys ===
+    for key in legacy_keys:
+        value = training.pop(key)
+        lr[key] = value
+        moved_keys.append(key)
+
+    if warning and moved_keys:
+        warnings.warn(
+            "Legacy warmup settings under training were moved to learning_rate: "
+            f"{', '.join(moved_keys)}."
+        )
+    return jdata
+
+
 def update_deepmd_input(
     jdata: dict[str, Any], warning: bool = True, dump: str | Path | None = None
 ) -> dict[str, Any]:
@@ -389,4 +456,5 @@ def update_deepmd_input(
     else:
         jdata = deprecate_numb_test(jdata, warning, dump)
 
+    jdata = migrate_training_warmup(jdata, warning=warning)
     return jdata

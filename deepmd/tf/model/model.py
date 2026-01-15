@@ -18,7 +18,7 @@ if TYPE_CHECKING:
         Self,
     )
 
-    from deepmd.tf.train.learning_rate import (
+    from deepmd.tf.utils.learning_rate import (
         LearningRateExp,
     )
 
