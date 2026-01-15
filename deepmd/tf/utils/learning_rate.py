@@ -21,6 +21,10 @@ class LearningRateSchedule:
     """
     TensorFlow wrapper for BaseLR.
 
+    The learning rate is computed via :func:`tf.numpy_function`, which prevents
+    TensorFlow from optimizing this operation in the graph. This overhead is
+    typically negligible compared to forward/backward passes.
+
     Parameters
     ----------
     params : dict[str, Any]
@@ -86,11 +90,18 @@ class LearningRateSchedule:
         self._base_lr = BaseLR(**params)
 
         # === Step 2. Bind a numpy_function for runtime evaluation ===
+        from deepmd.tf.env import (
+            GLOBAL_TF_FLOAT_PRECISION,
+        )
+
         def _lr_value(step: np.ndarray) -> np.ndarray:
-            return np.asarray(self._base_lr.value(step), dtype=np.float64)
+            return np.asarray(
+                self._base_lr.value(step),
+                dtype=GLOBAL_TF_FLOAT_PRECISION.as_numpy_dtype,
+            )
 
         lr = tf.numpy_function(
-            _lr_value, [global_step], Tout=tf.float64, name="lr_schedule"
+            _lr_value, [global_step], Tout=GLOBAL_TF_FLOAT_PRECISION, name="lr_schedule"
         )
         lr.set_shape(global_step.get_shape())
         return lr

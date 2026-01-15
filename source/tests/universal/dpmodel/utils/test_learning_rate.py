@@ -90,7 +90,11 @@ class TestLearningRateWarmup(unittest.TestCase):
         np.testing.assert_allclose(lr.value(0), 0.0, rtol=1e-10)
         np.testing.assert_allclose(lr.value(500), 0.5e-3, rtol=1e-10)
         np.testing.assert_allclose(lr.value(1000), 1e-3, rtol=1e-10)
-        self.assertLess(to_numpy_array(lr.value(2000)), 1e-3)
+        # Step 2000: 1000 steps into decay phase (1 decay period with decay_steps=1000)
+        # lr = start_lr * decay_rate^1 = 1e-3 * exp(log(0.01)/9) ≈ 5.995e-4
+        np.testing.assert_allclose(
+            to_numpy_array(lr.value(2000)), 1e-3 * np.exp(np.log(0.01) / 9), rtol=1e-5
+        )
 
     def test_warmup_steps_cosine(self) -> None:
         """Test warmup with cosine annealing."""

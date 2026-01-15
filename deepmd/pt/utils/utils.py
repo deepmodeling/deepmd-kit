@@ -227,6 +227,10 @@ def to_numpy_array(xx: torch.Tensor) -> np.ndarray: ...
 def to_numpy_array(xx: None) -> None: ...
 
 
+@overload
+def to_numpy_array(xx: float) -> np.ndarray: ...
+
+
 def to_numpy_array(
     xx: torch.Tensor | np.ndarray | float | None,
 ) -> np.ndarray | None:

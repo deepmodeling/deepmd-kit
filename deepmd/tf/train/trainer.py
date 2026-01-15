@@ -244,7 +244,7 @@ class DPTrainer:
         self.global_step = tf.train.get_or_create_global_step()
         if self.stop_batch == 0:
             # Use constant start_lr when stop_batch is zero (no training)
-            self.learning_rate = tf.cast(self.lr.start_lr(), tf.float64)
+            self.learning_rate = tf.cast(self.lr.start_lr(), GLOBAL_TF_FLOAT_PRECISION)
             log.info("built lr (constant start_lr for stop_batch=0)")
         else:
             self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
@@ -809,7 +809,7 @@ class DPTrainer:
                 prec = GLOBAL_ENER_FLOAT_PRECISION
             self.place_holders[kk] = tf.placeholder(prec, [None], name="t_" + kk)
             self.place_holders["find_" + kk] = tf.placeholder(
-                tf.float32, name="t_find_" + kk
+                GLOBAL_TF_FLOAT_PRECISION, name="t_find_" + kk
             )
 
     def _init_from_frz_model(self) -> None:
