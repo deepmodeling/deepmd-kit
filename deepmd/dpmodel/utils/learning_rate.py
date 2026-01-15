@@ -322,6 +322,9 @@ class LearningRateExp(BaseLR):
         # Compute decay_rate from start_lr/stop_lr if not explicitly provided
         if decay_rate is not None:
             self.decay_rate = decay_rate
+        elif decay_total == 0:
+            # No decay phase (num_steps == warmup_steps or num_steps == 0)
+            self.decay_rate = 1.0  # No decay
         else:
             self.decay_rate = np.exp(
                 np.log(clamped_stop_lr / self.start_lr)
