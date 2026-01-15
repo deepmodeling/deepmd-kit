@@ -715,9 +715,9 @@ def print_summary(
     # width 65
     sys_width = 42
     log.info(
-        f"---Summary of DataSystem: {name:13s}-----------------------------------------------"
+        f"---Summary of DataSystem: {name.capitalize():13s}-----------------------------------------------"
     )
-    log.info("found %d system(s):", nsystems)
+    log.info("Found %d System(s):", nsystems)
     log.info(
         "%s  %6s  %6s  %6s  %9s  %3s",
         _format_name_length("system", sys_width),

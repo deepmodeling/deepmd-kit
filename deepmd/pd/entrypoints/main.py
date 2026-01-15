@@ -219,8 +219,8 @@ class SummaryPrinter(BaseSummaryPrinter):
         op_info = {}
         return {
             "Backend": "Paddle",
-            "PD ver": f"v{paddle.__version__}-g{paddle.version.commit[:11]}",
-            "Enable custom OP": False,
+            "PD Ver": f"v{paddle.__version__}-g{paddle.version.commit[:11]}",
+            "Custom OP Enabled": False,
             **op_info,
         }
 

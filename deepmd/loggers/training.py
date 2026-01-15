@@ -12,7 +12,7 @@ def format_training_message(
     eta: int | None = None,
 ) -> str:
     """Format a training message."""
-    msg = f"batch {batch:7d}: total wall time = {wall_time:.2f} s"
+    msg = f"Batch {batch:7d}: total wall time = {wall_time:.2f} s"
     if isinstance(eta, int):
         msg += f", eta = {datetime.timedelta(seconds=int(eta))!s}"
     return msg
@@ -49,7 +49,7 @@ def format_training_message_per_task(
     # sort rmse
     rmse = dict(sorted(rmse.items()))
     msg = (
-        f"batch {batch:7d}: {task_name}"
+        f"Batch {batch:7d}: {task_name}"
         f"{', '.join([f'{kk} = {vv:8.2e}' for kk, vv in rmse.items()])}"
         f"{lr}"
     )
