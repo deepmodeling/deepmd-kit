@@ -49,7 +49,7 @@ from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
 from deepmd.tf.utils.learning_rate import (
-    LearningRateExp,
+    LearningRateSchedule,
 )
 
 from ..test_finetune import (
@@ -108,7 +108,7 @@ class DpTrainer:
         self.start_lr = 0.001
         self.stop_lr = 3.51e-8
         self.decay_steps = 500
-        self.stop_steps = 1600
+        self.num_steps = 1600
         self.start_pref_e = 1.0
         self.limit_pref_e = 2.0
         self.start_pref_f = 2.0
@@ -137,7 +137,7 @@ class DpTrainer:
                 input_dict=place_holders,
             )
             global_step = tf.train.get_or_create_global_step()
-            learning_rate = dp_lr.build(global_step, self.stop_steps)
+            learning_rate = dp_lr.build(global_step, self.num_steps)
             l2_l, _ = dp_loss.build(
                 learning_rate=learning_rate,
                 natoms=place_holders["natoms_vec"],
@@ -226,8 +226,13 @@ class DpTrainer:
         )
 
     def _get_dp_lr(self):
-        return LearningRateExp(
-            start_lr=self.start_lr, stop_lr=self.stop_lr, decay_steps=self.decay_steps
+        return LearningRateSchedule(
+            {
+                "type": "exp",
+                "start_lr": self.start_lr,
+                "stop_lr": self.stop_lr,
+                "decay_steps": self.decay_steps,
+            }
         )
 
     def _get_dp_placeholders(self, dataset):
@@ -298,7 +303,7 @@ class TestEnergy(unittest.TestCase):
             },
         )
         my_model.to(DEVICE)
-        my_lr = MyLRExp(self.start_lr, self.stop_lr, self.decay_steps, self.stop_steps)
+        my_lr = MyLRExp(self.start_lr, self.stop_lr, self.decay_steps, self.num_steps)
         my_loss = EnergyStdLoss(
             starter_learning_rate=self.start_lr,
             start_pref_e=self.start_pref_e,

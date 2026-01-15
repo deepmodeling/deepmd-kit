@@ -4,6 +4,9 @@ import logging
 import os
 import shutil
 import time
+from typing import (
+    Any,
+)
 
 import google.protobuf.message
 import numpy as np
@@ -52,7 +55,7 @@ from deepmd.tf.utils.graph import (
     load_graph_def,
 )
 from deepmd.tf.utils.learning_rate import (
-    LearningRateExp,
+    LearningRateSchedule,
 )
 from deepmd.tf.utils.sess import (
     run_sess,
@@ -100,7 +103,9 @@ class DPTrainer:
         self.model = Model(**model_param)
         self.fitting = self.model.get_fitting()
 
-        def get_lr_and_coef(lr_param):
+        def get_lr_and_coef(
+            lr_param: dict[str, Any],
+        ) -> tuple[LearningRateSchedule, float]:
             scale_by_worker = lr_param.get("scale_by_worker", "linear")
             if scale_by_worker == "linear":
                 scale_lr_coef = float(self.run_opt.world_size)
@@ -108,13 +113,8 @@ class DPTrainer:
                 scale_lr_coef = np.sqrt(self.run_opt.world_size).real
             else:
                 scale_lr_coef = 1.0
-            lr_type = lr_param.get("type", "exp")
-            if lr_type == "exp":
-                lr = LearningRateExp(
-                    lr_param["start_lr"], lr_param["stop_lr"], lr_param["decay_steps"]
-                )
-            else:
-                raise RuntimeError("unknown learning_rate type " + lr_type)
+            lr_params = {k: v for k, v in lr_param.items() if k != "scale_by_worker"}
+            lr = LearningRateSchedule(lr_params)
             return lr, scale_lr_coef
 
         # learning rate
@@ -427,11 +427,9 @@ class DPTrainer:
         is_first_step = True
         self.cur_batch = cur_batch
         log.info(
-            "start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e",
+            "start training at lr %.2e (== %.2e), final lr will be %.2e",
             run_sess(self.sess, self.learning_rate),
             self.lr.value(cur_batch),
-            self.lr.decay_steps_,
-            self.lr.decay_rate_,
             self.lr.value(stop_batch),
         )
 
