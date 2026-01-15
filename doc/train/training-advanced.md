@@ -63,15 +63,17 @@ The {ref}`learning_rate <learning_rate>` section for exponential decay in `input
 
 ```json
     "learning_rate" :{
-	"type":		"exp",
-	"start_lr":	0.001,
-	"stop_lr":	1e-6,
-	"decay_steps":	5000,
-	"_comment":	"that's all"
+        "type":        "exp",
+        "start_lr":    0.001,
+        "stop_lr":     1e-6,
+        "decay_steps": 5000,
+        "_comment":    "that's all"
     }
 ```
 
 #### Basic parameters
+
+The following parameters are available for learning rate configuration.
 
 **Common parameters for both `exp` and `cosine` types:**
 
@@ -90,27 +92,29 @@ During the decay phase, the learning rate decays exponentially from {ref}`start_
 
 - **Stepped mode (`smooth: false`, default):**
 
-```
+```text
 lr(t) = start_lr * decay_rate ^ floor((t - warmup_steps) / decay_steps)
 ```
 
 - **Smooth mode (`smooth: true`):**
 
-```
+```text
 lr(t) = start_lr * decay_rate ^ ((t - warmup_steps) / decay_steps)
 ```
 
 where `t` is the current training step and `warmup_steps` is the number of warmup steps (0 if warmup is not enabled).
 
+The formula for cosine annealing is as follows.
+
 **Learning rate formula for `cosine` type:**
 
 For cosine annealing, the learning rate smoothly decreases following a cosine curve:
 
-```
-lr(t) = stop_lr + (start_lr - stop_lr) / 2 * (1 + cos(pi * (t - warmup_steps) / decay_steps))
+```text
+lr(t) = stop_lr + (start_lr - stop_lr) / 2 * (1 + cos(pi * (t - warmup_steps) / decay_phase_steps))
 ```
 
-where `decay_steps = numb_steps - warmup_steps` is the number of steps in the decay phase.
+where `decay_phase_steps = numb_steps - warmup_steps` is the number of steps in the decay phase.
 
 #### Warmup parameters (optional)
 
@@ -122,14 +126,16 @@ Warmup is a technique to stabilize training in the early stages by gradually inc
 
 #### Configuration examples
 
+The following examples demonstrate various learning rate configurations.
+
 **Example 1: Basic exponential decay without warmup**
 
 ```json
     "learning_rate": {
-	"type":		"exp",
-	"start_lr":	0.001,
-	"stop_lr":	1e-6,
-	"decay_steps":	5000
+        "type":        "exp",
+        "start_lr":    0.001,
+        "stop_lr":     1e-6,
+        "decay_steps": 5000
     }
 ```
 
@@ -137,43 +143,49 @@ Warmup is a technique to stabilize training in the early stages by gradually inc
 
 ```json
     "learning_rate": {
-	"type":		"exp",
-	"start_lr":	0.001,
-	"stop_lr_ratio":	1e-3,
-	"decay_steps":	5000
+        "type":          "exp",
+        "start_lr":      0.001,
+        "stop_lr_ratio": 1e-3,
+        "decay_steps":   5000
     }
 ```
 
 This is equivalent to setting `stop_lr: 1e-6` (i.e., `0.001 * 1e-3`).
 
+The following example shows exponential decay with warmup using a specific number of warmup steps.
+
 **Example 3: Exponential decay with warmup (using warmup_steps)**
 
 ```json
     "learning_rate": {
-	"type":		"exp",
-	"start_lr":	0.001,
-	"stop_lr":	1e-6,
-	"decay_steps":	5000,
-	"warmup_steps":	10000,
-	"warmup_start_factor": 0.1
+        "type":               "exp",
+        "start_lr":           0.001,
+        "stop_lr":            1e-6,
+        "decay_steps":        5000,
+        "warmup_steps":       10000,
+        "warmup_start_factor": 0.1
     }
 ```
 
 In this example, the learning rate starts from `0.0001` (i.e., `0.1 * 0.001`) and increases linearly to `0.001` over the first 10,000 steps. After that, it decays exponentially to `1e-6`.
 
+The following example shows exponential decay with warmup using a ratio-based warmup duration.
+
 **Example 4: Exponential decay with warmup (using warmup_ratio)**
 
 ```json
     "learning_rate": {
-	"type":		"exp",
-	"start_lr":	0.001,
-	"stop_lr_ratio":	1e-3,
-	"decay_steps":	5000,
-	"warmup_ratio":	0.05
+        "type":          "exp",
+        "start_lr":      0.001,
+        "stop_lr_ratio": 1e-3,
+        "decay_steps":   5000,
+        "warmup_ratio":  0.05
     }
 ```
 
 In this example, if the total training steps (`numb_steps`) is 1,000,000, the warmup phase will last for 50,000 steps (i.e., `0.05 * 1,000,000`). The learning rate starts from `0.0` (default `warmup_start_factor: 0.0`) and increases linearly to `0.001` over the first 50,000 steps, then decays exponentially.
+
+The following examples demonstrate cosine annealing configurations.
 
 #### Cosine annealing schedule
 
@@ -181,59 +193,67 @@ The {ref}`learning_rate <learning_rate>` section for cosine annealing in `input.
 
 ```json
     "learning_rate": {
-	"type":		"cosine",
-	"start_lr":	0.001,
-	"stop_lr":	1e-6
+        "type":     "cosine",
+        "start_lr": 0.001,
+        "stop_lr":  1e-6
     }
 ```
 
 Cosine annealing provides a smooth decay curve that often works well for training neural networks. Unlike exponential decay, it does not require the `decay_steps` parameter.
 
+The following example shows basic cosine annealing without warmup.
+
 **Example 5: Basic cosine annealing without warmup**
 
 ```json
     "learning_rate": {
-	"type":		"cosine",
-	"start_lr":	0.001,
-	"stop_lr":	1e-6
+        "type":     "cosine",
+        "start_lr": 0.001,
+        "stop_lr":  1e-6
     }
 ```
+
+The following example shows cosine annealing with stop_lr_ratio.
 
 **Example 6: Cosine annealing with stop_lr_ratio**
 
 ```json
     "learning_rate": {
-	"type":		"cosine",
-	"start_lr":	0.001,
-	"stop_lr_ratio":	1e-3
+        "type":          "cosine",
+        "start_lr":      0.001,
+        "stop_lr_ratio": 1e-3
     }
 ```
 
 This is equivalent to setting `stop_lr: 1e-6` (i.e., `0.001 * 1e-3`).
 
+The following example shows cosine annealing with warmup.
+
 **Example 7: Cosine annealing with warmup**
 
 ```json
     "learning_rate": {
-	"type":		"cosine",
-	"start_lr":	0.001,
-	"stop_lr":	1e-6,
-	"warmup_steps":	5000,
-	"warmup_start_factor": 0.0
+        "type":               "cosine",
+        "start_lr":           0.001,
+        "stop_lr":            1e-6,
+        "warmup_steps":       5000,
+        "warmup_start_factor": 0.0
     }
 ```
 
 In this example, the learning rate starts from `0.0` and increases linearly to `0.001` over the first 5,000 steps, then follows a cosine annealing curve down to `1e-6`.
 
+The following example shows exponential decay with smooth mode enabled.
+
 **Example 8: Exponential decay with smooth mode**
 
 ```json
     "learning_rate": {
-	"type":		"exp",
-	"start_lr":	0.001,
-	"stop_lr":	1e-6,
-	"decay_steps":	5000,
-	"smooth":	true
+        "type":        "exp",
+        "start_lr":    0.001,
+        "stop_lr":     1e-6,
+        "decay_steps": 5000,
+        "smooth":      true
     }
 ```
 
@@ -245,25 +265,25 @@ Other training parameters are given in the {ref}`training <training>` section.
 
 ```json
     "training": {
- 	"training_data": {
-	    "systems":		["../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/"],
-	    "batch_size":	"auto"
-	},
-	"validation_data":{
-	    "systems":		["../data_water/data_3"],
-	    "batch_size":	1,
-	    "numb_btch":	3
-	},
-	"mixed_precision": {
-	    "output_prec":      "float32",
-	    "compute_prec":     "float16"
-	},
+        "training_data": {
+            "systems":    ["../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/"],
+            "batch_size": "auto"
+        },
+        "validation_data":{
+            "systems":    ["../data_water/data_3"],
+            "batch_size": 1,
+            "numb_btch":  3
+        },
+        "mixed_precision": {
+            "output_prec":  "float32",
+            "compute_prec": "float16"
+        },
 
-	"numb_steps":	1000000,
-	"seed":		1,
-	"disp_file":	"lcurve.out",
-	"disp_freq":	100,
-	"save_freq":	1000
+        "numb_steps": 1000000,
+        "seed":       1,
+        "disp_file":  "lcurve.out",
+        "disp_freq":  100,
+        "save_freq":  1000
     }
 ```
 
@@ -279,21 +299,21 @@ The sections {ref}`training_data <training/training_data>` and {ref}`validation_
 - An example of using `"auto_prob"` is given below. The probability of using `systems[2]` is 0.4, and the sum of the probabilities of using `systems[0]` and `systems[1]` is 0.6. If the number of frames in `systems[1]` is twice of `system[0]`, then the probability of using `system[1]` is 0.4 and that of `system[0]` is 0.2.
 
 ```json
- 	"training_data": {
-	    "systems":		["../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/"],
-	    "auto_prob":	"prob_sys_size; 0:2:0.6; 2:3:0.4",
-	    "batch_size":	"auto"
-	}
+    "training_data": {
+        "systems":    ["../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/"],
+        "auto_prob":  "prob_sys_size; 0:2:0.6; 2:3:0.4",
+        "batch_size": "auto"
+    }
 ```
 
 - The probability of using systems can also be specified explicitly with key {ref}`sys_probs <training/training_data/sys_probs>` which is a list having the length of the number of systems. For example
 
 ```json
- 	"training_data": {
-	    "systems":		["../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/"],
-	    "sys_probs":	[0.5, 0.3, 0.2],
-	    "batch_size":	"auto:32"
-	}
+    "training_data": {
+        "systems":    ["../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/"],
+        "sys_probs":  [0.5, 0.3, 0.2],
+        "batch_size": "auto:32"
+    }
 ```
 
 - The key {ref}`batch_size <training/training_data/batch_size>` specifies the number of frames used to train or validate the model in a training step. It can be set to
@@ -352,9 +372,9 @@ One can use `--init-frz-model` features to adjust (increase or decrease) [`sel`]
 
 ```json
 "model": {
-	"descriptor": {
-		"sel": [23, 46]
-	}
+    "descriptor": {
+        "sel": [23, 46]
+    }
 }
 ```
 
@@ -362,7 +382,7 @@ To obtain the new model at once, [`numb_steps`](./train-input.rst) should be set
 
 ```json
 "training": {
-	"numb_steps": 0
+    "numb_steps": 0
 }
 ```
 

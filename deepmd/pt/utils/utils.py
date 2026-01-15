@@ -234,6 +234,8 @@ def to_numpy_array(
         return None
     if isinstance(xx, (float, int)):
         return np.array(xx, dtype=GLOBAL_NP_FLOAT_PRECISION)
+    if isinstance(xx, np.ndarray):
+        return xx.astype(GLOBAL_NP_FLOAT_PRECISION)
     # Create a reverse mapping of PT_PRECISION_DICT
     reverse_precision_dict = {v: k for k, v in PT_PRECISION_DICT.items()}
     # Use the reverse mapping to find keys with the desired value
@@ -241,8 +243,6 @@ def to_numpy_array(
     prec = NP_PRECISION_DICT.get(prec, None)
     if prec is None:
         raise ValueError(f"unknown precision {xx.dtype}")
-    if isinstance(xx, np.ndarray):
-        return xx.astype(prec)
     assert isinstance(xx, torch.Tensor)
     if xx.dtype == torch.bfloat16:
         # https://github.com/pytorch/pytorch/issues/109873

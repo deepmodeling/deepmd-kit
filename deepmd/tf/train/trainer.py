@@ -431,12 +431,21 @@ class DPTrainer:
         elapsed_batch = stop_batch - start_batch
         is_first_step = True
         self.cur_batch = cur_batch
-        log.info(
-            "start training at lr %.2e (== %.2e), final lr will be %.2e",
-            run_sess(self.sess, self.learning_rate),
-            self.lr.value(cur_batch),
-            self.lr.value(stop_batch),
-        )
+        if stop_batch == 0:
+            lr0 = self.lr.start_lr()
+            log.info(
+                "start training at lr %.2e (== %.2e), final lr will be %.2e",
+                run_sess(self.sess, self.learning_rate),
+                lr0,
+                lr0,
+            )
+        else:
+            log.info(
+                "start training at lr %.2e (== %.2e), final lr will be %.2e",
+                run_sess(self.sess, self.learning_rate),
+                self.lr.value(cur_batch),
+                self.lr.value(stop_batch),
+            )
 
         prf_options = None
         prf_run_metadata = None

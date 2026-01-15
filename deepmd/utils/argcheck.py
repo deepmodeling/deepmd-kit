@@ -2575,8 +2575,10 @@ def _check_decay_steps_args(data: dict[str, Any]) -> bool:
         raise ValueError(f"decay_steps ({decay_steps}) must be positive.")
 
     decay_rate = data.get("decay_rate")
-    if decay_rate is not None and decay_rate <= 1:
-        raise ValueError(f"decay_rate ({decay_rate}) must be larger than 1.")
+    if decay_rate is not None and (decay_rate <= 0 or decay_rate > 1):
+        raise ValueError(
+            f"decay_rate ({decay_rate}) must be in (0, 1] for exponential decay."
+        )
     return True
 
 
