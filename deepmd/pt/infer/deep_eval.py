@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import io
 import json
 import logging
+import pickle
 from collections.abc import (
     Callable,
 )
@@ -48,6 +48,9 @@ from deepmd.pt.model.model import (
 )
 from deepmd.pt.model.network.network import (
     TypeEmbedNetConsistent,
+)
+from deepmd.pt.modifier import (
+    BaseModifier,
 )
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
@@ -172,19 +175,20 @@ class DeepEval(DeepEvalBackend):
             self.dp = ModelWrapper(model)
             self.dp.load_state_dict(state_dict)
         elif str(self.model_path).endswith(".pth"):
-            extra_files = {"data_modifier.pth": ""}
+            extra_files = {"modifier_data": ""}
             model = torch.jit.load(
                 model_file, map_location=env.DEVICE, _extra_files=extra_files
             )
             modifier = None
             # Load modifier if it exists in extra_files
-            if len(extra_files["data_modifier.pth"]) > 0:
-                # Create a file-like object from the in-memory data
-                modifier_data = extra_files["data_modifier.pth"]
+            if len(extra_files["modifier_data"]) > 0:
+                modifier_data = extra_files["modifier_data"]
                 if isinstance(modifier_data, bytes):
-                    modifier_data = io.BytesIO(modifier_data)
+                    modifier_data = pickle.loads(modifier_data)
                 # Load the modifier directly from the file-like object
-                modifier = torch.jit.load(modifier_data, map_location=env.DEVICE)
+                modifier = BaseModifier.get_class_by_type(
+                    modifier_data["type"]
+                ).deserialize(modifier_data)
             self.dp = ModelWrapper(model, modifier=modifier)
             self.modifier = modifier
             model_def_script = self.dp.model["Default"].get_model_def_script()

@@ -47,6 +47,7 @@ class BaseModifier(torch.nn.Module, make_base_modifier()):
         data = {
             "@class": "Modifier",
             "type": self.modifier_type,
+            "use_cache": self.use_cache,
             "@version": 3,
         }
         return data
