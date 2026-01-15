@@ -8,11 +8,17 @@ from torch_admp.utils import (
     calc_grads,
 )
 
+from deepmd.pt.model.model import (
+    DipoleModel,
+)
 from deepmd.pt.modifier.base_modifier import (
     BaseModifier,
 )
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.pt.utils.serialization import (
+    serialize_from_file,
 )
 from deepmd.pt.utils.utils import (
     to_torch_tensor,
@@ -42,18 +48,33 @@ class DipoleChargeModifier(BaseModifier):
 
     def __init__(
         self,
-        model_name: str,
+        model_name: str | None,
         model_charge_map: list[float],
         sys_charge_map: list[float],
         ewald_h: float = 1.0,
         ewald_beta: float = 1.0,
+        model: DipoleModel | None = None,
+        use_cache: bool = True,
     ) -> None:
         """Constructor."""
-        super().__init__()
+        super().__init__(use_cache=use_cache)
         self.modifier_type = "dipole_charge"
-        self.model_name = model_name
 
-        self.model = torch.jit.load(model_name, map_location=env.DEVICE)
+        if model_name is None and model is None:
+            raise AttributeError("`model_name` or `model` should be specified.")
+        if model_name is not None and model is not None:
+            raise AttributeError(
+                "`model_name` and `model` cannot be used simultaneously."
+            )
+
+        if model is not None:
+            self._model = model.to(env.DEVICE)
+        if model_name is not None:
+            data = serialize_from_file(model_name)
+            self._model = DipoleModel.deserialize(data["model"]).to(env.DEVICE)
+
+        # use jit model for inference
+        self.model = torch.jit.script(self._model)
         self.rcut = self.model.get_rcut()
         self.type_map = self.model.get_type_map()
         sel_type = self.model.get_sel_type()
@@ -93,17 +114,28 @@ class DipoleChargeModifier(BaseModifier):
         dict
             The serialized data
         """
-        data = {
-            "@class": "Modifier",
-            "type": self.modifier_type,
-            "@version": 3,
-            "model_name": self.model_name,
-            "model_charge_map": self._model_charge_map,
-            "sys_charge_map": self._sys_charge_map,
-            "ewald_h": self.ewald_h,
-            "ewald_beta": self.ewald_beta,
-        }
-        return data
+        dd = BaseModifier.serialize(self)
+        dd.update(
+            {
+                "model": self._model.serialize(),
+                "model_charge_map": self._model_charge_map,
+                "sys_charge_map": self._sys_charge_map,
+                "ewald_h": self.ewald_h,
+                "ewald_beta": self.ewald_beta,
+            }
+        )
+        return dd
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "DipoleChargeModifier":
+        data = data.copy()
+        data.pop("@class", None)
+        data.pop("type", None)
+        data.pop("@version", None)
+        model_obj = DipoleModel.deserialize(data.pop("model"))
+        data["model"] = model_obj
+        data["model_name"] = None
+        return cls(**data)
 
     def forward(
         self,
