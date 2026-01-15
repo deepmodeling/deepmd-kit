@@ -776,6 +776,10 @@ class Trainer:
                 f"Model Params:  {total / 1e6:.3f} M   (Trainable: {trainable / 1e6:.3f} M)"
             )
         else:
+            log.warning(
+                "In multitask mode, parameters may be shared across tasks. "
+                "The following per-task counts may include duplicates."
+            )
             for model_key in self.model_keys:
                 model = self.model[model_key]
                 trainable = sum(
