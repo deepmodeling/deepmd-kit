@@ -2482,7 +2482,7 @@ lr_args_plugin = ArgsPlugin()
 
 def _check_lr_stop_args(data: dict[str, Any]) -> bool:
     """
-    Check that stop_lr and stop_lr_rate are mutually exclusive and at least one is provided.
+    Check that stop_lr and stop_lr_ratio are mutually exclusive and at least one is provided.
 
     Parameters
     ----------
@@ -2497,20 +2497,20 @@ def _check_lr_stop_args(data: dict[str, Any]) -> bool:
     Raises
     ------
     ValueError
-        If both stop_lr and stop_lr_rate are provided, or neither is provided.
+        If both stop_lr and stop_lr_ratio are provided, or neither is provided.
     """
     has_stop_lr = "stop_lr" in data and data["stop_lr"] is not None
-    has_stop_lr_rate = "stop_lr_rate" in data and data["stop_lr_rate"] is not None
+    has_stop_lr_ratio = "stop_lr_ratio" in data and data["stop_lr_ratio"] is not None
 
-    if has_stop_lr and has_stop_lr_rate:
+    if has_stop_lr and has_stop_lr_ratio:
         raise ValueError(
-            "stop_lr and stop_lr_rate are mutually exclusive. "
-            f"Got stop_lr={data['stop_lr']}, stop_lr_rate={data['stop_lr_rate']}"
+            "stop_lr and stop_lr_ratio are mutually exclusive. "
+            f"Got stop_lr={data['stop_lr']}, stop_lr_ratio={data['stop_lr_ratio']}"
         )
-    if not has_stop_lr and not has_stop_lr_rate:
+    if not has_stop_lr and not has_stop_lr_ratio:
         raise ValueError(
-            "Either stop_lr or stop_lr_rate must be provided. "
-            "Got stop_lr=None, stop_lr_rate=None"
+            "Either stop_lr or stop_lr_ratio must be provided. "
+            "Got stop_lr=None, stop_lr_ratio=None"
         )
     return True
 
@@ -2546,13 +2546,47 @@ def _check_warmup_args(data: dict[str, Any]) -> bool:
     return True
 
 
+def _check_decay_steps_args(data: dict[str, Any]) -> bool:
+    """
+    Check that decay_steps is positive and decay_rate is valid for exponential learning rate.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        The learning rate configuration dictionary.
+
+    Returns
+    -------
+    bool
+        True if validation passes.
+
+    Raises
+    ------
+    ValueError
+        If decay_steps is not positive.
+        If decay_rate is not positive.
+    """
+    lr_type = data.get("type", "exp")
+    if lr_type != "exp":
+        return True
+
+    decay_steps = data.get("decay_steps")
+    if decay_steps is not None and decay_steps <= 0:
+        raise ValueError(f"decay_steps ({decay_steps}) must be positive.")
+
+    decay_rate = data.get("decay_rate")
+    if decay_rate is not None and decay_rate <= 1:
+        raise ValueError(f"decay_rate ({decay_rate}) must be larger than 1.")
+    return True
+
+
 def _learning_rate_common_args(
     doc_stop_lr: str,
     extra_args: list[Argument] | None = None,
 ) -> list[Argument]:
     doc_start_lr = "The learning rate at the start of the training (after warmup)."
-    doc_stop_lr_rate = (
-        "The ratio of stop_lr to start_lr. stop_lr = start_lr * stop_lr_rate. "
+    doc_stop_lr_ratio = (
+        "The ratio of stop_lr to start_lr. stop_lr = start_lr * stop_lr_ratio. "
         "Mutually exclusive with stop_lr."
     )
     doc_warmup_steps = (
@@ -2582,11 +2616,11 @@ def _learning_rate_common_args(
             doc=doc_stop_lr,
         ),
         Argument(
-            "stop_lr_rate",
+            "stop_lr_ratio",
             float,
             optional=True,
             default=None,
-            doc=doc_stop_lr_rate,
+            doc=doc_stop_lr_ratio,
         ),
     ]
     if extra_args:
@@ -2632,7 +2666,7 @@ def learning_rate_exp() -> list[Argument]:
         "When decay_rate is explicitly set, "
         "this value will serve as the minimum learning rate during training. "
         "In other words, if the learning rate decays below stop_lr, stop_lr will be applied instead. "
-        "Mutually exclusive with stop_lr_rate."
+        "Mutually exclusive with stop_lr_ratio."
     )
     doc_decay_steps = (
         "The learning rate is decaying every this number of training steps."
@@ -2641,6 +2675,10 @@ def learning_rate_exp() -> list[Argument]:
         "The decay rate for the learning rate. "
         "If this is provided, it will be used directly as the decay rate for learning rate "
         "instead of calculating it through interpolation between start_lr and stop_lr."
+    )
+    doc_smooth = (
+        "If True, use smooth exponential decay (lr decays continuously). "
+        "If False (default), use stepped decay (lr decays every decay_steps)."
     )
 
     extra_args = [
@@ -2652,6 +2690,7 @@ def learning_rate_exp() -> list[Argument]:
             default=None,
             doc=doc_decay_rate,
         ),
+        Argument("smooth", bool, optional=True, default=False, doc=doc_smooth),
     ]
     return _learning_rate_common_args(doc_stop_lr, extra_args=extra_args)
 
@@ -2666,7 +2705,7 @@ def learning_rate_cosine() -> list[Argument]:
     """
     doc_stop_lr = (
         "The desired learning rate at the end of training. "
-        "Mutually exclusive with stop_lr_rate."
+        "Mutually exclusive with stop_lr_ratio."
     )
     return _learning_rate_common_args(doc_stop_lr)
 
@@ -2689,10 +2728,12 @@ def learning_rate_args(fold_subdoc: bool = False) -> Argument:
 
     def _check_lr_args(data: dict[str, Any]) -> bool:
         """Check learning rate argument constraints."""
-        # Check stop_lr and stop_lr_rate
+        # Check stop_lr and stop_lr_ratio
         _check_lr_stop_args(data)
         # Check warmup_steps and warmup_ratio
         _check_warmup_args(data)
+        # Check decay_steps and decay_rate
+        _check_decay_steps_args(data)
         return True
 
     return Argument(

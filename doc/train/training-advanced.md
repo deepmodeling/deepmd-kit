@@ -76,19 +76,28 @@ The {ref}`learning_rate <learning_rate>` section for exponential decay in `input
 **Common parameters for both `exp` and `cosine` types:**
 
 - {ref}`start_lr <learning_rate[exp]/start_lr>` gives the learning rate at the start of the decay phase (i.e., after warmup if enabled). It should be set appropriately based on the model architecture and dataset.
-- {ref}`stop_lr <learning_rate[exp]/stop_lr>` gives the target learning rate at the end of the training. It should be small enough to ensure that the network parameters satisfactorily converge. This parameter is mutually exclusive with {ref}`stop_lr_rate <learning_rate[exp]/stop_lr_rate>`.
-- {ref}`stop_lr_rate <learning_rate[exp]/stop_lr_rate>` (optional) specifies the stopping learning rate as a ratio of {ref}`start_lr <learning_rate[exp]/start_lr>`. For example, `stop_lr_rate: 1e-3` means `stop_lr = start_lr * 1e-3`. This parameter is mutually exclusive with {ref}`stop_lr <learning_rate[exp]/stop_lr>`. Either {ref}`stop_lr <learning_rate[exp]/stop_lr>` or {ref}`stop_lr_rate <learning_rate[exp]/stop_lr_rate>` must be provided.
+- {ref}`stop_lr <learning_rate[exp]/stop_lr>` gives the target learning rate at the end of the training. It should be small enough to ensure that the network parameters satisfactorily converge. This parameter is mutually exclusive with {ref}`stop_lr_ratio <learning_rate[exp]/stop_lr_ratio>`.
+- {ref}`stop_lr_ratio <learning_rate[exp]/stop_lr_ratio>` (optional) specifies the stopping learning rate as a ratio of {ref}`start_lr <learning_rate[exp]/start_lr>`. For example, `stop_lr_ratio: 1e-3` means `stop_lr = start_lr * 1e-3`. This parameter is mutually exclusive with {ref}`stop_lr <learning_rate[exp]/stop_lr>`. Either {ref}`stop_lr <learning_rate[exp]/stop_lr>` or {ref}`stop_lr_ratio <learning_rate[exp]/stop_lr_ratio>` must be provided.
 
-**Additional parameter for `exp` type only:**
+**Additional parameters for `exp` type only:**
 
 - {ref}`decay_steps <learning_rate[exp]/decay_steps>` specifies the interval (in training steps) at which the learning rate is decayed. The learning rate is updated every {ref}`decay_steps <learning_rate[exp]/decay_steps>` steps during the decay phase.
+- {ref}`smooth <learning_rate[exp]/smooth>` (optional, default: `false`) controls the decay behavior. When set to `false`, the learning rate decays in a stepped manner (updated every `decay_steps` steps). When set to `true`, the learning rate decays smoothly at every step.
 
 **Learning rate formula for `exp` type:**
 
-During the decay phase, the learning rate decays exponentially from {ref}`start_lr <learning_rate[exp]/start_lr>` to {ref}`stop_lr <learning_rate[exp]/stop_lr>` following the formula:
+During the decay phase, the learning rate decays exponentially from {ref}`start_lr <learning_rate[exp]/start_lr>` to {ref}`stop_lr <learning_rate[exp]/stop_lr>`.
+
+- **Stepped mode (`smooth: false`, default):**
 
 ```
-lr(t) = start_lr * decay_rate ^ ( (t - warmup_steps) / decay_steps )
+lr(t) = start_lr * decay_rate ^ floor((t - warmup_steps) / decay_steps)
+```
+
+- **Smooth mode (`smooth: true`):**
+
+```
+lr(t) = start_lr * decay_rate ^ ((t - warmup_steps) / decay_steps)
 ```
 
 where `t` is the current training step and `warmup_steps` is the number of warmup steps (0 if warmup is not enabled).
@@ -124,13 +133,13 @@ Warmup is a technique to stabilize training in the early stages by gradually inc
     }
 ```
 
-**Example 2: Using stop_lr_rate instead of stop_lr**
+**Example 2: Using stop_lr_ratio instead of stop_lr**
 
 ```json
     "learning_rate": {
 	"type":		"exp",
 	"start_lr":	0.001,
-	"stop_lr_rate":	1e-3,
+	"stop_lr_ratio":	1e-3,
 	"decay_steps":	5000
     }
 ```
@@ -158,7 +167,7 @@ In this example, the learning rate starts from `0.0001` (i.e., `0.1 * 0.001`) an
     "learning_rate": {
 	"type":		"exp",
 	"start_lr":	0.001,
-	"stop_lr_rate":	1e-3,
+	"stop_lr_ratio":	1e-3,
 	"decay_steps":	5000,
 	"warmup_ratio":	0.05
     }
@@ -190,13 +199,13 @@ Cosine annealing provides a smooth decay curve that often works well for trainin
     }
 ```
 
-**Example 6: Cosine annealing with stop_lr_rate**
+**Example 6: Cosine annealing with stop_lr_ratio**
 
 ```json
     "learning_rate": {
 	"type":		"cosine",
 	"start_lr":	0.001,
-	"stop_lr_rate":	1e-3
+	"stop_lr_ratio":	1e-3
     }
 ```
 
@@ -215,6 +224,20 @@ This is equivalent to setting `stop_lr: 1e-6` (i.e., `0.001 * 1e-3`).
 ```
 
 In this example, the learning rate starts from `0.0` and increases linearly to `0.001` over the first 5,000 steps, then follows a cosine annealing curve down to `1e-6`.
+
+**Example 8: Exponential decay with smooth mode**
+
+```json
+    "learning_rate": {
+	"type":		"exp",
+	"start_lr":	0.001,
+	"stop_lr":	1e-6,
+	"decay_steps":	5000,
+	"smooth":	true
+    }
+```
+
+By setting `smooth: true`, the learning rate decays smoothly at every step instead of in a stepped manner. This provides a more gradual decay curve similar to PyTorch's `ExponentialLR`, whereas the default stepped mode (`smooth: false`) is similar to PyTorch's `StepLR`.
 
 ## Training parameters
 

@@ -32,7 +32,7 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
         self,
         start_lr: float,
         stop_lr: float | None = None,
-        stop_lr_rate: float | None = None,
+        stop_lr_ratio: float | None = None,
         num_steps: int = 100000,
         warmup_steps: int = 0,
         warmup_ratio: float | None = None,
@@ -48,11 +48,11 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
             The learning rate at the start of the training (after warmup).
         stop_lr : float, optional
             The final learning rate at the end of the training.
-            Mutually exclusive with stop_lr_rate.
-        stop_lr_rate : float, optional
-            The ratio of stop_lr to start_lr. stop_lr = start_lr * stop_lr_rate.
+            Mutually exclusive with stop_lr_ratio.
+        stop_lr_ratio : float, optional
+            The ratio of stop_lr to start_lr. stop_lr = start_lr * stop_lr_ratio.
             Mutually exclusive with stop_lr.
-            One of stop_lr or stop_lr_rate must be provided.
+            One of stop_lr or stop_lr_ratio must be provided.
         num_steps : int
             The total training steps (including warmup).
         warmup_steps : int, optional
@@ -67,24 +67,24 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
             The warmup learning rate starts from warmup_start_factor * start_lr.
             Default is 0.0.
         """
-        # === Step 1. Validate stop_lr and stop_lr_rate (runtime check) ===
+        # === Step 1. Validate stop_lr and stop_lr_ratio (runtime check) ===
         has_stop_lr = stop_lr is not None
-        has_stop_lr_rate = stop_lr_rate is not None
+        has_stop_lr_ratio = stop_lr_ratio is not None
 
-        if has_stop_lr and has_stop_lr_rate:
+        if has_stop_lr and has_stop_lr_ratio:
             raise ValueError(
-                "stop_lr and stop_lr_rate are mutually exclusive. "
-                f"Got stop_lr={stop_lr}, stop_lr_rate={stop_lr_rate}"
+                "stop_lr and stop_lr_ratio are mutually exclusive. "
+                f"Got stop_lr={stop_lr}, stop_lr_ratio={stop_lr_ratio}"
             )
-        if not has_stop_lr and not has_stop_lr_rate:
+        if not has_stop_lr and not has_stop_lr_ratio:
             raise ValueError(
-                "Either stop_lr or stop_lr_rate must be provided. "
-                "Got stop_lr=None, stop_lr_rate=None"
+                "Either stop_lr or stop_lr_ratio must be provided. "
+                "Got stop_lr=None, stop_lr_ratio=None"
             )
 
-        # === Step 2. Compute stop_lr from stop_lr_rate if needed ===
-        if stop_lr_rate is not None:
-            self.stop_lr = start_lr * stop_lr_rate
+        # === Step 2. Compute stop_lr from stop_lr_ratio if needed ===
+        if stop_lr_ratio is not None:
+            self.stop_lr = start_lr * stop_lr_ratio
         else:
             self.stop_lr = stop_lr
 
@@ -191,17 +191,57 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
 
 @BaseLR.register("exp")
 class LearningRateExp(BaseLR):
+    r"""
+    Exponential decay learning rate schedule with optional warmup.
+
+    The decay phase (after warmup) follows the exponential decay formula.
+
+    **Stepped mode (smooth=False, default):**
+
+    .. math::
+
+        lr(t) = lr_0 \cdot r^{\lfloor t / s \rfloor}
+
+    The learning rate decays every ``decay_steps`` steps, creating a staircase
+    pattern.
+
+    **Smooth mode (smooth=True):**
+
+    .. math::
+
+        lr(t) = lr_0 \cdot r^{t / s}
+
+    The learning rate decays continuously at every step.
+
+    where:
+    - :math:`lr_0` is ``start_lr`` (learning rate at the start of decay phase)
+    - :math:`r` is the decay rate ``decay_rate``
+    - :math:`t` is the step index within the decay phase
+    - :math:`s` is ``decay_steps`` (the decay period)
+
+    The decay rate is automatically computed from ``start_lr`` and ``stop_lr``
+    over the total decay steps unless explicitly provided:
+
+    .. math::
+
+        r = \left(\frac{lr_{\text{stop}}}{lr_0}\right)^{\frac{s}{T}}
+
+    where :math:`T = \text{num\_steps} - \text{warmup\_steps}` is the total
+    number of decay steps, and :math:`lr_{\text{stop}}` is ``stop_lr``.
+    """
+
     def __init__(
         self,
         start_lr: float,
         stop_lr: float | None = None,
-        stop_lr_rate: float | None = None,
+        stop_lr_ratio: float | None = None,
         decay_steps: int = 5000,
         num_steps: int = 100000,
         decay_rate: float | None = None,
         warmup_steps: int = 0,
         warmup_ratio: float | None = None,
         warmup_start_factor: float = 0.0,
+        smooth: bool = False,
         **kwargs: Any,
     ) -> None:
         """
@@ -215,8 +255,8 @@ class LearningRateExp(BaseLR):
             The desired learning rate at the end of the training.
             When decay_rate is explicitly set, this value will serve as
             the minimum learning rate during training.
-            Mutually exclusive with stop_lr_rate.
-        stop_lr_rate : float, optional
+            Mutually exclusive with stop_lr_ratio.
+        stop_lr_ratio : float, optional
             The ratio of stop_lr to start_lr.
             Mutually exclusive with stop_lr.
         decay_steps : int
@@ -237,18 +277,23 @@ class LearningRateExp(BaseLR):
         warmup_start_factor : float, optional
             The factor of start_lr for the initial warmup learning rate.
             Default is 0.0.
+        smooth : bool, optional
+            If True, use smooth exponential decay (lr decays continuously).
+            If False (default), use stepped decay (lr decays every decay_steps).
+            Default is False.
 
         Raises
         ------
         ValueError
-            If both stop_lr and stop_lr_rate are provided, or neither is provided.
+            If both stop_lr and stop_lr_ratio are provided, or neither is provided.
             If both warmup_steps and warmup_ratio are provided.
-            If decay_steps is larger than the decay phase total steps.
+            If decay_steps is not positive.
+            If decay_steps is larger than the decay phase total steps when decay_rate is not provided.
         """
         super().__init__(
             start_lr=start_lr,
             stop_lr=stop_lr,
-            stop_lr_rate=stop_lr_rate,
+            stop_lr_ratio=stop_lr_ratio,
             num_steps=num_steps,
             warmup_steps=warmup_steps,
             warmup_ratio=warmup_ratio,
@@ -260,20 +305,30 @@ class LearningRateExp(BaseLR):
         decay_total = self.decay_num_steps
         self.decay_steps = decay_steps
 
-        if self.decay_steps > decay_total:
+        if self.decay_steps <= 0:
+            raise ValueError(f"decay_steps ({self.decay_steps}) must be positive.")
+        # Only validate decay_steps <= decay_total when computing decay_rate from start_lr/stop_lr
+        if decay_rate is None and self.decay_steps > decay_total:
             raise ValueError(
-                f"decay_steps ({self.decay_steps}) must not exceed decay phase steps ({decay_total})."
+                f"decay_steps ({self.decay_steps}) must not exceed decay phase steps ({decay_total}) "
+                "when decay_rate is not explicitly provided."
             )
 
         # Avoid log(0) issues by clamping stop_lr for computation
         clamped_stop_lr = max(self.stop_lr, 1e-10)
         self.min_lr = self.stop_lr
 
-        self.decay_rate = np.exp(
-            np.log(clamped_stop_lr / self.start_lr) / (decay_total / self.decay_steps)
-        ).item()
+        # Compute decay_rate from start_lr/stop_lr if not explicitly provided
         if decay_rate is not None:
             self.decay_rate = decay_rate
+        else:
+            self.decay_rate = np.exp(
+                np.log(clamped_stop_lr / self.start_lr)
+                / (decay_total / self.decay_steps)
+            ).item()
+
+        # === Step 6. Store smooth mode ===
+        self.smooth = smooth
 
     def _decay_value(self, step: int | Array) -> Array:
         """
@@ -292,9 +347,14 @@ class LearningRateExp(BaseLR):
         if not array_api_compat.is_array_api_obj(step):
             step = np.asarray(step)
         xp = array_api_compat.array_namespace(step)
+        # === Step 1. Compute exponent based on smooth mode ===
+        if self.smooth:
+            exponent = xp.astype(step, xp.float64) / self.decay_steps
+        else:
+            exponent = xp.astype(step // self.decay_steps, xp.float64)
         step_lr = self.start_lr * xp.pow(
             xp.asarray(self.decay_rate, device=array_api_compat.device(step)),
-            xp.astype(step // self.decay_steps, xp.float64),
+            exponent,
         )
         # Clip to min_lr for numerical stability in JIT
         step_lr = xp.clip(step_lr, self.min_lr, None)
@@ -303,11 +363,34 @@ class LearningRateExp(BaseLR):
 
 @BaseLR.register("cosine")
 class LearningRateCosine(BaseLR):
+    r"""
+    Cosine annealing learning rate schedule with optional warmup.
+
+    The decay phase (after warmup) follows the cosine annealing formula:
+
+    .. math::
+
+        lr(t) = lr_{\text{stop}} + \frac{lr_0 - lr_{\text{stop}}}{2} \left(1 + \cos\left(\pi \frac{t}{T}\right)\right)
+
+    where:
+    - :math:`lr_0` is ``start_lr`` (learning rate at the start of decay phase)
+    - :math:`lr_{\text{stop}}` is ``stop_lr`` (minimum learning rate)
+    - :math:`t` is the step index within the decay phase
+    - :math:`T = \text{num\_steps} - \text{warmup\_steps}` is the total
+      number of decay steps
+
+    Equivalently, using :math:`\alpha = lr_{\text{stop}} / lr_0`:
+
+    .. math::
+
+        lr(t) = lr_0 \cdot \left[\alpha + \frac{1}{2}(1 - \alpha) \left(1 + \cos\left(\pi \frac{t}{T}\right)\right)\right]
+    """
+
     def __init__(
         self,
         start_lr: float,
         stop_lr: float | None = None,
-        stop_lr_rate: float | None = None,
+        stop_lr_ratio: float | None = None,
         num_steps: int = 100000,
         warmup_steps: int = 0,
         warmup_ratio: float | None = None,
@@ -315,10 +398,7 @@ class LearningRateCosine(BaseLR):
         **kwargs: Any,
     ) -> None:
         """
-        Defines a cosine annealing learning rate schedule with optional warmup.
-
-        The learning rate starts at `start_lr` (after warmup) and gradually
-        decreases to `stop_lr` following a cosine curve over the training steps.
+        Construct a cosine annealing learning rate schedule with optional warmup.
 
         Parameters
         ----------
@@ -326,8 +406,8 @@ class LearningRateCosine(BaseLR):
             The learning rate at the start of the training (after warmup).
         stop_lr : float, optional
             The final learning rate at the end of training.
-            Mutually exclusive with stop_lr_rate.
-        stop_lr_rate : float, optional
+            Mutually exclusive with stop_lr_ratio.
+        stop_lr_ratio : float, optional
             The ratio of stop_lr to start_lr.
             Mutually exclusive with stop_lr.
         num_steps : int
@@ -345,13 +425,13 @@ class LearningRateCosine(BaseLR):
         Raises
         ------
         ValueError
-            If both stop_lr and stop_lr_rate are provided, or neither is provided.
+            If both stop_lr and stop_lr_ratio are provided, or neither is provided.
             If both warmup_steps and warmup_ratio are provided.
         """
         super().__init__(
             start_lr=start_lr,
             stop_lr=stop_lr,
-            stop_lr_rate=stop_lr_rate,
+            stop_lr_ratio=stop_lr_ratio,
             num_steps=num_steps,
             warmup_steps=warmup_steps,
             warmup_ratio=warmup_ratio,

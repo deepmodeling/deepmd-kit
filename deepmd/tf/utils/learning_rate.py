@@ -28,11 +28,7 @@ class LearningRateSchedule:
     """
 
     def __init__(self, params: dict[str, Any]) -> None:
-        # === Step 1. Store configuration ===
         self._params = dict(params)
-        if "start_lr" not in self._params:
-            raise ValueError("start_lr must be provided")
-        self._start_lr = float(self._params["start_lr"])
         self._base_lr: BaseLR | None = None
 
     def start_lr(self) -> float:
@@ -44,7 +40,7 @@ class LearningRateSchedule:
         float
             The starting learning rate.
         """
-        return self._start_lr
+        return float(self._params["start_lr"])
 
     @property
     def base_lr(self) -> BaseLR:
@@ -97,7 +93,7 @@ class LearningRateSchedule:
             _lr_value, [global_step], Tout=tf.float64, name="lr_schedule"
         )
         lr.set_shape(global_step.get_shape())
-        return tf.cast(lr, tf.float32)
+        return lr
 
     def value(self, step: int) -> float:
         """

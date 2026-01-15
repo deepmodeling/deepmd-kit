@@ -242,8 +242,13 @@ class DPTrainer:
     def _build_lr(self) -> None:
         self._extra_train_ops = []
         self.global_step = tf.train.get_or_create_global_step()
-        self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
-        log.info("built lr")
+        if self.stop_batch == 0:
+            # Use constant start_lr when stop_batch is zero (no training)
+            self.learning_rate = tf.cast(self.lr.start_lr(), tf.float64)
+            log.info("built lr (constant start_lr for stop_batch=0)")
+        else:
+            self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
+            log.info("built lr")
 
     def _build_loss(self):
         if self.stop_batch == 0:

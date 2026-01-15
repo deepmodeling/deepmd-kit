@@ -26,11 +26,11 @@ class TestLearningRateExpBasic(unittest.TestCase):
         np.testing.assert_allclose(lr.value(0), 1e-3, rtol=1e-10)
         np.testing.assert_allclose(lr.value(10000), 1e-5, rtol=1e-5)
 
-    def test_stop_lr_rate(self) -> None:
-        """Test stop_lr_rate parameter."""
+    def test_stop_lr_ratio(self) -> None:
+        """Test stop_lr_ratio parameter."""
         lr = LearningRateExp(
             start_lr=1e-3,
-            stop_lr_rate=0.01,
+            stop_lr_ratio=0.01,
             num_steps=10000,
             decay_steps=5000,
         )
@@ -64,11 +64,11 @@ class TestLearningRateCosineBasic(unittest.TestCase):
         np.testing.assert_allclose(lr.value(10000), 1e-5, rtol=1e-10)
         np.testing.assert_allclose(lr.value(5000), (1e-3 + 1e-5) / 2, rtol=1e-5)
 
-    def test_stop_lr_rate(self) -> None:
-        """Test stop_lr_rate parameter."""
+    def test_stop_lr_ratio(self) -> None:
+        """Test stop_lr_ratio parameter."""
         lr = LearningRateCosine(
             start_lr=1e-3,
-            stop_lr_rate=0.01,
+            stop_lr_ratio=0.01,
             num_steps=10000,
         )
         np.testing.assert_allclose(lr.stop_lr, 1e-5, rtol=1e-10)
