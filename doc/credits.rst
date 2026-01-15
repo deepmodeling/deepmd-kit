@@ -148,6 +148,12 @@ Cite DeePMD-kit and methods
 
    Mo_npjComputMater_2022_v8_p107
 
+- If fitting properties (e.g. band gap) or multi-task fine-tuning is used,
+
+.. bibliography::
+   :filter: False
+
+   Zhang_2026_multitaskfinetuning
 
 Package Contributors
 =========================
