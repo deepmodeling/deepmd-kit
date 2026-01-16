@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import datetime
-from functools import cached_property
 import json
 from collections.abc import (
     Callable,
+)
+from functools import (
+    cached_property,
 )
 from pathlib import (
     Path,
