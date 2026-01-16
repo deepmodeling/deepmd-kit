@@ -346,8 +346,8 @@ class EnergyStdLoss(TaskLoss):
                         )
                     else:
                         l_huber_loss = custom_huber_loss(
-                            (atom_pref * force_pred).reshape(-1),
-                            (atom_pref * force_label).reshape(-1),
+                            atom_pref_reshape * force_pred.reshape(-1),
+                            atom_pref_reshape * force_label.reshape(-1),
                             delta=self.huber_delta,
                         )
                         loss += pref_pf * l_huber_loss
