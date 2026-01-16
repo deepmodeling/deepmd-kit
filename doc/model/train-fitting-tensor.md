@@ -30,7 +30,7 @@ $deepmd_source_dir/examples/water_tensor/polar/polar_input_torch.json
 
 The training and validation data are also provided our examples. But note that **the data provided along with the examples are of limited amount, and should not be used to train a production model.**
 
-Similar to the `input.json` used in `ener` mode, training JSON is also divided into {ref}`model <model>`, {ref}`learning_rate <learning_rate>`, {ref}`loss <loss>` and {ref}`training <training>`. Most keywords remain the same as `ener` mode, and their meaning can be found [here](train-se-e2-a.md).
+Similar to the `input.json` used in `ener` mode, training JSON is also divided into {ref}`model <model>`, {ref}`learning_rate <learning_rate>`, {ref}`optimizer <optimizer>`, {ref}`loss <loss>` and {ref}`training <training>`. Most keywords remain the same as `ener` mode, and their meaning can be found in the [SE-E2-A guide](train-se-e2-a.md).
 To fit a tensor, one needs to modify {ref}`fitting_net <model[standard]/fitting_net>` and {ref}`loss <loss>`.
 
 ## Theory
@@ -103,7 +103,7 @@ The JSON of `polar` type should be provided like
 	},
 ```
 
-- `type` specifies which type of fitting net should be used. It should be either `dipole` or `polar`. Note that `global_polar` mode in version 1.x is already **deprecated** and is merged into `polar`. To specify whether a system is global or atomic, please see [here](train-se-e2-a.md).
+- `type` specifies which type of fitting net should be used. It should be either `dipole` or `polar`. Note that `global_polar` mode in version 1.x is already **deprecated** and is merged into `polar`. To specify whether a system is global or atomic, please see the [SE-E2-A guide](train-se-e2-a.md).
 - `sel_type` is a list specifying which type of atoms have the quantity you want to fit. For example, in the water system, `sel_type` is `[0]` since `0` represents atom `O`. If left unset, all types of atoms will be fitted.
 - The rest arguments have the same meaning as they do in `ener` mode.
 
@@ -139,7 +139,7 @@ The JSON of `polar` type should be provided like
 	},
 ```
 
-- `type` specifies which type of fitting net should be used. It should be either `dipole` or `polar`. Note that `global_polar` mode in version 1.x is already **deprecated** and is merged into `polar`. To specify whether a system is global or atomic, please see [here](train-se-e2-a.md).
+- `type` specifies which type of fitting net should be used. It should be either `dipole` or `polar`. Note that `global_polar` mode in version 1.x is already **deprecated** and is merged into `polar`. To specify whether a system is global or atomic, please see the [SE-E2-A guide](train-se-e2-a.md).
 - `atom_exclude_types` is a list specifying the which type of atoms have the quantity you want to set to zero. For example, in the water system, `atom_exclude_types` is `[1]` since `1` represents atom `H`.
 - The rest arguments have the same meaning as they do in `ener` mode.
   :::

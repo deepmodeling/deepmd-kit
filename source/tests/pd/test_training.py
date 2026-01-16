@@ -21,6 +21,9 @@ from deepmd.pd.utils.env import (
 from deepmd.pd.utils.finetune import (
     get_finetune_rules,
 )
+from deepmd.utils.compat import (
+    convert_optimizer_to_new_format,
+)
 
 from .model.test_permutation import (
     model_dpa1,
@@ -151,6 +154,7 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_to_new_format(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -168,6 +172,7 @@ class TestEnergyModelGradientAccumulation(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_to_new_format(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -188,6 +193,7 @@ class TestFparam(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_to_new_format(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -209,6 +215,7 @@ class TestEnergyModelDPA1(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_to_new_format(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -225,6 +232,7 @@ class TestEnergyModelDPA2(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_to_new_format(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
