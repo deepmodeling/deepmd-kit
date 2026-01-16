@@ -23,6 +23,7 @@ from deepmd.pt.utils.serialization import (
     serialize_from_file,
 )
 from deepmd.pt.utils.utils import (
+    to_numpy_array,
     to_torch_tensor,
 )
 
@@ -392,3 +393,43 @@ class DipoleChargeModifier(BaseModifier):
         wfcc_coord = coord_reshaped + dipole_reshaped
         all_coord = torch.cat((coord_reshaped, wfcc_coord), dim=1)
         return all_coord, dipole_reshaped
+
+    def eval_np(
+        self,
+        coord: np.ndarray,
+        box: np.ndarray,
+        atype: np.ndarray,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        nf = coord.shape[0]
+        na = coord.reshape(nf, -1, 3).shape[1]
+
+        if fparam is not None:
+            _fparam = (
+                to_torch_tensor(fparam)
+                .reshape(nf, -1)
+                .to(env.GLOBAL_PT_FLOAT_PRECISION)
+            )
+        else:
+            _fparam = None
+        if aparam is not None:
+            _aparam = (
+                to_torch_tensor(aparam)
+                .reshape(nf, na, -1)
+                .to(env.GLOBAL_PT_FLOAT_PRECISION)
+            )
+        else:
+            _aparam = None
+        modifier_pred = self.forward(
+            to_torch_tensor(coord).reshape(nf, -1, 3).to(env.GLOBAL_PT_FLOAT_PRECISION),
+            to_torch_tensor(atype).reshape(nf, -1).to(torch.long),
+            to_torch_tensor(box).reshape(nf, 3, 3).to(env.GLOBAL_PT_FLOAT_PRECISION),
+            _fparam,
+            _aparam,
+        )
+        return (
+            to_numpy_array(modifier_pred["energy"]),
+            to_numpy_array(modifier_pred["force"]),
+            to_numpy_array(modifier_pred["virial"]),
+        )
