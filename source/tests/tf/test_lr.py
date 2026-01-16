@@ -13,6 +13,7 @@ from deepmd.dpmodel.utils.learning_rate import (
     LearningRateExp,
 )
 from deepmd.tf.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
     tf,
 )
 from deepmd.tf.utils.learning_rate import (
@@ -42,13 +43,13 @@ class TestLearningRateScheduleBuild(unittest.TestCase):
     """Test TF tensor building and integration."""
 
     def test_build_returns_tensor(self) -> None:
-        """Test that build() returns a float64 TF tensor (consistent with GLOBAL_TF_FLOAT_PRECISION)."""
+        """Test that build() returns a TF tensor with correct dtype."""
         lr_schedule = LearningRateSchedule({"start_lr": 1e-3, "stop_lr": 1e-5})
         global_step = tf.constant(0, dtype=tf.int64)
         lr_tensor = lr_schedule.build(global_step, num_steps=10000)
 
         self.assertIsInstance(lr_tensor, tf.Tensor)
-        self.assertEqual(lr_tensor.dtype, tf.float64)
+        self.assertEqual(lr_tensor.dtype, GLOBAL_TF_FLOAT_PRECISION)
 
     def test_default_type_exp(self) -> None:
         """Test that default type is 'exp' when not specified."""
@@ -58,8 +59,8 @@ class TestLearningRateScheduleBuild(unittest.TestCase):
 
         self.assertIsInstance(lr_schedule.base_lr, LearningRateExp)
 
-    def test_tensor_value_matches_base_lr(self) -> None:
-        """Test that TF tensor value matches BaseLR.value()."""
+    def test_value_method_matches_base_lr(self) -> None:
+        """Test that value() method matches BaseLR.value() after build."""
         lr_schedule = LearningRateSchedule(
             {
                 "start_lr": 1e-3,
@@ -72,12 +73,11 @@ class TestLearningRateScheduleBuild(unittest.TestCase):
         global_step = tf.constant(test_step, dtype=tf.int64)
         lr_schedule.build(global_step, num_steps=10000)
 
-        # Use value() method which works in both graph and eager mode
-        # This indirectly verifies tensor computation matches BaseLR
-        tensor_value = lr_schedule.value(test_step)
+        # value() method returns base_lr.value() as float
+        method_value = lr_schedule.value(test_step)
         base_lr_value = lr_schedule.base_lr.value(test_step)
 
-        np.testing.assert_allclose(tensor_value, base_lr_value, rtol=1e-10)
+        np.testing.assert_allclose(method_value, base_lr_value, rtol=1e-10)
 
     def test_start_lr_accessor(self) -> None:
         """Test start_lr() accessor returns correct value."""

@@ -244,7 +244,7 @@ class DpTrainer:
             prec = tf.float64
             place_holders[kk] = tf.placeholder(prec, [None], name="t_" + kk)
             place_holders["find_" + kk] = tf.placeholder(
-                tf.float32, name="t_find_" + kk
+                tf.float64, name="t_find_" + kk
             )
         place_holders["type"] = tf.placeholder(tf.int32, [None], name="t_type")
         place_holders["natoms_vec"] = tf.placeholder(
@@ -303,7 +303,12 @@ class TestEnergy(unittest.TestCase):
             },
         )
         my_model.to(DEVICE)
-        my_lr = MyLRExp(self.start_lr, self.stop_lr, self.decay_steps, self.num_steps)
+        my_lr = MyLRExp(
+            self.start_lr,
+            self.stop_lr,
+            decay_steps=self.decay_steps,
+            num_steps=self.num_steps,
+        )
         my_loss = EnergyStdLoss(
             starter_learning_rate=self.start_lr,
             start_pref_e=self.start_pref_e,
