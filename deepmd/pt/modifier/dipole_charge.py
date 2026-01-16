@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import os
+
 import numpy as np
 import torch
 from torch_admp.pme import (
@@ -53,6 +55,8 @@ class DipoleChargeModifier(BaseModifier):
         sys_charge_map: list[float],
         ewald_h: float = 1.0,
         ewald_beta: float = 1.0,
+        ewald_batch_size: int = 5,
+        dp_batch_size: int | None = None,
         model: DipoleModel | None = None,
         use_cache: bool = True,
     ) -> None:
@@ -72,6 +76,7 @@ class DipoleChargeModifier(BaseModifier):
         if model_name is not None:
             data = serialize_from_file(model_name)
             self._model = DipoleModel.deserialize(data["model"]).to(env.DEVICE)
+        self._model.eval()
 
         # use jit model for inference
         self.model = torch.jit.script(self._model)
@@ -106,6 +111,11 @@ class DipoleChargeModifier(BaseModifier):
             (1), device=env.DEVICE, dtype=torch.float64
         )
 
+        self.ewald_batch_size = ewald_batch_size
+        if dp_batch_size is None:
+            dp_batch_size = int(os.environ.get("DP_INFER_BATCH_SIZE", 1))
+        self.dp_batch_size = dp_batch_size
+
     def serialize(self) -> dict:
         """Serialize the modifier.
 
@@ -122,6 +132,8 @@ class DipoleChargeModifier(BaseModifier):
                 "sys_charge_map": self._sys_charge_map,
                 "ewald_h": self.ewald_h,
                 "ewald_beta": self.ewald_beta,
+                "ewald_batch_size": self.ewald_batch_size,
+                "dp_batch_size": self.dp_batch_size,
             }
         )
         return dd
@@ -192,12 +204,12 @@ class DipoleChargeModifier(BaseModifier):
 
             detached_box = input_box.detach()
             sfactor = torch.matmul(
-                torch.linalg.inv(detached_box.reshape(nframes, 3, 3)),
+                torch.inverse(detached_box.reshape(nframes, 3, 3)),
                 input_box.reshape(nframes, 3, 3),
             )
             input_coord = torch.matmul(coord, sfactor).reshape(nframes, -1)
 
-            extended_coord, extended_charge = self.extend_system(
+            extended_coord, extended_charge, _atomic_dipole = self.extend_system(
                 input_coord,
                 atype,
                 input_box,
@@ -205,16 +217,25 @@ class DipoleChargeModifier(BaseModifier):
                 aparam,
             )
 
-            tot_e = []
             # add Ewald reciprocal correction
-            for ii in range(nframes):
+            tot_e: list[torch.Tensor] = []
+            chunk_coord = torch.split(
+                extended_coord.reshape(nframes, -1, 3), self.dp_batch_size, dim=0
+            )
+            chunk_box = torch.split(
+                input_box.reshape(nframes, 3, 3), self.dp_batch_size, dim=0
+            )
+            chunk_charge = torch.split(
+                extended_charge.reshape(nframes, -1), self.dp_batch_size, dim=0
+            )
+            for _coord, _box, _charge in zip(chunk_coord, chunk_box, chunk_charge):
                 self.er(
-                    extended_coord[ii].reshape((-1, 3)),
-                    input_box[ii].reshape((3, 3)),
+                    _coord,
+                    _box,
                     self.placeholder_pairs,
                     self.placeholder_ds,
                     self.placeholder_buffer_scales,
-                    {"charge": extended_charge[ii].reshape((-1,))},
+                    {"charge": _charge},
                 )
                 tot_e.append(self.er.reciprocal_energy.unsqueeze(0))
             # nframe,
@@ -243,7 +264,7 @@ class DipoleChargeModifier(BaseModifier):
         box: torch.Tensor,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Extend the system with WFCC (Wannier Function Charge Centers).
 
         Parameters
@@ -261,17 +282,17 @@ class DipoleChargeModifier(BaseModifier):
 
         Returns
         -------
-        tuple
-            (extended_coord, extended_charge)
-            extended_coord : torch.Tensor
-                Extended coordinates with shape (nframes, (natoms + nsel) * 3)
-            extended_charge : torch.Tensor
-                Extended charges with shape (nframes, natoms + nsel)
+        Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+            A tuple containing three tensors:
+            - extended_coord : torch.Tensor
+                Extended coordinates with shape (nframes, 2 * natoms * 3)
+            - extended_charge : torch.Tensor
+                Extended charges with shape (nframes, 2 * natoms)
+            - atomic_dipole : torch.Tensor
+                Atomic dipoles with shape (nframes, natoms, 3)
         """
-        nframes = coord.shape[0]
-        mask = make_mask(self.sel_type, atype)
-
-        extended_coord = self.extend_system_coord(
+        # nframes, natoms, 3
+        extended_coord, atomic_dipole = self.extend_system_coord(
             coord,
             atype,
             box,
@@ -286,11 +307,9 @@ class DipoleChargeModifier(BaseModifier):
         # Assign charges to selected atom types
         for ii, charge in enumerate(self.model_charge_map):
             wc_charge[atype == self.sel_type[ii]] = charge
-        # Get the charges for selected atoms only
-        wc_charge_selected = wc_charge[mask].reshape(nframes, -1)
         # Concatenate ion charges and wfcc charges
-        extended_charge = torch.cat([ion_charge, wc_charge_selected], dim=1)
-        return extended_coord, extended_charge
+        extended_charge = torch.cat([ion_charge, wc_charge], dim=1)
+        return extended_coord, extended_charge, atomic_dipole
 
     def extend_system_coord(
         self,
@@ -299,7 +318,7 @@ class DipoleChargeModifier(BaseModifier):
         box: torch.Tensor,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Extend the system with WFCC (Wannier Function Charge Centers).
 
         This function calculates Wannier Function Charge Centers (WFCC) by adding dipole
@@ -321,24 +340,42 @@ class DipoleChargeModifier(BaseModifier):
 
         Returns
         -------
-        all_coord : torch.Tensor
-            Extended coordinates with shape (nframes, (natoms + nsel) * 3)
-            where nsel is the number of selected atoms
+        Tuple[torch.Tensor, torch.Tensor]
+            A tuple containing two tensors:
+            - all_coord : torch.Tensor
+                Extended coordinates with shape (nframes, 2 * natoms * 3)
+                where nsel is the number of selected atoms
+            - dipole_reshaped : torch.Tensor
+                Atomic dipoles with shape (nframes, natoms, 3)
         """
-        mask = make_mask(self.sel_type, atype)
-
         nframes = coord.shape[0]
         natoms = coord.shape[1] // 3
 
-        all_dipole = []
-        for ii in range(nframes):
+        all_dipole: list[torch.Tensor] = []
+        chunk_coord = torch.split(coord, self.dp_batch_size, dim=0)
+        chunk_atype = torch.split(atype, self.dp_batch_size, dim=0)
+        chunk_box = torch.split(box, self.dp_batch_size, dim=0)
+        # use placeholder to make the jit happy for fparam/aparam is None
+        chunk_fparam = (
+            torch.split(fparam, self.dp_batch_size, dim=0)
+            if fparam is not None
+            else chunk_atype
+        )
+        chunk_aparam = (
+            torch.split(aparam, self.dp_batch_size, dim=0)
+            if aparam is not None
+            else chunk_atype
+        )
+        for _coord, _atype, _box, _fparam, _aparam in zip(
+            chunk_coord, chunk_atype, chunk_box, chunk_fparam, chunk_aparam
+        ):
             dipole_batch = self.model(
-                coord=coord[ii].reshape(1, -1),
-                atype=atype[ii].reshape(1, -1),
-                box=box[ii].reshape(1, -1),
+                coord=_coord,
+                atype=_atype,
+                box=_box,
                 do_atomic_virial=False,
-                fparam=fparam[ii].reshape(1, -1) if fparam is not None else None,
-                aparam=aparam[ii].reshape(1, -1) if aparam is not None else None,
+                fparam=_fparam if fparam is not None else None,
+                aparam=_aparam if aparam is not None else None,
             )
             # Extract dipole from the output dictionary
             all_dipole.append(dipole_batch["dipole"])
@@ -352,37 +389,6 @@ class DipoleChargeModifier(BaseModifier):
 
         dipole_reshaped = dipole.reshape(nframes, natoms, 3)
         coord_reshaped = coord.reshape(nframes, natoms, 3)
-        _wfcc_coord = coord_reshaped + dipole_reshaped
-        # Apply mask and reshape
-        wfcc_coord = _wfcc_coord[mask.unsqueeze(-1).expand_as(_wfcc_coord)]
-        wfcc_coord = wfcc_coord.reshape(nframes, -1)
-        all_coord = torch.cat((coord, wfcc_coord), dim=1)
-        return all_coord
-
-
-@torch.jit.export
-def make_mask(
-    sel_type: torch.Tensor,
-    atype: torch.Tensor,
-) -> torch.Tensor:
-    """Create a boolean mask for selected atom types.
-
-    Parameters
-    ----------
-    sel_type : torch.Tensor
-        The selected atom types to create a mask for
-    atype : torch.Tensor
-        The atom types in the system
-
-    Returns
-    -------
-    mask : torch.Tensor
-        Boolean mask where True indicates atoms of selected types
-    """
-    # Ensure tensors are of the right type
-    sel_type = sel_type.to(torch.long)
-    atype = atype.to(torch.long)
-
-    # Create mask using broadcasting for JIT compatibility
-    mask = (atype.unsqueeze(-1) == sel_type).any(dim=-1)
-    return mask
+        wfcc_coord = coord_reshaped + dipole_reshaped
+        all_coord = torch.cat((coord_reshaped, wfcc_coord), dim=1)
+        return all_coord, dipole_reshaped
