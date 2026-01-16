@@ -70,14 +70,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             self,
             *args: Any,
             # underscore to prevent conflict with normal inputs
-            atomic_model_: T_AtomicModel | None = None,
+            atomic_model_: T_AtomicModel | None = None,  # type: ignore
             **kwargs: Any,
         ) -> None:
             super().__init__(*args, **kwargs)
             if atomic_model_ is not None:
-                self.atomic_model: T_AtomicModel = atomic_model_
+                self.atomic_model: T_AtomicModel = atomic_model_  # type: ignore
             else:
-                self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)
+                self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)  # type: ignore
             self.precision_dict = PRECISION_DICT
             self.reverse_precision_dict = RESERVED_PRECISION_DICT
             self.global_pt_float_precision = GLOBAL_PT_FLOAT_PRECISION

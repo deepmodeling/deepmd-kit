@@ -53,12 +53,23 @@ class SpinModel(torch.nn.Module):
 
     def process_spin_input(
         self, coord: torch.Tensor, atype: torch.Tensor, spin: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Generate virtual coordinates and types, concat into the input."""
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Generate virtual coordinates and types, concat into the input.
+
+        Returns
+        -------
+        coord_spin : torch.Tensor
+            Concatenated coordinates with shape (nframes, 2*nloc, 3).
+        atype_spin : torch.Tensor
+            Concatenated atom types with shape (nframes, 2*nloc).
+        coord_corr : torch.Tensor
+            Coordinate correction for virial with shape (nframes, 2*nloc, 3).
+        """
         nframes, nloc = atype.shape
         coord = coord.reshape(nframes, nloc, 3)
         spin = spin.reshape(nframes, nloc, 3)
         atype_spin = torch.concat([atype, atype + self.ntypes_real], dim=-1)
+        # spin_dist = s_i * \mu_i
         spin_dist = spin * (self.virtual_scale_mask.to(atype.device))[atype].reshape(
             [nframes, nloc, 1]
         )
@@ -75,10 +86,28 @@ class SpinModel(torch.nn.Module):
         extended_spin: torch.Tensor,
         nlist: torch.Tensor,
         mapping: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    ) -> tuple[
+        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor
+    ]:
         """
         Add `extended_spin` into `extended_coord` to generate virtual atoms, and extend `nlist` and `mapping`.
-        Note that the final `extended_coord_updated` with shape [nframes, nall + nall, 3] has the following order:
+
+        Returns
+        -------
+        extended_coord_updated : torch.Tensor
+            Updated coordinates with virtual atoms, shape (nframes, 2*nall, 3).
+        extended_atype_updated : torch.Tensor
+            Updated atom types with virtual atoms, shape (nframes, 2*nall).
+        nlist_updated : torch.Tensor
+            Updated neighbor list including virtual atoms.
+        mapping_updated : torch.Tensor or None
+            Updated mapping indices, or None if input mapping is None.
+        extended_coord_corr : torch.Tensor
+            Coordinate correction for virial with shape (nframes, 2*nall, 3).
+
+        Notes
+        -----
+        The final `extended_coord_updated` with shape [nframes, nall + nall, 3] has the following order:
         - [:, :nloc]: original nloc real atoms.
         - [:, nloc: nloc + nloc]: virtual atoms corresponding to nloc real atoms.
         - [:, nloc + nloc: nloc + nall]: ghost real atoms.
@@ -451,7 +480,7 @@ class SpinModel(torch.nn.Module):
             ) = self.process_spin_output(
                 atype,
                 model_ret[f"{var_name}_derv_c"],
-                add_mag=False,
+                add_mag=True,
                 virtual_scale=False,
             )
         return model_ret
@@ -517,7 +546,7 @@ class SpinModel(torch.nn.Module):
                 extended_atype,
                 model_ret[f"{var_name}_derv_c"],
                 nloc,
-                add_mag=False,
+                add_mag=True,
                 virtual_scale=False,
             )
         return model_ret
