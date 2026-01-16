@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from copy import deepcopy
 import datetime
 from functools import cached_property
 import json
@@ -293,7 +294,7 @@ class Node:
         data = {}
         for kk, vv in data_dict.items():
             if kk == "@variables":
-                variables = vv.copy()
+                variables = deepcopy(vv)
             elif isinstance(vv, dict):
                 children[kk] = cls.from_dict(vv)
             elif isinstance(vv, list):
