@@ -27,8 +27,9 @@ from deepmd.pt.utils.utils import (
 )
 from deepmd.tf.modifier import DipoleChargeModifier as TFDipoleChargeModifier
 
-SEED = 1
-DTYPE = torch.float64
+from ...seed import (
+    GLOBAL_SEED,
+)
 
 
 def ref_data():
@@ -37,7 +38,7 @@ def ref_data():
         str(Path(__file__).parent / "water/data/data_0/set.000/coord.npy")
     )
     nframe = len(all_box)
-    rng = np.random.default_rng(SEED)
+    rng = np.random.default_rng(GLOBAL_SEED)
     selected_id = rng.integers(nframe)
 
     coord = all_coord[selected_id].reshape(1, -1)
@@ -62,13 +63,10 @@ class TestDipoleChargeModifier(unittest.TestCase):
         self.sys_charge_map = [6.0, 1.0]
         self.descriptor_dict = {
             "type": "se_e2_a",
-            "sel": [46, 92],
+            "sel": [12, 24],
             "rcut_smth": 0.5,
             "rcut": 4.00,
-            "neuron": [
-                25,
-                50,
-            ],
+            "neuron": [6, 12, 24],
         }
 
         # Train DW model
@@ -117,38 +115,49 @@ class TestDipoleChargeModifier(unittest.TestCase):
     def test_consistency(self):
         coord, box, atype = ref_data()
         # consistent with the input shape from BaseModifier.modify_data
-        t_coord = to_torch_tensor(coord).to(DTYPE).reshape(1, -1, 3)
-        t_box = to_torch_tensor(box).to(DTYPE).reshape(1, 3, 3)
-        t_atype = to_torch_tensor(atype).to(torch.long)
+        t_coord = (
+            to_torch_tensor(coord).to(env.GLOBAL_PT_FLOAT_PRECISION).reshape(1, -1, 3)
+        )
+        t_box = to_torch_tensor(box).to(env.GLOBAL_PT_FLOAT_PRECISION).reshape(1, 3, 3)
+        t_atype = to_torch_tensor(atype).to(torch.long).reshape(1, -1)
 
-        dm_pred = self.dm_pt(
+        pt_data = self.dm_pt(
             coord=t_coord,
             atype=t_atype,
             box=t_box,
         )
+        tf_data = {}
         e, f, v = self.dm_tf.eval(
             coord=coord,
             box=box,
             atype=atype.reshape(-1),
         )
+        tf_data["energy"] = e
+        tf_data["force"] = f
+        tf_data["virial"] = v
 
+        for kw in ["energy", "virial"]:
+            np.testing.assert_allclose(
+                to_numpy_array(pt_data[kw]).reshape(-1),
+                tf_data[kw].reshape(-1),
+                atol=1e-6,
+            )
+        kw = "force"
         np.testing.assert_allclose(
-            to_numpy_array(dm_pred["energy"]).reshape(-1), e.reshape(-1), rtol=1e-4
-        )
-        np.testing.assert_allclose(
-            to_numpy_array(dm_pred["force"]).reshape(-1), f.reshape(-1), rtol=1e-4
-        )
-        np.testing.assert_allclose(
-            to_numpy_array(dm_pred["virial"]).reshape(-1), v.reshape(-1), rtol=1e-4
+            to_numpy_array(pt_data[kw]).reshape(-1),
+            tf_data[kw].reshape(-1),
+            rtol=1e-6,
         )
 
     def test_serialize(self):
         """Test the serialize method of DipoleChargeModifier."""
         coord, box, atype = ref_data()
         # consistent with the input shape from BaseModifier.modify_data
-        t_coord = to_torch_tensor(coord).to(DTYPE).reshape(1, -1, 3)
-        t_box = to_torch_tensor(box).to(DTYPE).reshape(1, 3, 3)
-        t_atype = to_torch_tensor(atype).to(torch.long)
+        t_coord = (
+            to_torch_tensor(coord).to(env.GLOBAL_PT_FLOAT_PRECISION).reshape(1, -1, 3)
+        )
+        t_box = to_torch_tensor(box).to(env.GLOBAL_PT_FLOAT_PRECISION).reshape(1, 3, 3)
+        t_atype = to_torch_tensor(atype).to(torch.long).reshape(1, -1)
 
         dm0 = self.dm_pt.to(env.DEVICE)
         dm1 = PTDipoleChargeModifier.deserialize(dm0.serialize()).to(env.DEVICE)
@@ -178,8 +187,10 @@ class TestDipoleChargeModifier(unittest.TestCase):
         """Test that a RuntimeError is raised when box is None."""
         coord, _b, atype = ref_data()
         # consistent with the input shape from BaseModifier.modify_data
-        t_coord = to_torch_tensor(coord).to(DTYPE).reshape(1, -1, 3)
-        t_atype = to_torch_tensor(atype).to(torch.long)
+        t_coord = (
+            to_torch_tensor(coord).to(env.GLOBAL_PT_FLOAT_PRECISION).reshape(1, -1, 3)
+        )
+        t_atype = to_torch_tensor(atype).to(torch.long).reshape(1, -1)
 
         with self.assertRaises(RuntimeError) as context:
             self.dm_pt(
