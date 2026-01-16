@@ -115,6 +115,7 @@ class Trainer:
         self.restart_training = restart_model is not None
         model_params = config["model"]
         training_params = config["training"]
+        optimizer_params = config.get("optimizer") or {}
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
         self.finetune_update_stat = False
@@ -149,13 +150,16 @@ class Trainer:
         self.lcurve_should_print_header = True
 
         def get_opt_param(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-            opt_type = params.get("opt_type", "Adam")
+            opt_type = params.get("type", "Adam")
             opt_param = {
                 "kf_blocksize": params.get("kf_blocksize", 5120),
                 "kf_start_pref_e": params.get("kf_start_pref_e", 1),
                 "kf_limit_pref_e": params.get("kf_limit_pref_e", 1),
                 "kf_start_pref_f": params.get("kf_start_pref_f", 1),
                 "kf_limit_pref_f": params.get("kf_limit_pref_f", 1),
+                "adam_beta1": params.get("adam_beta1", 0.9),
+                "adam_beta2": params.get("adam_beta2", 0.999),
+                "weight_decay": params.get("weight_decay", 0.0),
             }
             return opt_type, opt_param
 
@@ -263,7 +267,7 @@ class Trainer:
                     self.optim_dict[model_key]
                 )
         else:
-            self.opt_type, self.opt_param = get_opt_param(training_params)
+            self.opt_type, self.opt_param = get_opt_param(optimizer_params)
 
         # loss_param_tmp for Hessian activation
         loss_param_tmp = None
@@ -598,7 +602,11 @@ class Trainer:
                 lr_lambda=lambda step: warm_up_linear(step, self.warmup_steps),
             )
             self.optimizer = paddle.optimizer.Adam(
-                learning_rate=self.scheduler, parameters=self.wrapper.parameters()
+                learning_rate=self.scheduler,
+                parameters=self.wrapper.parameters(),
+                beta1=float(self.opt_param["adam_beta1"]),
+                beta2=float(self.opt_param["adam_beta2"]),
+                weight_decay=float(self.opt_param["weight_decay"]),
             )
             if optimizer_state_dict is not None and self.restart_training:
                 self.optimizer.set_state_dict(optimizer_state_dict)

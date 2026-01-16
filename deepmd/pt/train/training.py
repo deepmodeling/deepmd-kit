@@ -125,6 +125,7 @@ class Trainer:
         self.restart_training = restart_model is not None
         model_params = config["model"]
         training_params = config["training"]
+        optimizer_params = config.get("optimizer") or {}
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
         self.finetune_update_stat = False
@@ -157,7 +158,24 @@ class Trainer:
         self.lcurve_should_print_header = True
 
         def get_opt_param(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-            opt_type = params.get("opt_type", "Adam")
+            opt_type = params.get("type", "Adam")
+            if opt_type == "Adam":
+                default_adam_beta2 = 0.999
+                default_weight_decay = 0.0
+            elif opt_type == "AdamW":
+                default_adam_beta2 = 0.999
+                default_weight_decay = 0.0
+            elif opt_type == "LKF":
+                default_adam_beta2 = 0.95
+                default_weight_decay = 0.001
+            elif opt_type == "AdaMuon":
+                default_adam_beta2 = 0.95
+                default_weight_decay = 0.001
+            elif opt_type == "HybridMuon":
+                default_adam_beta2 = 0.95
+                default_weight_decay = 0.001
+            else:
+                raise ValueError(f"Not supported optimizer type '{opt_type}'")
             opt_param = {
                 # LKF parameters
                 "kf_blocksize": params.get("kf_blocksize", 5120),
@@ -166,11 +184,11 @@ class Trainer:
                 "kf_start_pref_f": params.get("kf_start_pref_f", 1),
                 "kf_limit_pref_f": params.get("kf_limit_pref_f", 1),
                 # Common parameters
-                "weight_decay": params.get("weight_decay", 0.001),
+                "weight_decay": params.get("weight_decay", default_weight_decay),
                 # Muon/AdaMuon parameters
                 "momentum": params.get("momentum", 0.95),
                 "adam_beta1": params.get("adam_beta1", 0.9),
-                "adam_beta2": params.get("adam_beta2", 0.95),
+                "adam_beta2": params.get("adam_beta2", default_adam_beta2),
                 "lr_adjust": params.get("lr_adjust", 10.0),
                 "lr_adjust_coeff": params.get("lr_adjust_coeff", 0.2),
                 "muon_2d_only": params.get("muon_2d_only", True),
@@ -299,7 +317,7 @@ class Trainer:
                     self.optim_dict[model_key]
                 )
         else:
-            self.opt_type, self.opt_param = get_opt_param(training_params)
+            self.opt_type, self.opt_param = get_opt_param(optimizer_params)
 
         # loss_param_tmp for Hessian activation
         loss_param_tmp = None
@@ -712,20 +730,38 @@ class Trainer:
 
         # TODO add optimizers for multitask
         # author: iProzd
-        if self.opt_type in ["Adam", "AdamW"]:
-            if self.opt_type == "Adam":
-                self.optimizer = torch.optim.Adam(
-                    self.wrapper.parameters(),
-                    lr=self.lr_exp.start_lr,
-                    fused=False if DEVICE.type == "cpu" else True,
-                )
-            else:
-                self.optimizer = torch.optim.AdamW(
-                    self.wrapper.parameters(),
-                    lr=self.lr_exp.start_lr,
-                    weight_decay=float(self.opt_param["weight_decay"]),
-                    fused=False if DEVICE.type == "cpu" else True,
-                )
+        if self.opt_type == "Adam":
+            adam_betas = (
+                float(self.opt_param["adam_beta1"]),
+                float(self.opt_param["adam_beta2"]),
+            )
+            weight_decay = float(self.opt_param["weight_decay"])
+            self.optimizer = torch.optim.Adam(
+                self.wrapper.parameters(),
+                lr=self.lr_exp.start_lr,
+                betas=adam_betas,
+                weight_decay=weight_decay,
+                fused=False if DEVICE.type == "cpu" else True,
+            )
+            if optimizer_state_dict is not None and self.restart_training:
+                self.optimizer.load_state_dict(optimizer_state_dict)
+            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
+                self.optimizer,
+                lambda step: warm_up_linear(step + self.start_step, self.warmup_steps),
+            )
+        elif self.opt_type == "AdamW":
+            adam_betas = (
+                float(self.opt_param["adam_beta1"]),
+                float(self.opt_param["adam_beta2"]),
+            )
+            weight_decay = float(self.opt_param["weight_decay"])
+            self.optimizer = torch.optim.AdamW(
+                self.wrapper.parameters(),
+                lr=self.lr_exp.start_lr,
+                betas=adam_betas,
+                weight_decay=weight_decay,
+                fused=False if DEVICE.type == "cpu" else True,
+            )
             if optimizer_state_dict is not None and self.restart_training:
                 self.optimizer.load_state_dict(optimizer_state_dict)
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
@@ -748,6 +784,12 @@ class Trainer:
                 ),
                 lr_adjust=float(self.opt_param["lr_adjust"]),
                 lr_adjust_coeff=float(self.opt_param["lr_adjust_coeff"]),
+            )
+            if optimizer_state_dict is not None and self.restart_training:
+                self.optimizer.load_state_dict(optimizer_state_dict)
+            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
+                self.optimizer,
+                lambda step: warm_up_linear(step + self.start_step, self.warmup_steps),
             )
         elif self.opt_type == "HybridMuon":
             self.optimizer = HybridMuonOptimizer(
