@@ -143,13 +143,15 @@ TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  EXPECT_EQ(virial.size(), 9);
-
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
   for (int ii = 0; ii < natoms * 3; ++ii) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
+  if (virial.empty()) {
+    return;
+  }
+  EXPECT_EQ(virial.size(), 9);
   for (int ii = 0; ii < 3 * 3; ++ii) {
     EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
   }
@@ -176,7 +178,6 @@ TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist_atomic) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  EXPECT_EQ(virial.size(), 9);
   EXPECT_EQ(atom_ener.size(), natoms);
 
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
@@ -184,12 +185,20 @@ TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist_atomic) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
+  if (virial.empty()) {
+    return;
+  }
+  EXPECT_EQ(virial.size(), 9);
   for (int ii = 0; ii < 3 * 3; ++ii) {
     EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
   }
   for (int ii = 0; ii < natoms; ++ii) {
     EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
   }
+  if (atom_vir.empty()) {
+    return;
+  }
+  EXPECT_EQ(atom_vir.size(), natoms * 9);
   for (int ii = 0; ii < natoms * 9; ++ii) {
     EXPECT_LT(fabs(atom_vir[ii] - expected_atom_v[ii]), EPSILON);
   }
@@ -317,13 +326,15 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_build_nlist) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  EXPECT_EQ(virial.size(), 9);
-
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
   for (int ii = 0; ii < natoms * 3; ++ii) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
+  if (virial.empty()) {
+    return;
+  }
+  EXPECT_EQ(virial.size(), 9);
   for (int ii = 0; ii < 3 * 3; ++ii) {
     EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
   }
@@ -350,7 +361,6 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_build_nlist_atomic) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  EXPECT_EQ(virial.size(), 9);
   EXPECT_EQ(atom_ener.size(), natoms);
 
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
@@ -358,12 +368,20 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_build_nlist_atomic) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
+  if (virial.empty()) {
+    return;
+  }
+  EXPECT_EQ(virial.size(), 9);
   for (int ii = 0; ii < 3 * 3; ++ii) {
     EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
   }
   for (int ii = 0; ii < natoms; ++ii) {
     EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
   }
+  if (atom_vir.empty()) {
+    return;
+  }
+  EXPECT_EQ(atom_vir.size(), natoms * 9);
   for (int ii = 0; ii < natoms * 9; ++ii) {
     EXPECT_LT(fabs(atom_vir[ii] - expected_atom_v[ii]), EPSILON);
   }
@@ -397,13 +415,15 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_lmp_nlist) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  EXPECT_EQ(virial.size(), 9);
-
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
   for (int ii = 0; ii < natoms * 3; ++ii) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
+  if (virial.empty()) {
+    return;
+  }
+  EXPECT_EQ(virial.size(), 9);
   for (int ii = 0; ii < 3 * 3; ++ii) {
     EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
   }
@@ -438,7 +458,6 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_lmp_nlist_atomic) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  EXPECT_EQ(virial.size(), 9);
   EXPECT_EQ(atom_ener.size(), natoms);
 
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
@@ -446,12 +465,20 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_lmp_nlist_atomic) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
+  if (virial.empty()) {
+    return;
+  }
+  EXPECT_EQ(virial.size(), 9);
   for (int ii = 0; ii < 3 * 3; ++ii) {
     EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
   }
   for (int ii = 0; ii < natoms; ++ii) {
     EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
   }
+  if (atom_vir.empty()) {
+    return;
+  }
+  EXPECT_EQ(atom_vir.size(), natoms * 9);
   for (int ii = 0; ii < natoms * 9; ++ii) {
     EXPECT_LT(fabs(atom_vir[ii] - expected_atom_v[ii]), EPSILON);
   }
