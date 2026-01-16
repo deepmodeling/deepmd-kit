@@ -142,6 +142,7 @@ class Trainer:
         self.restart_training = restart_model is not None
         model_params = config["model"]
         training_params = config["training"]
+        optimizer_params = config.get("optimizer", {})
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
         self.finetune_update_stat = False
@@ -185,26 +186,17 @@ class Trainer:
         self.lcurve_should_print_header = True
 
         def get_opt_param(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-            opt_type = params.get("opt_type", "Adam")
-            opt_param = {
-                # LKF parameters
-                "kf_blocksize": params.get("kf_blocksize", 5120),
-                "kf_start_pref_e": params.get("kf_start_pref_e", 1),
-                "kf_limit_pref_e": params.get("kf_limit_pref_e", 1),
-                "kf_start_pref_f": params.get("kf_start_pref_f", 1),
-                "kf_limit_pref_f": params.get("kf_limit_pref_f", 1),
-                # Common parameters
-                "weight_decay": params.get("weight_decay", 0.001),
-                # Muon/AdaMuon parameters
-                "momentum": params.get("momentum", 0.95),
-                "adam_beta1": params.get("adam_beta1", 0.9),
-                "adam_beta2": params.get("adam_beta2", 0.95),
-                "lr_adjust": params.get("lr_adjust", 10.0),
-                "lr_adjust_coeff": params.get("lr_adjust_coeff", 0.2),
-                "muon_2d_only": params.get("muon_2d_only", True),
-                "min_2d_dim": params.get("min_2d_dim", 1),
-                "flash_muon": params.get("flash_muon", True),
-            }
+            """
+            Extract optimizer parameters.
+
+            Note: Default values are already filled by argcheck.normalize()
+            before this function is called.
+            """
+            opt_type = params.get("type", "Adam")
+            if opt_type not in ("Adam", "AdamW", "LKF", "AdaMuon", "HybridMuon"):
+                raise ValueError(f"Not supported optimizer type '{opt_type}'")
+            opt_param = dict(params)
+            opt_param.pop("type", None)
             return opt_type, opt_param
 
         def cycle_iterator(iterable: Iterable) -> Generator[Any, None, None]:
@@ -328,7 +320,7 @@ class Trainer:
                     self.optim_dict[model_key]
                 )
         else:
-            self.opt_type, self.opt_param = get_opt_param(training_params)
+            self.opt_type, self.opt_param = get_opt_param(optimizer_params)
         if self.zero_stage > 0 and self.multi_task:
             raise ValueError(
                 "training.zero_stage is currently only supported in single-task training."
@@ -793,21 +785,21 @@ class Trainer:
         # author: iProzd
         initial_lr = self.lr_schedule.value(self.start_step)
         if self.opt_type in ["Adam", "AdamW"]:
-            # Initialize optimizer with the actual learning rate at start_step
-            # to ensure warmup is applied from the first step
-            if self.opt_type == "Adam":
-                self.optimizer = self._create_optimizer(
-                    torch.optim.Adam,
-                    lr=initial_lr,
-                    fused=DEVICE.type != "cpu",
-                )
-            else:
-                self.optimizer = self._create_optimizer(
-                    torch.optim.AdamW,
-                    lr=initial_lr,
-                    weight_decay=float(self.opt_param["weight_decay"]),
-                    fused=DEVICE.type != "cpu",
-                )
+            adam_betas = (
+                float(self.opt_param["adam_beta1"]),
+                float(self.opt_param["adam_beta2"]),
+            )
+            weight_decay = float(self.opt_param["weight_decay"])
+            optimizer_class = (
+                torch.optim.Adam if self.opt_type == "Adam" else torch.optim.AdamW
+            )
+            self.optimizer = self._create_optimizer(
+                optimizer_class,
+                lr=initial_lr,
+                betas=adam_betas,
+                weight_decay=weight_decay,
+                fused=DEVICE.type != "cpu",
+            )
             self._load_optimizer_state(optimizer_state_dict)
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self.optimizer,

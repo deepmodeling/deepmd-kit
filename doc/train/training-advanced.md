@@ -6,6 +6,22 @@ In this section, we will take `$deepmd_source_dir/examples/water/se_e2_a/input.j
 
 See {doc}`learning-rate` for detailed documentation on learning rate schedules.
 
+## Optimizer
+
+The {ref}`optimizer <optimizer>` section in `input.json` is given as follows
+
+```json
+    "optimizer" :{
+        "type": "Adam",
+        "_comment": "that's all"
+    }
+```
+
+- TensorFlow/Paddle: only {ref}`Adam <optimizer[Adam]>` is supported.
+- PyTorch: {ref}`Adam <optimizer[Adam]>`, {ref}`AdamW <optimizer[AdamW]>`, {ref}`LKF <optimizer[LKF]>`, {ref}`AdaMuon <optimizer[AdaMuon]>`, {ref}`HybridMuon <optimizer[HybridMuon]>`.
+- {ref}`adam_beta1 <optimizer[Adam]/adam_beta1>` and {ref}`adam_beta2 <optimizer[Adam]/adam_beta2>` control the Adam/AdamW moment decay.
+- {ref}`weight_decay <optimizer[Adam]/weight_decay>` applies L2 penalty in Adam, while {ref}`weight_decay <optimizer[AdamW]/weight_decay>` is decoupled in AdamW. TensorFlow does not support weight decay in Adam.
+
 ## Training parameters
 
 Other training parameters are given in the {ref}`training <training>` section.

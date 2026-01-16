@@ -120,6 +120,7 @@ class Trainer:
         self.restart_training = restart_model is not None
         model_params = config["model"]
         training_params = config["training"]
+        optimizer_params = config.get("optimizer", {})
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
         self.finetune_update_stat = False
@@ -157,14 +158,17 @@ class Trainer:
         self.lcurve_should_print_header = True
 
         def get_opt_param(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-            opt_type = params.get("opt_type", "Adam")
-            opt_param = {
-                "kf_blocksize": params.get("kf_blocksize", 5120),
-                "kf_start_pref_e": params.get("kf_start_pref_e", 1),
-                "kf_limit_pref_e": params.get("kf_limit_pref_e", 1),
-                "kf_start_pref_f": params.get("kf_start_pref_f", 1),
-                "kf_limit_pref_f": params.get("kf_limit_pref_f", 1),
-            }
+            """
+            Extract optimizer parameters.
+
+            Note: Default values are already filled by argcheck.normalize()
+            before this function is called.
+            """
+            opt_type = params.get("type", "Adam")
+            if opt_type != "Adam":
+                raise ValueError(f"Not supported optimizer type '{opt_type}'")
+            opt_param = dict(params)
+            opt_param.pop("type", None)
             return opt_type, opt_param
 
         def get_data_loader(
@@ -271,7 +275,7 @@ class Trainer:
                     self.optim_dict[model_key]
                 )
         else:
-            self.opt_type, self.opt_param = get_opt_param(training_params)
+            self.opt_type, self.opt_param = get_opt_param(optimizer_params)
 
         # loss_param_tmp for Hessian activation
         loss_param_tmp = None
@@ -677,7 +681,11 @@ class Trainer:
                 ),
             )
             self.optimizer = paddle.optimizer.Adam(
-                learning_rate=self.scheduler, parameters=self.wrapper.parameters()
+                learning_rate=self.scheduler,
+                parameters=self.wrapper.parameters(),
+                beta1=float(self.opt_param["adam_beta1"]),
+                beta2=float(self.opt_param["adam_beta2"]),
+                weight_decay=float(self.opt_param["weight_decay"]),
             )
             if optimizer_state_dict is not None and self.restart_training:
                 self.optimizer.set_state_dict(optimizer_state_dict)
