@@ -765,13 +765,29 @@ class Trainer:
         if self.rank == 0:
             self._log_parameter_count()
 
+    @staticmethod
+    def _count_parameters(model: torch.nn.Module) -> tuple[int, int]:
+        """
+        Count model parameters.
+
+        Parameters
+        ----------
+        model : torch.nn.Module
+            The model to count parameters for.
+
+        Returns
+        -------
+        tuple[int, int]
+            A tuple of (trainable, total) parameter counts.
+        """
+        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        total = sum(p.numel() for p in model.parameters())
+        return trainable, total
+
     def _log_parameter_count(self) -> None:
         """Log model parameter count."""
         if not self.multi_task:
-            trainable = sum(
-                p.numel() for p in self.model.parameters() if p.requires_grad
-            )
-            total = sum(p.numel() for p in self.model.parameters())
+            trainable, total = self._count_parameters(self.model)
             log.info(
                 f"Model Params:  {total / 1e6:.3f} M   (Trainable: {trainable / 1e6:.3f} M)"
             )
@@ -781,11 +797,7 @@ class Trainer:
                 "The following per-task counts may include duplicates."
             )
             for model_key in self.model_keys:
-                model = self.model[model_key]
-                trainable = sum(
-                    p.numel() for p in model.parameters() if p.requires_grad
-                )
-                total = sum(p.numel() for p in model.parameters())
+                trainable, total = self._count_parameters(self.model[model_key])
                 log.info(
                     f"Model Params [{model_key}]: {total / 1e6:.3f} M   (Trainable: {trainable / 1e6:.3f} M)"
                 )
