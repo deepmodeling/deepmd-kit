@@ -43,33 +43,34 @@ class TestInferDeepSpinDpaPt : public ::testing::Test {
   // atype = np.array([0, 1, 1, 0, 1, 1])
   // box = np.array([13., 0., 0., 0., 13., 0., 0., 0., 13.]).reshape(1, -1)
   // dp = DeepPot("deeppot_dpa_spin.pth")
-  // e, f, _, ae, _, fm, _ = dp.eval(coord, box, atype, atomic=True, spin=spin)
+  // e, f, v, ae, av, fm, _ = dp.eval(coord, box, atype, atomic=True, spin=spin)
   // np.set_printoptions(precision=16)
-  // print(f"{e.ravel()=} {f.ravel()=} {fm.ravel()=} {ae.ravel()=}")
+  // print(f"{e.ravel()=} {f.ravel()=} {v.ravel()=} {fm.ravel()=}
+  // {ae.ravel()=}")
 
-  std::vector<VALUETYPE> expected_e = {-5.835211567762678, -5.071189078159807,
-                                       -5.044361601406714, -5.582324154346981,
-                                       -5.059906899269188, -5.074135576182056};
+  std::vector<VALUETYPE> expected_e = {
+      0.004031596697107398, 0.005184816481863,     -0.0037631837498146537,
+      0.006270873743043575, -0.012075532435434355, -0.0007075898118526245};
   std::vector<VALUETYPE> expected_f = {
-      -0.0619881702551019, 0.0646720543680939,  0.2137632336140025,
-      0.037800173877136,   -0.096327623008356,  -0.1531911892384847,
-      -0.112204927558682,  0.0299145670766557,  -0.0589474826303666,
-      0.2278904556868233,  0.0382061907026398,  0.0888060647788163,
-      -0.0078898845686437, 0.0019385598635839,  -0.0791616129664364,
-      -0.083607647181527,  -0.0384037490026167, -0.0112690135575317};
+      0.004031596697107398,   -0.010387377583719964, -0.0014939173575417852,
+      0.005184816481863,      0.007415295749508299,  -0.004554417012705496,
+      -0.0037631837498146537, 0.0015839842563347012, 0.006270873743043575,
+      0.006270873743043575,   0.004772625898144978,  -0.007571431447088328,
+      0.007329892818131047,   0.0027987492097494076, -0.002697543490831946,
+      -0.006183277530017452,  0.01004643556512413};
   std::vector<VALUETYPE> expected_fm = {
-      -3.0778301386623275,
-      -1.3135930534661662,
-      -0.8332043979367366,
+      0.3247410481928812,
+      0.04515884619765668,
+      0.08718890854219401,
       0.0,
       0.0,
       0.0,
       0.0,
       0.0,
       0.0,
-      -0.5452347545527696,
-      -0.2051506559632127,
-      -0.4908015055951312,
+      0.13794571025867963,
+      0.08677363173679283,
+      0.09839542087871228,
       0.0,
       0.0,
       0.0,
@@ -77,10 +78,28 @@ class TestInferDeepSpinDpaPt : public ::testing::Test {
       0.0,
       0.0,
   };
+  std::vector<VALUETYPE> expected_tot_v = {
+      -0.02421162406248903,  -0.007399464728803163, 0.012770296772824489,
+      -0.005129031187923775, 0.001381624482046452,  0.00660380864594899,
+      0.013956096416149198,  0.006788089581579212,  -0.0102462390797404};
+  std::vector<VALUETYPE> expected_atom_v = {
+      1.56445561e-03,  -2.09940556e-04, -2.38887855e-03, 1.97370249e-03,
+      4.43423788e-03,  -1.87644028e-03, 2.28936857e-05,  -1.60139439e-03,
+      2.42612568e-03,  -8.18033202e-03, -3.63076402e-03, 3.29578144e-03,
+      -3.77806007e-03, -5.67947162e-04, 3.71520105e-03,  3.68597629e-03,
+      3.58375798e-03,  -3.53992730e-03, -1.25979731e-02, -5.71674421e-04,
+      4.05411698e-03,  9.59636201e-05,  2.98503616e-05,  1.41985921e-03,
+      3.86508016e-03,  1.60940945e-03,  -4.82848144e-03, 9.92060149e-03,
+      1.31159078e-03,  -1.08861454e-03, -1.33848341e-04, 2.24873882e-03,
+      -3.35090985e-03, -2.53510394e-03, -2.99970681e-03, 4.43709623e-03,
+      -1.06689446e-02, -2.83469144e-03, 5.46665681e-03,  -1.93195329e-03,
+      -1.85479946e-03, 2.29490155e-03,  4.39982122e-03,  1.49850013e-03,
+      -1.63963632e-03, -4.24943142e-03, -1.46398507e-03, 3.43123463e-03,
+      -1.35483560e-03, -2.90845595e-03, 4.40119696e-03,  4.51742900e-03,
+      4.69752322e-03,  -7.10141593e-03};
 
   int natoms;
   double expected_tot_e;
-  // std::vector<VALUETYPE> expected_tot_v;
 
   deepmd::DeepSpin dp;
 
@@ -93,18 +112,11 @@ class TestInferDeepSpinDpaPt : public ::testing::Test {
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
     EXPECT_EQ(natoms * 3, expected_fm.size());
-    // EXPECT_EQ(natoms * 9, expected_v.size());
+    EXPECT_EQ(9, expected_tot_v.size());
     expected_tot_e = 0.;
-    // expected_tot_v.resize(9);
-    // std::fill(expected_tot_v.begin(), expected_tot_v.end(), 0.);
     for (int ii = 0; ii < natoms; ++ii) {
       expected_tot_e += expected_e[ii];
     }
-    // for (int ii = 0; ii < natoms; ++ii) {
-    //   for (int dd = 0; dd < 9; ++dd) {
-    //     expected_tot_v[dd] += expected_v[ii * 9 + dd];
-    //   }
-    // }
   };
 
   void TearDown() override {};
@@ -121,10 +133,9 @@ TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist) {
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_fm = this->expected_fm;
-  // std::vector<VALUETYPE>& expected_v = this->expected_v;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
-  // std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial;
@@ -132,16 +143,16 @@ TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  // EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(virial.size(), 9);
 
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
   for (int ii = 0; ii < natoms * 3; ++ii) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < 3 * 3; ++ii) {
-  //   EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-  // }
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
 }
 
 TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist_atomic) {
@@ -153,10 +164,10 @@ TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist_atomic) {
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_fm = this->expected_fm;
-  // std::vector<VALUETYPE>& expected_v = this->expected_v;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  std::vector<VALUETYPE>& expected_atom_v = this->expected_atom_v;
   int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
-  // std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial, atom_ener, atom_vir;
@@ -165,24 +176,23 @@ TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist_atomic) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  // EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(virial.size(), 9);
   EXPECT_EQ(atom_ener.size(), natoms);
-  // EXPECT_EQ(atom_vir.size(), natoms * 9);
 
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
   for (int ii = 0; ii < natoms * 3; ++ii) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < 3 * 3; ++ii) {
-  //   EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-  // }
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
   for (int ii = 0; ii < natoms; ++ii) {
     EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < natoms * 9; ++ii) {
-  //   EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
-  // }
+  for (int ii = 0; ii < natoms * 9; ++ii) {
+    EXPECT_LT(fabs(atom_vir[ii] - expected_atom_v[ii]), EPSILON);
+  }
 }
 
 template <class VALUETYPE>
@@ -210,43 +220,59 @@ class TestInferDeepSpinDpaPtNopbc : public ::testing::Test {
   // atype = np.array([0, 1, 1, 0, 1, 1])
   // box = None
   // dp = DeepPot("deeppot_dpa_spin.pth")
-  // e, f, _, ae, _, fm, _ = dp.eval(coord, box, atype, atomic=True,
+  // e, f, v, ae, av, fm, _ = dp.eval(coord, box, atype, atomic=True,
   // spin=spin)
   // np.set_printoptions(precision=16)
-  // print(f"{e.ravel()=} {f.ravel()=} {fm.ravel()=} {ae.ravel()=}")
+  // print(f"{e.ravel()=} {f.ravel()=} {v.ravel()=} {fm.ravel()=}
+  // {ae.ravel()=}")
 
-  std::vector<VALUETYPE> expected_e = {-5.921669893870771, -5.1676693791758685,
-                                       -5.205933794558385, -5.58688965168251,
-                                       -5.080322972018686, -5.08213772482076};
+  std::vector<VALUETYPE> expected_e = {
+      0.007498790737048511,  -0.007498790737048388, 0.004559426360630839,
+      -0.013613732160576542, 0.00850610749140186,   0.0005481983085438703};
   std::vector<VALUETYPE> expected_f = {
-      -0.2929142244191496, 0.0801070990501456,  0.148216178514704,
-      0.2929142244191503,  -0.0801070990501454, -0.1482161785147037,
-      -0.2094984819251435, 0.0241594118950041,  -0.0215199116994508,
-      0.3068843038300324,  -0.001620530344866,  0.1508093841389746,
-      -0.0122719879278721, 0.0186341247897136,  -0.1137104245023705,
-      -0.0851138339770169, -0.0411730063398516, -0.0155790479371533};
-  std::vector<VALUETYPE> expected_fm = {-1.5298530476860008,
-                                        0.0071315024546899,
-                                        0.0650492472558729,
-                                        0.,
-                                        0.,
-                                        0.,
-                                        0.,
-                                        0.,
-                                        0.,
-                                        -0.6212052813442365,
-                                        -0.2290265978320395,
-                                        -0.5101405083352206,
-                                        0.,
-                                        0.,
-                                        0.,
-                                        0.,
-                                        0.,
-                                        0.};
+      0.007498790737048511,  -0.0029497082918209516, -0.005344282942348122,
+      -0.007498790737048388, 0.0029497082918209516,  0.005344282942348136,
+      0.004559426360630839,  -0.0008927886272257011, 0.000772240638534993,
+      -0.013613732160576542, 0.0046939098453736006,  -0.00808919320101087,
+      0.00850610749140186,   0.002414572951937019,   -0.0025239407162902434,
+      0.0005481983085438703, -0.006215694170084938,  0.009840893278766116};
+  std::vector<VALUETYPE> expected_fm = {0.37353304043388436,
+                                        0.05637553704723096,
+                                        0.08431875213543884,
+                                        0.0,
+                                        0.0,
+                                        0.0,
+                                        0.0,
+                                        0.0,
+                                        0.0,
+                                        0.13339419484030146,
+                                        0.09477549998456825,
+                                        0.11301714217596977,
+                                        0.0,
+                                        0.0,
+                                        0.0,
+                                        0.0,
+                                        0.0,
+                                        0.0};
+  std::vector<VALUETYPE> expected_tot_v = {
+      -0.006855934251658762, -0.00491299773599024,  0.001790727101442579,
+      -0.004700307257262127, -0.001921876254115465, 0.00522933533951051,
+      0.002220184013052337,  0.005305572188769711,  -0.0015617293208553679};
+  std::vector<VALUETYPE> expected_atom_v = {
+      0.00223849,  -0.00093775, -0.00169399, -0.00058709, 0.00024594,
+      0.00044429,  -0.00108942, 0.00045638,  0.00082442,  0.00331061,
+      -0.00138688, -0.00250533, -0.00159569, 0.00066847,  0.00120755,
+      -0.00286535, 0.00120035,  0.00216838,  -0.00726106, 0.00110669,
+      -0.0011729,  0.00151598,  -0.00037897, 0.0004289,   -0.00116555,
+      0.00041409,  -0.00051682, 0.00734061,  0.00124985,  -0.00139847,
+      0.00025622,  0.00238308,  -0.00372649, -0.00155401, -0.00312998,
+      0.00476667,  -0.00909511, -0.00319323, 0.00524226,  -0.00252116,
+      -0.00193343, 0.00250048,  0.00436096,  0.00167675,  -0.00186338,
+      -0.00338948, -0.00175168, 0.00331916,  -0.00176855, -0.00290696,
+      0.0043746,   0.00453355,  0.00468798,  -0.00694099};
 
   int natoms;
   double expected_tot_e;
-  // std::vector<VALUETYPE> expected_tot_v;
 
   deepmd::DeepSpin dp;
 
@@ -259,18 +285,12 @@ class TestInferDeepSpinDpaPtNopbc : public ::testing::Test {
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
     EXPECT_EQ(natoms * 3, expected_fm.size());
-    // EXPECT_EQ(natoms * 9, expected_v.size());
+    EXPECT_EQ(9, expected_tot_v.size());
+    EXPECT_EQ(natoms * 9, expected_atom_v.size());
     expected_tot_e = 0.;
-    // expected_tot_v.resize(9);
-    // std::fill(expected_tot_v.begin(), expected_tot_v.end(), 0.);
     for (int ii = 0; ii < natoms; ++ii) {
       expected_tot_e += expected_e[ii];
     }
-    // for (int ii = 0; ii < natoms; ++ii) {
-    //   for (int dd = 0; dd < 9; ++dd) {
-    //     expected_tot_v[dd] += expected_v[ii * 9 + dd];
-    //   }
-    // }
   };
 
   void TearDown() override {};
@@ -287,10 +307,9 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_build_nlist) {
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_fm = this->expected_fm;
-  // std::vector<VALUETYPE>& expected_v = this->expected_v;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
-  // std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial;
@@ -298,16 +317,16 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_build_nlist) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  // EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(virial.size(), 9);
 
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
   for (int ii = 0; ii < natoms * 3; ++ii) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < 3 * 3; ++ii) {
-  //   EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-  // }
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
 }
 
 TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_build_nlist_atomic) {
@@ -319,10 +338,10 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_build_nlist_atomic) {
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_fm = this->expected_fm;
-  // std::vector<VALUETYPE>& expected_v = this->expected_v;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  std::vector<VALUETYPE>& expected_atom_v = this->expected_atom_v;
   int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
-  // std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial, atom_ener, atom_vir;
@@ -331,24 +350,23 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_build_nlist_atomic) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  // EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(virial.size(), 9);
   EXPECT_EQ(atom_ener.size(), natoms);
-  // EXPECT_EQ(atom_vir.size(), natoms * 9);
 
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
   for (int ii = 0; ii < natoms * 3; ++ii) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < 3 * 3; ++ii) {
-  //   EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-  // }
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
   for (int ii = 0; ii < natoms; ++ii) {
     EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < natoms * 9; ++ii) {
-  //   EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
-  // }
+  for (int ii = 0; ii < natoms * 9; ++ii) {
+    EXPECT_LT(fabs(atom_vir[ii] - expected_atom_v[ii]), EPSILON);
+  }
 }
 
 TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_lmp_nlist) {
@@ -360,10 +378,9 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_lmp_nlist) {
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_fm = this->expected_fm;
-  // std::vector<VALUETYPE>& expected_v = this->expected_v;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
-  // std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial;
@@ -380,16 +397,16 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_lmp_nlist) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  // EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(virial.size(), 9);
 
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
   for (int ii = 0; ii < natoms * 3; ++ii) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < 3 * 3; ++ii) {
-  //   EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-  // }
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
 }
 
 TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_lmp_nlist_atomic) {
@@ -401,10 +418,10 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_lmp_nlist_atomic) {
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_fm = this->expected_fm;
-  // std::vector<VALUETYPE>& expected_v = this->expected_v;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  std::vector<VALUETYPE>& expected_atom_v = this->expected_atom_v;
   int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
-  // std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial, atom_ener, atom_vir;
@@ -421,22 +438,21 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_lmp_nlist_atomic) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  // EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(virial.size(), 9);
   EXPECT_EQ(atom_ener.size(), natoms);
-  // EXPECT_EQ(atom_vir.size(), natoms * 9);
 
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
   for (int ii = 0; ii < natoms * 3; ++ii) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < 3 * 3; ++ii) {
-  //   EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-  // }
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
   for (int ii = 0; ii < natoms; ++ii) {
     EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < natoms * 9; ++ii) {
-  //   EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
-  // }
+  for (int ii = 0; ii < natoms * 9; ++ii) {
+    EXPECT_LT(fabs(atom_vir[ii] - expected_atom_v[ii]), EPSILON);
+  }
 }
