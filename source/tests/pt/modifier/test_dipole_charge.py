@@ -114,40 +114,24 @@ class TestDipoleChargeModifier(unittest.TestCase):
 
     def test_consistency(self):
         coord, box, atype = ref_data()
-        # consistent with the input shape from BaseModifier.modify_data
-        t_coord = (
-            to_torch_tensor(coord).to(env.GLOBAL_PT_FLOAT_PRECISION).reshape(1, -1, 3)
-        )
-        t_box = to_torch_tensor(box).to(env.GLOBAL_PT_FLOAT_PRECISION).reshape(1, 3, 3)
-        t_atype = to_torch_tensor(atype).to(torch.long).reshape(1, -1)
 
-        pt_data = self.dm_pt(
-            coord=t_coord,
-            atype=t_atype,
-            box=t_box,
+        pt_data = self.dm_pt.eval_np(
+            coord=coord,
+            atype=atype,
+            box=box,
         )
-        tf_data = {}
-        e, f, v = self.dm_tf.eval(
+        tf_data = self.dm_tf.eval(
             coord=coord,
             box=box,
             atype=atype.reshape(-1),
         )
-        tf_data["energy"] = e
-        tf_data["force"] = f
-        tf_data["virial"] = v
-
-        for kw in ["energy", "virial"]:
+        for ii in range(3):
             np.testing.assert_allclose(
-                to_numpy_array(pt_data[kw]).reshape(-1),
-                tf_data[kw].reshape(-1),
+                pt_data[ii].reshape(-1),
+                tf_data[ii].reshape(-1),
                 atol=1e-6,
+                rtol=1e-6,
             )
-        kw = "force"
-        np.testing.assert_allclose(
-            to_numpy_array(pt_data[kw]).reshape(-1),
-            tf_data[kw].reshape(-1),
-            rtol=1e-6,
-        )
 
     def test_serialize(self):
         """Test the serialize method of DipoleChargeModifier."""

@@ -4,7 +4,7 @@
 **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
 :::
 
-Notice: **The interfaces of DPLR are not stable and subject to change. In addition, DP/LAMMPS interface does not yet support PyTorch DPLR models. Use `dp convert-backend` to convert your model to TensorFlow backend for LAMMPS simulations (see [details](#model-conversion)).**
+Notice: **The interfaces of DPLR are not stable and subject to change. In addition, DP/LAMMPS interface does not yet support PyTorch DPLR models.**
 
 The method of DPLR is described in [this paper][1]. One is recommended to read the paper before using the DPLR.
 
@@ -265,43 +265,5 @@ If LAMMPS complains that no model file `ener.pb` exists, it can be copied from t
 The MD simulation lasts for only 20 steps. If one runs a longer simulation, it will blow up, because the model is trained with a very limited dataset for very short training steps, thus is of poor quality.
 
 Another restriction that should be noted is that the energies printed at the zero steps are not correct. This is because at the zero steps the position of the WC has not been updated with the DW model. The energies printed in later steps are correct.
-
-## Model conversion
-
-### Converting from PyTorch to TensorFlow
-
-To use DPLR models with LAMMPS, you need to convert them from PyTorch to TensorFlow backend. The conversion process involves the following steps:
-
-1. **Convert the Deep Wannier (DW) model:**
-
-   ```bash
-    dp convert-backend dw_model.pth dw_model.pb
-   ```
-
-   This converts the PyTorch DW model (`.pth` file) to TensorFlow format (`.pb` file).
-
-2. **Convert the DPLR energy model:**
-
-   ```bash
-    dp convert-backend dplr_energy_model.pth dplr_energy_model.pb
-   ```
-
-   This converts the PyTorch DPLR energy model (short-range contribution) to TensorFlow backend.
-
-3. **Combine the models using TensorFlow training:**
-   ```bash
-   dp --tf train input.json --init-frz-model dplr_energy_model.pb
-   ```
-   Run TensorFlow training with the DPLR TensorFlow setup, setting the training steps to 0 to combine the models without additional training:
-   ```json
-   {
-     "training": {
-       "numb_steps": 0,
-       ...
-     }
-   }
-   ```
-
-This process ensures that both the DW model and the DPLR energy model are properly converted and combined for use with LAMMPS simulations.
 
 [1]: https://arxiv.org/abs/2112.13327
