@@ -337,12 +337,17 @@ class Node:
         return cls("ListNode", children, data, variables)
 
     def __str__(self) -> str:
+        elbow = "└──"
+        pipe = "│  "
+        tee = "├──"
+        blank = "   "
+        linebreak = "\n"
         buff = []
         buff.append(f"{self.name} (size={format_big_number(self.size)})")
         children_buff = []
-        for kk, vv in self.children.items():
+        for ii, (kk, vv) in enumerate(self.children.items()):
             # add indentation
-            child_repr = str(vv).replace("\n", "\n  ")
+            child_repr = str(vv)
             if len(children_buff) > 0:
                 # check if it is the same as the last one
                 last_repr = children_buff[-1][1]
@@ -360,5 +365,13 @@ class Node:
                     return f"[{keys[0]}...{keys[-1]}]"
             return kk
 
-        buff.extend(f"  {format_list_keys(kk)} -> {vv}" for kk, vv in children_buff)
+        buff.extend(
+            f"{tee if ii < len(children_buff) - 1 else elbow}{format_list_keys(kk)} -> {
+                vv.replace(
+                    linebreak,
+                    linebreak + (pipe if ii < len(children_buff) - 1 else blank),
+                )
+            }"
+            for ii, (kk, vv) in enumerate(children_buff)
+        )
         return "\n".join(buff)

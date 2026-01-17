@@ -312,8 +312,8 @@ class TestSaveLoadDPModel(unittest.TestCase):
     def test_node_display(self):
         disp_expected = textwrap.dedent("""\
             some_class some_type (size=18)
-              layers -> ListNode (size=18)
-                0, 1 -> Node (size=9)""")
+            └──layers -> ListNode (size=18)
+               └──0, 1 -> Node (size=9)""")
         disp = str(Node.deserialize(self.model_dict))
         self.assertEqual(disp, disp_expected)
 
