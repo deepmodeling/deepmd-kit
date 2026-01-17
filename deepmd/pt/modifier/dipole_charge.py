@@ -44,7 +44,6 @@ class DipoleChargeModifier(BaseModifier):
             Splitting parameter of the Ewald sum. Unit: A^{-1}
     """
 
-
     def __init__(
         self,
         model_name: str | None,
@@ -224,7 +223,9 @@ class DipoleChargeModifier(BaseModifier):
         chunk_charge = torch.split(
             extended_charge.reshape(nframes, -1), self.dp_batch_size, dim=0
         )
-        for _coord, _box, _charge in zip(chunk_coord, chunk_box, chunk_charge, strict=True):
+        for _coord, _box, _charge in zip(
+            chunk_coord, chunk_box, chunk_charge, strict=True
+        ):
             self.er(
                 _coord,
                 _box,
@@ -244,9 +245,7 @@ class DipoleChargeModifier(BaseModifier):
         tot_v = calc_grads(tot_e, input_box)
         tot_v = torch.reshape(tot_v, (nframes, 3, 3))
         # nframe, 3, 3
-        tot_v = -torch.matmul(
-            tot_v.transpose(2, 1), input_box.reshape(nframes, 3, 3)
-        )
+        tot_v = -torch.matmul(tot_v.transpose(2, 1), input_box.reshape(nframes, 3, 3))
 
         modifier_pred["energy"] = tot_e
         modifier_pred["force"] = tot_f
