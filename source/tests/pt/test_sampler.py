@@ -440,8 +440,6 @@ class TestSampler(unittest.TestCase):
         sampler_2 = pt_dataloader.get_sampler_from_params(
             dataset_2, {"sys_probs": [0.4, 0.6], "auto_prob": "prob_sys_size"}
         )
-        probs_1 = self._normalize_probs(np.asarray(sampler_1.weights))
-        probs_2 = self._normalize_probs(np.asarray(sampler_2.weights))
 
         # === Step 2. Compute per-task total_numb_batch ===
         per_task_total = np.array(
