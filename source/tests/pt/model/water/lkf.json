@@ -42,6 +42,11 @@
     "stop_lr": 3.51e-8,
     "_comment": "that's all"
   },
+  "optimizer": {
+    "type": "LKF",
+    "kf_blocksize": 1024,
+    "_comment": "that's all"
+  },
   "loss": {
     "type": "ener",
     "start_pref_e": 0.02,
@@ -71,8 +76,6 @@
     "disp_file": "lcurve.out",
     "disp_freq": 1,
     "save_freq": 1,
-    "opt_type": "LKF",
-    "kf_blocksize": 1024,
     "_comment": "that's all"
   },
   "_comment": "that's all"

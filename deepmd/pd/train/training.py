@@ -151,6 +151,8 @@ class Trainer:
 
         def get_opt_param(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
             opt_type = params.get("type", "Adam")
+            if opt_type != "Adam":
+                raise ValueError(f"Not supported optimizer type '{opt_type}'")
             opt_param = {
                 "kf_blocksize": params.get("kf_blocksize", 5120),
                 "kf_start_pref_e": params.get("kf_start_pref_e", 1),
