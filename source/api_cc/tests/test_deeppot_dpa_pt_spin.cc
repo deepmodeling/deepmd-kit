@@ -113,6 +113,7 @@ class TestInferDeepSpinDpaPt : public ::testing::Test {
     EXPECT_EQ(natoms * 3, expected_f.size());
     EXPECT_EQ(natoms * 3, expected_fm.size());
     EXPECT_EQ(9, expected_tot_v.size());
+    EXPECT_EQ(natoms * 9, expected_atom_v.size());
     expected_tot_e = 0.;
     for (int ii = 0; ii < natoms; ++ii) {
       expected_tot_e += expected_e[ii];
