@@ -125,12 +125,14 @@ class TestDipoleChargeModifier(unittest.TestCase):
             box=box,
             atype=atype.reshape(-1),
         )
-        for ii in range(3):
+        output_names = ["energy", "force", "virial"]
+        for ii, name in enumerate(output_names):
             np.testing.assert_allclose(
                 pt_data[ii].reshape(-1),
                 tf_data[ii].reshape(-1),
                 atol=1e-6,
                 rtol=1e-6,
+                err_msg=f"Mismatch in {name}",
             )
 
     def test_serialize(self):
@@ -206,6 +208,11 @@ class TestDipoleChargeModifier(unittest.TestCase):
 
         trainer = get_trainer(config)
         trainer.run()
+        # Verify model checkpoint was created
+        self.assertTrue(
+            Path("model.ckpt.pt").exists(),
+            "Training should produce a model checkpoint",
+        )
 
     def tearDown(self) -> None:
         os.chdir(self.orig_dir)
