@@ -3648,10 +3648,19 @@ def training_args(
                     raise ValueError(
                         "training.num_epoch_dict is mutually exclusive with training.model_prob."
                     )
+            else:
+                if num_steps is None:
+                    raise ValueError(
+                        "Multi-task mode requires either training.numb_steps or training.num_epoch_dict."
+                    )
         else:
             if num_steps is not None and num_epoch is not None:
                 raise ValueError(
                     "training.num_step and training.num_epoch are mutually exclusive."
+                )
+            if num_steps is None and num_epoch is None:
+                raise ValueError(
+                    "Single-task mode requires either training.numb_steps or training.num_epoch."
                 )
         return True
 
