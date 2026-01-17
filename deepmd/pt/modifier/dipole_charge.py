@@ -44,10 +44,6 @@ class DipoleChargeModifier(BaseModifier):
             Splitting parameter of the Ewald sum. Unit: A^{-1}
     """
 
-    def __new__(
-        cls, *args: tuple, model_name: str | None = None, **kwargs: dict
-    ) -> "DipoleChargeModifier":
-        return super().__new__(cls, model_name)
 
     def __init__(
         self,
@@ -195,68 +191,67 @@ class DipoleChargeModifier(BaseModifier):
             raise RuntimeError(
                 "dipole_charge data modifier can only be applied for periodic systems."
             )
-        else:
-            modifier_pred = {}
-            nframes = coord.shape[0]
-            natoms = coord.shape[1]
+        modifier_pred = {}
+        nframes = coord.shape[0]
+        natoms = coord.shape[1]
 
-            input_box = box.reshape(nframes, 9)
-            input_box.requires_grad_(True)
+        input_box = box.reshape(nframes, 9)
+        input_box.requires_grad_(True)
 
-            detached_box = input_box.detach()
-            sfactor = torch.matmul(
-                torch.inverse(detached_box.reshape(nframes, 3, 3)),
-                input_box.reshape(nframes, 3, 3),
-            )
-            input_coord = torch.matmul(coord, sfactor).reshape(nframes, -1)
+        detached_box = input_box.detach()
+        sfactor = torch.matmul(
+            torch.inverse(detached_box.reshape(nframes, 3, 3)),
+            input_box.reshape(nframes, 3, 3),
+        )
+        input_coord = torch.matmul(coord, sfactor).reshape(nframes, -1)
 
-            extended_coord, extended_charge, _atomic_dipole = self.extend_system(
-                input_coord,
-                atype,
-                input_box,
-                fparam,
-                aparam,
-            )
+        extended_coord, extended_charge, _atomic_dipole = self.extend_system(
+            input_coord,
+            atype,
+            input_box,
+            fparam,
+            aparam,
+        )
 
-            # add Ewald reciprocal correction
-            tot_e: list[torch.Tensor] = []
-            chunk_coord = torch.split(
-                extended_coord.reshape(nframes, -1, 3), self.dp_batch_size, dim=0
+        # add Ewald reciprocal correction
+        tot_e: list[torch.Tensor] = []
+        chunk_coord = torch.split(
+            extended_coord.reshape(nframes, -1, 3), self.dp_batch_size, dim=0
+        )
+        chunk_box = torch.split(
+            input_box.reshape(nframes, 3, 3), self.dp_batch_size, dim=0
+        )
+        chunk_charge = torch.split(
+            extended_charge.reshape(nframes, -1), self.dp_batch_size, dim=0
+        )
+        for _coord, _box, _charge in zip(chunk_coord, chunk_box, chunk_charge, strict=True):
+            self.er(
+                _coord,
+                _box,
+                self.placeholder_pairs,
+                self.placeholder_ds,
+                self.placeholder_buffer_scales,
+                {"charge": _charge},
             )
-            chunk_box = torch.split(
-                input_box.reshape(nframes, 3, 3), self.dp_batch_size, dim=0
-            )
-            chunk_charge = torch.split(
-                extended_charge.reshape(nframes, -1), self.dp_batch_size, dim=0
-            )
-            for _coord, _box, _charge in zip(chunk_coord, chunk_box, chunk_charge):
-                self.er(
-                    _coord,
-                    _box,
-                    self.placeholder_pairs,
-                    self.placeholder_ds,
-                    self.placeholder_buffer_scales,
-                    {"charge": _charge},
-                )
-                tot_e.append(self.er.reciprocal_energy.unsqueeze(0))
-            # nframe,
-            tot_e = torch.concat(tot_e, dim=0)
-            # nframe, nat * 3
-            tot_f = -calc_grads(tot_e, input_coord)
-            # nframe, nat, 3
-            tot_f = torch.reshape(tot_f, (nframes, natoms, 3))
-            # nframe, 9
-            tot_v = calc_grads(tot_e, input_box)
-            tot_v = torch.reshape(tot_v, (nframes, 3, 3))
-            # nframe, 3, 3
-            tot_v = -torch.matmul(
-                tot_v.transpose(2, 1), input_box.reshape(nframes, 3, 3)
-            )
+            tot_e.append(self.er.reciprocal_energy.unsqueeze(0))
+        # nframe,
+        tot_e = torch.concat(tot_e, dim=0)
+        # nframe, nat * 3
+        tot_f = -calc_grads(tot_e, input_coord)
+        # nframe, nat, 3
+        tot_f = torch.reshape(tot_f, (nframes, natoms, 3))
+        # nframe, 9
+        tot_v = calc_grads(tot_e, input_box)
+        tot_v = torch.reshape(tot_v, (nframes, 3, 3))
+        # nframe, 3, 3
+        tot_v = -torch.matmul(
+            tot_v.transpose(2, 1), input_box.reshape(nframes, 3, 3)
+        )
 
-            modifier_pred["energy"] = tot_e
-            modifier_pred["force"] = tot_f
-            modifier_pred["virial"] = tot_v
-            return modifier_pred
+        modifier_pred["energy"] = tot_e
+        modifier_pred["force"] = tot_f
+        modifier_pred["virial"] = tot_v
+        return modifier_pred
 
     def extend_system(
         self,
@@ -368,7 +363,7 @@ class DipoleChargeModifier(BaseModifier):
             else chunk_atype
         )
         for _coord, _atype, _box, _fparam, _aparam in zip(
-            chunk_coord, chunk_atype, chunk_box, chunk_fparam, chunk_aparam
+            chunk_coord, chunk_atype, chunk_box, chunk_fparam, chunk_aparam, strict=True
         ):
             dipole_batch = self.model(
                 coord=_coord,
