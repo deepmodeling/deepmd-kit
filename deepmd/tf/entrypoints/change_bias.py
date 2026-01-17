@@ -199,6 +199,12 @@ def _change_bias_checkpoint_file(
     if stop_batch is None and num_epoch is not None:
         if num_epoch <= 0:
             raise ValueError("training.num_epoch must be positive.")
+        # Apply sys_probs and auto_prob from original training config
+        # to ensure stop_batch calculation matches the original training
+        training_data_config = training_params.get("training_data", {})
+        sys_probs = training_data_config.get("sys_probs", None)
+        auto_prob = training_data_config.get("auto_prob", "prob_sys_size")
+        data.set_sys_probs(sys_probs=sys_probs, auto_prob_style=auto_prob)
         total_numb_batch = compute_total_numb_batch(data.nbatches, data.sys_probs)
         if total_numb_batch <= 0:
             raise ValueError("Total number of training batches must be positive.")
