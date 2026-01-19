@@ -365,14 +365,14 @@ class Node:
                     return f"[{keys[0]}...{keys[-1]}]"
             return kk
 
-        def format_value(vv: str) -> str:
+        def format_value(vv: str, current_index: int) -> str:
             return vv.replace(
                 linebreak,
-                linebreak + (pipe if ii < len(children_buff) - 1 else blank),
+                linebreak + (pipe if current_index < len(children_buff) - 1 else blank),
             )
 
         buff.extend(
-            f"{tee if ii < len(children_buff) - 1 else elbow}{format_list_keys(kk)} -> {format_value(vv)}"
+            f"{tee if ii < len(children_buff) - 1 else elbow}{format_list_keys(kk)} -> {format_value(vv, ii)}"
             for ii, (kk, vv) in enumerate(children_buff)
         )
         return "\n".join(buff)
