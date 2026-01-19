@@ -234,7 +234,7 @@ class Node:
         """
         total_size = 0
 
-        def count_variables(x: Any) -> None:
+        def count_variables(x: Any) -> Any:
             nonlocal total_size
             if isinstance(x, np.ndarray):
                 total_size += x.size
