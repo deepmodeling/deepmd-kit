@@ -206,7 +206,7 @@ class Node:
 
     Examples
     --------
-    >>> model_dict = load_dp_model("omol.dp")
+    >>> model_dict = load_dp_model("model.dp")  # Example filename
     >>> root_node = Node.deserialize(model_dict["model"])
     >>> print(root_node)
     """
