@@ -29,7 +29,7 @@ repos:
         exclude: ^source/3rdparty
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.14.11
+    rev: v0.14.13
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -104,7 +104,7 @@ repos:
           - --wrap=80
   # license header
   - repo: https://github.com/Lucas-C/pre-commit-hooks
-    rev: v1.5.5
+    rev: v1.5.6
     hooks:
       # C++, js
       - id: insert-license
