@@ -57,12 +57,15 @@ if INSTALLED_ARRAY_API_STRICT:
 
 
 @parameterized(
-    (False, True),  # use_huber
+    (False, False),  # huber, enable_atom_ener_coeff
+    (True, False),
+    (False, True),
+    (True, True),
 )
 class TestEner(CommonTest, LossTest, unittest.TestCase):
     @property
     def data(self) -> dict:
-        (use_huber,) = self.param
+        (use_huber, enable_atom_ener_coeff) = self.param
         return {
             "start_pref_e": 0.02,
             "limit_pref_e": 1.0,
@@ -75,6 +78,7 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             "start_pref_pf": 1.0 if not use_huber else 0.0,
             "limit_pref_pf": 1.0 if not use_huber else 0.0,
             "use_huber": use_huber,
+            "enable_atom_ener_coeff": enable_atom_ener_coeff,
         }
 
     skip_tf = CommonTest.skip_tf
@@ -124,11 +128,13 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
                     self.natoms,
                 )
             ),
+            "atom_ener_coeff": rng.random((self.nframes, self.natoms)),
             "atom_pref": np.ones((self.nframes, self.natoms, 3)),
             "find_energy": 1.0,
             "find_force": 1.0,
             "find_virial": 1.0,
             "find_atom_ener": 1.0,
+            "find_atom_ener_coeff": 1.0,
             "find_atom_pref": 1.0,
         }
 
