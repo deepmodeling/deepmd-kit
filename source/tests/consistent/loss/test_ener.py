@@ -57,10 +57,8 @@ if INSTALLED_ARRAY_API_STRICT:
 
 
 @parameterized(
-    (False, False),  # huber, enable_atom_ener_coeff
-    (True, False),
-    (False, True),
-    (True, True),
+    (False, True),  # huber
+    (False, True),  # enable_atom_ener_coeff
 )
 class TestEner(CommonTest, LossTest, unittest.TestCase):
     @property
