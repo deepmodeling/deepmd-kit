@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
 import os
+import textwrap
 import unittest
 from copy import (
     deepcopy,
@@ -19,6 +20,9 @@ from deepmd.dpmodel.utils import (
     NetworkCollection,
     load_dp_model,
     save_dp_model,
+)
+from deepmd.dpmodel.utils.serialization import (
+    Node,
 )
 
 
@@ -273,6 +277,7 @@ class TestSaveLoadDPModel(unittest.TestCase):
         self.w = np.full((3, 2), 3.0)
         self.b = np.full((3,), 4.0)
         self.model_dict = {
+            "@class": "some_class",
             "type": "some_type",
             "layers": [
                 {
@@ -303,6 +308,14 @@ class TestSaveLoadDPModel(unittest.TestCase):
         np.testing.assert_equal(model["model"], self.model_dict)
         assert "software" in model
         assert "version" in model
+
+    def test_node_display(self):
+        disp_expected = textwrap.dedent("""\
+            some_class some_type (size=18)
+            └──layers -> ListNode (size=18)
+               └──0, 1 -> Node (size=9)""")
+        disp = str(Node.deserialize(self.model_dict))
+        self.assertEqual(disp, disp_expected)
 
     def tearDown(self) -> None:
         if os.path.exists(self.filename):
