@@ -3,9 +3,6 @@ import re
 from abc import (
     abstractmethod,
 )
-from typing import (
-    Optional,
-)
 
 from deepmd.common import (
     j_get_type,
@@ -134,8 +131,8 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
         activation_function: str,
         resnet_dt: bool,
         variables: dict,
-        out_dim: Optional[int] = 1,
-        trainable: Optional[list[bool]] = None,
+        out_dim: int | None = 1,
+        trainable: list[bool] | None = None,
         suffix: str = "",
     ) -> dict:
         """Serialize network.

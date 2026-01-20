@@ -2,8 +2,6 @@
 from typing import (
     Any,
     Final,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -47,7 +45,7 @@ class SimpleLinear(nn.Module):
         bavg: float = 0.0,
         stddev: float = 1.0,
         use_timestep: bool = False,
-        activate: Optional[str] = None,
+        activate: str | None = None,
         bias: bool = True,
     ) -> None:
         """Construct a linear layer.
@@ -150,7 +148,7 @@ class NonLinearHead(nn.Module):
         input_dim: int,
         out_dim: int,
         activation_fn: str,
-        hidden: Optional[int] = None,
+        hidden: int | None = None,
     ) -> None:
         super().__init__()
         hidden = input_dim if not hidden else hidden
@@ -171,7 +169,7 @@ class MaskLMHead(nn.Module):
         embed_dim: int,
         output_dim: int,
         activation_fn: str,
-        weight: Optional[torch.Tensor] = None,
+        weight: torch.Tensor | None = None,
     ) -> None:
         super().__init__()
         self.dense = SimpleLinear(embed_dim, embed_dim)
@@ -190,7 +188,7 @@ class MaskLMHead(nn.Module):
     def forward(
         self,
         features: torch.Tensor,
-        masked_tokens: Optional[torch.Tensor] = None,
+        masked_tokens: torch.Tensor | None = None,
         **kwargs: Any,
     ) -> torch.Tensor:
         # Only project the masked tokens while training,
@@ -273,10 +271,10 @@ class TypeEmbedNet(nn.Module):
         bavg: float = 0.0,
         stddev: float = 1.0,
         precision: str = "default",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[list[str]] = None,
+        type_map: list[str] | None = None,
         trainable: bool = True,
     ) -> None:
         """Construct a type embedding net."""
@@ -350,7 +348,7 @@ class TypeEmbedNet(nn.Module):
             raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -396,11 +394,11 @@ class TypeEmbedNetConsistent(nn.Module):
         activation_function: str = "tanh",
         precision: str = "default",
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         padding: bool = False,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[list[str]] = None,
+        type_map: list[str] | None = None,
     ) -> None:
         """Construct a type embedding net."""
         super().__init__()
@@ -457,7 +455,7 @@ class TypeEmbedNetConsistent(nn.Module):
         return embed
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.

@@ -3,8 +3,6 @@ import math
 from typing import (
     Any,
     NoReturn,
-    Optional,
-    Union,
 )
 
 import array_api_compat
@@ -46,9 +44,9 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
 
     def __init__(
         self,
-        list: list[Union[BaseDescriptor, dict[str, Any]]],
-        type_map: Optional[list[str]] = None,
-        ntypes: Optional[int] = None,  # to be compat with input
+        list: list[BaseDescriptor | dict[str, Any]],
+        type_map: list[str] | None = None,
+        ntypes: int | None = None,  # to be compat with input
     ) -> None:
         super().__init__()
         # warning: list is conflict with built-in list
@@ -103,7 +101,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             start_idx = np.cumsum(np.pad(hybrid_sel, (1, 0), "constant"))[:-1]
             end_idx = start_idx + np.array(sub_sel)
             cut_idx = np.concatenate(
-                [range(ss, ee) for ss, ee in zip(start_idx, end_idx)]
+                [range(ss, ee) for ss, ee in zip(start_idx, end_idx, strict=True)]
             )
             nlist_cut_idx.append(cut_idx)
         self.nlist_cut_idx = nlist_cut_idx
@@ -196,7 +194,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             )
 
     def compute_input_stats(
-        self, merged: list[dict], path: Optional[DPPath] = None
+        self, merged: list[dict], path: DPPath | None = None
     ) -> None:
         """Update mean and stddev for descriptor elements."""
         for descrpt in self.descrpt_list:
@@ -204,8 +202,8 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: list[Union[np.ndarray, list[Array]]],
-        stddev: list[Union[np.ndarray, list[Array]]],
+        mean: list[np.ndarray | list[Array]],
+        stddev: list[np.ndarray | list[Array]],
     ) -> None:
         """Update mean and stddev for descriptor."""
         for ii, descrpt in enumerate(self.descrpt_list):
@@ -214,8 +212,8 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
     def get_stat_mean_and_stddev(
         self,
     ) -> tuple[
-        list[Union[Array, list[Array]]],
-        list[Union[Array, list[Array]]],
+        list[Array | list[Array]],
+        list[Array | list[Array]],
     ]:
         """Get mean and stddev for descriptor."""
         mean_list = []
@@ -263,13 +261,13 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         coord_ext: Array,
         atype_ext: Array,
         nlist: Array,
-        mapping: Optional[Array] = None,
+        mapping: Array | None = None,
     ) -> tuple[
         Array,
-        Optional[Array],
-        Optional[Array],
-        Optional[Array],
-        Optional[Array],
+        Array | None,
+        Array | None,
+        Array | None,
+        Array | None,
     ]:
         """Compute the descriptor.
 
@@ -312,7 +310,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             )
         else:
             nl_distinguish_types = None
-        for descrpt, nci in zip(self.descrpt_list, self.nlist_cut_idx):
+        for descrpt, nci in zip(self.descrpt_list, self.nlist_cut_idx, strict=True):
             # cut the nlist to the correct length
             if self.mixed_types() == descrpt.mixed_types():
                 nl = xp.take(nlist, nci, axis=2)
@@ -333,7 +331,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
     ) -> tuple[Array, Array]:
         """Update the selection and perform neighbor statistics.

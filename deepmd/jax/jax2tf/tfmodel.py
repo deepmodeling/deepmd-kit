@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
 )
 
 import jax.experimental.jax2tf as jax2tf
@@ -70,14 +69,23 @@ class TFModelWrapper(tf.Module):
             self.min_nbor_dist = None
         self.sel = self.model.get_sel().numpy().tolist()
         self.model_def_script = self.model.get_model_def_script().numpy().decode()
+        if hasattr(self.model, "has_default_fparam"):
+            # No attrs before v3.1.2
+            self._has_default_fparam = self.model.has_default_fparam().numpy().item()
+        else:
+            self._has_default_fparam = False
+        if hasattr(self.model, "get_default_fparam"):
+            self.default_fparam = self.model.get_default_fparam().numpy().tolist()
+        else:
+            self.default_fparam = None
 
     def __call__(
         self,
         coord: jnp.ndarray,
         atype: jnp.ndarray,
-        box: Optional[jnp.ndarray] = None,
-        fparam: Optional[jnp.ndarray] = None,
-        aparam: Optional[jnp.ndarray] = None,
+        box: jnp.ndarray | None = None,
+        fparam: jnp.ndarray | None = None,
+        aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
     ) -> Any:
         """Return model prediction.
@@ -111,9 +119,9 @@ class TFModelWrapper(tf.Module):
         self,
         coord: jnp.ndarray,
         atype: jnp.ndarray,
-        box: Optional[jnp.ndarray] = None,
-        fparam: Optional[jnp.ndarray] = None,
-        aparam: Optional[jnp.ndarray] = None,
+        box: jnp.ndarray | None = None,
+        fparam: jnp.ndarray | None = None,
+        aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, jnp.ndarray]:
         """Return model prediction.
@@ -175,9 +183,9 @@ class TFModelWrapper(tf.Module):
         extended_coord: jnp.ndarray,
         extended_atype: jnp.ndarray,
         nlist: jnp.ndarray,
-        mapping: Optional[jnp.ndarray] = None,
-        fparam: Optional[jnp.ndarray] = None,
-        aparam: Optional[jnp.ndarray] = None,
+        mapping: jnp.ndarray | None = None,
+        fparam: jnp.ndarray | None = None,
+        aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, jnp.ndarray]:
         if do_atomic_virial:
@@ -269,7 +277,7 @@ class TFModelWrapper(tf.Module):
         """Get the model definition script."""
         return self.model_def_script
 
-    def get_min_nbor_dist(self) -> Optional[float]:
+    def get_min_nbor_dist(self) -> float | None:
         """Get the minimum distance between two atoms."""
         return self.min_nbor_dist
 
@@ -291,9 +299,9 @@ class TFModelWrapper(tf.Module):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -332,3 +340,11 @@ class TFModelWrapper(tf.Module):
             The model
         """
         raise NotImplementedError("Not implemented")
+
+    def has_default_fparam(self) -> bool:
+        """Check whether the model has default frame parameters."""
+        return self._has_default_fparam
+
+    def get_default_fparam(self) -> list[float] | None:
+        """Get the default frame parameters."""
+        return self.default_fparam

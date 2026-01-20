@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
+from collections.abc import (
+    Callable,
+)
 from copy import (
     deepcopy,
 )
 from typing import (
     Any,
-    Callable,
-    Optional,
 )
 
 import torch
@@ -70,8 +71,8 @@ class SpinModel(torch.nn.Module):
         extended_atype: torch.Tensor,
         extended_spin: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+        mapping: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
         """
         Add `extended_spin` into `extended_coord` to generate virtual atoms, and extend `nlist` and `mapping`.
         Note that the final `extended_coord_updated` with shape [nframes, nall + nall, 3] has the following order:
@@ -293,7 +294,7 @@ class SpinModel(torch.nn.Module):
         return self.backbone_model.get_model_def_script()
 
     @torch.jit.export
-    def get_min_nbor_dist(self) -> Optional[float]:
+    def get_min_nbor_dist(self) -> float | None:
         """Get the minimum neighbor distance."""
         return self.backbone_model.get_min_nbor_dist()
 
@@ -352,7 +353,7 @@ class SpinModel(torch.nn.Module):
     def compute_or_load_stat(
         self,
         sampled_func: Callable[[], list[dict[str, Any]]],
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: DPPath | None = None,
     ) -> None:
         """
         Compute or load the statistics parameters of the model,
@@ -400,9 +401,9 @@ class SpinModel(torch.nn.Module):
         coord: torch.Tensor,
         atype: torch.Tensor,
         spin: torch.Tensor,
-        box: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
         nframes, nloc = atype.shape
@@ -449,11 +450,11 @@ class SpinModel(torch.nn.Module):
         extended_atype: torch.Tensor,
         extended_spin: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
         extra_nlist_sort: bool = False,
     ) -> dict[str, torch.Tensor]:
         nframes, nloc = nlist.shape[:2]
@@ -556,9 +557,9 @@ class SpinEnergyModel(SpinModel):
         coord: torch.Tensor,
         atype: torch.Tensor,
         spin: torch.Tensor,
-        box: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common(
@@ -587,11 +588,11 @@ class SpinEnergyModel(SpinModel):
         extended_atype: torch.Tensor,
         extended_spin: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,

@@ -41,6 +41,7 @@ def get_activation_function(functype: int):
 
 
 def setUpModule() -> None:
+    tf.reset_default_graph()
     tf.compat.v1.enable_eager_execution()
 
 

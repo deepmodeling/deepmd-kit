@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from collections.abc import (
+    Callable,
     Generator,
 )
 from typing import (
     Any,
-    Callable,
-    Optional,
 )
 
 from deepmd.tf.env import (
@@ -46,8 +45,8 @@ class ParallelOp:
     def __init__(
         self,
         builder: Callable[..., tuple[dict[str, tf.Tensor], tuple[tf.Tensor]]],
-        nthreads: Optional[int] = None,
-        config: Optional[tf.ConfigProto] = None,
+        nthreads: int | None = None,
+        config: tf.ConfigProto | None = None,
     ) -> None:
         if nthreads is not None:
             self.nthreads = nthreads

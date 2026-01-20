@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-)
 
 import numpy as np
 
@@ -190,7 +187,7 @@ class DescrptLocFrame(Descriptor):
             sumn = []
             sumv2 = []
             for cc, bb, tt, nn, mm in zip(
-                data_coord, data_box, data_atype, natoms_vec, mesh
+                data_coord, data_box, data_atype, natoms_vec, mesh, strict=True
             ):
                 sysv, sysv2, sysn = self._compute_dstats_sys_nonsmth(cc, bb, tt, nn, mm)
                 sumv.append(sysv)
@@ -218,7 +215,7 @@ class DescrptLocFrame(Descriptor):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -435,9 +432,9 @@ class DescrptLocFrame(Descriptor):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

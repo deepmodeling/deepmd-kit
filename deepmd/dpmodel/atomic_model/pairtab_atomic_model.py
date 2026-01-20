@@ -2,8 +2,6 @@
 from typing import (
     Any,
     NoReturn,
-    Optional,
-    Union,
 )
 
 import array_api_compat
@@ -64,10 +62,10 @@ class PairTabAtomicModel(BaseAtomicModel):
         self,
         tab_file: str,
         rcut: float,
-        sel: Union[int, list[int]],
+        sel: int | list[int],
         type_map: list[str],
-        rcond: Optional[float] = None,
-        atom_ener: Optional[list[float]] = None,
+        rcond: float | None = None,
+        atom_ener: list[float] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
@@ -204,9 +202,9 @@ class PairTabAtomicModel(BaseAtomicModel):
         extended_coord: Array,
         extended_atype: Array,
         nlist: Array,
-        mapping: Optional[Array] = None,
-        fparam: Optional[Array] = None,
-        aparam: Optional[Array] = None,
+        mapping: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
     ) -> dict[str, Array]:
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlist)
         nframes, nloc, nnei = nlist.shape

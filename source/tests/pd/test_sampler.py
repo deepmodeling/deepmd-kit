@@ -13,15 +13,15 @@ from paddle.io import (
     DataLoader,
 )
 
+from deepmd.common import (
+    expand_sys_str,
+)
 from deepmd.pd.utils.dataloader import (
     DpLoaderSet,
     get_weighted_sampler,
 )
-from deepmd.tf.common import (
-    expand_sys_str,
-)
 from deepmd.tf.utils import random as tf_random
-from deepmd.tf.utils.data_system import (
+from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
 
@@ -55,6 +55,7 @@ class TestSampler(unittest.TestCase):
         tf_random.seed(10)
         self.dp_dataset = DeepmdDataSystem(self.systems, self.batch_size, 1, self.rcut)
 
+    @unittest.skip("Temporarily skipped due to changes in numpy 2.4")
     def test_sampler_debug_info(self):
         dataloader = DataLoader(
             self.my_dataset,

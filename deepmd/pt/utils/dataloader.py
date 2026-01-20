@@ -6,8 +6,6 @@ from multiprocessing.dummy import (
 )
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import h5py
@@ -27,6 +25,9 @@ from torch.utils.data.distributed import (
     DistributedSampler,
 )
 
+from deepmd.pt.modifier import (
+    BaseModifier,
+)
 from deepmd.pt.utils import (
     dp_random,
     env,
@@ -50,7 +51,7 @@ log = logging.getLogger(__name__)
 torch.multiprocessing.set_sharing_strategy("file_system")
 
 
-def setup_seed(seed: Union[int, list[int], tuple[int, ...]]) -> None:
+def setup_seed(seed: int | list[int] | tuple[int, ...]) -> None:
     if isinstance(seed, (list, tuple)):
         mixed_seed = mix_entropy(seed)
     else:
@@ -80,11 +81,12 @@ class DpLoaderSet(Dataset):
 
     def __init__(
         self,
-        systems: Union[str, list[str]],
+        systems: str | list[str],
         batch_size: int,
-        type_map: Optional[list[str]],
-        seed: Optional[int] = None,
+        type_map: list[str] | None,
+        seed: int | None = None,
         shuffle: bool = True,
+        modifier: BaseModifier | None = None,
     ) -> None:
         if seed is not None:
             setup_seed(seed)
@@ -96,6 +98,7 @@ class DpLoaderSet(Dataset):
             return DeepmdDataSetForLoader(
                 system=system,
                 type_map=type_map,
+                modifier=modifier,
             )
 
         self.systems: list[DeepmdDataSetForLoader] = []
@@ -234,6 +237,10 @@ class DpLoaderSet(Dataset):
                 prob,
                 [ss._data_system.pbc for ss in self.systems],
             )
+
+    def preload_and_modify_all_data_torch(self) -> None:
+        for system in self.systems:
+            system.preload_and_modify_all_data_torch()
 
 
 def collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:

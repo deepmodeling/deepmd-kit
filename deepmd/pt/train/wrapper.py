@@ -2,8 +2,6 @@
 import logging
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import torch
@@ -18,10 +16,11 @@ log = logging.getLogger(__name__)
 class ModelWrapper(torch.nn.Module):
     def __init__(
         self,
-        model: Union[torch.nn.Module, dict],
-        loss: Union[torch.nn.Module, dict] = None,
-        model_params: Optional[dict[str, Any]] = None,
-        shared_links: Optional[dict[str, Any]] = None,
+        model: torch.nn.Module | dict,
+        loss: torch.nn.Module | dict = None,
+        model_params: dict[str, Any] | None = None,
+        shared_links: dict[str, Any] | None = None,
+        modifier: torch.nn.Module | None = None,
     ) -> None:
         """Construct a DeePMD model wrapper.
 
@@ -59,6 +58,8 @@ class ModelWrapper(torch.nn.Module):
                     )
                     self.loss[task_key] = loss[task_key]
         self.inference_only = self.loss is None
+        # Modifier
+        self.modifier = modifier
 
     def share_params(
         self,
@@ -155,15 +156,15 @@ class ModelWrapper(torch.nn.Module):
         self,
         coord: torch.Tensor,
         atype: torch.Tensor,
-        spin: Optional[torch.Tensor] = None,
-        box: Optional[torch.Tensor] = None,
-        cur_lr: Optional[torch.Tensor] = None,
-        label: Optional[torch.Tensor] = None,
-        task_key: Optional[torch.Tensor] = None,
+        spin: torch.Tensor | None = None,
+        box: torch.Tensor | None = None,
+        cur_lr: torch.Tensor | None = None,
+        label: torch.Tensor | None = None,
+        task_key: torch.Tensor | None = None,
         inference_only: bool = False,
         do_atomic_virial: bool = False,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
     ) -> tuple[Any, Any, Any]:
         if not self.multi_task:
             task_key = "Default"
@@ -187,6 +188,10 @@ class ModelWrapper(torch.nn.Module):
 
         if self.inference_only or inference_only:
             model_pred = self.model[task_key](**input_dict)
+            if self.modifier is not None:
+                modifier_pred = self.modifier(**input_dict)
+                for k, v in modifier_pred.items():
+                    model_pred[k] = model_pred[k] + v
             return model_pred, None, None
         else:
             natoms = atype.shape[-1]

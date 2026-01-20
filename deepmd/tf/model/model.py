@@ -9,8 +9,6 @@ from enum import (
 )
 from typing import (
     NoReturn,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -115,13 +113,13 @@ class Model(ABC, make_plugin_registry("model")):
 
     def __init__(
         self,
-        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[list[str]] = None,
+        type_embedding: dict | TypeEmbedNet | None = None,
+        type_map: list[str] | None = None,
         data_stat_nbatch: int = 10,
         data_bias_nsample: int = 10,
         data_stat_protect: float = 1e-2,
-        spin: Optional[Spin] = None,
-        compress: Optional[dict] = None,
+        spin: Spin | None = None,
+        compress: dict | None = None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -155,10 +153,10 @@ class Model(ABC, make_plugin_registry("model")):
         box: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        frz_model: Optional[str] = None,
-        ckpt_meta: Optional[str] = None,
+        frz_model: str | None = None,
+        ckpt_meta: str | None = None,
         suffix: str = "",
-        reuse: Optional[Union[bool, Enum]] = None,
+        reuse: bool | Enum | None = None,
     ):
         """Build the model.
 
@@ -223,10 +221,10 @@ class Model(ABC, make_plugin_registry("model")):
         box: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        frz_model: Optional[str] = None,
-        ckpt_meta: Optional[str] = None,
+        frz_model: str | None = None,
+        ckpt_meta: str | None = None,
         suffix: str = "",
-        reuse: Optional[Union[bool, Enum]] = None,
+        reuse: bool | Enum | None = None,
     ):
         """Build the descriptor part of the model.
 
@@ -311,10 +309,10 @@ class Model(ABC, make_plugin_registry("model")):
     def build_type_embedding(
         self,
         ntypes: int,
-        frz_model: Optional[str] = None,
-        ckpt_meta: Optional[str] = None,
+        frz_model: str | None = None,
+        ckpt_meta: str | None = None,
         suffix: str = "",
-        reuse: Optional[Union[bool, Enum]] = None,
+        reuse: bool | Enum | None = None,
     ) -> tf.Tensor:
         """Build the type embedding part of the model.
 
@@ -432,24 +430,24 @@ class Model(ABC, make_plugin_registry("model")):
         """
         raise RuntimeError("Not supported")
 
-    def get_numb_fparam(self) -> Union[int, dict]:
+    def get_numb_fparam(self) -> int | dict:
         """Get the number of frame parameters."""
         return 0
 
-    def get_numb_aparam(self) -> Union[int, dict]:
+    def get_numb_aparam(self) -> int | dict:
         """Get the number of atomic parameters."""
         return 0
 
-    def get_numb_dos(self) -> Union[int, dict]:
+    def get_numb_dos(self) -> int | dict:
         """Get the number of gridpoints in energy space."""
         return 0
 
     @abstractmethod
-    def get_fitting(self) -> Union[Fitting, dict]:
+    def get_fitting(self) -> Fitting | dict:
         """Get the fitting(s)."""
 
     @abstractmethod
-    def get_loss(self, loss: dict, lr) -> Optional[Union[Loss, dict]]:
+    def get_loss(self, loss: dict, lr) -> Loss | dict | None:
         """Get the loss function(s)."""
 
     @abstractmethod
@@ -518,9 +516,9 @@ class Model(ABC, make_plugin_registry("model")):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Notes
@@ -647,10 +645,10 @@ class StandardModel(Model):
 
     def __init__(
         self,
-        descriptor: Union[dict, Descriptor],
-        fitting_net: Union[dict, Fitting],
-        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[list[str]] = None,
+        descriptor: dict | Descriptor,
+        fitting_net: dict | Fitting,
+        type_embedding: dict | TypeEmbedNet | None = None,
+        type_map: list[str] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(
@@ -806,11 +804,11 @@ class StandardModel(Model):
         ):
             self.typeebd.init_variables(graph, graph_def, suffix=suffix)
 
-    def get_fitting(self) -> Union[Fitting, dict]:
+    def get_fitting(self) -> Fitting | dict:
         """Get the fitting(s)."""
         return self.fitting
 
-    def get_loss(self, loss: dict, lr) -> Union[Loss, dict]:
+    def get_loss(self, loss: dict, lr) -> Loss | dict:
         """Get the loss function(s)."""
         return self.fitting.get_loss(loss, lr)
 
@@ -950,9 +948,9 @@ class StandardModel(Model):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -1005,7 +1003,16 @@ class StandardModel(Model):
         check_version_compatibility(data.pop("@version", 2), 2, 1)
         descriptor = Descriptor.deserialize(data.pop("descriptor"), suffix=suffix)
         # bias_atom_e and out_bias are now completely independent - no conversion needed
-        fitting = Fitting.deserialize(data.pop("fitting"), suffix=suffix)
+        fitting_dict = data.pop("fitting", {})
+        atom_exclude_types = data.pop("atom_exclude_types", [])
+        if len(atom_exclude_types) > 0:
+            # get sel_type from complement of atom_exclude_types
+            full_type_list = np.arange(len(data["type_map"]), dtype=int)
+            sel_type = np.setdiff1d(
+                full_type_list, atom_exclude_types, assume_unique=True
+            )
+            fitting_dict["sel_type"] = sel_type.tolist()
+        fitting = Fitting.deserialize(fitting_dict, suffix=suffix)
         # pass descriptor type embedding to model
         if descriptor.explicit_ntypes:
             type_embedding = descriptor.type_embedding
@@ -1013,8 +1020,6 @@ class StandardModel(Model):
         else:
             type_embedding = None
         # BEGINE not supported keys
-        if len(data.pop("atom_exclude_types")) > 0:
-            raise NotImplementedError("atom_exclude_types is not supported")
         if len(data.pop("pair_exclude_types")) > 0:
             raise NotImplementedError("pair_exclude_types is not supported")
         data.pop("rcond", None)

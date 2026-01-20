@@ -18,8 +18,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [1, 2, 3, 4, 5, 6]
-        python: ["3.9", "3.12"]
+        group: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        python: ["3.10", "3.13"]
 
     steps:
     - uses: actions/checkout@v6
@@ -32,9 +32,7 @@ jobs:
         export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
         export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
         source/install/uv_with_retry.sh pip install --system -e .[test,jax] mpi4py --group pin_jax
-        source/install/uv_with_retry.sh pip install --system -U setuptools
-        source/install/uv_with_retry.sh pip install --system horovod --no-build-isolation
-        source/install/uv_with_retry.sh pip install --system --pre "paddlepaddle==3.0.0" -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+        source/install/uv_with_retry.sh pip install --system --find-links "https://www.paddlepaddle.org.cn/packages/nightly/cpu/paddlepaddle/" --index-url https://pypi.org/simple paddlepaddle==3.3.0.dev20251204
       env:
         # Please note that uv has some issues with finding
         # existing TensorFlow package. Currently, it uses
@@ -49,7 +47,7 @@ jobs:
         CMAKE_POLICY_VERSION_MINIMUM: 3.5
     - run: dp --version
     - name: Get durations from cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: .test_durations
         # the key must never match, even when restarting workflows, as that
@@ -59,9 +57,11 @@ jobs:
         restore-keys: |
           test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
           test2-durations-combined-${{ matrix.python }}
-    - run: pytest --cov=deepmd source/tests  --splits 6 --group ${{ matrix.group }} --store-durations --clean-durations --durations-path=.test_durations --splitting-algorithm least_duration
+    - run: pytest --cov=deepmd source/tests  --splits 12 --group ${{ matrix.group }} --store-durations --clean-durations --durations-path=.test_durations --splitting-algorithm least_duration
       env:
         NUM_WORKERS: 0
+        DP_CI_IMPORT_PADDLE_BEFORE_TF: 1
+        FLAGS_use_stride_compute_kernel: 0
     - name: Test TF2 eager mode
       run: pytest --cov=deepmd --cov-append source/tests/consistent/io/test_io.py source/jax2tf_tests
       env:
@@ -71,7 +71,7 @@ jobs:
       if: matrix.group == 1
     - run: mv .test_durations .test_durations_${{ matrix.group }}
     - name: Upload partial durations
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: split-${{ matrix.python }}-${{ matrix.group }}
         path: .test_durations_${{ matrix.group }}
@@ -85,11 +85,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.9", "3.12"]
+        python: ["3.10", "3.13"]
     needs: testpython
     steps:
     - name: Get durations from cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: .test_durations
         # key won't match during the first run for the given commit, but
@@ -98,7 +98,7 @@ jobs:
         key: test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
         restore-keys: test2-durations-combined-${{ matrix.python }}
     - name: Download artifacts
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: split-${{ matrix.python }}-*
         merge-multiple: true

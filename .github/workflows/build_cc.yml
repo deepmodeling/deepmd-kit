@@ -20,8 +20,6 @@ jobs:
         include:
         - variant: cpu
           dp_variant: cpu
-        - variant: cuda
-          dp_variant: cuda
         - variant: cuda120
           dp_variant: cuda
         - variant: rocm
@@ -36,12 +34,6 @@ jobs:
     - uses: lukka/get-cmake@latest
     - run: python -m pip install uv
     - run: source/install/uv_with_retry.sh pip install --system --group pin_tensorflow_cpu --group pin_pytorch_cpu --torch-backend cpu
-    - run: |
-         wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
-         && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
-         && sudo apt-get update \
-         && sudo apt-get -y install cuda-cudart-dev-11-8 cuda-nvcc-11-8
-      if: matrix.variant == 'cuda'
     - run: |
          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
          && sudo dpkg -i cuda-keyring_1.0-1_all.deb \

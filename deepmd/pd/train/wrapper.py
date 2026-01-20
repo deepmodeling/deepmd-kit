@@ -7,13 +7,10 @@ import logging
 from collections import (
     OrderedDict,
 )
-from typing import (
-    Union,
-)
 
 import paddle
 
-_StateDict = Union[dict[str, paddle.Tensor], OrderedDict[str, paddle.Tensor]]
+_StateDict = dict[str, paddle.Tensor] | OrderedDict[str, paddle.Tensor]
 
 
 log = logging.getLogger(__name__)

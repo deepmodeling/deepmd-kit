@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
     overload,
 )
 
@@ -24,7 +23,7 @@ def to_jax_array(array: np.ndarray) -> jnp.ndarray: ...
 def to_jax_array(array: None) -> None: ...
 
 
-def to_jax_array(array: Optional[np.ndarray]) -> Optional[jnp.ndarray]:
+def to_jax_array(array: np.ndarray | None) -> jnp.ndarray | None:
     """Convert a numpy array to a JAX array.
 
     Parameters

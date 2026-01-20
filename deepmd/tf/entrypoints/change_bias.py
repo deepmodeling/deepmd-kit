@@ -8,9 +8,6 @@ import tempfile
 from pathlib import (
     Path,
 )
-from typing import (
-    Optional,
-)
 
 import numpy as np
 
@@ -54,12 +51,12 @@ log = logging.getLogger(__name__)
 def change_bias(
     INPUT: str,
     mode: str = "change",
-    bias_value: Optional[list] = None,
-    datafile: Optional[str] = None,
+    bias_value: list | None = None,
+    datafile: str | None = None,
     system: str = ".",
     numb_batch: int = 0,
-    model_branch: Optional[str] = None,
-    output: Optional[str] = None,
+    model_branch: str | None = None,
+    output: str | None = None,
     log_level: int = 0,
     **kwargs,
 ) -> None:
@@ -131,12 +128,12 @@ def change_bias(
 def _change_bias_checkpoint_file(
     checkpoint_prefix: str,
     mode: str,
-    bias_value: Optional[list],
-    datafile: Optional[str],
+    bias_value: list | None,
+    datafile: str | None,
     system: str,
     numb_batch: int,
-    model_branch: Optional[str],
-    output: Optional[str],
+    model_branch: str | None,
+    output: str | None,
     log_level: int,
 ) -> None:
     """Change bias for individual checkpoint files."""
@@ -255,12 +252,12 @@ def _change_bias_checkpoint_file(
 def _change_bias_frozen_model(
     frozen_model_path: str,
     mode: str,
-    bias_value: Optional[list],
-    datafile: Optional[str],
+    bias_value: list | None,
+    datafile: str | None,
     system: str,
     numb_batch: int,
-    model_branch: Optional[str],
-    output: Optional[str],
+    model_branch: str | None,
+    output: str | None,
     log_level: int,
 ) -> None:
     """Change bias for frozen model (.pb file)."""
@@ -285,7 +282,7 @@ def _change_bias_frozen_model(
 
 
 def _load_data_systems(
-    datafile: Optional[str], system: str, trainer: DPTrainer
+    datafile: str | None, system: str, trainer: DPTrainer
 ) -> DeepmdDataSystem:
     """Load data systems for bias calculation."""
     if datafile is not None:

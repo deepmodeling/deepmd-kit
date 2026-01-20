@@ -15,7 +15,6 @@ import copy
 import json
 from typing import (
     Any,
-    Optional,
 )
 
 import numpy as np
@@ -210,7 +209,7 @@ def get_zbl_model(model_params: dict) -> DPZBLModel:
     return model
 
 
-def _can_be_converted_to_float(value: Any) -> Optional[bool]:
+def _can_be_converted_to_float(value: Any) -> bool | None:
     try:
         float(value)
         return True
@@ -220,8 +219,8 @@ def _can_be_converted_to_float(value: Any) -> Optional[bool]:
 
 
 def _convert_preset_out_bias_to_array(
-    preset_out_bias: Optional[dict], type_map: list[str]
-) -> Optional[dict]:
+    preset_out_bias: dict | None, type_map: list[str]
+) -> dict | None:
     if preset_out_bias is not None:
         for kk in preset_out_bias:
             if len(preset_out_bias[kk]) != len(type_map):

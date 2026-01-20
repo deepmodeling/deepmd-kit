@@ -7,8 +7,6 @@ from functools import (
 )
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -44,14 +42,14 @@ class DeepmdDataSystem:
         systems: list[str],
         batch_size: int,
         test_size: int,
-        rcut: Optional[float] = None,
+        rcut: float | None = None,
         set_prefix: str = "set",
         shuffle_test: bool = True,
-        type_map: Optional[list[str]] = None,
+        type_map: list[str] | None = None,
         optional_type_map: bool = True,
-        modifier: Optional[Any] = None,
+        modifier: Any | None = None,
         trn_all_set: bool = False,
-        sys_probs: Optional[list[float]] = None,
+        sys_probs: list[float] | None = None,
         auto_prob_style: str = "prob_sys_size",
         sort_atoms: bool = True,
     ) -> None:
@@ -174,7 +172,9 @@ class DeepmdDataSystem:
                 rule = int(words[1])
                 filtered_data_systems = []
                 filtered_system_dirs = []
-                for sys_dir, data_sys in zip(self.system_dirs, self.data_systems):
+                for sys_dir, data_sys in zip(
+                    self.system_dirs, self.data_systems, strict=True
+                ):
                     if data_sys.get_natoms() <= rule:
                         filtered_data_systems.append(data_sys)
                         filtered_system_dirs.append(sys_dir)
@@ -287,7 +287,7 @@ class DeepmdDataSystem:
         ]
 
     def compute_energy_shift(
-        self, rcond: Optional[float] = None, key: str = "energy"
+        self, rcond: float | None = None, key: str = "energy"
     ) -> tuple[np.ndarray, np.ndarray]:
         sys_ener = []
         for ss in self.data_systems:
@@ -348,10 +348,10 @@ class DeepmdDataSystem:
         atomic: bool = False,
         must: bool = False,
         high_prec: bool = False,
-        type_sel: Optional[list[int]] = None,
+        type_sel: list[int] | None = None,
         repeat: int = 1,
         default: float = 0.0,
-        dtype: Optional[np.dtype] = None,
+        dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
     ) -> None:
         """Add a data item that to be loaded.
@@ -414,7 +414,7 @@ class DeepmdDataSystem:
 
     def set_sys_probs(
         self,
-        sys_probs: Optional[list[float]] = None,
+        sys_probs: list[float] | None = None,
         auto_prob_style: str = "prob_sys_size",
     ) -> None:
         if sys_probs is None:
@@ -435,7 +435,7 @@ class DeepmdDataSystem:
             probs = process_sys_probs(sys_probs, self.nbatches)
         self.sys_probs = probs
 
-    def get_batch(self, sys_idx: Optional[int] = None) -> dict:
+    def get_batch(self, sys_idx: int | None = None) -> dict:
         # batch generation style altered by Ziyao Li:
         # one should specify the "sys_prob" and "auto_prob_style" params
         # via set_sys_prob() function. The sys_probs this function uses is
@@ -462,7 +462,7 @@ class DeepmdDataSystem:
             b_data = self.get_batch_mixed()
         return b_data
 
-    def get_batch_standard(self, sys_idx: Optional[int] = None) -> dict:
+    def get_batch_standard(self, sys_idx: int | None = None) -> dict:
         """Get a batch of data from the data systems in the standard way.
 
         Parameters
@@ -562,7 +562,7 @@ class DeepmdDataSystem:
 
     # ! altered by Marián Rynik
     def get_test(
-        self, sys_idx: Optional[int] = None, n_test: int = -1
+        self, sys_idx: int | None = None, n_test: int = -1
     ) -> dict[str, np.ndarray]:  # depreciated
         """Get test data from the the data systems.
 
@@ -588,7 +588,7 @@ class DeepmdDataSystem:
         test_system_data["default_mesh"] = self.default_mesh[idx]
         return test_system_data
 
-    def get_sys_ntest(self, sys_idx: Optional[int] = None) -> int:
+    def get_sys_ntest(self, sys_idx: int | None = None) -> int:
         """Get number of tests for the currently selected system,
         or one defined by sys_idx.
         """
@@ -654,7 +654,7 @@ class DeepmdDataSystem:
         return ts
 
     def _check_type_map_consistency(
-        self, type_map_list: list[Optional[list[str]]]
+        self, type_map_list: list[list[str] | None]
     ) -> list[str]:
         ret = []
         for ii in type_map_list:
@@ -715,9 +715,9 @@ def print_summary(
     # width 65
     sys_width = 42
     log.info(
-        f"---Summary of DataSystem: {name:13s}-----------------------------------------------"
+        f"---Summary of DataSystem: {name.capitalize():13s}-----------------------------------------------"
     )
-    log.info("found %d system(s):", nsystems)
+    log.info("Found %d System(s):", nsystems)
     log.info(
         "%s  %6s  %6s  %6s  %9s  %3s",
         _format_name_length("system", sys_width),
@@ -785,7 +785,7 @@ def prob_sys_size_ext(keywords: str, nsystems: int, nbatch: int) -> list[float]:
 
 
 def process_systems(
-    systems: Union[str, list[str]], patterns: Optional[list[str]] = None
+    systems: str | list[str], patterns: list[str] | None = None
 ) -> list[str]:
     """Process the user-input systems.
 
@@ -832,8 +832,8 @@ def process_systems(
 def get_data(
     jdata: dict[str, Any],
     rcut: float,
-    type_map: Optional[list[str]],
-    modifier: Optional[Any],
+    type_map: list[str] | None,
+    modifier: Any | None,
     multi_task_mode: bool = False,
 ) -> DeepmdDataSystem:
     """Get the data system.

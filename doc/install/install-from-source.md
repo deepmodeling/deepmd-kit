@@ -1,6 +1,6 @@
 # Install from source code
 
-Please follow our [GitHub](https://github.com/deepmodeling/deepmd-kit) webpage to download the [latest released version](https://github.com/deepmodeling/deepmd-kit/tree/master) and [development version](https://github.com/deepmodeling/deepmd-kit/tree/devel).
+Please follow our [GitHub](https://github.com/deepmodeling/deepmd-kit) webpage to download the source code of a specific version or the [development version](https://github.com/deepmodeling/deepmd-kit/tree/master).
 
 Or get the DeePMD-kit source code by `git clone`
 
@@ -21,7 +21,7 @@ deepmd_source_dir=`pwd`
 ### Install Backend's Python interface
 
 First, check the Python version on your machine.
-Python 3.9 or above is required.
+Python 3.10 or above is required.
 
 ```bash
 python --version
@@ -52,7 +52,7 @@ If one does not need the GPU support of DeePMD-kit and is concerned about packag
 pip install --upgrade tensorflow-cpu
 ```
 
-One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to install TensorFlow from [conda-forge](https://conda-forge.org).
+One can also [use conda](https://docs.deepmodeling.com/faq/conda.html) to install TensorFlow from [conda-forge](https://conda-forge.org).
 
 To verify the installation, run
 
@@ -74,7 +74,7 @@ pip install torch
 
 Follow [PyTorch documentation](https://pytorch.org/get-started/locally/) to install PyTorch built against different CUDA versions or without CUDA.
 
-One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to install PyTorch from [conda-forge](https://conda-forge.org).
+One can also [use conda](https://docs.deepmodeling.com/faq/conda.html) to install PyTorch from [conda-forge](https://conda-forge.org).
 
 :::
 
@@ -89,7 +89,7 @@ pip install jax-ai-stack
 One can also install packages in JAX AI Stack manually.
 Follow [JAX documentation](https://jax.readthedocs.io/en/latest/installation.html) to install JAX built against different CUDA versions or without CUDA.
 
-One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to install JAX from [conda-forge](https://conda-forge.org).
+One can also [use conda](https://docs.deepmodeling.com/faq/conda.html) to install JAX from [conda-forge](https://conda-forge.org).
 
 :::
 
@@ -103,12 +103,6 @@ To install Paddle, run
 pip install paddlepaddle-gpu==3.1.1 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
 # nightly-build version
 # pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/cu126/
-
-# cu118
-# release version
-pip install paddlepaddle-gpu==3.1.1 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/
-# nightly-build version
-# pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/cu118/
 
 # cpu
 # release version
@@ -136,7 +130,7 @@ deactivate
 If one has multiple python interpreters named something like python3.x, it can be specified by, for example
 
 ```bash
-virtualenv -p python3.9 $deepmd_venv
+virtualenv -p python3.12 $deepmd_venv
 ```
 
 One should remember to activate the virtual environment every time he/she uses DeePMD-kit.
@@ -273,6 +267,12 @@ It will print the help information like
 
 ### Install horovod and mpi4py {{ tensorflow_icon }}
 
+:::{warning}
+Horovod has not released a new version for a long time.
+As of December 2025, the latest Horovod release does not support the latest TensorFlow versions.
+You can check the patches required to support the latest TensorFlow at [conda-forge/horovod-feedstock](https://github.com/conda-forge/horovod-feedstock/blob/main/recipe/meta.yaml).
+:::
+
 [Horovod](https://github.com/horovod/horovod) and [mpi4py](https://github.com/mpi4py/mpi4py) are used for parallel training. For better performance on GPU, please follow the tuning steps in [Horovod on GPU](https://github.com/horovod/horovod/blob/master/docs/gpus.rst).
 
 ```bash
@@ -355,9 +355,7 @@ download the TensorFlow C library from [this page](https://www.tensorflow.org/in
 
 If you want to use C++ interface of Paddle, you need to compile the Paddle inference library(C++ interface) manually from the [linux-compile-by-make](https://www.paddlepaddle.org.cn/documentation/docs/zh/develop/install/compile/linux-compile-by-make.html), then use the `.so` and `.a` files in `Paddle/build/paddle_inference_install_dir/`.
 
-We also provide a weekly-build Paddle C++ inference library for Linux x86_64 with CUDA 11.8/12.3/CPU below:
-
-CUDA 11.8: [Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz](https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz)
+We also provide a weekly-build Paddle C++ inference library for Linux x86_64 with CUDA 12.3/CPU below:
 
 CUDA 12.3: [Cuda123_cudnn900_Trt8616_D1/latest/paddle_inference.tgz](https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda123_cudnn900_Trt8616_D1/latest/paddle_inference.tgz)
 
@@ -385,7 +383,7 @@ pip install -U cmake
 
 You must enable at least one backend.
 If you enable two or more backends, these backend libraries must be built in a compatible way, e.g. using the same `_GLIBCXX_USE_CXX11_ABI` flag.
-We recommend using [conda packages](https://docs.deepmodeling.org/faq/conda.html) from [conda-forge](https://conda-forge.org), which are usually compatible to each other.
+We recommend using [conda packages](https://docs.deepmodeling.com/faq/conda.html) from [conda-forge](https://conda-forge.org), which are usually compatible to each other.
 
 ::::{tab-set}
 

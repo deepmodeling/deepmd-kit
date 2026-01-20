@@ -3,6 +3,7 @@ import functools
 import logging
 import time
 from collections.abc import (
+    Callable,
     Generator,
     Iterable,
 )
@@ -14,8 +15,6 @@ from pathlib import (
 )
 from typing import (
     Any,
-    Callable,
-    Optional,
 )
 
 import numpy as np
@@ -43,6 +42,8 @@ from deepmd.pt.model.model import (
     get_zbl_model,
 )
 from deepmd.pt.optimizer import (
+    AdaMuonOptimizer,
+    HybridMuonOptimizer,
     KFOptimizerWrapper,
     LKFOptimizer,
 )
@@ -64,7 +65,7 @@ from deepmd.pt.utils.env import (
     SAMPLER_RECORD,
 )
 from deepmd.pt.utils.learning_rate import (
-    LearningRateExp,
+    BaseLR,
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
@@ -97,15 +98,15 @@ class Trainer:
         self,
         config: dict[str, Any],
         training_data: DpLoaderSet,
-        stat_file_path: Optional[str] = None,
-        validation_data: Optional[DpLoaderSet] = None,
-        init_model: Optional[str] = None,
-        restart_model: Optional[str] = None,
-        finetune_model: Optional[str] = None,
+        stat_file_path: str | None = None,
+        validation_data: DpLoaderSet | None = None,
+        init_model: str | None = None,
+        restart_model: str | None = None,
+        finetune_model: str | None = None,
         force_load: bool = False,
-        shared_links: Optional[dict[str, str]] = None,
-        finetune_links: Optional[dict[str, str]] = None,
-        init_frz_model: Optional[str] = None,
+        shared_links: dict[str, str] | None = None,
+        finetune_links: dict[str, str] | None = None,
+        init_frz_model: str | None = None,
     ) -> None:
         """Construct a DeePMD trainer.
 
@@ -158,12 +159,22 @@ class Trainer:
         def get_opt_param(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
             opt_type = params.get("opt_type", "Adam")
             opt_param = {
+                # LKF parameters
                 "kf_blocksize": params.get("kf_blocksize", 5120),
                 "kf_start_pref_e": params.get("kf_start_pref_e", 1),
                 "kf_limit_pref_e": params.get("kf_limit_pref_e", 1),
                 "kf_start_pref_f": params.get("kf_start_pref_f", 1),
                 "kf_limit_pref_f": params.get("kf_limit_pref_f", 1),
+                # Common parameters
                 "weight_decay": params.get("weight_decay", 0.001),
+                # Muon/AdaMuon parameters
+                "momentum": params.get("momentum", 0.95),
+                "adam_beta1": params.get("adam_beta1", 0.9),
+                "adam_beta2": params.get("adam_beta2", 0.95),
+                "lr_adjust": params.get("lr_adjust", 10.0),
+                "lr_adjust_coeff": params.get("lr_adjust_coeff", 0.2),
+                "muon_2d_only": params.get("muon_2d_only", True),
+                "min_2d_dim": params.get("min_2d_dim", 1),
             }
             return opt_type, opt_param
 
@@ -185,13 +196,13 @@ class Trainer:
 
         def get_data_loader(
             _training_data: DpLoaderSet,
-            _validation_data: Optional[DpLoaderSet],
+            _validation_data: DpLoaderSet | None,
             _training_params: dict[str, Any],
         ) -> tuple[
             DataLoader,
             Generator[Any, None, None],
-            Optional[DataLoader],
-            Optional[Generator[Any, None, None]],
+            DataLoader | None,
+            Generator[Any, None, None] | None,
             int,
         ]:
             def get_dataloader_and_iter(
@@ -246,16 +257,9 @@ class Trainer:
             _model: Any,
             _data_stat_nbatch: int,
             _training_data: DpLoaderSet,
-            _validation_data: Optional[DpLoaderSet],
-            _stat_file_path: Optional[str],
-            _data_requirement: list[DataRequirementItem],
+            _stat_file_path: str | None,
             finetune_has_new_type: bool = False,
         ) -> Callable[[], Any]:
-            _data_requirement += get_additional_data_requirement(_model)
-            _training_data.add_data_requirement(_data_requirement)
-            if _validation_data is not None:
-                _validation_data.add_data_requirement(_data_requirement)
-
             @functools.lru_cache
             def get_sample() -> Any:
                 sampled = make_stat_input(
@@ -274,13 +278,10 @@ class Trainer:
                     _stat_file_path.root.close()
             return get_sample
 
-        def get_lr(lr_params: dict[str, Any]) -> LearningRateExp:
-            assert lr_params.get("type", "exp") == "exp", (
-                "Only learning rate `exp` is supported!"
-            )
+        def get_lr(lr_params: dict[str, Any]) -> BaseLR:
             lr_params["stop_steps"] = self.num_steps - self.warmup_steps
-            lr_exp = LearningRateExp(**lr_params)
-            return lr_exp
+            lr_schedule = BaseLR(**lr_params)
+            return lr_schedule
 
         # Optimizer
         if self.multi_task and training_params.get("optim_dict", None) is not None:
@@ -340,13 +341,21 @@ class Trainer:
 
         # Data
         if not self.multi_task:
+            # add data requirement for labels
+            data_requirement = self.loss.label_requirement
+            data_requirement += get_additional_data_requirement(self.model)
+            training_data.add_data_requirement(data_requirement)
+            if validation_data is not None:
+                validation_data.add_data_requirement(data_requirement)
+            # Preload and apply modifiers to all data before computing statistics
+            training_data.preload_and_modify_all_data_torch()
+            if validation_data is not None:
+                validation_data.preload_and_modify_all_data_torch()
             self.get_sample_func = single_model_stat(
                 self.model,
                 model_params.get("data_stat_nbatch", 10),
                 training_data,
-                validation_data,
                 stat_file_path,
-                self.loss.label_requirement,
                 finetune_has_new_type=self.finetune_links["Default"].get_has_new_type()
                 if self.finetune_links is not None
                 else False,
@@ -376,19 +385,30 @@ class Trainer:
                 self.get_sample_func,
             ) = {}, {}, {}, {}, {}, {}
             for model_key in self.model_keys:
+                # add data requirement for labels
+                data_requirement = self.loss[model_key].label_requirement
+                data_requirement += get_additional_data_requirement(
+                    self.model[model_key]
+                )
+                training_data[model_key].add_data_requirement(data_requirement)
+                if validation_data[model_key] is not None:
+                    validation_data[model_key].add_data_requirement(data_requirement)
+                # Preload and apply modifiers to all data before computing statistics
+                training_data[model_key].preload_and_modify_all_data_torch()
+                if validation_data[model_key] is not None:
+                    validation_data[model_key].preload_and_modify_all_data_torch()
                 self.get_sample_func[model_key] = single_model_stat(
                     self.model[model_key],
                     model_params["model_dict"][model_key].get("data_stat_nbatch", 10),
                     training_data[model_key],
-                    validation_data[model_key],
                     stat_file_path[model_key],
-                    self.loss[model_key].label_requirement,
                     finetune_has_new_type=self.finetune_links[
                         model_key
                     ].get_has_new_type()
                     if self.finetune_links is not None
                     else False,
                 )
+
                 (
                     self.training_dataloader[model_key],
                     self.training_data[model_key],
@@ -417,7 +437,23 @@ class Trainer:
                     )
 
         # Learning rate
-        self.warmup_steps = training_params.get("warmup_steps", 0)
+        warmup_steps = training_params.get("warmup_steps", None)
+        warmup_ratio = training_params.get("warmup_ratio", None)
+        if warmup_steps is not None:
+            self.warmup_steps = warmup_steps
+        elif warmup_ratio is not None:
+            if not 0 <= warmup_ratio < 1:
+                raise ValueError(f"warmup_ratio must be in [0, 1), got {warmup_ratio}")
+            self.warmup_steps = int(warmup_ratio * self.num_steps)
+            if self.warmup_steps == 0 and warmup_ratio > 0:
+                log.warning(
+                    f"warmup_ratio {warmup_ratio} results in 0 warmup steps "
+                    f"due to truncation. Consider using a larger ratio or "
+                    f"specify warmup_steps directly."
+                )
+        else:
+            self.warmup_steps = 0
+        self.warmup_start_factor = training_params.get("warmup_start_factor", 0.0)
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
         assert self.num_steps - self.warmup_steps > 0 or self.warmup_steps == 0, (
             "Warm up steps must be less than total training steps!"
@@ -614,7 +650,12 @@ class Trainer:
 
         if init_frz_model is not None:
             frz_model = torch.jit.load(init_frz_model, map_location=DEVICE)
-            self.model.load_state_dict(frz_model.state_dict())
+            state = frz_model.state_dict()
+            missing, unexpected = self.model.load_state_dict(state, strict=False)
+            if missing or unexpected:
+                log.warning(
+                    f"Checkpoint loaded non-strictly. Missing keys: {missing}, Unexpected keys: {unexpected}"
+                )
 
         # Get model prob for multi-task
         if self.multi_task:
@@ -663,7 +704,9 @@ class Trainer:
         # author: iProzd
         def warm_up_linear(step: int, warmup_steps: int) -> float:
             if step < warmup_steps:
-                return step / warmup_steps
+                return self.warmup_start_factor + (1.0 - self.warmup_start_factor) * (
+                    step / warmup_steps
+                )
             else:
                 return self.lr_exp.value(step - warmup_steps) / self.lr_exp.start_lr
 
@@ -693,6 +736,40 @@ class Trainer:
             self.optimizer = LKFOptimizer(
                 self.wrapper.parameters(), 0.98, 0.99870, self.opt_param["kf_blocksize"]
             )
+        elif self.opt_type == "AdaMuon":
+            self.optimizer = AdaMuonOptimizer(
+                self.wrapper.parameters(),
+                lr=self.lr_exp.start_lr,
+                momentum=float(self.opt_param["momentum"]),
+                weight_decay=float(self.opt_param["weight_decay"]),
+                adam_betas=(
+                    float(self.opt_param["adam_beta1"]),
+                    float(self.opt_param["adam_beta2"]),
+                ),
+                lr_adjust=float(self.opt_param["lr_adjust"]),
+                lr_adjust_coeff=float(self.opt_param["lr_adjust_coeff"]),
+            )
+        elif self.opt_type == "HybridMuon":
+            self.optimizer = HybridMuonOptimizer(
+                self.wrapper.parameters(),
+                lr=self.lr_exp.start_lr,
+                momentum=float(self.opt_param["momentum"]),
+                weight_decay=float(self.opt_param["weight_decay"]),
+                adam_betas=(
+                    float(self.opt_param["adam_beta1"]),
+                    float(self.opt_param["adam_beta2"]),
+                ),
+                lr_adjust=float(self.opt_param["lr_adjust"]),
+                lr_adjust_coeff=float(self.opt_param["lr_adjust_coeff"]),
+                muon_2d_only=bool(self.opt_param["muon_2d_only"]),
+                min_2d_dim=int(self.opt_param["min_2d_dim"]),
+            )
+            if optimizer_state_dict is not None and self.restart_training:
+                self.optimizer.load_state_dict(optimizer_state_dict)
+            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
+                self.optimizer,
+                lambda step: warm_up_linear(step + self.start_step, self.warmup_steps),
+            )
         else:
             raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
@@ -703,6 +780,47 @@ class Trainer:
         self.enable_profiler = training_params.get("enable_profiler", False)
         self.profiling = training_params.get("profiling", False)
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
+
+        # Log model parameter count
+        if self.rank == 0:
+            self._log_parameter_count()
+
+    @staticmethod
+    def _count_parameters(model: torch.nn.Module) -> tuple[int, int]:
+        """
+        Count model parameters.
+
+        Parameters
+        ----------
+        model : torch.nn.Module
+            The model to count parameters for.
+
+        Returns
+        -------
+        tuple[int, int]
+            A tuple of (trainable, total) parameter counts.
+        """
+        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        total = sum(p.numel() for p in model.parameters())
+        return trainable, total
+
+    def _log_parameter_count(self) -> None:
+        """Log model parameter count."""
+        if not self.multi_task:
+            trainable, total = self._count_parameters(self.model)
+            log.info(
+                f"Model Params:  {total / 1e6:.3f} M   (Trainable: {trainable / 1e6:.3f} M)"
+            )
+        else:
+            log.warning(
+                "In multitask mode, parameters may be shared across tasks. "
+                "The following per-task counts may include duplicates."
+            )
+            for model_key in self.model_keys:
+                trainable, total = self._count_parameters(self.model[model_key])
+                log.info(
+                    f"Model Params [{model_key}]: {total / 1e6:.3f} M   (Trainable: {trainable / 1e6:.3f} M)"
+                )
 
     def run(self) -> None:
         fout = (
@@ -763,7 +881,7 @@ class Trainer:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
                 fout1.flush()
-            if self.opt_type in ["Adam", "AdamW"]:
+            if self.opt_type in ["Adam", "AdamW", "AdaMuon", "HybridMuon"]:
                 cur_lr = self.scheduler.get_last_lr()[0]
                 if _step_id < self.warmup_steps:
                     pref_lr = _lr.start_lr
@@ -1443,7 +1561,7 @@ def get_single_model(
 def get_model_for_wrapper(
     _model_params: dict[str, Any],
     resuming: bool = False,
-    _loss_params: Optional[dict[str, Any]] = None,
+    _loss_params: dict[str, Any] | None = None,
 ) -> Any:
     if "model_dict" not in _model_params:
         if _loss_params is not None and whether_hessian(_loss_params):
@@ -1505,8 +1623,6 @@ def model_change_out_bias(
 
     model_type_map = _model.get_type_map()
     log.info(
-        f"Change output bias of {model_type_map!s} "
-        f"from {to_numpy_array(old_bias).reshape(-1)!s} "
-        f"to {to_numpy_array(new_bias).reshape(-1)!s}."
+        f"Change output bias of {model_type_map!s} from {to_numpy_array(old_bias).reshape(-1)!s} to {to_numpy_array(new_bias).reshape(-1)!s}."
     )
     return _model
