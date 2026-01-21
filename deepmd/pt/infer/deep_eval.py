@@ -391,6 +391,7 @@ class DeepEval(DeepEvalBackend):
             zip(
                 [x.name for x in request_defs],
                 out,
+                strict=False,
             )
         )
 

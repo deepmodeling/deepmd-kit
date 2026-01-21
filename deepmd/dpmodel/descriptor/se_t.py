@@ -6,7 +6,6 @@ from collections.abc import (
 from typing import (
     Any,
     NoReturn,
-    Union,
 )
 
 import array_api_compat
@@ -112,7 +111,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         exclude_types: list[tuple[int, int]] = [],
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
         type_map: list[str] | None = None,
         ntypes: int | None = None,  # to be compat with input
     ) -> None:
@@ -257,7 +256,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
+        merged: Callable[[], list[dict]] | list[dict],
         path: DPPath | None = None,
     ) -> None:
         """

@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Union,
-)
 
 from deepmd.dpmodel.array_api import (
     Array,
@@ -78,7 +75,7 @@ class PropertyFittingNet(InvarFitting):
         neuron: list[int] = [128, 128, 128],
         bias_atom_p: Array | None = None,
         rcond: float | None = None,
-        trainable: Union[bool, list[bool]] = True,
+        trainable: bool | list[bool] = True,
         intensive: bool = False,
         property_name: str = "property",
         resnet_dt: bool = True,

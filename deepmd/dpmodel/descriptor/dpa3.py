@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Union,
 )
 
 import array_api_compat
@@ -296,7 +295,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         self,
         ntypes: int,
         # args for repflow
-        repflow: Union[RepFlowArgs, dict],
+        repflow: RepFlowArgs | dict,
         # kwargs for descriptor
         concat_output_tebd: bool = False,
         activation_function: str = "silu",
@@ -304,7 +303,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable: bool = True,
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
         use_loc_mapping: bool = True,
@@ -312,7 +311,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
     ) -> None:
         super().__init__()
 
-        def init_subclass_params(sub_data: Union[dict, Any], sub_class: type) -> Any:
+        def init_subclass_params(sub_data: dict | Any, sub_class: type) -> Any:
             if isinstance(sub_data, dict):
                 return sub_class(**sub_data)
             elif isinstance(sub_data, sub_class):

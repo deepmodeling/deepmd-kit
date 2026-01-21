@@ -246,7 +246,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
@@ -277,7 +277,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         use_tebd_bias: bool = False,
         type_map: list[str] | None = None,
         # consistent with argcheck, not used though
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
     ) -> None:
         ## seed, uniform_seed, not included.
         # Ensure compatibility with the deprecated stripped_type_embedding option.
@@ -421,7 +421,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
+        merged: Callable[[], list[dict]] | list[dict],
         path: DPPath | None = None,
     ) -> None:
         """
@@ -675,7 +675,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
@@ -698,7 +698,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         trainable_ln: bool = True,
         ln_eps: float | None = 1e-5,
         smooth: bool = True,
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         self.rcut = rcut
@@ -875,7 +875,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
+        merged: Callable[[], list[dict]] | list[dict],
         path: DPPath | None = None,
     ) -> None:
         """
@@ -1197,7 +1197,7 @@ class NeighborGatedAttention(NativeOP):
         ln_eps: float = 1e-5,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         """Construct a neighbor-wise attention net."""
@@ -1329,7 +1329,7 @@ class NeighborGatedAttentionLayer(NativeOP):
         ln_eps: float = 1e-5,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         """Construct a neighbor-wise attention layer."""
@@ -1437,7 +1437,7 @@ class GatedAttentionLayer(NativeOP):
         bias: bool = True,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         """Construct a multi-head neighbor-wise attention net."""

@@ -6,7 +6,6 @@ from collections.abc import (
 from typing import (
     Any,
     NoReturn,
-    Union,
 )
 
 import array_api_compat
@@ -170,7 +169,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         type_map: list[str] | None = None,
         ntypes: int | None = None,  # to be compat with input
         # consistent with argcheck, not used though
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
     ) -> None:
         del ntypes
         ## seed, uniform_seed, not included.
@@ -317,7 +316,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
+        merged: Callable[[], list[dict]] | list[dict],
         path: DPPath | None = None,
     ) -> None:
         """

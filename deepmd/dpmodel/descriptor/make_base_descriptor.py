@@ -9,7 +9,6 @@ from collections.abc import (
 from typing import (
     Any,
     NoReturn,
-    Union,
 )
 
 from deepmd.common import (
@@ -149,7 +148,7 @@ def make_base_descriptor(
 
         def compute_input_stats(
             self,
-            merged: Union[Callable[[], list[dict]], list[dict]],
+            merged: Callable[[], list[dict]] | list[dict],
             path: DPPath | None = None,
         ) -> NoReturn:
             """Update mean and stddev for descriptor elements."""

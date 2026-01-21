@@ -2,7 +2,6 @@
 from typing import (
     Any,
     NoReturn,
-    Union,
 )
 
 from deepmd.dpmodel import (
@@ -140,7 +139,7 @@ class InvarFitting(GeneralFitting):
         mixed_types: bool = True,
         exclude_types: list[int] = [],
         type_map: list[str] | None = None,
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
         default_fparam: list[float] | None = None,
     ) -> None:
         if tot_ener_zero:

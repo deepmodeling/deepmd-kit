@@ -6,7 +6,6 @@ from collections.abc import (
 )
 from typing import (
     Any,
-    Union,
 )
 
 import array_api_compat
@@ -16,7 +15,7 @@ from packaging.version import (
 )
 
 # Type alias for array_api compatible arrays
-Array = Union[np.ndarray, Any]  # Any to support JAX, PyTorch, etc. arrays
+Array = np.ndarray | Any  # Any to support JAX, PyTorch, etc. arrays
 
 
 def support_array_api(version: str) -> Callable:

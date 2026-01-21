@@ -2,7 +2,6 @@
 from typing import (
     Any,
     NoReturn,
-    Union,
 )
 
 import array_api_compat
@@ -63,7 +62,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         self,
         tab_file: str,
         rcut: float,
-        sel: Union[int, list[int]],
+        sel: int | list[int],
         type_map: list[str],
         rcond: float | None = None,
         atom_ener: list[float] | None = None,

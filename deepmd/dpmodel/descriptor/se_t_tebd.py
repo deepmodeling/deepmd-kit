@@ -5,7 +5,6 @@ from collections.abc import (
 from typing import (
     NoReturn,
     Optional,
-    Union,
 )
 
 import array_api_compat
@@ -125,7 +124,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list = [2, 4, 8],
         tebd_dim: int = 8,
@@ -137,7 +136,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         exclude_types: list[tuple[int, int]] = [],
         precision: str = "float64",
         trainable: bool = True,
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
         type_map: list[str] | None = None,
         concat_output_tebd: bool = True,
         use_econf_tebd: bool = False,
@@ -260,7 +259,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
+        merged: Callable[[], list[dict]] | list[dict],
         path: DPPath | None = None,
     ) -> None:
         """
@@ -493,7 +492,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list = [25, 50, 100],
         tebd_dim: int = 8,
@@ -505,7 +504,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         smooth: bool = True,
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         self.rcut = rcut
@@ -661,7 +660,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
+        merged: Callable[[], list[dict]] | list[dict],
         path: DPPath | None = None,
     ) -> None:
         """

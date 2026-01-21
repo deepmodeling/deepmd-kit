@@ -4,7 +4,6 @@ from collections.abc import (
 )
 from typing import (
     Any,
-    Union,
 )
 
 import array_api_compat
@@ -208,7 +207,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
         ln_eps: float | None = 1e-5,
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -384,7 +383,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
+        merged: Callable[[], list[dict]] | list[dict],
         path: DPPath | None = None,
     ) -> None:
         """
@@ -593,7 +592,7 @@ def get_residual(
     _mode: str = "norm",
     trainable: bool = True,
     precision: str = "float64",
-    seed: Union[int, list[int]] | None = None,
+    seed: int | list[int] | None = None,
 ) -> Array:
     """
     Get residual tensor for one update vector.
@@ -857,7 +856,7 @@ class Atten2Map(NativeOP):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         """Return neighbor-wise multi-head self-attention maps, with gate mechanism."""
@@ -982,7 +981,7 @@ class Atten2MultiHeadApply(NativeOP):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -1073,7 +1072,7 @@ class Atten2EquiVarApply(NativeOP):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -1154,7 +1153,7 @@ class LocalAtten(NativeOP):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -1320,7 +1319,7 @@ class RepformerLayer(NativeOP):
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
         ln_eps: float | None = 1e-5,
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()

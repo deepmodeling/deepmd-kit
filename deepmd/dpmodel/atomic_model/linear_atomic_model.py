@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Union,
 )
 
 import array_api_compat
@@ -149,14 +148,14 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the processed sels for each individual models. Not distinguishing types."""
         return [model.get_nsel() for model in self.models]
 
-    def get_model_sels(self) -> list[Union[int, list[int]]]:
+    def get_model_sels(self) -> list[int | list[int]]:
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
     def _sort_rcuts_sels(self) -> tuple[tuple[Array, Array], list[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = sorted(
-            zip(self.get_model_rcuts(), self.get_model_nsels()),
+            zip(self.get_model_rcuts(), self.get_model_nsels(), strict=True),
             key=lambda x: (x[1], x[0]),
         )
         return [p[0] for p in zipped], [p[1] for p in zipped]
@@ -236,12 +235,14 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         )
         raw_nlists = [
             nlists[get_multiple_nlist_key(rcut, sel)]
-            for rcut, sel in zip(self.get_model_rcuts(), self.get_model_nsels())
+            for rcut, sel in zip(
+                self.get_model_rcuts(), self.get_model_nsels(), strict=True
+            )
         ]
         nlists_ = [
             nl if mt else nlist_distinguish_types(nl, extended_atype, sel)
             for mt, nl, sel in zip(
-                self.mixed_types_list, raw_nlists, self.get_model_sels()
+                self.mixed_types_list, raw_nlists, self.get_model_sels(), strict=True
             )
         ]
         ener_list = []

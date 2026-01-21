@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Union,
 )
 
 import array_api_compat
@@ -113,7 +112,7 @@ class DipoleFitting(GeneralFitting):
         r_differentiable: bool = True,
         c_differentiable: bool = True,
         type_map: list[str] | None = None,
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
         default_fparam: list[float] | None = None,
     ) -> None:
         if tot_ener_zero:

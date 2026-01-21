@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     TYPE_CHECKING,
-    Union,
 )
 
 import numpy as np
@@ -41,13 +40,13 @@ class DOSFittingNet(InvarFitting):
         dim_case_embd: int = 0,
         bias_dos: Array | None = None,
         rcond: float | None = None,
-        trainable: Union[bool, list[bool]] = True,
+        trainable: bool | list[bool] = True,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = False,
         exclude_types: list[int] = [],
         type_map: list[str] | None = None,
-        seed: Union[int, list[int]] | None = None,
+        seed: int | list[int] | None = None,
         default_fparam: list | None = None,
     ) -> None:
         if bias_dos is not None:
