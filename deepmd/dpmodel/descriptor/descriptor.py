@@ -10,6 +10,7 @@ from collections.abc import (
 from typing import (
     Any,
     NoReturn,
+    Union,
 )
 
 import numpy as np
@@ -86,7 +87,7 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
 
     def compute_input_stats(
         self,
-        merged: Callable[[], list[dict]] | list[dict],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: DPPath | None = None,
     ) -> NoReturn:
         """

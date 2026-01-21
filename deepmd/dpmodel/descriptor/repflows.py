@@ -2,6 +2,9 @@
 from collections.abc import (
     Callable,
 )
+from typing import (
+    Union,
+)
 
 import array_api_compat
 import numpy as np
@@ -205,7 +208,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
         use_loc_mapping: bool = True,
-        seed: int | list[int] | None = None,
+        seed: Union[int, list[int]] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -419,7 +422,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Callable[[], list[dict]] | list[dict],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: DPPath | None = None,
     ) -> None:
         """
@@ -872,7 +875,7 @@ class RepFlowLayer(NativeOP):
         update_residual: float = 0.1,
         update_residual_init: str = "const",
         precision: str = "float64",
-        seed: int | list[int] | None = None,
+        seed: Union[int, list[int]] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()

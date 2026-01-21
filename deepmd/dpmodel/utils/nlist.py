@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Union,
+)
 
 import array_api_compat
 
@@ -51,7 +54,7 @@ def build_neighbor_list(
     atype: Array,
     nloc: int,
     rcut: float,
-    sel: int | list[int],
+    sel: Union[int, list[int]],
     distinguish_types: bool = True,
 ) -> Array:
     """Build neighbor list for a single frame. keeps nsel neighbors.
@@ -96,7 +99,7 @@ def build_neighbor_list(
     nall = coord.shape[1] // 3
     # fill virtual atoms with large coords so they are not neighbors of any
     # real atom.
-    if array_api_compat.size(coord) > 0:
+    if coord.size > 0:
         xmax = xp.max(coord) + 2.0 * rcut
     else:
         xmax = 2.0 * rcut
@@ -117,9 +120,7 @@ def build_neighbor_list(
     assert list(diff.shape) == [batch_size, nloc, nall, 3]
     rr = xp.linalg.vector_norm(diff, axis=-1)
     # if central atom has two zero distances, sorting sometimes can not exclude itself
-    rr -= xp.eye(nloc, nall, dtype=diff.dtype, device=array_api_compat.device(diff))[
-        xp.newaxis, :, :
-    ]
+    rr -= xp.eye(nloc, nall, dtype=diff.dtype)[xp.newaxis, :, :]
     nlist = xp.argsort(rr, axis=-1)
     rr = xp.sort(rr, axis=-1)
     rr = rr[:, :, 1:]
@@ -130,26 +131,11 @@ def build_neighbor_list(
         nlist = nlist[:, :, :nsel]
     else:
         rr = xp.concatenate(
-            [
-                rr,
-                xp.ones(
-                    [batch_size, nloc, nsel - nnei],
-                    dtype=rr.dtype,
-                    device=array_api_compat.device(rr),
-                )
-                + rcut,
-            ],
+            [rr, xp.ones([batch_size, nloc, nsel - nnei], dtype=rr.dtype) + rcut],
             axis=-1,
         )
         nlist = xp.concatenate(
-            [
-                nlist,
-                xp.ones(
-                    [batch_size, nloc, nsel - nnei],
-                    dtype=nlist.dtype,
-                    device=array_api_compat.device(nlist),
-                ),
-            ],
+            [nlist, xp.ones([batch_size, nloc, nsel - nnei], dtype=nlist.dtype)],
             axis=-1,
         )
     assert list(nlist.shape) == [batch_size, nloc, nsel]
@@ -235,11 +221,7 @@ def build_multiple_neighbor_list(
         return {}
     nb, nloc, nsel = nlist.shape
     if nsel < nsels[-1]:
-        pad = -1 * xp.ones(
-            (nb, nloc, nsels[-1] - nsel),
-            dtype=nlist.dtype,
-            device=array_api_compat.device(nlist),
-        )
+        pad = -1 * xp.ones((nb, nloc, nsels[-1] - nsel), dtype=nlist.dtype)
         nlist = xp.concat([nlist, pad], axis=-1)
         nsel = nsels[-1]
     coord1 = xp.reshape(coord, (nb, -1, 3))
@@ -255,7 +237,7 @@ def build_multiple_neighbor_list(
     rr = xp.where(nlist_mask, xp.full_like(rr, float("inf")), rr)
     nlist0 = nlist
     ret = {}
-    for rc, ns in zip(rcuts[::-1], nsels[::-1], strict=True):
+    for rc, ns in zip(rcuts[::-1], nsels[::-1]):
         tnlist_1 = nlist0[:, :, :ns]
         tnlist_1 = xp.where(rr[:, :, :ns] > rc, xp.full_like(tnlist_1, -1), tnlist_1)
         ret[get_multiple_nlist_key(rc, ns)] = tnlist_1
@@ -297,12 +279,7 @@ def extend_coord_with_ghosts(
     xp = array_api_compat.array_namespace(coord, atype)
     nf, nloc = atype.shape
     # int64 for index
-    aidx = xp.tile(
-        xp.arange(nloc, dtype=xp.int64, device=array_api_compat.device(atype))[
-            xp.newaxis, :
-        ],
-        (nf, 1),
-    )
+    aidx = xp.tile(xp.arange(nloc, dtype=xp.int64)[xp.newaxis, :], (nf, 1))
     if cell is None:
         nall = nloc
         extend_coord = coord
@@ -314,41 +291,17 @@ def extend_coord_with_ghosts(
         to_face = to_face_distance(cell)
         nbuff = xp.astype(xp.ceil(rcut / to_face), xp.int64)
         nbuff = xp.max(nbuff, axis=0)
-        xi = xp.arange(
-            -int(nbuff[0]),
-            int(nbuff[0]) + 1,
-            1,
-            dtype=xp.int64,
-            device=array_api_compat.device(coord),
-        )
-        yi = xp.arange(
-            -int(nbuff[1]),
-            int(nbuff[1]) + 1,
-            1,
-            dtype=xp.int64,
-            device=array_api_compat.device(coord),
-        )
-        zi = xp.arange(
-            -int(nbuff[2]),
-            int(nbuff[2]) + 1,
-            1,
-            dtype=xp.int64,
-            device=array_api_compat.device(coord),
-        )
-        xyz = xp.linalg.outer(
-            xi, xp.asarray([1, 0, 0], device=array_api_compat.device(xi))
-        )[:, xp.newaxis, xp.newaxis, :]
+        xi = xp.arange(-int(nbuff[0]), int(nbuff[0]) + 1, 1, dtype=xp.int64)
+        yi = xp.arange(-int(nbuff[1]), int(nbuff[1]) + 1, 1, dtype=xp.int64)
+        zi = xp.arange(-int(nbuff[2]), int(nbuff[2]) + 1, 1, dtype=xp.int64)
+        xyz = xp.linalg.outer(xi, xp.asarray([1, 0, 0]))[:, xp.newaxis, xp.newaxis, :]
         xyz = (
             xyz
-            + xp.linalg.outer(
-                yi, xp.asarray([0, 1, 0], device=array_api_compat.device(yi))
-            )[xp.newaxis, :, xp.newaxis, :]
+            + xp.linalg.outer(yi, xp.asarray([0, 1, 0]))[xp.newaxis, :, xp.newaxis, :]
         )
         xyz = (
             xyz
-            + xp.linalg.outer(
-                zi, xp.asarray([0, 0, 1], device=array_api_compat.device(zi))
-            )[xp.newaxis, xp.newaxis, :, :]
+            + xp.linalg.outer(zi, xp.asarray([0, 0, 1]))[xp.newaxis, xp.newaxis, :, :]
         )
         xyz = xp.reshape(xyz, (-1, 3))
         xyz = xp.astype(xyz, coord.dtype)

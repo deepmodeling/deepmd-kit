@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
 
-import numpy as np
-
 from deepmd.dpmodel.atomic_model import (
     DPAtomicModel,
     DPZBLLinearEnergyAtomicModel,
@@ -74,13 +72,6 @@ from ..fitting.test_fitting import (
 )
 
 
-def make_sel_type_from_atom_exclude_types(type_map, atom_exclude_types):
-    """Get sel_type from complement of atom_exclude_types."""
-    full_type_list = np.arange(len(type_map), dtype=int)
-    sel_type = np.setdiff1d(full_type_list, atom_exclude_types, assume_unique=True)
-    return sel_type.tolist()
-
-
 @parameterized(
     des_parameterized=(
         (
@@ -94,7 +85,6 @@ def make_sel_type_from_atom_exclude_types(type_map, atom_exclude_types):
             (DescriptorParamHybridMixedTTebd, DescrptHybrid),
         ),  # descrpt_class_param & class
         ((FittingParamEnergy, EnergyFittingNet),),  # fitting_class_param & class
-        ([], [0]),  # atom_exclude_types
     ),
     fit_parameterized=(
         (
@@ -107,7 +97,6 @@ def make_sel_type_from_atom_exclude_types(type_map, atom_exclude_types):
         (
             *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
         ),  # fitting_class_param & class
-        ([], [0]),  # atom_exclude_types
     ),
 )
 @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
@@ -139,21 +128,15 @@ class TestEnergyAtomicModelDP(unittest.TestCase, EnerAtomicModelTest, DPTestCase
             **cls.input_dict_ft,
         )
         cls.module = DPAtomicModel(
-            ds, ft, type_map=cls.expected_type_map, atom_exclude_types=cls.param[2]
+            ds,
+            ft,
+            type_map=cls.expected_type_map,
         )
         cls.output_def = cls.module.atomic_output_def().get_data()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
-
-    def test_sel_type_from_atom_exclude_types(self):
-        self.assertEqual(
-            make_sel_type_from_atom_exclude_types(
-                self.expected_type_map, self.param[2]
-            ),
-            self.expected_sel_type,
-        )
 
 
 @parameterized(
@@ -169,7 +152,6 @@ class TestEnergyAtomicModelDP(unittest.TestCase, EnerAtomicModelTest, DPTestCase
             (DescriptorParamHybridMixedTTebd, DescrptHybrid),
         ),  # descrpt_class_param & class
         ((FittingParamDos, DOSFittingNet),),  # fitting_class_param & class
-        ([], [0]),  # atom_exclude_types
     ),
     fit_parameterized=(
         (
@@ -182,7 +164,6 @@ class TestEnergyAtomicModelDP(unittest.TestCase, EnerAtomicModelTest, DPTestCase
         (
             *[(param_func, DOSFittingNet) for param_func in FittingParamDosList],
         ),  # fitting_class_param & class
-        ([], [0]),  # atom_exclude_types
     ),
 )
 @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
@@ -214,21 +195,15 @@ class TestDosAtomicModelDP(unittest.TestCase, DosAtomicModelTest, DPTestCase):
             **cls.input_dict_ft,
         )
         cls.module = DPAtomicModel(
-            ds, ft, type_map=cls.expected_type_map, atom_exclude_types=cls.param[2]
+            ds,
+            ft,
+            type_map=cls.expected_type_map,
         )
         cls.output_def = cls.module.atomic_output_def().get_data()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
-
-    def test_sel_type_from_atom_exclude_types(self):
-        self.assertEqual(
-            make_sel_type_from_atom_exclude_types(
-                self.expected_type_map, self.param[2]
-            ),
-            self.expected_sel_type,
-        )
 
 
 @parameterized(
@@ -241,7 +216,6 @@ class TestDosAtomicModelDP(unittest.TestCase, DosAtomicModelTest, DPTestCase):
             (DescriptorParamHybridMixed, DescrptHybrid),
         ),  # descrpt_class_param & class
         ((FittingParamDipole, DipoleFitting),),  # fitting_class_param & class
-        ([], [0]),  # atom_exclude_types
     ),
     fit_parameterized=(
         (
@@ -252,7 +226,6 @@ class TestDosAtomicModelDP(unittest.TestCase, DosAtomicModelTest, DPTestCase):
         (
             *[(param_func, DipoleFitting) for param_func in FittingParamDipoleList],
         ),  # fitting_class_param & class
-        ([], [0]),  # atom_exclude_types
     ),
 )
 @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
@@ -285,21 +258,15 @@ class TestDipoleAtomicModelDP(unittest.TestCase, DipoleAtomicModelTest, DPTestCa
             **cls.input_dict_ft,
         )
         cls.module = DPAtomicModel(
-            ds, ft, type_map=cls.expected_type_map, atom_exclude_types=cls.param[2]
+            ds,
+            ft,
+            type_map=cls.expected_type_map,
         )
         cls.output_def = cls.module.atomic_output_def().get_data()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
-
-    def test_sel_type_from_atom_exclude_types(self):
-        self.assertEqual(
-            make_sel_type_from_atom_exclude_types(
-                self.expected_type_map, self.param[2]
-            ),
-            self.expected_sel_type,
-        )
 
 
 @parameterized(
@@ -312,7 +279,6 @@ class TestDipoleAtomicModelDP(unittest.TestCase, DipoleAtomicModelTest, DPTestCa
             (DescriptorParamHybridMixed, DescrptHybrid),
         ),  # descrpt_class_param & class
         ((FittingParamPolar, PolarFitting),),  # fitting_class_param & class
-        ([], [0]),  # atom_exclude_types
     ),
     fit_parameterized=(
         (
@@ -323,7 +289,6 @@ class TestDipoleAtomicModelDP(unittest.TestCase, DipoleAtomicModelTest, DPTestCa
         (
             *[(param_func, PolarFitting) for param_func in FittingParamPolarList],
         ),  # fitting_class_param & class
-        ([], [0]),  # atom_exclude_types
     ),
 )
 @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
@@ -356,21 +321,15 @@ class TestPolarAtomicModelDP(unittest.TestCase, PolarAtomicModelTest, DPTestCase
             **cls.input_dict_ft,
         )
         cls.module = DPAtomicModel(
-            ds, ft, type_map=cls.expected_type_map, atom_exclude_types=cls.param[2]
+            ds,
+            ft,
+            type_map=cls.expected_type_map,
         )
         cls.output_def = cls.module.atomic_output_def().get_data()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
-
-    def test_sel_type_from_atom_exclude_types(self):
-        self.assertEqual(
-            make_sel_type_from_atom_exclude_types(
-                self.expected_type_map, self.param[2]
-            ),
-            self.expected_sel_type,
-        )
 
 
 @parameterized(
@@ -456,7 +415,6 @@ class TestZBLAtomicModelDP(unittest.TestCase, ZBLAtomicModelTest, DPTestCase):
             (DescriptorParamHybridMixedTTebd, DescrptHybrid),
         ),  # descrpt_class_param & class
         ((FittingParamProperty, PropertyFittingNet),),  # fitting_class_param & class
-        ([], [0]),  # atom_exclude_types
     ),
     fit_parameterized=(
         (
@@ -470,7 +428,6 @@ class TestZBLAtomicModelDP(unittest.TestCase, ZBLAtomicModelTest, DPTestCase):
                 for param_func in FittingParamPropertyList
             ],
         ),  # fitting_class_param & class
-        ([], [0]),  # atom_exclude_types
     ),
 )
 @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
@@ -503,18 +460,12 @@ class TestPropertyAtomicModelDP(unittest.TestCase, PropertyAtomicModelTest, DPTe
             **cls.input_dict_ft,
         )
         cls.module = DPAtomicModel(
-            ds, ft, type_map=cls.expected_type_map, atom_exclude_types=cls.param[2]
+            ds,
+            ft,
+            type_map=cls.expected_type_map,
         )
         cls.output_def = cls.module.atomic_output_def().get_data()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
-
-    def test_sel_type_from_atom_exclude_types(self):
-        self.assertEqual(
-            make_sel_type_from_atom_exclude_types(
-                self.expected_type_map, self.param[2]
-            ),
-            self.expected_sel_type,
-        )

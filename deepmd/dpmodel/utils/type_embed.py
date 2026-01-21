@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
+    Union,
 )
 
 import array_api_compat
@@ -63,7 +64,7 @@ class TypeEmbedNet(NativeOP):
         activation_function: str = "tanh",
         precision: str = "default",
         trainable: bool = True,
-        seed: int | list[int] | None = None,
+        seed: Union[int, list[int]] | None = None,
         padding: bool = False,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,

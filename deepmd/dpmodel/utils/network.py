@@ -11,6 +11,7 @@ from collections.abc import (
 from typing import (
     Any,
     ClassVar,
+    Union,
 )
 
 import array_api_compat
@@ -102,7 +103,7 @@ class NativeLayer(NativeOP):
         activation_function: str | None = None,
         resnet: bool = False,
         precision: str = DEFAULT_PRECISION,
-        seed: int | list[int] | None = None,
+        seed: Union[int, list[int]] | None = None,
         trainable: bool = True,
     ) -> None:
         # trainable must be set before any array attribute is set
@@ -425,7 +426,7 @@ class LayerNorm(NativeLayer):
         uni_init: bool = True,
         trainable: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: int | list[int] | None = None,
+        seed: Union[int, list[int]] | None = None,
     ) -> None:
         self.eps = eps
         self.uni_init = uni_init
@@ -715,9 +716,9 @@ def make_embedding_network(T_Network: type, T_NetworkLayer: type) -> type:
             activation_function: str = "tanh",
             resnet_dt: bool = False,
             precision: str = DEFAULT_PRECISION,
-            seed: int | list[int] | None = None,
+            seed: Union[int, list[int]] | None = None,
             bias: bool = True,
-            trainable: bool | list[bool] = True,
+            trainable: Union[bool, list[bool]] = True,
         ) -> None:
             layers = []
             i_in = in_dim
@@ -827,8 +828,8 @@ def make_fitting_network(
             resnet_dt: bool = False,
             precision: str = DEFAULT_PRECISION,
             bias_out: bool = True,
-            seed: int | list[int] | None = None,
-            trainable: bool | list[bool] = True,
+            seed: Union[int, list[int]] | None = None,
+            trainable: Union[bool, list[bool]] = True,
         ) -> None:
             if trainable is None:
                 trainable = [True] * (len(neuron) + 1)
@@ -937,7 +938,7 @@ class NetworkCollection:
         ndim: int,
         ntypes: int,
         network_type: str = "network",
-        networks: list[NativeNet | dict] = [],
+        networks: list[Union[NativeNet, dict]] = [],
     ) -> None:
         self.ndim = ndim
         self.ntypes = ntypes
@@ -960,7 +961,7 @@ class NetworkCollection:
             if self[tuple(tt)] is None:
                 raise RuntimeError(f"network for {tt} not found")
 
-    def _convert_key(self, key: int | tuple) -> int:
+    def _convert_key(self, key: Union[int, tuple]) -> int:
         if isinstance(key, int):
             idx = key
         else:
@@ -975,10 +976,10 @@ class NetworkCollection:
             idx = sum([tt * self.ntypes**ii for ii, tt in enumerate(key)])
         return idx
 
-    def __getitem__(self, key: int | tuple) -> Any:
+    def __getitem__(self, key: Union[int, tuple]) -> Any:
         return self._networks[self._convert_key(key)]
 
-    def __setitem__(self, key: int | tuple, value: Any) -> None:
+    def __setitem__(self, key: Union[int, tuple], value: Any) -> None:
         if value is None:
             pass
         elif isinstance(value, self.network_type):

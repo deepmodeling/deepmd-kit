@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Union,
     overload,
 )
 
@@ -9,10 +10,10 @@ def child_seed(seed: None, idx: int) -> None: ...
 
 
 @overload
-def child_seed(seed: int | list[int], idx: int) -> list[int]: ...
+def child_seed(seed: Union[int, list[int]], idx: int) -> list[int]: ...
 
 
-def child_seed(seed: int | list[int] | None, idx: int) -> list[int] | None:
+def child_seed(seed: Union[int, list[int]] | None, idx: int) -> list[int] | None:
     """Generate a child seed from a parent seed.
 
     Parameters

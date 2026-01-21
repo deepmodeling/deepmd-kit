@@ -51,8 +51,6 @@ class DPAtomicModel(BaseAtomicModel):
         self.type_map = type_map
         self.descriptor = descriptor
         self.fitting = fitting
-        if hasattr(self.fitting, "reinit_exclude"):
-            self.fitting.reinit_exclude(self.atom_exclude_types)
         self.type_map = type_map
         super().init_out_stat()
 
@@ -193,7 +191,7 @@ class DPAtomicModel(BaseAtomicModel):
             if model_with_new_type_stat is not None
             else None,
         )
-        self.fitting.change_type_map(type_map=type_map)
+        self.fitting_net.change_type_map(type_map=type_map)
 
     def serialize(self) -> dict:
         dd = super().serialize()
@@ -239,10 +237,6 @@ class DPAtomicModel(BaseAtomicModel):
     def has_default_fparam(self) -> bool:
         """Check if the model has default frame parameters."""
         return self.fitting.has_default_fparam()
-
-    def get_default_fparam(self) -> list[float] | None:
-        """Get the default frame parameters."""
-        return self.fitting.get_default_fparam()
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.

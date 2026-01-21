@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
+    Union,
 )
 
 import array_api_compat
@@ -120,7 +121,7 @@ class PolarFitting(GeneralFitting):
         scale: list[float] | None = None,
         shift_diag: bool = True,
         type_map: list[str] | None = None,
-        seed: int | list[int] | None = None,
+        seed: Union[int, list[int]] | None = None,
         default_fparam: list[float] | None = None,
     ) -> None:
         if tot_ener_zero:

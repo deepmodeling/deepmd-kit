@@ -95,10 +95,6 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Check if the model has default frame parameters."""
         return False
 
-    def get_default_fparam(self) -> list[float] | None:
-        """Get the default frame parameters."""
-        return None
-
     def reinit_atom_exclude(
         self,
         exclude_types: list[int] = [],

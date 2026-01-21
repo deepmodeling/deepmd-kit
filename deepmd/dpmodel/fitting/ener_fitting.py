@@ -2,6 +2,7 @@
 from typing import (
     TYPE_CHECKING,
     Any,
+    Union,
 )
 
 from deepmd.dpmodel.common import (
@@ -43,7 +44,7 @@ class EnergyFittingNet(InvarFitting):
         mixed_types: bool = False,
         exclude_types: list[int] = [],
         type_map: list[str] | None = None,
-        seed: int | list[int] | None = None,
+        seed: Union[int, list[int]] | None = None,
         default_fparam: list | None = None,
     ) -> None:
         super().__init__(
