@@ -63,7 +63,7 @@ def _get_standard_model_components(model_params, ntypes):
     return descriptor, fitting, fitting_net["type"]
 
 
-def _can_be_converted_to_float(value):
+def _can_be_converted_to_float(value) -> bool | None:
     try:
         float(value)
         return True

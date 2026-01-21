@@ -45,7 +45,7 @@ class EnergyFittingNet(InvarFitting):
         seed: int | list[int] | None = None,
         type_map: list[str] | None = None,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(
             "energy",
             ntypes,

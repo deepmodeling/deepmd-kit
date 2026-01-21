@@ -538,7 +538,7 @@ class EnergyHessianStdLoss(EnergyStdLoss):
         start_pref_h=0.0,
         limit_pref_h=0.0,
         **kwargs,
-    ):
+    ) -> None:
         r"""Enable the layer to compute loss on hessian.
 
         Parameters

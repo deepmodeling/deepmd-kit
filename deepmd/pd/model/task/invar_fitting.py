@@ -102,7 +102,7 @@ class InvarFitting(GeneralFitting):
         type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
         **kwargs,
-    ):
+    ) -> None:
         self.dim_out = dim_out
         self.atom_ener = atom_ener
         super().__init__(

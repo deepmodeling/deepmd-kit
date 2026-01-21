@@ -491,7 +491,7 @@ class GeneralFitting(Fitting):
         """
         return self.buffer_type_map
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this fitting net by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.

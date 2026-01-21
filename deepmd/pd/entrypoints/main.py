@@ -574,7 +574,7 @@ def change_bias(
     log.info(f"Saved model to {output_path}")
 
 
-def main(args: list[str] | argparse.Namespace | None = None):
+def main(args: list[str] | argparse.Namespace | None = None) -> None:
     if not isinstance(args, argparse.Namespace):
         FLAGS = parse_args(args=args)
     else:

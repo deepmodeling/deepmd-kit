@@ -203,7 +203,7 @@ class DpLoaderSet(Dataset):
         class LazyIter:
             """Lazy iterator to prevent fetching data when iter(item)."""
 
-            def __init__(self, item):
+            def __init__(self, item) -> None:
                 self.item = item
 
             def __iter__(self):
@@ -221,7 +221,7 @@ class DpLoaderSet(Dataset):
         for item in self.dataloaders:
             self.iters.append(LazyIter(item))
 
-    def set_noise(self, noise_settings):
+    def set_noise(self, noise_settings) -> None:
         # noise_settings['noise_type'] # "trunc_normal", "normal", "uniform"
         # noise_settings['noise'] # float, default 1.0
         # noise_settings['noise_mode'] # "prob", "fix_num"
@@ -244,7 +244,7 @@ class DpLoaderSet(Dataset):
         batch["sid"] = idx
         return batch
 
-    def add_data_requirement(self, data_requirement: list[DataRequirementItem]):
+    def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
         """Add data requirement for each system in multiple systems."""
         for system in self.systems:
             system.add_data_requirement(data_requirement)
@@ -253,7 +253,7 @@ class DpLoaderSet(Dataset):
         self,
         name: str,
         prob: list[float],
-    ):
+    ) -> None:
         rank = dist.get_rank() if dist.is_initialized() else 0
         if rank == 0:
             print_summary(

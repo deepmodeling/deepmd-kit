@@ -517,7 +517,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
         def deserialize(cls, data) -> "CM":
             return cls(atomic_model_=T_AtomicModel.deserialize(data))
 
-        def set_case_embd(self, case_idx: int):
+        def set_case_embd(self, case_idx: int) -> None:
             self.atomic_model.set_case_embd(case_idx)
 
         def get_dim_fparam(self) -> int:

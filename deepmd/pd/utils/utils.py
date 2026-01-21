@@ -196,7 +196,7 @@ class SiLUT(paddle.nn.Layer):
 
 
 class ActivationFn(paddle.nn.Layer):
-    def __init__(self, activation: str | None):
+    def __init__(self, activation: str | None) -> None:
         super().__init__()
         self.activation: str = activation if activation is not None else "linear"
         if self.activation.lower().startswith(

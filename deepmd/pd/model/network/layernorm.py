@@ -42,7 +42,7 @@ class LayerNorm(nn.Layer):
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
         seed: int | list[int] | None = None,
-    ):
+    ) -> None:
         super().__init__()
         self.eps = eps
         self.uni_init = uni_init

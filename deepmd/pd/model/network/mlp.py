@@ -50,7 +50,7 @@ def empty_t(shape, precision):
 
 
 class Identity(nn.Layer):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
     def forward(
@@ -86,7 +86,7 @@ class MLPLayer(nn.Layer):
         init: str = "default",
         seed: int | list[int] | None = None,
         trainable: bool = True,
-    ):
+    ) -> None:
         super().__init__()
         self.trainable = trainable
         # only use_timestep when skip connection is established.
@@ -147,10 +147,10 @@ class MLPLayer(nn.Layer):
         else:
             raise ValueError(f"Unknown initialization method: {init}")
 
-    def check_type_consistency(self):
+    def check_type_consistency(self) -> None:
         precision = self.precision
 
-        def check_var(var):
+        def check_var(var) -> None:
             if var is not None:
                 # assertion "float64" == "double" would fail
                 assert PRECISION_DICT[var.dtype.name] is PRECISION_DICT[precision]
@@ -170,7 +170,7 @@ class MLPLayer(nn.Layer):
         bavg: float = 0.0,
         stddev: float = 1.0,
         generator: PaddleGenerator | None = None,
-    ):
+    ) -> None:
         normal_(
             self.matrix.data,
             std=stddev / np.sqrt(self.num_out + self.num_in),
@@ -181,7 +181,7 @@ class MLPLayer(nn.Layer):
         if self.idt is not None:
             normal_(self.idt.data, mean=0.1, std=0.001, generator=generator)
 
-    def _trunc_normal_init(self, scale=1.0, generator: PaddleGenerator | None = None):
+    def _trunc_normal_init(self, scale=1.0, generator: PaddleGenerator | None = None) -> None:
         # Constant from scipy.stats.truncnorm.std(a=-2, b=2, loc=0., scale=1.)
         TRUNCATED_NORMAL_STDDEV_FACTOR = 0.87962566103423978
         _, fan_in = self.matrix.shape
@@ -189,17 +189,17 @@ class MLPLayer(nn.Layer):
         std = (scale**0.5) / TRUNCATED_NORMAL_STDDEV_FACTOR
         trunc_normal_(self.matrix, mean=0.0, std=std, generator=generator)
 
-    def _glorot_uniform_init(self, generator: PaddleGenerator | None = None):
+    def _glorot_uniform_init(self, generator: PaddleGenerator | None = None) -> None:
         xavier_uniform_(self.matrix, gain=1, generator=generator)
 
-    def _zero_init(self, use_bias=True):
+    def _zero_init(self, use_bias=True) -> None:
         with paddle.no_grad():
             self.matrix.fill_(0.0)
             if use_bias and self.bias is not None:
                 with paddle.no_grad():
                     self.bias.fill_(1.0)
 
-    def _normal_init(self, generator: PaddleGenerator | None = None):
+    def _normal_init(self, generator: PaddleGenerator | None = None) -> None:
         kaiming_normal_(self.matrix, nonlinearity="linear", generator=generator)
 
     def forward(
@@ -304,7 +304,7 @@ MLP_ = make_multilayer_network(MLPLayer, nn.Layer)
 
 
 class MLP(MLP_):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.layers = paddle.nn.LayerList(self.layers)
 
@@ -325,7 +325,7 @@ class NetworkCollection(DPNetworkCollection, nn.Layer):
         "fitting_network": FittingNet,
     }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         # init both two base classes
         DPNetworkCollection.__init__(self, *args, **kwargs)
         nn.Layer.__init__(self)

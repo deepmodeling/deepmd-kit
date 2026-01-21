@@ -8,10 +8,11 @@ from deepmd.dpmodel.model.base_model import (
 from deepmd.utils.path import (
     DPPath,
 )
+from typing import NoReturn
 
 
 class BaseModel(paddle.nn.Layer, make_base_model()):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         """Construct a basic model for different tasks."""
         paddle.nn.Layer.__init__(self)
         self.model_def_script = ""
@@ -21,7 +22,7 @@ class BaseModel(paddle.nn.Layer, make_base_model()):
         self,
         sampled_func,
         stat_file_path: DPPath | None = None,
-    ):
+    ) -> NoReturn:
         """
         Compute or load the statistics parameters of the model,
         such as mean and standard deviation of descriptors or the energy bias of the fitting net.
