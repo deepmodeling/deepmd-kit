@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import array_api_compat
@@ -108,22 +106,22 @@ class PolarFitting(GeneralFitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        rcond: Optional[float] = None,
+        rcond: float | None = None,
         tot_ener_zero: bool = False,
-        trainable: Optional[list[bool]] = None,
+        trainable: list[bool] | None = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        layer_name: Optional[list[Optional[str]]] = None,
+        layer_name: list[str | None] | None = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         mixed_types: bool = False,
         exclude_types: list[int] = [],
         fit_diag: bool = True,
-        scale: Optional[list[float]] = None,
+        scale: list[float] | None = None,
         shift_diag: bool = True,
-        type_map: Optional[list[str]] = None,
-        seed: Optional[Union[int, list[int]]] = None,
-        default_fparam: Optional[list[float]] = None,
+        type_map: list[str] | None = None,
+        seed: int | list[int] | None = None,
+        default_fparam: list[float] | None = None,
     ) -> None:
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
@@ -257,11 +255,11 @@ class PolarFitting(GeneralFitting):
         self,
         descriptor: Array,
         atype: Array,
-        gr: Optional[Array] = None,
-        g2: Optional[Array] = None,
-        h2: Optional[Array] = None,
-        fparam: Optional[Array] = None,
-        aparam: Optional[Array] = None,
+        gr: Array | None = None,
+        g2: Array | None = None,
+        h2: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
     ) -> dict[str, Array]:
         """Calculate the fitting.
 

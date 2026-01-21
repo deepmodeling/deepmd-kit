@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+from collections.abc import (
+    Callable,
+)
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Optional,
-    Union,
 )
 
 import numpy as np
@@ -83,7 +84,7 @@ class DeepEval(DeepEvalBackend):
         model_file: str,
         output_def: ModelOutputDef,
         *args: Any,
-        auto_batch_size: Union[bool, int, AutoBatchSize] = True,
+        auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         **kwargs: Any,
     ) -> None:
@@ -103,7 +104,7 @@ class DeepEval(DeepEvalBackend):
                 stablehlo_atomic_virial_no_ghost=model_data["@variables"][
                     "stablehlo_atomic_virial_no_ghost"
                 ].tobytes(),
-                model_def_script=model_data["model_def_script"],
+                model_def_script=json.dumps(model_data["model_def_script"]),
                 **model_data["constants"],
             )
         elif model_file.endswith(".savedmodel"):
@@ -158,7 +159,7 @@ class DeepEval(DeepEvalBackend):
             return DeepDOS
         elif "dipole" in model_output_type:
             return DeepDipole
-        elif "polar" in model_output_type:
+        elif "polar" in model_output_type or "polarizability" in model_output_type:
             return DeepPolar
         elif "wfc" in model_output_type:
             return DeepWFC
@@ -189,11 +190,11 @@ class DeepEval(DeepEvalBackend):
     def eval(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         **kwargs: Any,
     ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
@@ -248,6 +249,7 @@ class DeepEval(DeepEvalBackend):
             zip(
                 [x.name for x in request_defs],
                 out,
+                strict=True,
             )
         )
 
@@ -330,10 +332,10 @@ class DeepEval(DeepEvalBackend):
     def _eval_model(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray],
-        aparam: Optional[np.ndarray],
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
     ) -> tuple[np.ndarray, ...]:
         model = self.dp
@@ -353,6 +355,14 @@ class DeepEval(DeepEvalBackend):
             box_input = None
         if fparam is not None:
             fparam_input = fparam.reshape(nframes, self.get_dim_fparam())
+        elif self.dp.has_default_fparam():
+            # JAX (XLA) requires static shapes, so default must be implemented here
+            default_fparam = self.dp.get_default_fparam()
+            assert default_fparam is not None
+            fparam_input = np.tile(
+                np.array(default_fparam, dtype=GLOBAL_NP_FLOAT_PRECISION),
+                (nframes, 1),
+            )
         else:
             fparam_input = None
         if aparam is not None:
@@ -432,3 +442,7 @@ class DeepEval(DeepEvalBackend):
             The JAX model as BaseModel instance.
         """
         return self.dp
+
+    def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
+        return self.dp.has_default_fparam()

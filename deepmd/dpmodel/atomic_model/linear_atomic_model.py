@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import array_api_compat
@@ -115,7 +113,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return self.type_map
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -150,14 +148,14 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the processed sels for each individual models. Not distinguishing types."""
         return [model.get_nsel() for model in self.models]
 
-    def get_model_sels(self) -> list[Union[int, list[int]]]:
+    def get_model_sels(self) -> list[int | list[int]]:
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
     def _sort_rcuts_sels(self) -> tuple[tuple[Array, Array], list[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = sorted(
-            zip(self.get_model_rcuts(), self.get_model_nsels()),
+            zip(self.get_model_rcuts(), self.get_model_nsels(), strict=True),
             key=lambda x: (x[1], x[0]),
         )
         return [p[0] for p in zipped], [p[1] for p in zipped]
@@ -199,9 +197,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         extended_coord: Array,
         extended_atype: Array,
         nlist: Array,
-        mapping: Optional[Array] = None,
-        fparam: Optional[Array] = None,
-        aparam: Optional[Array] = None,
+        mapping: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
     ) -> dict[str, Array]:
         """Return atomic prediction.
 
@@ -237,12 +235,14 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         )
         raw_nlists = [
             nlists[get_multiple_nlist_key(rcut, sel)]
-            for rcut, sel in zip(self.get_model_rcuts(), self.get_model_nsels())
+            for rcut, sel in zip(
+                self.get_model_rcuts(), self.get_model_nsels(), strict=True
+            )
         ]
         nlists_ = [
             nl if mt else nlist_distinguish_types(nl, extended_atype, sel)
             for mt, nl, sel in zip(
-                self.mixed_types_list, raw_nlists, self.get_model_sels()
+                self.mixed_types_list, raw_nlists, self.get_model_sels(), strict=True
             )
         ]
         ener_list = []
@@ -401,7 +401,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         sw_rmin: float,
         sw_rmax: float,
         type_map: list[str],
-        smin_alpha: Optional[float] = 0.1,
+        smin_alpha: float | None = 0.1,
         **kwargs: Any,
     ) -> None:
         models = [dp_model, zbl_model]

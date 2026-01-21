@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 import logging
-from typing import (
-    Optional,
-    Union,
-)
 
 import paddle
 
@@ -91,7 +87,7 @@ class InvarFitting(GeneralFitting):
         dim_descrpt: int,
         dim_out: int,
         neuron: list[int] = [128, 128, 128],
-        bias_atom_e: Optional[paddle.Tensor] = None,
+        bias_atom_e: paddle.Tensor | None = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -99,11 +95,11 @@ class InvarFitting(GeneralFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        rcond: Optional[float] = None,
-        seed: Optional[Union[int, list[int]]] = None,
+        rcond: float | None = None,
+        seed: int | list[int] | None = None,
         exclude_types: list[int] = [],
-        atom_ener: Optional[list[Optional[paddle.Tensor]]] = None,
-        type_map: Optional[list[str]] = None,
+        atom_ener: list[paddle.Tensor | None] | None = None,
+        type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
         **kwargs,
     ):
@@ -167,11 +163,11 @@ class InvarFitting(GeneralFitting):
         self,
         descriptor: paddle.Tensor,
         atype: paddle.Tensor,
-        gr: Optional[paddle.Tensor] = None,
-        g2: Optional[paddle.Tensor] = None,
-        h2: Optional[paddle.Tensor] = None,
-        fparam: Optional[paddle.Tensor] = None,
-        aparam: Optional[paddle.Tensor] = None,
+        gr: paddle.Tensor | None = None,
+        g2: paddle.Tensor | None = None,
+        h2: paddle.Tensor | None = None,
+        fparam: paddle.Tensor | None = None,
+        aparam: paddle.Tensor | None = None,
     ):
         """Based on embedding net output, alculate total energy.
 

@@ -7,8 +7,6 @@ from enum import (
 )
 from typing import (
     NoReturn,
-    Optional,
-    Union,
 )
 
 from deepmd.entrypoints.convert_backend import (
@@ -83,10 +81,10 @@ class FrozenModel(Model):
         box: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        frz_model: Optional[str] = None,
-        ckpt_meta: Optional[str] = None,
+        frz_model: str | None = None,
+        ckpt_meta: str | None = None,
         suffix: str = "",
-        reuse: Optional[Union[bool, Enum]] = None,
+        reuse: bool | Enum | None = None,
     ) -> dict:
         """Build the model.
 
@@ -185,11 +183,11 @@ class FrozenModel(Model):
                 "Contribution is welcome!"
             )
 
-    def get_fitting(self) -> Union[Fitting, dict]:
+    def get_fitting(self) -> Fitting | dict:
         """Get the fitting(s)."""
         return {}
 
-    def get_loss(self, loss: dict, lr) -> Optional[Union[Loss, dict]]:
+    def get_loss(self, loss: dict, lr) -> Loss | dict | None:
         """Get the loss function(s)."""
         # loss should be never used for a frozen model
         return
@@ -243,9 +241,9 @@ class FrozenModel(Model):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

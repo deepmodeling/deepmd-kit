@@ -3,9 +3,6 @@
 
 import subprocess as sp
 import sys
-from typing import (
-    Optional,
-)
 
 from deepmd.tf.env import (
     tf,
@@ -49,7 +46,7 @@ def get_gpus():
         return list(range(num_gpus)) if num_gpus > 0 else None
 
 
-def get_resource() -> tuple[str, list[str], Optional[list[int]]]:
+def get_resource() -> tuple[str, list[str], list[int] | None]:
     """Get local resources: nodename, nodelist, and gpus.
 
     Returns

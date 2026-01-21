@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Utilities for the array API."""
 
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
-    Optional,
-    Union,
 )
 
 import array_api_compat
@@ -15,7 +15,7 @@ from packaging.version import (
 )
 
 # Type alias for array_api compatible arrays
-Array = Union[np.ndarray, Any]  # Any to support JAX, PyTorch, etc. arrays
+Array = np.ndarray | Any  # Any to support JAX, PyTorch, etc. arrays
 
 
 def support_array_api(version: str) -> Callable:
@@ -125,7 +125,7 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
         return x
 
 
-def xp_bincount(x: Array, weights: Optional[Array] = None, minlength: int = 0) -> Array:
+def xp_bincount(x: Array, weights: Array | None = None, minlength: int = 0) -> Array:
     """Counts the number of occurrences of each value in x."""
     xp = array_api_compat.array_namespace(x)
     if array_api_compat.is_numpy_array(x) or array_api_compat.is_jax_array(x):

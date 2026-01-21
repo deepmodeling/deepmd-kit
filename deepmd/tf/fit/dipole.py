@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-)
 
 import numpy as np
 
@@ -97,15 +94,15 @@ class DipoleFittingSeA(Fitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        sel_type: Optional[list[int]] = None,
-        seed: Optional[int] = None,
+        sel_type: list[int] | None = None,
+        seed: int | None = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
         mixed_types: bool = False,
-        type_map: Optional[list[str]] = None,  # to be compat with input
-        default_fparam: Optional[list[float]] = None,  # to be compat with input
-        trainable: Optional[list[bool]] = None,
+        type_map: list[str] | None = None,  # to be compat with input
+        default_fparam: list[float] | None = None,  # to be compat with input
+        trainable: list[bool] | None = None,
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -240,8 +237,8 @@ class DipoleFittingSeA(Fitting):
         input_d: tf.Tensor,
         rot_mat: tf.Tensor,
         natoms: tf.Tensor,
-        input_dict: Optional[dict] = None,
-        reuse: Optional[bool] = None,
+        input_dict: dict | None = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for fitting net.
@@ -373,7 +370,7 @@ class DipoleFittingSeA(Fitting):
             graph_def, suffix=suffix
         )
 
-    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: dict | None = None) -> None:
         """Receive the mixed precision setting.
 
         Parameters

@@ -7,7 +7,6 @@ from abc import (
 )
 from typing import (
     Any,
-    Optional,
 )
 
 from deepmd.utils.data_system import (
@@ -133,7 +132,7 @@ def make_base_model() -> type[object]:
 
         model_def_script: str
         """The model definition script."""
-        min_nbor_dist: Optional[float]
+        min_nbor_dist: float | None
         """The minimum distance between two atoms. Used for model compression.
         None when skipping neighbor statistics.
         """
@@ -143,7 +142,7 @@ def make_base_model() -> type[object]:
             """Get the model definition script."""
             pass
 
-        def get_min_nbor_dist(self) -> Optional[float]:
+        def get_min_nbor_dist(self) -> float | None:
             """Get the minimum distance between two atoms."""
             return self.min_nbor_dist
 
@@ -163,9 +162,9 @@ def make_base_model() -> type[object]:
         def update_sel(
             cls,
             train_data: DeepmdDataSystem,
-            type_map: Optional[list[str]],
+            type_map: list[str] | None,
             local_jdata: dict,
-        ) -> tuple[dict, Optional[float]]:
+        ) -> tuple[dict, float | None]:
             """Update the selection and perform neighbor statistics.
 
             Parameters

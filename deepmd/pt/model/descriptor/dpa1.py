@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import warnings
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
-    Optional,
-    Union,
 )
 
 import torch
@@ -220,7 +221,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list = [25, 50, 100],
         axis_neuron: int = 16,
@@ -238,21 +239,21 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         env_protection: float = 0.0,
         scaling_factor: int = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         concat_output_tebd: bool = True,
         trainable: bool = True,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
+        ln_eps: float | None = 1e-5,
         smooth_type_embedding: bool = True,
         type_one_side: bool = False,
-        stripped_type_embedding: Optional[bool] = None,
-        seed: Optional[Union[int, list[int]]] = None,
+        stripped_type_embedding: bool | None = None,
+        seed: int | list[int] | None = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[list[str]] = None,
+        type_map: list[str] | None = None,
         # not implemented
-        spin: Optional[Any] = None,
-        type: Optional[str] = None,
+        spin: Any | None = None,
+        type: str | None = None,
     ) -> None:
         super().__init__()
         # Ensure compatibility with the deprecated stripped_type_embedding option.
@@ -304,7 +305,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
-        self.compress = False
+        self.tebd_compress = False
+        self.geo_compress = False
         self.type_embedding = TypeEmbedNet(
             ntypes,
             tebd_dim,
@@ -416,8 +418,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -451,7 +453,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         return self.se_atten.mean, self.se_atten.stddev
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -592,12 +594,17 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         check_frequency
             The overflow check frequency
         """
-        # do some checks before the mocel compression process
-        if self.compress:
+        # do some checks before the model compression process
+        if self.tebd_compress or self.geo_compress:
             raise ValueError("Compression is already enabled.")
+
+        if self.tebd_input_mode != "strip":
+            raise RuntimeError("Type embedding compression only works in strip mode")
+
         assert not self.se_atten.resnet_dt, (
             "Model compression error: descriptor resnet_dt must be false!"
         )
+
         for tt in self.se_atten.exclude_types:
             if (tt[0] not in range(self.se_atten.ntypes)) or (
                 tt[1] not in range(self.se_atten.ntypes)
@@ -609,6 +616,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
                     + str(self.se_atten.ntypes)
                     + "!"
                 )
+
         if (
             self.se_atten.ntypes * self.se_atten.ntypes
             - len(self.se_atten.exclude_types)
@@ -618,48 +626,52 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
                 "Empty embedding-nets are not supported in model compression!"
             )
 
-        if self.se_atten.attn_layer != 0:
-            raise RuntimeError("Cannot compress model when attention layer is not 0.")
+        # Enable type embedding compression
+        self.se_atten.type_embedding_compression(self.type_embedding)
+        self.tebd_compress = True
 
-        if self.tebd_input_mode != "strip":
-            raise RuntimeError("Cannot compress model when tebd_input_mode == 'concat'")
+        if self.se_atten.attn_layer == 0:
+            data = self.serialize()
+            self.table = DPTabulate(
+                self,
+                data["neuron"],
+                data["type_one_side"],
+                data["exclude_types"],
+                ActivationFn(data["activation_function"]),
+            )
+            self.table_config = [
+                table_extrapolate,
+                table_stride_1,
+                table_stride_2,
+                check_frequency,
+            ]
+            self.lower, self.upper = self.table.build(
+                min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+            )
 
-        data = self.serialize()
-        self.table = DPTabulate(
-            self,
-            data["neuron"],
-            data["type_one_side"],
-            data["exclude_types"],
-            ActivationFn(data["activation_function"]),
-        )
-        self.table_config = [
-            table_extrapolate,
-            table_stride_1,
-            table_stride_2,
-            check_frequency,
-        ]
-        self.lower, self.upper = self.table.build(
-            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
-        )
-
-        self.se_atten.enable_compression(
-            self.table.data, self.table_config, self.lower, self.upper
-        )
-        self.compress = True
+            self.se_atten.enable_compression(
+                self.table.data, self.table_config, self.lower, self.upper
+            )
+            self.geo_compress = True
+        else:
+            warnings.warn(
+                "Attention layer is not 0, only type embedding is compressed. Geometric part is not compressed.",
+                UserWarning,
+            )
 
     def forward(
         self,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> tuple[
         torch.Tensor,
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
     ]:
         """Compute the descriptor.
 
@@ -729,9 +741,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

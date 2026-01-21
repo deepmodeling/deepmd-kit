@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
 )
 
 import array_api_compat
@@ -117,8 +116,8 @@ class EnvMat(NativeOP):
         coord_ext: Array,
         atype_ext: Array,
         nlist: Array,
-        davg: Optional[Array] = None,
-        dstd: Optional[Array] = None,
+        davg: Array | None = None,
+        dstd: Array | None = None,
         radial_only: bool = False,
     ) -> tuple[Array, Array, Array]:
         """Compute the environment matrix.

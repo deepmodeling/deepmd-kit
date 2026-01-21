@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-from typing import (
-    Optional,
-)
 
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
@@ -77,7 +74,7 @@ class DescrptSeAttenV2(DescrptSeAtten):
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         type_one_side: bool = True,
         set_davg_zero: bool = False,
         exclude_types: list[list[int]] = [],

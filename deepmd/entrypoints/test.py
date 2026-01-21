@@ -8,7 +8,6 @@ from pathlib import (
 from typing import (
     TYPE_CHECKING,
     Any,
-    Optional,
 )
 
 import numpy as np
@@ -66,16 +65,16 @@ log = logging.getLogger(__name__)
 def test(
     *,
     model: str,
-    system: Optional[str],
-    datafile: Optional[str],
-    train_json: Optional[str] = None,
-    valid_json: Optional[str] = None,
+    system: str | None,
+    datafile: str | None,
+    train_json: str | None = None,
+    valid_json: str | None = None,
     numb_test: int,
-    rand_seed: Optional[int],
+    rand_seed: int | None,
     shuffle_test: bool,
     detail_file: str,
     atomic: bool,
-    head: Optional[str] = None,
+    head: str | None = None,
     **kwargs: Any,
 ) -> None:
     """Test model predictions.
@@ -303,7 +302,7 @@ def test_ener(
     data: DeepmdData,
     system: str,
     numb_test: int,
-    detail_file: Optional[str],
+    detail_file: str | None,
     has_atom_ener: bool,
     append_detail: bool = False,
 ) -> tuple[list[np.ndarray], list[int]]:
@@ -688,7 +687,7 @@ def test_dos(
     data: DeepmdData,
     system: str,
     numb_test: int,
-    detail_file: Optional[str],
+    detail_file: str | None,
     has_atom_dos: bool,
     append_detail: bool = False,
 ) -> tuple[list[np.ndarray], list[int]]:
@@ -848,7 +847,7 @@ def test_property(
     data: DeepmdData,
     system: str,
     numb_test: int,
-    detail_file: Optional[str],
+    detail_file: str | None,
     has_atom_property: bool,
     append_detail: bool = False,
 ) -> tuple[list[np.ndarray], list[int]]:
@@ -1042,7 +1041,7 @@ def test_wfc(
     dp: "DeepWFC",
     data: DeepmdData,
     numb_test: int,
-    detail_file: Optional[str],
+    detail_file: str | None,
 ) -> tuple[list[np.ndarray], list[int]]:
     """Test energy type model.
 
@@ -1104,7 +1103,7 @@ def test_polar(
     dp: "DeepPolar",
     data: DeepmdData,
     numb_test: int,
-    detail_file: Optional[str],
+    detail_file: str | None,
     *,
     atomic: bool,
 ) -> tuple[list[np.ndarray], list[int]]:
@@ -1246,7 +1245,7 @@ def test_dipole(
     dp: "DeepDipole",
     data: DeepmdData,
     numb_test: int,
-    detail_file: Optional[str],
+    detail_file: str | None,
     atomic: bool,
 ) -> tuple[list[np.ndarray], list[int]]:
     """Test energy type model.

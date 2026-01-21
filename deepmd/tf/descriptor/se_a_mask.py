@@ -2,7 +2,6 @@
 import warnings
 from typing import (
     Any,
-    Optional,
 )
 
 import numpy as np
@@ -124,7 +123,7 @@ class DescrptSeAMask(DescrptSeA):
         trainable: bool = True,
         type_one_side: bool = False,
         exclude_types: list[list[int]] = [],
-        seed: Optional[int] = None,
+        seed: int | None = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
@@ -269,7 +268,7 @@ class DescrptSeAMask(DescrptSeA):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict[str, Any],
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -427,9 +426,9 @@ class DescrptSeAMask(DescrptSeA):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

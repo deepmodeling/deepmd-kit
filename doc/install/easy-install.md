@@ -10,7 +10,7 @@ You can refer to [DeepModeling conda FAQ](https://docs.deepmodeling.com/faq/cond
 :::
 
 :::{note}
-Python 3.9 or above is required for Python interface.
+Python 3.10 or above is required for Python interface.
 :::
 
 - [Install off-line packages](#install-off-line-packages)
@@ -96,14 +96,6 @@ pip install deepmd-kit[gpu,cu12]
 
 ::::
 
-::::{tab-item} CUDA 11
-
-```bash
-pip install deepmd-kit-cu11[gpu,cu11]
-```
-
-::::
-
 ::::{tab-item} CPU
 
 ```bash
@@ -124,15 +116,6 @@ pip install deepmd-kit[cpu]
 
 ```bash
 pip install deepmd-kit[torch]
-```
-
-::::
-
-::::{tab-item} CUDA 11.8
-
-```bash
-pip install torch --index-url https://download.pytorch.org/whl/cu118
-pip install deepmd-kit-cu11
 ```
 
 ::::
@@ -189,18 +172,6 @@ Switch to the TensorFlow {{ tensorflow_icon }} tab for more information.
 pip install paddlepaddle-gpu==3.1.1 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
 # nightly-build version
 # pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/cu126/
-pip install deepmd-kit
-```
-
-::::
-
-::::{tab-item} CUDA 11.8
-
-```bash
-# release version
-pip install paddlepaddle-gpu==3.1.1 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/
-# nightly-build version
-# pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/cu118/
 pip install deepmd-kit
 ```
 

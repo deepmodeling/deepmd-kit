@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-)
 
 import paddle
 
@@ -67,7 +64,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             self,
             *args,
             # underscore to prevent conflict with normal inputs
-            atomic_model_: Optional[T_AtomicModel] = None,
+            atomic_model_: T_AtomicModel | None = None,
             **kwargs,
         ) -> None:
             super().__init__(*args, **kwargs)
@@ -129,9 +126,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             self,
             coord,
             atype,
-            box: Optional[paddle.Tensor] = None,
-            fparam: Optional[paddle.Tensor] = None,
-            aparam: Optional[paddle.Tensor] = None,
+            box: paddle.Tensor | None = None,
+            fparam: paddle.Tensor | None = None,
+            aparam: paddle.Tensor | None = None,
             do_atomic_virial: bool = False,
         ) -> dict[str, paddle.Tensor]:
             """Return model prediction.
@@ -228,17 +225,19 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 merged,
                 bias_adjust_mode=bias_adjust_mode,
             )
+            if bias_adjust_mode == "set-by-statistic":
+                self.atomic_model.compute_fitting_input_stat(merged)
 
         def forward_common_lower(
             self,
             extended_coord,
             extended_atype,
             nlist,
-            mapping: Optional[paddle.Tensor] = None,
-            fparam: Optional[paddle.Tensor] = None,
-            aparam: Optional[paddle.Tensor] = None,
+            mapping: paddle.Tensor | None = None,
+            fparam: paddle.Tensor | None = None,
+            aparam: paddle.Tensor | None = None,
             do_atomic_virial: bool = False,
-            comm_dict: Optional[list[paddle.Tensor]] = None,
+            comm_dict: list[paddle.Tensor] | None = None,
             extra_nlist_sort: bool = False,
         ):
             """Return model prediction. Lower interface that takes
@@ -304,14 +303,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
         def input_type_cast(
             self,
             coord: paddle.Tensor,
-            box: Optional[paddle.Tensor] = None,
-            fparam: Optional[paddle.Tensor] = None,
-            aparam: Optional[paddle.Tensor] = None,
+            box: paddle.Tensor | None = None,
+            fparam: paddle.Tensor | None = None,
+            aparam: paddle.Tensor | None = None,
         ) -> tuple[
             paddle.Tensor,
-            Optional[paddle.Tensor],
-            Optional[paddle.Tensor],
-            Optional[paddle.Tensor],
+            paddle.Tensor | None,
+            paddle.Tensor | None,
+            paddle.Tensor | None,
             str,
         ]:
             """Cast the input data to global float type."""
@@ -326,7 +325,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             #           " does not match"
             #           f" that of the coordinate {input_prec}"
             #         )
-            _lst: list[Optional[paddle.Tensor]] = [
+            _lst: list[paddle.Tensor | None] = [
                 vv.astype(coord.dtype) if vv is not None else None
                 for vv in [box, fparam, aparam]
             ]
@@ -482,7 +481,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def do_grad_r(
             self,
-            var_name: Optional[str] = None,
+            var_name: str | None = None,
         ) -> bool:
             """Tell if the output variable `var_name` is r_differentiable.
             if var_name is None, returns if any of the variable is r_differentiable.
@@ -491,7 +490,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def do_grad_c(
             self,
-            var_name: Optional[str] = None,
+            var_name: str | None = None,
         ) -> bool:
             """Tell if the output variable `var_name` is c_differentiable.
             if var_name is None, returns if any of the variable is c_differentiable.
@@ -529,6 +528,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             """Get the number (dimension) of atomic parameters of this atomic model."""
             return self.atomic_model.get_dim_aparam()
 
+        def get_buffer_dim_fparam(self) -> paddle.Tensor:
+            """Get the number (dimension) of frame parameters of this atomic model as a buffer-style Tensor."""
+            return self.atomic_model.get_buffer_dim_fparam()
+
+        def get_buffer_dim_aparam(self) -> paddle.Tensor:
+            """Get the number (dimension) of atomic parameters of this atomic model as a buffer-style Tensor."""
+            return self.atomic_model.get_buffer_dim_aparam()
+
         def get_sel_type(self) -> list[int]:
             """Get the selected atom types of this model.
 
@@ -553,6 +560,22 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             """Get the type map."""
             return self.atomic_model.get_type_map()
 
+        def get_buffer_rcut(self) -> paddle.Tensor:
+            """Get the cut-off radius as a buffer-style Tensor."""
+            return self.atomic_model.get_buffer_rcut()
+
+        def get_buffer_type_map(self) -> paddle.Tensor:
+            """
+            Return the type map as a buffer-style Tensor for JIT saving.
+
+            The original type map (e.g., ['Ni', 'O']) is first joined into a single space-separated string
+            (e.g., "Ni O"). Each character in this string is then converted to its ASCII code using `ord()`,
+            and the resulting integer sequence is stored as a 1D paddle.Tensor of dtype int.
+
+            This format allows the type map to be serialized as a raw byte buffer during JIT model saving.
+            """
+            return self.atomic_model.get_buffer_type_map()
+
         def get_nsel(self) -> int:
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return self.atomic_model.get_nsel()
@@ -568,7 +591,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
         def compute_or_load_stat(
             self,
             sampled_func,
-            stat_file_path: Optional[DPPath] = None,
+            stat_file_path: DPPath | None = None,
         ):
             """Compute or load the statistics."""
             return self.atomic_model.compute_or_load_stat(sampled_func, stat_file_path)
@@ -601,9 +624,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             self,
             coord,
             atype,
-            box: Optional[paddle.Tensor] = None,
-            fparam: Optional[paddle.Tensor] = None,
-            aparam: Optional[paddle.Tensor] = None,
+            box: paddle.Tensor | None = None,
+            fparam: paddle.Tensor | None = None,
+            aparam: paddle.Tensor | None = None,
             do_atomic_virial: bool = False,
         ) -> dict[str, paddle.Tensor]:
             # directly call the forward_common method when no specific transform rule

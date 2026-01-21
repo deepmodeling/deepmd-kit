@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
 )
 
 from deepmd.dpmodel.array_api import (
@@ -52,6 +51,8 @@ class DPAtomicModel(BaseAtomicModel):
         self.type_map = type_map
         self.descriptor = descriptor
         self.fitting = fitting
+        if hasattr(self.fitting, "reinit_exclude"):
+            self.fitting.reinit_exclude(self.atom_exclude_types)
         self.type_map = type_map
         super().init_out_stat()
 
@@ -130,9 +131,9 @@ class DPAtomicModel(BaseAtomicModel):
         extended_coord: Array,
         extended_atype: Array,
         nlist: Array,
-        mapping: Optional[Array] = None,
-        fparam: Optional[Array] = None,
-        aparam: Optional[Array] = None,
+        mapping: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
     ) -> dict[str, Array]:
         """Models' atomic predictions.
 
@@ -177,7 +178,7 @@ class DPAtomicModel(BaseAtomicModel):
         return ret
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -192,7 +193,7 @@ class DPAtomicModel(BaseAtomicModel):
             if model_with_new_type_stat is not None
             else None,
         )
-        self.fitting_net.change_type_map(type_map=type_map)
+        self.fitting.change_type_map(type_map=type_map)
 
     def serialize(self) -> dict:
         dd = super().serialize()
@@ -238,6 +239,10 @@ class DPAtomicModel(BaseAtomicModel):
     def has_default_fparam(self) -> bool:
         """Check if the model has default frame parameters."""
         return self.fitting.has_default_fparam()
+
+    def get_default_fparam(self) -> list[float] | None:
+        """Get the default frame parameters."""
+        return self.fitting.get_default_fparam()
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.

@@ -53,9 +53,12 @@ class TestInferDeepSpinA : public ::testing::Test {
   double expected_tot_e;
   // std::vector<double> expected_tot_v;
 
-  DP_DeepSpin* dp;
+  DP_DeepSpin* dp = nullptr;
 
   void SetUp() override {
+#ifndef BUILD_PYTORCH
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
     dp = DP_NewDeepSpin("../../tests/infer/deeppot_dpa_spin.pth");
 
     natoms = expected_e.size();
@@ -233,9 +236,12 @@ class TestInferDeepSpinANoPBC : public ::testing::Test {
   double expected_tot_e;
   // std::vector<double> expected_tot_v;
 
-  DP_DeepSpin* dp;
+  DP_DeepSpin* dp = nullptr;
 
   void SetUp() override {
+#ifndef BUILD_PYTORCH
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
     dp = DP_NewDeepSpin("../../tests/infer/deeppot_dpa_spin.pth");
 
     natoms = expected_e.size();

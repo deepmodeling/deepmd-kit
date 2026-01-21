@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 from deepmd.tf.env import (
     MODEL_VERSION,
@@ -49,8 +45,8 @@ class DOSModel(StandardModel):
         self,
         descriptor: dict,
         fitting_net: dict,
-        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[list[str]] = None,
+        type_embedding: dict | TypeEmbedNet | None = None,
+        type_map: list[str] | None = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
         **kwargs,
@@ -137,7 +133,7 @@ class DOSModel(StandardModel):
         mesh,
         input_dict,
         frz_model=None,
-        ckpt_meta: Optional[str] = None,
+        ckpt_meta: str | None = None,
         suffix="",
         reuse=None,
     ):

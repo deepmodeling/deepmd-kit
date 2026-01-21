@@ -2,9 +2,6 @@
 from collections.abc import (
     Iterator,
 )
-from typing import (
-    Optional,
-)
 
 import numpy as np
 import paddle
@@ -52,7 +49,7 @@ class NeighborStatOP(paddle.nn.Layer):
         self,
         coord: paddle.Tensor,
         atype: paddle.Tensor,
-        cell: Optional[paddle.Tensor],
+        cell: paddle.Tensor | None,
     ) -> tuple[paddle.Tensor, paddle.Tensor]:
         """Calculate the neareest neighbor distance between atoms, maximum nbor size of
         atoms and the output data range of the environment matrix.
@@ -173,7 +170,7 @@ class NeighborStat(BaseNeighborStat):
         self,
         coord: np.ndarray,
         atype: np.ndarray,
-        cell: Optional[np.ndarray],
+        cell: np.ndarray | None,
     ):
         """Execute the operation.
 

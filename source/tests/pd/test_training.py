@@ -89,7 +89,11 @@ class DPTrainTest:
                     state_dict_trained[state_key].numpy(),
                     state_dict_finetuned_empty[state_key].numpy(),
                 )
-                if "fitting_net" not in state_key:
+                if (
+                    ("fitting_net" not in state_key)
+                    or ("fparam" in state_key)
+                    or ("aparam" in state_key)
+                ):
                     np.testing.assert_allclose(
                         state_dict_trained[state_key].numpy(),
                         state_dict_finetuned_random[state_key].numpy(),
@@ -132,11 +136,14 @@ class DPTrainTest:
     def tearDown(self) -> None:
         for f in os.listdir("."):
             if f.startswith("model") and f.endswith(".pd"):
-                os.remove(f)
+                if os.path.exists(f):
+                    os.remove(f)
             if f in ["lcurve.out"]:
-                os.remove(f)
+                if os.path.exists(f):
+                    os.remove(f)
             if f in ["stat_files"]:
-                shutil.rmtree(f)
+                if os.path.exists(f):
+                    shutil.rmtree(f)
 
 
 class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
@@ -190,6 +197,7 @@ class TestFparam(unittest.TestCase, DPTrainTest):
         self.config["training"]["save_freq"] = 1
         self.set_path = Path(__file__).parent / "water/data/data_0" / "set.000"
         shutil.copyfile(self.set_path / "energy.npy", self.set_path / "fparam.npy")
+        self.config["model"]["data_stat_nbatch"] = 100
 
     def tearDown(self) -> None:
         (self.set_path / "fparam.npy").unlink(missing_ok=True)

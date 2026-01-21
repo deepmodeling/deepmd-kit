@@ -2,9 +2,10 @@
 requires = [
     # TODO: unpin the upper bound when scikit-build dynamic metadata API is stable
     # dynamic metadata API is still unstable
-    "scikit-build-core>=0.5,<0.11,!=0.6.0",
+    "scikit-build-core>=0.5,!=0.6.0,<0.12",
     "packaging",
     'tomli >= 1.1.0 ; python_version < "3.11"',
+    "dependency_groups",
 ]
 build-backend = "backend.dp_backend"
 backend-path = ["."]
@@ -28,10 +29,10 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Environment :: GPU :: NVIDIA CUDA :: 12 :: 12.2",
     "Intended Audience :: Science/Research",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Physics",
@@ -54,7 +55,7 @@ dependencies = [
     'mendeleev',
     'array-api-compat',
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 keywords = ["deepmd"]
 
 [project.entry-points."lammps.plugins"]
@@ -85,7 +86,8 @@ test = [
     "pytest-sugar",
     "pytest-split",
     "dpgui",
-    'array-api-strict>=2,!=2.1.1;python_version>="3.9"',
+    # to support Array API 2024.12
+    'array-api-strict>=2.2;python_version>="3.9"',
 ]
 docs = [
     "sphinx>=3.1.1",
@@ -108,23 +110,13 @@ docs = [
     "sphinx-remove-toctrees",
 ]
 lmp = [
-    "lammps[mpi]~=2025.7.22.1.0",
+    "lammps[mpi]~=2025.7.22.2.0",
 ]
 ipi = [
     "ipi",
 ]
 gui = [
     "dpgui",
-]
-cu11 = [
-    "nvidia-cuda-runtime-cu11",
-    "nvidia-cublas-cu11",
-    "nvidia-cufft-cu11",
-    "nvidia-curand-cu11",
-    "nvidia-cusolver-cu11",
-    "nvidia-cusparse-cu11",
-    "nvidia-cudnn-cu11<9",
-    "nvidia-cuda-nvcc-cu11",
 ]
 cu12 = [
     "nvidia-cuda-runtime-cu12",
@@ -157,6 +149,28 @@ dev = [
   "pre-commit",
   "cmake",
   "mpich",
+]
+pin_tensorflow_cpu = [
+  # https://github.com/tensorflow/tensorflow/issues/75279
+  # macos x86 has been deprecated
+  "tensorflow-cpu>=2.18,<2.21; platform_machine=='x86_64' and platform_system == 'Linux'",
+  "tensorflow~=2.18.0; (platform_machine!='x86_64' or platform_system != 'Linux') and (platform_machine!='x86_64' or platform_system != 'Darwin')",
+  "tensorflow; platform_machine=='x86_64' and platform_system == 'Darwin'",
+]
+pin_tensorflow_gpu = [
+  "tensorflow~=2.18.0",
+]
+pin_pytorch_cpu = [
+  # https://github.com/pytorch/pytorch/issues/114602
+  # macos x86 has been deprecated
+  "torch>=2.8,<2.10; platform_machine!='x86_64' or platform_system != 'Darwin'",
+  "torch; platform_machine=='x86_64' and platform_system == 'Darwin'",
+]
+pin_pytorch_gpu = [
+  "torch>=2.7,<2.10",
+]
+pin_jax = [
+  "jax==0.5.0;python_version>='3.10'",
 ]
 
 [tool.setuptools_scm]
@@ -232,9 +246,7 @@ test-command = [
 test-extras = ["cpu", "test", "lmp", "ipi", "torch", "paddle"]
 build = ["cp311-*"]
 skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
-# TODO: uncomment to use the latest image when CUDA 11 is deprecated
-# manylinux-x86_64-image = "manylinux_2_28"
-manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64:2022-11-19-1b19e81"
+manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
 
 [tool.cibuildwheel.macos]
@@ -242,7 +254,7 @@ repair-wheel-command = """delocate-wheel --require-archs {delocate_archs} -w {de
 
 [tool.cibuildwheel.macos.environment]
 PIP_PREFER_BINARY = "1"
-DP_LAMMPS_VERSION = "stable_22Jul2025_update1"
+DP_LAMMPS_VERSION = "stable_22Jul2025_update2"
 DP_ENABLE_IPI = "1"
 DP_ENABLE_PYTORCH = "1"
 DP_ENABLE_PADDLE = "1"
@@ -266,26 +278,19 @@ environment-pass = [
 ]
 before-all = [
     """if [ ! -z "${DP_PKG_NAME}" ]; then sed -i "s/name = \\"deepmd-kit\\"/name = \\"${DP_PKG_NAME}\\"/g" pyproject.toml; fi""",
-    # https://almalinux.org/blog/2023-12-20-almalinux-8-key-update/
-    """rpm --import https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux""",
     """{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-nvcc-${CUDA_VERSION/./-} cuda-cudart-devel-${CUDA_VERSION/./-}; fi }""",
-    # uv is not available in the old manylinux image
-    """{ if [ "$(uname -m)" = "x86_64" ] ; then pipx install uv; fi }""",
 ]
 before-build = [
-    # old build doesn't support uv
-    """{ if [ "$(uname -m)" = "x86_64" ] ; then uv pip install --system -U build; fi }""",
 ]
 [tool.cibuildwheel.linux.environment]
 PIP_PREFER_BINARY = "1"
-DP_LAMMPS_VERSION = "stable_22Jul2025_update1"
+DP_LAMMPS_VERSION = "stable_22Jul2025_update2"
 DP_ENABLE_IPI = "1"
 DP_ENABLE_PYTORCH = "1"
 DP_ENABLE_PADDLE = "1"
 # use CPU version of torch for building, which should also work for GPU
-# note: uv has different behavior from pip on extra index url
-# https://github.com/astral-sh/uv/blob/main/PIP_COMPATIBILITY.md#packages-that-exist-on-multiple-indexes
-UV_EXTRA_INDEX_URL = "https://download.pytorch.org/whl/cpu"
+# https://docs.astral.sh/uv/guides/integration/pytorch/#automatic-backend-selection
+UV_TORCH_BACKEND = "cpu"
 
 [tool.cibuildwheel.windows]
 test-extras = ["cpu", "torch", "paddle"]
@@ -350,6 +355,11 @@ ignore = "D413, D416, D203, D107, D213"
 profile = "black"
 force_grid_wrap = 1
 
+[tool.ruff]
+extend-exclude = [
+    "source/3rdparty/**",
+]
+
 [tool.ruff.format]
 docstring-code-format = true
 
@@ -373,6 +383,7 @@ select = [
     "TCH", # flake8-type-checking
     "PYI", # flake8-pyi
     "ANN", # type annotations
+    "B905", # zip-without-explicit-strict
 ]
 
 ignore = [
@@ -391,10 +402,6 @@ ignore = [
     "D205", # 1 blank line required between summary line and description
     "D401", # TODO: first line should be in imperative mood
     "D404", # TODO: first word of the docstring should not be This
-]
-
-exclude = [
-    "source/3rdparty/**",
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -424,51 +431,10 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "backend/**" = ["ANN"]
 "data/**" = ["ANN"]
 "deepmd/tf/**" = ["TID253", "ANN"]
-"deepmd/pt/**" = ["TID253"]
+"deepmd/pt/**" = ["TID253", "B905"]
 "deepmd/jax/**" = ["TID253"]
-"deepmd/pd/**" = ["TID253", "ANN"]
-# Paddle backend: Gradually enabling ANN rule
-# Completed files with full type annotations:
-"deepmd/pd/entrypoints/main.py" = ["TID253"]  # ✅ Fully typed
-"deepmd/pd/entrypoints/__init__.py" = ["TID253"]  # ✅ Fully typed
-"deepmd/pd/train/wrapper.py" = ["TID253"]     # ✅ Fully typed
-"deepmd/pd/train/__init__.py" = ["TID253"]    # ✅ Fully typed
-"deepmd/pd/utils/learning_rate.py" = ["TID253"]  # ✅ Fully typed
-"deepmd/pd/utils/dp_random.py" = ["TID253"]   # ✅ Fully typed
-"deepmd/pd/utils/update_sel.py" = ["TID253"]  # ✅ Fully typed
-"deepmd/pd/utils/preprocess.py" = ["TID253"]  # ✅ Fully typed
-"deepmd/pd/utils/spin.py" = ["TID253"]        # ✅ Fully typed
-"deepmd/pd/utils/dataset.py" = ["TID253"]     # ✅ Fully typed
-"deepmd/pd/utils/decomp.py" = ["TID253"]      # ✅ Fully typed
-"deepmd/pd/utils/env.py" = ["TID253"]         # ✅ Fully typed
-"deepmd/pd/utils/auto_batch_size.py" = ["TID253"]  # ✅ Fully typed
-"deepmd/pd/loss/__init__.py" = ["TID253"]     # ✅ Fully typed
-"deepmd/pd/loss/loss.py" = ["TID253"]         # ✅ Fully typed
-"deepmd/pd/model/__init__.py" = ["TID253"]    # ✅ Fully typed
-"deepmd/pd/model/network/__init__.py" = ["TID253"]  # ✅ Fully typed
-"deepmd/pd/model/task/__init__.py" = ["TID253"]     # ✅ Fully typed
-"deepmd/pd/model/task/task.py" = ["TID253"]         # ✅ Fully typed
-"deepmd/pd/model/task/base_fitting.py" = ["TID253"] # ✅ Fully typed
-"deepmd/pd/model/descriptor/base_descriptor.py" = ["TID253"] # ✅ Fully typed
-"deepmd/pd/infer/__init__.py" = ["TID253"]    # ✅ Fully typed
-"deepmd/pd/infer/inference.py" = ["TID253"]   # ✅ Fully typed
-"deepmd/pd/__init__.py" = ["TID253"]          # ✅ Fully typed
-"deepmd/pd/utils/__init__.py" = ["TID253"]    # ✅ Fully typed
-"deepmd/pd/model/atomic_model/__init__.py" = ["TID253"]  # ✅ Fully typed
-"deepmd/pd/model/atomic_model/energy_atomic_model.py" = ["TID253"]  # ✅ Fully typed
-"deepmd/pd/cxx_op.py" = ["TID253"]           # ✅ Fully typed
-"deepmd/pd/model/descriptor/__init__.py" = ["TID253"]  # ✅ Fully typed
-"deepmd/pd/model/task/ener.py" = ["TID253"]   # ✅ Fully typed
-"deepmd/pd/model/model/dp_model.py" = ["TID253"]  # ✅ Fully typed
-"deepmd/pd/utils/serialization.py" = ["TID253"]  # ✅ Fully typed
-"deepmd/pd/utils/region.py" = ["TID253"]      # ✅ Fully typed
-"deepmd/pd/utils/exclude_mask.py" = ["TID253"] # ✅ Fully typed
-# TODO: Complete type hints and remove ANN exclusion for remaining files:
-"deepmd/pd/train/**" = ["TID253", "ANN"]     # 🚧 Partial progress - training.py still needs work
-"deepmd/pd/utils/**" = ["TID253", "ANN"]     # 🚧 Partial progress - utils.py partially done
-"deepmd/pd/loss/**" = ["TID253", "ANN"]      # 🚧 Partial progress - other loss files need work
-"deepmd/pd/model/**" = ["TID253", "ANN"]     # 🚧 Partial progress - some files completed
-"deepmd/pd/infer/**" = ["TID253", "ANN"]     # 🚧 Partial progress - inference.py completed
+"deepmd/pd/**" = ["TID253", "B905"]
+
 "source/**" = ["ANN"]
 "source/tests/tf/**" = ["TID253", "ANN"]
 "source/tests/pt/**" = ["TID253", "ANN"]

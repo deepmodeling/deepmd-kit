@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 import paddle
 
@@ -40,7 +36,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list = [25, 50, 100],
         axis_neuron: int = 16,
@@ -61,16 +57,16 @@ class DescrptSeAttenV2(DescrptDPA1):
         concat_output_tebd: bool = True,
         trainable: bool = True,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
+        ln_eps: float | None = 1e-5,
         type_one_side: bool = False,
-        stripped_type_embedding: Optional[bool] = None,
-        seed: Optional[Union[int, list[int]]] = None,
+        stripped_type_embedding: bool | None = None,
+        seed: int | list[int] | None = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[list[str]] = None,
+        type_map: list[str] | None = None,
         # not implemented
         spin=None,
-        type: Optional[str] = None,
+        type: str | None = None,
     ) -> None:
         r"""Construct smooth version of embedding net of type `se_atten_v2`.
 

@@ -2,10 +2,11 @@
 from abc import (
     abstractmethod,
 )
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import array_api_compat
@@ -112,21 +113,21 @@ class GeneralFitting(NativeOP, BaseFitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        bias_atom_e: Optional[Array] = None,
-        rcond: Optional[float] = None,
+        bias_atom_e: Array | None = None,
+        rcond: float | None = None,
         tot_ener_zero: bool = False,
-        trainable: Optional[list[bool]] = None,
+        trainable: list[bool] | None = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        layer_name: Optional[list[Optional[str]]] = None,
+        layer_name: list[str | None] | None = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         mixed_types: bool = True,
         exclude_types: list[int] = [],
-        remove_vaccum_contribution: Optional[list[bool]] = None,
-        type_map: Optional[list[str]] = None,
-        seed: Optional[Union[int, list[int]]] = None,
-        default_fparam: Optional[list[float]] = None,
+        remove_vaccum_contribution: list[bool] | None = None,
+        type_map: list[str] | None = None,
+        seed: int | list[int] | None = None,
+        default_fparam: list[float] | None = None,
     ) -> None:
         self.var_name = var_name
         self.ntypes = ntypes
@@ -221,6 +222,71 @@ class GeneralFitting(NativeOP, BaseFitting):
             ],
         )
 
+    def compute_input_stats(
+        self,
+        merged: Callable[[], list[dict]] | list[dict],
+        protection: float = 1e-2,
+    ) -> None:
+        """
+        Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `numpy.ndarray`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        protection : float
+            Divided-by-zero protection
+        """
+        if self.numb_fparam == 0 and self.numb_aparam == 0:
+            # skip data statistics
+            return
+        if callable(merged):
+            sampled = merged()
+        else:
+            sampled = merged
+        # stat fparam
+        if self.numb_fparam > 0:
+            cat_data = np.concatenate([frame["fparam"] for frame in sampled], axis=0)
+            cat_data = np.reshape(cat_data, [-1, self.numb_fparam])
+            fparam_avg = np.mean(cat_data, axis=0)
+            fparam_std = np.std(cat_data, axis=0, ddof=0)  # ddof=0 for population std
+            fparam_std = np.where(
+                fparam_std < protection,
+                np.array(protection, dtype=fparam_std.dtype),
+                fparam_std,
+            )
+            fparam_inv_std = 1.0 / fparam_std
+            self.fparam_avg = fparam_avg.astype(self.fparam_avg.dtype)
+            self.fparam_inv_std = fparam_inv_std.astype(self.fparam_inv_std.dtype)
+        # stat aparam
+        if self.numb_aparam > 0:
+            sys_sumv = []
+            sys_sumv2 = []
+            sys_sumn = []
+            for ss_ in [frame["aparam"] for frame in sampled]:
+                ss = np.reshape(ss_, [-1, self.numb_aparam])
+                sys_sumv.append(np.sum(ss, axis=0))
+                sys_sumv2.append(np.sum(ss * ss, axis=0))
+                sys_sumn.append(ss.shape[0])
+            sumv = np.sum(np.stack(sys_sumv), axis=0)
+            sumv2 = np.sum(np.stack(sys_sumv2), axis=0)
+            sumn = sum(sys_sumn)
+            aparam_avg = sumv / sumn
+            aparam_std = np.sqrt(sumv2 / sumn - (sumv / sumn) ** 2)
+            aparam_std = np.where(
+                aparam_std < protection,
+                np.array(protection, dtype=aparam_std.dtype),
+                aparam_std,
+            )
+            aparam_inv_std = 1.0 / aparam_std
+            self.aparam_avg = aparam_avg.astype(self.aparam_avg.dtype)
+            self.aparam_inv_std = aparam_inv_std.astype(self.aparam_inv_std.dtype)
+
     @abstractmethod
     def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
@@ -237,6 +303,10 @@ class GeneralFitting(NativeOP, BaseFitting):
     def has_default_fparam(self) -> bool:
         """Check if the fitting has default frame parameters."""
         return self.default_fparam is not None
+
+    def get_default_fparam(self) -> list[float] | None:
+        """Get the default frame parameters."""
+        return self.default_fparam
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
@@ -259,7 +329,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.case_embd = np.eye(self.dim_case_embd, dtype=self.prec)[case_idx]
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -381,11 +451,11 @@ class GeneralFitting(NativeOP, BaseFitting):
         self,
         descriptor: Array,
         atype: Array,
-        gr: Optional[Array] = None,
-        g2: Optional[Array] = None,
-        h2: Optional[Array] = None,
-        fparam: Optional[Array] = None,
-        aparam: Optional[Array] = None,
+        gr: Array | None = None,
+        g2: Array | None = None,
+        h2: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
     ) -> dict[str, Array]:
         """Calculate the fitting.
 

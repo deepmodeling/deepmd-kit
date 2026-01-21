@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
+from collections.abc import (
     Callable,
-    Optional,
-    Union,
 )
 
 import paddle
@@ -227,7 +225,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         sel_reduce_factor: float = 10.0,
         use_loc_mapping: bool = True,
         optim_update: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -238,6 +236,9 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.a_rcut_smth = float(a_rcut_smth)
         self.a_sel = a_sel
         self.ntypes = ntypes
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
         self.nlayers = nlayers
         # for other common desciptor method
         sel = [e_sel] if isinstance(e_sel, int) else e_sel
@@ -245,7 +246,9 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.ndescrpt = self.nnei * 4  # use full descriptor.
         assert len(sel) == 1
         self.sel = sel
+        self.register_buffer("buffer_sel", paddle.to_tensor(sel))
         self.rcut = e_rcut
+        self.register_buffer("buffer_rcut", paddle.to_tensor(self.e_rcut))
         self.rcut_smth = e_rcut_smth
         self.sec = self.sel
         self.split_sel = self.sel
@@ -355,6 +358,10 @@ class DescrptBlockRepflows(DescriptorBlock):
         """Returns the cut-off radius."""
         return self.e_rcut
 
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Returns the cut-off radius as a buffer-style Tensor."""
+        return self.buffer_rcut
+
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.e_rcut_smth
@@ -367,9 +374,13 @@ class DescrptBlockRepflows(DescriptorBlock):
         """Returns the number of selected atoms for each type."""
         return self.sel
 
+    def get_buffer_sel(self) -> paddle.Tensor:
+        """Returns the number of selected atoms for each type as a buffer-style Tensor."""
+        return self.buffer_sel
+
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.ntypes
+        return self.ntypes if paddle.in_dynamic_mode() else self.buffer_ntypes
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
@@ -442,9 +453,9 @@ class DescrptBlockRepflows(DescriptorBlock):
         nlist: paddle.Tensor,
         extended_coord: paddle.Tensor,
         extended_atype: paddle.Tensor,
-        extended_atype_embd: Optional[paddle.Tensor] = None,
-        mapping: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[list[paddle.Tensor]] = None,
+        extended_atype_embd: paddle.Tensor | None = None,
+        mapping: paddle.Tensor | None = None,
+        comm_dict: list[paddle.Tensor] | None = None,
     ):
         parallel_mode = comm_dict is not None
         if not parallel_mode:
@@ -717,8 +728,8 @@ class DescrptBlockRepflows(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.

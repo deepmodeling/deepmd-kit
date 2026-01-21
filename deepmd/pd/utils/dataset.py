@@ -10,6 +10,9 @@ from paddle.io import (
     Dataset,
 )
 
+from deepmd.pd.utils.env import (
+    NUM_WORKERS,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
     DeepmdData,
@@ -17,7 +20,7 @@ from deepmd.utils.data import (
 
 
 class DeepmdDataSetForLoader(Dataset):
-    def __init__(self, system: str, type_map: Optional[list[str]] = None) -> None:
+    def __init__(self, system: str, type_map: list[str] | None = None):
         """Construct DeePMD-style dataset containing frames cross different systems.
 
         Args:
@@ -37,7 +40,7 @@ class DeepmdDataSetForLoader(Dataset):
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         """Get a frame from the selected system."""
-        b_data = self._data_system.get_item_paddle(index)
+        b_data = self._data_system.get_item_paddle(index, max(1, NUM_WORKERS))
         b_data["natoms"] = self._natoms_vec
         return b_data
 

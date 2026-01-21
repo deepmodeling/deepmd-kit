@@ -4,7 +4,6 @@ from copy import (
 )
 from typing import (
     Any,
-    Optional,
 )
 
 from deepmd.pt.model.descriptor import (
@@ -107,7 +106,7 @@ def preprocess_shared_params(
         key_type: str,
         key_in_dict: str,
         suffix: str = "",
-        index: Optional[int] = None,
+        index: int | None = None,
     ) -> None:
         shared_type = key_type
         shared_key = key_in_dict

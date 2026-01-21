@@ -4,7 +4,6 @@ import tempfile
 from typing import (
     Any,
     NoReturn,
-    Optional,
 )
 
 import torch
@@ -119,9 +118,9 @@ class FrozenModel(BaseModel):
         self,
         coord: torch.Tensor,
         atype: torch.Tensor,
-        box: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
         return self.model.forward(
@@ -143,7 +142,7 @@ class FrozenModel(BaseModel):
         return self.model.get_model_def_script()
 
     @torch.jit.export
-    def get_min_nbor_dist(self) -> Optional[float]:
+    def get_min_nbor_dist(self) -> float | None:
         """Get the minimum neighbor distance."""
         return self.model.get_min_nbor_dist()
 
@@ -176,9 +175,9 @@ class FrozenModel(BaseModel):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-)
 
 import paddle
 
@@ -34,6 +31,18 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         DPModelCommon.__init__(self)
         DPEnergyModel_.__init__(self, *args, **kwargs)
 
+    def get_buffer_type_map(self) -> paddle.Tensor:
+        """
+        Return the type map as a buffer-style Tensor for JIT saving.
+
+        The original type map (e.g., ['Ni', 'O']) is first joined into a single space-separated string
+        (e.g., "Ni O"). Each character in this string is then converted to its ASCII code using `ord()`,
+        and the resulting integer sequence is stored as a 1D paddle.Tensor of dtype int.
+
+        This format allows the type map to be serialized as a raw byte buffer during JIT model saving.
+        """
+        return super().get_buffer_type_map()
+
     def translated_output_def(self):
         out_def_data = self.model_output_def().get_data()
         output_def = {
@@ -56,9 +65,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         self,
         coord,
         atype,
-        box: Optional[paddle.Tensor] = None,
-        fparam: Optional[paddle.Tensor] = None,
-        aparam: Optional[paddle.Tensor] = None,
+        box: paddle.Tensor | None = None,
+        fparam: paddle.Tensor | None = None,
+        aparam: paddle.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, paddle.Tensor]:
         model_ret = self.forward_common(
@@ -99,11 +108,11 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         extended_coord,
         extended_atype,
         nlist,
-        mapping: Optional[paddle.Tensor] = None,
-        fparam: Optional[paddle.Tensor] = None,
-        aparam: Optional[paddle.Tensor] = None,
+        mapping: paddle.Tensor | None = None,
+        fparam: paddle.Tensor | None = None,
+        aparam: paddle.Tensor | None = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[list[paddle.Tensor]] = None,
+        comm_dict: list[paddle.Tensor] | None = None,
     ):
         model_ret = self.forward_common_lower(
             extended_coord,

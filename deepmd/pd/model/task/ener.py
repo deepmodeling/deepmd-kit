@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 import logging
-from typing import (
-    Optional,
-    Union,
-)
 
 import paddle
 
@@ -38,7 +34,7 @@ class EnergyFittingNet(InvarFitting):
         ntypes: int,
         dim_descrpt: int,
         neuron: list[int] = [128, 128, 128],
-        bias_atom_e: Optional[paddle.Tensor] = None,
+        bias_atom_e: paddle.Tensor | None = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -46,10 +42,10 @@ class EnergyFittingNet(InvarFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
-        type_map: Optional[list[str]] = None,
-        **kwargs: object,
-    ) -> None:
+        seed: int | list[int] | None = None,
+        type_map: list[str] | None = None,
+        **kwargs,
+    ):
         super().__init__(
             "energy",
             ntypes,

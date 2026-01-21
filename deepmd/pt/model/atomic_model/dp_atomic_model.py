@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
 import logging
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
     Optional,
 )
 
@@ -62,6 +64,8 @@ class DPAtomicModel(BaseAtomicModel):
         self.rcut = self.descriptor.get_rcut()
         self.sel = self.descriptor.get_sel()
         self.fitting_net = fitting
+        if hasattr(self.fitting_net, "reinit_exclude"):
+            self.fitting_net.reinit_exclude(self.atom_exclude_types)
         super().init_out_stat()
         self.enable_eval_descriptor_hook = False
         self.enable_eval_fitting_last_layer_hook = False
@@ -149,6 +153,9 @@ class DPAtomicModel(BaseAtomicModel):
             else None,
         )
         self.fitting_net.change_type_map(type_map=type_map)
+        # Reinitialize fitting to get correct sel_type
+        if hasattr(self.fitting_net, "reinit_exclude"):
+            self.fitting_net.reinit_exclude(self.atom_exclude_types)
 
     def has_message_passing(self) -> bool:
         """Returns whether the atomic model has message passing."""
@@ -221,10 +228,10 @@ class DPAtomicModel(BaseAtomicModel):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -288,7 +295,7 @@ class DPAtomicModel(BaseAtomicModel):
     def compute_or_load_stat(
         self,
         sampled_func: Callable[[], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
     ) -> None:
         """
@@ -325,14 +332,46 @@ class DPAtomicModel(BaseAtomicModel):
                 atom_exclude_types = self.atom_excl.get_exclude_types()
                 for sample in sampled:
                     sample["atom_exclude_types"] = list(atom_exclude_types)
+            if (
+                "find_fparam" not in sampled[0]
+                and "fparam" not in sampled[0]
+                and self.has_default_fparam()
+            ):
+                default_fparam = self.get_default_fparam()
+                for sample in sampled:
+                    nframe = sample["atype"].shape[0]
+                    sample["fparam"] = default_fparam.repeat(nframe, 1)
             return sampled
 
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
-        self.fitting_net.compute_input_stats(
-            wrapped_sampler, protection=self.data_stat_protect
-        )
+        self.compute_fitting_input_stat(wrapped_sampler, stat_file_path)
         if compute_or_load_out_stat:
             self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
+
+    def compute_fitting_input_stat(
+        self,
+        sample_merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
+    ) -> None:
+        """Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
+
+        Parameters
+        ----------
+        sample_merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        stat_file_path : Optional[DPPath]
+            The dictionary of paths to the statistics files.
+        """
+        self.fitting_net.compute_input_stats(
+            sample_merged,
+            protection=self.data_stat_protect,
+            stat_file_path=stat_file_path,
+        )
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
@@ -341,6 +380,9 @@ class DPAtomicModel(BaseAtomicModel):
     def has_default_fparam(self) -> bool:
         """Check if the model has default frame parameters."""
         return self.fitting_net.has_default_fparam()
+
+    def get_default_fparam(self) -> torch.Tensor | None:
+        return self.fitting_net.get_default_fparam()
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""

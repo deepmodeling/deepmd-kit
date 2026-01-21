@@ -82,37 +82,39 @@ log = logging.getLogger(__name__)
 
 def get_trainer(
     config: dict[str, Any],
-    init_model: Optional[str] = None,
-    restart_model: Optional[str] = None,
-    finetune_model: Optional[str] = None,
+    init_model: str | None = None,
+    restart_model: str | None = None,
+    finetune_model: str | None = None,
     force_load: bool = False,
-    init_frz_model: Optional[str] = None,
-    shared_links: Optional[dict[str, Any]] = None,
-    finetune_links: Optional[dict[str, Any]] = None,
+    init_frz_model: str | None = None,
+    shared_links: dict[str, Any] | None = None,
+    finetune_links: dict[str, Any] | None = None,
 ) -> training.Trainer:
     multi_task = "model_dict" in config.get("model", {})
 
     # Initialize DDP
     world_size = dist.get_world_size()
     if world_size > 1:
-        assert paddle.version.nccl() != "0"
+        assert not paddle.core.is_compiled_with_nccl() or paddle.version.nccl() != "0"
         fleet.init(is_collective=True)
 
     def prepare_trainer_input_single(
         model_params_single: dict[str, Any],
         data_dict_single: dict[str, Any],
         rank: int = 0,
-        seed: Optional[int] = None,
-    ) -> tuple[Any, Any, Any, Optional[Any]]:
+        seed: int | None = None,
+    ) -> tuple[DpLoaderSet, DpLoaderSet | None, DPPath | None]:
         training_dataset_params = data_dict_single["training_data"]
         validation_dataset_params = data_dict_single.get("validation_data", None)
         validation_systems = (
             validation_dataset_params["systems"] if validation_dataset_params else None
         )
         training_systems = training_dataset_params["systems"]
-        training_systems = process_systems(training_systems)
+        trn_patterns = training_dataset_params.get("rglob_patterns", None)
+        training_systems = process_systems(training_systems, patterns=trn_patterns)
         if validation_systems is not None:
-            validation_systems = process_systems(validation_systems)
+            val_patterns = validation_dataset_params.get("rglob_patterns", None)
+            validation_systems = process_systems(validation_systems, val_patterns)
 
         # stat files
         stat_file_path_single = data_dict_single.get("stat_file", None)
@@ -212,25 +214,39 @@ class SummaryPrinter(BaseSummaryPrinter):
 
     def get_ngpus(self) -> int:
         """Get the number of GPUs."""
-        return paddle.device.cuda.device_count()
+        return paddle.device.device_count()
 
     def get_backend_info(self) -> dict:
         """Get backend information."""
         op_info = {}
         return {
             "Backend": "Paddle",
-            "PD ver": f"v{paddle.__version__}-g{paddle.version.commit[:11]}",
-            "Enable custom OP": False,
+            "PD Ver": f"v{paddle.__version__}-g{paddle.version.commit[:11]}",
+            "Custom OP Enabled": False,
             **op_info,
         }
+
+    def get_device_name(self) -> str | None:
+        """Get the underlying GPU name.
+
+        Returns
+        -------
+        str or None
+            The device name if available, otherwise None.
+        """
+        if paddle.device.is_compiled_with_cuda():
+            cuda = paddle.device.cuda
+            if cuda.device_count() > 0:
+                return cuda.get_device_name()
+        return None
 
 
 def train(
     input_file: str,
-    init_model: Optional[str],
-    restart: Optional[str],
-    finetune: Optional[str],
-    init_frz_model: Optional[str],
+    init_model: str | None,
+    restart: str | None,
+    finetune: str | None,
+    init_frz_model: str | None,
     model_branch: str,
     skip_neighbor_stat: bool = False,
     use_pretrain_script: bool = False,
@@ -345,7 +361,8 @@ def train(
 def freeze(
     model: str,
     output: str = "frozen_model.json",
-    head: Optional[str] = None,
+    head: str | None = None,
+    do_atomic_virial: bool = False,
 ) -> None:
     paddle.set_flags(
         {
@@ -378,7 +395,7 @@ def freeze(
                 None,  # fparam
                 None,  # aparam
                 # InputSpec([], dtype="bool", name="do_atomic_virial"),  # do_atomic_virial
-                False,  # do_atomic_virial
+                do_atomic_virial,  # do_atomic_virial
             ],
             full_graph=True,
         )
@@ -400,7 +417,7 @@ def freeze(
                 None,  # fparam
                 None,  # aparam
                 # InputSpec([], dtype="bool", name="do_atomic_virial"),  # do_atomic_virial
-                False,  # do_atomic_virial
+                do_atomic_virial,  # do_atomic_virial
                 (
                     InputSpec([-1], "int64", name="send_list"),
                     InputSpec([-1], "int32", name="send_proc"),
@@ -413,6 +430,26 @@ def freeze(
             ],
             full_graph=True,
         )
+    for method_name in [
+        "get_buffer_rcut",
+        "get_buffer_type_map",
+        "get_buffer_dim_fparam",
+        "get_buffer_dim_aparam",
+        "get_buffer_intensive",
+        "get_buffer_sel_type",
+        "get_buffer_numb_dos",
+        "get_buffer_task_dim",
+    ]:
+        if hasattr(model, method_name):
+            setattr(
+                model,
+                method_name,
+                paddle.jit.to_static(
+                    getattr(model, method_name),
+                    input_spec=[],
+                    full_graph=True,
+                ),
+            )
     if output.endswith(".json"):
         output = output[:-5]
     paddle.jit.save(
@@ -428,12 +465,12 @@ def freeze(
 def change_bias(
     input_file: str,
     mode: str = "change",
-    bias_value: Optional[list] = None,
-    datafile: Optional[str] = None,
+    bias_value: list | None = None,
+    datafile: str | None = None,
     system: str = ".",
     numb_batch: int = 0,
-    model_branch: Optional[str] = None,
-    output: Optional[str] = None,
+    model_branch: str | None = None,
+    output: str | None = None,
 ) -> None:
     if input_file.endswith(".pd"):
         old_state_dict = paddle.load(input_file)
@@ -539,7 +576,7 @@ def change_bias(
     log.info(f"Saved model to {output_path}")
 
 
-def main(args: Optional[Union[list[str], argparse.Namespace]] = None) -> None:
+def main(args: list[str] | argparse.Namespace | None = None):
     if not isinstance(args, argparse.Namespace):
         FLAGS = parse_args(args=args)
     else:

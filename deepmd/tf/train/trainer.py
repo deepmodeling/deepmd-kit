@@ -967,4 +967,4 @@ class DatasetLoader:
         dict[str, np.ndarray]
             The dict of the loaded data.
         """
-        return dict(zip(self.data_keys, batch_list))
+        return dict(zip(self.data_keys, batch_list, strict=True))

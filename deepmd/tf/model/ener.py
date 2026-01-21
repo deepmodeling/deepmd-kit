@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 import numpy as np
 
@@ -75,16 +71,16 @@ class EnerModel(StandardModel):
         self,
         descriptor: dict,
         fitting_net: dict,
-        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[list[str]] = None,
+        type_embedding: dict | TypeEmbedNet | None = None,
+        type_map: list[str] | None = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
-        use_srtab: Optional[str] = None,
-        smin_alpha: Optional[float] = None,
-        sw_rmin: Optional[float] = None,
-        sw_rmax: Optional[float] = None,
+        use_srtab: str | None = None,
+        smin_alpha: float | None = None,
+        sw_rmin: float | None = None,
+        sw_rmax: float | None = None,
         srtab_add_bias: bool = True,
-        spin: Optional[Spin] = None,
+        spin: Spin | None = None,
         data_bias_nsample: int = 10,
         **kwargs,
     ) -> None:
@@ -182,7 +178,7 @@ class EnerModel(StandardModel):
         mesh,
         input_dict,
         frz_model=None,
-        ckpt_meta: Optional[str] = None,
+        ckpt_meta: str | None = None,
         suffix="",
         reuse=None,
     ):

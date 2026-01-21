@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
     ClassVar,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -143,11 +143,11 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         exclude_types: list[tuple[int, int]] = [],
         precision: str = "float64",
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
-        type_map: Optional[list[str]] = None,
-        ntypes: Optional[int] = None,  # to be compat with input
+        seed: int | list[int] | None = None,
+        type_map: list[str] | None = None,
+        ntypes: int | None = None,  # to be compat with input
         # not implemented
-        spin: Optional[dict] = None,
+        spin: dict | None = None,
     ) -> None:
         del ntypes
         if spin is not None:
@@ -247,7 +247,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         return self.seat.dim_out
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -260,8 +260,8 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -341,14 +341,14 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         coord_ext: torch.Tensor,
         atype_ext: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> tuple[
         torch.Tensor,
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
     ]:
         """Compute the descriptor.
 
@@ -460,9 +460,9 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -506,7 +506,7 @@ class DescrptBlockSeT(DescriptorBlock):
         exclude_types: list[tuple[int, int]] = [],
         precision: str = "float64",
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
     ) -> None:
         r"""Construct an embedding net of type `se_e3`.
 
@@ -684,8 +684,8 @@ class DescrptBlockSeT(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -774,15 +774,15 @@ class DescrptBlockSeT(DescriptorBlock):
         nlist: torch.Tensor,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
-        type_embedding: Optional[torch.Tensor] = None,
+        extended_atype_embd: torch.Tensor | None = None,
+        mapping: torch.Tensor | None = None,
+        type_embedding: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
     ]:
         """Compute the descriptor.
 
