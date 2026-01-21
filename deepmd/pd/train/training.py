@@ -11,8 +11,6 @@ from pathlib import (
 )
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -89,15 +87,15 @@ class Trainer:
         self,
         config: dict[str, Any],
         training_data: Any,
-        stat_file_path: Optional[Union[str, Path]] = None,
-        validation_data: Optional[Any] = None,
-        init_model: Optional[str] = None,
-        restart_model: Optional[str] = None,
-        finetune_model: Optional[str] = None,
+        stat_file_path: str | Path | None = None,
+        validation_data: Any | None = None,
+        init_model: str | None = None,
+        restart_model: str | None = None,
+        finetune_model: str | None = None,
         force_load: bool = False,
-        shared_links: Optional[dict[str, Any]] = None,
-        finetune_links: Optional[dict[str, Any]] = None,
-        init_frz_model: Optional[str] = None,
+        shared_links: dict[str, Any] | None = None,
+        finetune_links: dict[str, Any] | None = None,
+        init_frz_model: str | None = None,
     ) -> None:
         """Construct a DeePMD trainer.
 
@@ -216,8 +214,8 @@ class Trainer:
             _model: Any,
             _data_stat_nbatch: int,
             _training_data: Any,
-            _validation_data: Optional[Any],
-            _stat_file_path: Optional[Union[str, Path]],
+            _validation_data: Any | None,
+            _stat_file_path: str | Path | None,
             _data_requirement: list[DataRequirementItem],
             finetune_has_new_type: bool = False,
         ) -> Any:
@@ -1288,7 +1286,7 @@ def get_single_model(
 def get_model_for_wrapper(
     _model_params: dict[str, Any],
     resuming: bool = False,
-    _loss_params: Optional[dict[str, Any]] = None,
+    _loss_params: dict[str, Any] | None = None,
 ) -> Any:
     if "model_dict" not in _model_params:
         if _loss_params is not None and whether_hessian(_loss_params):

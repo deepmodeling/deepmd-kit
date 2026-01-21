@@ -12,10 +12,6 @@ from multiprocessing.dummy import (
 from threading import (
     Thread,
 )
-from typing import (
-    Optional,
-    Union,
-)
 
 import h5py
 import numpy as np
@@ -57,7 +53,7 @@ log = logging.getLogger(__name__)
 # paddle.multiprocessing.set_sharing_strategy("file_system")
 
 
-def setup_seed(seed: Union[int, list, tuple]) -> None:
+def setup_seed(seed: int | list | tuple) -> None:
     if isinstance(seed, (list, tuple)):
         mixed_seed = mix_entropy(seed)
     else:
@@ -86,10 +82,10 @@ class DpLoaderSet(Dataset):
 
     def __init__(
         self,
-        systems: Union[str, list[str]],
+        systems: str | list[str],
         batch_size: int,
         type_map: list[str],
-        seed: Optional[int] = None,
+        seed: int | None = None,
         shuffle: bool = True,
     ) -> None:
         if seed is not None:

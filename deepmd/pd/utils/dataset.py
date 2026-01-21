@@ -3,7 +3,6 @@
 
 from typing import (
     Any,
-    Optional,
 )
 
 from paddle.io import (

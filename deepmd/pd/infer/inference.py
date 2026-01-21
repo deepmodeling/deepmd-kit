@@ -3,9 +3,6 @@ import logging
 from copy import (
     deepcopy,
 )
-from typing import (
-    Optional,
-)
 
 import paddle
 
@@ -27,7 +24,7 @@ class Tester:
     def __init__(
         self,
         model_ckpt: str,
-        head: Optional[str] = None,
+        head: str | None = None,
     ) -> None:
         """Construct a DeePMD tester.
 

@@ -22,7 +22,14 @@ class TaskLoss(paddle.nn.Layer, ABC, make_plugin_registry("loss")):
         """Construct loss."""
         super().__init__()
 
-    def forward(self, input_dict: dict[str, paddle.Tensor], model: paddle.nn.Layer, label: dict[str, paddle.Tensor], natoms: int, learning_rate: float) -> NoReturn:
+    def forward(
+        self,
+        input_dict: dict[str, paddle.Tensor],
+        model: paddle.nn.Layer,
+        label: dict[str, paddle.Tensor],
+        natoms: int,
+        learning_rate: float,
+    ) -> NoReturn:
         """Return loss ."""
         raise NotImplementedError
 

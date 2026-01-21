@@ -6,7 +6,9 @@ import paddle
 log = logging.getLogger(__name__)
 
 
-def compute_smooth_weight(distance: paddle.Tensor, rmin: float, rmax: float) -> paddle.Tensor:
+def compute_smooth_weight(
+    distance: paddle.Tensor, rmin: float, rmax: float
+) -> paddle.Tensor:
     """Compute smooth weight for descriptor elements."""
     if rmin >= rmax:
         raise ValueError("rmin should be less than rmax.")

@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Union,
-)
 
 from deepmd.pd.model.task.ener import (
     EnergyFittingNet,
@@ -17,7 +14,7 @@ class DPEnergyAtomicModel(DPAtomicModel):
     def __init__(
         self,
         descriptor: object,
-        fitting: Union[EnergyFittingNet, InvarFitting],
+        fitting: EnergyFittingNet | InvarFitting,
         type_map: list[str],
         **kwargs: object,
     ) -> None:
