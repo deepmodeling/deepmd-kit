@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 
 import paddle
 
@@ -36,7 +39,7 @@ from deepmd.utils.path import (
 )
 
 
-def make_model(T_AtomicModel: type[BaseAtomicModel]):
+def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
     """Make a model as a derived class of an atomic model.
 
     The model provide two interfaces.
@@ -62,10 +65,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
     class CM(BaseModel):
         def __init__(
             self,
-            *args,
+            *args: object,
             # underscore to prevent conflict with normal inputs
             atomic_model_: T_AtomicModel | None = None,
-            **kwargs,
+            **kwargs: object,
         ) -> None:
             super().__init__(*args, **kwargs)
             if atomic_model_ is not None:
@@ -77,7 +80,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             self.global_pd_float_precision = GLOBAL_PD_FLOAT_PRECISION
             self.global_pd_ener_float_precision = GLOBAL_PD_ENER_FLOAT_PRECISION
 
-        def model_output_def(self):
+        def model_output_def(self) -> ModelOutputDef:
             """Get the output def for the model."""
             return ModelOutputDef(self.atomic_output_def())
 
@@ -124,8 +127,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def forward_common(
             self,
-            coord,
-            atype,
+            coord: paddle.Tensor,
+            atype: paddle.Tensor,
             box: paddle.Tensor | None = None,
             fparam: paddle.Tensor | None = None,
             aparam: paddle.Tensor | None = None,
@@ -201,8 +204,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def change_out_bias(
             self,
-            merged,
-            bias_adjust_mode="change-by-statistic",
+            merged: list[dict] | Callable[[], list[dict]],
+            bias_adjust_mode: str = "change-by-statistic",
         ) -> None:
             """Change the output bias of atomic model according to the input data and the pretrained model.
 
@@ -230,16 +233,16 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def forward_common_lower(
             self,
-            extended_coord,
-            extended_atype,
-            nlist,
+            extended_coord: paddle.Tensor,
+            extended_atype: paddle.Tensor,
+            nlist: paddle.Tensor,
             mapping: paddle.Tensor | None = None,
             fparam: paddle.Tensor | None = None,
             aparam: paddle.Tensor | None = None,
             do_atomic_virial: bool = False,
             comm_dict: list[paddle.Tensor] | None = None,
             extra_nlist_sort: bool = False,
-        ):
+        ) -> dict[str, paddle.Tensor]:
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
             as input, and returns the predictions on the extended region.
@@ -379,7 +382,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             extended_atype: paddle.Tensor,
             nlist: paddle.Tensor,
             extra_nlist_sort: bool = False,
-        ):
+        ) -> paddle.Tensor:
             """Format the neighbor list.
 
             1. If the number of neighbors in the `nlist` is equal to sum(self.sel),
@@ -430,7 +433,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             nlist: paddle.Tensor,
             nnei: int,
             extra_nlist_sort: bool = False,
-        ):
+        ) -> paddle.Tensor:
             n_nf, n_nloc, n_nnei = nlist.shape
             # nf x nall x 3
             extended_coord = extended_coord.reshape([n_nf, -1, 3])
@@ -498,7 +501,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             return self.atomic_model.do_grad_c(var_name)
 
         def change_type_map(
-            self, type_map: list[str], model_with_new_type_stat=None
+            self, type_map: list[str], model_with_new_type_stat: "CM | None" = None
         ) -> None:
             """Change the type related params to new ones, according to `type_map` and the original one in the model.
             If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -514,7 +517,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             return self.atomic_model.serialize()
 
         @classmethod
-        def deserialize(cls, data) -> "CM":
+        def deserialize(cls, data: dict) -> "CM":
             return cls(atomic_model_=T_AtomicModel.deserialize(data))
 
         def set_case_embd(self, case_idx: int) -> None:
@@ -590,9 +593,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def compute_or_load_stat(
             self,
-            sampled_func,
+            sampled_func: Callable,
             stat_file_path: DPPath | None = None,
-        ):
+        ) -> None:
             """Compute or load the statistics."""
             return self.atomic_model.compute_or_load_stat(sampled_func, stat_file_path)
 
@@ -622,8 +625,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def forward(
             self,
-            coord,
-            atype,
+            coord: paddle.Tensor,
+            atype: paddle.Tensor,
             box: paddle.Tensor | None = None,
             fparam: paddle.Tensor | None = None,
             aparam: paddle.Tensor | None = None,
