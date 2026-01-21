@@ -267,7 +267,7 @@ class FittingOutputDef:
     def get_data(self) -> dict[str, OutputVariableDef]:
         return self.var_defs
 
-    def keys(self):
+    def keys(self):  # noqa: ANN201
         return self.var_defs.keys()
 
 
@@ -319,25 +319,25 @@ class ModelOutputDef:
     ) -> dict[str, OutputVariableDef]:
         return self.var_defs
 
-    def keys(self):
+    def keys(self):  # noqa: ANN201
         return self.var_defs.keys()
 
-    def keys_outp(self):
+    def keys_outp(self):  # noqa: ANN201
         return self.def_outp.keys()
 
-    def keys_redu(self):
+    def keys_redu(self):  # noqa: ANN201
         return self.def_redu.keys()
 
-    def keys_derv_r(self):
+    def keys_derv_r(self):  # noqa: ANN201
         return self.def_derv_r.keys()
 
-    def keys_hess_r(self):
+    def keys_hess_r(self):  # noqa: ANN201
         return self.def_hess_r.keys()
 
-    def keys_derv_c(self):
+    def keys_derv_c(self):  # noqa: ANN201
         return self.def_derv_c.keys()
 
-    def keys_derv_c_redu(self):
+    def keys_derv_c_redu(self):  # noqa: ANN201
         return self.def_derv_c_redu.keys()
 
 
