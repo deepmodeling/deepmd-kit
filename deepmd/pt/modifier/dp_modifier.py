@@ -22,7 +22,6 @@ class DPModifier(BaseModifier):
         dp_model: torch.nn.Module | None = None,
         dp_model_file_name: str | None = None,
         use_cache: bool = True,
-        **kwargs,
     ) -> None:
         """Constructor."""
         super().__init__(use_cache=use_cache)
