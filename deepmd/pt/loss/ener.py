@@ -224,8 +224,8 @@ class EnergyStdLoss(TaskLoss):
                     loss += atom_norm * (pref_e * l2_ener_loss)
                 else:
                     l_huber_loss = custom_huber_loss(
-                        atom_norm * model_pred["energy"],
-                        atom_norm * label["energy"],
+                        atom_norm * energy_pred,
+                        atom_norm * energy_label,
                         delta=self.huber_delta,
                     )
                     loss += pref_e * l_huber_loss
