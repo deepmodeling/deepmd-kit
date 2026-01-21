@@ -475,7 +475,7 @@ class DeepEval(DeepEvalBackend):
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
-    ):
+    ) -> tuple[np.ndarray, ...]:
         if not self.static_model:
             model = self.dp.to(DEVICE)
         prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PD_FLOAT_PRECISION]]
