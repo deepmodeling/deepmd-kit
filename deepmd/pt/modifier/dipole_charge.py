@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import os
 
 import numpy as np
 import torch
@@ -16,11 +15,11 @@ from deepmd.pt.model.model import (
 from deepmd.pt.modifier.base_modifier import (
     BaseModifier,
 )
+from deepmd.pt.modifier.dp_modifier import (
+    DPModifier,
+)
 from deepmd.pt.utils import (
     env,
-)
-from deepmd.pt.utils.serialization import (
-    serialize_from_file,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
@@ -29,7 +28,7 @@ from deepmd.pt.utils.utils import (
 
 
 @BaseModifier.register("dipole_charge")
-class DipoleChargeModifier(BaseModifier):
+class DipoleChargeModifier(DPModifier):
     """Parameters
     ----------
     model_name
@@ -46,36 +45,22 @@ class DipoleChargeModifier(BaseModifier):
 
     def __init__(
         self,
-        model_name: str | None,
+        dp_model: DipoleModel | None,
         model_charge_map: list[float],
         sys_charge_map: list[float],
         ewald_h: float = 1.0,
         ewald_beta: float = 1.0,
-        ewald_batch_size: int = 5,
-        dp_batch_size: int | None = None,
-        model: DipoleModel | None = None,
+        dp_model_file_name: str | None = None,
         use_cache: bool = True,
     ) -> None:
         """Constructor."""
-        super().__init__(use_cache=use_cache)
         self.modifier_type = "dipole_charge"
+        super().__init__(
+            dp_model=dp_model,
+            dp_model_file_name=dp_model_file_name,
+            use_cache=use_cache,
+        )
 
-        if model_name is None and model is None:
-            raise AttributeError("`model_name` or `model` should be specified.")
-        if model_name is not None and model is not None:
-            raise AttributeError(
-                "`model_name` and `model` cannot be used simultaneously."
-            )
-
-        if model is not None:
-            self._model = model.to(env.DEVICE)
-        if model_name is not None:
-            data = serialize_from_file(model_name)
-            self._model = DipoleModel.deserialize(data["model"]).to(env.DEVICE)
-        self._model.eval()
-
-        # use jit model for inference
-        self.model = torch.jit.script(self._model)
         self.rcut = self.model.get_rcut()
         self.type_map = self.model.get_type_map()
         sel_type = self.model.get_sel_type()
@@ -95,22 +80,21 @@ class DipoleChargeModifier(BaseModifier):
         # init ewald recp
         self.ewald_h = ewald_h
         self.ewald_beta = ewald_beta
-        self.er = CoulombForceModule(
+        er = CoulombForceModule(
             rcut=self.rcut,
             rspace=False,
             kappa=ewald_beta,
             spacing=ewald_h,
-        )
+        ).to(env.GLOBAL_PT_FLOAT_PRECISION)
+        self.er = torch.jit.script(er)
+        self.er.eval()
         self.placeholder_pairs = torch.ones((1, 2), device=env.DEVICE, dtype=torch.long)
-        self.placeholder_ds = torch.ones((1), device=env.DEVICE, dtype=torch.float64)
-        self.placeholder_buffer_scales = torch.zeros(
-            (1), device=env.DEVICE, dtype=torch.float64
+        self.placeholder_ds = torch.ones(
+            (1), device=env.DEVICE, dtype=env.GLOBAL_PT_FLOAT_PRECISION
         )
-
-        self.ewald_batch_size = ewald_batch_size
-        if dp_batch_size is None:
-            dp_batch_size = int(os.environ.get("DP_INFER_BATCH_SIZE", 1))
-        self.dp_batch_size = dp_batch_size
+        self.placeholder_buffer_scales = torch.zeros(
+            (1), device=env.DEVICE, dtype=env.GLOBAL_PT_FLOAT_PRECISION
+        )
 
     def serialize(self) -> dict:
         """Serialize the modifier.
@@ -120,16 +104,13 @@ class DipoleChargeModifier(BaseModifier):
         dict
             The serialized data
         """
-        dd = BaseModifier.serialize(self)
+        dd = super().serialize()
         dd.update(
             {
-                "model": self._model.serialize(),
                 "model_charge_map": self._model_charge_map,
                 "sys_charge_map": self._sys_charge_map,
                 "ewald_h": self.ewald_h,
                 "ewald_beta": self.ewald_beta,
-                "ewald_batch_size": self.ewald_batch_size,
-                "dp_batch_size": self.dp_batch_size,
             }
         )
         return dd
@@ -140,9 +121,9 @@ class DipoleChargeModifier(BaseModifier):
         data.pop("@class", None)
         data.pop("type", None)
         data.pop("@version", None)
-        model_obj = DipoleModel.deserialize(data.pop("model"))
-        data["model"] = model_obj
-        data["model_name"] = None
+        model_obj = DipoleModel.deserialize(data.pop("dp_model"))
+        data["dp_model"] = model_obj
+        data["dp_model_file_name"] = None
         return cls(**data)
 
     def forward(
@@ -213,30 +194,23 @@ class DipoleChargeModifier(BaseModifier):
         )
 
         # add Ewald reciprocal correction
-        tot_e: list[torch.Tensor] = []
-        chunk_coord = torch.split(
-            extended_coord.reshape(nframes, -1, 3), self.dp_batch_size, dim=0
+        placeholder_pairs = torch.tile(
+            self.placeholder_pairs.unsqueeze(0), (nframes, 1, 1)
         )
-        chunk_box = torch.split(
-            input_box.reshape(nframes, 3, 3), self.dp_batch_size, dim=0
+        placeholder_ds = torch.tile(self.placeholder_ds.unsqueeze(0), (nframes, 1))
+        placeholder_buffer_scales = torch.tile(
+            self.placeholder_buffer_scales.unsqueeze(0), (nframes, 1)
         )
-        chunk_charge = torch.split(
-            extended_charge.reshape(nframes, -1), self.dp_batch_size, dim=0
+        self.er(
+            extended_coord.reshape(nframes, 2 * natoms, 3),
+            input_box.reshape(nframes, 3, 3),
+            placeholder_pairs,
+            placeholder_ds,
+            placeholder_buffer_scales,
+            {"charge": extended_charge.reshape(nframes, 2 * natoms)},
         )
-        for _coord, _box, _charge in zip(
-            chunk_coord, chunk_box, chunk_charge, strict=True
-        ):
-            self.er(
-                _coord,
-                _box,
-                self.placeholder_pairs,
-                self.placeholder_ds,
-                self.placeholder_buffer_scales,
-                {"charge": _charge},
-            )
-            tot_e.append(self.er.reciprocal_energy.unsqueeze(0))
         # nframe,
-        tot_e = torch.concat(tot_e, dim=0)
+        tot_e = self.er.reciprocal_energy
         # nframe, nat * 3
         tot_f = -calc_grads(tot_e, input_coord)
         # nframe, nat, 3
@@ -346,37 +320,17 @@ class DipoleChargeModifier(BaseModifier):
         nframes = coord.shape[0]
         natoms = coord.shape[1] // 3
 
-        all_dipole: list[torch.Tensor] = []
-        chunk_coord = torch.split(coord, self.dp_batch_size, dim=0)
-        chunk_atype = torch.split(atype, self.dp_batch_size, dim=0)
-        chunk_box = torch.split(box, self.dp_batch_size, dim=0)
-        # use placeholder to make the jit happy for fparam/aparam is None
-        chunk_fparam = (
-            torch.split(fparam, self.dp_batch_size, dim=0)
-            if fparam is not None
-            else chunk_atype
+        model_pred = self.model(
+            coord=coord,
+            atype=atype,
+            box=box,
+            do_atomic_virial=False,
+            fparam=fparam if fparam is not None else None,
+            aparam=aparam if aparam is not None else None,
         )
-        chunk_aparam = (
-            torch.split(aparam, self.dp_batch_size, dim=0)
-            if aparam is not None
-            else chunk_atype
-        )
-        for _coord, _atype, _box, _fparam, _aparam in zip(
-            chunk_coord, chunk_atype, chunk_box, chunk_fparam, chunk_aparam, strict=True
-        ):
-            dipole_batch = self.model(
-                coord=_coord,
-                atype=_atype,
-                box=_box,
-                do_atomic_virial=False,
-                fparam=_fparam if fparam is not None else None,
-                aparam=_aparam if aparam is not None else None,
-            )
-            # Extract dipole from the output dictionary
-            all_dipole.append(dipole_batch["dipole"])
 
-        # nframe x natoms x 3
-        dipole = torch.cat(all_dipole, dim=0)
+        # nframe, natoms, 3
+        dipole = model_pred["dipole"]
         if dipole.shape[0] != nframes:
             raise RuntimeError(
                 f"Dipole shape mismatch: expected {nframes} frames, got {dipole.shape[0]}"
