@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+from typing import (
+    NoReturn,
+)
 
 import paddle
 
@@ -12,7 +15,6 @@ from deepmd.pd.model.model.model import (
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
-from typing import NoReturn
 
 
 @BaseModel.register("frozen")

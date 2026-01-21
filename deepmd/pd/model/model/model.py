@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from typing import (
+    NoReturn,
+)
+
 import paddle
 
 from deepmd.dpmodel.model.base_model import (
@@ -8,7 +12,6 @@ from deepmd.dpmodel.model.base_model import (
 from deepmd.utils.path import (
     DPPath,
 )
-from typing import NoReturn
 
 
 class BaseModel(paddle.nn.Layer, make_base_model()):

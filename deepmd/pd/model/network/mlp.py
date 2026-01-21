@@ -181,7 +181,9 @@ class MLPLayer(nn.Layer):
         if self.idt is not None:
             normal_(self.idt.data, mean=0.1, std=0.001, generator=generator)
 
-    def _trunc_normal_init(self, scale=1.0, generator: PaddleGenerator | None = None) -> None:
+    def _trunc_normal_init(
+        self, scale=1.0, generator: PaddleGenerator | None = None
+    ) -> None:
         # Constant from scipy.stats.truncnorm.std(a=-2, b=2, loc=0., scale=1.)
         TRUNCATED_NORMAL_STDDEV_FACTOR = 0.87962566103423978
         _, fan_in = self.matrix.shape
