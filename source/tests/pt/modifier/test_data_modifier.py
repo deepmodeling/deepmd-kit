@@ -42,11 +42,8 @@ from deepmd.pt.model.model import (
 from deepmd.pt.modifier.base_modifier import (
     BaseModifier,
 )
-from deepmd.pt.utils import (
-    env,
-)
-from deepmd.pt.utils.serialization import (
-    serialize_from_file,
+from deepmd.pt.modifier.dp_modifier import (
+    DPModifier,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
@@ -188,43 +185,18 @@ class ModifierZeroTester(BaseModifier):
 
 
 @BaseModifier.register("scaling_tester")
-class ModifierScalingTester(BaseModifier):
-    def __new__(
-        cls,
-        *args: tuple,
-        model: str | None = None,
-        model_name: str | None = None,
-        **kwargs: dict,
-    ) -> "ModifierScalingTester":
-        return super().__new__(cls, model_name if model_name is not None else model)
-
+class ModifierScalingTester(DPModifier):
     def __init__(
         self,
-        model: torch.nn.Module | None = None,
-        model_name: str | None = None,
+        dp_model: torch.nn.Module | None = None,
+        dp_model_file_name: str | None = None,
         sfactor: float = 1.0,
         use_cache: bool = True,
     ) -> None:
         """Initialize a test modifier that applies scaled model predictions using a frozen model."""
-        super().__init__(use_cache)
+        super().__init__(dp_model, dp_model_file_name, use_cache)
         self.modifier_type = "scaling_tester"
         self.sfactor = sfactor
-
-        if model_name is None and model is None:
-            raise AttributeError("`model_name` or `model` should be specified.")
-        if model_name is not None and model is not None:
-            raise AttributeError(
-                "`model_name` and `model` cannot be used simultaneously."
-            )
-
-        if model is not None:
-            self._model = model.to(env.DEVICE)
-        if model_name is not None:
-            data = serialize_from_file(model_name)
-            self._model = EnergyModel.deserialize(data["model"]).to(env.DEVICE)
-
-        # use jit model for inference
-        self.model = torch.jit.script(self._model)
 
     def serialize(self) -> dict:
         """Serialize the modifier.
@@ -234,10 +206,9 @@ class ModifierScalingTester(BaseModifier):
         dict
             The serialized data
         """
-        dd = BaseModifier.serialize(self)
+        dd = super().serialize()
         dd.update(
             {
-                "model": self._model.serialize(),
                 "sfactor": self.sfactor,
             }
         )
@@ -249,8 +220,8 @@ class ModifierScalingTester(BaseModifier):
         data.pop("@class", None)
         data.pop("type", None)
         data.pop("@version", None)
-        model_obj = EnergyModel.deserialize(data.pop("model"))
-        data["model"] = model_obj
+        model_obj = EnergyModel.deserialize(data.pop("dp_model"))
+        data["dp_model"] = model_obj
         return cls(**data)
 
     def forward(
