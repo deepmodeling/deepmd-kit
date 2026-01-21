@@ -197,7 +197,7 @@ class EnvMatStatSe(EnvMatStat):
             }
         )
 
-    def __call__(self):
+    def __call__(self) -> dict[str, paddle.Tensor]:
         avgs = self.get_avg()
         stds = self.get_std()
 

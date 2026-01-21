@@ -4,6 +4,7 @@ from __future__ import (
 )
 
 from typing import (
+    Any,
     ClassVar,
 )
 
@@ -45,7 +46,7 @@ from deepmd.pd.utils.utils import (
 )
 
 
-def empty_t(shape, precision):
+def empty_t(shape: list[int], precision: paddle.dtype) -> paddle.Tensor:
     return paddle.empty(shape, dtype=precision).to(device=device)
 
 
@@ -74,8 +75,8 @@ class Identity(nn.Layer):
 class MLPLayer(nn.Layer):
     def __init__(
         self,
-        num_in,
-        num_out,
+        num_in: int,
+        num_out: int,
         bias: bool = True,
         use_timestep: bool = False,
         activation_function: str | None = None,
@@ -150,7 +151,7 @@ class MLPLayer(nn.Layer):
     def check_type_consistency(self) -> None:
         precision = self.precision
 
-        def check_var(var) -> None:
+        def check_var(var: paddle.Tensor | None) -> None:
             if var is not None:
                 # assertion "float64" == "double" would fail
                 assert PRECISION_DICT[var.dtype.name] is PRECISION_DICT[precision]
@@ -182,7 +183,7 @@ class MLPLayer(nn.Layer):
             normal_(self.idt.data, mean=0.1, std=0.001, generator=generator)
 
     def _trunc_normal_init(
-        self, scale=1.0, generator: PaddleGenerator | None = None
+        self, scale: float = 1.0, generator: PaddleGenerator | None = None
     ) -> None:
         # Constant from scipy.stats.truncnorm.std(a=-2, b=2, loc=0., scale=1.)
         TRUNCATED_NORMAL_STDDEV_FACTOR = 0.87962566103423978
@@ -194,7 +195,7 @@ class MLPLayer(nn.Layer):
     def _glorot_uniform_init(self, generator: PaddleGenerator | None = None) -> None:
         xavier_uniform_(self.matrix, gain=1, generator=generator)
 
-    def _zero_init(self, use_bias=True) -> None:
+    def _zero_init(self, use_bias: bool = True) -> None:
         with paddle.no_grad():
             self.matrix.fill_(0.0)
             if use_bias and self.bias is not None:
@@ -286,7 +287,7 @@ class MLPLayer(nn.Layer):
         )
         prec = PRECISION_DICT[obj.precision]
 
-        def check_load_param(ss):
+        def check_load_param(ss: str) -> paddle.Tensor | None:
             if nl[ss] is not None:
                 tensor = to_paddle_tensor(nl[ss])
                 return paddle.create_parameter(
@@ -306,7 +307,7 @@ MLP_ = make_multilayer_network(MLPLayer, nn.Layer)
 
 
 class MLP(MLP_):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.layers = paddle.nn.LayerList(self.layers)
 
@@ -327,7 +328,7 @@ class NetworkCollection(DPNetworkCollection, nn.Layer):
         "fitting_network": FittingNet,
     }
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         # init both two base classes
         DPNetworkCollection.__init__(self, *args, **kwargs)
         nn.Layer.__init__(self)
