@@ -404,6 +404,8 @@ def freeze(
     extra_files = {"modifier_data": ""}
     dm = tester.modifier
     if dm is not None:
+        # dict from dm.serialize() includes np.ndarray
+        # use pickle rather than json
         bytes_data = pickle.dumps(dm.serialize())
         extra_files = {"modifier_data": bytes_data}
     torch.jit.save(

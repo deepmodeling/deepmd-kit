@@ -85,7 +85,7 @@ class DipoleChargeModifier(DPModifier):
             rspace=False,
             kappa=ewald_beta,
             spacing=ewald_h,
-        ).to(env.GLOBAL_PT_FLOAT_PRECISION)
+        ).to(device=env.DEVICE, dtype=env.GLOBAL_PT_FLOAT_PRECISION)
         self.er = torch.jit.script(er)
         self.er.eval()
         self.placeholder_pairs = torch.ones((1, 2), device=env.DEVICE, dtype=torch.long)

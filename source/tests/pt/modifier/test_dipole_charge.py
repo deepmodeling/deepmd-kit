@@ -160,30 +160,31 @@ class TestDipoleChargeModifier(unittest.TestCase):
         dtype = torch.get_default_dtype()
         torch.set_default_dtype(torch.float64)
 
-        coord, box, atype = ref_data()
+        try:
+            coord, box, atype = ref_data()
 
-        pt_data = self.dm_pt.eval_np(
-            coord=coord,
-            atype=atype,
-            box=box,
-        )
-        tf_data = self.dm_tf.eval(
-            coord=coord,
-            box=box,
-            atype=atype.reshape(-1),
-        )
-        tol = 1e-6
-        output_names = ["energy", "force", "virial"]
-        for ii, name in enumerate(output_names):
-            np.testing.assert_allclose(
-                pt_data[ii].reshape(-1),
-                tf_data[ii].reshape(-1),
-                atol=tol,
-                rtol=tol,
-                err_msg=f"Mismatch in {name}",
+            pt_data = self.dm_pt.eval_np(
+                coord=coord,
+                atype=atype,
+                box=box,
             )
-
-        torch.set_default_dtype(dtype)
+            tf_data = self.dm_tf.eval(
+                coord=coord,
+                box=box,
+                atype=atype.reshape(-1),
+            )
+            tol = 1e-6
+            output_names = ["energy", "force", "virial"]
+            for ii, name in enumerate(output_names):
+                np.testing.assert_allclose(
+                    pt_data[ii].reshape(-1),
+                    tf_data[ii].reshape(-1),
+                    atol=tol,
+                    rtol=tol,
+                    err_msg=f"Mismatch in {name}",
+                )
+        finally:
+            torch.set_default_dtype(dtype)
 
     def test_serialize(self):
         """Test the serialize method of DipoleChargeModifier."""
