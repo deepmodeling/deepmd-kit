@@ -176,7 +176,9 @@ def _compute_model_predict(
         fparam = system.get("fparam", None)
         aparam = system.get("aparam", None)
 
-        def model_forward_auto_batch_size(*args, **kwargs):
+        def model_forward_auto_batch_size(
+            *args: object, **kwargs: object
+        ) -> paddle.Tensor:
             return auto_batch_size.execute_all(
                 model_forward,
                 nframes,
