@@ -18,7 +18,7 @@ from deepmd.utils.plugin import (
 
 
 class TaskLoss(paddle.nn.Layer, ABC, make_plugin_registry("loss")):
-    def __init__(self) -> None:
+    def __init__(self, **kwargs) -> None:
         """Construct loss."""
         super().__init__()
 
