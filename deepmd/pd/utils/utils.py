@@ -12,6 +12,13 @@ from typing import (
     overload,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from deepmd.pd.model.network.init import (
+        PaddleGenerator,
+    )
+
 import ml_dtypes
 import numpy as np
 import paddle
@@ -29,11 +36,6 @@ from .env import (
     DEVICE,
 )
 from .env import PRECISION_DICT as PD_PRECISION_DICT
-
-if TYPE_CHECKING:
-    from deepmd.pd.model.network.init import (
-        PaddleGenerator,
-    )
 
 
 def silut_forward(
@@ -145,7 +147,9 @@ class SiLUTScript(paddle.nn.Layer):
                 return grad_input
 
             @staticmethod
-            def backward(ctx, grad_grad_output):
+            def backward(
+                ctx: object, grad_grad_output: paddle.Tensor
+            ) -> tuple[paddle.Tensor, paddle.Tensor]:
                 (x, grad_output) = ctx.saved_tensor()
                 threshold = ctx.threshold
                 slope = ctx.slope
@@ -320,7 +324,7 @@ MIX_MULT_R = 0x4973F715
 XSHIFT = 16
 
 
-def hashmix(value: int, hash_const: list[int]):
+def hashmix(value: int, hash_const: list[int]) -> int:
     value ^= INIT_A
     hash_const[0] *= MULT_A
     value *= INIT_A
@@ -331,7 +335,7 @@ def hashmix(value: int, hash_const: list[int]):
     return value
 
 
-def mix(x: int, y: int):
+def mix(x: int, y: int) -> int:
     result = MIX_MULT_L * x - MIX_MULT_R * y
     # prevent overflow
     result &= 0xFFFF_FFFF_FFFF_FFFF
@@ -384,7 +388,7 @@ def get_generator(
 
 
 @contextmanager
-def nvprof_context(enable_profiler: bool, name: str):
+def nvprof_context(enable_profiler: bool, name: str) -> Generator[None, None, None]:
     if enable_profiler:
         core.nvprof_nvtx_push(name)
 
