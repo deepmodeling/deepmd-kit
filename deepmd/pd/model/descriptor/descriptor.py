@@ -43,7 +43,7 @@ class DescriptorBlock(paddle.nn.Layer, ABC, make_plugin_registry("DescriptorBloc
 
     local_cluster = False
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: object, **kwargs: object) -> "DescriptorBlock":
         if cls is DescriptorBlock:
             try:
                 descrpt_type = kwargs["type"]
@@ -126,7 +126,9 @@ class DescriptorBlock(paddle.nn.Layer, ABC, make_plugin_registry("DescriptorBloc
         """Get the statistics of the descriptor."""
         raise NotImplementedError
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: object, shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -180,7 +182,7 @@ class DescriptorBlock(paddle.nn.Layer, ABC, make_plugin_registry("DescriptorBloc
         extended_atype_embd: paddle.Tensor | None = None,
         mapping: paddle.Tensor | None = None,
         type_embedding: paddle.Tensor | None = None,
-    ):
+    ) -> paddle.Tensor:
         """Calculate DescriptorBlock."""
         pass
 
@@ -194,14 +196,16 @@ class DescriptorBlock(paddle.nn.Layer, ABC, make_plugin_registry("DescriptorBloc
 
 
 def make_default_type_embedding(
-    ntypes,
-):
+    ntypes: int,
+) -> tuple[TypeEmbedNet, dict]:
     aux = {}
     aux["tebd_dim"] = 8
     return TypeEmbedNet(ntypes, aux["tebd_dim"]), aux
 
 
-def extend_descrpt_stat(des, type_map, des_with_stat=None) -> None:
+def extend_descrpt_stat(
+    des: object, type_map: list[str], des_with_stat: object = None
+) -> None:
     r"""
     Extend the statistics of a descriptor block with types from newly provided `type_map`.
 
