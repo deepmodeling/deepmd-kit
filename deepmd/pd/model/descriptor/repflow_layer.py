@@ -714,7 +714,7 @@ class RepFlowLayer(paddle.nn.Layer):
         a_sw: paddle.Tensor,  # switch func, nf x nloc x a_nnei
         edge_index: paddle.Tensor,  # 2 x n_edge
         angle_index: paddle.Tensor,  # 3 x n_angle
-    ):
+    ) -> tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """
         Parameters
         ----------
