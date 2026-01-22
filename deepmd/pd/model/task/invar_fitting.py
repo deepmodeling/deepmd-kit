@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 import logging
+from typing import (
+    Any,
+)
 
 import paddle
 
@@ -101,7 +104,7 @@ class InvarFitting(GeneralFitting):
         atom_ener: list[paddle.Tensor | None] | None = None,
         type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
-        **kwargs: object,
+        **kwargs: Any,
     ) -> None:
         self.dim_out = dim_out
         self.atom_ener = atom_ener

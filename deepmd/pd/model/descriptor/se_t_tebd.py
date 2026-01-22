@@ -2,6 +2,9 @@
 from collections.abc import (
     Callable,
 )
+from typing import (
+    Any,
+)
 
 import paddle
 
@@ -331,7 +334,7 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
         return self.se_ttebd.mean, self.se_ttebd.stddev
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: object | None = None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.

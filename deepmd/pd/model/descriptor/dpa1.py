@@ -2,6 +2,9 @@
 from collections.abc import (
     Callable,
 )
+from typing import (
+    Any,
+)
 
 import paddle
 
@@ -242,7 +245,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         use_tebd_bias: bool = False,
         type_map: list[str] | None = None,
         # not implemented
-        spin: object = None,
+        spin: Any = None,
         type: str | None = None,
     ) -> None:
         super().__init__()
@@ -398,7 +401,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         return self.se_atten.get_env_protection()
 
     def share_params(
-        self, base_class: object, shared_level: int, resume: bool = False
+        self, base_class: Any, shared_level: int, resume: bool = False
     ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
@@ -471,7 +474,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         return self.se_atten.mean, self.se_atten.stddev
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: object = None
+        self, type_map: list[str], model_with_new_type_stat: Any = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -571,7 +574,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
             data["use_tebd_bias"] = True
         obj = cls(**data)
 
-        def t_cvt(xx: object) -> paddle.Tensor:
+        def t_cvt(xx: Any) -> paddle.Tensor:
             return paddle.to_tensor(xx, dtype=obj.se_atten.prec).to(device=env.DEVICE)
 
         obj.type_embedding.embedding = TypeEmbedNetConsistent.deserialize(

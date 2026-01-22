@@ -2,6 +2,9 @@
 from collections.abc import (
     Callable,
 )
+from typing import (
+    Any,
+)
 
 import paddle
 
@@ -149,7 +152,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         """
         super().__init__()
 
-        def init_subclass_params(sub_data: dict | object, sub_class: type) -> object:
+        def init_subclass_params(sub_data: dict | Any, sub_class: type) -> Any:
             if isinstance(sub_data, dict):
                 return sub_class(**sub_data)
             elif isinstance(sub_data, sub_class):
@@ -401,7 +404,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         return self.repinit.get_env_protection()
 
     def share_params(
-        self, base_class: object, shared_level: int, resume: bool = False
+        self, base_class: Any, shared_level: int, resume: bool = False
     ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
@@ -438,7 +441,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: object = None
+        self, type_map: list[str], model_with_new_type_stat: Any = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -674,7 +677,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         if obj.repinit.dim_out != obj.repformers.dim_in:
             obj.g1_shape_tranform = MLPLayer.deserialize(g1_shape_tranform)
 
-        def t_cvt(xx: object) -> paddle.Tensor:
+        def t_cvt(xx: Any) -> paddle.Tensor:
             return paddle.to_tensor(xx, dtype=obj.repinit.prec, place=env.DEVICE)
 
         # deserialize repinit

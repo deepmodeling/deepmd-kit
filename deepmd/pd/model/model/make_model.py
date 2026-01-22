@@ -2,6 +2,9 @@
 from collections.abc import (
     Callable,
 )
+from typing import (
+    Any,
+)
 
 import paddle
 
@@ -65,10 +68,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
     class CM(BaseModel):
         def __init__(
             self,
-            *args: object,
+            *args: Any,
             # underscore to prevent conflict with normal inputs
             atomic_model_: T_AtomicModel | None = None,
-            **kwargs: object,
+            **kwargs: Any,
         ) -> None:
             super().__init__(*args, **kwargs)
             if atomic_model_ is not None:

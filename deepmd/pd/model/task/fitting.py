@@ -6,6 +6,9 @@ from abc import (
 from collections.abc import (
     Callable,
 )
+from typing import (
+    Any,
+)
 
 import numpy as np
 import paddle
@@ -51,7 +54,7 @@ log = logging.getLogger(__name__)
 class Fitting(paddle.nn.Layer, BaseFitting):
     # plugin moved to BaseFitting
 
-    def __new__(cls, *args: object, **kwargs: object) -> "Fitting":
+    def __new__(cls, *args: Any, **kwargs: Any) -> "Fitting":
         if cls is Fitting:
             return BaseFitting.__new__(BaseFitting, *args, **kwargs)
         return super().__new__(cls)
@@ -244,7 +247,7 @@ class GeneralFitting(Fitting):
         type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
         default_fparam: list[float] | None = None,
-        **kwargs: object,
+        **kwargs: Any,
     ) -> None:
         super().__init__()
         self.var_name = var_name

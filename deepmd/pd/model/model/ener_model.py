@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from typing import (
+    Any,
+)
+
 import paddle
 
 from deepmd.pd.model.atomic_model import (
@@ -25,8 +29,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
 
     def __init__(
         self,
-        *args: object,
-        **kwargs: object,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         DPModelCommon.__init__(self)
         DPEnergyModel_.__init__(self, *args, **kwargs)
