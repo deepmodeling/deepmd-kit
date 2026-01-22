@@ -225,7 +225,7 @@ class Trainer:
                 _validation_data.add_data_requirement(_data_requirement)
 
             @functools.lru_cache
-            def get_sample():
+            def get_sample() -> dict[str, Any]:
                 sampled = make_stat_input(
                     _training_data.systems,
                     _training_data.dataloaders,
@@ -487,11 +487,11 @@ class Trainer:
                     state_dict = pretrained_model_wrapper.state_dict()
 
                     def collect_single_finetune_params(
-                        _model_key,
-                        _finetune_rule_single,
-                        _new_state_dict,
-                        _origin_state_dict,
-                        _random_state_dict,
+                        _model_key: str,
+                        _finetune_rule_single: Any,
+                        _new_state_dict: dict,
+                        _origin_state_dict: dict,
+                        _random_state_dict: dict,
                     ) -> None:
                         _new_fitting = _finetune_rule_single.get_random_fitting()
                         _model_key_from = _finetune_rule_single.get_model_branch()
@@ -536,10 +536,10 @@ class Trainer:
                 if finetune_model is not None:
 
                     def single_model_finetune(
-                        _model,
-                        _finetune_rule_single,
-                        _sample_func,
-                    ):
+                        _model: Any,
+                        _finetune_rule_single: Any,
+                        _sample_func: Any,
+                    ) -> Any:
                         _model = model_change_out_bias(
                             _model,
                             _sample_func,
@@ -584,7 +584,7 @@ class Trainer:
 
         # TODO add lr warmups for multitask
         # author: iProzd
-        def warm_up_linear(step, warmup_steps):
+        def warm_up_linear(step: int, warmup_steps: int) -> float:
             if step < warmup_steps:
                 return step / warmup_steps
             else:
@@ -732,7 +732,7 @@ class Trainer:
             core.nvprof_start()
             core.nvprof_enable_record_event()
 
-        def step(_step_id, task_key="Default") -> None:
+        def step(_step_id: int, task_key: str = "Default") -> None:
             if self.multi_task:
                 model_index = dp_random.choice(
                     np.arange(self.num_model, dtype=np.int_),
@@ -815,7 +815,9 @@ class Trainer:
             ):
                 self.wrapper.eval()  # Will set to train mode before fininshing validation
 
-                def log_loss_train(_loss, _more_loss, _task_key="Default"):
+                def log_loss_train(
+                    _loss: Any, _more_loss: dict, _task_key: str = "Default"
+                ) -> dict:
                     results = {}
                     rmse_val = {
                         item: _more_loss[item]
@@ -826,7 +828,7 @@ class Trainer:
                         results[item] = rmse_val[item]
                     return results
 
-                def log_loss_valid(_task_key="Default"):
+                def log_loss_valid(_task_key: str = "Default") -> dict:
                     single_results = {}
                     sum_natoms = 0
                     if not self.multi_task:
