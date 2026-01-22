@@ -52,8 +52,8 @@ class DescrptSeAttenV2(DescrptDPA1):
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         scaling_factor: int = 1.0,
-        normalize=True,
-        temperature=None,
+        normalize: bool = True,
+        temperature: float | None = None,
         concat_output_tebd: bool = True,
         trainable: bool = True,
         trainable_ln: bool = True,
@@ -65,7 +65,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         use_tebd_bias: bool = False,
         type_map: list[str] | None = None,
         # not implemented
-        spin=None,
+        spin: object = None,
         type: str | None = None,
     ) -> None:
         r"""Construct smooth version of embedding net of type `se_atten_v2`.
@@ -253,7 +253,7 @@ class DescrptSeAttenV2(DescrptDPA1):
             data["use_tebd_bias"] = True
         obj = cls(**data)
 
-        def t_cvt(xx):
+        def t_cvt(xx: object) -> paddle.Tensor:
             return paddle.to_tensor(xx, dtype=obj.se_atten.prec, place=env.DEVICE)
 
         obj.type_embedding.embedding = TypeEmbedNetConsistent.deserialize(
