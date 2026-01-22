@@ -13,13 +13,13 @@ from deepmd.pd.utils.region import (
 
 
 def extend_input_and_build_neighbor_list(
-    coord,
-    atype,
+    coord: paddle.Tensor,
+    atype: paddle.Tensor,
     rcut: float,
     sel: list[int],
     mixed_types: bool = False,
     box: paddle.Tensor | None = None,
-):
+) -> tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
     nframes, nloc = atype.shape[:2]
     if box is not None:
         box_gpu = box
@@ -279,7 +279,7 @@ def nlist_distinguish_types(
     nlist: paddle.Tensor,
     atype: paddle.Tensor,
     sel: list[int],
-):
+) -> paddle.Tensor:
     """Given a nlist that does not distinguish atom types, return a nlist that
     distinguish atom types.
 
