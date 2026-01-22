@@ -228,8 +228,8 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         scaling_factor: int = 1.0,
-        normalize=True,
-        temperature=None,
+        normalize: bool = True,
+        temperature: float | None = None,
         concat_output_tebd: bool = True,
         trainable: bool = True,
         trainable_ln: bool = True,
@@ -242,7 +242,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         use_tebd_bias: bool = False,
         type_map: list[str] | None = None,
         # not implemented
-        spin=None,
+        spin: object = None,
         type: str | None = None,
     ) -> None:
         super().__init__()
@@ -397,7 +397,9 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         """Returns the protection of building environment matrix."""
         return self.se_atten.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: object, shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -425,18 +427,18 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
             raise NotImplementedError
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         return self.get_dim_out()
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         return self.get_dim_emb()
 
     def compute_input_stats(
         self,
         merged: Callable[[], list[dict]] | list[dict],
         path: DPPath | None = None,
-    ):
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -469,7 +471,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         return self.se_atten.mean, self.se_atten.stddev
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: object = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -569,7 +571,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
             data["use_tebd_bias"] = True
         obj = cls(**data)
 
-        def t_cvt(xx):
+        def t_cvt(xx: object) -> paddle.Tensor:
             return paddle.to_tensor(xx, dtype=obj.se_atten.prec).to(device=env.DEVICE)
 
         obj.type_embedding.embedding = TypeEmbedNetConsistent.deserialize(
@@ -620,7 +622,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         nlist: paddle.Tensor,
         mapping: paddle.Tensor | None = None,
         comm_dict: list[paddle.Tensor] | None = None,
-    ):
+    ) -> paddle.Tensor:
         """Compute the descriptor.
 
         Parameters
