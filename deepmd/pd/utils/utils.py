@@ -148,7 +148,7 @@ class SiLUTScript(paddle.nn.Layer):
 
             @staticmethod
             def backward(
-                ctx: object, grad_grad_output: paddle.Tensor
+                ctx: paddle.autograd.PyLayerContext, grad_grad_output: paddle.Tensor
             ) -> tuple[paddle.Tensor, paddle.Tensor]:
                 (x, grad_output) = ctx.saved_tensor()
                 threshold = ctx.threshold

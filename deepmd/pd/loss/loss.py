@@ -4,7 +4,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    NoReturn,
+    Any,
 )
 
 import paddle
@@ -18,7 +18,7 @@ from deepmd.utils.plugin import (
 
 
 class TaskLoss(paddle.nn.Layer, ABC, make_plugin_registry("loss")):
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """Construct loss."""
         super().__init__()
 
@@ -29,7 +29,8 @@ class TaskLoss(paddle.nn.Layer, ABC, make_plugin_registry("loss")):
         label: dict[str, paddle.Tensor],
         natoms: int,
         learning_rate: float,
-    ) -> NoReturn:
+        mae: bool | None = None,
+    ) -> paddle.Tensor:
         """Return loss ."""
         raise NotImplementedError
 

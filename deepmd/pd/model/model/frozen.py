@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 from typing import (
+    Any,
     NoReturn,
 )
 
@@ -27,7 +28,7 @@ class FrozenModel(BaseModel):
         The path to the frozen model
     """
 
-    def __init__(self, model_file: str, **kwargs: object) -> None:
+    def __init__(self, model_file: str, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.model_file = model_file
         if model_file.endswith(".json"):

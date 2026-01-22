@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
 
 import paddle
 import paddle.nn.functional as F
@@ -54,7 +57,7 @@ class EnergyStdLoss(TaskLoss):
         inference: bool = False,
         use_huber: bool = False,
         huber_delta: float = 0.01,
-        **kwargs: object,
+        **kwargs: Any,
     ) -> None:
         r"""Construct a layer to compute loss on energy, force and virial.
 
@@ -547,7 +550,7 @@ class EnergyHessianStdLoss(EnergyStdLoss):
         self,
         start_pref_h: float = 0.0,
         limit_pref_h: float = 0.0,
-        **kwargs: object,
+        **kwargs: Any,
     ) -> None:
         r"""Enable the layer to compute loss on hessian.
 

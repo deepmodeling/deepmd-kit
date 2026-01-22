@@ -65,7 +65,7 @@ def _get_standard_model_components(
     return descriptor, fitting, fitting_net["type"]
 
 
-def _can_be_converted_to_float(value: object) -> bool | None:
+def _can_be_converted_to_float(value: object) -> bool:
     try:
         float(value)
         return True

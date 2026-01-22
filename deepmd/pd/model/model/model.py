@@ -4,6 +4,7 @@ from collections.abc import (
     Callable,
 )
 from typing import (
+    Any,
     NoReturn,
 )
 
@@ -18,7 +19,7 @@ from deepmd.utils.path import (
 
 
 class BaseModel(paddle.nn.Layer, make_base_model()):
-    def __init__(self, *args: object, **kwargs: object) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Construct a basic model for different tasks."""
         paddle.nn.Layer.__init__(self)
         self.model_def_script = ""
