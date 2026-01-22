@@ -122,7 +122,7 @@ def take_deriv(
     split_vv1 = paddle.split(vv1, [1] * size, axis=-1)
     split_svv1 = paddle.split(svv1, [1] * size, axis=-1)
     split_ff, split_avir = [], []
-    for vvi, svvi in zip(split_vv1, split_svv1, strict=False):
+    for vvi, svvi in zip(split_vv1, split_svv1):
         # nf x nloc x 3, nf x nloc x 9
         ffi, aviri = task_deriv_one(
             vvi,
