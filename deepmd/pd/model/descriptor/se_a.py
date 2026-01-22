@@ -769,7 +769,7 @@ class DescrptBlockSeA(DescriptorBlock):
                 self.filter_layers.networks,
                 self.compress_data,
                 self.compress_info,
-                strict=True,
+                strict=False,
             )
         ):
             if self.type_one_side:
