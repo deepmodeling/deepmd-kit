@@ -8,6 +8,7 @@ from collections.abc import (
     Callable,
 )
 from typing import (
+    Any,
     NoReturn,
 )
 
@@ -43,7 +44,7 @@ class DescriptorBlock(paddle.nn.Layer, ABC, make_plugin_registry("DescriptorBloc
 
     local_cluster = False
 
-    def __new__(cls, *args: object, **kwargs: object) -> "DescriptorBlock":
+    def __new__(cls, *args: Any, **kwargs: Any) -> "DescriptorBlock":
         if cls is DescriptorBlock:
             try:
                 descrpt_type = kwargs["type"]
@@ -127,7 +128,7 @@ class DescriptorBlock(paddle.nn.Layer, ABC, make_plugin_registry("DescriptorBloc
         raise NotImplementedError
 
     def share_params(
-        self, base_class: object, shared_level: int, resume: bool = False
+        self, base_class: Any, shared_level: int, resume: bool = False
     ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
@@ -204,7 +205,7 @@ def make_default_type_embedding(
 
 
 def extend_descrpt_stat(
-    des: object, type_map: list[str], des_with_stat: object = None
+    des: Any, type_map: list[str], des_with_stat: Any = None
 ) -> None:
     r"""
     Extend the statistics of a descriptor block with types from newly provided `type_map`.

@@ -569,7 +569,7 @@ class EnergyHessianStdLoss(EnergyStdLoss):
     def forward(
         self,
         input_dict: dict[str, paddle.Tensor],
-        model: paddle.nn.Layer,
+        model: paddle.nn.Module,
         label: dict[str, paddle.Tensor],
         natoms: int,
         learning_rate: float,
