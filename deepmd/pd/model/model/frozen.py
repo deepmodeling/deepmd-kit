@@ -27,7 +27,7 @@ class FrozenModel(BaseModel):
         The path to the frozen model
     """
 
-    def __init__(self, model_file: str, **kwargs) -> None:
+    def __init__(self, model_file: str, **kwargs: object) -> None:
         super().__init__(**kwargs)
         self.model_file = model_file
         if model_file.endswith(".json"):
@@ -99,8 +99,8 @@ class FrozenModel(BaseModel):
 
     def forward(
         self,
-        coord,
-        atype,
+        coord: paddle.Tensor,
+        atype: paddle.Tensor,
         box: paddle.Tensor | None = None,
         fparam: paddle.Tensor | None = None,
         aparam: paddle.Tensor | None = None,
