@@ -578,7 +578,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
             device=device
         )
 
-    def _default_std(self):
+    def _default_std(self) -> paddle.Tensor:
         ntypes = self.get_ntypes()
         return paddle.ones([self.n_out, ntypes, self.max_out_size], dtype=dtype).to(
             device=device
@@ -626,7 +626,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         paddle.assign(out_bias_data, self.out_bias)
         paddle.assign(out_std_data, self.out_std)
 
-    def get_ntypes(self):
+    def get_ntypes(self) -> int:
         return len(self.type_map)
 
     def get_buffer_ntypes(self) -> paddle.Tensor:
