@@ -101,7 +101,7 @@ class InvarFitting(GeneralFitting):
         atom_ener: list[paddle.Tensor | None] | None = None,
         type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
-        **kwargs,
+        **kwargs: object,
     ) -> None:
         self.dim_out = dim_out
         self.atom_ener = atom_ener
@@ -129,7 +129,7 @@ class InvarFitting(GeneralFitting):
             **kwargs,
         )
 
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         return self.dim_out
 
@@ -168,7 +168,7 @@ class InvarFitting(GeneralFitting):
         h2: paddle.Tensor | None = None,
         fparam: paddle.Tensor | None = None,
         aparam: paddle.Tensor | None = None,
-    ):
+    ) -> paddle.Tensor:
         """Based on embedding net output, alculate total energy.
 
         Args:
