@@ -123,6 +123,17 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
         # Decay phase covers (num_steps - warmup_steps) steps
         self.decay_num_steps = num_steps - self.warmup_steps
 
+    def start_lr(self) -> float:
+        """
+        Get the starting learning rate.
+
+        Returns
+        -------
+        float
+            The starting learning rate.
+        """
+        return self.start_lr
+
     @abstractmethod
     def _decay_value(self, step: int | Array) -> Array:
         """

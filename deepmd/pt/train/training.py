@@ -688,13 +688,13 @@ class Trainer:
             if self.opt_type == "Adam":
                 self.optimizer = torch.optim.Adam(
                     self.wrapper.parameters(),
-                    lr=self.lr_exp.start_lr,
+                    lr=self.lr_exp.start_lr(),
                     fused=False if DEVICE.type == "cpu" else True,
                 )
             else:
                 self.optimizer = torch.optim.AdamW(
                     self.wrapper.parameters(),
-                    lr=self.lr_exp.start_lr,
+                    lr=self.lr_exp.start_lr(),
                     weight_decay=float(self.opt_param["weight_decay"]),
                     fused=False if DEVICE.type == "cpu" else True,
                 )
@@ -703,7 +703,7 @@ class Trainer:
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self.optimizer,
                 lambda step: self.lr_exp.value(step + self.start_step)
-                / self.lr_exp.start_lr,
+                / self.lr_exp.start_lr(),
             )
         elif self.opt_type == "LKF":
             self.optimizer = LKFOptimizer(
@@ -712,7 +712,7 @@ class Trainer:
         elif self.opt_type == "AdaMuon":
             self.optimizer = AdaMuonOptimizer(
                 self.wrapper.parameters(),
-                lr=self.lr_exp.start_lr,
+                lr=self.lr_exp.start_lr(),
                 momentum=float(self.opt_param["momentum"]),
                 weight_decay=float(self.opt_param["weight_decay"]),
                 adam_betas=(
@@ -725,7 +725,7 @@ class Trainer:
         elif self.opt_type == "HybridMuon":
             self.optimizer = HybridMuonOptimizer(
                 self.wrapper.parameters(),
-                lr=self.lr_exp.start_lr,
+                lr=self.lr_exp.start_lr(),
                 momentum=float(self.opt_param["momentum"]),
                 weight_decay=float(self.opt_param["weight_decay"]),
                 adam_betas=(
@@ -742,7 +742,7 @@ class Trainer:
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self.optimizer,
                 lambda step: self.lr_exp.value(step + self.start_step)
-                / self.lr_exp.start_lr,
+                / self.lr_exp.start_lr(),
             )
         else:
             raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
