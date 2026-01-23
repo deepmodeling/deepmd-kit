@@ -203,3 +203,6 @@ class TestInitFrzModelR(unittest.TestCase):
         np.testing.assert_almost_equal(
             ckpt_rmse_ckpt["rmse_fm"], ckpt_rmse_frz["rmse_fm"], default_places
         )
+        np.testing.assert_almost_equal(
+            ckpt_rmse_ckpt["rmse_v"], ckpt_rmse_frz["rmse_v"], default_places
+        )
