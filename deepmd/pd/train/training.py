@@ -584,9 +584,9 @@ class Trainer:
         # author: iProzd
         if self.opt_type == "Adam":
             self.scheduler = paddle.optimizer.lr.LambdaDecay(
-                learning_rate=self.lr_exp.start_lr(),
+                learning_rate=self.lr_exp.start_lr,
                 lr_lambda=lambda step: self.lr_exp.value(step + self.start_step)
-                / self.lr_exp.start_lr(),
+                / self.lr_exp.start_lr,
             )
             self.optimizer = paddle.optimizer.Adam(
                 learning_rate=self.scheduler, parameters=self.wrapper.parameters()

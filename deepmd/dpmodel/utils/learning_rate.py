@@ -118,11 +118,12 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
         self.warmup_start_lr = warmup_start_factor * start_lr
 
         # === Step 7. Store core parameters ===
-        self.start_lr = start_lr
+        self._start_lr = start_lr
         self.num_steps = num_steps
         # Decay phase covers (num_steps - warmup_steps) steps
         self.decay_num_steps = num_steps - self.warmup_steps
 
+    @property
     def start_lr(self) -> float:
         """
         Get the starting learning rate.
@@ -132,7 +133,7 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
         float
             The starting learning rate.
         """
-        return self.start_lr
+        return self._start_lr
 
     @abstractmethod
     def _decay_value(self, step: int | Array) -> Array:
@@ -184,7 +185,7 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
             warmup_progress = xp.astype(step, xp.float64) / self.warmup_steps
             warmup_lr = (
                 self.warmup_start_lr
-                + (self.start_lr - self.warmup_start_lr) * warmup_progress
+                + (self._start_lr - self.warmup_start_lr) * warmup_progress
             )
 
             # === Step 3. Decay phase ===
@@ -338,7 +339,7 @@ class LearningRateExp(BaseLR):
             self.decay_rate = 1.0  # No decay
         else:
             self.decay_rate = np.exp(
-                np.log(clamped_stop_lr / self.start_lr)
+                np.log(clamped_stop_lr / self._start_lr)
                 / (decay_total / self.decay_steps)
             ).item()
 
@@ -367,7 +368,7 @@ class LearningRateExp(BaseLR):
             exponent = xp.astype(step, xp.float64) / self.decay_steps
         else:
             exponent = xp.astype(step // self.decay_steps, xp.float64)
-        step_lr = self.start_lr * xp.pow(
+        step_lr = self._start_lr * xp.pow(
             xp.asarray(self.decay_rate, device=array_api_compat.device(step)),
             exponent,
         )
@@ -472,11 +473,11 @@ class LearningRateCosine(BaseLR):
         if not array_api_compat.is_array_api_obj(step):
             step = np.asarray(step)
         xp = array_api_compat.array_namespace(step)
-        min_lr = self.start_lr * self.lr_min_factor
+        min_lr = self._start_lr * self.lr_min_factor
         # Handle decay_num_steps=0 (no training steps) - return start_lr
         if self.decay_num_steps == 0:
-            return xp.full_like(step, self.start_lr, dtype=xp.float64)
-        step_lr = self.start_lr * (
+            return xp.full_like(step, self._start_lr, dtype=xp.float64)
+        step_lr = self._start_lr * (
             self.lr_min_factor
             + 0.5
             * (1 - self.lr_min_factor)
