@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from typing import (
+    Any,
+)
+
 import paddle
 
 from deepmd.pd.model.atomic_model import (
@@ -25,8 +29,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
 
     def __init__(
         self,
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         DPModelCommon.__init__(self)
         DPEnergyModel_.__init__(self, *args, **kwargs)
@@ -43,7 +47,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         """
         return super().get_buffer_type_map()
 
-    def translated_output_def(self):
+    def translated_output_def(self) -> dict:
         out_def_data = self.model_output_def().get_data()
         output_def = {
             "atom_energy": out_def_data["energy"],
@@ -63,8 +67,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
 
     def forward(
         self,
-        coord,
-        atype,
+        coord: paddle.Tensor,
+        atype: paddle.Tensor,
         box: paddle.Tensor | None = None,
         fparam: paddle.Tensor | None = None,
         aparam: paddle.Tensor | None = None,
@@ -105,15 +109,15 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
 
     def forward_lower(
         self,
-        extended_coord,
-        extended_atype,
-        nlist,
+        extended_coord: paddle.Tensor,
+        extended_atype: paddle.Tensor,
+        nlist: paddle.Tensor,
         mapping: paddle.Tensor | None = None,
         fparam: paddle.Tensor | None = None,
         aparam: paddle.Tensor | None = None,
         do_atomic_virial: bool = False,
         comm_dict: list[paddle.Tensor] | None = None,
-    ):
+    ) -> dict[str, paddle.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,

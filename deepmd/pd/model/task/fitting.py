@@ -6,6 +6,9 @@ from abc import (
 from collections.abc import (
     Callable,
 )
+from typing import (
+    Any,
+)
 
 import numpy as np
 import paddle
@@ -51,12 +54,14 @@ log = logging.getLogger(__name__)
 class Fitting(paddle.nn.Layer, BaseFitting):
     # plugin moved to BaseFitting
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> "Fitting":
         if cls is Fitting:
             return BaseFitting.__new__(BaseFitting, *args, **kwargs)
         return super().__new__(cls)
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: "Fitting", shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -242,7 +247,7 @@ class GeneralFitting(Fitting):
         type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
         default_fparam: list[float] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         super().__init__()
         self.var_name = var_name
@@ -365,7 +370,7 @@ class GeneralFitting(Fitting):
         self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: "Fitting | None" = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -491,7 +496,7 @@ class GeneralFitting(Fitting):
         """
         return self.buffer_type_map
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this fitting net by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -503,7 +508,7 @@ class GeneralFitting(Fitting):
     def set_return_middle_output(self, return_middle_output: bool = True) -> None:
         self.eval_return_middle_output = return_middle_output
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: paddle.Tensor) -> None:
         if key in ["bias_atom_e"]:
             value = value.reshape([self.ntypes, self._net_out_dim()])
             self.bias_atom_e = value
@@ -522,7 +527,7 @@ class GeneralFitting(Fitting):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> paddle.Tensor:
         if key in ["bias_atom_e"]:
             return self.bias_atom_e
         elif key in ["fparam_avg"]:
@@ -541,7 +546,7 @@ class GeneralFitting(Fitting):
             raise KeyError(key)
 
     @abstractmethod
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         pass
 
@@ -560,7 +565,7 @@ class GeneralFitting(Fitting):
         h2: paddle.Tensor | None = None,
         fparam: paddle.Tensor | None = None,
         aparam: paddle.Tensor | None = None,
-    ):
+    ) -> tuple[paddle.Tensor, paddle.Tensor | None]:
         # cast the input to internal precsion
         xx = descriptor.astype(self.prec)
         fparam = fparam.astype(self.prec) if fparam is not None else None

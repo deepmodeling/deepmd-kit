@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from collections.abc import (
+    Callable,
+)
+from typing import (
+    Any,
+    NoReturn,
+)
+
 import paddle
 
 from deepmd.dpmodel.model.base_model import (
@@ -11,7 +19,7 @@ from deepmd.utils.path import (
 
 
 class BaseModel(paddle.nn.Layer, make_base_model()):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Construct a basic model for different tasks."""
         paddle.nn.Layer.__init__(self)
         self.model_def_script = ""
@@ -19,9 +27,9 @@ class BaseModel(paddle.nn.Layer, make_base_model()):
 
     def compute_or_load_stat(
         self,
-        sampled_func,
+        sampled_func: Callable,
         stat_file_path: DPPath | None = None,
-    ):
+    ) -> NoReturn:
         """
         Compute or load the statistics parameters of the model,
         such as mean and standard deviation of descriptors or the energy bias of the fitting net.
@@ -47,7 +55,7 @@ class BaseModel(paddle.nn.Layer, make_base_model()):
         """Get the minimum distance between two atoms."""
         return self.min_nbor_dist
 
-    def get_ntypes(self):
+    def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return len(self.get_type_map())
 
