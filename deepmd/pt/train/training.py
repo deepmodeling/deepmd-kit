@@ -73,9 +73,6 @@ from deepmd.pt.utils.stat import (
 from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
-from deepmd.utils.compat import (
-    convert_optimizer_to_new_format,
-)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -126,8 +123,6 @@ class Trainer:
             resume_model = None
         resuming = resume_model is not None
         self.restart_training = restart_model is not None
-        # Backward compatibility: convert old optimizer format
-        config = convert_optimizer_to_new_format(config)
         model_params = config["model"]
         training_params = config["training"]
         optimizer_params = config.get("optimizer", {})
