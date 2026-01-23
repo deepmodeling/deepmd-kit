@@ -29,18 +29,29 @@ from deepmd.pt.utils.utils import (
 
 @BaseModifier.register("dipole_charge")
 class DipoleChargeModifier(DPModifier):
-    """Parameters
+    """Modifier for dipole-charge systems using Wannier Function Charge Centers (WFCC).
+
+    This modifier extends a system with Wannier Function Charge Centers (WFCC) by
+    adding dipole vectors to atomic coordinates for selected atom types. It then
+    calculates the electrostatic interactions using Ewald reciprocal summation
+    to obtain energy, force, and virial corrections.
+
+    Parameters
     ----------
-    model_name
-            The model file for the DeepDipole model
-    model_charge_map
-            Gives the amount of charge for the wfcc
-    sys_charge_map
-            Gives the amount of charge for the real atoms
-    ewald_h
-            Grid spacing of the reciprocal part of Ewald sum. Unit: A
-    ewald_beta
-            Splitting parameter of the Ewald sum. Unit: A^{-1}
+    dp_model : DipoleModel | None
+        The DeepDipole model to use for dipole prediction
+    model_charge_map : List[float]
+        The amount of charge for the WFCC for each selected atom type
+    sys_charge_map : List[float]
+        The amount of charge for the real atoms for each atom type
+    ewald_h : float, optional
+        Grid spacing of the reciprocal part of Ewald sum. Unit: Å, default is 1.0
+    ewald_beta : float, optional
+        Splitting parameter of the Ewald sum. Unit: Å^{-1}, default is 1.0
+    dp_model_file_name : str | None, optional
+        Path to the model file, by default None
+    use_cache : bool, optional
+        Whether to use cache for computations, by default True
     """
 
     def __init__(
@@ -53,7 +64,30 @@ class DipoleChargeModifier(DPModifier):
         dp_model_file_name: str | None = None,
         use_cache: bool = True,
     ) -> None:
-        """Constructor."""
+        """Initialize the DipoleChargeModifier.
+
+        Parameters
+        ----------
+        dp_model : DipoleModel | None
+            The DeepDipole model to use for dipole prediction
+        model_charge_map : List[float]
+            The amount of charge for the WFCC for each selected atom type
+        sys_charge_map : List[float]
+            The amount of charge for the real atoms for each atom type
+        ewald_h : float, optional
+            Grid spacing of the reciprocal part of Ewald sum. Unit: Å, default is 1.0
+        ewald_beta : float, optional
+            Splitting parameter of the Ewald sum. Unit: Å^{-1}, default is 1.0
+        dp_model_file_name : str | None, optional
+            Path to the model file, by default None
+        use_cache : bool, optional
+            Whether to use cache for computations, by default True
+
+        Raises
+        ------
+        ValueError
+            If model_charge_map and sel_type have mismatching lengths
+        """
         self.modifier_type = "dipole_charge"
         super().__init__(
             dp_model=dp_model,
@@ -97,12 +131,12 @@ class DipoleChargeModifier(DPModifier):
         )
 
     def serialize(self) -> dict:
-        """Serialize the modifier.
+        """Serialize the modifier to a dictionary.
 
         Returns
         -------
         dict
-            The serialized data
+            The serialized data containing model parameters and configuration
         """
         dd = super().serialize()
         dd.update(
@@ -117,6 +151,18 @@ class DipoleChargeModifier(DPModifier):
 
     @classmethod
     def deserialize(cls, data: dict) -> "DipoleChargeModifier":
+        """Deserialize the modifier from a dictionary.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data containing model parameters and configuration
+
+        Returns
+        -------
+        DipoleChargeModifier
+            The deserialized modifier instance
+        """
         data = data.copy()
         data.pop("@class", None)
         data.pop("type", None)
@@ -342,6 +388,7 @@ class DipoleChargeModifier(DPModifier):
         all_coord = torch.cat((coord_reshaped, wfcc_coord), dim=1)
         return all_coord, dipole_reshaped
 
+    @torch.jit.unused
     def eval_np(
         self,
         coord: np.ndarray,
@@ -350,6 +397,32 @@ class DipoleChargeModifier(DPModifier):
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Evaluate the modifier with NumPy input and output.
+
+        This method converts NumPy inputs to PyTorch tensors, evaluates the modifier,
+        and converts the results back to NumPy arrays.
+
+        Parameters
+        ----------
+        coord : np.ndarray
+            The coordinates of atoms with shape (nframes, natoms, 3)
+        box : np.ndarray
+            The simulation box with shape (nframes, 3, 3)
+        atype : np.ndarray
+            The atom types with shape (nframes, natoms)
+        fparam : np.ndarray | None, optional
+            Frame parameters with shape (nframes, nfp), by default None
+        aparam : np.ndarray | None, optional
+            Atom parameters with shape (nframes, natoms, nap), by default None
+
+        Returns
+        -------
+        Tuple[np.ndarray, np.ndarray, np.ndarray]
+            A tuple containing three NumPy arrays:
+            - energy: Energy correction with shape (nframes, 1)
+            - force: Force correction with shape (nframes, natoms, 3)
+            - virial: Virial correction with shape (nframes, 3, 3)
+        """
         nf = coord.shape[0]
         na = coord.reshape(nf, -1, 3).shape[1]
 
