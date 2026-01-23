@@ -390,3 +390,75 @@ def update_deepmd_input(
         jdata = deprecate_numb_test(jdata, warning, dump)
 
     return jdata
+
+
+def convert_optimizer_to_new_format(
+    jdata: dict[str, Any], warning: bool = True
+) -> dict[str, Any]:
+    """Convert old optimizer format (in training section) to new format (separate optimizer section).
+
+    Old format: optimizer parameters (opt_type, kf_blocksize, etc.) in training section.
+    New format: separate optimizer section with type field.
+
+    Parameters
+    ----------
+    jdata : dict[str, Any]
+        loaded json/yaml file
+    warning : bool, optional
+        whether to show deprecation warning, by default True
+
+    Returns
+    -------
+    dict[str, Any]
+        converted output with optimizer section
+    """
+    training_cfg = jdata.get("training", {})
+    if "opt_type" not in training_cfg:
+        # No conversion needed
+        return jdata
+
+    # Optimizer parameters that may be in the training section
+    optimizer_keys = [
+        "opt_type",
+        "kf_blocksize",
+        "kf_start_pref_e",
+        "kf_limit_pref_e",
+        "kf_start_pref_f",
+        "kf_limit_pref_f",
+        "weight_decay",
+        "momentum",
+        "muon_momentum",
+        "adam_beta1",
+        "adam_beta2",
+        "lr_adjust",
+        "lr_adjust_coeff",
+        "muon_2d_only",
+        "min_2d_dim",
+    ]
+
+    # Extract optimizer parameters from training section
+    optimizer_cfg = {}
+    for key in optimizer_keys:
+        if key in training_cfg:
+            optimizer_cfg[key] = training_cfg.pop(key)
+
+    # Convert opt_type to type for new format
+    if "opt_type" in optimizer_cfg:
+        optimizer_cfg["type"] = optimizer_cfg.pop("opt_type")
+
+    # Set the optimizer section if not already present
+    if "optimizer" not in jdata:
+        jdata["optimizer"] = optimizer_cfg
+    else:
+        # Merge with existing optimizer config (new config from conversion takes precedence)
+        jdata["optimizer"].update(optimizer_cfg)
+
+    if warning:
+        warnings.warn(
+            "Placing optimizer parameters (opt_type, kf_blocksize, etc.) in the training section "
+            "is deprecated. Use a separate 'optimizer' section with 'type' field instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+    return jdata

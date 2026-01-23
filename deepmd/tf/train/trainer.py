@@ -57,6 +57,9 @@ from deepmd.tf.utils.learning_rate import (
 from deepmd.tf.utils.sess import (
     run_sess,
 )
+from deepmd.utils.compat import (
+    convert_optimizer_to_new_format,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -121,8 +124,10 @@ class DPTrainer:
         lr_param = jdata["learning_rate"]
         self.lr, self.scale_lr_coef = get_lr_and_coef(lr_param)
         # optimizer
+        # Backward compatibility: convert old optimizer format
+        jdata = convert_optimizer_to_new_format(jdata)
         # Note: Default values are already filled by argcheck.normalize()
-        optimizer_param = jdata.get("optimizer") or {}
+        optimizer_param = jdata.get("optimizer", {})
         self.optimizer_type = optimizer_param.get("type", "Adam")
         self.optimizer_beta1 = float(optimizer_param.get("adam_beta1"))
         self.optimizer_beta2 = float(optimizer_param.get("adam_beta2"))
