@@ -158,41 +158,33 @@ class Trainer:
         self.lcurve_should_print_header = True
 
         def get_opt_param(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+            """
+            Extract optimizer parameters.
+
+            Note: Default values are already filled by argcheck.normalize()
+            before this function is called, so we use params.get() without
+            fallback defaults here.
+            """
             opt_type = params.get("type", "Adam")
-            if opt_type == "Adam":
-                default_adam_beta2 = 0.999
-                default_weight_decay = 0.0
-            elif opt_type == "AdamW":
-                default_adam_beta2 = 0.999
-                default_weight_decay = 0.0
-            elif opt_type == "LKF":
-                default_adam_beta2 = 0.95
-                default_weight_decay = 0.001
-            elif opt_type == "AdaMuon":
-                default_adam_beta2 = 0.95
-                default_weight_decay = 0.001
-            elif opt_type == "HybridMuon":
-                default_adam_beta2 = 0.95
-                default_weight_decay = 0.001
-            else:
+            if opt_type not in ("Adam", "AdamW", "LKF", "AdaMuon", "HybridMuon"):
                 raise ValueError(f"Not supported optimizer type '{opt_type}'")
             opt_param = {
                 # LKF parameters
-                "kf_blocksize": params.get("kf_blocksize", 5120),
-                "kf_start_pref_e": params.get("kf_start_pref_e", 1),
-                "kf_limit_pref_e": params.get("kf_limit_pref_e", 1),
-                "kf_start_pref_f": params.get("kf_start_pref_f", 1),
-                "kf_limit_pref_f": params.get("kf_limit_pref_f", 1),
+                "kf_blocksize": params.get("kf_blocksize"),
+                "kf_start_pref_e": params.get("kf_start_pref_e"),
+                "kf_limit_pref_e": params.get("kf_limit_pref_e"),
+                "kf_start_pref_f": params.get("kf_start_pref_f"),
+                "kf_limit_pref_f": params.get("kf_limit_pref_f"),
                 # Common parameters
-                "weight_decay": params.get("weight_decay", default_weight_decay),
+                "weight_decay": params.get("weight_decay"),
                 # Muon/AdaMuon parameters
-                "momentum": params.get("momentum", 0.95),
-                "adam_beta1": params.get("adam_beta1", 0.9),
-                "adam_beta2": params.get("adam_beta2", default_adam_beta2),
-                "lr_adjust": params.get("lr_adjust", 10.0),
-                "lr_adjust_coeff": params.get("lr_adjust_coeff", 0.2),
-                "muon_2d_only": params.get("muon_2d_only", True),
-                "min_2d_dim": params.get("min_2d_dim", 1),
+                "momentum": params.get("momentum"),
+                "adam_beta1": params.get("adam_beta1"),
+                "adam_beta2": params.get("adam_beta2"),
+                "lr_adjust": params.get("lr_adjust"),
+                "lr_adjust_coeff": params.get("lr_adjust_coeff"),
+                "muon_2d_only": params.get("muon_2d_only"),
+                "min_2d_dim": params.get("min_2d_dim"),
             }
             return opt_type, opt_param
 

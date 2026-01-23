@@ -150,18 +150,25 @@ class Trainer:
         self.lcurve_should_print_header = True
 
         def get_opt_param(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+            """
+            Extract optimizer parameters.
+
+            Note: Default values are already filled by argcheck.normalize()
+            before this function is called, so we use params.get() without
+            fallback defaults here.
+            """
             opt_type = params.get("type", "Adam")
             if opt_type != "Adam":
                 raise ValueError(f"Not supported optimizer type '{opt_type}'")
             opt_param = {
-                "kf_blocksize": params.get("kf_blocksize", 5120),
-                "kf_start_pref_e": params.get("kf_start_pref_e", 1),
-                "kf_limit_pref_e": params.get("kf_limit_pref_e", 1),
-                "kf_start_pref_f": params.get("kf_start_pref_f", 1),
-                "kf_limit_pref_f": params.get("kf_limit_pref_f", 1),
-                "adam_beta1": params.get("adam_beta1", 0.9),
-                "adam_beta2": params.get("adam_beta2", 0.999),
-                "weight_decay": params.get("weight_decay", 0.0),
+                "kf_blocksize": params.get("kf_blocksize"),
+                "kf_start_pref_e": params.get("kf_start_pref_e"),
+                "kf_limit_pref_e": params.get("kf_limit_pref_e"),
+                "kf_start_pref_f": params.get("kf_start_pref_f"),
+                "kf_limit_pref_f": params.get("kf_limit_pref_f"),
+                "adam_beta1": params.get("adam_beta1"),
+                "adam_beta2": params.get("adam_beta2"),
+                "weight_decay": params.get("weight_decay"),
             }
             return opt_type, opt_param
 

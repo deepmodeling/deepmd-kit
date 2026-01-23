@@ -121,11 +121,12 @@ class DPTrainer:
         lr_param = jdata["learning_rate"]
         self.lr, self.scale_lr_coef = get_lr_and_coef(lr_param)
         # optimizer
+        # Note: Default values are already filled by argcheck.normalize()
         optimizer_param = jdata.get("optimizer") or {}
         self.optimizer_type = optimizer_param.get("type", "Adam")
-        self.optimizer_beta1 = float(optimizer_param.get("adam_beta1", 0.9))
-        self.optimizer_beta2 = float(optimizer_param.get("adam_beta2", 0.999))
-        self.optimizer_weight_decay = float(optimizer_param.get("weight_decay", 0.0))
+        self.optimizer_beta1 = float(optimizer_param.get("adam_beta1"))
+        self.optimizer_beta2 = float(optimizer_param.get("adam_beta2"))
+        self.optimizer_weight_decay = float(optimizer_param.get("weight_decay"))
         if self.optimizer_type != "Adam":
             raise RuntimeError(
                 f"Unsupported optimizer type {self.optimizer_type} for TensorFlow backend."
