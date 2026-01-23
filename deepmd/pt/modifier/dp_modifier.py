@@ -37,7 +37,11 @@ class DPModifier(BaseModifier):
             self._model = dp_model.to(env.DEVICE)
         if dp_model_file_name is not None:
             data = serialize_from_file(dp_model_file_name)
-            assert data["model"]["type"] == "standard"
+            model_type = data["model"]["type"]
+            if model_type != "standard":
+                raise ValueError(
+                    f"DPModifier only support standard model. Unsupported model type: {model_type}"
+                )
             self._model = (
                 BaseModel.get_class_by_type(data["model"]["fitting"]["type"])
                 .deserialize(data["model"])
