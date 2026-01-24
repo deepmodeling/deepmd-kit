@@ -313,7 +313,7 @@ class PairwiseDPRc(Model):
     def get_ntypes(self) -> int:
         return self.ntypes
 
-    def data_stat(self, data) -> None:
+    def data_stat(self, data, stat_file_path=None) -> None:
         self.qm_model.data_stat(data)
         self.qmmm_model.data_stat(data)
 

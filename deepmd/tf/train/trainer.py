@@ -170,7 +170,14 @@ class DPTrainer:
         self.ckpt_meta = None
         self.model_type = None
 
-    def build(self, data=None, stop_batch=0, origin_type_map=None, suffix="") -> None:
+    def build(
+        self,
+        data=None,
+        stop_batch=0,
+        origin_type_map=None,
+        suffix="",
+        stat_file_path=None,
+    ) -> None:
         self.ntypes = self.model.get_ntypes()
         self.stop_batch = stop_batch
 
@@ -209,7 +216,7 @@ class DPTrainer:
                 # self.saver.restore (in self._init_session) will restore avg and std variables, so data_stat is useless
                 # init_from_frz_model will restore data_stat variables in `init_variables` method
                 log.info("data stating... (this step may take long time)")
-                self.model.data_stat(data)
+                self.model.data_stat(data, stat_file_path=stat_file_path)
 
             # config the init_frz_model command
             if self.run_opt.init_mode == "init_from_frz_model":
