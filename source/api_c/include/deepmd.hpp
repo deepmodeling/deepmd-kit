@@ -2602,9 +2602,9 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
       for (int j = 0; j < natoms * 3; j++) {
         force_mag[i][j] = force_mag_flat[i * natoms * 3 + j];
       }
-      // for (int j = 0; j < 9; j++) {
-      //   virial[i][j] = virial_flat[i * 9 + j];
-      // }
+      for (int j = 0; j < 9; j++) {
+        virial[i][j] = virial_flat[i * 9 + j];
+      }
     }
   };
   /**
@@ -2705,9 +2705,9 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
       for (int j = 0; j < natoms * 3; j++) {
         force_mag[i][j] = force_mag_flat[i * natoms * 3 + j];
       }
-      // for (int j = 0; j < 9; j++) {
-      //   virial[i][j] = virial_flat[i * 9 + j];
-      // }
+      for (int j = 0; j < 9; j++) {
+        virial[i][j] = virial_flat[i * 9 + j];
+      }
       for (int j = 0; j < natoms; j++) {
         atom_energy[i][j] = atom_energy_flat[i * natoms + j];
       }
