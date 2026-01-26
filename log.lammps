@@ -1,0 +1,23 @@
+LAMMPS (22 Jul 2025 - Update 2)
+  using 1 OpenMP thread(s) per MPI task
+Loaded 0 plugins from
+units metal
+boundary p p p
+atom_style atomic
+neighbor 2.0 bin
+neigh_modify every 10 delay 0 check no
+read_data /home/outisli/Research/dpmd/source/lmp/tests/data.lmp
+Reading data file ...
+  triclinic box = (0 0 0) to (13 13 13) with tilt (0 0 0)
+  1 by 1 by 1 MPI processor grid
+  reading atoms ...
+  6 atoms
+  read_data CPU = 0.000 seconds
+mass 1 16
+mass 2 2
+timestep 0.0005
+fix 1 all nve
+pair_style deepmd /home/outisli/Research/dpmd/source/tests/infer/deeppot_sea.pth
+ERROR: Unrecognized pair style 'deepmd' (src/src/force.cpp:275)
+Last input line: pair_style deepmd /home/outisli/Research/dpmd/source/tests/infer/deeppot_sea.pth
+Total wall time: 0:00:00
