@@ -154,22 +154,13 @@ class Trainer:
             Extract optimizer parameters.
 
             Note: Default values are already filled by argcheck.normalize()
-            before this function is called, so we use params.get() without
-            fallback defaults here.
+            before this function is called.
             """
             opt_type = params.get("type", "Adam")
             if opt_type != "Adam":
                 raise ValueError(f"Not supported optimizer type '{opt_type}'")
-            opt_param = {
-                "kf_blocksize": params.get("kf_blocksize"),
-                "kf_start_pref_e": params.get("kf_start_pref_e"),
-                "kf_limit_pref_e": params.get("kf_limit_pref_e"),
-                "kf_start_pref_f": params.get("kf_start_pref_f"),
-                "kf_limit_pref_f": params.get("kf_limit_pref_f"),
-                "adam_beta1": params.get("adam_beta1"),
-                "adam_beta2": params.get("adam_beta2"),
-                "weight_decay": params.get("weight_decay"),
-            }
+            opt_param = dict(params)
+            opt_param.pop("type", None)
             return opt_type, opt_param
 
         def get_data_loader(

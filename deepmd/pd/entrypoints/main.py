@@ -64,7 +64,6 @@ from deepmd.utils.argcheck import (
     normalize,
 )
 from deepmd.utils.compat import (
-    convert_optimizer_to_new_format,
     update_deepmd_input,
 )
 from deepmd.utils.data_system import (
@@ -293,8 +292,6 @@ def train(
 
     # argcheck
     config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
-    # Backward compatibility: convert old optimizer format
-    config = convert_optimizer_to_new_format(config)
     config = normalize(config, multi_task=multi_task)
 
     # do neighbor stat

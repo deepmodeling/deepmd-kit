@@ -37,7 +37,6 @@ from deepmd.tf.utils.argcheck import (
     normalize,
 )
 from deepmd.tf.utils.compat import (
-    convert_optimizer_to_new_format,
     update_deepmd_input,
 )
 from deepmd.tf.utils.finetune import (
@@ -163,9 +162,6 @@ def train(
         jdata["model"] = json.loads(t_training_script)["model"]
 
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
-    # Backward compatibility: convert old optimizer format
-    jdata = convert_optimizer_to_new_format(jdata)
-
     jdata = normalize(jdata)
 
     if not is_compress and not skip_neighbor_stat:

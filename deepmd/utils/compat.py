@@ -389,6 +389,7 @@ def update_deepmd_input(
     else:
         jdata = deprecate_numb_test(jdata, warning, dump)
 
+    jdata = convert_optimizer_to_new_format(jdata, warning=warning)
     return jdata
 
 
@@ -423,28 +424,26 @@ def convert_optimizer_to_new_format(
     training_cfg = jdata.get("training", {})
     optimizer_cfg = jdata.get("optimizer", {})
 
-    # Case 1: Old format - optimizer params in training section
-    if "opt_type" in training_cfg:
-        # Optimizer parameters that may be in the training section
-        optimizer_keys = [
-            "opt_type",
-            "kf_blocksize",
-            "kf_start_pref_e",
-            "kf_limit_pref_e",
-            "kf_start_pref_f",
-            "kf_limit_pref_f",
-            "weight_decay",
-            "momentum",
-            "muon_momentum",
-            "adam_beta1",
-            "adam_beta2",
-            "lr_adjust",
-            "lr_adjust_coeff",
-            "muon_2d_only",
-            "min_2d_dim",
-        ]
-
-        # Extract optimizer parameters from training section
+    # === Step 1. Extract legacy optimizer parameters from training ===
+    optimizer_keys = [
+        "opt_type",
+        "kf_blocksize",
+        "kf_start_pref_e",
+        "kf_limit_pref_e",
+        "kf_start_pref_f",
+        "kf_limit_pref_f",
+        "weight_decay",
+        "momentum",
+        "muon_momentum",
+        "adam_beta1",
+        "adam_beta2",
+        "lr_adjust",
+        "lr_adjust_coeff",
+        "muon_2d_only",
+        "min_2d_dim",
+    ]
+    has_legacy_optimizer = any(key in training_cfg for key in optimizer_keys)
+    if has_legacy_optimizer:
         extracted_cfg = {}
         for key in optimizer_keys:
             if key in training_cfg:
@@ -465,8 +464,7 @@ def convert_optimizer_to_new_format(
                 stacklevel=2,
             )
 
-    # Case 2: Fill in missing defaults
-    # If type is not specified, default to Adam
+    # === Step 2. Fill in missing defaults ===
     if "type" not in optimizer_cfg:
         optimizer_cfg["type"] = default_optimizer["type"]
 

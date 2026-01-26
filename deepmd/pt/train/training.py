@@ -162,30 +162,13 @@ class Trainer:
             Extract optimizer parameters.
 
             Note: Default values are already filled by argcheck.normalize()
-            before this function is called, so we use params.get() without
-            fallback defaults here.
+            before this function is called.
             """
             opt_type = params.get("type", "Adam")
             if opt_type not in ("Adam", "AdamW", "LKF", "AdaMuon", "HybridMuon"):
                 raise ValueError(f"Not supported optimizer type '{opt_type}'")
-            opt_param = {
-                # LKF parameters
-                "kf_blocksize": params.get("kf_blocksize"),
-                "kf_start_pref_e": params.get("kf_start_pref_e"),
-                "kf_limit_pref_e": params.get("kf_limit_pref_e"),
-                "kf_start_pref_f": params.get("kf_start_pref_f"),
-                "kf_limit_pref_f": params.get("kf_limit_pref_f"),
-                # Common parameters
-                "weight_decay": params.get("weight_decay"),
-                # Muon/AdaMuon parameters
-                "momentum": params.get("momentum"),
-                "adam_beta1": params.get("adam_beta1"),
-                "adam_beta2": params.get("adam_beta2"),
-                "lr_adjust": params.get("lr_adjust"),
-                "lr_adjust_coeff": params.get("lr_adjust_coeff"),
-                "muon_2d_only": params.get("muon_2d_only"),
-                "min_2d_dim": params.get("min_2d_dim"),
-            }
+            opt_param = dict(params)
+            opt_param.pop("type", None)
             return opt_type, opt_param
 
         def cycle_iterator(iterable: Iterable) -> Generator[Any, None, None]:
