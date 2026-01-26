@@ -3349,7 +3349,7 @@ def training_args(
             ],
         ),
         Argument(
-            "num_epoch",
+            "numb_epoch",
             [int, float],
             optional=True,
             doc=doc_num_epoch,
