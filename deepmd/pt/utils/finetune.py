@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import json
 import logging
 from copy import (
     deepcopy,
@@ -148,10 +149,27 @@ def get_finetune_rules(
         Fine-tuning rules in a dict format, with `model_branch`: FinetuneRuleItem pairs.
     """
     multi_task = "model_dict" in model_config
-    state_dict = torch.load(finetune_model, map_location=env.DEVICE, weights_only=True)
-    if "model" in state_dict:
-        state_dict = state_dict["model"]
-    last_model_params = state_dict["_extra_state"]["model_params"]
+
+    # Load model parameters based on file extension
+    if finetune_model.endswith(".pt"):
+        # Load checkpoint file (.pt)
+        state_dict = torch.load(
+            finetune_model, map_location=env.DEVICE, weights_only=True
+        )
+        if "model" in state_dict:
+            state_dict = state_dict["model"]
+        last_model_params = state_dict["_extra_state"]["model_params"]
+    elif finetune_model.endswith(".pth"):
+        # Load frozen model (.pth)
+        jit_model = torch.jit.load(finetune_model, map_location=env.DEVICE)
+        model_params_string = jit_model.get_model_def_script()
+        last_model_params = json.loads(model_params_string)
+    else:
+        raise RuntimeError(
+            "The finetune model provided must be a checkpoint file with a .pt extension "
+            "or a frozen model with a .pth extension"
+        )
+
     finetune_from_multi_task = "model_dict" in last_model_params
     finetune_links = {}
     if not multi_task:
