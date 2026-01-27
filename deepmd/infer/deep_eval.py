@@ -11,6 +11,9 @@ from typing import (
 )
 
 import numpy as np
+from typing_extensions import (
+    Self,
+)
 
 from deepmd.backend.backend import (
     Backend,
@@ -22,7 +25,6 @@ from deepmd.dpmodel.output_def import (
 from deepmd.utils.batch_size import (
     AutoBatchSize,
 )
-from typing_extensions import Self
 
 if TYPE_CHECKING:
     import ase.neighborlist
@@ -90,9 +92,7 @@ class DeepEvalBackend(ABC):
     ) -> None:
         pass
 
-    def __new__(
-        cls, model_file: str, *args: object, **kwargs: object
-    ) -> Self:
+    def __new__(cls, model_file: str, *args: object, **kwargs: object) -> Self:
         if cls is DeepEvalBackend:
             backend = Backend.detect_backend_by_model(model_file)
             return super().__new__(backend().deep_eval)

@@ -8,11 +8,14 @@ from typing import (
     Any,
 )
 
+from typing_extensions import (
+    Self,
+)
+
 from deepmd.utils.plugin import (
     PluginVariant,
     make_plugin_registry,
 )
-from typing_extensions import Self
 
 
 def make_base_modifier() -> type[object]:

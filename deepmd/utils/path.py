@@ -18,10 +18,12 @@ from typing import (
 
 import h5py
 import numpy as np
+from typing_extensions import (
+    Self,
+)
 from wcmatch.glob import (
     globfilter,
 )
-from typing_extensions import Self
 
 
 class DPPath(ABC):

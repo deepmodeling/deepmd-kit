@@ -13,6 +13,9 @@ from typing import (
 )
 
 import torch
+from typing_extensions import (
+    Self,
+)
 
 from deepmd.pt.model.network.network import (
     TypeEmbedNet,
@@ -32,7 +35,6 @@ from deepmd.utils.path import (
 from deepmd.utils.plugin import (
     make_plugin_registry,
 )
-from typing_extensions import Self
 
 log = logging.getLogger(__name__)
 

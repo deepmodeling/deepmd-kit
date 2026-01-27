@@ -13,6 +13,9 @@ from typing import (
 
 import numpy as np
 import torch
+from typing_extensions import (
+    Self,
+)
 
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -48,7 +51,6 @@ from deepmd.utils.finetune import (
 from deepmd.utils.path import (
     DPPath,
 )
-from typing_extensions import Self
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
