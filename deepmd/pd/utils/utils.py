@@ -34,6 +34,7 @@ from deepmd.pd.utils import (
 
 from .env import (
     DEVICE,
+    GLOBAL_NP_FLOAT_PRECISION,
 )
 from .env import PRECISION_DICT as PD_PRECISION_DICT
 
@@ -257,7 +258,8 @@ def to_numpy_array(
 ):
     if xx is None:
         return None
-    assert xx is not None
+    if isinstance(xx, (float, int)):
+        return np.array(xx, dtype=GLOBAL_NP_FLOAT_PRECISION)
     # Create a reverse mapping of PD_PRECISION_DICT
     reverse_precision_dict = {v: k for k, v in PD_PRECISION_DICT.items()}
     # Use the reverse mapping to find keys with the desired value

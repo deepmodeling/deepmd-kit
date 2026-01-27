@@ -1,10 +1,7 @@
 {
   "_comment": "that's all",
   "model": {
-    "type_map": [
-      "O",
-      "H"
-    ],
+    "type_map": ["O", "H"],
     "descriptor": {
       "type": "dpa3",
       "repflow": {
@@ -40,11 +37,7 @@
       "seed": 1
     },
     "fitting_net": {
-      "neuron": [
-        240,
-        240,
-        240
-      ],
+      "neuron": [240, 240, 240],
       "resnet_dt": true,
       "precision": "float32",
       "activation_function": "silut:10.0",
@@ -73,23 +66,16 @@
   "training": {
     "stat_file": "./dpa3.hdf5",
     "training_data": {
-      "systems": [
-        "../data/data_0",
-        "../data/data_1",
-        "../data/data_2"
-      ],
+      "systems": ["../data/data_0", "../data/data_1", "../data/data_2"],
       "batch_size": 1,
       "_comment": "that's all"
     },
     "validation_data": {
-      "systems": [
-        "../data/data_3"
-      ],
+      "systems": ["../data/data_3"],
       "batch_size": 1,
       "_comment": "that's all"
     },
     "numb_steps": 1000000,
-    "warmup_steps": 0,
     "gradient_max_norm": 5.0,
     "seed": 10,
     "disp_file": "lcurve.out",

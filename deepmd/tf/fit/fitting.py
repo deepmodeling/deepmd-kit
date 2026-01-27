@@ -73,7 +73,7 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
         ----------
         loss : dict
             the loss dict
-        lr : LearningRateExp
+        lr : LearningRateSchedule
             the learning rate
 
         Returns

@@ -1,10 +1,7 @@
 {
   "_comment": "that's all",
   "model": {
-    "type_map": [
-      "O",
-      "H"
-    ],
+    "type_map": ["O", "H"],
     "descriptor": {
       "type": "dpa2",
       "repinit": {
@@ -12,11 +9,7 @@
         "rcut": 6.0,
         "rcut_smth": 0.5,
         "nsel": 120,
-        "neuron": [
-          25,
-          50,
-          100
-        ],
+        "neuron": [25, 50, 100],
         "axis_neuron": 12,
         "activation_function": "tanh",
         "three_body_sel": 48,
@@ -57,11 +50,7 @@
       "seed": 1
     },
     "fitting_net": {
-      "neuron": [
-        240,
-        240,
-        240
-      ],
+      "neuron": [240, 240, 240],
       "resnet_dt": true,
       "precision": "float64",
       "seed": 1,
@@ -73,7 +62,7 @@
     "type": "exp",
     "decay_steps": 5000,
     "start_lr": 0.001,
-    "stop_lr": 3.51e-08,
+    "stop_lr": 3.51e-8,
     "_comment": "that's all"
   },
   "loss": {
@@ -89,23 +78,16 @@
   "training": {
     "stat_file": "./dpa2.hdf5",
     "training_data": {
-      "systems": [
-        "../data/data_0",
-        "../data/data_1",
-        "../data/data_2"
-      ],
+      "systems": ["../data/data_0", "../data/data_1", "../data/data_2"],
       "batch_size": 1,
       "_comment": "that's all"
     },
     "validation_data": {
-      "systems": [
-        "../data/data_3"
-      ],
+      "systems": ["../data/data_3"],
       "batch_size": 1,
       "_comment": "that's all"
     },
     "numb_steps": 1000000,
-    "warmup_steps": 0,
     "gradient_max_norm": 5.0,
     "seed": 10,
     "disp_file": "lcurve.out",
