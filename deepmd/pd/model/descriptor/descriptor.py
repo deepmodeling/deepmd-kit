@@ -13,6 +13,9 @@ from typing import (
 )
 
 import paddle
+from typing_extensions import (
+    Self,
+)
 
 from deepmd.pd.model.network.network import (
     TypeEmbedNet,
@@ -44,7 +47,7 @@ class DescriptorBlock(paddle.nn.Layer, ABC, make_plugin_registry("DescriptorBloc
 
     local_cluster = False
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> "DescriptorBlock":
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         if cls is DescriptorBlock:
             try:
                 descrpt_type = kwargs["type"]

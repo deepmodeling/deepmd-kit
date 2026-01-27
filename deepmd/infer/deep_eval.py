@@ -11,6 +11,9 @@ from typing import (
 )
 
 import numpy as np
+from typing_extensions import (
+    Self,
+)
 
 from deepmd.backend.backend import (
     Backend,
@@ -89,9 +92,7 @@ class DeepEvalBackend(ABC):
     ) -> None:
         pass
 
-    def __new__(
-        cls, model_file: str, *args: object, **kwargs: object
-    ) -> "DeepEvalBackend":
+    def __new__(cls, model_file: str, *args: object, **kwargs: object) -> Self:
         if cls is DeepEvalBackend:
             backend = Backend.detect_backend_by_model(model_file)
             return super().__new__(backend().deep_eval)
@@ -384,7 +385,7 @@ class DeepEval(ABC):
         Keyword arguments.
     """
 
-    def __new__(cls, model_file: str, *args: object, **kwargs: object) -> "DeepEval":
+    def __new__(cls, model_file: str, *args: object, **kwargs: object) -> Self:
         if cls is DeepEval:
             deep_eval = DeepEvalBackend(
                 model_file,

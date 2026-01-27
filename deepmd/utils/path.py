@@ -18,6 +18,9 @@ from typing import (
 
 import h5py
 import numpy as np
+from typing_extensions import (
+    Self,
+)
 from wcmatch.glob import (
     globfilter,
 )
@@ -34,7 +37,7 @@ class DPPath(ABC):
         mode, by default "r"
     """
 
-    def __new__(cls, path: str, mode: str = "r") -> "DPPath":
+    def __new__(cls, path: str, mode: str = "r") -> Self:
         if cls is DPPath:
             if os.path.isdir(path):
                 return super().__new__(DPOSPath)
