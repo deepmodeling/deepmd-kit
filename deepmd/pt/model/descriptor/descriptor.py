@@ -32,6 +32,7 @@ from deepmd.utils.path import (
 from deepmd.utils.plugin import (
     make_plugin_registry,
 )
+from typing_extensions import Self
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
 
     local_cluster = False
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> "DescriptorBlock":
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         if cls is DescriptorBlock:
             try:
                 descrpt_type = kwargs["type"]

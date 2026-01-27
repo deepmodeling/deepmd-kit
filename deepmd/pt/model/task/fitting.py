@@ -48,6 +48,7 @@ from deepmd.utils.finetune import (
 from deepmd.utils.path import (
     DPPath,
 )
+from typing_extensions import Self
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
@@ -58,7 +59,7 @@ log = logging.getLogger(__name__)
 class Fitting(torch.nn.Module, BaseFitting):
     # plugin moved to BaseFitting
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> "Fitting":
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         if cls is Fitting:
             return BaseFitting.__new__(BaseFitting, *args, **kwargs)
         return super().__new__(cls)

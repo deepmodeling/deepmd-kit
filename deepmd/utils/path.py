@@ -21,6 +21,7 @@ import numpy as np
 from wcmatch.glob import (
     globfilter,
 )
+from typing_extensions import Self
 
 
 class DPPath(ABC):
@@ -34,7 +35,7 @@ class DPPath(ABC):
         mode, by default "r"
     """
 
-    def __new__(cls, path: str, mode: str = "r") -> "DPPath":
+    def __new__(cls, path: str, mode: str = "r") -> Self:
         if cls is DPPath:
             if os.path.isdir(path):
                 return super().__new__(DPOSPath)

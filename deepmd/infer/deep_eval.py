@@ -22,6 +22,7 @@ from deepmd.dpmodel.output_def import (
 from deepmd.utils.batch_size import (
     AutoBatchSize,
 )
+from typing_extensions import Self
 
 if TYPE_CHECKING:
     import ase.neighborlist
@@ -91,7 +92,7 @@ class DeepEvalBackend(ABC):
 
     def __new__(
         cls, model_file: str, *args: object, **kwargs: object
-    ) -> "DeepEvalBackend":
+    ) -> Self:
         if cls is DeepEvalBackend:
             backend = Backend.detect_backend_by_model(model_file)
             return super().__new__(backend().deep_eval)
@@ -384,7 +385,7 @@ class DeepEval(ABC):
         Keyword arguments.
     """
 
-    def __new__(cls, model_file: str, *args: object, **kwargs: object) -> "DeepEval":
+    def __new__(cls, model_file: str, *args: object, **kwargs: object) -> Self:
         if cls is DeepEval:
             deep_eval = DeepEvalBackend(
                 model_file,
