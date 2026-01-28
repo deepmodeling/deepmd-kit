@@ -1,10 +1,10 @@
 on:
   push:
     branches-ignore:
-      - "gh-readonly-queue/**"
-      - "copilot/**"
-      - "dependabot/**"
-      - "pre-commit-ci-update-config"
+    - "gh-readonly-queue/**"
+    - "copilot/**"
+    - "dependabot/**"
+    - "pre-commit-ci-update-config"
   pull_request:
   merge_group:
 concurrency:
@@ -79,6 +79,8 @@ jobs:
     - uses: codecov/codecov-action@v5
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      with:
+        use_oidc: true
   update_durations:
     name: Combine and update integration test durations
     runs-on: ubuntu-22.04
@@ -114,3 +116,5 @@ jobs:
       uses: re-actors/alls-green@release/v1
       with:
         jobs: ${{ toJSON(needs) }}
+permissions:
+  id-token: write
