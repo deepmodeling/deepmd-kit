@@ -162,7 +162,6 @@ def train(
         jdata["model"] = json.loads(t_training_script)["model"]
 
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
-
     jdata = normalize(jdata)
 
     if not is_compress and not skip_neighbor_stat:

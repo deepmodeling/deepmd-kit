@@ -389,4 +389,92 @@ def update_deepmd_input(
     else:
         jdata = deprecate_numb_test(jdata, warning, dump)
 
+    jdata = convert_optimizer_to_new_format(jdata, warning=warning)
+    return jdata
+
+
+def convert_optimizer_to_new_format(
+    jdata: dict[str, Any], warning: bool = True
+) -> dict[str, Any]:
+    """Convert old optimizer format (in training section) to new format (separate optimizer section).
+
+    Old format: optimizer parameters (opt_type, kf_blocksize, etc.) in training section.
+    New format: separate optimizer section with type field.
+
+    Parameters
+    ----------
+    jdata : dict[str, Any]
+        loaded json/yaml file
+    warning : bool, optional
+        whether to show deprecation warning, by default True
+
+    Returns
+    -------
+    dict[str, Any]
+        converted output with optimizer section
+    """
+    # Default optimizer values (must match argcheck.py defaults)
+    default_optimizer = {
+        "type": "Adam",
+        "adam_beta1": 0.9,
+        "adam_beta2": 0.999,
+        "weight_decay": 0.0,
+    }
+
+    training_cfg = jdata.get("training", {})
+    optimizer_cfg = jdata.get("optimizer", {})
+
+    # === Step 1. Extract legacy optimizer parameters from training ===
+    optimizer_keys = [
+        "opt_type",
+        "kf_blocksize",
+        "kf_start_pref_e",
+        "kf_limit_pref_e",
+        "kf_start_pref_f",
+        "kf_limit_pref_f",
+        "weight_decay",
+        "momentum",
+        "muon_momentum",
+        "adam_beta1",
+        "adam_beta2",
+        "lr_adjust",
+        "lr_adjust_coeff",
+        "muon_2d_only",
+        "min_2d_dim",
+    ]
+    has_legacy_optimizer = any(key in training_cfg for key in optimizer_keys)
+    if has_legacy_optimizer:
+        extracted_cfg = {}
+        for key in optimizer_keys:
+            if key in training_cfg:
+                extracted_cfg[key] = training_cfg.pop(key)
+
+        # Convert opt_type to type for new format
+        if "opt_type" in extracted_cfg:
+            extracted_cfg["type"] = extracted_cfg.pop("opt_type")
+
+        # Merge with existing optimizer config (conversion takes precedence)
+        optimizer_cfg = {**optimizer_cfg, **extracted_cfg}
+
+        if warning:
+            warnings.warn(
+                "Placing optimizer parameters (opt_type, kf_blocksize, etc.) in the training section "
+                "is deprecated. Use a separate 'optimizer' section with 'type' field instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+    # === Step 2. Fill in missing defaults ===
+    if "type" not in optimizer_cfg:
+        optimizer_cfg["type"] = default_optimizer["type"]
+
+    # Fill in defaults for Adam optimizer type
+    if optimizer_cfg["type"] in ("Adam", "AdamW"):
+        for key, value in default_optimizer.items():
+            if key not in optimizer_cfg:
+                optimizer_cfg[key] = value
+
+    # Set/update the optimizer section
+    jdata["optimizer"] = optimizer_cfg
+
     return jdata
