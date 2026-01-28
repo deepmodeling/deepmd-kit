@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 import logging
+from typing import (
+    Any,
+)
 
 import paddle
 
@@ -44,8 +47,8 @@ class EnergyFittingNet(InvarFitting):
         mixed_types: bool = True,
         seed: int | list[int] | None = None,
         type_map: list[str] | None = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__(
             "energy",
             ntypes,

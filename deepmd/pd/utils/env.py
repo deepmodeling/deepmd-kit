@@ -121,7 +121,7 @@ inter_nthreads, intra_nthreads = get_default_nthreads()
 #     os.environ['CPU_NUM'] = str(intra_nthreads)
 
 
-def enable_prim(enable: bool = True):
+def enable_prim(enable: bool = True) -> None:
     # NOTE: operators in list below will not use composite
     # operator but kernel instead for better performance
     EAGER_COMP_OP_BLACK_LIST = [

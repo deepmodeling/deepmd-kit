@@ -45,7 +45,7 @@ dependencies = [
     'scipy',
     'pyyaml',
     'dargs >= 0.4.7',
-    'typing_extensions; python_version < "3.8"',
+    'typing_extensions>=4.0.0',
     'importlib_metadata>=1.4; python_version < "3.8"',
     'h5py',
     "h5py>=3.6.0,!=3.11.0; platform_system=='Linux' and platform_machine=='aarch64'",
@@ -171,7 +171,7 @@ pin_pytorch_cpu = [
   "torch-admp>=1.1.5",
 ]
 pin_pytorch_gpu = [
-  "torch>=2.7,<2.10",
+  "torch==2.10.0",
   "torch-admp>=1.1.5",
 ]
 pin_jax = [
@@ -438,7 +438,7 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "deepmd/tf/**" = ["TID253", "ANN"]
 "deepmd/pt/**" = ["TID253", "B905"]
 "deepmd/jax/**" = ["TID253"]
-"deepmd/pd/**" = ["TID253", "ANN", "B905"]
+"deepmd/pd/**" = ["TID253", "B905"]
 
 "source/**" = ["ANN"]
 "source/tests/tf/**" = ["TID253", "ANN"]

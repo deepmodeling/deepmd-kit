@@ -13,6 +13,9 @@ from typing import (
 
 import numpy as np
 import torch
+from typing_extensions import (
+    Self,
+)
 
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -58,7 +61,7 @@ log = logging.getLogger(__name__)
 class Fitting(torch.nn.Module, BaseFitting):
     # plugin moved to BaseFitting
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> "Fitting":
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         if cls is Fitting:
             return BaseFitting.__new__(BaseFitting, *args, **kwargs)
         return super().__new__(cls)

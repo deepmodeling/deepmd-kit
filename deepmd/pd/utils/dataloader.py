@@ -4,6 +4,7 @@ import os
 import queue
 import time
 from collections.abc import (
+    Iterable,
     Iterator,
 )
 from multiprocessing.dummy import (
@@ -11,6 +12,9 @@ from multiprocessing.dummy import (
 )
 from threading import (
     Thread,
+)
+from typing import (
+    Any,
 )
 
 import h5py
@@ -53,7 +57,7 @@ log = logging.getLogger(__name__)
 # paddle.multiprocessing.set_sharing_strategy("file_system")
 
 
-def setup_seed(seed):
+def setup_seed(seed: int | list | tuple) -> None:
     if isinstance(seed, (list, tuple)):
         mixed_seed = mix_entropy(seed)
     else:
@@ -82,12 +86,12 @@ class DpLoaderSet(Dataset):
 
     def __init__(
         self,
-        systems,
-        batch_size,
-        type_map,
-        seed=None,
-        shuffle=True,
-    ):
+        systems: str | list[str],
+        batch_size: int,
+        type_map: list[str],
+        seed: int | None = None,
+        shuffle: bool = True,
+    ) -> None:
         if seed is not None:
             setup_seed(seed)
         if isinstance(systems, str):
@@ -98,7 +102,7 @@ class DpLoaderSet(Dataset):
         if len(systems) >= 100:
             log.info(f"Constructing DataLoaders from {len(systems)} systems")
 
-        def construct_dataset(system):
+        def construct_dataset(system: str) -> DeepmdDataSetForLoader:
             return DeepmdDataSetForLoader(
                 system=system,
                 type_map=type_map,
@@ -203,14 +207,14 @@ class DpLoaderSet(Dataset):
         class LazyIter:
             """Lazy iterator to prevent fetching data when iter(item)."""
 
-            def __init__(self, item):
+            def __init__(self, item: Any) -> None:
                 self.item = item
 
-            def __iter__(self):
+            def __iter__(self) -> "LazyIter":
                 # directly return
                 return self
 
-            def __next__(self):
+            def __next__(self) -> Any:
                 if not isinstance(self.item, Iterator):
                     # make iterator here lazily
                     self.item = iter(self.item)
@@ -221,7 +225,7 @@ class DpLoaderSet(Dataset):
         for item in self.dataloaders:
             self.iters.append(LazyIter(item))
 
-    def set_noise(self, noise_settings):
+    def set_noise(self, noise_settings: dict) -> None:
         # noise_settings['noise_type'] # "trunc_normal", "normal", "uniform"
         # noise_settings['noise'] # float, default 1.0
         # noise_settings['noise_mode'] # "prob", "fix_num"
@@ -234,7 +238,7 @@ class DpLoaderSet(Dataset):
     def __len__(self) -> int:
         return len(self.dataloaders)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> dict:
         # log.warning(str(paddle.distributed.get_rank())+" idx: "+str(idx)+" index: "+str(self.index[idx]))
         try:
             batch = next(self.iters[idx])
@@ -244,7 +248,7 @@ class DpLoaderSet(Dataset):
         batch["sid"] = idx
         return batch
 
-    def add_data_requirement(self, data_requirement: list[DataRequirementItem]):
+    def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
         """Add data requirement for each system in multiple systems."""
         for system in self.systems:
             system.add_data_requirement(data_requirement)
@@ -253,7 +257,7 @@ class DpLoaderSet(Dataset):
         self,
         name: str,
         prob: list[float],
-    ):
+    ) -> None:
         rank = dist.get_rank() if dist.is_initialized() else 0
         if rank == 0:
             print_summary(
@@ -276,7 +280,9 @@ QUEUESIZE = 32
 
 
 class BackgroundConsumer(Thread):
-    def __init__(self, queue, source, max_len) -> None:
+    def __init__(
+        self, queue: "queue.Queue[Any]", source: Iterable, max_len: int
+    ) -> None:
         Thread.__init__(self)
         self._queue = queue
         self._source = source  # Main DL iterator
@@ -291,7 +297,7 @@ class BackgroundConsumer(Thread):
 
 
 class BufferedIterator:
-    def __init__(self, iterable) -> None:
+    def __init__(self, iterable: Iterable) -> None:
         self._queue = queue.Queue(QUEUESIZE)
         self._iterable = iterable
         self._consumer = None
@@ -305,13 +311,13 @@ class BufferedIterator:
         self._consumer.daemon = True
         self._consumer.start()
 
-    def __iter__(self):
+    def __iter__(self) -> "BufferedIterator":
         return self
 
     def __len__(self) -> int:
         return self.total
 
-    def __next__(self):
+    def __next__(self) -> Any:
         # Create consumer if not created yet
         if self._consumer is None:
             self._create_consumer()
@@ -338,7 +344,7 @@ class BufferedIterator:
         return item
 
 
-def collate_batch(batch):
+def collate_batch(batch: list[dict]) -> dict:
     example = batch[0]
     result = {}
     for key in example.keys():
@@ -356,7 +362,9 @@ def collate_batch(batch):
     return result
 
 
-def get_weighted_sampler(training_data, prob_style, sys_prob=False):
+def get_weighted_sampler(
+    training_data: DpLoaderSet, prob_style: str, sys_prob: bool = False
+) -> WeightedRandomSampler:
     if sys_prob is False:
         if prob_style == "prob_uniform":
             prob_v = 1.0 / float(training_data.__len__())
@@ -376,7 +384,9 @@ def get_weighted_sampler(training_data, prob_style, sys_prob=False):
     return sampler
 
 
-def get_sampler_from_params(_data, _params):
+def get_sampler_from_params(
+    _data: DpLoaderSet, _params: dict
+) -> WeightedRandomSampler | BatchSampler | DistributedBatchSampler:
     if (
         "sys_probs" in _params and _params["sys_probs"] is not None
     ):  # use sys_probs first
