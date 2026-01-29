@@ -823,6 +823,8 @@ class DeepEval(DeepEvalBackend):
         model = (
             self.dp.model["Default"] if isinstance(self.dp, ModelWrapper) else self.dp
         )
+        if self.auto_batch_size is not None:
+            self.auto_batch_size.set_oom_retry_mode(True)
         model.set_eval_descriptor_hook(True)
         self.eval(
             coords,
@@ -835,6 +837,8 @@ class DeepEval(DeepEvalBackend):
         )
         descriptor = model.eval_descriptor()
         model.set_eval_descriptor_hook(False)
+        if self.auto_batch_size is not None:
+            self.auto_batch_size.set_oom_retry_mode(False)
         return to_numpy_array(descriptor)
 
     def eval_fitting_last_layer(
@@ -878,6 +882,8 @@ class DeepEval(DeepEvalBackend):
             Fitting output before last layer.
         """
         model = self.dp.model["Default"]
+        if self.auto_batch_size is not None:
+            self.auto_batch_size.set_oom_retry_mode(True)
         model.set_eval_fitting_last_layer_hook(True)
         self.eval(
             coords,
@@ -890,4 +896,6 @@ class DeepEval(DeepEvalBackend):
         )
         fitting_net = model.eval_fitting_last_layer()
         model.set_eval_fitting_last_layer_hook(False)
+        if self.auto_batch_size is not None:
+            self.auto_batch_size.set_oom_retry_mode(False)
         return to_numpy_array(fitting_net)
