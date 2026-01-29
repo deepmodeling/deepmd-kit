@@ -10,7 +10,6 @@ from typing import (
 )
 
 import numpy as np
-from deepmd.utils.batch_size import RetrySignal
 import paddle
 from paddle import inference as paddle_inference
 
@@ -64,6 +63,9 @@ from deepmd.pd.utils.env import (
 from deepmd.pd.utils.utils import (
     to_numpy_array,
     to_paddle_tensor,
+)
+from deepmd.utils.batch_size import (
+    RetrySignal,
 )
 from deepmd.utils.econf_embd import (
     sort_element_type,

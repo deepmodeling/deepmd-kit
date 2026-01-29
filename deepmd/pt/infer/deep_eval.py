@@ -67,7 +67,9 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
 )
-from deepmd.utils.batch_size import RetrySignal
+from deepmd.utils.batch_size import (
+    RetrySignal,
+)
 from deepmd.utils.econf_embd import (
     sort_element_type,
 )
