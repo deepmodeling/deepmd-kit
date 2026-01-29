@@ -10,6 +10,7 @@ from typing import (
 )
 
 import numpy as np
+from deepmd.utils.batch_size import RetrySignal
 import paddle
 from paddle import inference as paddle_inference
 
@@ -826,19 +827,30 @@ class DeepEval(DeepEvalBackend):
         if self.auto_batch_size is not None:
             self.auto_batch_size.set_oom_retry_mode(True)
         model.set_eval_descriptor_hook(True)
-        self.eval(
-            coords,
-            cells,
-            atom_types,
-            atomic=False,
-            fparam=fparam,
-            aparam=aparam,
-            **kwargs,
-        )
-        descriptor = model.eval_descriptor()
-        model.set_eval_descriptor_hook(False)
-        if self.auto_batch_size is not None:
-            self.auto_batch_size.set_oom_retry_mode(False)
+        try:
+            self.eval(
+                coords,
+                cells,
+                atom_types,
+                atomic=False,
+                fparam=fparam,
+                aparam=aparam,
+                **kwargs,
+            )
+        except RetrySignal:
+            return self.eval_descriptor(
+                coords,
+                cells,
+                atom_types,
+                fparam=fparam,
+                aparam=aparam,
+                **kwargs,
+            )
+        finally:
+            descriptor = model.eval_descriptor()
+            model.set_eval_descriptor_hook(False)
+            if self.auto_batch_size is not None:
+                self.auto_batch_size.set_oom_retry_mode(False)
         return to_numpy_array(descriptor)
 
     def eval_fitting_last_layer(
@@ -885,17 +897,28 @@ class DeepEval(DeepEvalBackend):
         if self.auto_batch_size is not None:
             self.auto_batch_size.set_oom_retry_mode(True)
         model.set_eval_fitting_last_layer_hook(True)
-        self.eval(
-            coords,
-            cells,
-            atom_types,
-            atomic=False,
-            fparam=fparam,
-            aparam=aparam,
-            **kwargs,
-        )
-        fitting_net = model.eval_fitting_last_layer()
-        model.set_eval_fitting_last_layer_hook(False)
-        if self.auto_batch_size is not None:
-            self.auto_batch_size.set_oom_retry_mode(False)
+        try:
+            self.eval(
+                coords,
+                cells,
+                atom_types,
+                atomic=False,
+                fparam=fparam,
+                aparam=aparam,
+                **kwargs,
+            )
+        except RetrySignal:
+            return self.eval_descriptor(
+                coords,
+                cells,
+                atom_types,
+                fparam=fparam,
+                aparam=aparam,
+                **kwargs,
+            )
+        finally:
+            fitting_net = model.eval_fitting_last_layer()
+            model.set_eval_fitting_last_layer_hook(False)
+            if self.auto_batch_size is not None:
+                self.auto_batch_size.set_oom_retry_mode(False)
         return to_numpy_array(fitting_net)

@@ -27,34 +27,6 @@ class RetrySignal(Exception):
     """Signal to retry execution after OOM error."""
 
 
-# originally copied from dpdispatcher
-# https://github.com/deepmodeling/dpdispatcher/blob/9a76542311a02e84c4ae62f15b7edcd30850a64e/dpdispatcher/utils/utils.py#L161-L213
-# license: LGPL-3.0-or-later
-def retry(func: Any) -> Callable:
-    """Decorator to retry the function until it succeeds or fails for certain times.
-
-    Returns
-    -------
-    wrapper: Callable
-        The wrapper.
-
-    Examples
-    --------
-    >>> @retry
-    ... def func():
-    ...     raise RetrySignal("Failed")
-    """
-
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        while True:
-            try:
-                return func(*args, **kwargs)
-            except RetrySignal:
-                log.info("Retry the entire method")
-
-    return wrapper
-
-
 class AutoBatchSize(ABC):
     """This class allows DeePMD-kit to automatically decide the maximum
     batch size that will not cause an OOM error.
@@ -159,7 +131,7 @@ class AutoBatchSize(ABC):
                 ) from e
             # adjust the next batch size
             self._adjust_batch_size(1.0 / self.factor)
-            if self.set_oom_retry_mode:
+            if self.oom_retry_mode:
                 raise RetrySignal from e
             return 0, None
         else:
