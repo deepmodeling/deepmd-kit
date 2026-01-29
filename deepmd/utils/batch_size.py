@@ -154,7 +154,6 @@ class AutoBatchSize(ABC):
             f"Adjust batch size from {old_batch_size} to {self.current_batch_size}"
         )
 
-    @retry
     def execute_all(
         self,
         callable: Callable,
