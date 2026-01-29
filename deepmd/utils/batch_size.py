@@ -22,7 +22,6 @@ from deepmd.utils.errors import (
 log = logging.getLogger(__name__)
 
 
-
 class RetrySignal(Exception):
     """Signal to retry execution after OOM error."""
 
@@ -330,4 +329,3 @@ class AutoBatchSize(ABC):
             True to enable OOM retry mode
         """
         self.oom_retry_mode = enable
-
