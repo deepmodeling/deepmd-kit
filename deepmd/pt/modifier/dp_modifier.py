@@ -27,7 +27,9 @@ class DPModifier(BaseModifier):
         super().__init__(use_cache=use_cache)
 
         if dp_model_file_name is None and dp_model is None:
-            raise AttributeError("`dp_model_file_name` or `dp_model` should be specified.")
+            raise AttributeError(
+                "`dp_model_file_name` or `dp_model` should be specified."
+            )
         if dp_model_file_name is not None and dp_model is not None:
             raise AttributeError(
                 "`dp_model_file_name` and `dp_model` cannot be used simultaneously."
