@@ -141,7 +141,7 @@ jax = [
     # 'jax-ai-stack;python_version>="3.10"',
 ]
 torch = [
-    "torch-admp",
+    "torch-admp>=1.1.5",
 ]
 
 [tool.deepmd_build_backend.scripts]
