@@ -32,10 +32,10 @@ class AtomExcludeMask(paddle.nn.Layer):
         )
         self.type_mask = to_paddle_tensor(self.type_mask).reshape([-1])
 
-    def get_exclude_types(self):
+    def get_exclude_types(self) -> list[int]:
         return self.exclude_types
 
-    def get_type_mask(self):
+    def get_type_mask(self) -> paddle.Tensor:
         return self.type_mask
 
     def forward(
@@ -98,7 +98,7 @@ class PairExcludeMask(paddle.nn.Layer):
         self.type_mask = to_paddle_tensor(self.type_mask).reshape([-1])
         self.no_exclusion = len(self._exclude_types) == 0
 
-    def get_exclude_types(self):
+    def get_exclude_types(self) -> set[tuple[int, int]]:
         return self._exclude_types
 
     # may have a better place for this method...

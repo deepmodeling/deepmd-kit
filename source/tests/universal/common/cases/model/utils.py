@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from collections.abc import (
+    Callable,
+)
 from copy import (
     deepcopy,
 )
 from typing import (
     Any,
-    Callable,
-    Optional,
 )
 
 import numpy as np
@@ -54,11 +55,11 @@ class ModelTestCase:
     """Class wrapper for forward method."""
     forward_wrapper_cpu_ref: Callable[[Any], Any]
     """Convert model to CPU method."""
-    aprec_dict: dict[str, Optional[float]]
+    aprec_dict: dict[str, float | None]
     """Dictionary of absolute precision in each test."""
-    rprec_dict: dict[str, Optional[float]]
+    rprec_dict: dict[str, float | None]
     """Dictionary of relative precision in each test."""
-    epsilon_dict: dict[str, Optional[float]]
+    epsilon_dict: dict[str, float | None]
     """Dictionary of epsilons in each test."""
 
     def test_get_type_map(self) -> None:

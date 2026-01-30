@@ -46,7 +46,8 @@ class DPTabulate(BaseTabulate):
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     activation_function
-            The activation function in the embedding net. Supported options are {"tanh","gelu"} in common.ActivationFn.
+            The activation function in the embedding net. See :class:`ActivationFn`
+            for supported options (e.g. "tanh", "gelu", "relu", "silu").
     """
 
     def __init__(
@@ -66,12 +67,7 @@ class DPTabulate(BaseTabulate):
         )
         self.descrpt_type = self._get_descrpt_type()
 
-        supported_descrpt_type = (
-            "Atten",
-            "A",
-            "T",
-            "R",
-        )
+        supported_descrpt_type = ("Atten", "A", "T", "T_TEBD", "R")
 
         if self.descrpt_type in supported_descrpt_type:
             self.sel_a = self.descrpt.get_sel()
@@ -89,6 +85,7 @@ class DPTabulate(BaseTabulate):
             "relu6": 4,
             "softplus": 5,
             "sigmoid": 6,
+            "silu": 7,
         }
 
         activation = activation_fn.activation
@@ -156,7 +153,7 @@ class DPTabulate(BaseTabulate):
                         self.matrix["layer_" + str(layer + 1)][idx],
                         xbar,
                         self.functype,
-                    ) + torch.ones((1, 1), dtype=yy.dtype)  # pylint: disable=no-explicit-device
+                    ) + torch.ones((1, 1), dtype=yy.dtype, device=yy.device)
                     dy2 = unaggregated_dy2_dx_s(
                         yy - xx,
                         dy,
@@ -175,7 +172,7 @@ class DPTabulate(BaseTabulate):
                         self.matrix["layer_" + str(layer + 1)][idx],
                         xbar,
                         self.functype,
-                    ) + torch.ones((1, 2), dtype=yy.dtype)  # pylint: disable=no-explicit-device
+                    ) + torch.ones((1, 2), dtype=yy.dtype, device=yy.device)
                     dy2 = unaggregated_dy2_dx_s(
                         yy - tt,
                         dy,
@@ -311,6 +308,8 @@ class DPTabulate(BaseTabulate):
             return "R"
         elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT):
             return "T"
+        elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeTTebd):
+            return "T_TEBD"
         raise RuntimeError(f"Unsupported descriptor {self.descrpt}")
 
     def _get_layer_size(self) -> int:
@@ -325,7 +324,7 @@ class DPTabulate(BaseTabulate):
                 * len(self.embedding_net_nodes[0])
                 * len(self.neuron)
             )
-        if self.descrpt_type == "Atten":
+        if self.descrpt_type in ("Atten", "T_TEBD"):
             layer_size = len(self.embedding_net_nodes[0]["layers"])
         elif self.descrpt_type == "A":
             layer_size = len(self.embedding_net_nodes[0]["layers"])
@@ -394,6 +393,13 @@ class DPTabulate(BaseTabulate):
                             "layers"
                         ][layer - 1]["@variables"][var_name]
                         result["layer_" + str(layer)].append(node)
+            elif self.descrpt_type == "T_TEBD":
+                # For the se_e3_tebd descriptor, a single,
+                # shared embedding network is used for all type pairs
+                node = self.embedding_net_nodes[0]["layers"][layer - 1]["@variables"][
+                    var_name
+                ]
+                result["layer_" + str(layer)].append(node)
             elif self.descrpt_type == "R":
                 if self.type_one_side:
                     for ii in range(0, self.ntypes):
@@ -464,6 +470,11 @@ def grad(xbar: torch.Tensor, y: torch.Tensor, functype: int) -> torch.Tensor:
     elif functype == 6:
         return y * (1 - y)
 
+    elif functype == 7:
+        # silu'(x) = sigmoid(x) * (1 + x * (1 - sigmoid(x)))
+        sig = torch.sigmoid(xbar)
+        return sig + xbar * sig * (1 - sig)
+
     else:
         raise ValueError(f"Unsupported function type: {functype}")
 
@@ -490,6 +501,12 @@ def grad_grad(xbar: torch.Tensor, y: torch.Tensor, functype: int) -> torch.Tenso
 
     elif functype == 6:
         return y * (1 - y) * (1 - 2 * y)
+
+    elif functype == 7:
+        sig = torch.sigmoid(xbar)
+        d_sig = sig * (1 - sig)
+        # silu''(x) = 2 * d_sig + x * d_sig * (1 - 2 * sig)
+        return 2 * d_sig + xbar * d_sig * (1 - 2 * sig)
 
     else:
         return -torch.ones_like(xbar)

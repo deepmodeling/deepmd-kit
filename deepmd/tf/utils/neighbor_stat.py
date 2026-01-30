@@ -3,9 +3,6 @@ import logging
 from collections.abc import (
     Iterator,
 )
-from typing import (
-    Optional,
-)
 
 import numpy as np
 
@@ -252,7 +249,7 @@ class NeighborStat(BaseNeighborStat):
         self,
         coord: np.ndarray,
         atype: np.ndarray,
-        box: Optional[np.ndarray],
+        box: np.ndarray | None,
         pbc: bool,
     ):
         """Execute the operation.

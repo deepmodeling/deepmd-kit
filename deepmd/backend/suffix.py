@@ -4,10 +4,6 @@ import operator
 from pathlib import (
     Path,
 )
-from typing import (
-    Optional,
-    Union,
-)
 
 from deepmd.backend.backend import (
     Backend,
@@ -16,9 +12,9 @@ from deepmd.backend.backend import (
 
 def format_model_suffix(
     filename: str,
-    feature: Optional[Backend.Feature] = None,
-    preferred_backend: Optional[Union[str, type["Backend"]]] = None,
-    strict_prefer: Optional[bool] = None,
+    feature: Backend.Feature | None = None,
+    preferred_backend: str | type["Backend"] | None = None,
+    strict_prefer: bool | None = None,
 ) -> str:
     """Check and format the suffixes of a filename.
 

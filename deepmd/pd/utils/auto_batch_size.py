@@ -36,7 +36,7 @@ class AutoBatchSize(AutoBatchSizeBase):
         bool
             True if GPU is available
         """
-        return paddle.device.cuda.device_count() > 0
+        return paddle.device.device_count() > 0
 
     def is_oom_error(self, e: Exception) -> bool:
         """Check if the exception is an OOM error.
@@ -51,6 +51,6 @@ class AutoBatchSize(AutoBatchSizeBase):
         # (the meaningless error message should be considered as a bug in cusolver)
         if isinstance(e, MemoryError) and ("ResourceExhaustedError" in e.args[0]):
             # Release all unoccupied cached memory
-            paddle.device.cuda.empty_cache()
+            paddle.device.empty_cache()
             return True
         return False

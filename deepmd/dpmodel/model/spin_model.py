@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
 )
 
 import numpy as np
@@ -59,7 +58,7 @@ class SpinModel(NativeOP):
         extended_atype: Array,
         extended_spin: Array,
         nlist: Array,
-        mapping: Optional[Array] = None,
+        mapping: Array | None = None,
     ) -> tuple[Array, Array]:
         """
         Add `extended_spin` into `extended_coord` to generate virtual atoms, and extend `nlist` and `mapping`.
@@ -276,7 +275,7 @@ class SpinModel(NativeOP):
         """Get the model definition script."""
         return self.backbone_model.get_model_def_script()
 
-    def get_min_nbor_dist(self) -> Optional[float]:
+    def get_min_nbor_dist(self) -> float | None:
         """Get the minimum neighbor distance."""
         return self.backbone_model.get_min_nbor_dist()
 
@@ -339,9 +338,9 @@ class SpinModel(NativeOP):
         coord: Array,
         atype: Array,
         spin: Array,
-        box: Optional[Array] = None,
-        fparam: Optional[Array] = None,
-        aparam: Optional[Array] = None,
+        box: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, Array]:
         """Return model prediction.
@@ -402,9 +401,9 @@ class SpinModel(NativeOP):
         extended_atype: Array,
         extended_spin: Array,
         nlist: Array,
-        mapping: Optional[Array] = None,
-        fparam: Optional[Array] = None,
-        aparam: Optional[Array] = None,
+        mapping: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, Array]:
         """Return model prediction. Lower interface that takes

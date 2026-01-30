@@ -4,15 +4,18 @@ from abc import (
     ABC,
     abstractmethod,
 )
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
     NoReturn,
-    Optional,
-    Union,
 )
 
 import torch
+from typing_extensions import (
+    Self,
+)
 
 from deepmd.pt.model.network.network import (
     TypeEmbedNet,
@@ -44,7 +47,7 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
 
     local_cluster = False
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> "DescriptorBlock":
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         if cls is DescriptorBlock:
             try:
                 descrpt_type = kwargs["type"]
@@ -102,8 +105,8 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> NoReturn:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -178,15 +181,15 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         nlist: torch.Tensor,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
-        type_embedding: Optional[torch.Tensor] = None,
+        extended_atype_embd: torch.Tensor | None = None,
+        mapping: torch.Tensor | None = None,
+        type_embedding: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
     ]:
         """Calculate DescriptorBlock."""
         pass
@@ -211,7 +214,7 @@ def make_default_type_embedding(
 def extend_descrpt_stat(
     des: DescriptorBlock,
     type_map: list[str],
-    des_with_stat: Optional[DescriptorBlock] = None,
+    des_with_stat: DescriptorBlock | None = None,
 ) -> None:
     r"""
     Extend the statistics of a descriptor block with types from newly provided `type_map`.

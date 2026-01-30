@@ -8,10 +8,12 @@ from typing import (
     Any,
     ClassVar,
     Optional,
-    Union,
 )
 
 import numpy as np
+from typing_extensions import (
+    Self,
+)
 
 from deepmd.backend.backend import (
     Backend,
@@ -84,15 +86,13 @@ class DeepEvalBackend(ABC):
         model_file: str,
         output_def: ModelOutputDef,
         *args: Any,
-        auto_batch_size: Union[bool, int, AutoBatchSize] = True,
+        auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         **kwargs: Any,
     ) -> None:
         pass
 
-    def __new__(
-        cls, model_file: str, *args: object, **kwargs: object
-    ) -> "DeepEvalBackend":
+    def __new__(cls, model_file: str, *args: object, **kwargs: object) -> Self:
         if cls is DeepEvalBackend:
             backend = Backend.detect_backend_by_model(model_file)
             return super().__new__(backend().deep_eval)
@@ -102,11 +102,11 @@ class DeepEvalBackend(ABC):
     def eval(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         **kwargs: Any,
     ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
@@ -173,11 +173,11 @@ class DeepEvalBackend(ABC):
     def eval_descriptor(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-        efield: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        efield: np.ndarray | None = None,
         mixed_type: bool = False,
         **kwargs: Any,
     ) -> np.ndarray:
@@ -224,10 +224,10 @@ class DeepEvalBackend(ABC):
     def eval_fitting_last_layer(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate fitting before last layer by using this DP.
@@ -385,7 +385,7 @@ class DeepEval(ABC):
         Keyword arguments.
     """
 
-    def __new__(cls, model_file: str, *args: object, **kwargs: object) -> "DeepEval":
+    def __new__(cls, model_file: str, *args: object, **kwargs: object) -> Self:
         if cls is DeepEval:
             deep_eval = DeepEvalBackend(
                 model_file,
@@ -400,7 +400,7 @@ class DeepEval(ABC):
         self,
         model_file: str,
         *args: Any,
-        auto_batch_size: Union[bool, int, AutoBatchSize] = True,
+        auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         **kwargs: Any,
     ) -> None:
@@ -471,10 +471,10 @@ class DeepEval(ABC):
     def eval_descriptor(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         mixed_type: bool = False,
         **kwargs: Any,
     ) -> np.ndarray:
@@ -538,10 +538,10 @@ class DeepEval(ABC):
     def eval_fitting_last_layer(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         mixed_type: bool = False,
         **kwargs: Any,
     ) -> np.ndarray:
@@ -633,18 +633,18 @@ class DeepEval(ABC):
 
     def _standard_input(
         self,
-        coords: Union[np.ndarray, list],
-        cells: Optional[Union[np.ndarray, list]],
-        atom_types: Union[np.ndarray, list],
-        fparam: Optional[Union[np.ndarray, list]],
-        aparam: Optional[Union[np.ndarray, list]],
+        coords: np.ndarray | list,
+        cells: np.ndarray | list | None,
+        atom_types: np.ndarray | list,
+        fparam: np.ndarray | list | None,
+        aparam: np.ndarray | list | None,
         mixed_type: bool,
     ) -> tuple[
         np.ndarray,
-        Optional[np.ndarray],
+        np.ndarray | None,
         np.ndarray,
-        Optional[np.ndarray],
-        Optional[np.ndarray],
+        np.ndarray | None,
+        np.ndarray | None,
     ]:
         coords = np.array(coords)
         if cells is not None:

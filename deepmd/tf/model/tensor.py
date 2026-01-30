@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
+import numpy as np
+
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 from deepmd.tf.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
     MODEL_VERSION,
     global_cvt_2_ener_float,
     tf,
@@ -49,8 +51,8 @@ class TensorModel(StandardModel):
         tensor_name: str,
         descriptor: dict,
         fitting_net: dict,
-        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[list[str]] = None,
+        type_embedding: dict | TypeEmbedNet | None = None,
+        type_map: list[str] | None = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
         **kwargs,
@@ -113,7 +115,7 @@ class TensorModel(StandardModel):
         mesh,
         input_dict,
         frz_model=None,
-        ckpt_meta: Optional[str] = None,
+        ckpt_meta: str | None = None,
         suffix="",
         reuse=None,
     ):
@@ -125,6 +127,9 @@ class TensorModel(StandardModel):
             t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
             t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
             t_od = tf.constant(self.get_out_size(), name="output_dim", dtype=tf.int32)
+
+            # Initialize out_bias and out_std for tensor models (dipole/polar)
+            self.init_out_stat(suffix=suffix)
 
         natomsel = sum(natoms[2 + type_i] for type_i in self.get_sel_type())
         nout = self.get_out_size()
@@ -164,6 +169,38 @@ class TensorModel(StandardModel):
         output = self.fitting.build(
             dout, rot_mat, natoms, input_dict, reuse=reuse, suffix=suffix
         )
+
+        # Apply out_bias and out_std directly to tensor output
+        # dipole not applying bias but polar does, per dpmodel
+        if self.model_type == "polar" and self.fitting.shift_diag:
+            v_constant_matrix = np.zeros(
+                self.ntypes,
+                dtype=GLOBAL_NP_FLOAT_PRECISION,
+            )
+            sel_type = self.get_sel_type()
+            for itype in range(len(sel_type)):
+                v_constant_matrix[sel_type[itype]] = np.mean(
+                    np.diagonal(self.out_bias[0, itype].reshape((3, 3)))
+                )
+            nframes = input_dict["nframes"]
+            nloc_mask = tf.reshape(
+                tf.tile(tf.repeat(self.fitting.sel_mask, natoms[2:]), [nframes]),
+                [nframes, -1],
+            )
+            constant_matrix = tf.reshape(
+                tf.reshape(
+                    tf.tile(tf.repeat(v_constant_matrix, natoms[2:]), [nframes]),
+                    [nframes, -1],
+                )[nloc_mask],
+                [nframes, -1],
+            )
+
+            # nf x nloc x odims, out_bias: ntypes x odims
+            output = output + tf.reshape(
+                tf.expand_dims(tf.expand_dims(constant_matrix, -1), -1)
+                * tf.eye(3, batch_shape=[1, 1], dtype=GLOBAL_TF_FLOAT_PRECISION),
+                tf.shape(output),
+            )
         framesize = nout if "global" in self.model_type else natomsel * nout
         output = tf.reshape(
             output, [-1, framesize], name="o_" + self.model_type + suffix

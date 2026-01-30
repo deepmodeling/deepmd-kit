@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 import paddle
 import paddle.nn as nn
@@ -44,7 +40,7 @@ def get_residual(
     _mode: str = "norm",
     trainable: bool = True,
     precision: str = "float64",
-    seed: Optional[Union[int, list[int]]] = None,
+    seed: int | list[int] | None = None,
 ) -> paddle.Tensor:
     r"""
     Get residual tensor for one update vector.
@@ -162,7 +158,7 @@ class Atten2Map(paddle.nn.Layer):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         """Return neighbor-wise multi-head self-attention maps, with gate mechanism."""
@@ -289,7 +285,7 @@ class Atten2MultiHeadApply(paddle.nn.Layer):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -379,7 +375,7 @@ class Atten2EquiVarApply(paddle.nn.Layer):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -458,7 +454,7 @@ class LocalAtten(paddle.nn.Layer):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -595,12 +591,12 @@ class LocalAtten(paddle.nn.Layer):
 class RepformerLayer(paddle.nn.Layer):
     def __init__(
         self,
-        rcut,
-        rcut_smth,
+        rcut: float,
+        rcut_smth: float,
         sel: int,
         ntypes: int,
-        g1_dim=128,
-        g2_dim=16,
+        g1_dim: int = 128,
+        g2_dim: int = 16,
         axis_neuron: int = 4,
         update_chnnl_2: bool = True,
         update_g1_has_conv: bool = True,
@@ -622,11 +618,11 @@ class RepformerLayer(paddle.nn.Layer):
         smooth: bool = True,
         precision: str = "float64",
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
+        ln_eps: float | None = 1e-5,
         use_sqrt_nnei: bool = True,
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -1151,7 +1147,7 @@ class RepformerLayer(paddle.nn.Layer):
         nlist: paddle.Tensor,  # nf x nloc x nnei
         nlist_mask: paddle.Tensor,  # nf x nloc x nnei
         sw: paddle.Tensor,  # switch func, nf x nloc x nnei
-    ):
+    ) -> tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """
         Parameters
         ----------

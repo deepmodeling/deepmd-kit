@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from collections.abc import (
+    Callable,
+)
 from functools import (
     cached_property,
-)
-from typing import (
-    Callable,
 )
 
 import numpy as np

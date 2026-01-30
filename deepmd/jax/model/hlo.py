@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
 )
 
 from deepmd.dpmodel.model.make_model import (
@@ -44,21 +43,24 @@ OUTPUT_DEFS = {
 class HLO(BaseModel):
     def __init__(
         self,
-        stablehlo,
-        stablehlo_atomic_virial,
-        stablehlo_no_ghost,
-        stablehlo_atomic_virial_no_ghost,
-        model_def_script,
-        type_map,
-        rcut,
-        dim_fparam,
-        dim_aparam,
-        sel_type,
-        is_aparam_nall,
-        model_output_type,
-        mixed_types,
-        min_nbor_dist,
-        sel,
+        stablehlo: bytearray,
+        stablehlo_atomic_virial: bytearray,
+        stablehlo_no_ghost: bytearray,
+        stablehlo_atomic_virial_no_ghost: bytearray,
+        model_def_script: str,
+        type_map: list[str],
+        rcut: float,
+        dim_fparam: int,
+        dim_aparam: int,
+        sel_type: list[int],
+        is_aparam_nall: bool,
+        model_output_type: str,
+        mixed_types: bool,
+        min_nbor_dist: float | None,
+        sel: list[int],
+        # new in v3.1.1
+        has_default_fparam: bool = False,
+        default_fparam: list[float] | None = None,
     ) -> None:
         self._call_lower = jax_export.deserialize(stablehlo).call
         self._call_lower_atomic_virial = jax_export.deserialize(
@@ -80,14 +82,16 @@ class HLO(BaseModel):
         self.min_nbor_dist = min_nbor_dist
         self.sel = sel
         self.model_def_script = model_def_script
+        self._has_default_fparam = has_default_fparam
+        self.default_fparam = default_fparam
 
     def __call__(
         self,
         coord: jnp.ndarray,
         atype: jnp.ndarray,
-        box: Optional[jnp.ndarray] = None,
-        fparam: Optional[jnp.ndarray] = None,
-        aparam: Optional[jnp.ndarray] = None,
+        box: jnp.ndarray | None = None,
+        fparam: jnp.ndarray | None = None,
+        aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
     ) -> Any:
         """Return model prediction.
@@ -121,11 +125,11 @@ class HLO(BaseModel):
         self,
         coord: jnp.ndarray,
         atype: jnp.ndarray,
-        box: Optional[jnp.ndarray] = None,
-        fparam: Optional[jnp.ndarray] = None,
-        aparam: Optional[jnp.ndarray] = None,
+        box: jnp.ndarray | None = None,
+        fparam: jnp.ndarray | None = None,
+        aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
-    ):
+    ) -> dict[str, jnp.ndarray]:
         """Return model prediction.
 
         Parameters
@@ -165,7 +169,7 @@ class HLO(BaseModel):
             do_atomic_virial=do_atomic_virial,
         )
 
-    def model_output_def(self):
+    def model_output_def(self) -> ModelOutputDef:
         return ModelOutputDef(
             FittingOutputDef([OUTPUT_DEFS[tt] for tt in self.model_output_type()])
         )
@@ -175,11 +179,11 @@ class HLO(BaseModel):
         extended_coord: jnp.ndarray,
         extended_atype: jnp.ndarray,
         nlist: jnp.ndarray,
-        mapping: Optional[jnp.ndarray] = None,
-        fparam: Optional[jnp.ndarray] = None,
-        aparam: Optional[jnp.ndarray] = None,
+        mapping: jnp.ndarray | None = None,
+        fparam: jnp.ndarray | None = None,
+        aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
-    ):
+    ) -> dict[str, jnp.ndarray]:
         if extended_coord.shape[1] > nlist.shape[1]:
             if do_atomic_virial:
                 call_lower = self._call_lower_atomic_virial
@@ -203,15 +207,15 @@ class HLO(BaseModel):
         """Get the type map."""
         return self.type_map
 
-    def get_rcut(self):
+    def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return self.rcut
 
-    def get_dim_fparam(self):
+    def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
         return self.dim_fparam
 
-    def get_dim_aparam(self):
+    def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.dim_aparam
 
@@ -265,7 +269,7 @@ class HLO(BaseModel):
         """Get the model definition script."""
         return self.model_def_script
 
-    def get_min_nbor_dist(self) -> Optional[float]:
+    def get_min_nbor_dist(self) -> float | None:
         """Get the minimum distance between two atoms."""
         return self.min_nbor_dist
 
@@ -287,9 +291,9 @@ class HLO(BaseModel):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -328,3 +332,11 @@ class HLO(BaseModel):
             The model
         """
         raise NotImplementedError("Not implemented")
+
+    def has_default_fparam(self) -> bool:
+        """Check whether the model has default frame parameters."""
+        return self._has_default_fparam
+
+    def get_default_fparam(self) -> list[float] | None:
+        """Get the default frame parameters."""
+        return self.default_fparam

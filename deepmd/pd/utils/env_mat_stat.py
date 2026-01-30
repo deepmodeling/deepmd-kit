@@ -4,7 +4,6 @@ from collections.abc import (
 )
 from typing import (
     TYPE_CHECKING,
-    Union,
 )
 
 import numpy as np
@@ -69,7 +68,7 @@ class EnvMatStatSe(EnvMatStat):
         The descriptor of the model.
     """
 
-    def __init__(self, descriptor: "DescriptorBlock"):
+    def __init__(self, descriptor: "DescriptorBlock") -> None:
         super().__init__()
         self.descriptor = descriptor
         self.last_dim = (
@@ -77,7 +76,7 @@ class EnvMatStatSe(EnvMatStat):
         )  # se_r=1, se_a=4
 
     def iter(
-        self, data: list[dict[str, Union[paddle.Tensor, list[tuple[int, int]]]]]
+        self, data: list[dict[str, paddle.Tensor | list[tuple[int, int]]]]
     ) -> Iterator[dict[str, StatItem]]:
         """Get the iterator of the environment matrix.
 
@@ -198,7 +197,7 @@ class EnvMatStatSe(EnvMatStat):
             }
         )
 
-    def __call__(self):
+    def __call__(self) -> dict[str, paddle.Tensor]:
         avgs = self.get_avg()
         stds = self.get_std()
 

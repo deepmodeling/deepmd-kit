@@ -58,7 +58,7 @@ class EnvMatStat(BaseEnvMatStat):
         for kk, vv in env_mat.items():
             xp = array_api_compat.array_namespace(vv)
             stats[kk] = StatItem(
-                number=vv.size,
+                number=array_api_compat.size(vv),
                 sum=float(xp.sum(vv)),
                 squared_sum=float(xp.sum(xp.square(vv))),
             )
@@ -82,7 +82,7 @@ class EnvMatStatSe(EnvMatStat):
         )  # se_r=1, se_a=4
 
     def iter(
-        self, data: list[dict[str, Union[np.ndarray, list[tuple[int, int]]]]]
+        self, data: list[dict[str, np.ndarray | list[tuple[int, int]]]]
     ) -> Iterator[dict[str, StatItem]]:
         """Get the iterator of the environment matrix.
 
@@ -96,23 +96,6 @@ class EnvMatStatSe(EnvMatStat):
         dict[str, StatItem]
             The statistics of the environment matrix.
         """
-        xp = array_api_compat.array_namespace(data[0]["coord"])
-        zero_mean = xp.zeros(
-            (
-                self.descriptor.get_ntypes(),
-                self.descriptor.get_nsel(),
-                self.last_dim,
-            ),
-            dtype=get_xp_precision(xp, "global"),
-        )
-        one_stddev = xp.ones(
-            (
-                self.descriptor.get_ntypes(),
-                self.descriptor.get_nsel(),
-                self.last_dim,
-            ),
-            dtype=get_xp_precision(xp, "global"),
-        )
         if self.last_dim == 4:
             radial_only = False
         elif self.last_dim == 1:
@@ -121,6 +104,29 @@ class EnvMatStatSe(EnvMatStat):
             raise ValueError(
                 "last_dim should be 1 for raial-only or 4 for full descriptor."
             )
+        if len(data) == 0:
+            # workaround to fix IndexError: list index out of range
+            yield from ()
+            return
+        xp = array_api_compat.array_namespace(data[0]["coord"])
+        zero_mean = xp.zeros(
+            (
+                self.descriptor.get_ntypes(),
+                self.descriptor.get_nsel(),
+                self.last_dim,
+            ),
+            dtype=get_xp_precision(xp, "global"),
+            device=array_api_compat.device(data[0]["coord"]),
+        )
+        one_stddev = xp.ones(
+            (
+                self.descriptor.get_ntypes(),
+                self.descriptor.get_nsel(),
+                self.last_dim,
+            ),
+            dtype=get_xp_precision(xp, "global"),
+            device=array_api_compat.device(data[0]["coord"]),
+        )
         for system in data:
             coord, atype, box, natoms = (
                 system["coord"],
@@ -175,16 +181,25 @@ class EnvMatStatSe(EnvMatStat):
             type_idx = xp.equal(
                 xp.reshape(atype, (1, -1)),
                 xp.reshape(
-                    xp.arange(self.descriptor.get_ntypes(), dtype=xp.int32),
+                    xp.arange(
+                        self.descriptor.get_ntypes(),
+                        dtype=xp.int32,
+                        device=array_api_compat.device(atype),
+                    ),
                     (-1, 1),
                 ),
             )
             if "pair_exclude_types" in system:
+                pair_exclude_mask = PairExcludeMask(
+                    self.descriptor.get_ntypes(), system["pair_exclude_types"]
+                )
+                pair_exclude_mask.type_mask = xp.asarray(
+                    pair_exclude_mask.type_mask,
+                    device=array_api_compat.device(atype),
+                )
                 # shape: (1, nloc, nnei)
                 exclude_mask = xp.reshape(
-                    PairExcludeMask(
-                        self.descriptor.get_ntypes(), system["pair_exclude_types"]
-                    ).build_type_exclude_mask(nlist, extended_atype),
+                    pair_exclude_mask.build_type_exclude_mask(nlist, extended_atype),
                     (1, coord.shape[0] * coord.shape[1], -1),
                 )
                 # shape: (ntypes, nloc, nnei)

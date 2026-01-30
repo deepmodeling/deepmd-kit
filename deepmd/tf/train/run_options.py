@@ -67,11 +67,29 @@ class SummaryPrinter(BaseSummaryPrinter):
         """Get backend information."""
         return {
             "Backend": "TensorFlow",
-            "TF ver": tf.version.GIT_VERSION,
-            "build with TF ver": TF_VERSION,
-            "build with TF inc": GLOBAL_CONFIG["tf_include_dir"].replace(";", "\n"),
-            "build with TF lib": GLOBAL_CONFIG["tf_libs"].replace(";", "\n"),
+            "TF Ver": tf.version.GIT_VERSION,
+            "Built with TF Ver": TF_VERSION,
+            "Built with TF Inc": GLOBAL_CONFIG["tf_include_dir"].replace(";", "\n"),
+            "Built with TF Lib": GLOBAL_CONFIG["tf_libs"].replace(";", "\n"),
         }
+
+    def get_device_name(self) -> str | None:
+        """Get the hardware device name if available.
+
+        Returns
+        -------
+        str or None
+            The device name (e.g., NVIDIA A100) if available, otherwise None.
+        """
+        try:
+            gpus = tf.config.get_visible_devices("GPU")
+            if gpus:
+                details = tf.config.experimental.get_device_details(gpus[0])
+                return details.get("device_name")
+        except (AttributeError, RuntimeError):
+            # Experimental API may not exist or fail in some TF versions
+            pass
+        return None
 
 
 class RunOptions:
@@ -96,7 +114,7 @@ class RunOptions:
         device type - gpu or cpu
     """
 
-    gpus: Optional[list[int]]
+    gpus: list[int] | None
     world_size: int
     my_rank: int
     nodename: str
@@ -108,11 +126,11 @@ class RunOptions:
 
     def __init__(
         self,
-        init_model: Optional[str] = None,
-        init_frz_model: Optional[str] = None,
-        finetune: Optional[str] = None,
-        restart: Optional[str] = None,
-        log_path: Optional[str] = None,
+        init_model: str | None = None,
+        init_frz_model: str | None = None,
+        finetune: str | None = None,
+        restart: str | None = None,
+        log_path: str | None = None,
         log_level: int = 0,
         mpi_log: str = "master",
     ) -> None:
@@ -151,9 +169,9 @@ class RunOptions:
 
     def _setup_logger(
         self,
-        log_path: Optional[Path],
+        log_path: Path | None,
         log_level: int,
-        mpi_log: Optional[str],
+        mpi_log: str | None,
     ) -> None:
         """Set up package loggers.
 

@@ -2,9 +2,6 @@
 from collections.abc import (
     Iterator,
 )
-from typing import (
-    Optional,
-)
 
 import array_api_compat
 import numpy as np
@@ -51,7 +48,7 @@ class NeighborStatOP(NativeOP):
         self,
         coord: Array,
         atype: Array,
-        cell: Optional[Array],
+        cell: Array | None,
     ) -> tuple[Array, Array]:
         """Calculate the neareest neighbor distance between atoms, maximum nbor size of
         atoms and the output data range of the environment matrix.
@@ -90,7 +87,7 @@ class NeighborStatOP(NativeOP):
         )
         assert list(diff.shape) == [nframes, nloc, nall, 3]
         # remove the diagonal elements
-        mask = xp.eye(nloc, nall, dtype=xp.bool)
+        mask = xp.eye(nloc, nall, dtype=xp.bool, device=array_api_compat.device(diff))
         mask = xp.tile(mask[None, :, :, None], (nframes, 1, 1, 3))
         diff = xp.where(mask, xp.full_like(diff, xp.inf), diff)
         rr2 = xp.sum(xp.square(diff), axis=-1)

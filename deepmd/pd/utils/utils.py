@@ -3,6 +3,7 @@ from __future__ import (
     annotations,
 )
 
+import warnings
 from contextlib import (
     contextmanager,
 )
@@ -10,6 +11,13 @@ from typing import (
     TYPE_CHECKING,
     overload,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from deepmd.pd.model.network.init import (
+        PaddleGenerator,
+    )
 
 import ml_dtypes
 import numpy as np
@@ -28,11 +36,6 @@ from .env import (
     DEVICE,
 )
 from .env import PRECISION_DICT as PD_PRECISION_DICT
-
-if TYPE_CHECKING:
-    from deepmd.pd.model.network.init import (
-        PaddleGenerator,
-    )
 
 
 def silut_forward(
@@ -83,7 +86,7 @@ def silut_double_backward(
 
 
 class SiLUTScript(paddle.nn.Layer):
-    def __init__(self, threshold: float = 3.0):
+    def __init__(self, threshold: float = 3.0) -> None:
         super().__init__()
         self.threshold = threshold
 
@@ -95,7 +98,7 @@ class SiLUTScript(paddle.nn.Layer):
         self.const_val = float(threshold * sigmoid_threshold)
         self.get_script_code()
 
-    def get_script_code(self):
+    def get_script_code(self) -> None:
         silut_forward_script = paddle.jit.to_static(silut_forward, full_graph=True)
         silut_backward_script = paddle.jit.to_static(silut_backward, full_graph=True)
         silut_double_backward_script = paddle.jit.to_static(
@@ -104,7 +107,13 @@ class SiLUTScript(paddle.nn.Layer):
 
         class SiLUTFunction(paddle.autograd.PyLayer):
             @staticmethod
-            def forward(ctx, x, threshold, slope, const_val):
+            def forward(
+                ctx: paddle.autograd.PyLayerContext,
+                x: paddle.Tensor,
+                threshold: float,
+                slope: float,
+                const_val: float,
+            ) -> paddle.Tensor:
                 ctx.save_for_backward(x)
                 ctx.threshold = threshold
                 ctx.slope = slope
@@ -112,7 +121,9 @@ class SiLUTScript(paddle.nn.Layer):
                 return silut_forward_script(x, threshold, slope, const_val)
 
             @staticmethod
-            def backward(ctx, grad_output):
+            def backward(
+                ctx: paddle.autograd.PyLayerContext, grad_output: paddle.Tensor
+            ) -> paddle.Tensor:
                 (x,) = ctx.saved_tensor()
                 threshold = ctx.threshold
                 slope = ctx.slope
@@ -122,7 +133,13 @@ class SiLUTScript(paddle.nn.Layer):
 
         class SiLUTGradFunction(paddle.autograd.PyLayer):
             @staticmethod
-            def forward(ctx, x, grad_output, threshold, slope):
+            def forward(
+                ctx: paddle.autograd.PyLayerContext,
+                x: paddle.Tensor,
+                grad_output: paddle.Tensor,
+                threshold: float,
+                slope: float,
+            ) -> paddle.Tensor:
                 ctx.threshold = threshold
                 ctx.slope = slope
                 grad_input = silut_backward_script(x, grad_output, threshold, slope)
@@ -130,7 +147,9 @@ class SiLUTScript(paddle.nn.Layer):
                 return grad_input
 
             @staticmethod
-            def backward(ctx, grad_grad_output):
+            def backward(
+                ctx: paddle.autograd.PyLayerContext, grad_grad_output: paddle.Tensor
+            ) -> tuple[paddle.Tensor, paddle.Tensor]:
                 (x, grad_output) = ctx.saved_tensor()
                 threshold = ctx.threshold
                 slope = ctx.slope
@@ -142,21 +161,21 @@ class SiLUTScript(paddle.nn.Layer):
 
         self.SiLUTFunction = SiLUTFunction
 
-    def forward(self, x):
+    def forward(self, x: paddle.Tensor) -> paddle.Tensor:
         return self.SiLUTFunction.apply(x, self.threshold, self.slope, self.const_val)
 
 
 class SiLUT(paddle.nn.Layer):
-    def __init__(self, threshold=3.0):
+    def __init__(self, threshold: float = 3.0) -> None:
         super().__init__()
 
-        def sigmoid(x):
+        def sigmoid(x: paddle.Tensor) -> paddle.Tensor:
             return F.sigmoid(x)
 
-        def silu(x):
+        def silu(x: paddle.Tensor) -> paddle.Tensor:
             return F.silu(x)
 
-        def silu_grad(x):
+        def silu_grad(x: paddle.Tensor) -> paddle.Tensor:
             sig = sigmoid(x)
             return sig + x * sig * (1 - sig)
 
@@ -181,7 +200,7 @@ class SiLUT(paddle.nn.Layer):
 
 
 class ActivationFn(paddle.nn.Layer):
-    def __init__(self, activation: str | None):
+    def __init__(self, activation: str | None) -> None:
         super().__init__()
         self.activation: str = activation if activation is not None else "linear"
         if self.activation.lower().startswith(
@@ -281,7 +300,9 @@ def to_paddle_tensor(
     return paddle.to_tensor(xx, dtype=prec, place=DEVICE)
 
 
-def dict_to_device(sample_dict):
+def dict_to_device(
+    sample_dict: dict[str, paddle.Tensor | list[paddle.Tensor] | None],
+) -> None:
     for key in sample_dict:
         if isinstance(sample_dict[key], list):
             sample_dict[key] = [item.to(DEVICE) for item in sample_dict[key]]
@@ -303,7 +324,7 @@ MIX_MULT_R = 0x4973F715
 XSHIFT = 16
 
 
-def hashmix(value: int, hash_const: list[int]):
+def hashmix(value: int, hash_const: list[int]) -> int:
     value ^= INIT_A
     hash_const[0] *= MULT_A
     value *= INIT_A
@@ -314,7 +335,7 @@ def hashmix(value: int, hash_const: list[int]):
     return value
 
 
-def mix(x: int, y: int):
+def mix(x: int, y: int) -> int:
     result = MIX_MULT_L * x - MIX_MULT_R * y
     # prevent overflow
     result &= 0xFFFF_FFFF_FFFF_FFFF
@@ -345,8 +366,21 @@ def get_generator(
             generator = paddle.framework.core.default_cuda_generator(
                 int(DEVICE.split("gpu:")[1])
             )
+        elif DEVICE == "xpu":
+            generator = paddle.framework.core.default_xpu_generator(0)
+        elif DEVICE.startswith("xpu:"):
+            generator = paddle.framework.core.default_xpu_generator(
+                int(DEVICE.split("xpu:")[1])
+            )
         else:
-            raise ValueError("DEVICE should be cpu or gpu or gpu:x")
+            # return none for compability in different devices
+            warnings.warn(
+                f"DEVICE is {DEVICE}, which is not supported. Returning None.",
+                category=UserWarning,
+                stacklevel=2,
+            )
+            return None
+            # raise ValueError("DEVICE should be cpu or gpu or gpu:x or xpu or xpu:x")
         generator.manual_seed(seed)
         return generator
     else:
@@ -354,7 +388,7 @@ def get_generator(
 
 
 @contextmanager
-def nvprof_context(enable_profiler: bool, name: str):
+def nvprof_context(enable_profiler: bool, name: str) -> Generator[None, None, None]:
     if enable_profiler:
         core.nvprof_nvtx_push(name)
 

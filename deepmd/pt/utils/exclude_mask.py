@@ -147,3 +147,5 @@ class PairExcludeMask(torch.nn.Module):
         type_ij = type_ij.view(nf, nloc * nnei)
         mask = self.type_mask[type_ij].view(nf, nloc, nnei).to(atype_ext.device)
         return mask
+
+    build_type_exclude_mask = forward

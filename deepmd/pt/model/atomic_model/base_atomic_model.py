@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 import logging
-from typing import (
+from collections.abc import (
     Callable,
+)
+from typing import (
     NoReturn,
     Optional,
-    Union,
 )
 
 import numpy as np
@@ -77,8 +78,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         type_map: list[str],
         atom_exclude_types: list[int] = [],
         pair_exclude_types: list[tuple[int, int]] = [],
-        rcond: Optional[float] = None,
-        preset_out_bias: Optional[dict[str, np.ndarray]] = None,
+        rcond: float | None = None,
+        preset_out_bias: dict[str, np.ndarray] | None = None,
         data_stat_protect: float = 1e-2,
     ) -> None:
         torch.nn.Module.__init__(self)
@@ -203,10 +204,10 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
         """Common interface for atomic inference.
 
@@ -284,10 +285,10 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
         return self.forward_common_atomic(
             extended_coord,
@@ -367,8 +368,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def compute_or_load_stat(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
     ) -> NoReturn:
         """
@@ -394,8 +395,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def compute_or_load_out_stat(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
     ) -> None:
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -444,8 +445,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def change_out_bias(
         self,
-        sample_merged: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        sample_merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
         bias_adjust_mode: str = "change-by-statistic",
     ) -> None:
         """Change the output bias according to the input data and the pretrained model.
@@ -493,15 +494,33 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         else:
             raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
 
+    def compute_fitting_input_stat(
+        self,
+        sample_merged: Callable[[], list[dict]] | list[dict],
+    ) -> None:
+        """Compute the input statistics (e.g. mean and stddev) for the atomic model from packed data.
+
+        Parameters
+        ----------
+        sample_merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        """
+        pass
+
     def _get_forward_wrapper_func(self) -> Callable[..., torch.Tensor]:
         """Get a forward wrapper of the atomic model for output bias calculation."""
 
         def model_forward(
             coord: torch.Tensor,
             atype: torch.Tensor,
-            box: Optional[torch.Tensor],
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            box: torch.Tensor | None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             with (
                 torch.no_grad()

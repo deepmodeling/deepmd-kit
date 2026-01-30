@@ -3,13 +3,15 @@ from abc import (
     ABC,
     abstractmethod,
 )
+from collections.abc import (
+    Callable,
+)
 from functools import (
     wraps,
 )
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Optional,
     overload,
 )
@@ -101,7 +103,7 @@ class NativeOP(ABC):
         return self.call(*args, **kwargs)
 
 
-def to_numpy_array(x: Optional["Array"]) -> Optional[np.ndarray]:
+def to_numpy_array(x: Optional["Array"]) -> np.ndarray | None:
     """Convert an array to a NumPy array.
 
     Parameters

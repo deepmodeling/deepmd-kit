@@ -2,13 +2,15 @@
 """Collection of functions and classes used throughout the whole package."""
 
 import warnings
+from collections.abc import (
+    Callable,
+)
 from functools import (
     wraps,
 )
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Union,
 )
 

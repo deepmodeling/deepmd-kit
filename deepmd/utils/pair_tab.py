@@ -4,7 +4,6 @@
 import logging
 from typing import (
     Any,
-    Optional,
 )
 
 import numpy as np
@@ -35,12 +34,12 @@ class PairTab:
         cutoff raduis for the tabulated potential
     """
 
-    def __init__(self, filename: str, rcut: Optional[float] = None) -> None:
+    def __init__(self, filename: str, rcut: float | None = None) -> None:
         """Constructor."""
         self.data_type = np.float64
         self.reinit(filename, rcut)
 
-    def reinit(self, filename: str, rcut: Optional[float] = None) -> None:
+    def reinit(self, filename: str, rcut: float | None = None) -> None:
         """Initialize the tabulated interaction.
 
         Parameters

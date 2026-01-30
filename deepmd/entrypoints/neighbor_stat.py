@@ -2,7 +2,6 @@
 import logging
 from typing import (
     Any,
-    Optional,
 )
 
 from deepmd.backend.backend import (
@@ -22,7 +21,7 @@ def neighbor_stat(
     *,
     system: str,
     rcut: float,
-    type_map: Optional[list[str]],
+    type_map: list[str] | None,
     mixed_type: bool = False,
     backend: str = "tensorflow",
     **kwargs: Any,

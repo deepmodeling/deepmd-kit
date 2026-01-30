@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-from typing import (
-    Optional,
-)
 
 import numpy as np
 
@@ -118,17 +115,17 @@ class DOSFitting(Fitting):
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
         numb_dos: int = 300,
-        rcond: Optional[float] = None,
-        trainable: Optional[list[bool]] = None,
-        seed: Optional[int] = None,
+        rcond: float | None = None,
+        trainable: list[bool] | None = None,
+        seed: int | None = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        layer_name: Optional[list[Optional[str]]] = None,
+        layer_name: list[str | None] | None = None,
         use_aparam_as_mask: bool = False,
         mixed_types: bool = False,
-        type_map: Optional[list[str]] = None,  # to be compat with input
-        default_fparam: Optional[list[float]] = None,  # to be compat with input
+        type_map: list[str] | None = None,  # to be compat with input
+        default_fparam: list[float] | None = None,  # to be compat with input
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -406,8 +403,8 @@ class DOSFitting(Fitting):
         self,
         inputs: tf.Tensor,
         natoms: tf.Tensor,
-        input_dict: Optional[dict] = None,
-        reuse: Optional[bool] = None,
+        input_dict: dict | None = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for fitting net.
@@ -640,7 +637,7 @@ class DOSFitting(Fitting):
             # for compatibility, old models has no t_bias_dos
             pass
 
-    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: dict | None = None) -> None:
         """Receive the mixed precision setting.
 
         Parameters
@@ -750,6 +747,11 @@ class DOSFitting(Fitting):
                 "case_embd": None,
             },
             "type_map": self.type_map,
+            "tot_ener_zero": False,
+            "layer_name": None,
+            "use_aparam_as_mask": False,
+            "spin": None,
+            "atom_ener": None,
         }
         return data
 

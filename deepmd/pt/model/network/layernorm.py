@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 import numpy as np
 import torch
@@ -44,7 +40,7 @@ class LayerNorm(nn.Module):
         stddev: float = 1.0,
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
     ) -> None:
         super().__init__()
         self.eps = eps
@@ -141,7 +137,7 @@ class LayerNorm(nn.Module):
         )
         prec = PRECISION_DICT[obj.precision]
 
-        def check_load_param(ss: str) -> Optional[nn.Parameter]:
+        def check_load_param(ss: str) -> nn.Parameter | None:
             return (
                 nn.Parameter(data=to_torch_tensor(nl[ss]))
                 if nl[ss] is not None

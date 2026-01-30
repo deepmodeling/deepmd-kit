@@ -2,13 +2,13 @@ name: TODO workflow
 on:
   push:
     branches:
-      - devel
+      - master
 jobs:
   build:
     if: github.repository_owner == 'deepmodeling'
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - name: Run tdg-github-action
       uses: ribtoks/tdg-github-action@master
       with:

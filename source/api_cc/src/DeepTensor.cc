@@ -6,6 +6,9 @@
 #ifdef BUILD_TENSORFLOW
 #include "DeepTensorTF.h"
 #endif
+#ifdef BUILD_PYTORCH
+#include "DeepTensorPT.h"
+#endif
 #include "common.h"
 
 using namespace deepmd;
@@ -38,7 +41,11 @@ void DeepTensor::init(const std::string& model,
     throw deepmd::deepmd_exception("TensorFlow backend is not built.");
 #endif
   } else if (deepmd::DPBackend::PyTorch == backend) {
-    throw deepmd::deepmd_exception("PyTorch backend is not supported yet");
+#ifdef BUILD_PYTORCH
+    dt = std::make_shared<deepmd::DeepTensorPT>(model, gpu_rank, name_scope_);
+#else
+    throw deepmd::deepmd_exception("PyTorch backend is not built.");
+#endif
   } else if (deepmd::DPBackend::Paddle == backend) {
     throw deepmd::deepmd_exception("PaddlePaddle backend is not supported yet");
   } else {

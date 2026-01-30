@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 from deepmd.tf.common import (
     make_default_mesh,
@@ -49,17 +45,17 @@ class PairwiseDPRc(Model):
         self,
         qm_model: dict,
         qmmm_model: dict,
-        type_embedding: Union[dict, TypeEmbedNet],
+        type_embedding: dict | TypeEmbedNet,
         type_map: list[str],
         data_stat_nbatch: int = 10,
         data_stat_nsample: int = 10,
         data_stat_protect: float = 1e-2,
-        use_srtab: Optional[str] = None,
-        smin_alpha: Optional[float] = None,
-        sw_rmin: Optional[float] = None,
-        sw_rmax: Optional[float] = None,
-        spin: Optional[Spin] = None,
-        compress: Optional[dict] = None,
+        use_srtab: str | None = None,
+        smin_alpha: float | None = None,
+        sw_rmin: float | None = None,
+        sw_rmax: float | None = None,
+        spin: Spin | None = None,
+        compress: dict | None = None,
         **kwargs,
     ) -> None:
         # internal variable to compare old and new behavior
@@ -116,9 +112,9 @@ class PairwiseDPRc(Model):
         mesh: tf.Tensor,
         input_dict: dict,
         frz_model=None,
-        ckpt_meta: Optional[str] = None,
+        ckpt_meta: str | None = None,
         suffix: str = "",
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
     ):
         feed_dict = self.get_feed_dict(
             coord_, atype_, natoms, box_, mesh, aparam=input_dict["aparam"]
@@ -300,14 +296,14 @@ class PairwiseDPRc(Model):
         model_dict["atype"] = atype_
         return model_dict
 
-    def get_fitting(self) -> Union[str, dict]:
+    def get_fitting(self) -> str | dict:
         """Get the fitting(s)."""
         return {
             "qm": self.qm_model.get_fitting(),
             "qmmm": self.qmmm_model.get_fitting(),
         }
 
-    def get_loss(self, loss: dict, lr) -> Union[Loss, dict]:
+    def get_loss(self, loss: dict, lr) -> Loss | dict:
         """Get the loss function(s)."""
         return self.qm_model.get_loss(loss, lr)
 
@@ -413,9 +409,9 @@ class PairwiseDPRc(Model):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

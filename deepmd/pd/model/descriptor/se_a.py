@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
-from typing import (
+from collections.abc import (
     Callable,
+)
+from typing import (
     ClassVar,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -71,11 +71,11 @@ from .base_descriptor import (
 class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
     def __init__(
         self,
-        rcut,
-        rcut_smth,
-        sel,
-        neuron=[25, 50, 100],
-        axis_neuron=16,
+        rcut: float,
+        rcut_smth: float,
+        sel: int | list[int],
+        neuron: list[int] = [25, 50, 100],
+        axis_neuron: int = 16,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "float64",
@@ -84,17 +84,22 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         env_protection: float = 0.0,
         type_one_side: bool = True,
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
-        ntypes: Optional[int] = None,  # to be compat with input
-        type_map: Optional[list[str]] = None,
+        seed: int | list[int] | None = None,
+        ntypes: int | None = None,  # to be compat with input
+        type_map: list[str] | None = None,
         # not implemented
-        spin=None,
+        spin: object = None,
     ) -> None:
         del ntypes
         if spin is not None:
             raise NotImplementedError("old implementation of spin is not supported.")
         super().__init__()
         self.type_map = type_map
+        if type_map is not None:
+            self.register_buffer(
+                "buffer_type_map",
+                paddle.to_tensor([ord(c) for c in " ".join(type_map)]),
+            )
         self.compress = False
         self.prec = PRECISION_DICT[precision]
         self.sea = DescrptBlockSeA(
@@ -122,6 +127,14 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.sea.get_rcut_smth()
 
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Returns the cut-off radius as a buffer-style Tensor."""
+        return self.sea.get_buffer_rcut()
+
+    def get_buffer_rcut_smth(self) -> paddle.Tensor:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0 as a buffer-style Tensor."""
+        return self.sea.get_buffer_rcut_smth()
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return self.sea.get_nsel()
@@ -138,6 +151,18 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         """Get the name to each type of atoms."""
         return self.type_map
 
+    def get_buffer_type_map(self) -> paddle.Tensor:
+        """
+        Return the type map as a buffer-style Tensor for JIT saving.
+
+        The original type map (e.g., ['Ni', 'O']) is first joined into a single space-separated string
+        (e.g., "Ni O"). Each character in this string is then converted to its ASCII code using `ord()`,
+        and the resulting integer sequence is stored as a 1D paddle.Tensor of dtype int.
+
+        This format allows the type map to be serialized as a raw byte buffer during JIT model saving.
+        """
+        return self.buffer_type_map
+
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         return self.sea.get_dim_out()
@@ -146,7 +171,7 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         """Returns the output dimension."""
         return self.sea.get_dim_emb()
 
-    def mixed_types(self):
+    def mixed_types(self) -> bool:
         """Returns if the descriptor requires a neighbor list that distinguish different
         atomic types or not.
         """
@@ -164,7 +189,9 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         """Returns the protection of building environment matrix."""
         return self.sea.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: object, shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -183,12 +210,12 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
             raise NotImplementedError
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.sea.dim_out
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: object = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -201,9 +228,9 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
-    ):
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -259,9 +286,9 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         coord_ext: paddle.Tensor,
         atype_ext: paddle.Tensor,
         nlist: paddle.Tensor,
-        mapping: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[list[paddle.Tensor]] = None,
-    ):
+        mapping: paddle.Tensor | None = None,
+        comm_dict: list[paddle.Tensor] | None = None,
+    ) -> paddle.Tensor:
         """Compute the descriptor.
 
         Parameters
@@ -364,7 +391,7 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         env_mat = data.pop("env_mat")
         obj = cls(**data)
 
-        def t_cvt(xx):
+        def t_cvt(xx: np.ndarray) -> paddle.Tensor:
             return paddle.to_tensor(xx, dtype=obj.sea.prec).to(device=env.DEVICE)
 
         obj.sea["davg"] = t_cvt(variables["davg"])
@@ -376,9 +403,9 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -411,11 +438,11 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def __init__(
         self,
-        rcut,
-        rcut_smth,
-        sel,
-        neuron=[25, 50, 100],
-        axis_neuron=16,
+        rcut: float,
+        rcut_smth: float,
+        sel: int | list[int],
+        neuron: list[int] = [25, 50, 100],
+        axis_neuron: int = 16,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "float64",
@@ -424,8 +451,8 @@ class DescrptBlockSeA(DescriptorBlock):
         env_protection: float = 0.0,
         type_one_side: bool = True,
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
-        **kwargs,
+        seed: int | list[int] | None = None,
+        **kwargs: object,
     ) -> None:
         """Construct an embedding net of type `se_a`.
 
@@ -438,7 +465,9 @@ class DescrptBlockSeA(DescriptorBlock):
         """
         super().__init__()
         self.rcut = float(rcut)
+        self.register_buffer("buffer_rcut", paddle.to_tensor(self.rcut))
         self.rcut_smth = float(rcut_smth)
+        self.register_buffer("buffer_rcut_smth", paddle.to_tensor(self.rcut_smth))
         self.neuron = neuron
         self.filter_neuron = self.neuron
         self.axis_neuron = axis_neuron
@@ -449,6 +478,9 @@ class DescrptBlockSeA(DescriptorBlock):
         self.resnet_dt = resnet_dt
         self.env_protection = env_protection
         self.ntypes = len(sel)
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
         self.type_one_side = type_one_side
         self.seed = seed
         # order matters, placed after the assignment of self.ntypes
@@ -513,6 +545,14 @@ class DescrptBlockSeA(DescriptorBlock):
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.rcut_smth
 
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Returns the cut-off radius as a buffer-style Tensor."""
+        return self.buffer_rcut
+
+    def get_buffer_rcut_smth(self) -> paddle.Tensor:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0 as a buffer-style Tensor."""
+        return self.buffer_rcut_smth
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
@@ -523,7 +563,7 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.ntypes
+        return self.ntypes if paddle.in_dynamic_mode() else self.buffer_ntypes
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
@@ -558,7 +598,7 @@ class DescrptBlockSeA(DescriptorBlock):
         return self.env_protection
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.filter_neuron[-1] * self.axis_neuron
 
@@ -567,7 +607,7 @@ class DescrptBlockSeA(DescriptorBlock):
         """Returns the atomic input dimension of this descriptor."""
         return 0
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: paddle.Tensor) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -575,7 +615,7 @@ class DescrptBlockSeA(DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> paddle.Tensor:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -585,8 +625,8 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -646,7 +686,7 @@ class DescrptBlockSeA(DescriptorBlock):
     def enable_compression(
         self,
         table_data: dict[str, paddle.Tensor],
-        table_config: list[Union[int, float]],
+        table_config: list[int | float],
         lower: dict[str, int],
         upper: dict[str, int],
     ) -> None:
@@ -684,10 +724,10 @@ class DescrptBlockSeA(DescriptorBlock):
         nlist: paddle.Tensor,
         extended_coord: paddle.Tensor,
         extended_atype: paddle.Tensor,
-        extended_atype_embd: Optional[paddle.Tensor] = None,
-        mapping: Optional[paddle.Tensor] = None,
-        type_embedding: Optional[paddle.Tensor] = None,
-    ):
+        extended_atype_embd: paddle.Tensor | None = None,
+        mapping: paddle.Tensor | None = None,
+        type_embedding: paddle.Tensor | None = None,
+    ) -> paddle.Tensor:
         """Calculate decoded embedding for each atom.
 
         Args:
@@ -725,7 +765,11 @@ class DescrptBlockSeA(DescriptorBlock):
         # nfnl x nnei
         exclude_mask = self.emask(nlist, extended_atype).reshape([nfnl, self.nnei])
         for embedding_idx, (ll, compress_data_ii, compress_info_ii) in enumerate(
-            zip(self.filter_layers.networks, self.compress_data, self.compress_info)
+            zip(
+                self.filter_layers.networks,
+                self.compress_data,
+                self.compress_info,
+            )
         ):
             if self.type_one_side:
                 ii = embedding_idx

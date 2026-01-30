@@ -7,10 +7,6 @@ from functools import (
     lru_cache,
     reduce,
 )
-from typing import (
-    Optional,
-    Union,
-)
 
 from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
@@ -64,13 +60,13 @@ class LinearModel(Model):
         else:
             raise ValueError(f"Invalid weights {weights}")
 
-    def get_fitting(self) -> Union[Fitting, dict]:
+    def get_fitting(self) -> Fitting | dict:
         """Get the fitting(s)."""
         return {
             f"model{ii}": model.get_fitting() for ii, model in enumerate(self.models)
         }
 
-    def get_loss(self, loss: dict, lr) -> Optional[Union[Loss, dict]]:
+    def get_loss(self, loss: dict, lr) -> Loss | dict | None:
         """Get the loss function(s)."""
         # the first model that is not None, or None if all models are None
         for model in self.models:
@@ -138,9 +134,9 @@ class LinearModel(Model):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -194,10 +190,10 @@ class LinearEnergyModel(LinearModel):
         box: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        frz_model: Optional[str] = None,
-        ckpt_meta: Optional[str] = None,
+        frz_model: str | None = None,
+        ckpt_meta: str | None = None,
         suffix: str = "",
-        reuse: Optional[Union[bool, Enum]] = None,
+        reuse: bool | Enum | None = None,
     ) -> dict:
         """Build the model.
 

@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 from deepmd.tf.env import (
     MODEL_VERSION,
@@ -49,8 +45,8 @@ class DOSModel(StandardModel):
         self,
         descriptor: dict,
         fitting_net: dict,
-        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[list[str]] = None,
+        type_embedding: dict | TypeEmbedNet | None = None,
+        type_map: list[str] | None = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
         **kwargs,
@@ -137,7 +133,7 @@ class DOSModel(StandardModel):
         mesh,
         input_dict,
         frz_model=None,
-        ckpt_meta: Optional[str] = None,
+        ckpt_meta: str | None = None,
         suffix="",
         reuse=None,
     ):
@@ -148,6 +144,9 @@ class DOSModel(StandardModel):
             t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
             t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
             t_od = tf.constant(self.numb_dos, name="output_dim", dtype=tf.int32)
+
+            # Initialize out_bias and out_std for DOS models
+            self.init_out_stat(suffix=suffix)
 
         coord = tf.reshape(coord_, [-1, natoms[1] * 3])
         atype = tf.reshape(atype_, [-1, natoms[1]])
@@ -181,6 +180,10 @@ class DOSModel(StandardModel):
         atom_dos = self.fitting.build(
             dout, natoms, input_dict, reuse=reuse, suffix=suffix
         )
+
+        # Apply out_bias and out_std directly to DOS output
+        atom_dos = self._apply_out_bias_std(atom_dos, atype, natoms, coord)
+
         self.atom_dos = atom_dos
 
         dos_raw = atom_dos

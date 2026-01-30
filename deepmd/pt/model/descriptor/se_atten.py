@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
-    Optional,
-    Union,
 )
 
 import torch
@@ -26,6 +26,9 @@ from deepmd.pt.model.network.mlp import (
     EmbeddingNet,
     MLPLayer,
     NetworkCollection,
+)
+from deepmd.pt.model.network.network import (
+    TypeEmbedNet,
 )
 from deepmd.pt.utils import (
     env,
@@ -76,7 +79,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list = [25, 50, 100],
         axis_neuron: int = 16,
@@ -92,15 +95,15 @@ class DescrptBlockSeAtten(DescriptorBlock):
         resnet_dt: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         smooth: bool = True,
         type_one_side: bool = False,
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
-        seed: Optional[Union[int, list[int]]] = None,
-        type: Optional[str] = None,
+        ln_eps: float | None = 1e-5,
+        seed: int | list[int] | None = None,
+        type: str | None = None,
         trainable: bool = True,
     ) -> None:
         r"""Construct an embedding net of type `se_atten`.
@@ -272,14 +275,19 @@ class DescrptBlockSeAtten(DescriptorBlock):
             self.filter_layers_strip = filter_layers_strip
         self.stats = None
 
-        # add for compression
-        self.compress = False
+        self.tebd_compress = False
+        self.geo_compress = False
         self.is_sorted = False
+        # For geometric compression
         self.compress_info = nn.ParameterList(
             [nn.Parameter(torch.zeros(0, dtype=self.prec, device="cpu"))]
         )
         self.compress_data = nn.ParameterList(
             [nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))]
+        )
+        # For type embedding compression
+        self.register_buffer(
+            "type_embd_data", torch.zeros(0, dtype=self.prec, device=env.DEVICE)
         )
 
     def get_rcut(self) -> float:
@@ -367,8 +375,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -445,22 +453,74 @@ class DescrptBlockSeAtten(DescriptorBlock):
             device="cpu",
         )
         self.compress_data[0] = table_data[net].to(device=env.DEVICE, dtype=self.prec)
-        self.compress = True
+        self.geo_compress = True
+
+    def type_embedding_compression(self, type_embedding_net: TypeEmbedNet) -> None:
+        """Enable type embedding compression for strip mode.
+
+        Precomputes embedding network outputs for all type combinations:
+        - One-side: (ntypes+1) combinations (neighbor types only)
+        - Two-side: (ntypes+1)² combinations (neighbor x center type pairs)
+
+        Parameters
+        ----------
+        type_embedding_net : TypeEmbedNet
+            The type embedding network that provides get_full_embedding() method
+        """
+        if self.tebd_input_mode != "strip":
+            raise RuntimeError("Type embedding compression only works in strip mode")
+        if self.filter_layers_strip is None:
+            raise RuntimeError(
+                "filter_layers_strip must be initialized for type embedding compression"
+            )
+
+        with torch.no_grad():
+            # Get full type embedding: (ntypes+1) x tebd_dim
+            full_embd = type_embedding_net.get_full_embedding(env.DEVICE)
+            nt, t_dim = full_embd.shape
+
+            if self.type_one_side:
+                # One-side: only neighbor types, much simpler!
+                # Precompute for all (ntypes+1) neighbor types
+                embd_tensor = self.filter_layers_strip.networks[0](full_embd).detach()
+                if hasattr(self, "type_embd_data"):
+                    del self.type_embd_data
+                self.register_buffer("type_embd_data", embd_tensor)
+            else:
+                # Two-side: all (ntypes+1)² type pair combinations
+                # Create [neighbor, center] combinations
+                # for a fixed row i, all columns j have different neighbor types
+                embd_nei = full_embd.view(1, nt, t_dim).expand(nt, nt, t_dim)
+                # for a fixed row i, all columns j share the same center type i
+                embd_center = full_embd.view(nt, 1, t_dim).expand(nt, nt, t_dim)
+                two_side_embd = torch.cat([embd_nei, embd_center], dim=-1).reshape(
+                    -1, t_dim * 2
+                )
+                # Precompute for all type pairs
+                # Index formula: idx = center_type * nt + neighbor_type
+                embd_tensor = self.filter_layers_strip.networks[0](
+                    two_side_embd
+                ).detach()
+                if hasattr(self, "type_embd_data"):
+                    del self.type_embd_data
+                self.register_buffer("type_embd_data", embd_tensor)
+
+        self.tebd_compress = True
 
     def forward(
         self,
         nlist: torch.Tensor,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
-        type_embedding: Optional[torch.Tensor] = None,
+        extended_atype_embd: torch.Tensor | None = None,
+        mapping: torch.Tensor | None = None,
+        type_embedding: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
     ]:
         """Compute the descriptor.
 
@@ -572,47 +632,49 @@ class DescrptBlockSeAtten(DescriptorBlock):
             nlist_index = nlist.reshape(nb, nloc * nnei)
             # nf x (nl x nnei)
             nei_type = torch.gather(extended_atype, dim=1, index=nlist_index)
-            # (nf x nl x nnei) x ng
-            nei_type_index = nei_type.view(-1, 1).expand(-1, ng).type(torch.long)
             if self.type_one_side:
-                tt_full = self.filter_layers_strip.networks[0](type_embedding)
-                # (nf x nl x nnei) x ng
-                gg_t = torch.gather(tt_full, dim=0, index=nei_type_index)
+                if self.tebd_compress:
+                    tt_full = self.type_embd_data
+                else:
+                    # (ntypes+1, tebd_dim) -> (ntypes+1, ng)
+                    tt_full = self.filter_layers_strip.networks[0](type_embedding)
+                # (nf*nl*nnei,) -> (nf*nl*nnei, ng)
+                gg_t = tt_full[nei_type.view(-1).type(torch.long)]
             else:
                 idx_i = torch.tile(
                     atype.reshape(-1, 1) * ntypes_with_padding, [1, nnei]
                 ).view(-1)
                 idx_j = nei_type.view(-1)
+                # (nf x nl x nnei)
+                idx = (idx_i + idx_j).to(torch.long)
+                if self.tebd_compress:
+                    # ((ntypes+1)^2, ng)
+                    tt_full = self.type_embd_data
+                else:
+                    # ((ntypes+1)^2) * (ntypes+1)^2 * nt
+                    type_embedding_nei = torch.tile(
+                        type_embedding.view(1, ntypes_with_padding, nt),
+                        [ntypes_with_padding, 1, 1],
+                    )
+                    # (ntypes+1)^2 * ((ntypes+1)^2) * nt
+                    type_embedding_center = torch.tile(
+                        type_embedding.view(ntypes_with_padding, 1, nt),
+                        [1, ntypes_with_padding, 1],
+                    )
+                    # ((ntypes+1)^2 * (ntypes+1)^2) * (nt+nt)
+                    two_side_type_embedding = torch.cat(
+                        [type_embedding_nei, type_embedding_center], -1
+                    ).reshape(-1, nt * 2)
+                    tt_full = self.filter_layers_strip.networks[0](
+                        two_side_type_embedding
+                    )
                 # (nf x nl x nnei) x ng
-                idx = (
-                    (idx_i + idx_j)
-                    .view(-1, 1)
-                    .expand(-1, ng)
-                    .type(torch.long)
-                    .to(torch.long)
-                )
-                # (ntypes) * ntypes * nt
-                type_embedding_nei = torch.tile(
-                    type_embedding.view(1, ntypes_with_padding, nt),
-                    [ntypes_with_padding, 1, 1],
-                )
-                # ntypes * (ntypes) * nt
-                type_embedding_center = torch.tile(
-                    type_embedding.view(ntypes_with_padding, 1, nt),
-                    [1, ntypes_with_padding, 1],
-                )
-                # (ntypes * ntypes) * (nt+nt)
-                two_side_type_embedding = torch.cat(
-                    [type_embedding_nei, type_embedding_center], -1
-                ).reshape(-1, nt * 2)
-                tt_full = self.filter_layers_strip.networks[0](two_side_type_embedding)
-                # (nf x nl x nnei) x ng
-                gg_t = torch.gather(tt_full, dim=0, index=idx)
+                gg_t = tt_full[idx]
             # (nf x nl) x nnei x ng
             gg_t = gg_t.reshape(nfnl, nnei, ng)
             if self.smooth:
                 gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
-            if self.compress:
+            if self.geo_compress:
                 ss = ss.reshape(-1, 1)
                 gg_t = gg_t.reshape(-1, gg_t.size(-1))
                 xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_atten(
@@ -660,7 +722,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         return (
             result.view(nframes, nloc, self.filter_neuron[-1] * self.axis_neuron),
             gg.view(nframes, nloc, self.nnei, self.filter_neuron[-1])
-            if not self.compress
+            if not self.geo_compress
             else None,
             dmatrix.view(nframes, nloc, self.nnei, 4)[..., 1:],
             rot_mat.view(nframes, nloc, self.filter_neuron[-1], 3),
@@ -687,12 +749,12 @@ class NeighborGatedAttention(nn.Module):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         trainable_ln: bool = True,
         ln_eps: float = 1e-5,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         """Construct a neighbor-wise attention net."""
@@ -738,8 +800,8 @@ class NeighborGatedAttention(nn.Module):
         self,
         input_G: torch.Tensor,
         nei_mask: torch.Tensor,
-        input_r: Optional[torch.Tensor] = None,
-        sw: Optional[torch.Tensor] = None,
+        input_r: torch.Tensor | None = None,
+        sw: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Compute the multi-layer gated self-attention.
 
@@ -832,12 +894,12 @@ class NeighborGatedAttentionLayer(nn.Module):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         smooth: bool = True,
         trainable_ln: bool = True,
         ln_eps: float = 1e-5,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         """Construct a neighbor-wise attention layer."""
@@ -880,8 +942,8 @@ class NeighborGatedAttentionLayer(nn.Module):
         self,
         x: torch.Tensor,
         nei_mask: torch.Tensor,
-        input_r: Optional[torch.Tensor] = None,
-        sw: Optional[torch.Tensor] = None,
+        input_r: torch.Tensor | None = None,
+        sw: torch.Tensor | None = None,
     ) -> torch.Tensor:
         residual = x
         x, _ = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)
@@ -942,11 +1004,11 @@ class GatedAttentionLayer(nn.Module):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         bias: bool = True,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         """Construct a multi-head neighbor-wise attention net."""
@@ -998,8 +1060,8 @@ class GatedAttentionLayer(nn.Module):
         self,
         query: torch.Tensor,
         nei_mask: torch.Tensor,
-        input_r: Optional[torch.Tensor] = None,
-        sw: Optional[torch.Tensor] = None,
+        input_r: torch.Tensor | None = None,
+        sw: torch.Tensor | None = None,
         attnw_shift: float = 20.0,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute the multi-head gated self-attention.

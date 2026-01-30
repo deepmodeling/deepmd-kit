@@ -3,9 +3,6 @@ import sys
 from pathlib import (
     Path,
 )
-from typing import (
-    Optional,
-)
 
 from .find_pytorch import (
     get_pt_requirement,
@@ -31,7 +28,7 @@ def __dir__() -> list[str]:
 
 def dynamic_metadata(
     field: str,
-    settings: Optional[dict[str, object]] = None,
+    settings: dict[str, object] | None = None,
 ):
     assert field in ["optional-dependencies", "entry-points", "scripts"]
     _, _, find_libpython_requires, extra_scripts, tf_version, pt_version = (

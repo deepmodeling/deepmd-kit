@@ -15,7 +15,6 @@ from collections import (
 )
 from typing import (
     Any,
-    Optional,
 )
 
 from deepmd.backend.backend import (
@@ -69,7 +68,7 @@ class BackendOption(argparse.Action):
         parser: argparse.ArgumentParser,
         namespace: argparse.Namespace,
         values: Any,
-        option_string: Optional[str] = None,
+        option_string: str | None = None,
     ) -> None:
         setattr(namespace, self.dest, BACKEND_TABLE[values])
 
@@ -87,7 +86,7 @@ class DeprecateAction(argparse.Action):
         parser: argparse.ArgumentParser,
         namespace: argparse.Namespace,
         values: Any,
-        option_string: Optional[str] = None,
+        option_string: str | None = None,
     ) -> None:
         if self.call_count == 0:
             warnings.warn(
@@ -946,7 +945,7 @@ def main_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
+def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     """Parse arguments and convert argument strings to objects.
 
     Parameters
@@ -970,7 +969,7 @@ def parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
     return parsed_args
 
 
-def main(args: Optional[list[str]] = None) -> None:
+def main(args: list[str] | None = None) -> None:
     """DeePMD-kit new entry point.
 
     Parameters

@@ -2,8 +2,6 @@
 import logging
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -47,7 +45,7 @@ class EnergyFittingNet(InvarFitting):
         ntypes: int,
         dim_descrpt: int,
         neuron: list[int] = [128, 128, 128],
-        bias_atom_e: Optional[torch.Tensor] = None,
+        bias_atom_e: torch.Tensor | None = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -55,9 +53,9 @@ class EnergyFittingNet(InvarFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
-        type_map: Optional[list[str]] = None,
-        default_fparam: Optional[list] = None,
+        seed: int | list[int] | None = None,
+        type_map: list[str] | None = None,
+        default_fparam: list | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -108,7 +106,7 @@ class EnergyFittingNetDirect(Fitting):
         ntypes: int,
         dim_descrpt: int,
         neuron: list[int],
-        bias_atom_e: Optional[torch.Tensor] = None,
+        bias_atom_e: torch.Tensor | None = None,
         out_dim: int = 1,
         resnet_dt: bool = True,
         use_tebd: bool = True,
@@ -190,7 +188,7 @@ class EnergyFittingNetDirect(Fitting):
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         raise NotImplementedError
 
@@ -201,11 +199,11 @@ class EnergyFittingNetDirect(Fitting):
         self,
         inputs: torch.Tensor,
         atype: torch.Tensor,
-        gr: Optional[torch.Tensor] = None,
-        g2: Optional[torch.Tensor] = None,
-        h2: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        gr: torch.Tensor | None = None,
+        g2: torch.Tensor | None = None,
+        h2: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, None]:
         """Based on embedding net output, alculate total energy.
 
