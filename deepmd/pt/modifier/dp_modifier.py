@@ -27,10 +27,10 @@ class DPModifier(BaseModifier):
         super().__init__(use_cache=use_cache)
 
         if dp_model_file_name is None and dp_model is None:
-            raise AttributeError("`model_name` or `model` should be specified.")
+            raise AttributeError("`dp_model_file_name` or `dp_model` should be specified.")
         if dp_model_file_name is not None and dp_model is not None:
             raise AttributeError(
-                "`model_name` and `model` cannot be used simultaneously."
+                "`dp_model_file_name` and `dp_model` cannot be used simultaneously."
             )
 
         if dp_model is not None:
@@ -42,8 +42,9 @@ class DPModifier(BaseModifier):
                 raise ValueError(
                     f"DPModifier only support standard model. Unsupported model type: {model_type}"
                 )
+            fitting_type = data["model"].get("fitting", {}).get("type", "ener")
             self._model = (
-                BaseModel.get_class_by_type(data["model"]["fitting"]["type"])
+                BaseModel.get_class_by_type(fitting_type)
                 .deserialize(data["model"])
                 .to(env.DEVICE)
             )
