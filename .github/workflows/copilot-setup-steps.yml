@@ -54,10 +54,10 @@ jobs:
       - name: Build Python package
         run: uv pip install -e .[cpu,test]
 
-      - name: Install pre-commit tools
+      - name: Install prek tools
         run: uv tool install prek
 
-      - name: Install pre-commit hooks
+      - name: Install prek hooks
         run: prek install --install-hooks
 
       - name: Verify installation
