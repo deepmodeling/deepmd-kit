@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from typing import (
+    Any,
+)
 
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
@@ -85,7 +88,7 @@ class DescrptSeAttenV2(DescrptSeAtten):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         DescrptSeAtten.__init__(
             self,
@@ -114,7 +117,7 @@ class DescrptSeAttenV2(DescrptSeAtten):
         )
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = ""):
+    def deserialize(cls, data: dict, suffix: str = "") -> "DescrptSeAttenV2":
         """Deserialize the model.
 
         Parameters
