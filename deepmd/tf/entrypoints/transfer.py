@@ -6,6 +6,9 @@ import re
 from collections.abc import (
     Sequence,
 )
+from typing import (
+    Any,
+)
 
 import numpy as np
 
@@ -54,7 +57,7 @@ def convert_matrix(
     return conv
 
 
-def transfer(*, old_model: str, raw_model: str, output: str, **kwargs) -> None:
+def transfer(*, old_model: str, raw_model: str, output: str, **kwargs: Any) -> None:
     """Transfer operation from old from graph to new prepared raw graph.
 
     Parameters
@@ -181,7 +184,7 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
 
 
 class CopyNodeAttr:
-    def __init__(self, node) -> None:
+    def __init__(self, node: Any) -> None:
         self.node = node
 
     def from_array(
