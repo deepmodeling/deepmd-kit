@@ -4,7 +4,6 @@ from typing import (
     Any,
 )
 
-# SPDX-License-Identifier: LGPL-3.0-or-later
 from tensorflow.python.framework import (
     ops,
 )
