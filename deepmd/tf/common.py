@@ -10,6 +10,7 @@ from functools import (
 )
 from typing import (
     TYPE_CHECKING,
+    Any,
     Union,
 )
 
@@ -317,7 +318,7 @@ def cast_precision(func: Callable) -> Callable:
     """
 
     @wraps(func)
-    def wrapper(self: object, *args: object, **kwargs: object) -> object:
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
         # only convert tensors
         returned_tensor = func(
             self,
