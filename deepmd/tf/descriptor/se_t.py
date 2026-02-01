@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import re
+from typing import (
+    Any,
+)
 
 import numpy as np
 
@@ -104,7 +107,7 @@ class DescrptSeT(DescrptSe):
         uniform_seed: bool = False,
         type_map: list[str] | None = None,  # to be compat with input
         env_protection: float = 0.0,  # not implement!!
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         if rcut < rcut_smth:
@@ -230,7 +233,7 @@ class DescrptSeT(DescrptSe):
         natoms_vec: list,
         mesh: list,
         input_dict: dict,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 
@@ -277,7 +280,7 @@ class DescrptSeT(DescrptSe):
             }
             self.merge_input_stats(stat_dict)
 
-    def merge_input_stats(self, stat_dict) -> None:
+    def merge_input_stats(self, stat_dict: Any) -> None:
         """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
 
         Parameters
@@ -539,8 +542,15 @@ class DescrptSeT(DescrptSe):
         return force, virial, atom_virial
 
     def _pass_filter(
-        self, inputs, atype, natoms, input_dict, reuse=None, suffix="", trainable=True
-    ):
+        self,
+        inputs: Any,
+        atype: Any,
+        natoms: Any,
+        input_dict: Any,
+        reuse: Any = None,
+        suffix: str = "",
+        trainable: bool = True,
+    ) -> Any:
         start_index = 0
         inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
@@ -566,8 +576,13 @@ class DescrptSeT(DescrptSe):
         return output, None
 
     def _compute_dstats_sys_smth(
-        self, data_coord, data_box, data_atype, natoms_vec, mesh
-    ):
+        self,
+        data_coord: Any,
+        data_box: Any,
+        data_atype: Any,
+        natoms_vec: Any,
+        mesh: Any,
+    ) -> Any:
         dd_all = run_sess(
             self.sub_sess,
             self.stat_descrpt,
@@ -608,7 +623,7 @@ class DescrptSeT(DescrptSe):
             sysa2.append(suma2)
         return sysr, sysr2, sysa, sysa2, sysn
 
-    def _compute_std(self, sumv2, sumv, sumn):
+    def _compute_std(self, sumv2: Any, sumv: Any, sumn: Any) -> Any:
         val = np.sqrt(sumv2 / sumn - np.multiply(sumv / sumn, sumv / sumn))
         if np.abs(val) < 1e-2:
             val = 1e-2
@@ -617,16 +632,16 @@ class DescrptSeT(DescrptSe):
     @cast_precision
     def _filter(
         self,
-        inputs,
-        type_input,
-        natoms,
-        activation_fn=tf.nn.tanh,
-        stddev=1.0,
-        bavg=0.0,
-        name="linear",
-        reuse=None,
-        trainable=True,
-    ):
+        inputs: Any,
+        type_input: Any,
+        natoms: Any,
+        activation_fn: Any = tf.nn.tanh,
+        stddev: float = 1.0,
+        bavg: float = 0.0,
+        name: str = "linear",
+        reuse: Any = None,
+        trainable: bool = True,
+    ) -> Any:
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()
         outputs_size = [1, *self.filter_neuron]
@@ -763,7 +778,7 @@ class DescrptSeT(DescrptSe):
             network_type="embedding_network",
         )
 
-        def clear_ij(type_i, type_j) -> None:
+        def clear_ij(type_i: int, type_j: int) -> None:
             # initialize an empty network
             embeddings[(type_i, type_j)] = EmbeddingNet(
                 in_dim=in_dim,
@@ -866,7 +881,7 @@ class DescrptSeT(DescrptSe):
         return embedding_net_variables
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = ""):
+    def deserialize(cls, data: dict, suffix: str = "") -> "DescrptSeT":
         """Deserialize the model.
 
         Parameters
