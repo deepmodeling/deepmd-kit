@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from typing import (
+    Any,
+)
+
 import numpy as np
 
 from deepmd.dpmodel.utils.env_mat import (
@@ -180,7 +184,7 @@ class DescrptSeA(DescrptSe):
         tebd_input_mode: str = "concat",
         type_map: list[str] | None = None,  # to be compat with input
         env_protection: float = 0.0,  # not implement!!
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         if rcut < rcut_smth:
@@ -346,7 +350,7 @@ class DescrptSeA(DescrptSe):
         natoms_vec: list,
         mesh: list,
         input_dict: dict,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 
@@ -393,7 +397,7 @@ class DescrptSeA(DescrptSe):
             }
             self.merge_input_stats(stat_dict)
 
-    def merge_input_stats(self, stat_dict) -> None:
+    def merge_input_stats(self, stat_dict: Any) -> None:
         """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
 
         Parameters
@@ -747,8 +751,15 @@ class DescrptSeA(DescrptSe):
         return force, virial, atom_virial
 
     def _pass_filter(
-        self, inputs, atype, natoms, input_dict, reuse=None, suffix="", trainable=True
-    ):
+        self,
+        inputs: Any,
+        atype: Any,
+        natoms: Any,
+        input_dict: Any,
+        reuse: Any = None,
+        suffix: str = "",
+        trainable: bool = True,
+    ) -> Any:
         if input_dict is not None:
             type_embedding = input_dict.get("type_embedding", None)
             if type_embedding is not None:
@@ -834,8 +845,13 @@ class DescrptSeA(DescrptSe):
         return output, output_qmat
 
     def _compute_dstats_sys_smth(
-        self, data_coord, data_box, data_atype, natoms_vec, mesh
-    ):
+        self,
+        data_coord: Any,
+        data_box: Any,
+        data_atype: Any,
+        natoms_vec: Any,
+        mesh: Any,
+    ) -> Any:
         dd_all = run_sess(
             self.sub_sess,
             self.stat_descrpt,
@@ -876,7 +892,7 @@ class DescrptSeA(DescrptSe):
             sysa2.append(suma2)
         return sysr, sysr2, sysa, sysa2, sysn
 
-    def _compute_std(self, sumv2, sumv, sumn):
+    def _compute_std(self, sumv2: Any, sumv: Any, sumn: Any) -> Any:
         if sumn == 0:
             return 1.0 / self.rcut_r
         val = np.sqrt(sumv2 / sumn - np.multiply(sumv / sumn, sumv / sumn))
@@ -886,11 +902,11 @@ class DescrptSeA(DescrptSe):
 
     def _concat_type_embedding(
         self,
-        xyz_scatter,
-        nframes,
-        natoms,
-        type_embedding,
-    ):
+        xyz_scatter: Any,
+        nframes: Any,
+        natoms: Any,
+        type_embedding: Any,
+    ) -> Any:
         """Concatenate `type_embedding` of neighbors and `xyz_scatter`.
         If not self.type_one_side, concatenate `type_embedding` of center atoms as well.
 
@@ -939,21 +955,21 @@ class DescrptSeA(DescrptSe):
 
     def _filter_lower(
         self,
-        type_i,
-        type_input,
-        start_index,
-        incrs_index,
-        inputs,
-        nframes,
-        natoms,
-        type_embedding=None,
-        is_exclude=False,
-        activation_fn=None,
-        bavg=0.0,
-        stddev=1.0,
-        trainable=True,
-        suffix="",
-    ):
+        type_i: Any,
+        type_input: Any,
+        start_index: Any,
+        incrs_index: Any,
+        inputs: Any,
+        nframes: Any,
+        natoms: Any,
+        type_embedding: Any = None,
+        is_exclude: bool = False,
+        activation_fn: Any = None,
+        bavg: float = 0.0,
+        stddev: float = 1.0,
+        trainable: bool = True,
+        suffix: str = "",
+    ) -> Any:
         """Input env matrix, returns R.G."""
         outputs_size = [1, *self.filter_neuron]
         # cut-out inputs
@@ -1159,17 +1175,17 @@ class DescrptSeA(DescrptSe):
     @cast_precision
     def _filter(
         self,
-        inputs,
-        type_input,
-        natoms,
-        type_embedding=None,
-        activation_fn=tf.nn.tanh,
-        stddev=1.0,
-        bavg=0.0,
-        name="linear",
-        reuse=None,
-        trainable=True,
-    ):
+        inputs: Any,
+        type_input: Any,
+        natoms: Any,
+        type_embedding: Any = None,
+        activation_fn: Any = tf.nn.tanh,
+        stddev: float = 1.0,
+        bavg: float = 0.0,
+        name: str = "linear",
+        reuse: Any = None,
+        trainable: bool = True,
+    ) -> Any:
         nframes = tf.shape(tf.reshape(inputs, [-1, natoms[0], self.ndescrpt]))[0]
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()
@@ -1363,7 +1379,7 @@ class DescrptSeA(DescrptSe):
         return False
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = ""):
+    def deserialize(cls, data: dict, suffix: str = "") -> "DescrptSeA":
         """Deserialize the model.
 
         Parameters
