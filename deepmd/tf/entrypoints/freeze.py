@@ -14,6 +14,9 @@ from os.path import (
 from pathlib import (
     Path,
 )
+from typing import (
+    Any,
+)
 
 import google.protobuf.message
 
@@ -41,7 +44,9 @@ __all__ = ["freeze"]
 log = logging.getLogger(__name__)
 
 
-def _transfer_fitting_net_trainable_variables(sess, old_graph_def, raw_graph_def):
+def _transfer_fitting_net_trainable_variables(
+    sess: Any, old_graph_def: Any, raw_graph_def: Any
+) -> Any:
     old_pattern = FITTING_NET_PATTERN
     raw_pattern = (
         FITTING_NET_PATTERN.replace("idt", r"idt+_\d+")
@@ -218,14 +223,14 @@ def _make_node_names(
 
 
 def freeze_graph(
-    sess,
-    input_graph,
-    input_node,
-    freeze_type,
-    modifier,
-    out_graph_name,
-    node_names=None,
-    out_suffix="",
+    sess: Any,
+    input_graph: Any,
+    input_node: list[str],
+    freeze_type: str,
+    modifier: str | None,
+    out_graph_name: str,
+    node_names: str | None = None,
+    out_suffix: str = "",
 ) -> None:
     """Freeze the single graph with chosen out_suffix.
 
@@ -295,7 +300,7 @@ def freeze(
     output: str,
     node_names: str | None = None,
     nvnmd_weight: str | None = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> None:
     """Freeze the graph in supplied folder.
 
