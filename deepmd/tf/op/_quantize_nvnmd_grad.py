@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
+
 from tensorflow.python.framework import (
     ops,
 )
@@ -11,7 +15,7 @@ from deepmd.tf.env import (
 
 
 @ops.RegisterGradient("QuantizeNvnmd")
-def _QuantizeNvnmdGrad(op, grad):
+def _QuantizeNvnmdGrad(op: Any, grad: Any) -> list[Any]:
     isround = op.get_attr("isround")
     nbit1 = op.get_attr("nbit1")
     nbit2 = op.get_attr("nbit2")

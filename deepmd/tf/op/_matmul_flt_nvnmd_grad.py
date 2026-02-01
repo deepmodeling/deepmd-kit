@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
+
 from tensorflow.python.framework import (
     ops,
 )
@@ -12,7 +16,7 @@ from deepmd.tf.env import (
 
 
 @ops.RegisterGradient("MatmulFltNvnmd")
-def _MatmulFltNvnmdGrad(op, grad):
+def _MatmulFltNvnmdGrad(op: Any, grad: Any) -> list[Any]:
     x = op.inputs[0]
     w = op.inputs[1]
     normx = op.get_attr("normx")
