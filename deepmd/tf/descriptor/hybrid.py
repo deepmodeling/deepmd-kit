@@ -46,7 +46,7 @@ class DescrptHybrid(Descriptor):
         list: list[Descriptor | dict[str, Any]],
         ntypes: int | None = None,
         spin: Spin | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         # warning: list is conflict with built-in list
@@ -142,7 +142,7 @@ class DescrptHybrid(Descriptor):
         input_dict: dict,
         mixed_type: bool = False,
         real_natoms_vec: list | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 
@@ -182,7 +182,7 @@ class DescrptHybrid(Descriptor):
                 **kwargs,
             )
 
-    def merge_input_stats(self, stat_dict) -> None:
+    def merge_input_stats(self, stat_dict: Any) -> None:
         """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
 
         Parameters
