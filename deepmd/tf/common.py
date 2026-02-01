@@ -10,8 +10,6 @@ from functools import (
 )
 from typing import (
     TYPE_CHECKING,
-    Callable,
-    Any,
     Union,
 )
 
@@ -149,13 +147,13 @@ def silu(x: tf.Tensor) -> tf.Tensor:
 
 
 def get_silut(activation_function: str = "silut") -> Callable[[tf.Tensor], tf.Tensor]:
-    def sigmoid(x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+    def sigmoid(x: float | np.ndarray) -> float | np.ndarray:
         return 1 / (1 + np.exp(-x))
 
-    def silu(x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+    def silu(x: float | np.ndarray) -> float | np.ndarray:
         return x * sigmoid(x)
 
-    def silu_grad(x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+    def silu_grad(x: float | np.ndarray) -> float | np.ndarray:
         sig = sigmoid(x)
         return sig + x * sig * (1 - sig)
 
