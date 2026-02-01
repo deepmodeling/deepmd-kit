@@ -387,6 +387,7 @@ select = [
 ]
 
 ignore = [
+    "ANN401", # Allow Any due to too many violations
     "E501", # line too long
     "F841", # local variable is assigned to but never used
     "RUF059", # unused-unpacked-variable
