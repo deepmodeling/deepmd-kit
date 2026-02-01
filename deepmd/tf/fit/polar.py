@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import warnings
+from typing import (
+    Any,
+)
 
 import numpy as np
 
@@ -122,7 +125,7 @@ class PolarFittingSeA(Fitting):
         type_map: list[str] | None = None,  # to be compat with input
         default_fparam: list[float] | None = None,  # to be compat with input
         trainable: list[bool] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         self.ntypes = ntypes
@@ -212,7 +215,7 @@ class PolarFittingSeA(Fitting):
         """Get the output size. Should be 9."""
         return 9
 
-    def compute_output_stats(self, all_stat) -> None:
+    def compute_output_stats(self, all_stat: dict) -> None:
         """Compute the output statistics.
 
         Parameters
@@ -306,7 +309,15 @@ class PolarFittingSeA(Fitting):
                 )
 
     @cast_precision
-    def _build_lower(self, start_index, natoms, inputs, rot_mat, suffix="", reuse=None):
+    def _build_lower(
+        self,
+        start_index: int,
+        natoms: int,
+        inputs: tf.Tensor,
+        rot_mat: tf.Tensor,
+        suffix: str = "",
+        reuse: bool | None = None,
+    ) -> tf.Tensor:
         # cut-out inputs
         inputs_i = tf.slice(
             inputs, [0, start_index * self.dim_descrpt], [-1, natoms * self.dim_descrpt]
@@ -425,7 +436,7 @@ class PolarFittingSeA(Fitting):
         input_dict: dict | None = None,
         reuse: bool | None = None,
         suffix: str = "",
-    ):
+    ) -> tf.Tensor:
         """Build the computational graph for fitting net.
 
         Parameters
@@ -615,7 +626,7 @@ class PolarFittingSeA(Fitting):
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
 
-    def get_loss(self, loss: dict, lr) -> Loss:
+    def get_loss(self, loss: dict, lr: Any) -> Loss:
         """Get the loss function."""
         return TensorLoss(
             loss,
@@ -688,7 +699,7 @@ class PolarFittingSeA(Fitting):
         return data
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str):
+    def deserialize(cls, data: dict, suffix: str) -> "PolarFittingSeA":
         """Deserialize the model.
 
         Parameters
@@ -783,12 +794,12 @@ class GlobalPolarFittingSeA:
 
     def build(
         self,
-        input_d,
-        rot_mat,
-        natoms,
+        input_d: tf.Tensor,
+        rot_mat: tf.Tensor,
+        natoms: tf.Tensor,
         input_dict: dict | None = None,
-        reuse=None,
-        suffix="",
+        reuse: bool | None = None,
+        suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for fitting net.
 
@@ -856,7 +867,7 @@ class GlobalPolarFittingSeA:
         """
         self.polar_fitting.enable_mixed_precision(mixed_prec)
 
-    def get_loss(self, loss: dict, lr) -> Loss:
+    def get_loss(self, loss: dict, lr: Any) -> Loss:
         """Get the loss function.
 
         Parameters
