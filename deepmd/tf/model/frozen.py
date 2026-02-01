@@ -6,6 +6,7 @@ from enum import (
     Enum,
 )
 from typing import (
+    Any,
     NoReturn,
 )
 
@@ -55,7 +56,7 @@ class FrozenModel(Model):
         The path to the frozen model
     """
 
-    def __init__(self, model_file: str, **kwargs) -> None:
+    def __init__(self, model_file: str, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.model_file = model_file
         if not model_file.endswith(".pb"):
@@ -187,18 +188,18 @@ class FrozenModel(Model):
         """Get the fitting(s)."""
         return {}
 
-    def get_loss(self, loss: dict, lr) -> Loss | dict | None:
+    def get_loss(self, loss: dict, lr: Any) -> Loss | dict | None:
         """Get the loss function(s)."""
         # loss should be never used for a frozen model
         return
 
-    def get_rcut(self):
+    def get_rcut(self) -> float:
         return self.model.get_rcut()
 
     def get_ntypes(self) -> int:
         return self.model.get_ntypes()
 
-    def data_stat(self, data) -> None:
+    def data_stat(self, data: DeepmdDataSystem) -> None:
         pass
 
     def init_variables(
