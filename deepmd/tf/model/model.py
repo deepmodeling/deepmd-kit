@@ -8,6 +8,7 @@ from enum import (
     Enum,
 )
 from typing import (
+    Any,
     NoReturn,
 )
 
@@ -104,7 +105,7 @@ class Model(ABC, make_plugin_registry("model")):
         Compression information for internal use
     """
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> "Model":
         if cls is Model:
             # init model
             cls = cls.get_class_by_type(kwargs.get("type", "standard"))
@@ -120,7 +121,7 @@ class Model(ABC, make_plugin_registry("model")):
         data_stat_protect: float = 1e-2,
         spin: Spin | None = None,
         compress: dict | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         super().__init__()
         # spin
@@ -157,7 +158,7 @@ class Model(ABC, make_plugin_registry("model")):
         ckpt_meta: str | None = None,
         suffix: str = "",
         reuse: bool | Enum | None = None,
-    ):
+    ) -> dict:
         """Build the model.
 
         Parameters
@@ -225,7 +226,7 @@ class Model(ABC, make_plugin_registry("model")):
         ckpt_meta: str | None = None,
         suffix: str = "",
         reuse: bool | Enum | None = None,
-    ):
+    ) -> dict:
         """Build the descriptor part of the model.
 
         Parameters
@@ -362,7 +363,7 @@ class Model(ABC, make_plugin_registry("model")):
 
     def _import_graph_def_from_frz_model(
         self, frz_model: str, feed_dict: dict, return_elements: list[str]
-    ):
+    ) -> Any:
         return_nodes = [x[:-2] for x in return_elements]
         graph, graph_def = load_graph_def(frz_model)
         sub_graph_def = tf.graph_util.extract_sub_graph(graph_def, return_nodes)
@@ -372,7 +373,7 @@ class Model(ABC, make_plugin_registry("model")):
 
     def _import_graph_def_from_ckpt_meta(
         self, ckpt_meta: str, feed_dict: dict, return_elements: list[str]
-    ):
+    ) -> Any:
         return_nodes = [x[:-2] for x in return_elements]
         with tf.Graph().as_default() as graph:
             tf.train.import_meta_graph(f"{ckpt_meta}.meta", clear_devices=True)
@@ -447,7 +448,7 @@ class Model(ABC, make_plugin_registry("model")):
         """Get the fitting(s)."""
 
     @abstractmethod
-    def get_loss(self, loss: dict, lr) -> Loss | dict | None:
+    def get_loss(self, loss: dict, lr: Any) -> Loss | dict | None:
         """Get the loss function(s)."""
 
     @abstractmethod
@@ -459,7 +460,7 @@ class Model(ABC, make_plugin_registry("model")):
         """Get the number of types."""
 
     @abstractmethod
-    def data_stat(self, data: dict):
+    def data_stat(self, data: dict) -> None:
         """Data staticis."""
 
     def get_feed_dict(
@@ -469,7 +470,7 @@ class Model(ABC, make_plugin_registry("model")):
         natoms: tf.Tensor,
         box: tf.Tensor,
         mesh: tf.Tensor,
-        **kwargs,
+        **kwargs: Any,
     ) -> dict[str, tf.Tensor]:
         """Generate the feed_dict for current descriptor.
 
@@ -607,7 +608,7 @@ class StandardModel(Model):
         The type map
     """
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> "Model":
         from .dos import (
             DOSModel,
         )
@@ -649,7 +650,7 @@ class StandardModel(Model):
         fitting_net: dict | Fitting,
         type_embedding: dict | TypeEmbedNet | None = None,
         type_map: list[str] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         super().__init__(
             descriptor=descriptor, fitting=fitting_net, type_map=type_map, **kwargs
@@ -808,7 +809,7 @@ class StandardModel(Model):
         """Get the fitting(s)."""
         return self.fitting
 
-    def get_loss(self, loss: dict, lr) -> Loss | dict:
+    def get_loss(self, loss: dict, lr: Any) -> Loss | dict:
         """Get the loss function(s)."""
         return self.fitting.get_loss(loss, lr)
 
@@ -820,7 +821,7 @@ class StandardModel(Model):
         """Get the number of types."""
         return self.ntypes
 
-    def _get_dim_out(self):
+    def _get_dim_out(self) -> int:
         """Get output dimension based on model type.
 
         Returns
@@ -880,7 +881,14 @@ class StandardModel(Model):
         self.out_bias = out_bias_data
         self.out_std = out_std_data
 
-    def _apply_out_bias_std(self, output, atype, natoms, coord, selected_atype=None):
+    def _apply_out_bias_std(
+        self,
+        output: Any,
+        atype: Any,
+        natoms: Any,
+        coord: Any,
+        selected_atype: Any = None,
+    ) -> Any:
         """Apply output bias and standard deviation to the model output.
 
         Parameters
