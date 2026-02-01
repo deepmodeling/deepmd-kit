@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from typing import (
+    Any,
+)
 
 import numpy as np
 
@@ -92,7 +95,7 @@ class MapTable:
 
         nvnmd_cfg.init_from_jdata(jdata)
 
-    def build_map(self):
+    def build_map(self) -> dict:
         if self.Gs_Gt_mode == 0:
             self.shift_Gs = 1
             self.shift_Gt = 0
@@ -179,7 +182,7 @@ class MapTable:
         log.info("NVNMD: finish building mapping table")
         return self.map
 
-    def mapping(self, x, dic_map, cfgs):
+    def mapping(self, x: Any, dic_map: dict, cfgs: dict) -> dict:
         r"""Evaluate value by mapping table operation of tensorflow."""
         n = len(x)
         dic_val = {}
@@ -213,7 +216,7 @@ class MapTable:
                 dic_val[key] = dats
         return dic_val
 
-    def mapping2(self, x, dic_map, cfgs):
+    def mapping2(self, x: Any, dic_map: dict, cfgs: dict) -> dict:
         r"""Evaluate value by mapping table of numpy."""
         tf.reset_default_graph()
         t_x = tf.placeholder(tf.float64, [None, 1], "t_x")
@@ -247,11 +250,13 @@ class MapTable:
             dic_val[key] = dats
         return dic_val
 
-    def plot_lines(self, x, dic1, dic2=None) -> None:
+    def plot_lines(self, x: Any, dic1: dict, dic2: dict | None = None) -> None:
         r"""Plot lines to see accuracy."""
         pass
 
-    def build_map_coef(self, cfgs, x, ys, grads, grad_grads, Nr, Nc):
+    def build_map_coef(
+        self, cfgs: list, x: Any, ys: Any, grads: Any, grad_grads: Any, Nr: int, Nc: int
+    ) -> tuple[Any, Any]:
         r"""Build mapping table coefficient
         cfgs: cfg list
         cfg = x0, x1, dx.
@@ -295,7 +300,7 @@ class MapTable:
             coef_grads = coef_grads[0]
         return coefs, coef_grads
 
-    def cal_coef4(self, cfgs, x, y, dy):
+    def cal_coef4(self, cfgs: list, x: Any, y: Any, dy: Any) -> np.ndarray:
         r"""Build mapping table coefficient for one line
         coef4:
         a x^3 + b x^2 + c x + d = y:
@@ -330,7 +335,7 @@ class MapTable:
         coefs = np.concatenate(coefs)
         return coefs
 
-    def build_grad(self, x, y, Nr, Nc):
+    def build_grad(self, x: Any, y: Any, Nr: int, Nc: int) -> tuple[Any, Any]:
         r""": Build gradient of tensor y of x."""
         is_list = isinstance(y, list)
         grads = []
@@ -354,7 +359,7 @@ class MapTable:
             grad_grads = grad_grads[0]
         return grads, grad_grads
 
-    def build_u2s(self, r2):
+    def build_u2s(self, r2: Any) -> Any:
         r"""Build tensor s, s=s(r2)."""
         rmin = nvnmd_cfg.dscp["rcut_smth"]
         rmax = nvnmd_cfg.dscp["rcut"]
@@ -397,7 +402,7 @@ class MapTable:
             h = tf.reshape(h, [-1, 1])
             return [s], [h]
 
-    def build_u2s_grad(self):
+    def build_u2s_grad(self) -> dict:
         r"""Build gradient of s with respect to u (r^2)."""
         if nvnmd_cfg.version == 0:
             ndim = nvnmd_cfg.dscp["ntype"]
@@ -415,7 +420,7 @@ class MapTable:
         )
         return dic_ph
 
-    def run_u2s(self):
+    def run_u2s(self) -> tuple[dict, dict]:
         r"""Build u->s graph and run it to get value of mapping table."""
         ntype = nvnmd_cfg.dscp["ntype"]
         if nvnmd_cfg.version == 0:
@@ -464,7 +469,7 @@ class MapTable:
         sess.close()
         return res_dic, res_dic2
 
-    def build_s2g(self, s):
+    def build_s2g(self, s: Any) -> Any:
         r"""Build s->G
         s is switch function
         G is embedding net output.
@@ -481,7 +486,7 @@ class MapTable:
             xyz_scatters.append(xyz_scatter)
         return xyz_scatters
 
-    def build_s2g_grad(self):
+    def build_s2g_grad(self) -> dict:
         r"""Build gradient of G with respect to s."""
         M1 = nvnmd_cfg.dscp["M1"]
         #
@@ -502,7 +507,7 @@ class MapTable:
         )
         return dic_ph
 
-    def run_s2g(self):
+    def run_s2g(self) -> tuple[dict, dict]:
         r"""Build s-> graph and run it to get value of mapping table."""
         smin = nvnmd_cfg.dscp["smin"]
         smax = nvnmd_cfg.dscp["smax"]
@@ -545,7 +550,7 @@ class MapTable:
         sess.close()
         return res_dic, res_dic2
 
-    def build_t2g(self):
+    def build_t2g(self) -> dict:
         r"""Build t->G
         t is chemical species of center atom and neighbor atom
         G is embedding net output of type.
@@ -591,7 +596,7 @@ class MapTable:
         )
         return dic_ph
 
-    def run_t2g(self):
+    def run_t2g(self) -> dict:
         r"""Build t-> graph and run it to get value of mapping table."""
         tf.reset_default_graph()
         dic_ph = self.build_t2g()
@@ -606,7 +611,9 @@ class MapTable:
         sess.close()
         return res_dic
 
-    def build_embedding_net(self, xx, wbs, activation_fn=tf.tanh):
+    def build_embedding_net(
+        self, xx: Any, wbs: list, activation_fn: Any = tf.tanh
+    ) -> Any:
         for ll in range(len(wbs)):
             # weight and bias
             w, b, t = wbs[ll]
@@ -634,7 +641,7 @@ class MapTable:
                 xx = hidden
         return xx
 
-    def build_davg_dstd(self):
+    def build_davg_dstd(self) -> dict:
         ntype = nvnmd_cfg.dscp["ntype"]
         davg, dstd = get_normalize(nvnmd_cfg.weight)
         #
@@ -649,7 +656,7 @@ def mapt(
     nvnmd_config: str | None = "nvnmd/config.npy",
     nvnmd_weight: str | None = "nvnmd/weight.npy",
     nvnmd_map: str | None = "nvnmd/map.npy",
-    **kwargs,
+    **kwargs: Any,
 ) -> None:
     # build mapping table
     mapObj = MapTable(nvnmd_config, nvnmd_weight, nvnmd_map)
