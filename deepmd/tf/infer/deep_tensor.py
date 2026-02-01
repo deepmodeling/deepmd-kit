@@ -59,7 +59,7 @@ class DeepTensor(DeepEval):
         load_prefix: str = "load",
         default_tf_graph: bool = False,
         input_map: dict | None = None,
-        neighbor_list=None,
+        neighbor_list: object | None = None,
     ) -> None:
         """Constructor."""
         DeepEval.__init__(
