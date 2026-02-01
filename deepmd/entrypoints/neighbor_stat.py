@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    Optional,
+    Any,
 )
 
 from deepmd.backend.backend import (
@@ -21,10 +21,10 @@ def neighbor_stat(
     *,
     system: str,
     rcut: float,
-    type_map: Optional[list[str]],
+    type_map: list[str] | None,
     mixed_type: bool = False,
     backend: str = "tensorflow",
-    **kwargs: object,
+    **kwargs: Any,
 ) -> None:
     """Calculate neighbor statistics.
 

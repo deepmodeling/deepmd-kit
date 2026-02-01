@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Optional,
+    Any,
     overload,
 )
 
@@ -19,14 +19,14 @@ from deepmd.utils.data import (
 try:
     from typing import Literal  # python >=3.8
 except ImportError:
-    from typing_extensions import Literal  # type: ignore
+    from typing import Literal  # type: ignore
 
 
 @overload
 def calc_model_devi_f(
     fs: np.ndarray,
-    real_f: Optional[np.ndarray] = None,
-    relative: Optional[float] = None,
+    real_f: np.ndarray | None = None,
+    relative: float | None = None,
     atomic: Literal[False] = ...,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]: ...
 
@@ -34,8 +34,8 @@ def calc_model_devi_f(
 @overload
 def calc_model_devi_f(
     fs: np.ndarray,
-    real_f: Optional[np.ndarray] = None,
-    relative: Optional[float] = None,
+    real_f: np.ndarray | None = None,
+    relative: float | None = None,
     atomic: Literal[True] = ...,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: ...
 
@@ -43,16 +43,16 @@ def calc_model_devi_f(
 @overload
 def calc_model_devi_f(
     fs: np.ndarray,
-    real_f: Optional[np.ndarray] = None,
-    relative: Optional[float] = None,
+    real_f: np.ndarray | None = None,
+    relative: float | None = None,
     atomic: bool = False,
 ) -> tuple[np.ndarray, ...]: ...
 
 
 def calc_model_devi_f(
     fs: np.ndarray,
-    real_f: Optional[np.ndarray] = None,
-    relative: Optional[float] = None,
+    real_f: np.ndarray | None = None,
+    relative: float | None = None,
     atomic: bool = False,
 ) -> tuple[np.ndarray, ...]:
     """Calculate model deviation of force.
@@ -106,9 +106,7 @@ def calc_model_devi_f(
     return max_devi_f, min_devi_f, avg_devi_f
 
 
-def calc_model_devi_e(
-    es: np.ndarray, real_e: Optional[np.ndarray] = None
-) -> np.ndarray:
+def calc_model_devi_e(es: np.ndarray, real_e: np.ndarray | None = None) -> np.ndarray:
     """Calculate model deviation of total energy per atom.
 
     Here we don't use the atomic energy, as the decomposition
@@ -138,8 +136,8 @@ def calc_model_devi_e(
 
 def calc_model_devi_v(
     vs: np.ndarray,
-    real_v: Optional[np.ndarray] = None,
-    relative: Optional[float] = None,
+    real_v: np.ndarray | None = None,
+    relative: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Calculate model deviation of virial.
 
@@ -225,7 +223,7 @@ def write_model_devi_out(
     return devi
 
 
-def _check_tmaps(tmaps: list[list[str]], ref_tmap: Optional[list[str]] = None) -> bool:
+def _check_tmaps(tmaps: list[list[str]], ref_tmap: list[str] | None = None) -> bool:
     """Check whether type maps are identical."""
     assert isinstance(tmaps, list)
     if ref_tmap is None:
@@ -242,18 +240,18 @@ def _check_tmaps(tmaps: list[list[str]], ref_tmap: Optional[list[str]] = None) -
 
 def calc_model_devi(
     coord: np.ndarray,
-    box: Optional[np.ndarray],
+    box: np.ndarray | None,
     atype: np.ndarray,
     models: list[DeepPot],
-    fname: Optional[str] = None,
+    fname: str | None = None,
     frequency: int = 1,
     mixed_type: bool = False,
-    fparam: Optional[np.ndarray] = None,
-    aparam: Optional[np.ndarray] = None,
-    real_data: Optional[dict] = None,
+    fparam: np.ndarray | None = None,
+    aparam: np.ndarray | None = None,
+    real_data: dict | None = None,
     atomic: bool = False,
-    relative: Optional[float] = None,
-    relative_v: Optional[float] = None,
+    relative: float | None = None,
+    relative_v: float | None = None,
 ) -> np.ndarray:
     """Python interface to calculate model deviation.
 
@@ -361,9 +359,9 @@ def make_model_devi(
     frequency: int,
     real_error: bool = False,
     atomic: bool = False,
-    relative: Optional[float] = None,
-    relative_v: Optional[float] = None,
-    **kwargs: object,
+    relative: float | None = None,
+    relative_v: float | None = None,
+    **kwargs: Any,
 ) -> None:
     """Make model deviation calculation.
 

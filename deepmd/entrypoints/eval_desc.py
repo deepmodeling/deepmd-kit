@@ -7,7 +7,7 @@ from pathlib import (
     Path,
 )
 from typing import (
-    Optional,
+    Any,
 )
 
 import numpy as np
@@ -33,8 +33,8 @@ def eval_desc(
     system: str,
     datafile: str,
     output: str = "desc",
-    head: Optional[str] = None,
-    **kwargs: object,
+    head: str | None = None,
+    **kwargs: Any,
 ) -> None:
     """Evaluate descriptors for given systems.
 
@@ -128,6 +128,7 @@ def eval_desc(
             atype,
             fparam=fparam,
             aparam=aparam,
+            mixed_type=mixed_type,
         )
 
         # descriptors are kept in 3D format (nframes, natoms, ndesc)

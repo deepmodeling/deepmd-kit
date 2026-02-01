@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
 
 from deepmd.backend.backend import (
     Backend,
@@ -9,7 +12,7 @@ def convert_backend(
     *,  # Enforce keyword-only arguments
     INPUT: str,
     OUTPUT: str,
-    **kwargs: object,
+    **kwargs: Any,
 ) -> None:
     """Convert a model file from one backend to another.
 

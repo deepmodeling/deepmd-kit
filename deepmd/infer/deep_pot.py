@@ -2,8 +2,6 @@
 from typing import (
     Any,
     Literal,
-    Optional,
-    Union,
     overload,
 )
 
@@ -93,58 +91,58 @@ class DeepPot(DeepEval):
     def eval(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
-        atom_types: Union[list[int], np.ndarray],
+        cells: np.ndarray | None,
+        atom_types: list[int] | np.ndarray,
         atomic: Literal[True],
-        fparam: Optional[np.ndarray],
-        aparam: Optional[np.ndarray],
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
         mixed_type: bool,
-        **kwargs: object,
-    ) -> Union[
-        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
-        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
-    ]:
+        **kwargs: Any,
+    ) -> (
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+        | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+    ):
         pass
 
     @overload
     def eval(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
-        atom_types: Union[list[int], np.ndarray],
+        cells: np.ndarray | None,
+        atom_types: list[int] | np.ndarray,
         atomic: Literal[False],
-        fparam: Optional[np.ndarray],
-        aparam: Optional[np.ndarray],
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
         mixed_type: bool,
-        **kwargs: object,
-    ) -> Union[
-        tuple[np.ndarray, np.ndarray, np.ndarray],
-        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
-    ]:
+        **kwargs: Any,
+    ) -> (
+        tuple[np.ndarray, np.ndarray, np.ndarray]
+        | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+    ):
         pass
 
     @overload
     def eval(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
-        atom_types: Union[list[int], np.ndarray],
+        cells: np.ndarray | None,
+        atom_types: list[int] | np.ndarray,
         atomic: bool,
-        fparam: Optional[np.ndarray],
-        aparam: Optional[np.ndarray],
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
         mixed_type: bool,
-        **kwargs: object,
+        **kwargs: Any,
     ) -> tuple[np.ndarray, ...]:
         pass
 
     def eval(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
-        atom_types: Union[list[int], np.ndarray],
+        cells: np.ndarray | None,
+        atom_types: list[int] | np.ndarray,
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         mixed_type: bool = False,
         **kwargs: Any,
     ) -> tuple[np.ndarray, ...]:
