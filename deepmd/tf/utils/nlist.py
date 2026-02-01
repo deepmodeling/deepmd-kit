@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
+
 from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     tf,
@@ -14,7 +18,7 @@ def extend_coord_with_ghosts(
     cell: tf.Tensor,
     rcut: float,
     pbc: tf.Tensor,
-):
+) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
     """Extend the coordinates of the atoms by appending peridoc images.
     The number of images is large enough to ensure all the neighbors
     within rcut are appended.
@@ -47,10 +51,10 @@ def extend_coord_with_ghosts(
     nloc = tf.shape(atype)[1]
     aidx = tf.tile(tf.expand_dims(tf.range(nloc), 0), [nf, 1])  # pylint: disable=no-explicit-dtype
 
-    def extend_coord_with_ghosts_nopbc(coord, atype, cell):
+    def extend_coord_with_ghosts_nopbc(coord: Any, atype: Any, cell: Any) -> tuple:
         return coord, atype, aidx, nloc
 
-    def extend_coord_with_ghosts_pbc(coord, atype, cell):
+    def extend_coord_with_ghosts_pbc(coord: Any, atype: Any, cell: Any) -> tuple:
         coord = tf.reshape(coord, [nf, nloc, 3])
         cell = tf.reshape(cell, [nf, 3, 3])
         # nf x 3
