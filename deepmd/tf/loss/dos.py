@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from typing import (
+    Any,
+)
+
 import numpy as np
 
 from deepmd.tf.env import (
@@ -36,7 +40,7 @@ class DOSLoss(Loss):
         limit_pref_acdf: float = 0.0,
         protect_value: float = 1e-8,
         log_fit: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         self.starter_learning_rate = starter_learning_rate
         self.numb_dos = numb_dos
@@ -58,7 +62,14 @@ class DOSLoss(Loss):
         self.has_ados = self.start_pref_ados != 0.0 or self.limit_pref_ados != 0.0
         self.has_acdf = self.start_pref_acdf != 0.0 or self.limit_pref_acdf != 0.0
 
-    def build(self, learning_rate, natoms, model_dict, label_dict, suffix):
+    def build(
+        self,
+        learning_rate: Any,
+        natoms: Any,
+        model_dict: Any,
+        label_dict: Any,
+        suffix: Any,
+    ) -> tuple[Any, dict[str, Any]]:
         dos = model_dict["dos"]
         atom_dos = model_dict["atom_dos"]
 
@@ -183,7 +194,7 @@ class DOSLoss(Loss):
         self.l2_more = more_loss
         return l2_loss, more_loss
 
-    def eval(self, sess, feed_dict, natoms):
+    def eval(self, sess: Any, feed_dict: Any, natoms: Any) -> dict[str, Any]:
         placeholder = self.l2_l
         run_data = [
             self.l2_l,
