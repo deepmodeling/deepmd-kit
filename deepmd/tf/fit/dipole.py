@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
 
 import numpy as np
 
@@ -103,7 +106,7 @@ class DipoleFittingSeA(Fitting):
         type_map: list[str] | None = None,  # to be compat with input
         default_fparam: list[float] | None = None,  # to be compat with input
         trainable: list[bool] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         self.ntypes = ntypes
@@ -166,7 +169,15 @@ class DipoleFittingSeA(Fitting):
         return 3
 
     @cast_precision
-    def _build_lower(self, start_index, natoms, inputs, rot_mat, suffix="", reuse=None):
+    def _build_lower(
+        self,
+        start_index: int,
+        natoms: int,
+        inputs: Any,
+        rot_mat: Any,
+        suffix: str = "",
+        reuse: bool | None = None,
+    ) -> Any:
         # cut-out inputs
         inputs_i = tf.slice(inputs, [0, start_index, 0], [-1, natoms, -1])
         inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
@@ -381,7 +392,7 @@ class DipoleFittingSeA(Fitting):
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
 
-    def get_loss(self, loss: dict, lr) -> Loss:
+    def get_loss(self, loss: dict, lr: Any) -> Loss:
         """Get the loss function.
 
         Parameters
@@ -467,7 +478,7 @@ class DipoleFittingSeA(Fitting):
         return data
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str):
+    def deserialize(cls, data: dict, suffix: str) -> "DipoleFittingSeA":
         """Deserialize the model.
 
         Parameters
