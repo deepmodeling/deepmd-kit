@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
 
 from deepmd.tf.env import (
     MODEL_VERSION,
@@ -49,7 +52,7 @@ class DOSModel(StandardModel):
         type_map: list[str] | None = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         super().__init__(
@@ -66,16 +69,16 @@ class DOSModel(StandardModel):
         self.numb_fparam = self.fitting.get_numb_fparam()
         self.numb_aparam = self.fitting.get_numb_aparam()
 
-    def get_numb_dos(self):
+    def get_numb_dos(self) -> int:
         return self.numb_dos
 
-    def get_rcut(self):
+    def get_rcut(self) -> float:
         return self.rcut
 
-    def get_ntypes(self):
+    def get_ntypes(self) -> int:
         return self.ntypes
 
-    def get_type_map(self):
+    def get_type_map(self) -> list[str]:
         return self.type_map
 
     def get_numb_fparam(self) -> int:
@@ -86,7 +89,7 @@ class DOSModel(StandardModel):
         """Get the number of atomic parameters."""
         return self.numb_aparam
 
-    def data_stat(self, data) -> None:
+    def data_stat(self, data: Any) -> None:
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)
         m_all_stat = merge_sys_stat(all_stat)
         self._compute_input_stat(
@@ -95,7 +98,9 @@ class DOSModel(StandardModel):
         # self._compute_output_stat(all_stat, mixed_type=data.mixed_type)
         # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
-    def _compute_input_stat(self, all_stat, protection=1e-2, mixed_type=False) -> None:
+    def _compute_input_stat(
+        self, all_stat: dict, protection: float = 1e-2, mixed_type: bool = False
+    ) -> None:
         if mixed_type:
             self.descrpt.compute_input_stats(
                 all_stat["coord"],
@@ -118,7 +123,7 @@ class DOSModel(StandardModel):
             )
         self.fitting.compute_input_stats(all_stat, protection=protection)
 
-    def _compute_output_stat(self, all_stat, mixed_type=False) -> None:
+    def _compute_output_stat(self, all_stat: dict, mixed_type: bool = False) -> None:
         if mixed_type:
             self.fitting.compute_output_stats(all_stat, mixed_type=mixed_type)
         else:
@@ -126,17 +131,17 @@ class DOSModel(StandardModel):
 
     def build(
         self,
-        coord_,
-        atype_,
-        natoms,
-        box,
-        mesh,
-        input_dict,
-        frz_model=None,
+        coord_: tf.Tensor,
+        atype_: tf.Tensor,
+        natoms: tf.Tensor,
+        box: tf.Tensor,
+        mesh: tf.Tensor,
+        input_dict: dict,
+        frz_model: str | None = None,
         ckpt_meta: str | None = None,
-        suffix="",
-        reuse=None,
-    ):
+        suffix: str = "",
+        reuse: bool | None = None,
+    ) -> dict:
         if input_dict is None:
             input_dict = {}
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):
