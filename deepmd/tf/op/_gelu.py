@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """First-order derivatives and second-order derivatives for gelu function."""
 
+from typing import (
+    Any,
+)
+
 import tensorflow
 from tensorflow.python.framework import (
     ops,
@@ -16,11 +20,11 @@ try:
 except AttributeError:
 
     @ops.RegisterGradient("Gelu")
-    def _gelu_cc(op, dy):
+    def _gelu_cc(op: Any, dy: Any) -> Any:
         return op_module.gelu_grad_custom(dy, op.inputs[0])
 
     @ops.RegisterGradient("GeluGrad")
-    def _gelu_grad_cc(op, dy):
+    def _gelu_grad_cc(op: Any, dy: Any) -> list:
         return [
             op_module.gelu_grad_custom(dy, op.inputs[1]),
             op_module.gelu_grad_grad_custom(dy, op.inputs[0], op.inputs[1]),
@@ -28,12 +32,12 @@ except AttributeError:
 
 
 @ops.RegisterGradient("GeluCustom")
-def _gelu_custom_cc(op, dy):
+def _gelu_custom_cc(op: Any, dy: Any) -> Any:
     return op_module.gelu_grad_custom(dy, op.inputs[0])
 
 
 @ops.RegisterGradient("GeluGradCustom")
-def _gelu_grad_custom_cc(op, dy):
+def _gelu_grad_custom_cc(op: Any, dy: Any) -> list:
     return [
         op_module.gelu_grad_custom(dy, op.inputs[1]),
         op_module.gelu_grad_grad_custom(dy, op.inputs[0], op.inputs[1]),
