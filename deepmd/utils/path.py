@@ -12,13 +12,15 @@ from pathlib import (
     Path,
 )
 from typing import (
+    Any,
     ClassVar,
-    Optional,
-    Union,
 )
 
 import h5py
 import numpy as np
+from typing_extensions import (
+    Self,
+)
 from wcmatch.glob import (
     globfilter,
 )
@@ -35,7 +37,7 @@ class DPPath(ABC):
         mode, by default "r"
     """
 
-    def __new__(cls, path: str, mode: str = "r") -> "DPPath":
+    def __new__(cls, path: str, mode: str = "r") -> Self:
         if cls is DPPath:
             if os.path.isdir(path):
                 return super().__new__(DPOSPath)
@@ -56,7 +58,7 @@ class DPPath(ABC):
         """
 
     @abstractmethod
-    def load_txt(self, **kwargs: object) -> np.ndarray:
+    def load_txt(self, **kwargs: Any) -> np.ndarray:
         """Load NumPy array from text.
 
         Returns
@@ -168,7 +170,7 @@ class DPOSPath(DPPath):
         mode, by default "r"
     """
 
-    def __init__(self, path: Union[str, Path], mode: str = "r") -> None:
+    def __init__(self, path: str | Path, mode: str = "r") -> None:
         super().__init__()
         self.mode = mode
         self.path = Path(path)
@@ -186,7 +188,7 @@ class DPOSPath(DPPath):
         """
         return np.load(str(self.path))
 
-    def load_txt(self, **kwargs: object) -> np.ndarray:
+    def load_txt(self, **kwargs: Any) -> np.ndarray:
         """Load NumPy array from text.
 
         Returns
@@ -341,9 +343,7 @@ class DPH5Path(DPPath):
         """
         return self.root[self._name][:]
 
-    def load_txt(
-        self, dtype: Optional[np.dtype] = None, **kwargs: object
-    ) -> np.ndarray:
+    def load_txt(self, dtype: np.dtype | None = None, **kwargs: Any) -> np.ndarray:
         """Load NumPy array from text.
 
         Returns

@@ -9,7 +9,7 @@ from typing import (
 import numpy as np
 
 
-def _make_all_stat_ref(data: object, nbatches: int) -> dict[str, list[object]]:
+def _make_all_stat_ref(data: Any, nbatches: int) -> dict[str, list[Any]]:
     all_stat = defaultdict(list)
     for ii in range(data.get_nsystems()):
         for jj in range(nbatches):
@@ -22,8 +22,8 @@ def _make_all_stat_ref(data: object, nbatches: int) -> dict[str, list[object]]:
 
 
 def make_stat_input(
-    data: object, nbatches: int, merge_sys: bool = True
-) -> dict[str, list[object]]:
+    data: Any, nbatches: int, merge_sys: bool = True
+) -> dict[str, list[Any]]:
     """Pack data for statistics.
 
     Parameters

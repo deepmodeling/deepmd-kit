@@ -2,11 +2,11 @@
 import json
 import logging
 import warnings
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
-    Optional,
-    Union,
 )
 
 from dargs import (
@@ -89,7 +89,7 @@ def deprecate_argument_extra_check(key: str) -> Callable[[dict], bool]:
         The name of the deprecated argument.
     """
 
-    def deprecate_something(data: Optional[dict]) -> bool:
+    def deprecate_something(data: dict | None) -> bool:
         if data is not None and key in data:
             warnings.warn(f"{key} has been removed and takes no effect.", FutureWarning)
             data.pop(key)
@@ -183,10 +183,10 @@ class ArgsPlugin:
         self.__plugin = Plugin()
 
     def register(
-        self, name: str, alias: Optional[list[str]] = None, doc: str = ""
+        self, name: str, alias: list[str] | None = None, doc: str = ""
     ) -> Callable[
-        [Union[Callable[[], Argument], Callable[[], list[Argument]]]],
-        Union[Callable[[], Argument], Callable[[], list[Argument]]],
+        [Callable[[], Argument] | Callable[[], list[Argument]]],
+        Callable[[], Argument] | Callable[[], list[Argument]],
     ]:
         """Register a descriptor argument plugin.
 
@@ -505,7 +505,7 @@ def descrpt_se_atten_common_args() -> list[Argument]:
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
     doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
     doc_attn = "The length of hidden vectors in attention layers"
-    doc_attn_layer = "The number of attention layers. Note that model compression of `se_atten` is only enabled when attn_layer==0 and tebd_input_mode=='strip'"
+    doc_attn_layer = "The number of attention layers. Note that model compression of `se_atten` works for any attn_layer value (for pytorch backend only, for other backends, attn_layer=0 is still needed to compress) when tebd_input_mode=='strip'. When attn_layer!=0, only type embedding is compressed, geometric parts are not compressed."
     doc_attn_dotr = "Whether to do dot product with the normalized relative coordinates"
     doc_attn_mask = "Whether to do mask on the diagonal in the attention matrix"
 
@@ -1748,6 +1748,7 @@ fitting_args_plugin = ArgsPlugin()
 def fitting_ener() -> list[Argument]:
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
+    doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
     doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
@@ -1775,6 +1776,13 @@ def fitting_ener() -> list[Argument]:
     return [
         Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
         Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
+        Argument(
+            "default_fparam",
+            list[float],
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_default_fparam,
+        ),
         Argument(
             "dim_case_embd",
             int,
@@ -1812,7 +1820,7 @@ def fitting_ener() -> list[Argument]:
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument(
             "atom_ener",
-            list[Optional[float]],
+            list[float | None],
             optional=True,
             default=[],
             doc=doc_atom_ener,
@@ -1832,6 +1840,7 @@ def fitting_ener() -> list[Argument]:
 def fitting_dos() -> list[Argument]:
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
+    doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
     doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
@@ -1849,6 +1858,13 @@ def fitting_dos() -> list[Argument]:
     return [
         Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
         Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
+        Argument(
+            "default_fparam",
+            list[float],
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_default_fparam,
+        ),
         Argument(
             "dim_case_embd",
             int,
@@ -1887,6 +1903,7 @@ def fitting_dos() -> list[Argument]:
 def fitting_property() -> list[Argument]:
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
+    doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
     doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built"
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
@@ -1902,6 +1919,13 @@ def fitting_property() -> list[Argument]:
     return [
         Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
         Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
+        Argument(
+            "default_fparam",
+            list[float],
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_default_fparam,
+        ),
         Argument(
             "dim_case_embd",
             int,
@@ -1949,6 +1973,7 @@ def fitting_property() -> list[Argument]:
 def fitting_polar() -> list[Argument]:
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
+    doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
     doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
@@ -1977,6 +2002,13 @@ def fitting_polar() -> list[Argument]:
             optional=True,
             default=0,
             doc=doc_only_pt_supported + doc_numb_aparam,
+        ),
+        Argument(
+            "default_fparam",
+            list[float],
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_default_fparam,
         ),
         Argument(
             "dim_case_embd",
@@ -2027,6 +2059,7 @@ def fitting_polar() -> list[Argument]:
 def fitting_dipole() -> list[Argument]:
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
+    doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
     doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
@@ -2048,6 +2081,13 @@ def fitting_dipole() -> list[Argument]:
             optional=True,
             default=0,
             doc=doc_only_pt_supported + doc_numb_aparam,
+        ),
+        Argument(
+            "default_fparam",
+            list[float],
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_default_fparam,
         ),
         Argument(
             "dim_case_embd",
@@ -2244,7 +2284,7 @@ def model_args(exclude_hybrid: bool = False) -> list[Argument]:
             ),
             Argument(
                 "preset_out_bias",
-                dict[str, list[Optional[Union[float, list[float]]]]],
+                dict[str, list[float | list[float] | None]],
                 optional=True,
                 default=None,
                 doc=doc_only_pt_supported + doc_preset_out_bias,
@@ -2437,6 +2477,10 @@ def linear_ener_model_args() -> Argument:
 
 
 #  --- Learning rate configurations: --- #
+lr_args_plugin = ArgsPlugin()
+
+
+@lr_args_plugin.register("exp")
 def learning_rate_exp() -> list[Argument]:
     doc_start_lr = "The learning rate at the start of the training."
     doc_stop_lr = (
@@ -2469,12 +2513,30 @@ def learning_rate_exp() -> list[Argument]:
     return args
 
 
+@lr_args_plugin.register("cosine", doc=doc_only_pt_supported)
+def learning_rate_cosine() -> list[Argument]:
+    """
+    Defines a cosine annealing learning rate schedule.
+
+    The learning rate starts at `start_lr` and gradually decreases to `stop_lr`
+    following a cosine curve over the training steps.
+    """
+    doc_start_lr = "The learning rate at the start of the training."
+    doc_stop_lr = "The desired learning rate at the end of the training. "
+
+    args = [
+        Argument("start_lr", float, optional=True, default=1e-3, doc=doc_start_lr),
+        Argument("stop_lr", float, optional=True, default=1e-5, doc=doc_stop_lr),
+    ]
+    return args
+
+
 def learning_rate_variant_type_args() -> Variant:
     doc_lr = "The type of the learning rate."
 
     return Variant(
         "type",
-        [Argument("exp", dict, learning_rate_exp())],
+        lr_args_plugin.get_all_argument(),
         optional=True,
         default_tag="exp",
         doc=doc_lr,
@@ -2504,9 +2566,7 @@ def learning_rate_args(fold_subdoc: bool = False) -> Argument:
 
 
 #  --- Loss configurations: --- #
-def start_pref(
-    item: str, label: Optional[str] = None, abbr: Optional[str] = None
-) -> str:
+def start_pref(item: str, label: str | None = None, abbr: str | None = None) -> str:
     if label is None:
         label = item
     if abbr is None:
@@ -2953,8 +3013,9 @@ def training_data_args() -> list[
     link_sys = make_link("systems", "training/training_data/systems")
     doc_systems = (
         "The data systems for training. "
-        "This key can be provided with a list that specifies the systems, or be provided with a string "
-        "by which the prefix of all systems are given and the list of the systems is automatically generated."
+        "This key can be a list or a str. "
+        "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
+        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all training systems. "
@@ -3034,8 +3095,9 @@ def validation_data_args() -> list[
     link_sys = make_link("systems", "training/validation_data/systems")
     doc_systems = (
         "The data systems for validation. "
-        "This key can be provided with a list that specifies the systems, or be provided with a string "
-        "by which the prefix of all systems are given and the list of the systems is automatically generated."
+        "This key can be a list or a str. "
+        "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
+        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all validation systems. "
@@ -3183,6 +3245,17 @@ def training_args(
         "the learning rate begins at zero and progressively increases linearly to `start_lr`, "
         "rather than starting directly from `start_lr`"
     )
+    doc_warmup_ratio = (
+        "The ratio of warmup steps to total training steps. "
+        "The actual number of warmup steps is calculated as `warmup_ratio * numb_steps`. "
+        "Valid values are in the range [0.0, 1.0). "
+        "If `warmup_steps` is set, this option will be ignored."
+    )
+    doc_warmup_start_factor = (
+        "The factor of start learning rate to the target learning rate during warmup. "
+        "The warmup learning rate will linearly increase from `warmup_start_factor * start_lr` to `start_lr`. "
+        "Default is 0.0, meaning the learning rate starts from zero."
+    )
     doc_gradient_max_norm = (
         "Clips the gradient norm to a maximum value. "
         "If the gradient norm exceeds this value, it will be clipped to this limit. "
@@ -3297,6 +3370,19 @@ def training_args(
             doc=doc_only_pt_supported + doc_warmup_steps,
         ),
         Argument(
+            "warmup_ratio",
+            float,
+            optional=True,
+            doc=doc_only_pt_supported + doc_warmup_ratio,
+        ),
+        Argument(
+            "warmup_start_factor",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_only_pt_supported + doc_warmup_start_factor,
+        ),
+        Argument(
             "gradient_max_norm",
             float,
             optional=True,
@@ -3329,6 +3415,154 @@ def training_args(
                     ],
                     [],
                     optional=True,
+                ),
+                Argument(
+                    "AdaMuon",
+                    dict,
+                    [
+                        Argument(
+                            "momentum",
+                            float,
+                            optional=True,
+                            default=0.95,
+                            alias=["muon_momentum"],
+                            doc=doc_only_pt_supported
+                            + "Momentum coefficient for AdaMuon optimizer.",
+                        ),
+                        Argument(
+                            "adam_beta1",
+                            float,
+                            optional=True,
+                            default=0.9,
+                            doc=doc_only_pt_supported
+                            + "Adam beta1 coefficient for AdaMuon optimizer.",
+                        ),
+                        Argument(
+                            "adam_beta2",
+                            float,
+                            optional=True,
+                            default=0.95,
+                            doc=doc_only_pt_supported
+                            + "Adam beta2 coefficient for AdaMuon optimizer.",
+                        ),
+                        Argument(
+                            "weight_decay",
+                            float,
+                            optional=True,
+                            default=0.001,
+                            doc=doc_only_pt_supported
+                            + "Weight decay coefficient. Applied only to >=2D parameters (AdaMuon path).",
+                        ),
+                        Argument(
+                            "lr_adjust",
+                            float,
+                            optional=True,
+                            default=10.0,
+                            doc=doc_only_pt_supported
+                            + "Learning rate adjustment factor for Adam (1D params). "
+                            "If lr_adjust <= 0: use match-RMS scaling (scale = lr_adjust_coeff * sqrt(max(m, n))), Adam uses lr directly. "
+                            "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1.0, m/n))), Adam uses lr/lr_adjust.",
+                        ),
+                        Argument(
+                            "lr_adjust_coeff",
+                            float,
+                            optional=True,
+                            default=0.2,
+                            doc=doc_only_pt_supported
+                            + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
+                        ),
+                    ],
+                    [],
+                    optional=True,
+                ),
+                Argument(
+                    "HybridMuon",
+                    dict,
+                    [
+                        Argument(
+                            "momentum",
+                            float,
+                            optional=True,
+                            default=0.95,
+                            alias=["muon_momentum"],
+                            doc=doc_only_pt_supported
+                            + "Momentum coefficient for HybridMuon optimizer (>=2D params). "
+                            "Used in Nesterov momentum update: m_t = beta*m_{t-1} + (1-beta)*g_t.",
+                        ),
+                        Argument(
+                            "adam_beta1",
+                            float,
+                            optional=True,
+                            default=0.9,
+                            doc=doc_only_pt_supported
+                            + "Adam beta1 coefficient for 1D parameters (biases, norms).",
+                        ),
+                        Argument(
+                            "adam_beta2",
+                            float,
+                            optional=True,
+                            default=0.95,
+                            doc=doc_only_pt_supported
+                            + "Adam beta2 coefficient for 1D parameters (biases, norms).",
+                        ),
+                        Argument(
+                            "weight_decay",
+                            float,
+                            optional=True,
+                            default=0.001,
+                            doc=doc_only_pt_supported
+                            + "Weight decay coefficient. Applied only to Muon-routed parameters",
+                        ),
+                        Argument(
+                            "lr_adjust",
+                            float,
+                            optional=True,
+                            default=10.0,
+                            doc=doc_only_pt_supported
+                            + "Learning rate adjustment mode for HybridMuon scaling and Adam learning rate. "
+                            "If lr_adjust <= 0: use match-RMS scaling (scale = coeff*sqrt(max(m,n))), Adam uses lr directly. "
+                            "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1, m/n))), Adam uses lr/lr_adjust. "
+                            "Default is 10.0 (Adam lr = lr/10).",
+                        ),
+                        Argument(
+                            "lr_adjust_coeff",
+                            float,
+                            optional=True,
+                            default=0.2,
+                            doc=doc_only_pt_supported
+                            + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
+                        ),
+                        Argument(
+                            "muon_2d_only",
+                            bool,
+                            optional=True,
+                            default=True,
+                            doc=doc_only_pt_supported
+                            + "If True, only 2D parameters use Muon (matching PyTorch's torch.optim.Muon). "
+                            + "Parameters with ndim > 2 use Adam without weight decay. "
+                            + "If False, all >=2D parameters use Muon.",
+                        ),
+                        Argument(
+                            "min_2d_dim",
+                            int,
+                            optional=True,
+                            default=1,
+                            alias=["muon_min_2d_dim"],
+                            doc=doc_only_pt_supported
+                            + "Minimum min(m, n) threshold for HybridMuon on 2D matrices. "
+                            "Matrices with min(m, n) >= min_2d_dim use HybridMuon; "
+                            "those with min(m, n) < min_2d_dim use Adam fallback. "
+                            "Set to 1 to disable fallback.",
+                        ),
+                    ],
+                    [],
+                    optional=True,
+                    doc=doc_only_pt_supported
+                    + "HybridMuon optimizer (DeePMD-kit custom implementation). "
+                    + "This is a Hybrid optimizer that automatically combines Muon and Adam. "
+                    + "For >=2D params: Muon update with Newton-Schulz. "
+                    + "For 1D params: Standard Adam. "
+                    + "This is DIFFERENT from PyTorch's torch.optim.Muon which ONLY supports 2D parameters.",
                 ),
             ],
             optional=True,
@@ -3383,7 +3617,7 @@ def gen_doc(
     make_anchor: bool = True,
     make_link: bool = True,
     multi_task: bool = False,
-    **kwargs: object,
+    **kwargs: Any,
 ) -> str:
     if make_link:
         make_anchor = True
@@ -3400,7 +3634,7 @@ def gen_doc(
     return "\n\n".join(ptr)
 
 
-def gen_json(multi_task: bool = False, **kwargs: object) -> str:
+def gen_json(multi_task: bool = False, **kwargs: Any) -> str:
     return json.dumps(
         tuple(gen_args(multi_task=multi_task)),
         cls=ArgumentEncoder,

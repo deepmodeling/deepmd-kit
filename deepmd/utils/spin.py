@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
-from typing import (
-    Optional,
-    Union,
-)
 
 import numpy as np
 
@@ -39,7 +35,7 @@ class Spin:
     def __init__(
         self,
         use_spin: list[bool],
-        virtual_scale: Union[list[float], float],
+        virtual_scale: list[float] | float,
     ) -> None:
         type_dtype = np.int32
         self.ntypes_real = len(use_spin)
@@ -137,7 +133,7 @@ class Spin:
         self.atom_exclude_types_p = self.placeholder_type.tolist()
 
     def get_pair_exclude_types(
-        self, exclude_types: Optional[list[tuple[int, int]]] = None
+        self, exclude_types: list[tuple[int, int]] | None = None
     ) -> list[tuple[int, int]]:
         """
         Return the pair-wise exclusion types for descriptor.
@@ -155,7 +151,7 @@ class Spin:
             return _exclude_types
 
     def get_atom_exclude_types(
-        self, exclude_types: Optional[list[int]] = None
+        self, exclude_types: list[int] | None = None
     ) -> list[int]:
         """
         Return the atom-wise exclusion types for fitting before out_def.
@@ -170,7 +166,7 @@ class Spin:
             return _exclude_types
 
     def get_atom_exclude_types_placeholder(
-        self, exclude_types: Optional[list[int]] = None
+        self, exclude_types: list[int] | None = None
     ) -> list[int]:
         """
         Return the atom-wise exclusion types for fitting after out_def.

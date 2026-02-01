@@ -5,8 +5,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    Optional,
-    Union,
+    Any,
 )
 
 from deepmd.utils.data_system import (
@@ -25,9 +24,9 @@ class BaseUpdateSel(ABC):
     def update_one_sel(
         self,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         rcut: float,
-        sel: Union[int, list[int], str],
+        sel: int | list[int] | str,
         mixed_type: bool = False,
     ) -> tuple[float, list[int]]:
         min_nbor_dist, tmp_sel = self.get_nbor_stat(
@@ -44,7 +43,9 @@ class BaseUpdateSel(ABC):
             sel = [int(self.wrap_up_4(ii * ratio)) for ii in tmp_sel]
         else:
             # sel is set by user
-            for ii, (tt, dd) in enumerate(zip(tmp_sel, sel)):
+            # TODO: Fix len(tmp_sel) != len(sel) for TF spin models when strict is True
+            # error reported by source/tests/tf/test_init_frz_model_spin.py
+            for ii, (tt, dd) in enumerate(zip(tmp_sel, sel, strict=False)):
                 if dd and tt > dd:
                     # we may skip warning for sel=0, where the user is likely
                     # to exclude such type in the descriptor
@@ -55,7 +56,7 @@ class BaseUpdateSel(ABC):
                     )
         return min_nbor_dist, sel
 
-    def parse_auto_sel(self, sel: object) -> bool:
+    def parse_auto_sel(self, sel: Any) -> bool:
         if not isinstance(sel, str):
             return False
         words = sel.split(":")
@@ -64,7 +65,7 @@ class BaseUpdateSel(ABC):
         else:
             return False
 
-    def parse_auto_sel_ratio(self, sel: object) -> float:
+    def parse_auto_sel_ratio(self, sel: Any) -> float:
         if not self.parse_auto_sel(sel):
             raise RuntimeError(f"invalid auto sel format {sel}")
         else:
@@ -83,10 +84,10 @@ class BaseUpdateSel(ABC):
     def get_nbor_stat(
         self,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         rcut: float,
         mixed_type: bool = False,
-    ) -> tuple[float, Union[int, list[int]]]:
+    ) -> tuple[float, int | list[int]]:
         """Get the neighbor statistics of the data.
 
         Parameters

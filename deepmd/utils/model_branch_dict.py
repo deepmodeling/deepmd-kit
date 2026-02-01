@@ -5,7 +5,6 @@ from collections import (
 )
 from typing import (
     Any,
-    Optional,
 )
 
 
@@ -100,7 +99,7 @@ class OrderedDictTableWrapper:
         # Construct table header: fixed columns + dynamic info keys
         self.headers: list[str] = ["Model Branch", "Alias", *self.info_keys]
 
-    def _wrap_cell(self, text: object, width: Optional[int] = None) -> list[str]:
+    def _wrap_cell(self, text: Any, width: int | None = None) -> list[str]:
         """
         Convert a cell value into a list of wrapped text lines.
 
@@ -170,7 +169,7 @@ class OrderedDictTableWrapper:
         # Step 3: Determine actual width for each column
         # For the first two columns, we already decided the exact widths above.
         col_widths: list[int] = []
-        for idx, col in enumerate(zip(*wrapped_rows)):
+        for idx, col in enumerate(zip(*wrapped_rows, strict=True)):
             if idx == 0:
                 col_widths.append(branch_col_width)
             elif idx == 1:
@@ -188,7 +187,8 @@ class OrderedDictTableWrapper:
             return (
                 "| "
                 + " | ".join(
-                    part.ljust(width) for part, width in zip(cells_parts, col_widths)
+                    part.ljust(width)
+                    for part, width in zip(cells_parts, col_widths, strict=True)
                 )
                 + " |"
             )

@@ -6,9 +6,11 @@ import difflib
 from abc import (
     ABCMeta,
 )
-from typing import (
+from collections.abc import (
     Callable,
-    Optional,
+)
+from typing import (
+    Any,
 )
 
 
@@ -73,7 +75,7 @@ class Plugin:
 
 
 class VariantMeta:
-    def __call__(self, *args: object, **kwargs: object) -> object:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Remove `type` and keys that starts with underline."""
         obj = self.__new__(self, *args, **kwargs)
         kwargs.pop("type", None)
@@ -97,7 +99,7 @@ class PluginVariant(metaclass=VariantABCMeta):
     pass
 
 
-def make_plugin_registry(name: Optional[str] = None) -> type[object]:
+def make_plugin_registry(name: str | None = None) -> type[object]:
     """Make a plugin registry.
 
     Parameters
