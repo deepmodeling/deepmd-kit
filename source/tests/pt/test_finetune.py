@@ -367,5 +367,80 @@ class TestEnergyModelDPA2(FinetuneTest, unittest.TestCase):
         self.testkey = None
 
 
+class TestFinetuneFromPthModel(unittest.TestCase):
+    """Test that finetuning from .pth (frozen) models works correctly."""
+
+    def setUp(self) -> None:
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.data_file = [str(Path(__file__).parent / "water/data/single")]
+        self.config["training"]["training_data"]["systems"] = self.data_file
+        self.config["training"]["validation_data"]["systems"] = self.data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+
+    def test_finetune_from_pth_model(self) -> None:
+        """Test that get_finetune_rules works with .pth (frozen) models."""
+        # Train initial model
+        trainer = get_trainer(self.config)
+        trainer.run()
+
+        # Freeze model to .pth
+        from deepmd.pt.entrypoints.main import (
+            freeze,
+        )
+
+        freeze(model="model.pt", output="test_model.pth")
+
+        # Test finetuning from .pth model
+        finetune_config = deepcopy(self.config)
+        finetune_config["model"], finetune_links = get_finetune_rules(
+            "test_model.pth",  # This is a .pth file
+            finetune_config["model"],
+            change_model_params=True,
+        )
+
+        # Verify the finetune rules were created successfully
+        self.assertIsNotNone(finetune_links)
+        self.assertIn("Default", finetune_links)
+        self.assertIsInstance(finetune_config["model"], dict)
+        self.assertIn("type_map", finetune_config["model"])
+
+        self.tearDown()
+
+    def test_finetune_from_pt_model_still_works(self) -> None:
+        """Test that original .pt finetuning still works after our changes."""
+        # Train initial model
+        trainer = get_trainer(self.config)
+        trainer.run()
+
+        # Test finetuning from .pt model (original functionality)
+        finetune_config = deepcopy(self.config)
+        finetune_config["model"], finetune_links = get_finetune_rules(
+            "model.pt",  # This is a .pt file
+            finetune_config["model"],
+            change_model_params=True,
+        )
+
+        # Verify the finetune rules were created successfully
+        self.assertIsNotNone(finetune_links)
+        self.assertIn("Default", finetune_links)
+        self.assertIsInstance(finetune_config["model"], dict)
+        self.assertIn("type_map", finetune_config["model"])
+
+        self.tearDown()
+
+    def tearDown(self) -> None:
+        for f in os.listdir("."):
+            if f.startswith("model") and (f.endswith(".pt") or f.endswith(".pth")):
+                os.remove(f)
+            if f in ["lcurve.out"]:
+                os.remove(f)
+            if f in ["stat_files"]:
+                shutil.rmtree(f)
+
+
 if __name__ == "__main__":
     unittest.main()
