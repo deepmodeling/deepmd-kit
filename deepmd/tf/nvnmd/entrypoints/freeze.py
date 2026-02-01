@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
+
 from deepmd.tf.env import (
     tf,
 )
@@ -12,7 +16,7 @@ from deepmd.tf.utils.graph import (
 )
 
 
-def filter_tensorVariableList(tensorVariableList) -> dict:
+def filter_tensorVariableList(tensorVariableList: Any) -> dict:
     r"""Get the name of variable for NVNMD.
 
     | :code:`train_attr/min_nbor_dist`
@@ -60,7 +64,7 @@ def filter_tensorVariableList(tensorVariableList) -> dict:
     return dic_name_tv
 
 
-def save_weight(sess, file_name: str = "nvnmd/weight.npy") -> None:
+def save_weight(sess: Any, file_name: str = "nvnmd/weight.npy") -> None:
     r"""Save the dictionary of weight to a npy file."""
     tvs = tf.global_variables()
     dic_key_tv = filter_tensorVariableList(tvs)
