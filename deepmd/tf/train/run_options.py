@@ -159,7 +159,7 @@ class RunOptions:
         self._setup_logger(Path(log_path) if log_path else None, log_level, mpi_log)
 
     @property
-    def is_chief(self):
+    def is_chief(self) -> bool:
         """Whether my rank is 0."""
         return self.my_rank == 0
 
