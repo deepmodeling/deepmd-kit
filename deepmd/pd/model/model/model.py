@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+
+from collections.abc import (
+    Callable,
+)
 from typing import (
-    Optional,
+    Any,
+    NoReturn,
 )
 
 import paddle
@@ -14,7 +19,7 @@ from deepmd.utils.path import (
 
 
 class BaseModel(paddle.nn.Layer, make_base_model()):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Construct a basic model for different tasks."""
         paddle.nn.Layer.__init__(self)
         self.model_def_script = ""
@@ -22,9 +27,9 @@ class BaseModel(paddle.nn.Layer, make_base_model()):
 
     def compute_or_load_stat(
         self,
-        sampled_func,
-        stat_file_path: Optional[DPPath] = None,
-    ):
+        sampled_func: Callable,
+        stat_file_path: DPPath | None = None,
+    ) -> NoReturn:
         """
         Compute or load the statistics parameters of the model,
         such as mean and standard deviation of descriptors or the energy bias of the fitting net.
@@ -46,10 +51,14 @@ class BaseModel(paddle.nn.Layer, make_base_model()):
         """Get the model definition script."""
         return self.model_def_script
 
-    def get_min_nbor_dist(self) -> Optional[float]:
+    def get_min_nbor_dist(self) -> float | None:
         """Get the minimum distance between two atoms."""
         return self.min_nbor_dist
 
-    def get_ntypes(self):
+    def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return len(self.get_type_map())
+
+    def get_buffer_ntypes(self) -> paddle.Tensor:
+        """Returns the number of element types as a buffer-style Tensor."""
+        return self.get_buffer_ntypes()

@@ -13,6 +13,9 @@ from pathlib import (
     Path,
 )
 
+from deepmd.common import (
+    expand_sys_str,
+)
 from deepmd.pd.model.descriptor import (
     prod_env_mat,
 )
@@ -30,9 +33,6 @@ from deepmd.pd.utils.env import (
 )
 from deepmd.pd.utils.nlist import (
     extend_input_and_build_neighbor_list,
-)
-from deepmd.tf.common import (
-    expand_sys_str,
 )
 from deepmd.tf.env import (
     op_module,

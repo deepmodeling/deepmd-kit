@@ -1,12 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
+from collections.abc import (
     Callable,
-    Optional,
+)
+from typing import (
+    Any,
 )
 
 import array_api_compat
 import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    Array,
+)
 from deepmd.dpmodel.atomic_model.base_atomic_model import (
     BaseAtomicModel,
 )
@@ -47,23 +52,23 @@ def model_call_from_call_lower(
             np.ndarray,
             np.ndarray,
             np.ndarray,
-            Optional[np.ndarray],
-            Optional[np.ndarray],
+            np.ndarray | None,
+            np.ndarray | None,
             bool,
         ],
-        dict[str, np.ndarray],
+        dict[str, Array],
     ],
     rcut: float,
     sel: list[int],
     mixed_types: bool,
     model_output_def: ModelOutputDef,
-    coord: np.ndarray,
-    atype: np.ndarray,
-    box: Optional[np.ndarray] = None,
-    fparam: Optional[np.ndarray] = None,
-    aparam: Optional[np.ndarray] = None,
+    coord: Array,
+    atype: Array,
+    box: Array | None = None,
+    fparam: Array | None = None,
+    aparam: Array | None = None,
     do_atomic_virial: bool = False,
-):
+) -> dict[str, Array]:
     """Return model prediction from lower interface.
 
     Parameters
@@ -131,7 +136,7 @@ def model_call_from_call_lower(
     return model_predict
 
 
-def make_model(T_AtomicModel: type[BaseAtomicModel]):
+def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
     """Make a model as a derived class of an atomic model.
 
     The model provide two interfaces.
@@ -157,10 +162,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
     class CM(NativeOP, BaseModel):
         def __init__(
             self,
-            *args,
+            *args: Any,
             # underscore to prevent conflict with normal inputs
-            atomic_model_: Optional[T_AtomicModel] = None,
-            **kwargs,
+            atomic_model_: T_AtomicModel | None = None,
+            **kwargs: Any,
         ) -> None:
             BaseModel.__init__(self)
             if atomic_model_ is not None:
@@ -173,7 +178,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             self.global_np_float_precision = GLOBAL_NP_FLOAT_PRECISION
             self.global_ener_float_precision = GLOBAL_ENER_FLOAT_PRECISION
 
-        def model_output_def(self):
+        def model_output_def(self) -> ModelOutputDef:
             """Get the output def for the model."""
             return ModelOutputDef(self.atomic_output_def())
 
@@ -218,13 +223,13 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def call(
             self,
-            coord,
-            atype,
-            box: Optional[np.ndarray] = None,
-            fparam: Optional[np.ndarray] = None,
-            aparam: Optional[np.ndarray] = None,
+            coord: Array,
+            atype: Array,
+            box: Array | None = None,
+            fparam: Array | None = None,
+            aparam: Array | None = None,
             do_atomic_virial: bool = False,
-        ) -> dict[str, np.ndarray]:
+        ) -> dict[str, Array]:
             """Return model prediction.
 
             Parameters
@@ -272,14 +277,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def call_lower(
             self,
-            extended_coord: np.ndarray,
-            extended_atype: np.ndarray,
-            nlist: np.ndarray,
-            mapping: Optional[np.ndarray] = None,
-            fparam: Optional[np.ndarray] = None,
-            aparam: Optional[np.ndarray] = None,
+            extended_coord: Array,
+            extended_atype: Array,
+            nlist: Array,
+            mapping: Array | None = None,
+            fparam: Array | None = None,
+            aparam: Array | None = None,
             do_atomic_virial: bool = False,
-        ):
+        ) -> dict[str, Array]:
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
             as input, and returns the predictions on the extended region.
@@ -334,14 +339,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def forward_common_atomic(
             self,
-            extended_coord: np.ndarray,
-            extended_atype: np.ndarray,
-            nlist: np.ndarray,
-            mapping: Optional[np.ndarray] = None,
-            fparam: Optional[np.ndarray] = None,
-            aparam: Optional[np.ndarray] = None,
+            extended_coord: Array,
+            extended_atype: Array,
+            nlist: Array,
+            mapping: Array | None = None,
+            fparam: Array | None = None,
+            aparam: Array | None = None,
             do_atomic_virial: bool = False,
-        ):
+        ) -> dict[str, Array]:
             atomic_ret = self.atomic_model.forward_common_atomic(
                 extended_coord,
                 extended_atype,
@@ -362,23 +367,17 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def input_type_cast(
             self,
-            coord: np.ndarray,
-            box: Optional[np.ndarray] = None,
-            fparam: Optional[np.ndarray] = None,
-            aparam: Optional[np.ndarray] = None,
-        ) -> tuple[
-            np.ndarray,
-            Optional[np.ndarray],
-            Optional[np.ndarray],
-            Optional[np.ndarray],
-            str,
-        ]:
+            coord: Array,
+            box: Array | None = None,
+            fparam: Array | None = None,
+            aparam: Array | None = None,
+        ) -> tuple[Array, Array, np.ndarray | None, np.ndarray | None, str]:
             """Cast the input data to global float type."""
             input_prec = RESERVED_PRECISION_DICT[self.precision_dict[coord.dtype.name]]
             ###
             ### type checking would not pass jit, convert to coord prec anyway
             ###
-            _lst: list[Optional[np.ndarray]] = [
+            _lst: list[np.ndarray | None] = [
                 vv.astype(coord.dtype) if vv is not None else None
                 for vv in [box, fparam, aparam]
             ]
@@ -397,9 +396,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def output_type_cast(
             self,
-            model_ret: dict[str, np.ndarray],
+            model_ret: dict[str, Array],
             input_prec: str,
-        ) -> dict[str, np.ndarray]:
+        ) -> dict[str, Array]:
             """Convert the model output to the input prec."""
             do_cast = (
                 input_prec != RESERVED_PRECISION_DICT[self.global_np_float_precision]
@@ -424,11 +423,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def format_nlist(
             self,
-            extended_coord: np.ndarray,
-            extended_atype: np.ndarray,
-            nlist: np.ndarray,
+            extended_coord: Array,
+            extended_atype: Array,
+            nlist: Array,
             extra_nlist_sort: bool = False,
-        ):
+        ) -> Array:
             """Format the neighbor list.
 
             1. If the number of neighbors in the `nlist` is equal to sum(self.sel),
@@ -476,11 +475,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def _format_nlist(
             self,
-            extended_coord: np.ndarray,
-            nlist: np.ndarray,
+            extended_coord: Array,
+            nlist: Array,
             nnei: int,
             extra_nlist_sort: bool = False,
-        ):
+        ) -> Array:
             xp = array_api_compat.array_namespace(extended_coord, nlist)
             n_nf, n_nloc, n_nnei = nlist.shape
             extended_coord = extended_coord.reshape([n_nf, -1, 3])
@@ -522,7 +521,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def do_grad_r(
             self,
-            var_name: Optional[str] = None,
+            var_name: str | None = None,
         ) -> bool:
             """Tell if the output variable `var_name` is r_differentiable.
             if var_name is None, returns if any of the variable is r_differentiable.
@@ -531,7 +530,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def do_grad_c(
             self,
-            var_name: Optional[str] = None,
+            var_name: str | None = None,
         ) -> bool:
             """Tell if the output variable `var_name` is c_differentiable.
             if var_name is None, returns if any of the variable is c_differentiable.
@@ -539,7 +538,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             return self.atomic_model.do_grad_c(var_name)
 
         def change_type_map(
-            self, type_map: list[str], model_with_new_type_stat=None
+            self, type_map: list[str], model_with_new_type_stat: Any = None
         ) -> None:
             """Change the type related params to new ones, according to `type_map` and the original one in the model.
             If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -550,10 +549,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             return self.atomic_model.serialize()
 
         @classmethod
-        def deserialize(cls, data) -> "CM":
+        def deserialize(cls, data: dict) -> "CM":
             return cls(atomic_model_=T_AtomicModel.deserialize(data))
 
-        def set_case_embd(self, case_idx: int):
+        def set_case_embd(self, case_idx: int) -> None:
             self.atomic_model.set_case_embd(case_idx)
 
         def get_dim_fparam(self) -> int:
@@ -563,6 +562,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
         def get_dim_aparam(self) -> int:
             """Get the number (dimension) of atomic parameters of this atomic model."""
             return self.atomic_model.get_dim_aparam()
+
+        def has_default_fparam(self) -> bool:
+            """Check if the model has default frame parameters."""
+            return self.atomic_model.has_default_fparam()
+
+        def get_default_fparam(self) -> list[float] | None:
+            """Get the default frame parameters."""
+            return self.atomic_model.get_default_fparam()
 
         def get_sel_type(self) -> list[int]:
             """Get the selected atom types of this model.

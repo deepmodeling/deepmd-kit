@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import re
-from typing import (
-    Optional,
-)
 
 import numpy as np
 
@@ -99,13 +96,13 @@ class DescrptSeT(DescrptSe):
         neuron: list[int] = [24, 48, 96],
         resnet_dt: bool = False,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         exclude_types: list[list[int]] = [],
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        type_map: Optional[list[str]] = None,  # to be compat with input
+        type_map: list[str] | None = None,  # to be compat with input
         env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:
@@ -261,7 +258,7 @@ class DescrptSeT(DescrptSe):
             sumr2 = []
             suma2 = []
             for cc, bb, tt, nn, mm in zip(
-                data_coord, data_box, data_atype, natoms_vec, mesh
+                data_coord, data_box, data_atype, natoms_vec, mesh, strict=True
             ):
                 sysr, sysr2, sysa, sysa2, sysn = self._compute_dstats_sys_smth(
                     cc, bb, tt, nn, mm
@@ -387,7 +384,7 @@ class DescrptSeT(DescrptSe):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.

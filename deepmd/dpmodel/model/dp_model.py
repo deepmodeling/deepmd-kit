@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 
-from typing import (
-    Optional,
-)
-
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
+)
+from deepmd.dpmodel.fitting.base_fitting import (
+    BaseFitting,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -19,9 +18,9 @@ class DPModelCommon:
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -46,6 +45,6 @@ class DPModelCommon:
         )
         return local_jdata_cpy, min_nbor_dist
 
-    def get_fitting_net(self):
+    def get_fitting_net(self) -> BaseFitting:
         """Get the fitting network."""
         return self.atomic_model.fitting

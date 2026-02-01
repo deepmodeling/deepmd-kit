@@ -9,14 +9,14 @@ from deepmd.pt.utils.preprocess import (
 
 
 def _make_env_mat(
-    nlist,
-    coord,
+    nlist: torch.Tensor,
+    coord: torch.Tensor,
     rcut: float,
     ruct_smth: float,
     radial_only: bool = False,
     protection: float = 0.0,
     use_exp_switch: bool = False,
-):
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Make smooth environment matrix."""
     bsz, natoms, nnei = nlist.shape
     coord = coord.view(bsz, -1, 3)
@@ -49,17 +49,17 @@ def _make_env_mat(
 
 
 def prod_env_mat(
-    extended_coord,
-    nlist,
-    atype,
-    mean,
-    stddev,
+    extended_coord: torch.Tensor,
+    nlist: torch.Tensor,
+    atype: torch.Tensor,
+    mean: torch.Tensor,
+    stddev: torch.Tensor,
     rcut: float,
     rcut_smth: float,
     radial_only: bool = False,
     protection: float = 0.0,
     use_exp_switch: bool = False,
-):
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Generate smooth environment matrix from atom coordinates and other context.
 
     Args:

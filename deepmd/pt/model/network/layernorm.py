@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 import numpy as np
 import torch
@@ -30,21 +26,21 @@ from deepmd.pt.utils.utils import (
 device = env.DEVICE
 
 
-def empty_t(shape, precision):
+def empty_t(shape: tuple[int, ...], precision: torch.dtype) -> torch.Tensor:
     return torch.empty(shape, dtype=precision, device=device)
 
 
 class LayerNorm(nn.Module):
     def __init__(
         self,
-        num_in,
+        num_in: int,
         eps: float = 1e-5,
         uni_init: bool = True,
         bavg: float = 0.0,
         stddev: float = 1.0,
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
     ) -> None:
         super().__init__()
         self.eps = eps
@@ -141,7 +137,7 @@ class LayerNorm(nn.Module):
         )
         prec = PRECISION_DICT[obj.precision]
 
-        def check_load_param(ss):
+        def check_load_param(ss: str) -> nn.Parameter | None:
             return (
                 nn.Parameter(data=to_torch_tensor(nl[ss]))
                 if nl[ss] is not None

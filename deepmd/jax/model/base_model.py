@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-)
 
 from deepmd.dpmodel.model.base_model import (
     make_base_model,
@@ -20,15 +17,15 @@ BaseModel = make_base_model()
 
 
 def forward_common_atomic(
-    self,
+    self: "BaseModel",
     extended_coord: jnp.ndarray,
     extended_atype: jnp.ndarray,
     nlist: jnp.ndarray,
-    mapping: Optional[jnp.ndarray] = None,
-    fparam: Optional[jnp.ndarray] = None,
-    aparam: Optional[jnp.ndarray] = None,
+    mapping: jnp.ndarray | None = None,
+    fparam: jnp.ndarray | None = None,
+    aparam: jnp.ndarray | None = None,
     do_atomic_virial: bool = False,
-):
+) -> dict[str, jnp.ndarray]:
     atomic_ret = self.atomic_model.forward_common_atomic(
         extended_coord,
         extended_atype,
@@ -60,16 +57,16 @@ def forward_common_atomic(
             if vdef.r_differentiable:
 
                 def eval_output(
-                    cc_ext,
-                    extended_atype,
-                    nlist,
-                    mapping,
-                    fparam,
-                    aparam,
+                    cc_ext: jnp.ndarray,
+                    extended_atype: jnp.ndarray,
+                    nlist: jnp.ndarray,
+                    mapping: jnp.ndarray | None,
+                    fparam: jnp.ndarray | None,
+                    aparam: jnp.ndarray | None,
                     *,
-                    _kk=kk,
-                    _atom_axis=atom_axis,
-                ):
+                    _kk: str = kk,
+                    _atom_axis: int = atom_axis,
+                ) -> jnp.ndarray:
                     atomic_ret = self.atomic_model.forward_common_atomic(
                         cc_ext[None, ...],
                         extended_atype[None, ...],
@@ -117,16 +114,16 @@ def forward_common_atomic(
                 if do_atomic_virial:
 
                     def eval_ce(
-                        cc_ext,
-                        extended_atype,
-                        nlist,
-                        mapping,
-                        fparam,
-                        aparam,
+                        cc_ext: jnp.ndarray,
+                        extended_atype: jnp.ndarray,
+                        nlist: jnp.ndarray,
+                        mapping: jnp.ndarray | None,
+                        fparam: jnp.ndarray | None,
+                        aparam: jnp.ndarray | None,
                         *,
-                        _kk=kk,
-                        _atom_axis=atom_axis - 1,
-                    ):
+                        _kk: str = kk,
+                        _atom_axis: int = atom_axis - 1,
+                    ) -> jnp.ndarray:
                         # atomic_ret[_kk]: [nf, nloc, *def]
                         atomic_ret = self.atomic_model.forward_common_atomic(
                             cc_ext[None, ...],

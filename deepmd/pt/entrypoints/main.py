@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import argparse
 import copy
+import io
 import json
 import logging
 import os
@@ -8,8 +9,7 @@ from pathlib import (
     Path,
 )
 from typing import (
-    Optional,
-    Union,
+    Any,
 )
 
 import h5py
@@ -47,6 +47,9 @@ from deepmd.pt.infer import (
 )
 from deepmd.pt.model.model import (
     BaseModel,
+)
+from deepmd.pt.modifier import (
+    get_data_modifier,
 )
 from deepmd.pt.train import (
     training,
@@ -95,20 +98,29 @@ log = logging.getLogger(__name__)
 
 
 def get_trainer(
-    config,
-    init_model=None,
-    restart_model=None,
-    finetune_model=None,
-    force_load=False,
-    init_frz_model=None,
-    shared_links=None,
-    finetune_links=None,
-):
+    config: dict[str, Any],
+    init_model: str | None = None,
+    restart_model: str | None = None,
+    finetune_model: str | None = None,
+    force_load: bool = False,
+    init_frz_model: str | None = None,
+    shared_links: dict[str, Any] | None = None,
+    finetune_links: dict[str, Any] | None = None,
+) -> training.Trainer:
     multi_task = "model_dict" in config.get("model", {})
 
     def prepare_trainer_input_single(
-        model_params_single, data_dict_single, rank=0, seed=None
-    ):
+        model_params_single: dict[str, Any],
+        data_dict_single: dict[str, Any],
+        rank: int = 0,
+        seed: int | None = None,
+    ) -> tuple[DpLoaderSet, DpLoaderSet | None, DPPath | None]:
+        # get data modifier
+        modifier = None
+        modifier_params = model_params_single.get("modifier", None)
+        if modifier_params is not None:
+            modifier = get_data_modifier(modifier_params).to(DEVICE)
+
         training_dataset_params = data_dict_single["training_data"]
         validation_dataset_params = data_dict_single.get("validation_data", None)
         validation_systems = (
@@ -143,6 +155,7 @@ def get_trainer(
                 validation_dataset_params["batch_size"],
                 model_params_single["type_map"],
                 seed=rank_seed,
+                modifier=modifier,
             )
             if validation_systems
             else None
@@ -152,6 +165,7 @@ def get_trainer(
             training_dataset_params["batch_size"],
             model_params_single["type_map"],
             seed=rank_seed,
+            modifier=modifier,
         )
         return (
             train_data_single,
@@ -225,26 +239,38 @@ class SummaryPrinter(BaseSummaryPrinter):
         """Get backend information."""
         if ENABLE_CUSTOMIZED_OP:
             op_info = {
-                "build with PT ver": GLOBAL_CONFIG["pt_version"],
-                "build with PT inc": GLOBAL_CONFIG["pt_include_dir"].replace(";", "\n"),
-                "build with PT lib": GLOBAL_CONFIG["pt_libs"].replace(";", "\n"),
+                "Built with PT Ver": GLOBAL_CONFIG["pt_version"],
+                "Built with PT Inc": GLOBAL_CONFIG["pt_include_dir"].replace(";", "\n"),
+                "Built with PT Lib": GLOBAL_CONFIG["pt_libs"].replace(";", "\n"),
             }
         else:
             op_info = {}
         return {
             "Backend": "PyTorch",
-            "PT ver": f"v{torch.__version__}-g{torch.version.git_version[:11]}",
-            "Enable custom OP": ENABLE_CUSTOMIZED_OP,
+            "PT Ver": f"v{torch.__version__}-g{torch.version.git_version[:11]}",
+            "Custom OP Enabled": ENABLE_CUSTOMIZED_OP,
             **op_info,
         }
+
+    def get_device_name(self) -> str | None:
+        """Use PyTorch's current device name as the device identifier.
+
+        Returns
+        -------
+        str or None
+            The device name if available, otherwise None.
+        """
+        if torch.cuda.is_available():
+            return torch.cuda.get_device_name(torch.cuda.current_device())
+        return None
 
 
 def train(
     input_file: str,
-    init_model: Optional[str],
-    restart: Optional[str],
-    finetune: Optional[str],
-    init_frz_model: Optional[str],
+    init_model: str | None,
+    restart: str | None,
+    finetune: str | None,
+    init_frz_model: str | None,
     model_branch: str,
     skip_neighbor_stat: bool = False,
     use_pretrain_script: bool = False,
@@ -368,12 +394,24 @@ def train(
 def freeze(
     model: str,
     output: str = "frozen_model.pth",
-    head: Optional[str] = None,
+    head: str | None = None,
 ) -> None:
-    model = inference.Tester(model, head=head).model
+    tester = inference.Tester(model, head=head)
+    model = tester.model
     model.eval()
     model = torch.jit.script(model)
-    extra_files = {}
+
+    dm_output = "data_modifier.pth"
+    extra_files = {dm_output: ""}
+    if tester.modifier is not None:
+        dm = tester.modifier
+        dm.eval()
+        buffer = io.BytesIO()
+        torch.jit.save(
+            torch.jit.script(dm),
+            buffer,
+        )
+        extra_files = {dm_output: buffer.getvalue()}
     torch.jit.save(
         model,
         output,
@@ -385,12 +423,12 @@ def freeze(
 def change_bias(
     input_file: str,
     mode: str = "change",
-    bias_value: Optional[list] = None,
-    datafile: Optional[str] = None,
+    bias_value: list | None = None,
+    datafile: str | None = None,
     system: str = ".",
     numb_batch: int = 0,
-    model_branch: Optional[str] = None,
-    output: Optional[str] = None,
+    model_branch: str | None = None,
+    output: str | None = None,
 ) -> None:
     if input_file.endswith(".pt"):
         old_state_dict = torch.load(
@@ -514,7 +552,7 @@ def change_bias(
 
 
 @record
-def main(args: Optional[Union[list[str], argparse.Namespace]] = None) -> None:
+def main(args: list[str] | argparse.Namespace | None = None) -> None:
     if not isinstance(args, argparse.Namespace):
         FLAGS = parse_args(args=args)
     else:

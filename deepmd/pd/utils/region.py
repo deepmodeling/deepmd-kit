@@ -75,7 +75,7 @@ def to_face_distance(
     return dist.reshape(list(cshape[:-2]) + [3])  # noqa:RUF005
 
 
-def b_to_face_distance(cell):
+def b_to_face_distance(cell: paddle.Tensor) -> paddle.Tensor:
     volume = paddle.linalg.det(cell)
     c_yz = paddle.cross(cell[:, 1], cell[:, 2], axis=-1)
     _h2yz = volume / paddle.linalg.norm(c_yz, axis=-1)

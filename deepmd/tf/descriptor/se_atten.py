@@ -4,8 +4,6 @@ import re
 import warnings
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -172,13 +170,13 @@ class DescrptSeAtten(DescrptSeA):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         type_one_side: bool = True,
         set_davg_zero: bool = True,
         exclude_types: list[list[int]] = [],
@@ -196,11 +194,11 @@ class DescrptSeAtten(DescrptSeA):
         normalize=True,
         temperature=None,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-3,
+        ln_eps: float | None = 1e-3,
         concat_output_tebd: bool = True,
         env_protection: float = 0.0,  # not implement!!
-        stripped_type_embedding: Optional[bool] = None,
-        type_map: Optional[list[str]] = None,  # to be compat with input
+        stripped_type_embedding: bool | None = None,
+        type_map: list[str] | None = None,  # to be compat with input
         **kwargs,
     ) -> None:
         # Ensure compatibility with the deprecated stripped_type_embedding option.
@@ -343,7 +341,7 @@ class DescrptSeAtten(DescrptSeA):
         mesh: list,
         input_dict: dict,
         mixed_type: bool = False,
-        real_natoms_vec: Optional[list] = None,
+        real_natoms_vec: list | None = None,
         **kwargs,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
@@ -381,7 +379,13 @@ class DescrptSeAtten(DescrptSeA):
             if mixed_type:
                 sys_num = 0
                 for cc, bb, tt, nn, mm, r_n in zip(
-                    data_coord, data_box, data_atype, natoms_vec, mesh, real_natoms_vec
+                    data_coord,
+                    data_box,
+                    data_atype,
+                    natoms_vec,
+                    mesh,
+                    real_natoms_vec,
+                    strict=True,
                 ):
                     sysr, sysr2, sysa, sysa2, sysn = self._compute_dstats_sys_smth(
                         cc, bb, tt, nn, mm, mixed_type, r_n
@@ -394,7 +398,7 @@ class DescrptSeAtten(DescrptSeA):
                     suma2.append(sysa2)
             else:
                 for cc, bb, tt, nn, mm in zip(
-                    data_coord, data_box, data_atype, natoms_vec, mesh
+                    data_coord, data_box, data_atype, natoms_vec, mesh, strict=True
                 ):
                     sysr, sysr2, sysa, sysa2, sysn = self._compute_dstats_sys_smth(
                         cc, bb, tt, nn, mm
@@ -522,7 +526,7 @@ class DescrptSeAtten(DescrptSeA):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -1513,9 +1517,9 @@ class DescrptSeAtten(DescrptSeA):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -2184,7 +2188,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
@@ -2204,17 +2208,17 @@ class DescrptDPA1Compat(DescrptSeAtten):
         precision: str = "default",
         scaling_factor=1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-3,
+        ln_eps: float | None = 1e-3,
         smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[list[str]] = None,
-        spin: Optional[Any] = None,
+        type_map: list[str] | None = None,
+        spin: Any | None = None,
         # consistent with argcheck, not used though
-        seed: Optional[int] = None,
+        seed: int | None = None,
         uniform_seed: bool = False,
     ) -> None:
         if not normalize:
@@ -2302,7 +2306,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         type_embedding = self.type_embedding.build(self.ntypes, suffix=suffix)

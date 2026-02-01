@@ -9,9 +9,6 @@ from importlib import (
 from pathlib import (
     Path,
 )
-from typing import (
-    Optional,
-)
 
 import torch  # noqa: TID253
 from packaging.version import (
@@ -34,7 +31,7 @@ else:
     find_libpython = None
 
 
-def get_env(paths: list[Optional[str]]) -> str:
+def get_env(paths: list[str | None]) -> str:
     """Get the environment variable from given paths."""
     return ":".join(p for p in paths if p is not None)
 

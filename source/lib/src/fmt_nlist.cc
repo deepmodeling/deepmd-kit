@@ -18,26 +18,26 @@ struct NeighborInfo {
   int index;
   NeighborInfo() : type(0), dist(0), index(0) {}
   NeighborInfo(int tt, FPTYPE dd, int ii) : type(tt), dist(dd), index(ii) {}
-  bool operator<(const NeighborInfo &b) const {
+  bool operator<(const NeighborInfo& b) const {
     return (type < b.type ||
             (type == b.type &&
              (dist < b.dist || (dist == b.dist && index < b.index))));
   }
 };
 
-int format_nlist_i_fill_a(std::vector<int> &fmt_nei_idx_a,
-                          std::vector<int> &fmt_nei_idx_r,
-                          const std::vector<double> &posi,
-                          const int &ntypes,
-                          const std::vector<int> &type,
-                          const SimulationRegion<double> &region,
-                          const bool &b_pbc,
-                          const int &i_idx,
-                          const std::vector<int> &nei_idx_a,
-                          const std::vector<int> &nei_idx_r,
-                          const double &rcut,
-                          const std::vector<int> &sec_a,
-                          const std::vector<int> &sec_r) {
+int format_nlist_i_fill_a(std::vector<int>& fmt_nei_idx_a,
+                          std::vector<int>& fmt_nei_idx_r,
+                          const std::vector<double>& posi,
+                          const int& ntypes,
+                          const std::vector<int>& type,
+                          const SimulationRegion<double>& region,
+                          const bool& b_pbc,
+                          const int& i_idx,
+                          const std::vector<int>& nei_idx_a,
+                          const std::vector<int>& nei_idx_r,
+                          const double& rcut,
+                          const std::vector<int>& sec_a,
+                          const std::vector<int>& sec_r) {
 #ifdef DEBUG
   assert(sec_a.size() == ntypes + 1);
   assert(sec_r.size() == ntypes + 1);
@@ -57,7 +57,7 @@ int format_nlist_i_fill_a(std::vector<int> &fmt_nei_idx_a,
   sel_nei.reserve(nei_idx_a.size() + nei_idx_r.size());
   for (unsigned kk = 0; kk < nei_idx.size(); ++kk) {
     double diff[3];
-    const int &j_idx = nei_idx[kk];
+    const int& j_idx = nei_idx[kk];
     if (b_pbc) {
       region.diffNearestNeighbor(posi[j_idx * 3 + 0], posi[j_idx * 3 + 1],
                                  posi[j_idx * 3 + 2], posi[i_idx * 3 + 0],
@@ -78,7 +78,7 @@ int format_nlist_i_fill_a(std::vector<int> &fmt_nei_idx_a,
   std::vector<int> nei_iter = sec_a;
   int overflowed = -1;
   for (unsigned kk = 0; kk < sel_nei.size(); ++kk) {
-    const int &nei_type = sel_nei[kk].type;
+    const int& nei_type = sel_nei[kk].type;
     if (nei_iter[nei_type] >= sec_a[nei_type + 1]) {
       int r_idx_iter =
           (nei_iter[nei_type]++) - sec_a[nei_type + 1] + sec_r[nei_type];
@@ -96,13 +96,13 @@ int format_nlist_i_fill_a(std::vector<int> &fmt_nei_idx_a,
 }
 
 template <typename FPTYPE>
-int format_nlist_i_cpu(std::vector<int> &fmt_nei_idx_a,
-                       const std::vector<FPTYPE> &posi,
-                       const std::vector<int> &type,
-                       const int &i_idx,
-                       const std::vector<int> &nei_idx_a,
-                       const float &rcut,
-                       const std::vector<int> &sec_a) {
+int format_nlist_i_cpu(std::vector<int>& fmt_nei_idx_a,
+                       const std::vector<FPTYPE>& posi,
+                       const std::vector<int>& type,
+                       const int& i_idx,
+                       const std::vector<int>& nei_idx_a,
+                       const float& rcut,
+                       const std::vector<int>& sec_a) {
   fmt_nei_idx_a.resize(sec_a.back());
   fill(fmt_nei_idx_a.begin(), fmt_nei_idx_a.end(), -1);
 
@@ -115,7 +115,7 @@ int format_nlist_i_cpu(std::vector<int> &fmt_nei_idx_a,
   for (unsigned kk = 0; kk < nei_idx.size(); ++kk) {
     // rcut is float in this function, so float rr is enough
     float diff[3];
-    const int &j_idx = nei_idx[kk];
+    const int& j_idx = nei_idx[kk];
     if (type[j_idx] < 0) {
       continue;
     }
@@ -132,7 +132,7 @@ int format_nlist_i_cpu(std::vector<int> &fmt_nei_idx_a,
   std::vector<int> nei_iter = sec_a;
   int overflowed = -1;
   for (unsigned kk = 0; kk < sel_nei.size(); ++kk) {
-    const int &nei_type = sel_nei[kk].type;
+    const int& nei_type = sel_nei[kk].type;
     if (nei_iter[nei_type] < sec_a[nei_type + 1]) {
       fmt_nei_idx_a[nei_iter[nei_type]++] = sel_nei[kk].index;
     } else {
@@ -143,10 +143,10 @@ int format_nlist_i_cpu(std::vector<int> &fmt_nei_idx_a,
 }
 
 template <typename FPTYPE>
-void deepmd::format_nlist_cpu(int *nlist,
-                              const InputNlist &in_nlist,
-                              const FPTYPE *coord,
-                              const int *type,
+void deepmd::format_nlist_cpu(int* nlist,
+                              const InputNlist& in_nlist,
+                              const FPTYPE* coord,
+                              const int* type,
                               const int nloc,
                               const int nall,
                               const float rcut,
@@ -165,7 +165,7 @@ void deepmd::format_nlist_cpu(int *nlist,
     std::copy(in_nlist.firstneigh[ii], in_nlist.firstneigh[ii] + i_num,
               ilist.begin());
     format_nlist_i_cpu(fmt_ilist, posi_, type_, i_idx, ilist, rcut, sec);
-    int *cur_nlist = nlist + i_idx * nnei;
+    int* cur_nlist = nlist + i_idx * nnei;
     if (fmt_ilist.size() != nnei) {
       std::cerr << "FATAL: formatted nlist of i have length "
                 << fmt_ilist.size() << " which does not match " << nnei
@@ -176,37 +176,37 @@ void deepmd::format_nlist_cpu(int *nlist,
   }
 }
 
-template int format_nlist_i_cpu<double>(std::vector<int> &fmt_nei_idx_a,
-                                        const std::vector<double> &posi,
-                                        const std::vector<int> &type,
-                                        const int &i_idx,
-                                        const std::vector<int> &nei_idx_a,
-                                        const float &rcut,
-                                        const std::vector<int> &sec_a);
+template int format_nlist_i_cpu<double>(std::vector<int>& fmt_nei_idx_a,
+                                        const std::vector<double>& posi,
+                                        const std::vector<int>& type,
+                                        const int& i_idx,
+                                        const std::vector<int>& nei_idx_a,
+                                        const float& rcut,
+                                        const std::vector<int>& sec_a);
 
-template int format_nlist_i_cpu<float>(std::vector<int> &fmt_nei_idx_a,
-                                       const std::vector<float> &posi,
-                                       const std::vector<int> &type,
-                                       const int &i_idx,
-                                       const std::vector<int> &nei_idx_a,
-                                       const float &rcut,
-                                       const std::vector<int> &sec_a);
+template int format_nlist_i_cpu<float>(std::vector<int>& fmt_nei_idx_a,
+                                       const std::vector<float>& posi,
+                                       const std::vector<int>& type,
+                                       const int& i_idx,
+                                       const std::vector<int>& nei_idx_a,
+                                       const float& rcut,
+                                       const std::vector<int>& sec_a);
 
 template void deepmd::format_nlist_cpu<double>(
-    int *nlist,
-    const deepmd::InputNlist &in_nlist,
-    const double *coord,
-    const int *type,
+    int* nlist,
+    const deepmd::InputNlist& in_nlist,
+    const double* coord,
+    const int* type,
     const int nloc,
     const int nall,
     const float rcut,
     const std::vector<int> sec);
 
 template void deepmd::format_nlist_cpu<float>(
-    int *nlist,
-    const deepmd::InputNlist &in_nlist,
-    const float *coord,
-    const int *type,
+    int* nlist,
+    const deepmd::InputNlist& in_nlist,
+    const float* coord,
+    const int* type,
     const int nloc,
     const int nall,
     const float rcut,

@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 import numpy as np
 import paddle
@@ -31,22 +27,22 @@ from deepmd.pd.utils.utils import (
 device = env.DEVICE
 
 
-def empty_t(shape, precision):
+def empty_t(shape: list[int], precision: paddle.dtype) -> paddle.Tensor:
     return paddle.empty(shape, dtype=precision).to(device=device)
 
 
 class LayerNorm(nn.Layer):
     def __init__(
         self,
-        num_in,
+        num_in: int,
         eps: float = 1e-5,
         uni_init: bool = True,
         bavg: float = 0.0,
         stddev: float = 1.0,
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
-    ):
+        seed: int | list[int] | None = None,
+    ) -> None:
         super().__init__()
         self.eps = eps
         self.uni_init = uni_init
@@ -150,7 +146,7 @@ class LayerNorm(nn.Layer):
         )
         prec = PRECISION_DICT[obj.precision]
 
-        def check_load_param(ss):
+        def check_load_param(ss: str) -> paddle.Tensor | None:
             if nl[ss] is not None:
                 tensor = to_paddle_tensor(nl[ss])
                 return paddle.create_parameter(

@@ -117,6 +117,9 @@ class TestInferDeepPotAFparamAparamNFrames : public ::testing::Test {
   deepmd::DeepPot dp;
 
   void SetUp() override {
+#ifndef BUILD_TENSORFLOW
+    GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
+#endif
     std::string file_name = "../../tests/infer/fparam_aparam.pbtxt";
     deepmd::convert_pbtxt_to_pb("../../tests/infer/fparam_aparam.pbtxt",
                                 "fparam_aparam.pb");
@@ -758,6 +761,9 @@ class TestInferDeepPotAFparamAparamNFramesSingleParam : public ::testing::Test {
   deepmd::DeepPot dp;
 
   void SetUp() override {
+#ifndef BUILD_TENSORFLOW
+    GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
+#endif
     std::string file_name = "../../tests/infer/fparam_aparam.pbtxt";
     deepmd::convert_pbtxt_to_pb("../../tests/infer/fparam_aparam.pbtxt",
                                 "fparam_aparam.pb");

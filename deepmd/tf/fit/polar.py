@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import warnings
-from typing import (
-    Optional,
-)
 
 import numpy as np
 
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 from deepmd.tf.common import (
     cast_precision,
     get_activation_func,
@@ -90,6 +90,9 @@ class PolarFittingSeA(Fitting):
         different fitting nets for different atom types.
     type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
+    default_fparam: list[float], optional
+        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+        this value will be used as the default value for the frame parameter in the fitting net.
     trainable : list[bool], Optional
         If the weights of fitting net are trainable.
         Suppose that we have :math:`N_l` hidden layers in the fitting net,
@@ -106,18 +109,19 @@ class PolarFittingSeA(Fitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        sel_type: Optional[list[int]] = None,
+        sel_type: list[int] | None = None,
         fit_diag: bool = True,
-        scale: Optional[list[float]] = None,
+        scale: list[float] | None = None,
         shift_diag: bool = True,  # YWolfeee: will support the user to decide whether to use this function
         # diag_shift : list[float] = None, YWolfeee: will not support the user to assign a shift
-        seed: Optional[int] = None,
+        seed: int | None = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
         mixed_types: bool = False,
-        type_map: Optional[list[str]] = None,  # to be compat with input
-        trainable: Optional[list[bool]] = None,
+        type_map: list[str] | None = None,  # to be compat with input
+        default_fparam: list[float] | None = None,  # to be compat with input
+        trainable: list[bool] | None = None,
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -175,12 +179,15 @@ class PolarFittingSeA(Fitting):
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
         self.dim_case_embd = dim_case_embd
+        self.default_fparam = default_fparam
         if numb_fparam > 0:
             raise ValueError("numb_fparam is not supported in the dipole fitting")
         if numb_aparam > 0:
             raise ValueError("numb_aparam is not supported in the dipole fitting")
         if dim_case_embd > 0:
             raise ValueError("dim_case_embd is not supported in TensorFlow.")
+        if default_fparam is not None:
+            raise ValueError("default_fparam is not supported in TensorFlow.")
         self.fparam_avg = None
         self.fparam_std = None
         self.fparam_inv_std = None
@@ -415,8 +422,8 @@ class PolarFittingSeA(Fitting):
         input_d: tf.Tensor,
         rot_mat: tf.Tensor,
         natoms: tf.Tensor,
-        input_dict: Optional[dict] = None,
-        reuse: Optional[bool] = None,
+        input_dict: dict | None = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ):
         """Build the computational graph for fitting net.
@@ -597,7 +604,7 @@ class PolarFittingSeA(Fitting):
                     stacklevel=2,
                 )
 
-    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: dict | None = None) -> None:
         """Receive the mixed precision setting.
 
         Parameters
@@ -629,22 +636,21 @@ class PolarFittingSeA(Fitting):
         data = {
             "@class": "Fitting",
             "type": "polar",
-            "@version": 4,
+            "@version": 5,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
             "embedding_width": self.dim_rot_mat_1,
             "mixed_types": self.mixed_types,
-            "dim_out": 3,
             "neuron": self.n_neuron,
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
             "dim_case_embd": self.dim_case_embd,
+            "default_fparam": self.default_fparam,
             "activation_function": self.activation_function_name,
             "precision": self.fitting_precision.name,
             "exclude_types": [],
             "fit_diag": self.fit_diag,
-            "scale": list(self.scale),
             "shift_diag": self.shift_diag,
             "nets": self.serialize_network(
                 ntypes=self.ntypes,
@@ -666,8 +672,18 @@ class PolarFittingSeA(Fitting):
                 "case_embd": None,
                 "scale": self.scale.reshape(-1, 1),
                 "constant_matrix": self.constant_matrix.reshape(-1),
+                "bias_atom_e": np.zeros(
+                    (self.ntypes, self.dim_rot_mat_1), dtype=GLOBAL_NP_FLOAT_PRECISION
+                ),
             },
             "type_map": self.type_map,
+            "var_name": "polar",
+            "rcond": None,
+            "tot_ener_zero": False,
+            "trainable": self.trainable,
+            "layer_name": None,
+            "use_aparam_as_mask": False,
+            "spin": None,
         }
         return data
 
@@ -687,7 +703,7 @@ class PolarFittingSeA(Fitting):
         """
         data = data.copy()
         check_version_compatibility(
-            data.pop("@version", 1), 4, 1
+            data.pop("@version", 1), 5, 1
         )  # to allow PT version.
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
@@ -731,11 +747,11 @@ class GlobalPolarFittingSeA:
         descrpt: tf.Tensor,
         neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
-        sel_type: Optional[list[int]] = None,
+        sel_type: list[int] | None = None,
         fit_diag: bool = True,
-        scale: Optional[list[float]] = None,
-        diag_shift: Optional[list[float]] = None,
-        seed: Optional[int] = None,
+        scale: list[float] | None = None,
+        diag_shift: list[float] | None = None,
+        seed: int | None = None,
         activation_function: str = "tanh",
         precision: str = "default",
     ) -> None:
@@ -770,7 +786,7 @@ class GlobalPolarFittingSeA:
         input_d,
         rot_mat,
         natoms,
-        input_dict: Optional[dict] = None,
+        input_dict: dict | None = None,
         reuse=None,
         suffix="",
     ) -> tf.Tensor:
@@ -830,7 +846,7 @@ class GlobalPolarFittingSeA:
             graph=graph, graph_def=graph_def, suffix=suffix
         )
 
-    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: dict | None = None) -> None:
         """Receive the mixed precision setting.
 
         Parameters

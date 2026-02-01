@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-)
 
 import numpy as np
 
@@ -95,15 +92,15 @@ class DescrptSeR(DescrptSe):
         neuron: list[int] = [24, 48, 96],
         resnet_dt: bool = False,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         type_one_side: bool = True,
         exclude_types: list[list[int]] = [],
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        spin: Optional[Spin] = None,
-        type_map: Optional[list[str]] = None,  # to be compat with input
+        spin: Spin | None = None,
+        type_map: list[str] | None = None,  # to be compat with input
         env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:
@@ -274,7 +271,7 @@ class DescrptSeR(DescrptSe):
         sumn = []
         sumr2 = []
         for cc, bb, tt, nn, mm in zip(
-            data_coord, data_box, data_atype, natoms_vec, mesh
+            data_coord, data_box, data_atype, natoms_vec, mesh, strict=True
         ):
             sysr, sysr2, sysn = self._compute_dstats_sys_se_r(cc, bb, tt, nn, mm)
             sumr.append(sysr)
@@ -382,7 +379,7 @@ class DescrptSeR(DescrptSe):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.

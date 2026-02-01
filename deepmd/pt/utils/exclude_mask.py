@@ -32,10 +32,10 @@ class AtomExcludeMask(torch.nn.Module):
         )
         self.type_mask = to_torch_tensor(self.type_mask).view([-1])
 
-    def get_exclude_types(self):
+    def get_exclude_types(self) -> list[int]:
         return self.exclude_types
 
-    def get_type_mask(self):
+    def get_type_mask(self) -> torch.Tensor:
         return self.type_mask
 
     def forward(
@@ -98,7 +98,7 @@ class PairExcludeMask(torch.nn.Module):
         self.type_mask = to_torch_tensor(self.type_mask).view([-1])
         self.no_exclusion = len(self._exclude_types) == 0
 
-    def get_exclude_types(self):
+    def get_exclude_types(self) -> set[tuple[int, int]]:
         return self._exclude_types
 
     # may have a better place for this method...
@@ -147,3 +147,5 @@ class PairExcludeMask(torch.nn.Module):
         type_ij = type_ij.view(nf, nloc * nnei)
         mask = self.type_mask[type_ij].view(nf, nloc, nnei).to(atype_ext.device)
         return mask
+
+    build_type_exclude_mask = forward

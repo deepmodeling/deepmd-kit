@@ -1,13 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 import array_api_compat
-import numpy as np
 
 from deepmd.dpmodel.array_api import (
+    Array,
     xp_take_along_axis,
 )
 
@@ -18,13 +14,13 @@ from .region import (
 
 
 def extend_input_and_build_neighbor_list(
-    coord,
-    atype,
+    coord: Array,
+    atype: Array,
     rcut: float,
     sel: list[int],
     mixed_types: bool = False,
-    box: Optional[np.ndarray] = None,
-):
+    box: Array | None = None,
+) -> tuple[Array, Array]:
     xp = array_api_compat.array_namespace(coord, atype)
     nframes, nloc = atype.shape[:2]
     if box is not None:
@@ -51,20 +47,20 @@ def extend_input_and_build_neighbor_list(
 
 ## translated from torch implementation by chatgpt
 def build_neighbor_list(
-    coord: np.ndarray,
-    atype: np.ndarray,
+    coord: Array,
+    atype: Array,
     nloc: int,
     rcut: float,
-    sel: Union[int, list[int]],
+    sel: int | list[int],
     distinguish_types: bool = True,
-) -> np.ndarray:
+) -> Array:
     """Build neighbor list for a single frame. keeps nsel neighbors.
 
     Parameters
     ----------
-    coord : np.ndarray
+    coord : Array
         exptended coordinates of shape [batch_size, nall x 3]
-    atype : np.ndarray
+    atype : Array
         extended atomic types of shape [batch_size, nall]
         type < 0 the atom is treat as virtual atoms.
     nloc : int
@@ -81,7 +77,7 @@ def build_neighbor_list(
 
     Returns
     -------
-    neighbor_list : np.ndarray
+    neighbor_list : Array
         Neighbor list of shape [batch_size, nloc, nsel], the neighbors
         are stored in an ascending order. If the number of
         neighbors is less than nsel, the positions are masked
@@ -100,7 +96,7 @@ def build_neighbor_list(
     nall = coord.shape[1] // 3
     # fill virtual atoms with large coords so they are not neighbors of any
     # real atom.
-    if coord.size > 0:
+    if array_api_compat.size(coord) > 0:
         xmax = xp.max(coord) + 2.0 * rcut
     else:
         xmax = 2.0 * rcut
@@ -121,7 +117,9 @@ def build_neighbor_list(
     assert list(diff.shape) == [batch_size, nloc, nall, 3]
     rr = xp.linalg.vector_norm(diff, axis=-1)
     # if central atom has two zero distances, sorting sometimes can not exclude itself
-    rr -= xp.eye(nloc, nall, dtype=diff.dtype)[xp.newaxis, :, :]
+    rr -= xp.eye(nloc, nall, dtype=diff.dtype, device=array_api_compat.device(diff))[
+        xp.newaxis, :, :
+    ]
     nlist = xp.argsort(rr, axis=-1)
     rr = xp.sort(rr, axis=-1)
     rr = rr[:, :, 1:]
@@ -132,11 +130,26 @@ def build_neighbor_list(
         nlist = nlist[:, :, :nsel]
     else:
         rr = xp.concatenate(
-            [rr, xp.ones([batch_size, nloc, nsel - nnei], dtype=rr.dtype) + rcut],
+            [
+                rr,
+                xp.ones(
+                    [batch_size, nloc, nsel - nnei],
+                    dtype=rr.dtype,
+                    device=array_api_compat.device(rr),
+                )
+                + rcut,
+            ],
             axis=-1,
         )
         nlist = xp.concatenate(
-            [nlist, xp.ones([batch_size, nloc, nsel - nnei], dtype=nlist.dtype)],
+            [
+                nlist,
+                xp.ones(
+                    [batch_size, nloc, nsel - nnei],
+                    dtype=nlist.dtype,
+                    device=array_api_compat.device(nlist),
+                ),
+            ],
             axis=-1,
         )
     assert list(nlist.shape) == [batch_size, nloc, nsel]
@@ -153,10 +166,10 @@ def build_neighbor_list(
 
 
 def nlist_distinguish_types(
-    nlist: np.ndarray,
-    atype: np.ndarray,
+    nlist: Array,
+    atype: Array,
     sel: list[int],
-):
+) -> Array:
     """Given a nlist that does not distinguish atom types, return a nlist that
     distinguish atom types.
 
@@ -188,20 +201,20 @@ def get_multiple_nlist_key(rcut: float, nsel: int) -> str:
 
 ## translated from torch implementation by chatgpt
 def build_multiple_neighbor_list(
-    coord: np.ndarray,
-    nlist: np.ndarray,
+    coord: Array,
+    nlist: Array,
     rcuts: list[float],
     nsels: list[int],
-) -> dict[str, np.ndarray]:
+) -> dict[str, Array]:
     """Input one neighbor list, and produce multiple neighbor lists with
     different cutoff radius and numbers of selection out of it.  The
     required rcuts and nsels should be smaller or equal to the input nlist.
 
     Parameters
     ----------
-    coord : np.ndarray
+    coord : Array
         exptended coordinates of shape [batch_size, nall x 3]
-    nlist : np.ndarray
+    nlist : Array
         Neighbor list of shape [batch_size, nloc, nsel], the neighbors
         should be stored in an ascending order.
     rcuts : list[float]
@@ -211,7 +224,7 @@ def build_multiple_neighbor_list(
 
     Returns
     -------
-    nlist_dict : dict[str, np.ndarray]
+    nlist_dict : dict[str, Array]
         A dict of nlists, key given by get_multiple_nlist_key(rc, nsel)
         value being the corresponding nlist.
 
@@ -222,7 +235,11 @@ def build_multiple_neighbor_list(
         return {}
     nb, nloc, nsel = nlist.shape
     if nsel < nsels[-1]:
-        pad = -1 * xp.ones((nb, nloc, nsels[-1] - nsel), dtype=nlist.dtype)
+        pad = -1 * xp.ones(
+            (nb, nloc, nsels[-1] - nsel),
+            dtype=nlist.dtype,
+            device=array_api_compat.device(nlist),
+        )
         nlist = xp.concat([nlist, pad], axis=-1)
         nsel = nsels[-1]
     coord1 = xp.reshape(coord, (nb, -1, 3))
@@ -238,7 +255,7 @@ def build_multiple_neighbor_list(
     rr = xp.where(nlist_mask, xp.full_like(rr, float("inf")), rr)
     nlist0 = nlist
     ret = {}
-    for rc, ns in zip(rcuts[::-1], nsels[::-1]):
+    for rc, ns in zip(rcuts[::-1], nsels[::-1], strict=True):
         tnlist_1 = nlist0[:, :, :ns]
         tnlist_1 = xp.where(rr[:, :, :ns] > rc, xp.full_like(tnlist_1, -1), tnlist_1)
         ret[get_multiple_nlist_key(rc, ns)] = tnlist_1
@@ -247,40 +264,45 @@ def build_multiple_neighbor_list(
 
 ## translated from torch implementation by chatgpt
 def extend_coord_with_ghosts(
-    coord: np.ndarray,
-    atype: np.ndarray,
-    cell: Optional[np.ndarray],
+    coord: Array,
+    atype: Array,
+    cell: Array | None,
     rcut: float,
-):
+) -> tuple[Array, Array]:
     """Extend the coordinates of the atoms by appending peridoc images.
     The number of images is large enough to ensure all the neighbors
     within rcut are appended.
 
     Parameters
     ----------
-    coord : np.ndarray
+    coord : Array
         original coordinates of shape [-1, nloc*3].
-    atype : np.ndarray
+    atype : Array
         atom type of shape [-1, nloc].
-    cell : np.ndarray
+    cell : Array
         simulation cell tensor of shape [-1, 9].
     rcut : float
         the cutoff radius
 
     Returns
     -------
-    extended_coord: np.ndarray
+    extended_coord: Array
         extended coordinates of shape [-1, nall*3].
-    extended_atype: np.ndarray
+    extended_atype: Array
         extended atom type of shape [-1, nall].
-    index_mapping: np.ndarray
+    index_mapping: Array
         mapping extended index to the local index
 
     """
     xp = array_api_compat.array_namespace(coord, atype)
     nf, nloc = atype.shape
     # int64 for index
-    aidx = xp.tile(xp.arange(nloc, dtype=xp.int64)[xp.newaxis, :], (nf, 1))
+    aidx = xp.tile(
+        xp.arange(nloc, dtype=xp.int64, device=array_api_compat.device(atype))[
+            xp.newaxis, :
+        ],
+        (nf, 1),
+    )
     if cell is None:
         nall = nloc
         extend_coord = coord
@@ -292,17 +314,41 @@ def extend_coord_with_ghosts(
         to_face = to_face_distance(cell)
         nbuff = xp.astype(xp.ceil(rcut / to_face), xp.int64)
         nbuff = xp.max(nbuff, axis=0)
-        xi = xp.arange(-int(nbuff[0]), int(nbuff[0]) + 1, 1, dtype=xp.int64)
-        yi = xp.arange(-int(nbuff[1]), int(nbuff[1]) + 1, 1, dtype=xp.int64)
-        zi = xp.arange(-int(nbuff[2]), int(nbuff[2]) + 1, 1, dtype=xp.int64)
-        xyz = xp.linalg.outer(xi, xp.asarray([1, 0, 0]))[:, xp.newaxis, xp.newaxis, :]
+        xi = xp.arange(
+            -int(nbuff[0]),
+            int(nbuff[0]) + 1,
+            1,
+            dtype=xp.int64,
+            device=array_api_compat.device(coord),
+        )
+        yi = xp.arange(
+            -int(nbuff[1]),
+            int(nbuff[1]) + 1,
+            1,
+            dtype=xp.int64,
+            device=array_api_compat.device(coord),
+        )
+        zi = xp.arange(
+            -int(nbuff[2]),
+            int(nbuff[2]) + 1,
+            1,
+            dtype=xp.int64,
+            device=array_api_compat.device(coord),
+        )
+        xyz = xp.linalg.outer(
+            xi, xp.asarray([1, 0, 0], device=array_api_compat.device(xi))
+        )[:, xp.newaxis, xp.newaxis, :]
         xyz = (
             xyz
-            + xp.linalg.outer(yi, xp.asarray([0, 1, 0]))[xp.newaxis, :, xp.newaxis, :]
+            + xp.linalg.outer(
+                yi, xp.asarray([0, 1, 0], device=array_api_compat.device(yi))
+            )[xp.newaxis, :, xp.newaxis, :]
         )
         xyz = (
             xyz
-            + xp.linalg.outer(zi, xp.asarray([0, 0, 1]))[xp.newaxis, xp.newaxis, :, :]
+            + xp.linalg.outer(
+                zi, xp.asarray([0, 0, 1], device=array_api_compat.device(zi))
+            )[xp.newaxis, xp.newaxis, :, :]
         )
         xyz = xp.reshape(xyz, (-1, 3))
         xyz = xp.astype(xyz, coord.dtype)

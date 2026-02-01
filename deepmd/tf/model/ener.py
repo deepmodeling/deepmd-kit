@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 import numpy as np
 
@@ -75,16 +71,16 @@ class EnerModel(StandardModel):
         self,
         descriptor: dict,
         fitting_net: dict,
-        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[list[str]] = None,
+        type_embedding: dict | TypeEmbedNet | None = None,
+        type_map: list[str] | None = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
-        use_srtab: Optional[str] = None,
-        smin_alpha: Optional[float] = None,
-        sw_rmin: Optional[float] = None,
-        sw_rmax: Optional[float] = None,
+        use_srtab: str | None = None,
+        smin_alpha: float | None = None,
+        sw_rmin: float | None = None,
+        sw_rmax: float | None = None,
         srtab_add_bias: bool = True,
-        spin: Optional[Spin] = None,
+        spin: Spin | None = None,
         data_bias_nsample: int = 10,
         **kwargs,
     ) -> None:
@@ -182,7 +178,7 @@ class EnerModel(StandardModel):
         mesh,
         input_dict,
         frz_model=None,
-        ckpt_meta: Optional[str] = None,
+        ckpt_meta: str | None = None,
         suffix="",
         reuse=None,
     ):
@@ -192,6 +188,9 @@ class EnerModel(StandardModel):
             t_tmap = tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
             t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
             t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
+
+            # Initialize out_bias and out_std for energy models
+            self.init_out_stat(suffix=suffix)
 
             if self.srtab is not None:
                 tab_info, tab_data = self.srtab.get()
@@ -253,6 +252,10 @@ class EnerModel(StandardModel):
         atom_ener = self.fitting.build(
             dout, natoms, input_dict, reuse=reuse, suffix=suffix
         )
+
+        # Apply out_bias and out_std directly to atom energy
+        atom_ener = self._apply_out_bias_std(atom_ener, atype, natoms, coord)
+
         self.atom_ener = atom_ener
 
         if self.srtab is not None:

@@ -15,7 +15,6 @@ from io import (
 from typing import (
     TYPE_CHECKING,
     Any,
-    Union,
 )
 
 from deepmd.main import (
@@ -30,7 +29,7 @@ if TYPE_CHECKING:
         from typing_extensions import TypedDict  # python<=3.7
 
     class DATA(TypedDict):
-        type: Union[type, tuple[type]]
+        type: type | tuple[type]
         value: Any
 
     TEST_DICT = dict[str, DATA]
@@ -318,6 +317,32 @@ class TestParserOutput(unittest.TestCase):
             "--rand-seed": {"type": (int, type(None)), "value": 12321},
             "--detail-file": {"type": (str, type(None)), "value": "TARGET.FILE"},
             "--atomic": {"type": bool},
+        }
+
+        self.run_test(command="test", mapping=ARGS)
+
+    def test_parser_test_train_data(self) -> None:
+        """Test test subparser with train-data."""
+        ARGS = {
+            "--model": {"type": str, "value": "MODEL.PB"},
+            "--train-data": {
+                "type": (str, type(None)),
+                "value": "INPUT.JSON",
+                "dest": "train_json",
+            },
+        }
+
+        self.run_test(command="test", mapping=ARGS)
+
+    def test_parser_test_valid_data(self) -> None:
+        """Test test subparser with valid-data."""
+        ARGS = {
+            "--model": {"type": str, "value": "MODEL.PB"},
+            "--valid-data": {
+                "type": (str, type(None)),
+                "value": "INPUT.JSON",
+                "dest": "valid_json",
+            },
         }
 
         self.run_test(command="test", mapping=ARGS)

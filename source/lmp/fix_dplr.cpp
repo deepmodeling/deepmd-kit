@@ -24,7 +24,7 @@ using namespace LAMMPS_NS;
 using namespace FixConst;
 using namespace std;
 
-static bool is_key(const string &input) {
+static bool is_key(const string& input) {
   vector<string> keys;
   keys.push_back("model");
   keys.push_back("type_associate");
@@ -39,7 +39,7 @@ static bool is_key(const string &input) {
   return false;
 }
 
-FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
+FixDPLR::FixDPLR(LAMMPS* lmp, int narg, char** arg)
     : Fix(lmp, narg, arg),
       xstr(nullptr),
       ystr(nullptr),
@@ -145,11 +145,11 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   try {
     dpt.init(model, 0, "dipole_charge");
     dtm.init(model, 0, "dipole_charge");
-  } catch (deepmd_compat::deepmd_exception &e) {
+  } catch (deepmd_compat::deepmd_exception& e) {
     error->one(FLERR, e.what());
   }
 
-  pair_deepmd = (PairDeepMD *)force->pair_match("deepmd", 1, pair_deepmd_index);
+  pair_deepmd = (PairDeepMD*)force->pair_match("deepmd", 1, pair_deepmd_index);
   if (!pair_deepmd) {
     error->all(FLERR, "pair_style deepmd should be set before this fix\n");
   }
@@ -305,7 +305,7 @@ void FixDPLR::init() {
 /* ---------------------------------------------------------------------- */
 
 void FixDPLR::setup_post_neighbor() {
-  double **x = atom->x;
+  double** x = atom->x;
 
   vector<pair<int, int> > valid_pairs;
   get_valid_pairs(valid_pairs, true);
@@ -358,7 +358,7 @@ void FixDPLR::min_setup(int vflag) { setup(vflag); }
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs, bool is_setup) {
+void FixDPLR::get_valid_pairs(vector<pair<int, int> >& pairs, bool is_setup) {
   pairs.clear();
 
   int nlocal = atom->nlocal;
@@ -366,12 +366,12 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs, bool is_setup) {
   int nall = nlocal + nghost;
   vector<int> dtype(nall);
   // get type
-  int *type = atom->type;
+  int* type = atom->type;
   for (int ii = 0; ii < nall; ++ii) {
     dtype[ii] = type_idx_map[type[ii] - 1];
   }
 
-  int **bondlist = neighbor->bondlist;
+  int** bondlist = neighbor->bondlist;
   int nbondlist = neighbor->nbondlist;
   for (int ii = 0; ii < nbondlist; ++ii) {
     int idx0 = -1, idx1 = -1;
@@ -437,9 +437,9 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs, bool is_setup) {
 /* ---------------------------------------------------------------------- */
 
 void FixDPLR::pre_exchange() {
-  double **x = atom->x;
-  double **v = atom->v;
-  int *type = atom->type;
+  double** x = atom->x;
+  double** v = atom->v;
+  int* type = atom->type;
   int nlocal = atom->nlocal;
   int nghost = atom->nghost;
   int nall = nlocal + nghost;
@@ -461,8 +461,8 @@ void FixDPLR::pre_exchange() {
 /* ---------------------------------------------------------------------- */
 
 void FixDPLR::pre_force(int vflag) {
-  double **x = atom->x;
-  int *type = atom->type;
+  double** x = atom->x;
+  int* type = atom->type;
   int nlocal = atom->nlocal;
   int nghost = atom->nghost;
   int nall = nlocal + nghost;
@@ -503,7 +503,7 @@ void FixDPLR::pre_force(int vflag) {
     }
   }
   // get lammps nlist
-  NeighList *list = pair_deepmd->list;
+  NeighList* list = pair_deepmd->list;
   deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
                                      list->firstneigh);
   lmp_list.set_mask(NEIGHMASK);
@@ -515,7 +515,7 @@ void FixDPLR::pre_force(int vflag) {
   // compute
   try {
     dpt.compute(tensor, dcoord, dtype, dbox, nghost, lmp_list);
-  } catch (deepmd_compat::deepmd_exception &e) {
+  } catch (deepmd_compat::deepmd_exception& e) {
     error->one(FLERR, e.what());
   }
   // cout << "tensor of size " << tensor.size() << endl;
@@ -607,7 +607,7 @@ void FixDPLR::post_force(int vflag) {
     update_efield_variables();
   }
 
-  PPPMDPLR *pppm_dplr = (PPPMDPLR *)force->kspace_match("pppm/dplr", 1);
+  PPPMDPLR* pppm_dplr = (PPPMDPLR*)force->kspace_match("pppm/dplr", 1);
   int nlocal = atom->nlocal;
   int nghost = atom->nghost;
   int nall = nlocal + nghost;
@@ -616,7 +616,7 @@ void FixDPLR::post_force(int vflag) {
   vector<int> dtype(nall, 0);
   // set values for dcoord, dbox, dfele
   {
-    int *type = atom->type;
+    int* type = atom->type;
     for (int ii = 0; ii < nall; ++ii) {
       dtype[ii] = type_idx_map[type[ii] - 1];
     }
@@ -627,7 +627,7 @@ void FixDPLR::post_force(int vflag) {
     dbox[6] = domain->h[4] / dist_unit_cvt_factor;  // zx
     dbox[3] = domain->h[5] / dist_unit_cvt_factor;  // yx
     // get coord
-    double **x = atom->x;
+    double** x = atom->x;
     for (int ii = 0; ii < nall; ++ii) {
       for (int dd = 0; dd < 3; ++dd) {
         dcoord[ii * 3 + dd] =
@@ -636,15 +636,15 @@ void FixDPLR::post_force(int vflag) {
     }
     // revise force according to efield
     if (pppm_dplr) {
-      const vector<double> &dfele_(pppm_dplr->get_fele());
+      const vector<double>& dfele_(pppm_dplr->get_fele());
       assert(dfele_.size() == nlocal * 3);
       for (int ii = 0; ii < nlocal * 3; ++ii) {
         dfele[ii] += dfele_[ii];
       }
     }
     // revise force and virial according to efield
-    double *q = atom->q;
-    imageint *image = atom->image;
+    double* q = atom->q;
+    imageint* image = atom->image;
     double unwrap[3];
     double v[6];
     efield_fsum[0] = efield_fsum[1] = efield_fsum[2] = efield_fsum[3] = 0.0;
@@ -675,7 +675,7 @@ void FixDPLR::post_force(int vflag) {
     }
   }
   // lmp nlist
-  NeighList *list = pair_deepmd->list;
+  NeighList* list = pair_deepmd->list;
   deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
                                      list->firstneigh);
   // bonded pairs
@@ -696,7 +696,7 @@ void FixDPLR::post_force(int vflag) {
     for (int ii = 0; ii < 9; ++ii) {
       dvcorr[ii] *= ener_unit_cvt_factor;
     }
-  } catch (deepmd_compat::deepmd_exception &e) {
+  } catch (deepmd_compat::deepmd_exception& e) {
     error->one(FLERR, e.what());
   }
   assert(dfcorr.size() == dcoord.size());
@@ -726,7 +726,7 @@ void FixDPLR::post_force(int vflag) {
   //   cout << endl;
   // }
   // apply the force correction
-  double **f = atom->f;
+  double** f = atom->f;
   for (int ii = 0; ii < nlocal; ++ii) {
     for (int dd = 0; dd < 3; ++dd) {
       f[ii][dd] += dfcorr[ii * 3 + dd];
@@ -778,7 +778,7 @@ void FixDPLR::min_post_force(int vflag) { post_force(vflag); }
 
 /* ---------------------------------------------------------------------- */
 
-int FixDPLR::pack_reverse_comm(int n, int first, double *buf) {
+int FixDPLR::pack_reverse_comm(int n, int first, double* buf) {
   int m = 0;
   int last = first + n;
   for (int i = first; i < last; i++) {
@@ -791,7 +791,7 @@ int FixDPLR::pack_reverse_comm(int n, int first, double *buf) {
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::unpack_reverse_comm(int n, int *list, double *buf) {
+void FixDPLR::unpack_reverse_comm(int n, int* list, double* buf) {
   int m = 0;
   for (int i = 0; i < n; i++) {
     int j = list[i];

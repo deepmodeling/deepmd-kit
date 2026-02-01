@@ -37,7 +37,9 @@ from .model.test_permutation import (
 
 
 class DPTest:
-    def test_dp_test_1_frame(self) -> None:
+    def _run_dp_test(
+        self, use_input_json: bool, numb_test: int = 0, use_train: bool = False
+    ) -> None:
         trainer = get_trainer(deepcopy(self.config))
         with torch.device("cpu"):
             input_dict, label_dict, _ = trainer.get_data(is_train=False)
@@ -51,12 +53,17 @@ class DPTest:
         model = torch.jit.script(trainer.model)
         tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
         torch.jit.save(model, tmp_model.name)
+        val_sys = self.config["training"]["validation_data"]["systems"]
+        if isinstance(val_sys, list):
+            val_sys = val_sys[0]
         dp_test(
             model=tmp_model.name,
-            system=self.config["training"]["validation_data"]["systems"][0],
+            system=None if use_input_json else val_sys,
             datafile=None,
+            train_json=self.input_json if use_input_json and use_train else None,
+            valid_json=self.input_json if use_input_json and not use_train else None,
             set_prefix="set",
-            numb_test=0,
+            numb_test=numb_test,
             rand_seed=None,
             shuffle_test=False,
             detail_file=self.detail_file,
@@ -99,6 +106,20 @@ class DPTest:
                     result["force_mag"][result["mask_mag"].bool().squeeze(-1)]
                 ).reshape(-1, 3),
             )
+
+    def test_dp_test_1_frame(self) -> None:
+        self._run_dp_test(False)
+
+    def test_dp_test_input_json(self) -> None:
+        self._run_dp_test(True)
+
+    def test_dp_test_input_json_train(self) -> None:
+        with open(self.input_json) as f:
+            cfg = json.load(f)
+        cfg["training"]["validation_data"]["systems"] = ["non-existent"]
+        with open(self.input_json, "w") as f:
+            json.dump(cfg, f, indent=4)
+        self._run_dp_test(True, use_train=True)
 
     def tearDown(self) -> None:
         for f in os.listdir("."):
@@ -145,6 +166,116 @@ class TestDPTestSeASpin(DPTest, unittest.TestCase):
         self.input_json = "test_dp_test.json"
         with open(self.input_json, "w") as fp:
             json.dump(self.config, fp, indent=4)
+
+
+class TestDPTestSeARglob(unittest.TestCase):
+    def setUp(self) -> None:
+        self.detail_file = "test_dp_test_ener_rglob_detail"
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        data_file = [str(Path(__file__).parent / "water/data/single")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        root_dir = str(Path(__file__).parent)
+        self.config["training"]["validation_data"]["systems"] = root_dir
+        self.config["training"]["validation_data"]["rglob_patterns"] = [
+            "water/data/single"
+        ]
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.input_json = "test_dp_test_rglob.json"
+        with open(self.input_json, "w") as fp:
+            json.dump(self.config, fp, indent=4)
+
+    def test_dp_test_input_json_rglob(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        with torch.device("cpu"):
+            input_dict, _, _ = trainer.get_data(is_train=False)
+        input_dict.pop("spin", None)
+        model = torch.jit.script(trainer.model)
+        tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
+        torch.jit.save(model, tmp_model.name)
+        dp_test(
+            model=tmp_model.name,
+            system=None,
+            datafile=None,
+            valid_json=self.input_json,
+            set_prefix="set",
+            numb_test=1,
+            rand_seed=None,
+            shuffle_test=False,
+            detail_file=self.detail_file,
+            atomic=False,
+        )
+        os.unlink(tmp_model.name)
+        self.assertTrue(os.path.exists(self.detail_file + ".e.out"))
+
+    def tearDown(self) -> None:
+        for f in os.listdir("."):
+            if f.startswith("model") and f.endswith(".pt"):
+                os.remove(f)
+            if f.startswith(self.detail_file):
+                os.remove(f)
+            if f in ["lcurve.out", self.input_json]:
+                os.remove(f)
+            if f in ["stat_files"]:
+                shutil.rmtree(f)
+
+
+class TestDPTestSeARglobTrain(unittest.TestCase):
+    def setUp(self) -> None:
+        self.detail_file = "test_dp_test_ener_rglob_train_detail"
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        root_dir = str(Path(__file__).parent)
+        self.config["training"]["training_data"]["systems"] = root_dir
+        self.config["training"]["training_data"]["rglob_patterns"] = [
+            "water/data/single"
+        ]
+        data_file = [str(Path(__file__).parent / "water/data/single")]
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.input_json = "test_dp_test_rglob_train.json"
+        with open(self.input_json, "w") as fp:
+            json.dump(self.config, fp, indent=4)
+
+    def test_dp_test_input_json_rglob_train(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        with torch.device("cpu"):
+            input_dict, _, _ = trainer.get_data(is_train=False)
+        input_dict.pop("spin", None)
+        model = torch.jit.script(trainer.model)
+        tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
+        torch.jit.save(model, tmp_model.name)
+        dp_test(
+            model=tmp_model.name,
+            system=None,
+            datafile=None,
+            train_json=self.input_json,
+            set_prefix="set",
+            numb_test=1,
+            rand_seed=None,
+            shuffle_test=False,
+            detail_file=self.detail_file,
+            atomic=False,
+        )
+        os.unlink(tmp_model.name)
+        self.assertTrue(os.path.exists(self.detail_file + ".e.out"))
+
+    def tearDown(self) -> None:
+        for f in os.listdir("."):
+            if f.startswith("model") and f.endswith(".pt"):
+                os.remove(f)
+            if f.startswith(self.detail_file):
+                os.remove(f)
+            if f in ["lcurve.out", self.input_json]:
+                os.remove(f)
+            if f in ["stat_files"]:
+                shutil.rmtree(f)
 
 
 class TestDPTestForceWeight(DPTest, unittest.TestCase):

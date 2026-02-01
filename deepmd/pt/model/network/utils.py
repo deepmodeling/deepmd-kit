@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-)
 
 import torch
 
@@ -11,7 +8,7 @@ def aggregate(
     data: torch.Tensor,
     owners: torch.Tensor,
     average: bool = True,
-    num_owner: Optional[int] = None,
+    num_owner: int | None = None,
 ) -> torch.Tensor:
     """
     Aggregate rows in data by specifying the owners.
@@ -57,7 +54,7 @@ def get_graph_index(
     a_nlist_mask: torch.Tensor,
     nall: int,
     use_loc_mapping: bool = True,
-):
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Get the index mapping for edge graph and angle graph, ready in `aggregate` or `index_select`.
 

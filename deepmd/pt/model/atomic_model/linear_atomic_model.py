@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
+from collections.abc import (
+    Callable,
+)
 from typing import (
+    Any,
     Optional,
-    Union,
 )
 
 import torch
@@ -55,8 +58,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self,
         models: list[BaseAtomicModel],
         type_map: list[str],
-        weights: Optional[Union[str, list[float]]] = "mean",
-        **kwargs,
+        weights: str | list[float] | None = "mean",
+        **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
         super().init_out_stat()
@@ -135,7 +138,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return self.type_map
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self,
+        type_map: list[str],
+        model_with_new_type_stat: Optional["LinearEnergyAtomicModel"] = None,
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -158,7 +163,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     def get_sel(self) -> list[int]:
         return [max([model.get_nsel() for model in self.models])]
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -228,10 +233,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -307,7 +312,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self,
         ret: dict[str, torch.Tensor],
         atype: torch.Tensor,
-    ):
+    ) -> dict[str, torch.Tensor]:
         """Apply the stat to each atomic output.
         The developer may override the method to define how the bias is applied
         to the atomic output of the model.
@@ -471,8 +476,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def compute_or_load_stat(
         self,
-        sampled_func,
-        stat_file_path: Optional[DPPath] = None,
+        sampled_func: Callable[[], list[dict[str, Any]]],
+        stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
     ) -> None:
         """
@@ -504,7 +509,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             stat_file_path /= " ".join(self.type_map)
 
         @functools.lru_cache
-        def wrapped_sampler():
+        def wrapped_sampler() -> list[dict[str, Any]]:
             sampled = sampled_func()
             if self.pair_excl is not None:
                 pair_exclude_types = self.pair_excl.get_exclude_types()
@@ -547,8 +552,8 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         sw_rmin: float,
         sw_rmax: float,
         type_map: list[str],
-        smin_alpha: Optional[float] = 0.1,
-        **kwargs,
+        smin_alpha: float | None = 0.1,
+        **kwargs: Any,
     ) -> None:
         models = [dp_model, zbl_model]
         kwargs["models"] = models
@@ -576,7 +581,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         )
         return dd
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -585,7 +590,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         self.models[0].set_case_embd(case_idx)
 
     @classmethod
-    def deserialize(cls, data) -> "DPZBLLinearEnergyAtomicModel":
+    def deserialize(cls, data: dict[str, Any]) -> "DPZBLLinearEnergyAtomicModel":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         models = [

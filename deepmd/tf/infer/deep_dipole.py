@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     TYPE_CHECKING,
-    Optional,
 )
 
 from deepmd.infer.deep_dipole import (
@@ -50,7 +49,7 @@ class DeepDipoleOld(DeepTensor):
         model_file: "Path",
         load_prefix: str = "load",
         default_tf_graph: bool = False,
-        input_map: Optional[dict] = None,
+        input_map: dict | None = None,
         neighbor_list=None,
     ) -> None:
         # use this in favor of dict update to move attribute from class to

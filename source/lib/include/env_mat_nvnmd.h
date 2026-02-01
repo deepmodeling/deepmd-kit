@@ -28,16 +28,16 @@ date: 2021-12-6
 namespace deepmd {
 
 template <typename FPTYPE>
-void env_mat_a_nvnmd_quantize_cpu(std::vector<FPTYPE> &descrpt_a,
-                                  std::vector<FPTYPE> &descrpt_a_deriv,
-                                  std::vector<FPTYPE> &rij_a,
-                                  const std::vector<FPTYPE> &posi,
-                                  const std::vector<int> &type,
-                                  const int &i_idx,
-                                  const std::vector<int> &fmt_nlist,
-                                  const std::vector<int> &sec,
-                                  const float &rmin,
-                                  const float &rmax);
+void env_mat_a_nvnmd_quantize_cpu(std::vector<FPTYPE>& descrpt_a,
+                                  std::vector<FPTYPE>& descrpt_a_deriv,
+                                  std::vector<FPTYPE>& rij_a,
+                                  const std::vector<FPTYPE>& posi,
+                                  const std::vector<int>& type,
+                                  const int& i_idx,
+                                  const std::vector<int>& fmt_nlist,
+                                  const std::vector<int>& sec,
+                                  const float& rmin,
+                                  const float& rmax);
 }
 
 union U_Flt64_Int64 {
@@ -59,7 +59,7 @@ union U_Flt64_Int64 {
   split double into sign, expo, and frac
 */
 template <class T>  // float and double
-void split_flt(T x, int64_t &sign, int64_t &expo, int64_t &mant) {
+void split_flt(T x, int64_t& sign, int64_t& expo, int64_t& mant) {
   U_Flt64_Int64 ufi;
   ufi.nflt = x;
   sign = (ufi.nint >> 63) & 0x01;
@@ -71,7 +71,7 @@ void split_flt(T x, int64_t &sign, int64_t &expo, int64_t &mant) {
  find the max exponent for float array x
 */
 template <class T>  // float and double
-void find_max_expo(int64_t &max_expo, T *x, int64_t M) {
+void find_max_expo(int64_t& max_expo, T* x, int64_t M) {
   int ii, jj, kk;
   U_Flt64_Int64 ufi;
   int64_t expo;
@@ -87,7 +87,7 @@ void find_max_expo(int64_t &max_expo, T *x, int64_t M) {
  find the max exponent for float array x
 */
 template <class T>  // float and double
-void find_max_expo(int64_t &max_expo, T *x, int64_t N, int64_t M) {
+void find_max_expo(int64_t& max_expo, T* x, int64_t N, int64_t M) {
   int ii, jj, kk;
   U_Flt64_Int64 ufi;
   int64_t expo;
@@ -103,7 +103,7 @@ void find_max_expo(int64_t &max_expo, T *x, int64_t N, int64_t M) {
  dot multiply
 */
 template <class T>  // float and double
-void dotmul_flt_nvnmd(T &y, T *x1, T *x2, int64_t M) {
+void dotmul_flt_nvnmd(T& y, T* x1, T* x2, int64_t M) {
   int ii, jj, kk;
   U_Flt64_Int64 ufi;
   //
@@ -146,7 +146,7 @@ void dotmul_flt_nvnmd(T &y, T *x1, T *x2, int64_t M) {
   multiply
 */
 template <class T>  // float and double
-void mul_flt_nvnmd(T &y, T x1, T x2) {
+void mul_flt_nvnmd(T& y, T x1, T x2) {
   U_Flt64_Int64 ufi1, ufi2, ufi3;
   ufi1.nflt = x1;
   ufi1.nint &= FLT_MASK;
@@ -161,7 +161,7 @@ void mul_flt_nvnmd(T &y, T x1, T x2) {
   add
 */
 template <class T>  // float and double
-void add_flt_nvnmd(T &y, T x1, T x2) {
+void add_flt_nvnmd(T& y, T x1, T x2) {
   U_Flt64_Int64 ufi1, ufi2, ufi3;
   int64_t sign1, sign2, sign3;
   int64_t expo1, expo2, expo3;

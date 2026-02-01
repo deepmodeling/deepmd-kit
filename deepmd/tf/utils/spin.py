@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-)
 
 from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
@@ -24,9 +21,9 @@ class Spin:
 
     def __init__(
         self,
-        use_spin: Optional[list[bool]] = None,
-        spin_norm: Optional[list[float]] = None,
-        virtual_len: Optional[list[float]] = None,
+        use_spin: list[bool] | None = None,
+        spin_norm: list[float] | None = None,
+        virtual_len: list[float] | None = None,
     ) -> None:
         """Constructor."""
         self.use_spin = use_spin

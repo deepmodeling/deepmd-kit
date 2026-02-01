@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 import torch
 
@@ -16,13 +12,13 @@ from deepmd.pt.utils.region import (
 
 
 def extend_input_and_build_neighbor_list(
-    coord,
-    atype,
+    coord: torch.Tensor,
+    atype: torch.Tensor,
     rcut: float,
     sel: list[int],
     mixed_types: bool = False,
-    box: Optional[torch.Tensor] = None,
-):
+    box: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     nframes, nloc = atype.shape[:2]
     if box is not None:
         box_gpu = box.to(coord.device, non_blocking=True)
@@ -53,7 +49,7 @@ def build_neighbor_list(
     atype: torch.Tensor,
     nloc: int,
     rcut: float,
-    sel: Union[int, list[int]],
+    sel: int | list[int],
     distinguish_types: bool = True,
 ) -> torch.Tensor:
     """Build neighbor list for a single frame. keeps nsel neighbors.
@@ -192,7 +188,7 @@ def build_directional_neighbor_list(
     coord_neig: torch.Tensor,
     atype_neig: torch.Tensor,
     rcut: float,
-    sel: Union[int, list[int]],
+    sel: int | list[int],
     distinguish_types: bool = True,
 ) -> torch.Tensor:
     """Build directional neighbor list.
@@ -292,7 +288,7 @@ def nlist_distinguish_types(
     nlist: torch.Tensor,
     atype: torch.Tensor,
     sel: list[int],
-):
+) -> torch.Tensor:
     """Given a nlist that does not distinguish atom types, return a nlist that
     distinguish atom types.
 
@@ -411,10 +407,10 @@ def build_multiple_neighbor_list(
 def extend_coord_with_ghosts(
     coord: torch.Tensor,
     atype: torch.Tensor,
-    cell: Optional[torch.Tensor],
+    cell: torch.Tensor | None,
     rcut: float,
-    cell_cpu: Optional[torch.Tensor] = None,
-):
+    cell_cpu: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Extend the coordinates of the atoms by appending peridoc images.
     The number of images is large enough to ensure all the neighbors
     within rcut are appended.

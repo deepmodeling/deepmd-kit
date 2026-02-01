@@ -23,9 +23,9 @@ log = logging.getLogger(__name__)
 class Tester:
     def __init__(
         self,
-        model_ckpt,
-        head=None,
-    ):
+        model_ckpt: str,
+        head: str | None = None,
+    ) -> None:
         """Construct a DeePMD tester.
 
         Args:

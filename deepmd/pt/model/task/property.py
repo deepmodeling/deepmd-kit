@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    Optional,
-    Union,
+    Any,
 )
 
 import torch
@@ -80,7 +79,7 @@ class PropertyFittingNet(InvarFitting):
         property_name: str,
         task_dim: int = 1,
         neuron: list[int] = [128, 128, 128],
-        bias_atom_p: Optional[torch.Tensor] = None,
+        bias_atom_p: torch.Tensor | None = None,
         intensive: bool = False,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -89,9 +88,10 @@ class PropertyFittingNet(InvarFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        trainable: Union[bool, list[bool]] = True,
-        seed: Optional[int] = None,
-        **kwargs,
+        trainable: bool | list[bool] = True,
+        seed: int | None = None,
+        default_fparam: list | None = None,
+        **kwargs: Any,
     ) -> None:
         self.task_dim = task_dim
         self.intensive = intensive
@@ -111,6 +111,7 @@ class PropertyFittingNet(InvarFitting):
             mixed_types=mixed_types,
             trainable=trainable,
             seed=seed,
+            default_fparam=default_fparam,
             **kwargs,
         )
 
@@ -135,7 +136,7 @@ class PropertyFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "PropertyFittingNet":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 5, 1)
         data.pop("dim_out")
         data["property_name"] = data.pop("var_name")
         obj = super().deserialize(data)
@@ -150,7 +151,7 @@ class PropertyFittingNet(InvarFitting):
             "task_dim": self.task_dim,
             "intensive": self.intensive,
         }
-        dd["@version"] = 4
+        dd["@version"] = 5
 
         return dd
 

@@ -2,8 +2,7 @@
 import copy
 import math
 from typing import (
-    Optional,
-    Union,
+    Any,
 )
 
 import torch
@@ -11,9 +10,12 @@ import torch
 from deepmd.dpmodel import (
     get_hessian_name,
 )
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+)
 
 
-def make_hessian_model(T_Model):
+def make_hessian_model(T_Model: type) -> type:
     """Make a model that can compute Hessian.
 
     LIMITATION: this model is not jitable due to the restrictions of torch jit script.
@@ -34,8 +36,8 @@ def make_hessian_model(T_Model):
     class CM(T_Model):
         def __init__(
             self,
-            *args,
-            **kwargs,
+            *args: Any,
+            **kwargs: Any,
         ) -> None:
             super().__init__(
                 *args,
@@ -45,7 +47,7 @@ def make_hessian_model(T_Model):
 
         def requires_hessian(
             self,
-            keys: Union[str, list[str]],
+            keys: str | list[str],
         ) -> None:
             """Set which output variable(s) requires hessian."""
             if isinstance(keys, str):
@@ -54,17 +56,17 @@ def make_hessian_model(T_Model):
                 if kk in keys:
                     self.hess_fitting_def[kk].r_hessian = True
 
-        def atomic_output_def(self):
+        def atomic_output_def(self) -> FittingOutputDef:
             """Get the fitting output def."""
             return self.hess_fitting_def
 
         def forward_common(
             self,
-            coord,
-            atype,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
         ) -> dict[str, torch.Tensor]:
             """Return model prediction.
@@ -117,9 +119,9 @@ def make_hessian_model(T_Model):
             self,
             coord: torch.Tensor,
             atype: torch.Tensor,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             nf, nloc = atype.shape
             coord = coord.view([nf, (nloc * 3)])
@@ -159,12 +161,12 @@ def make_hessian_model(T_Model):
 
         def _cal_hessian_one_component(
             self,
-            ci,
-            coord,
-            atype,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            ci: int,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
         ) -> torch.Tensor:
             # coord, # (nloc x 3)
             # atype, # nloc
@@ -185,9 +187,9 @@ def make_hessian_model(T_Model):
             obj: CM,
             ci: int,
             atype: torch.Tensor,
-            box: Optional[torch.Tensor],
-            fparam: Optional[torch.Tensor],
-            aparam: Optional[torch.Tensor],
+            box: torch.Tensor | None,
+            fparam: torch.Tensor | None,
+            aparam: torch.Tensor | None,
         ) -> None:
             self.atype, self.box, self.fparam, self.aparam = atype, box, fparam, aparam
             self.ci = ci
@@ -195,8 +197,8 @@ def make_hessian_model(T_Model):
 
         def __call__(
             self,
-            xx,
-        ):
+            xx: torch.Tensor,
+        ) -> torch.Tensor:
             ci = self.ci
             atype, box, fparam, aparam = self.atype, self.box, self.fparam, self.aparam
             res = super(CM, self.obj).forward_common(

@@ -1,24 +1,27 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import array_api_compat
-import numpy as np
+
+from deepmd.dpmodel.array_api import (
+    Array,
+)
 
 
 def phys2inter(
-    coord: np.ndarray,
-    cell: np.ndarray,
-) -> np.ndarray:
+    coord: Array,
+    cell: Array,
+) -> Array:
     """Convert physical coordinates to internal(direct) coordinates.
 
     Parameters
     ----------
-    coord : np.ndarray
+    coord : Array
         physical coordinates of shape [*, na, 3].
-    cell : np.ndarray
+    cell : Array
         simulation cell tensor of shape [*, 3, 3].
 
     Returns
     -------
-    inter_coord: np.ndarray
+    inter_coord: Array
         the internal coordinates
 
     """
@@ -28,21 +31,21 @@ def phys2inter(
 
 
 def inter2phys(
-    coord: np.ndarray,
-    cell: np.ndarray,
-) -> np.ndarray:
+    coord: Array,
+    cell: Array,
+) -> Array:
     """Convert internal(direct) coordinates to physical coordinates.
 
     Parameters
     ----------
-    coord : np.ndarray
+    coord : Array
         internal coordinates of shape [*, na, 3].
-    cell : np.ndarray
+    cell : Array
         simulation cell tensor of shape [*, 3, 3].
 
     Returns
     -------
-    phys_coord: np.ndarray
+    phys_coord: Array
         the physical coordinates
 
     """
@@ -51,43 +54,45 @@ def inter2phys(
 
 
 def normalize_coord(
-    coord: np.ndarray,
-    cell: np.ndarray,
-) -> np.ndarray:
+    coord: Array,
+    cell: Array,
+) -> Array:
     """Apply PBC according to the atomic coordinates.
 
     Parameters
     ----------
-    coord : np.ndarray
+    coord : Array
         original coordinates of shape [*, na, 3].
-    cell : np.ndarray
+    cell : Array
         simulation cell shape [*, 3, 3].
 
     Returns
     -------
-    wrapped_coord: np.ndarray
+    wrapped_coord: Array
         wrapped coordinates of shape [*, na, 3].
 
     """
     xp = array_api_compat.array_namespace(coord, cell)
     icoord = phys2inter(coord, cell)
-    icoord = xp.remainder(icoord, xp.asarray(1.0))
+    icoord = xp.remainder(
+        icoord, xp.ones((), dtype=icoord.dtype, device=array_api_compat.device(icoord))
+    )
     return inter2phys(icoord, cell)
 
 
 def to_face_distance(
-    cell: np.ndarray,
-) -> np.ndarray:
+    cell: Array,
+) -> Array:
     """Compute the to-face-distance of the simulation cell.
 
     Parameters
     ----------
-    cell : np.ndarray
+    cell : Array
         simulation cell tensor of shape [*, 3, 3].
 
     Returns
     -------
-    dist: np.ndarray
+    dist: Array
         the to face distances of shape [*, 3]
 
     """
@@ -97,7 +102,7 @@ def to_face_distance(
     return xp.reshape(dist, tuple(list(cshape[:-2]) + [3]))  # noqa:RUF005
 
 
-def b_to_face_distance(cell):
+def b_to_face_distance(cell: Array) -> Array:
     xp = array_api_compat.array_namespace(cell)
     volume = xp.linalg.det(cell)
     c_yz = xp.linalg.cross(cell[:, 1, ...], cell[:, 2, ...], axis=-1)

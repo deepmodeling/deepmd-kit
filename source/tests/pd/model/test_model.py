@@ -19,6 +19,9 @@ from pathlib import (
     Path,
 )
 
+from deepmd.common import (
+    expand_sys_str,
+)
 from deepmd.dpmodel.utils.learning_rate import LearningRateExp as MyLRExp
 from deepmd.pd.loss import (
     EnergyStdLoss,
@@ -31,9 +34,6 @@ from deepmd.pd.utils.dataloader import (
 )
 from deepmd.pd.utils.env import (
     DEVICE,
-)
-from deepmd.tf.common import (
-    expand_sys_str,
 )
 from deepmd.tf.descriptor import DescrptSeA as DescrptSeA_tf
 from deepmd.tf.fit import (

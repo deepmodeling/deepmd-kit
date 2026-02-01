@@ -4,9 +4,6 @@ import unittest
 from pathlib import (
     Path,
 )
-from typing import (
-    Optional,
-)
 
 import h5py
 import numpy as np
@@ -92,11 +89,11 @@ class FooFitting(paddle.nn.Layer, BaseFitting):
         self,
         descriptor: paddle.Tensor,
         atype: paddle.Tensor,
-        gr: Optional[paddle.Tensor] = None,
-        g2: Optional[paddle.Tensor] = None,
-        h2: Optional[paddle.Tensor] = None,
-        fparam: Optional[paddle.Tensor] = None,
-        aparam: Optional[paddle.Tensor] = None,
+        gr: paddle.Tensor | None = None,
+        g2: paddle.Tensor | None = None,
+        h2: paddle.Tensor | None = None,
+        fparam: paddle.Tensor | None = None,
+        aparam: paddle.Tensor | None = None,
     ):
         nf, nloc, _ = descriptor.shape
         ret = {}

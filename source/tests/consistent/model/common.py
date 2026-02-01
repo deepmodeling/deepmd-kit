@@ -77,8 +77,8 @@ class ModelTest:
             ]
         elif ret_key == "polar":
             ret_list = [
-                ret["polar"],
                 ret["global_polar"],
+                ret["polar"],
             ]
         else:
             raise NotImplementedError
