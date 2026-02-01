@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
 
 import numpy as np
 
@@ -80,8 +83,8 @@ class DescrptSeAEf(DescrptSe):
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
-        uniform_seed=False,
-        **kwargs,
+        uniform_seed: bool = False,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         self.descrpt_para = DescrptSeAEfLower(
@@ -168,7 +171,7 @@ class DescrptSeAEf(DescrptSe):
         natoms_vec: list,
         mesh: list,
         input_dict: dict,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 
@@ -297,7 +300,7 @@ class DescrptSeAEfLower(DescrptSeA):
 
     def __init__(
         self,
-        op,
+        op: Any,
         rcut: float,
         rcut_smth: float,
         sel: list[int],
@@ -401,13 +404,13 @@ class DescrptSeAEfLower(DescrptSeA):
 
     def compute_input_stats(
         self,
-        data_coord,
-        data_box,
-        data_atype,
-        natoms_vec,
-        mesh,
-        input_dict,
-        **kwargs,
+        data_coord: Any,
+        data_box: Any,
+        data_atype: Any,
+        natoms_vec: Any,
+        mesh: Any,
+        input_dict: dict,
+        **kwargs: Any,
     ) -> None:
         data_efield = input_dict["efield"]
         all_davg = []
@@ -456,14 +459,22 @@ class DescrptSeAEfLower(DescrptSeA):
         self.davg = np.array(all_davg)
         self.dstd = np.array(all_dstd)
 
-    def _normalize_3d(self, a):
+    def _normalize_3d(self, a: Any) -> Any:
         na = tf.norm(a, axis=1)
         na = tf.tile(tf.reshape(na, [-1, 1]), tf.constant([1, 3]))
         return tf.divide(a, na)
 
     def build(
-        self, coord_, atype_, natoms, box_, mesh, input_dict, suffix="", reuse=None
-    ):
+        self,
+        coord_: Any,
+        atype_: Any,
+        natoms: Any,
+        box_: Any,
+        mesh: Any,
+        input_dict: dict,
+        suffix: str = "",
+        reuse: Any = None,
+    ) -> Any:
         efield = input_dict["efield"]
         davg = self.davg
         dstd = self.dstd
@@ -543,8 +554,14 @@ class DescrptSeAEfLower(DescrptSeA):
         return self.dout
 
     def _compute_dstats_sys_smth(
-        self, data_coord, data_box, data_atype, natoms_vec, mesh, data_efield
-    ):
+        self,
+        data_coord: Any,
+        data_box: Any,
+        data_atype: Any,
+        natoms_vec: Any,
+        mesh: Any,
+        data_efield: Any,
+    ) -> Any:
         dd_all = run_sess(
             self.sub_sess,
             self.stat_descrpt,
