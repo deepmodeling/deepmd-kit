@@ -146,7 +146,7 @@ dp = "deepmd.main:main"
 
 [dependency-groups]
 dev = [
-  "pre-commit",
+  "prek",
   "cmake",
   "mpich",
 ]

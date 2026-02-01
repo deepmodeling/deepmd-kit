@@ -55,10 +55,10 @@ jobs:
         run: uv pip install -e .[cpu,test]
 
       - name: Install pre-commit tools
-        run: uv tool install pre-commit
+        run: uv tool install prek
 
       - name: Install pre-commit hooks
-        run: pre-commit install --install-hooks
+        run: prek install --install-hooks
 
       - name: Verify installation
         run: |

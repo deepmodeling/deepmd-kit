@@ -44,7 +44,7 @@ repos:
     hooks:
       - id: flake8
         additional_dependencies:
-          - torchfix==0.6.0
+          - torchfix==0.7.0
           - flake8-pyproject==1.2.3
   # numpydoc
   - repo: https://github.com/Carreau/velin
