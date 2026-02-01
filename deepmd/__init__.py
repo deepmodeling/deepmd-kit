@@ -10,6 +10,7 @@ modules for performance.
 
 from typing import (
     TYPE_CHECKING,
+    Any,
 )
 
 if TYPE_CHECKING:
@@ -23,7 +24,7 @@ except ImportError:
     )
 
 
-def DeepPotential(*args: object, **kwargs: object) -> "DeepPotentialType":
+def DeepPotential(*args: Any, **kwargs: Any) -> "DeepPotentialType":
     """Factory function that forwards to DeepEval (for compatibility
     and performance).
 

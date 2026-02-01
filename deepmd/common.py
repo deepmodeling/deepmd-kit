@@ -283,7 +283,7 @@ def symlink_prefix_files(old_prefix: str, new_prefix: str) -> None:
             shutil.copyfile(ori_ff, new_ff)
 
 
-def get_hash(obj: object) -> str:
+def get_hash(obj: Any) -> str:
     """Get hash of object.
 
     Parameters
