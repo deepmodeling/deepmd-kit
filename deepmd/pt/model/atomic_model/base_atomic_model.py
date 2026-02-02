@@ -382,6 +382,9 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         """
         raise NotImplementedError
 
+    def get_wrapper_sampler(self, sampled_func):
+        raise NotImplementedError
+
     def compute_or_load_out_stat(
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],

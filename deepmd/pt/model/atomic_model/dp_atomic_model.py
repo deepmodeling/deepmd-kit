@@ -304,6 +304,22 @@ class DPAtomicModel(BaseAtomicModel):
         )
         self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
+    def get_wrapper_sampler(self, sampled_func):
+        @functools.lru_cache
+        def wrapped_sampler():
+            sampled = sampled_func()
+            if self.pair_excl is not None:
+                pair_exclude_types = self.pair_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["pair_exclude_types"] = list(pair_exclude_types)
+            if self.atom_excl is not None:
+                atom_exclude_types = self.atom_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["atom_exclude_types"] = list(atom_exclude_types)
+            return sampled
+
+        return wrapped_sampler
+
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
         return self.fitting_net.get_dim_fparam()

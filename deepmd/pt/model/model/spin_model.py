@@ -350,6 +350,71 @@ class SpinModel(torch.nn.Module):
         else:
             return getattr(self.backbone_model, name)
 
+    def get_spin_sampled_func(self, sampled_func):
+        @functools.lru_cache
+        def spin_sampled_func():
+            sampled = sampled_func()
+            spin_sampled = []
+            for sys in sampled:
+                coord_updated, atype_updated, _ = self.process_spin_input(
+                    sys["coord"], sys["atype"], sys["spin"]
+                )
+                tmp_dict = {
+                    "coord": coord_updated,
+                    "atype": atype_updated,
+                }
+                if "natoms" in sys:
+                    natoms = sys["natoms"]
+                    tmp_dict["natoms"] = torch.cat(
+                        [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]], dim=-1
+                    )
+                for item_key in sys.keys():
+                    if item_key not in ["coord", "atype", "spin", "natoms"]:
+                        tmp_dict[item_key] = sys[item_key]
+                spin_sampled.append(tmp_dict)
+            return spin_sampled
+
+        return self.backbone_model.atomic_model.get_wrapper_sampler(spin_sampled_func)
+
+    def change_out_bias(
+        self,
+        merged,
+        bias_adjust_mode="change-by-statistic",
+    ) -> None:
+        """Change the output bias of atomic model according to the input data and the pretrained model.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        bias_adjust_mode : str
+            The mode for changing output bias : ['change-by-statistic', 'set-by-statistic']
+            'change-by-statistic' : perform predictions on labels of target dataset,
+                    and do least square on the errors to obtain the target shift as bias.
+            'set-by-statistic' : directly use the statistic output bias in the target dataset.
+        """
+        spin_sampled_func = self.get_spin_sampled_func(merged)
+        self.backbone_model.change_out_bias(
+            spin_sampled_func,
+            bias_adjust_mode=bias_adjust_mode,
+        )
+
+    def change_type_map(
+        self, type_map: list[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        type_map_with_spin = type_map + [item + "_spin" for item in type_map]
+        self.backbone_model.change_type_map(
+            type_map_with_spin, model_with_new_type_stat
+        )
+
     def compute_or_load_stat(
         self,
         sampled_func,

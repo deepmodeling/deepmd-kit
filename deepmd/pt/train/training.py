@@ -1350,7 +1350,7 @@ def model_change_out_bias(
     model_type_map = _model.get_type_map()
     log.info(
         f"Change output bias of {model_type_map!s} "
-        f"from {to_numpy_array(old_bias).reshape(-1)!s} "
-        f"to {to_numpy_array(new_bias).reshape(-1)!s}."
+        f"from {to_numpy_array(old_bias).reshape(-1)[: len(model_type_map)]!s} "
+        f"to {to_numpy_array(new_bias).reshape(-1)[: len(model_type_map)]!s}."
     )
     return _model
