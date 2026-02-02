@@ -822,7 +822,7 @@ class StandardModel(Model):
         """Get the fitting(s)."""
         return self.fitting
 
-    def get_loss(self, loss: dict, lr: Any) -> Loss | dict:
+    def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss | dict:
         """Get the loss function(s)."""
         return self.fitting.get_loss(loss, lr)
 

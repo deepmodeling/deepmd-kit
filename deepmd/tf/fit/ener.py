@@ -46,6 +46,9 @@ from deepmd.tf.utils.graph import (
     get_fitting_net_variables_from_graph_def,
     get_tensor_by_name_from_graph,
 )
+from deepmd.tf.utils.learning_rate import (
+    LearningRateExp,
+)
 from deepmd.tf.utils.network import one_layer as one_layer_deepmd
 from deepmd.tf.utils.network import (
     one_layer_rand_seed_shift,
@@ -854,7 +857,7 @@ class EnerFitting(Fitting):
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
 
-    def get_loss(self, loss: dict, lr: Any) -> Loss:
+    def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss:
         """Get the loss function.
 
         Parameters

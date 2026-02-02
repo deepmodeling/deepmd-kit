@@ -9,6 +9,9 @@ from typing import (
     Any,
 )
 
+if TYPE_CHECKING:
+    from typing import TextIO
+
 import google.protobuf.message
 import numpy as np
 from packaging.version import (
@@ -188,7 +191,7 @@ class DPTrainer:
 
     def build(
         self,
-        data: dict,
+        data: DeepmdDataSystem | None = None,
         stop_batch: int = 0,
         origin_type_map: list[str] | None = None,
         suffix: str = "",
@@ -267,7 +270,7 @@ class DPTrainer:
         self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
         log.info("built lr")
 
-    def _build_loss(self) -> Any:
+    def _build_loss(self) -> tuple[None, None] | tuple[tf.Tensor, dict[str, tf.Tensor]]:
         if self.stop_batch == 0:
             # l2 is not used if stop_batch is zero
             return None, None
@@ -284,7 +287,7 @@ class DPTrainer:
 
         return l2_l, l2_more
 
-    def _build_network(self, data: dict, suffix: str = "") -> None:
+    def _build_network(self, data: DeepmdDataSystem, suffix: str = "") -> None:
         self.place_holders = {}
         if self.is_compress:
             for kk in ["coord", "box"]:
@@ -688,7 +691,7 @@ class DPTrainer:
         feed_dict[self.place_holders["is_training"]] = is_training
         return feed_dict
 
-    def get_global_step(self) -> Any:
+    def get_global_step(self) -> int:
         return run_sess(self.sess, self.global_step)
 
     # def print_head (self) :  # depreciated
