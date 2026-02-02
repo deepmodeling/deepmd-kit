@@ -752,10 +752,10 @@ class DescrptSeA(DescrptSe):
 
     def _pass_filter(
         self,
-        inputs: Any,
-        atype: Any,
-        natoms: Any,
-        input_dict: Any,
+        inputs: tf.Tensor,
+        atype: tf.Tensor,
+        natoms: tf.Tensor,
+        input_dict: dict,
         reuse: Any = None,
         suffix: str = "",
         trainable: bool = True,

@@ -376,11 +376,11 @@ class DescrptLocFrame(Descriptor):
 
     def _compute_dstats_sys_nonsmth(
         self,
-        data_coord: Any,
-        data_box: Any,
-        data_atype: Any,
-        natoms_vec: Any,
-        mesh: Any,
+        data_coord: np.ndarray,
+        data_box: np.ndarray,
+        data_atype: np.ndarray,
+        natoms_vec: np.ndarray,
+        mesh: np.ndarray,
     ) -> tuple[Any, Any]:
         dd_all = run_sess(
             self.sub_sess,
@@ -413,7 +413,7 @@ class DescrptLocFrame(Descriptor):
             sysv2.append(sumv2)
         return sysv, sysv2, sysn
 
-    def _compute_std(self, sumv2: Any, sumv: Any, sumn: Any) -> Any:
+    def _compute_std(self, sumv2: float, sumv: float, sumn: float) -> float:
         return np.sqrt(sumv2 / sumn - np.multiply(sumv / sumn, sumv / sumn))
 
     def init_variables(

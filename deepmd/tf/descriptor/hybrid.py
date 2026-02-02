@@ -182,7 +182,7 @@ class DescrptHybrid(Descriptor):
                 **kwargs,
             )
 
-    def merge_input_stats(self, stat_dict: Any) -> None:
+    def merge_input_stats(self, stat_dict: dict[str, float]) -> None:
         """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
 
         Parameters
