@@ -55,6 +55,9 @@ from deepmd.tf.utils.data_system import (
 from deepmd.tf.utils.graph import (
     load_graph_def,
 )
+from deepmd.tf.utils.learning_rate import (
+    LearningRateExp,
+)
 from deepmd.tf.utils.spin import (
     Spin,
 )
@@ -449,7 +452,7 @@ class Model(ABC, make_plugin_registry("model")):
         """Get the fitting(s)."""
 
     @abstractmethod
-    def get_loss(self, loss: dict, lr: Any) -> Loss | dict | None:
+    def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss | dict | None:
         """Get the loss function(s)."""
 
     @abstractmethod
