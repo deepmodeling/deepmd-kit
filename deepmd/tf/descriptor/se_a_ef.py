@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
 )
@@ -300,7 +303,7 @@ class DescrptSeAEfLower(DescrptSeA):
 
     def __init__(
         self,
-        op: Any,
+        op: Callable,
         rcut: float,
         rcut_smth: float,
         sel: list[int],
@@ -404,11 +407,11 @@ class DescrptSeAEfLower(DescrptSeA):
 
     def compute_input_stats(
         self,
-        data_coord: Any,
-        data_box: Any,
-        data_atype: Any,
-        natoms_vec: Any,
-        mesh: Any,
+        data_coord: list[np.ndarray],
+        data_box: list[np.ndarray],
+        data_atype: list[np.ndarray],
+        natoms_vec: list[np.ndarray],
+        mesh: list[np.ndarray],
         input_dict: dict,
         **kwargs: Any,
     ) -> None:
@@ -459,22 +462,22 @@ class DescrptSeAEfLower(DescrptSeA):
         self.davg = np.array(all_davg)
         self.dstd = np.array(all_dstd)
 
-    def _normalize_3d(self, a: Any) -> Any:
+    def _normalize_3d(self, a: tf.Tensor) -> tf.Tensor:
         na = tf.norm(a, axis=1)
         na = tf.tile(tf.reshape(na, [-1, 1]), tf.constant([1, 3]))
         return tf.divide(a, na)
 
     def build(
         self,
-        coord_: Any,
-        atype_: Any,
-        natoms: Any,
-        box_: Any,
-        mesh: Any,
+        coord_: tf.Tensor,
+        atype_: tf.Tensor,
+        natoms: list,
+        box_: tf.Tensor,
+        mesh: tf.Tensor,
         input_dict: dict,
         suffix: str = "",
-        reuse: Any = None,
-    ) -> Any:
+        reuse: bool | None = None,
+    ) -> tf.Tensor:
         efield = input_dict["efield"]
         davg = self.davg
         dstd = self.dstd
@@ -555,13 +558,13 @@ class DescrptSeAEfLower(DescrptSeA):
 
     def _compute_dstats_sys_smth(
         self,
-        data_coord: Any,
-        data_box: Any,
-        data_atype: Any,
-        natoms_vec: Any,
-        mesh: Any,
-        data_efield: Any,
-    ) -> Any:
+        data_coord: np.ndarray,
+        data_box: np.ndarray,
+        data_atype: np.ndarray,
+        natoms_vec: np.ndarray,
+        mesh: np.ndarray,
+        data_efield: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         dd_all = run_sess(
             self.sub_sess,
             self.stat_descrpt,
