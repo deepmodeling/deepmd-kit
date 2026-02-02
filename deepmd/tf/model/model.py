@@ -18,6 +18,10 @@ if TYPE_CHECKING:
         Self,
     )
 
+    from deepmd.tf.train.learning_rate import (
+        LearningRateExp,
+    )
+
 import numpy as np
 
 from deepmd.common import (
@@ -892,12 +896,12 @@ class StandardModel(Model):
 
     def _apply_out_bias_std(
         self,
-        output: Any,
-        atype: Any,
-        natoms: Any,
-        coord: Any,
-        selected_atype: Any = None,
-    ) -> Any:
+        output: tf.Tensor,
+        atype: tf.Tensor,
+        natoms: list[int],
+        coord: tf.Tensor,
+        selected_atype: tf.Tensor | None = None,
+    ) -> tf.Tensor:
         """Apply output bias and standard deviation to the model output.
 
         Parameters
