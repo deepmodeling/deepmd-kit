@@ -17,13 +17,15 @@ from deepmd.tf.utils.graph import (
 log = logging.getLogger(__name__)
 
 
-def get_type_embedding(self: Any, graph: Any) -> np.ndarray:
+def get_type_embedding(self: Any, graph: tf.Graph) -> np.ndarray:
     type_embedding = get_tensor_by_name_from_graph(graph, "t_typeebd")
     type_embedding = type_embedding.astype(self.filter_np_precision)
     return type_embedding
 
 
-def get_two_side_type_embedding(self: Any, graph: Any, suffix: str = "") -> np.ndarray:
+def get_two_side_type_embedding(
+    self: Any, graph: tf.Graph, suffix: str = ""
+) -> np.ndarray:
     type_embedding = get_tensor_by_name_from_graph(graph, f"t_typeebd{suffix}")
     type_embedding = type_embedding.astype(self.filter_np_precision)
     type_embedding_shape = type_embedding.shape
@@ -46,7 +48,11 @@ def get_two_side_type_embedding(self: Any, graph: Any, suffix: str = "") -> np.n
 
 
 def get_extra_side_embedding_net_variable(
-    self: Any, graph_def: Any, type_side_suffix: str, varialbe_name: str, suffix: str
+    self: Any,
+    graph_def: tf.GraphDef,
+    type_side_suffix: str,
+    varialbe_name: str,
+    suffix: str,
 ) -> dict[str, Any]:
     ret = {}
     for i in range(1, self.layer_size + 1):
@@ -59,16 +65,18 @@ def get_extra_side_embedding_net_variable(
     return ret
 
 
-def _layer_0(self: Any, x: tf.Tensor, w: Any, b: Any) -> tf.Tensor:
+def _layer_0(self: Any, x: tf.Tensor, w: tf.Tensor, b: tf.Tensor) -> tf.Tensor:
     return self.filter_activation_fn(tf.matmul(x, w) + b)
 
 
-def _layer_1(self: Any, x: tf.Tensor, w: Any, b: Any) -> tuple[tf.Tensor, tf.Tensor]:
+def _layer_1(
+    self: Any, x: tf.Tensor, w: tf.Tensor, b: tf.Tensor
+) -> tuple[tf.Tensor, tf.Tensor]:
     t = tf.concat([x, x], axis=1)
     return t, self.filter_activation_fn(tf.matmul(x, w) + b) + t
 
 
-def make_data(self: Any, xx: Any) -> Any:
+def make_data(self: Any, xx: np.ndarray) -> np.ndarray:
     with tf.Session() as sess:
         for layer in range(self.layer_size):
             if layer == 0:

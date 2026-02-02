@@ -858,8 +858,8 @@ class DPTrainer:
 
     def _init_from_pretrained_model(
         self,
-        data: Any,
-        origin_type_map: Any = None,
+        data: DeepmdDataSystem,
+        origin_type_map: list[str] | None = None,
         bias_adjust_mode: str = "change-by-statistic",
     ) -> None:
         """Init the embedding net variables with the given frozen model.
@@ -909,9 +909,9 @@ class DPTrainer:
 
     def _change_energy_bias(
         self,
-        data: Any,
-        frozen_model: Any,
-        origin_type_map: Any,
+        data: DeepmdDataSystem,
+        frozen_model: str,
+        origin_type_map: list[str] | None,
         bias_adjust_mode: str = "change-by-statistic",
     ) -> None:
         full_type_map = data.get_type_map()
