@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -23,6 +24,11 @@ from deepmd.utils.version import (
 from .loss import (
     Loss,
 )
+
+if TYPE_CHECKING:
+    from typing import (
+        TextIO,
+    )
 
 
 def custom_huber_loss(
@@ -805,10 +811,10 @@ class EnerSpinLoss(Loss):
 
     def print_on_training(
         self,
-        tb_writer: Any,
+        tb_writer: "TextIO",
         cur_batch: int,
-        sess: Any,
-        natoms: Any,
+        sess: "tf.Session",
+        natoms: np.ndarray,
         feed_dict_test: dict,
         feed_dict_batch: dict,
     ) -> str:  # depreciated
