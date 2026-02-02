@@ -64,12 +64,12 @@ class DOSLoss(Loss):
 
     def build(
         self,
-        learning_rate: Any,
-        natoms: Any,
-        model_dict: Any,
-        label_dict: Any,
-        suffix: Any,
-    ) -> tuple[Any, dict[str, Any]]:
+        learning_rate: tf.Tensor,
+        natoms: tf.Tensor,
+        model_dict: dict,
+        label_dict: dict,
+        suffix: str,
+    ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
         dos = model_dict["dos"]
         atom_dos = model_dict["atom_dos"]
 
@@ -194,7 +194,9 @@ class DOSLoss(Loss):
         self.l2_more = more_loss
         return l2_loss, more_loss
 
-    def eval(self, sess: Any, feed_dict: Any, natoms: Any) -> dict[str, Any]:
+    def eval(
+        self, sess: tf.Session, feed_dict: dict, natoms: np.ndarray
+    ) -> dict[str, Any]:
         placeholder = self.l2_l
         run_data = [
             self.l2_l,

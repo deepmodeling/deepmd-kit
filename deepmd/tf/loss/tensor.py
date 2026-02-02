@@ -25,7 +25,7 @@ from .loss import (
 class TensorLoss(Loss):
     """Loss function for tensorial properties."""
 
-    def __init__(self, jdata: Any, **kwarg: Any) -> None:
+    def __init__(self, jdata: dict | None, **kwarg: Any) -> None:
         model = kwarg.get("model", None)
         if model is not None:
             self.type_sel = model.get_sel_type()
@@ -58,12 +58,12 @@ class TensorLoss(Loss):
 
     def build(
         self,
-        learning_rate: Any,
-        natoms: Any,
-        model_dict: Any,
-        label_dict: Any,
-        suffix: Any,
-    ) -> tuple[Any, dict[str, Any]]:
+        learning_rate: tf.Tensor,
+        natoms: tf.Tensor,
+        model_dict: dict,
+        label_dict: dict,
+        suffix: str,
+    ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
         polar_hat = label_dict[self.label_name]
         atomic_polar_hat = label_dict["atom_" + self.label_name]
         polar = tf.reshape(model_dict[self.tensor_name], [-1])
@@ -141,7 +141,9 @@ class TensorLoss(Loss):
         self.l2_loss_summary = tf.summary.scalar("l2_loss_" + suffix, tf.sqrt(l2_loss))
         return l2_loss, more_loss
 
-    def eval(self, sess: Any, feed_dict: Any, natoms: Any) -> dict[str, Any]:
+    def eval(
+        self, sess: tf.Session, feed_dict: dict, natoms: np.ndarray
+    ) -> dict[str, Any]:
         atoms = 0
         if self.type_sel is not None:
             for w in self.type_sel:

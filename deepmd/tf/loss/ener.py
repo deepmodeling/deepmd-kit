@@ -25,7 +25,9 @@ from .loss import (
 )
 
 
-def custom_huber_loss(predictions: Any, targets: Any, delta: float = 1.0) -> Any:
+def custom_huber_loss(
+    predictions: tf.Tensor, targets: tf.Tensor, delta: float = 1.0
+) -> tf.Tensor:
     error = targets - predictions
     abs_error = tf.abs(error)
     quadratic_loss = 0.5 * tf.pow(error, 2)
@@ -144,12 +146,12 @@ class EnerStdLoss(Loss):
 
     def build(
         self,
-        learning_rate: Any,
-        natoms: Any,
+        learning_rate: tf.Tensor,
+        natoms: tf.Tensor,
         model_dict: dict,
         label_dict: dict,
         suffix: str,
-    ) -> Any:
+    ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
         energy = model_dict["energy"]
         force = model_dict["force"]
         virial = model_dict["virial"]
@@ -412,7 +414,7 @@ class EnerStdLoss(Loss):
         self.l2_more = more_loss
         return loss, more_loss
 
-    def eval(self, sess: Any, feed_dict: dict, natoms: Any) -> dict:
+    def eval(self, sess: tf.Session, feed_dict: dict, natoms: np.ndarray) -> dict:
         placeholder = self.l2_l
         run_data = [
             self.l2_l,
@@ -591,12 +593,12 @@ class EnerSpinLoss(Loss):
 
     def build(
         self,
-        learning_rate: Any,
-        natoms: Any,
+        learning_rate: tf.Tensor,
+        natoms: tf.Tensor,
         model_dict: dict,
         label_dict: dict,
         suffix: str,
-    ) -> Any:
+    ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
         energy_pred = model_dict["energy"]
         force_pred = model_dict["force"]
         virial_pred = model_dict["virial"]
@@ -759,7 +761,7 @@ class EnerSpinLoss(Loss):
         self.l2_more = more_loss
         return l2_loss, more_loss
 
-    def eval(self, sess: Any, feed_dict: dict, natoms: Any) -> dict:
+    def eval(self, sess: tf.Session, feed_dict: dict, natoms: np.ndarray) -> dict:
         placeholder = self.l2_l
         run_data = [
             self.l2_l,
@@ -936,12 +938,12 @@ class EnerDipoleLoss(Loss):
 
     def build(
         self,
-        learning_rate: Any,
-        natoms: Any,
+        learning_rate: tf.Tensor,
+        natoms: tf.Tensor,
         model_dict: dict,
         label_dict: dict,
         suffix: str,
-    ) -> Any:
+    ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
         coord = model_dict["coord"]
         energy = model_dict["energy"]
         atom_ener = model_dict["atom_ener"]
@@ -1019,7 +1021,7 @@ class EnerDipoleLoss(Loss):
         self.l2_more = more_loss
         return l2_loss, more_loss
 
-    def eval(self, sess: Any, feed_dict: dict, natoms: Any) -> dict:
+    def eval(self, sess: tf.Session, feed_dict: dict, natoms: np.ndarray) -> dict:
         run_data = [
             self.l2_l,
             self.l2_more["l2_ener_loss"],
