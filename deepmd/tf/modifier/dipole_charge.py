@@ -58,7 +58,9 @@ class DipoleChargeModifier(DeepDipole, BaseModifier):
             Splitting parameter of the Ewald sum. Unit: A^{-1}
     """
 
-    def __new__(cls, *args: Any, model_name: str | None = None, **kwargs: Any) -> "Self":
+    def __new__(
+        cls, *args: Any, model_name: str | None = None, **kwargs: Any
+    ) -> "Self":
         return super().__new__(cls, model_name)
 
     def __init__(
