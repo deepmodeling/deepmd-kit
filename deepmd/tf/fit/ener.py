@@ -2,6 +2,7 @@
 import logging
 from typing import (
     Any,
+    Callable,
 )
 
 import numpy as np
@@ -282,7 +283,7 @@ class EnerFitting(Fitting):
         )
 
     def _compute_output_stats(
-        self, all_stat: Any, rcond: float = 1e-3, mixed_type: bool = False
+        self, all_stat: dict[str, Any], rcond: float = 1e-3, mixed_type: bool = False
     ) -> tuple:
         data = all_stat["energy"]
         # data[sys_idx][batch_idx][frame_idx]
@@ -373,22 +374,22 @@ class EnerFitting(Fitting):
                     self.aparam_std[ii] = protection
             self.aparam_inv_std = 1.0 / self.aparam_std
 
-    def _compute_std(self, sumv2: Any, sumv: Any, sumn: Any) -> Any:
+    def _compute_std(self, sumv2: float, sumv: float, sumn: int) -> float:
         return np.sqrt(sumv2 / sumn - np.multiply(sumv / sumn, sumv / sumn))
 
     @cast_precision
     def _build_lower(
         self,
         start_index: int,
-        natoms: Any,
-        inputs: Any,
-        fparam: Any = None,
-        aparam: Any = None,
+        natoms: tf.Tensor,
+        inputs: tf.Tensor,
+        fparam: tf.Tensor | None = None,
+        aparam: tf.Tensor | None = None,
         bias_atom_e: float = 0.0,
         type_suffix: str = "",
         suffix: str = "",
-        reuse: Any = None,
-    ) -> Any:
+        reuse: bool | None = None,
+    ) -> tf.Tensor:
         # cut-out inputs
         inputs_i = tf.slice(inputs, [0, start_index, 0], [-1, natoms, -1])
         inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
