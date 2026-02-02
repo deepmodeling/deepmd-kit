@@ -34,6 +34,9 @@ from deepmd.tf.utils.graph import (
     get_tensor_by_name_from_graph,
     load_graph_def,
 )
+from deepmd.tf.utils.learning_rate import (
+    LearningRateExp,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -188,7 +191,7 @@ class FrozenModel(Model):
         """Get the fitting(s)."""
         return {}
 
-    def get_loss(self, loss: dict, lr: Any) -> Loss | dict | None:
+    def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss | dict | None:
         """Get the loss function(s)."""
         # loss should be never used for a frozen model
         return
