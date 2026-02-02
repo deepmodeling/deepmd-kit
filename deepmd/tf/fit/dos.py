@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -47,6 +48,11 @@ from deepmd.utils.data import (
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.train.learning_rate import (
+        LearningRateExp,
+    )
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -655,7 +661,7 @@ class DOSFitting(Fitting):
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
 
-    def get_loss(self, loss: dict, lr: Any) -> Loss:
+    def get_loss(self, loss: dict, lr: "LearningRateExp") -> Loss:
         """Get the loss function.
 
         Parameters
