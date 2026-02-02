@@ -43,12 +43,12 @@ However, you can still set the `trainable` parameters in each part of `input.jso
 To obtain a more simplified script, for example, you can change the {ref}`model <model>` part in `input.json` to perform finetuning:
 
 ```json
-    "model": {
-        "type_map":     ["O", "H"],
-        "type_embedding": {"trainable":  true},
-        "descriptor" :  {},
-        "fitting_net" : {}
+"model":
+{
+    "type_map" : [ "O", "H" ], "type_embedding" : {"trainable" : true}, "descriptor" : {}, "fitting_net":
+    {
     }
+}
 ```
 
 ## PyTorch Implementation {{ pytorch_icon }}
@@ -85,11 +85,12 @@ $ dp --pt train input.json --finetune pretrained.pt --use-pretrain-script
 The model section will be overwritten (except the `type_map` subsection) by that in the pretrained model and then the input.json can be simplified as follows:
 
 ```json
-    "model": {
-        "type_map":     ["O", "H"],
-        "descriptor" :  {},
-        "fitting_net" : {}
+"model":
+{
+    "type_map" : [ "O", "H" ], "descriptor" : {}, "fitting_net":
+    {
     }
+}
 ```
 
 #### Fine-tuning from a multi-task pre-trained model
@@ -139,51 +140,29 @@ Then, prepare a suitable input script for multitask fine-tuning `multi_input.jso
 The complete `multi_input.json` should appear as follows ("..." means copied from input script of pre-trained model):
 
 ```json
-  "model": {
-    "shared_dict": {
-      ...
-    },
-    "model_dict": {
-      "PRE_DATA1": {
-        "type_map": ...,
-        "descriptor": ...,
-        "fitting_net": ...
-      },
-      "PRE_DATA2": {
-        "type_map": ...,
-        "descriptor": ...,
-        "fitting_net": ...
-      },
-      "DOWNSTREAM_DATA": {
-        "finetune_head": "PRE_DATA1",
-        "type_map": ...,
-        "descriptor": ...,
-        "fitting_net": ...
-      },
+"model" : {
+    "shared_dict" : {...},
+    "model_dict" : {
+        "PRE_DATA1" : {"type_map" : ..., "descriptor" : ..., "fitting_net" : ...},
+        "PRE_DATA2" : {"type_map" : ..., "descriptor" : ..., "fitting_net" : ...},
+        "DOWNSTREAM_DATA" : {"finetune_head" : "PRE_DATA1", "type_map" : ..., "descriptor" : ..., "fitting_net" : ...},
     }
-  },
-  "learning_rate": ...,
-  "loss_dict": {
-      "PRE_DATA1": ...,
-      "PRE_DATA2": ...,
-      "DOWNSTREAM_DATA": ...
-  },
-  "training": {
-    "model_prob": {
-      "PRE_DATA1": 0.5,
-      "PRE_DATA2": 0.5,
-      "DOWNSTREAM_DATA": 1.0
-    },
-    "data_dict": {
-      "PRE_DATA1": ...,
-      "PRE_DATA2": ...,
-      "DOWNSTREAM_DATA": {
-        "training_data": "training_data_config_for_DOWNSTREAM_DATA",
-        "validation_data": "validation_data_config_for_DOWNSTREAM_DATA"
-      }
-    },
-    ...
-  }
+},
+          "learning_rate" : ...,
+                            "loss_dict" : {"PRE_DATA1" : ..., "PRE_DATA2" : ..., "DOWNSTREAM_DATA" : ...},
+                                          "training":
+{
+    "model_prob" : {"PRE_DATA1" : 0.5, "PRE_DATA2" : 0.5, "DOWNSTREAM_DATA" : 1.0},
+                   "data_dict" : {
+                       "PRE_DATA1" : ...,
+                       "PRE_DATA2" : ...,
+                       "DOWNSTREAM_DATA" : {
+                           "training_data" : "training_data_config_for_DOWNSTREAM_DATA",
+                           "validation_data" : "validation_data_config_for_DOWNSTREAM_DATA"
+                       }
+                   },
+                                 ...
+}
 ```
 
 Subsequently, run the command:
@@ -231,11 +210,12 @@ $ dp --pd train input.json --finetune pretrained.pd --use-pretrain-script
 The model section will be overwritten (except the `type_map` subsection) by that in the pretrained model and then the input.json can be simplified as follows:
 
 ```json
-    "model": {
-        "type_map":     ["O", "H"],
-        "descriptor" :  {},
-        "fitting_net" : {}
+"model":
+{
+    "type_map" : [ "O", "H" ], "descriptor" : {}, "fitting_net":
+    {
     }
+}
 ```
 
 #### Fine-tuning from a multi-task pre-trained model

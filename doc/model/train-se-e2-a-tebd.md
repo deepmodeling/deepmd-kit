@@ -69,18 +69,13 @@ In the TensorFlow backend, the type embedding is at the model level.
 The {ref}`model <model>` defines how the model is constructed, adding a section of type embedding net:
 
 ```json
-    "model": {
-	"type_map":	["O", "H"],
-	"type_embedding":{
-			...
-	},
-	"descriptor" :{
-            ...
-	},
-	"fitting_net" : {
-            ...
-	}
+"model":
+{
+    "type_map" : [ "O", "H" ], "type_embedding" : {...}, "descriptor" : {...}, "fitting_net":
+    {
+        ...
     }
+}
 ```
 
 The model will automatically apply the type embedding approach and generate type embedding vectors. If the type embedding vector is detected, the descriptor and fitting net would take it as a part of the input.
@@ -88,11 +83,7 @@ The model will automatically apply the type embedding approach and generate type
 The construction of type embedding net is given by {ref}`type_embedding <model/type_embedding>`. An example of {ref}`type_embedding <model/type_embedding>` is provided as follows
 
 ```json
-	"type_embedding":{
-	    "neuron":		[2, 4, 8],
-	    "resnet_dt":	false,
-	    "seed":		1
-	}
+"type_embedding" : {"neuron" : [ 2, 4, 8 ], "resnet_dt" : false, "seed" : 1}
 ```
 
 - The {ref}`neuron <model/type_embedding/neuron>` specifies the size of the type embedding net. From left to right the members denote the sizes of each hidden layer from the input end to the output end, respectively. It takes a one-hot vector as input and output dimension equals to the last dimension of the {ref}`neuron <model/type_embedding/neuron>` list. If the outer layer is twice the size of the inner layer, then the inner layer is copied and concatenated, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them.

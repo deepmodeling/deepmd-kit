@@ -82,25 +82,25 @@ The {ref}`fitting_net <model[standard]/fitting_net>` section tells DP which fitt
 The JSON of `dipole` type should be provided like
 
 ```json
-	"fitting_net" : {
-		"type": "dipole",
-		"sel_type": [0],
-		"neuron": [100,100,100],
-		"resnet_dt": true,
-		"seed": 1,
-	},
+"fitting_net" : {
+    "type" : "dipole",
+    "sel_type" : [0],
+    "neuron" : [ 100, 100, 100 ],
+    "resnet_dt" : true,
+    "seed" : 1,
+},
 ```
 
 The JSON of `polar` type should be provided like
 
 ```json
-	"fitting_net" : {
-	   	"type": "polar",
-		"sel_type": [0],
-		"neuron": [100,100,100],
-		"resnet_dt": true,
-		"seed": 1,
-	},
+"fitting_net" : {
+    "type" : "polar",
+    "sel_type" : [0],
+    "neuron" : [ 100, 100, 100 ],
+    "resnet_dt" : true,
+    "seed" : 1,
+},
 ```
 
 - `type` specifies which type of fitting net should be used. It should be either `dipole` or `polar`. Note that `global_polar` mode in version 1.x is already **deprecated** and is merged into `polar`. To specify whether a system is global or atomic, please see [here](train-se-e2-a.md).
@@ -114,29 +114,23 @@ The JSON of `polar` type should be provided like
 The JSON of `dipole` type should be provided like
 
 ```json
-	"atom_exclude_types": [
-      1
-    ],
-	"fitting_net" : {
-		"type": "dipole",
-		"neuron": [100,100,100],
-		"resnet_dt": true,
-		"seed": 1,
-	},
+"atom_exclude_types" : [1], "fitting_net" : {
+    "type" : "dipole",
+    "neuron" : [ 100, 100, 100 ],
+    "resnet_dt" : true,
+    "seed" : 1,
+},
 ```
 
 The JSON of `polar` type should be provided like
 
 ```json
-	"atom_exclude_types": [
-      1
-    ],
-	"fitting_net" : {
-	   	"type": "polar",
-		"neuron": [100,100,100],
-		"resnet_dt": true,
-		"seed": 1,
-	},
+"atom_exclude_types" : [1], "fitting_net" : {
+    "type" : "polar",
+    "neuron" : [ 100, 100, 100 ],
+    "resnet_dt" : true,
+    "seed" : 1,
+},
 ```
 
 - `type` specifies which type of fitting net should be used. It should be either `dipole` or `polar`. Note that `global_polar` mode in version 1.x is already **deprecated** and is merged into `polar`. To specify whether a system is global or atomic, please see [here](train-se-e2-a.md).
@@ -159,11 +153,7 @@ loss = pref * global_loss + pref_atomic * atomic_loss
 The loss section should be provided like
 
 ```json
-	"loss" : {
-		"type":		"tensor",
-		"pref":		1.0,
-		"pref_atomic":	1.0
-	},
+"loss" : {"type" : "tensor", "pref" : 1.0, "pref_atomic" : 1.0},
 ```
 
 - {ref}`type <loss/type>` should be written as `tensor` as a distinction from `ener` mode.

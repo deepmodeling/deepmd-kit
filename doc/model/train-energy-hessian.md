@@ -11,17 +11,17 @@ To train a model that takes Hessian matrices, i.e., the second order derivatives
 If you want to train with Hessians, you are expected to add the start and limit prefactors of Hessians, i.e., {ref}`start_pref_h <loss[ener_hess]/start_pref_h>` and {ref}`limit_pref_h <loss[ener_hess]/limit_pref_h>` to the {ref}`loss <loss>` section in the `input.json`:
 
 ```json
-   "loss": {
-      "type": "ener",
-      "start_pref_e": 0.02,
-      "limit_pref_e": 1,
-      "start_pref_f": 1000,
-      "limit_pref_f": 1,
-      "start_pref_v": 0,
-      "limit_pref_v": 0,
-      "start_pref_h": 10,
-      "limit_pref_h": 1
-   },
+"loss" : {
+    "type" : "ener",
+    "start_pref_e" : 0.02,
+    "limit_pref_e" : 1,
+    "start_pref_f" : 1000,
+    "limit_pref_f" : 1,
+    "start_pref_v" : 0,
+    "limit_pref_v" : 0,
+    "start_pref_h" : 10,
+    "limit_pref_h" : 1
+},
 ```
 
 The options {ref}`start_pref_e <loss[ener_hess]/start_pref_e>`, {ref}`limit_pref_e <loss[ener_hess]/limit_pref_e>`, {ref}`start_pref_f <loss[ener_hess]/start_pref_f>`, {ref}`limit_pref_f <loss[ener_hess]/limit_pref_f>`, {ref}`start_pref_v <loss[ener_hess]/start_pref_v>` and {ref}`limit_pref_v <loss[ener_hess]/limit_pref_v>` determine the start and limit prefactors of energy, force, and virial, respectively. The calculation and definition of Hessian loss are the same as for the other terms.

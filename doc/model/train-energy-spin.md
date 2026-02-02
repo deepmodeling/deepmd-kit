@@ -32,11 +32,11 @@ Note that the construction of spin settings is different between TensorFlow and 
 The implementation in TensorFlow only supports `se_e2_a` descriptor. See examples in `$deepmd_source_dir/examples/spin/se_e2_a/input_tf.json`, the {ref}`spin <model/spin>` section is defined as the following:
 
 ```json
-    "spin" : {
-        "use_spin":         [true, false],
-        "virtual_len":      [0.4],
-        "spin_norm":        [1.2737],
-    },
+"spin" : {
+    "use_spin" : [ true, false ],
+    "virtual_len" : [0.4],
+    "spin_norm" : [1.2737],
+},
 ```
 
 - {ref}`use_spin <model/spin[ener_spin]/use_spin>` is a list of boolean values indicating whether to use atomic spin for each atom type.
@@ -56,10 +56,7 @@ In PyTorch/DP, the spin implementation is more flexible and so far supports the 
 See `se_e2_a` examples in `$deepmd_source_dir/examples/spin/se_e2_a/input_torch.json`, the {ref}`spin <model/spin>` section is defined as the following with a much more clear interface:
 
 ```json
-    "spin": {
-      "use_spin": [true, false],
-      "virtual_scale": [0.3140]
-    },
+"spin" : {"use_spin" : [ true, false ], "virtual_scale" : [0.3140]},
 ```
 
 - {ref}`use_spin <model/spin[ener_spin]/use_spin>` is a list of boolean values indicating whether to use atomic spin for each atom type, or a list of type indexes that use atomic spin.
@@ -105,17 +102,17 @@ pref_fr(t) = start_pref_fr * ( lr(t) / start_lr ) + limit_pref_fr * ( 1 - lr(t) 
 The {ref}`loss <loss>` section in the `input.json` is
 
 ```json
-    "loss" :{
-	"type":		        "ener_spin",
-	"start_pref_e":	    0.02,
-	"limit_pref_e":	    1,
-	"start_pref_fr":	1000,
-    "limit_pref_fr":	1.0,
-	"start_pref_fm":	10000,
-	"limit_pref_fm":	10.0,
-	"start_pref_v":	    0,
-	"limit_pref_v":	    0,
-    },
+"loss" : {
+    "type" : "ener_spin",
+    "start_pref_e" : 0.02,
+    "limit_pref_e" : 1,
+    "start_pref_fr" : 1000,
+    "limit_pref_fr" : 1.0,
+    "start_pref_fm" : 10000,
+    "limit_pref_fm" : 10.0,
+    "start_pref_v" : 0,
+    "limit_pref_v" : 0,
+},
 ```
 
 The options {ref}`start_pref_e <loss[ener_spin]/start_pref_e>`, {ref}`limit_pref_e <loss[ener_spin]/limit_pref_e>`, {ref}`start_pref_fr <loss[ener_spin]/start_pref_fr>`, {ref}`limit_pref_fm <loss[ener_spin]/limit_pref_fm>`, {ref}`start_pref_v <loss[ener_spin]/start_pref_v>` and {ref}`limit_pref_v <loss[ener_spin]/limit_pref_v>` determine the start and limit prefactors of energy, atomic force, magnatic force and virial, respectively.

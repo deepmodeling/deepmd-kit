@@ -95,12 +95,7 @@ Multiple versions of the nvnmd model correspond to different network structures.
 The "learning_rate" section is defined as
 
 ```json
-{
-  "type": "exp",
-  "start_lr": 1e-3,
-  "stop_lr": 3e-8,
-  "decay_steps": 5000
-}
+{ "type": "exp", "start_lr": 1e-3, "stop_lr": 3e-8, "decay_steps": 5000 }
 ```
 
 where items are defined as:

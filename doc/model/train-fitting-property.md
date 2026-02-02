@@ -24,13 +24,13 @@ The JSON of `property` type should be provided like
 
 ```json
 "fitting_net" : {
-	"type": "property",
-        "intensive": true,
-        "property_name": "band_prop",
-        "task_dim": 3,
-	"neuron": [240,240,240],
-	"resnet_dt": true,
-	"seed": 1,
+    "type" : "property",
+    "intensive" : true,
+    "property_name" : "band_prop",
+    "task_dim" : 3,
+    "neuron" : [ 240, 240, 240 ],
+    "resnet_dt" : true,
+    "seed" : 1,
 },
 ```
 
@@ -47,11 +47,7 @@ DeepProperty supports trainings of the global system (one or more global labels 
 The loss section should be provided like
 
 ```json
-"loss" : {
-	"type": "property",
-	"metric": ["mae"],
-	"loss_func": "smooth_mae"
-},
+"loss" : {"type" : "property", "metric" : ["mae"], "loss_func" : "smooth_mae"},
 ```
 
 - {ref}`type <loss/type>` should be written as `property` as a distinction from `ener` mode.

@@ -59,20 +59,16 @@ $deepmd_source_dir/examples/water/se_e3_tebd/input.json
 The training input script is very similar to that of [`se_e2_a`](train-se-e2-a.md). The only difference lies in the {ref}`descriptor <model[standard]/descriptor>` section
 
 ```json
-	"descriptor": {
-      "type": "se_e3_tebd",
-      "sel": 40,
-      "rcut_smth": 0.5,
-      "rcut": 4.0,
-      "neuron": [
-        2,
-        4,
-        8
-      ],
-      "tebd_dim": 8,
-      "tebd_input_mode": "concat",
-      "activation_function": "tanh"
-	},
+"descriptor" : {
+    "type" : "se_e3_tebd",
+    "sel" : 40,
+    "rcut_smth" : 0.5,
+    "rcut" : 4.0,
+    "neuron" : [ 2, 4, 8 ],
+    "tebd_dim" : 8,
+    "tebd_input_mode" : "concat",
+    "activation_function" : "tanh"
+},
 ```
 
 The type of the descriptor is set by the key {ref}`type <model[standard]/descriptor/type>`.

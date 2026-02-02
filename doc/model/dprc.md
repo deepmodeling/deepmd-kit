@@ -63,7 +63,7 @@ Two levels of data use the same MM method, so $E_\text{MM}$ is eliminated.
 In a DPRc model, QM atoms and MM atoms have different atom types. Assuming we have 4 QM atom types (C, H, O, P) and 2 MM atom types (HW, OW):
 
 ```json
-"type_map": ["C", "H", "HW", "O", "OW", "P"]
+"type_map" : [ "C", "H", "HW", "O", "OW", "P" ]
 ```
 
 As described in the paper, the DPRc model only corrects $E_\text{QM}$ and $E_\text{QM/MM}$ within the cutoff, so we use a hybrid descriptor to describe them separately:
@@ -73,29 +73,35 @@ As described in the paper, the DPRc model only corrects $E_\text{QM}$ and $E_\te
 :::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 ```json
-"descriptor" :{
-    "type":             "hybrid",
-    "list" : [
+"descriptor":
+{
+    "type" : "hybrid", "list" : [
         {
-            "type":     "se_a_ebd_v2",
-            "sel":              [6, 11, 0, 6, 0, 1],
-            "rcut_smth":        1.00,
-            "rcut":             9.00,
-            "neuron":           [12, 25, 50],
-            "exclude_types":    [[2, 2], [2, 4], [4, 4], [0, 2], [0, 4], [1, 2], [1, 4], [3, 2], [3, 4], [5, 2], [5, 4]],
-            "axis_neuron":      12,
-            "_comment": " QM/QM interaction"
+            "type" : "se_a_ebd_v2",
+            "sel" : [ 6, 11, 0, 6, 0, 1 ],
+            "rcut_smth" : 1.00,
+            "rcut" : 9.00,
+            "neuron" : [ 12, 25, 50 ],
+            "exclude_types" : [
+                [ 2, 2 ], [ 2, 4 ], [ 4, 4 ], [ 0, 2 ], [ 0, 4 ], [ 1, 2 ], [ 1, 4 ], [ 3, 2 ], [ 3, 4 ], [ 5, 2 ],
+                [ 5, 4 ]
+            ],
+            "axis_neuron" : 12,
+            "_comment" : " QM/QM interaction"
         },
         {
-            "type":     "se_a_ebd_v2",
-            "sel":              [6, 11, 100, 6, 50, 1],
-            "rcut_smth":        0.50,
-            "rcut":             6.00,
-            "neuron":           [12, 25, 50],
-            "exclude_types":    [[0, 0], [0, 1], [0, 3], [0, 5], [1, 1], [1, 3], [1, 5], [3, 3], [3, 5], [5, 5], [2, 2], [2, 4], [4, 4]],
-            "axis_neuron":      12,
-            "set_davg_zero":    true,
-            "_comment": " QM/MM interaction"
+            "type" : "se_a_ebd_v2",
+            "sel" : [ 6, 11, 100, 6, 50, 1 ],
+            "rcut_smth" : 0.50,
+            "rcut" : 6.00,
+            "neuron" : [ 12, 25, 50 ],
+            "exclude_types" : [
+                [ 0, 0 ], [ 0, 1 ], [ 0, 3 ], [ 0, 5 ], [ 1, 1 ], [ 1, 3 ], [ 1, 5 ], [ 3, 3 ], [ 3, 5 ], [ 5, 5 ],
+                [ 2, 2 ], [ 2, 4 ], [ 4, 4 ]
+            ],
+            "axis_neuron" : 12,
+            "set_davg_zero" : true,
+            "_comment" : " QM/MM interaction"
         }
     ]
 }
@@ -106,31 +112,37 @@ As described in the paper, the DPRc model only corrects $E_\text{QM}$ and $E_\te
 :::{tab-item} PyTorch {{ pytorch_icon }}
 
 ```json
-"descriptor" :{
-    "type":             "hybrid",
-    "list" : [
+"descriptor":
+{
+    "type" : "hybrid", "list" : [
         {
-            "type":     "se_e2_a",
-            "sel":              [6, 11, 0, 6, 0, 1],
-            "rcut_smth":        1.00,
-            "rcut":             9.00,
-            "neuron":           [12, 25, 50],
-            "exclude_types":    [[2, 2], [2, 4], [4, 4], [0, 2], [0, 4], [1, 2], [1, 4], [3, 2], [3, 4], [5, 2], [5, 4]],
-            "axis_neuron":      12,
-            "type_one_side":    true,
-            "_comment": " QM/QM interaction"
+            "type" : "se_e2_a",
+            "sel" : [ 6, 11, 0, 6, 0, 1 ],
+            "rcut_smth" : 1.00,
+            "rcut" : 9.00,
+            "neuron" : [ 12, 25, 50 ],
+            "exclude_types" : [
+                [ 2, 2 ], [ 2, 4 ], [ 4, 4 ], [ 0, 2 ], [ 0, 4 ], [ 1, 2 ], [ 1, 4 ], [ 3, 2 ], [ 3, 4 ], [ 5, 2 ],
+                [ 5, 4 ]
+            ],
+            "axis_neuron" : 12,
+            "type_one_side" : true,
+            "_comment" : " QM/QM interaction"
         },
         {
-            "type":     "se_e2_a",
-            "sel":              [6, 11, 100, 6, 50, 1],
-            "rcut_smth":        0.50,
-            "rcut":             6.00,
-            "neuron":           [12, 25, 50],
-            "exclude_types":    [[0, 0], [0, 1], [0, 3], [0, 5], [1, 1], [1, 3], [1, 5], [3, 3], [3, 5], [5, 5], [2, 2], [2, 4], [4, 4]],
-            "axis_neuron":      12,
-            "set_davg_zero":    true,
-            "type_one_side":    true,
-            "_comment": " QM/MM interaction"
+            "type" : "se_e2_a",
+            "sel" : [ 6, 11, 100, 6, 50, 1 ],
+            "rcut_smth" : 0.50,
+            "rcut" : 6.00,
+            "neuron" : [ 12, 25, 50 ],
+            "exclude_types" : [
+                [ 0, 0 ], [ 0, 1 ], [ 0, 3 ], [ 0, 5 ], [ 1, 1 ], [ 1, 3 ], [ 1, 5 ], [ 3, 3 ], [ 3, 5 ], [ 5, 5 ],
+                [ 2, 2 ], [ 2, 4 ], [ 4, 4 ]
+            ],
+            "axis_neuron" : 12,
+            "set_davg_zero" : true,
+            "type_one_side" : true,
+            "_comment" : " QM/MM interaction"
         }
     ]
 }
@@ -166,10 +178,9 @@ print(
 Also, DPRc assumes MM atom energies ({ref}`atom_ener <model[standard]/fitting_net[ener]/atom_ener>`) are zero:
 
 ```json
-"fitting_net": {
-   "neuron": [240, 240, 240],
-   "resnet_dt": true,
-   "atom_ener": [null, null, 0.0, null, 0.0, null]
+"fitting_net":
+{
+    "neuron" : [ 240, 240, 240 ], "resnet_dt" : true, "atom_ener" : [ null, null, 0.0, null, 0.0, null ]
 }
 ```
 
@@ -201,10 +212,7 @@ It is noted that the [`se_atten` descriptor](./train-se-atten.md) should be used
   "model": {
     "type": "pairwise_dprc",
     "type_map": ["C", "P", "O", "H", "OW", "HW"],
-    "type_embedding": {
-      "neuron": [8],
-      "precision": "float32"
-    },
+    "type_embedding": { "neuron": [8], "precision": "float32" },
     "qm_model": {
       "descriptor": {
         "type": "se_atten_v2",

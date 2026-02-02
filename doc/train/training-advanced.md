@@ -28,13 +28,8 @@ where $\tau^{\text{stop}} \in \mathbb{N}$, $\gamma^{\text{stop}} \in \mathbb{R}$
 The {ref}`learning_rate <learning_rate>` section in `input.json` is given as follows
 
 ```json
-    "learning_rate" :{
-	"type":		"exp",
-	"start_lr":	0.001,
-	"stop_lr":	3.51e-8,
-	"decay_steps":	5000,
-	"_comment":	"that's all"
-    }
+"learning_rate"
+    : {"type" : "exp", "start_lr" : 0.001, "stop_lr" : 3.51e-8, "decay_steps" : 5000, "_comment" : "that's all"}
 ```
 
 - {ref}`start_lr <learning_rate[exp]/start_lr>` gives the learning rate at the beginning of the training.
@@ -50,27 +45,20 @@ The {ref}`learning_rate <learning_rate>` section in `input.json` is given as fol
 Other training parameters are given in the {ref}`training <training>` section.
 
 ```json
-    "training": {
- 	"training_data": {
-	    "systems":		["../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/"],
-	    "batch_size":	"auto"
-	},
-	"validation_data":{
-	    "systems":		["../data_water/data_3"],
-	    "batch_size":	1,
-	    "numb_btch":	3
-	},
-	"mixed_precision": {
-	    "output_prec":      "float32",
-	    "compute_prec":     "float16"
-	},
+"training" : {
+    "training_data" : {
+        "systems" : [ "../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/" ],
+        "batch_size" : "auto"
+    },
+    "validation_data" : {"systems" : ["../data_water/data_3"], "batch_size" : 1, "numb_btch" : 3},
+    "mixed_precision" : {"output_prec" : "float32", "compute_prec" : "float16"},
 
-	"numb_steps":	1000000,
-	"seed":		1,
-	"disp_file":	"lcurve.out",
-	"disp_freq":	100,
-	"save_freq":	1000
-    }
+    "numb_steps" : 1000000,
+    "seed" : 1,
+    "disp_file" : "lcurve.out",
+    "disp_freq" : 100,
+    "save_freq" : 1000
+}
 ```
 
 The sections {ref}`training_data <training/training_data>` and {ref}`validation_data <training/validation_data>` give the training dataset and validation dataset, respectively. Taking the training dataset for example, the keys are explained below:
@@ -85,21 +73,21 @@ The sections {ref}`training_data <training/training_data>` and {ref}`validation_
 - An example of using `"auto_prob"` is given below. The probability of using `systems[2]` is 0.4, and the sum of the probabilities of using `systems[0]` and `systems[1]` is 0.6. If the number of frames in `systems[1]` is twice of `system[0]`, then the probability of using `system[1]` is 0.4 and that of `system[0]` is 0.2.
 
 ```json
- 	"training_data": {
-	    "systems":		["../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/"],
-	    "auto_prob":	"prob_sys_size; 0:2:0.6; 2:3:0.4",
-	    "batch_size":	"auto"
-	}
+"training_data" : {
+    "systems" : [ "../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/" ],
+    "auto_prob" : "prob_sys_size; 0:2:0.6; 2:3:0.4",
+    "batch_size" : "auto"
+}
 ```
 
 - The probability of using systems can also be specified explicitly with key {ref}`sys_probs <training/training_data/sys_probs>` which is a list having the length of the number of systems. For example
 
 ```json
- 	"training_data": {
-	    "systems":		["../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/"],
-	    "sys_probs":	[0.5, 0.3, 0.2],
-	    "batch_size":	"auto:32"
-	}
+"training_data" : {
+    "systems" : [ "../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/" ],
+    "sys_probs" : [ 0.5, 0.3, 0.2 ],
+    "batch_size" : "auto:32"
+}
 ```
 
 - The key {ref}`batch_size <training/training_data/batch_size>` specifies the number of frames used to train or validate the model in a training step. It can be set to
@@ -157,19 +145,19 @@ See [Runtime environment variables](../env.md) for all runtime environment varia
 One can use `--init-frz-model` features to adjust (increase or decrease) [`sel`](../model/sel.md) of an existing model. Firstly, one needs to adjust [`sel`](./train-input.rst) in `input.json`. For example, adjust from `[46, 92]` to `[23, 46]`.
 
 ```json
-"model": {
-	"descriptor": {
-		"sel": [23, 46]
-	}
+"model":
+{
+    "descriptor":
+    {
+        "sel" : [ 23, 46 ]
+    }
 }
 ```
 
 To obtain the new model at once, [`numb_steps`](./train-input.rst) should be set to zero:
 
 ```json
-"training": {
-	"numb_steps": 0
-}
+"training" : {"numb_steps" : 0}
 ```
 
 Then, one can initialize the training from the frozen model and freeze the new model at once:

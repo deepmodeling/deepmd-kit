@@ -84,20 +84,20 @@ With the training input script, data are also provided in the example directory.
 An example of the DPA-1 descriptor is provided as follows
 
 ```json
-	"descriptor" :{
-          "type":		"se_atten",
-          "rcut_smth":	0.50,
-          "rcut":		6.00,
-          "sel":		120,
-          "neuron":		[25, 50, 100],
-          "axis_neuron":	16,
-          "resnet_dt":	false,
-          "attn":	128,
-          "attn_layer":	2,
-          "attn_mask":	false,
-          "attn_dotr":	true,
-          "seed":	1
-	}
+"descriptor" : {
+    "type" : "se_atten",
+    "rcut_smth" : 0.50,
+    "rcut" : 6.00,
+    "sel" : 120,
+    "neuron" : [ 25, 50, 100 ],
+    "axis_neuron" : 16,
+    "resnet_dt" : false,
+    "attn" : 128,
+    "attn_layer" : 2,
+    "attn_mask" : false,
+    "attn_dotr" : true,
+    "seed" : 1
+}
 ```
 
 - The {ref}`type <model[standard]/descriptor/type>` of the descriptor is set to `"se_atten"`, which will use DPA-1 structures.
@@ -117,9 +117,7 @@ An example of the DPA-1 descriptor is provided as follows
 We highly recommend using the version 2.0 of the attention-based descriptor `"se_atten_v2"`, which is inherited from `"se_atten"` but with the following parameter modifications:
 
 ```json
-      "tebd_input_mode": "strip",
-      "smooth_type_embedding": true,
-      "set_davg_zero": false
+"tebd_input_mode" : "strip", "smooth_type_embedding" : true, "set_davg_zero" : false
 ```
 
 You can use descriptor `"se_atten_v2"` and is not allowed to set `tebd_input_mode` and `smooth_type_embedding`. In `"se_atten_v2"`, `tebd_input_mode` is forced to be `"strip"` and `smooth_type_embedding` is forced to be `"true"`. When `tebd_input_mode` is `"strip"`, the embedding matrix $\mathcal{G}^i$ is constructed as:
@@ -145,11 +143,7 @@ DPA-1 only supports models with type embeddings.
 In the TensorFlow backend, the {ref}`type_embedding <model/type_embedding>` section will be used. If it is not set, the following default parameters will be used:
 
 ```json
-"type_embedding":{
-    "neuron":           [8],
-    "resnet_dt":        false,
-    "seed":             1
-}
+"type_embedding" : {"neuron" : [8], "resnet_dt" : false, "seed" : 1}
 ```
 
 In other backends, type embedding is within this descriptor with the {ref}`tebd_dim <model[standard]/descriptor[se_atten_v2]/tebd_dim>` argument.
@@ -169,11 +163,7 @@ In the TensorFlow backend, {ref}`scaling_factor <model[standard]/descriptor[se_a
 For training large systems, especially those with dozens of elements, the {ref}`type <model/type_map>` determines the element index of training data:
 
 ```json
-"type_map": [
-   "Mg",
-   "Al",
-   "Cu"
-  ]
+"type_map" : [ "Mg", "Al", "Cu" ]
 ```
 
 which should include all the elements in the dataset you want to train on.

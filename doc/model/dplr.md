@@ -50,23 +50,14 @@ It is noted that **the tutorial dataset is not enough for training a productive 
 Two settings make the training input script different from an energy training input:
 
 ```json
-	"fitting_net": {
-	    "type":		"dipole",
-	    "dipole_type":	[0],
-	    "neuron":		[128, 128, 128],
-	    "seed":		1
-	},
+"fitting_net" : {"type" : "dipole", "dipole_type" : [0], "neuron" : [ 128, 128, 128 ], "seed" : 1},
 ```
 
 The type of fitting is set to {ref}`dipole <model[standard]/fitting_net[dipole]>`. The dipole is associated with type 0 atoms (oxygens), by the setting `"dipole_type": [0]`. What we trained is the displacement of the WC from the corresponding oxygen atom. It shares the same training input as the atomic dipole because both are 3-dimensional vectors defined on atoms.
 The loss section is provided as follows
 
 ```json
-    "loss": {
-	"type":		"tensor",
-	"pref":		0.0,
-	"pref_atomic":	1.0
-    },
+"loss" : {"type" : "tensor", "pref" : 0.0, "pref_atomic" : 1.0},
 ```
 
 so that the atomic dipole is trained as labels. Note that the NumPy compressed file `atomic_dipole.npy` should be provided in each dataset. In the context of DPLR models, the atomic dipole data represents the displacement vector from each atom to its associated Wannier centroid (WC), which can be calculated as `atomic_dipole = wannier_centroid_position - atom_position` from DFT calculations using tools such as VASP with Wannier90.
@@ -82,14 +73,14 @@ dp train dw.json && dp freeze -o dw.pb
 The training of the DPLR model is very similar to the standard short-range DP models. An example input script can be found in the example directory. The following section is introduced to compute the long-range energy contribution of the DPLR model, and modify the short-range DP model by this part.
 
 ```json
-        "modifier": {
-            "type":             "dipole_charge",
-            "model_name":       "dw.pb",
-            "model_charge_map": [-8],
-            "sys_charge_map":   [6, 1],
-            "ewald_h":          1.00,
-            "ewald_beta":       0.40
-        },
+"modifier" : {
+    "type" : "dipole_charge",
+    "model_name" : "dw.pb",
+    "model_charge_map" : [-8],
+    "sys_charge_map" : [ 6, 1 ],
+    "ewald_h" : 1.00,
+    "ewald_beta" : 0.40
+},
 ```
 
 The {ref}`model_name <model/modifier[dipole_charge]/model_name>` specifies which DW model is used to predict the position of WCs. {ref}`model_charge_map <model/modifier[dipole_charge]/model_charge_map>` gives the amount of charge assigned to WCs. {ref}`sys_charge_map <model/modifier[dipole_charge]/sys_charge_map>` provides the nuclear charge of oxygen (type 0) and hydrogen (type 1) atoms. {ref}`ewald_beta <model/modifier[dipole_charge]/ewald_beta>` (unit $\text{Å}^{-1}$) gives the spread parameter controls the spread of Gaussian charges, and {ref}`ewald_h <model/modifier[dipole_charge]/ewald_h>` (unit Å) assigns the grid size of Fourier transformation.
