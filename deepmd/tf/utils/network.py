@@ -113,12 +113,12 @@ def one_layer(
 
 
 def layer_norm_tf(
-    x: Any,
+    x: tf.Tensor,
     shape: tuple,
-    weight: Any | None = None,
-    bias: Any | None = None,
+    weight: tf.Tensor | None = None,
+    bias: tf.Tensor | None = None,
     eps: float = 1e-5,
-) -> Any:
+) -> tf.Tensor:
     """
     Layer normalization implementation in TensorFlow.
 
@@ -157,9 +157,9 @@ def layer_norm_tf(
 
 
 def layernorm(
-    inputs: Any,
+    inputs: tf.Tensor,
     outputs_size: int,
-    precision: Any = GLOBAL_TF_FLOAT_PRECISION,
+    precision: tf.DType = GLOBAL_TF_FLOAT_PRECISION,
     name: str = "linear",
     scope: str = "",
     reuse: bool | None = None,
@@ -168,8 +168,8 @@ def layernorm(
     uni_init: bool = True,
     eps: float = 1e-5,
     trainable: bool = True,
-    initial_variables: Any | None = None,
-) -> Any:
+    initial_variables: dict[str, np.ndarray] | None = None,
+) -> tf.Tensor:
     with tf.variable_scope(name, reuse=reuse):
         shape = inputs.get_shape().as_list()
         if uni_init:
