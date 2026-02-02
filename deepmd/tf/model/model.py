@@ -10,6 +10,7 @@ from enum import (
 from typing import (
     Any,
     NoReturn,
+    Self,
 )
 
 import numpy as np
@@ -105,7 +106,7 @@ class Model(ABC, make_plugin_registry("model")):
         Compression information for internal use
     """
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> "Model":
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         if cls is Model:
             # init model
             cls = cls.get_class_by_type(kwargs.get("type", "standard"))

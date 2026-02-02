@@ -33,7 +33,7 @@ class Spin:
 
     def build(
         self,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> None:
         """Build the computational graph for the spin.

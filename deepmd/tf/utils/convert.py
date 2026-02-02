@@ -24,7 +24,7 @@ from deepmd.tf.env import (
 log = logging.getLogger(__name__)
 
 
-def detect_model_version(input_model: str) -> Optional[Version]:
+def detect_model_version(input_model: str) -> Version | None:
     """Detect DP graph version.
 
     Parameters
