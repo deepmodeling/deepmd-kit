@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-)
-
 from tensorflow.python.framework import (
     ops,
 )
@@ -16,7 +12,7 @@ from deepmd.tf.env import (
 
 
 @ops.RegisterGradient("MatmulFitnetNvnmd")
-def _MatmulFitnetNvnmdGrad(op: Any, grad: Any) -> list[Any]:
+def _MatmulFitnetNvnmdGrad(op: tf.Operation, grad: tf.Tensor) -> list[tf.Tensor]:
     x = op.inputs[0]
     w = op.inputs[1]
     nbitx = op.get_attr("nbitx")

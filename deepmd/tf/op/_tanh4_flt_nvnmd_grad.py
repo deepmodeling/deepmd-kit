@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-)
-
 from tensorflow.python.framework import (
     ops,
 )
@@ -15,7 +11,7 @@ from deepmd.tf.env import (
 
 
 @ops.RegisterGradient("Tanh4FltNvnmd")
-def _Tanh4FltNvnmdGrad(op: Any, grad: Any) -> list[Any]:
+def _Tanh4FltNvnmdGrad(op: tf.Operation, grad: tf.Tensor) -> tf.Tensor:
     prechi = 2**23
     preclo = 2**19
     x = op.inputs[0]
