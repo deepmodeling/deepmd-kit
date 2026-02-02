@@ -5,6 +5,7 @@ import os
 import shutil
 import time
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -63,6 +64,18 @@ from deepmd.tf.utils.sess import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import (
+        Callable,
+    )
+    from typing import (
+        TextIO,
+    )
+
+    from deepmd.tf.loss.loss import (
+        Loss,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -175,9 +188,9 @@ class DPTrainer:
 
     def build(
         self,
-        data: Any = None,
+        data: dict,
         stop_batch: int = 0,
-        origin_type_map: Any = None,
+        origin_type_map: list[str] | None = None,
         suffix: str = "",
     ) -> None:
         self.ntypes = self.model.get_ntypes()
@@ -271,7 +284,7 @@ class DPTrainer:
 
         return l2_l, l2_more
 
-    def _build_network(self, data: Any, suffix: str = "") -> None:
+    def _build_network(self, data: dict, suffix: str = "") -> None:
         self.place_holders = {}
         if self.is_compress:
             for kk in ["coord", "box"]:
@@ -417,7 +430,9 @@ class DPTrainer:
                 log.info("receive global variables from task#0")
             run_sess(self.sess, bcast_op)
 
-    def train(self, train_data: Any = None, valid_data: Any = None) -> None:
+    def train(
+        self, train_data: dict | None = None, valid_data: dict | None = None
+    ) -> None:
         # if valid_data is None:  # no validation set specified.
         #     valid_data = train_data  # using training set as validation set.
 
@@ -687,11 +702,11 @@ class DPTrainer:
 
     def valid_on_the_fly(
         self,
-        fp: Any,
+        fp: "TextIO",
         train_batches: list,
         valid_batches: list,
         print_header: bool = False,
-        fitting_key: Any = None,
+        fitting_key: str | None = None,
     ) -> None:
         train_results = self.get_evaluation_results(train_batches)
         valid_results = self.get_evaluation_results(valid_batches)
@@ -709,7 +724,9 @@ class DPTrainer:
         )
 
     @staticmethod
-    def print_header(fp: Any, train_results: dict, valid_results: Any) -> None:
+    def print_header(
+        fp: "TextIO", train_results: dict, valid_results: dict | None
+    ) -> None:
         print_str = ""
         print_str += "# {:5s}".format("step")
         if valid_results is not None:
@@ -727,9 +744,9 @@ class DPTrainer:
 
     @staticmethod
     def print_on_training(
-        fp: Any,
+        fp: "TextIO",
         train_results: dict,
-        valid_results: Any,
+        valid_results: dict | None,
         cur_batch: int,
         cur_lr: float,
     ) -> None:
@@ -767,12 +784,12 @@ class DPTrainer:
 
     @staticmethod
     def eval_single_list(
-        single_batch_list: Any,
-        loss: Any,
-        sess: Any,
-        get_feed_dict_func: Any,
+        single_batch_list: list | None,
+        loss: "Loss",
+        sess: tf.Session,
+        get_feed_dict_func: "Callable",
         prefix: str = "",
-    ) -> Any:
+    ) -> dict | None:
         if single_batch_list is None:
             return None
         numb_batch = len(single_batch_list)
