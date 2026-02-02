@@ -264,12 +264,12 @@ class MapTable:
         self,
         cfgs: list,
         x: np.ndarray,
-        ys: Any,
-        grads: Any,
-        grad_grads: Any,
+        ys: np.ndarray,
+        grads: np.ndarray,
+        grad_grads: np.ndarray,
         Nr: int,
         Nc: int,
-    ) -> tuple[Any, Any]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         r"""Build mapping table coefficient
         cfgs: cfg list
         cfg = x0, x1, dx.
@@ -313,7 +313,9 @@ class MapTable:
             coef_grads = coef_grads[0]
         return coefs, coef_grads
 
-    def cal_coef4(self, cfgs: list, x: np.ndarray, y: Any, dy: Any) -> np.ndarray:
+    def cal_coef4(
+        self, cfgs: list, x: np.ndarray, y: np.ndarray, dy: np.ndarray
+    ) -> np.ndarray:
         r"""Build mapping table coefficient for one line
         coef4:
         a x^3 + b x^2 + c x + d = y:
