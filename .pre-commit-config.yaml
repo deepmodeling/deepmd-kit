@@ -58,6 +58,11 @@ repos:
     rev: 1.20.0
     hooks:
       - id: blacken-docs
+  - repo: https://github.com/finsberg/clang-format-docs
+    rev: v0.4.0
+    hooks:
+      - id: clang-format-docs
+        additional_dependencies: [clang-format==21.1.8]
   # C++
   - repo: https://github.com/pre-commit/mirrors-clang-format
     rev: v21.1.8
