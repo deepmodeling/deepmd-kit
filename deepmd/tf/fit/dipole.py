@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
+    Callable,
 )
 
 import numpy as np
@@ -27,6 +28,9 @@ from deepmd.tf.loss.tensor import (
 )
 from deepmd.tf.utils.graph import (
     get_fitting_net_variables_from_graph_def,
+)
+from deepmd.tf.utils.learning_rate import (
+    LearningRateExp,
 )
 from deepmd.tf.utils.network import (
     one_layer,
@@ -173,11 +177,11 @@ class DipoleFittingSeA(Fitting):
         self,
         start_index: int,
         natoms: int,
-        inputs: Any,
-        rot_mat: Any,
+        inputs: tf.Tensor,
+        rot_mat: tf.Tensor,
         suffix: str = "",
         reuse: bool | None = None,
-    ) -> Any:
+    ) -> tf.Tensor:
         # cut-out inputs
         inputs_i = tf.slice(inputs, [0, start_index, 0], [-1, natoms, -1])
         inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
@@ -392,7 +396,7 @@ class DipoleFittingSeA(Fitting):
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
 
-    def get_loss(self, loss: dict, lr: Any) -> Loss:
+    def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss:
         """Get the loss function.
 
         Parameters
