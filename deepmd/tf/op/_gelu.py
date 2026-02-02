@@ -17,8 +17,8 @@ try:
 except AttributeError:
 
     @ops.RegisterGradient("Gelu")
-    def _gelu_cc(op: tf.Operation, dy: tf.Tensor) -> list[tf.Tensor]:
-        return [op_module.gelu_grad_custom(dy, op.inputs[0])]
+    def _gelu_cc(op: tf.Operation, dy: tf.Tensor) -> tf.Tensor:
+        return op_module.gelu_grad_custom(dy, op.inputs[0])
 
     @ops.RegisterGradient("GeluGrad")
     def _gelu_grad_cc(op: tf.Operation, dy: tf.Tensor) -> list:
@@ -29,8 +29,8 @@ except AttributeError:
 
 
 @ops.RegisterGradient("GeluCustom")
-def _gelu_custom_cc(op: tf.Operation, dy: tf.Tensor) -> list[tf.Tensor]:
-    return [op_module.gelu_grad_custom(dy, op.inputs[0])]
+def _gelu_custom_cc(op: tf.Operation, dy: tf.Tensor) -> tf.Tensor:
+    return op_module.gelu_grad_custom(dy, op.inputs[0])
 
 
 @ops.RegisterGradient("GeluGradCustom")
