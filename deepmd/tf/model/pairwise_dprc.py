@@ -21,6 +21,9 @@ from deepmd.tf.model.model import (
 from deepmd.tf.utils.graph import (
     load_graph_def,
 )
+from deepmd.tf.utils.learning_rate import (
+    LearningRateExp,
+)
 from deepmd.tf.utils.spin import (
     Spin,
 )
@@ -306,7 +309,7 @@ class PairwiseDPRc(Model):
             "qmmm": self.qmmm_model.get_fitting(),
         }
 
-    def get_loss(self, loss: dict, lr: Any) -> Loss | dict:
+    def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss | dict:
         """Get the loss function(s)."""
         return self.qm_model.get_loss(loss, lr)
 
@@ -316,7 +319,7 @@ class PairwiseDPRc(Model):
     def get_ntypes(self) -> int:
         return self.ntypes
 
-    def data_stat(self, data: Any) -> None:
+    def data_stat(self, data: dict) -> None:
         self.qm_model.data_stat(data)
         self.qmmm_model.data_stat(data)
 
