@@ -30,6 +30,9 @@ from deepmd.tf.loss.loss import (
 from deepmd.tf.utils import (
     PluginVariant,
 )
+from deepmd.tf.utils.learning_rate import (
+    LearningRateExp,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -75,7 +78,7 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
         )
 
     @abstractmethod
-    def get_loss(self, loss: dict, lr: Any) -> Loss:
+    def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss:
         """Get the loss function.
 
         Parameters
