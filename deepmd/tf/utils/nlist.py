@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-)
 
 from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,

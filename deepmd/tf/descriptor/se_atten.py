@@ -2,9 +2,11 @@
 import logging
 import re
 import warnings
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
 )
 
 import numpy as np
