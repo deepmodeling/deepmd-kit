@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -32,6 +33,11 @@ from deepmd.tf.nvnmd.utils.weight import (
 from deepmd.tf.utils.sess import (
     run_sess,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import (
+        Callable,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -182,7 +188,7 @@ class MapTable:
         log.info("NVNMD: finish building mapping table")
         return self.map
 
-    def mapping(self, x: Any, dic_map: dict, cfgs: dict) -> dict:
+    def mapping(self, x: np.ndarray, dic_map: dict, cfgs: dict) -> dict:
         r"""Evaluate value by mapping table operation of tensorflow."""
         n = len(x)
         dic_val = {}
@@ -216,7 +222,7 @@ class MapTable:
                 dic_val[key] = dats
         return dic_val
 
-    def mapping2(self, x: Any, dic_map: dict, cfgs: dict) -> dict:
+    def mapping2(self, x: np.ndarray, dic_map: dict, cfgs: dict) -> dict:
         r"""Evaluate value by mapping table of numpy."""
         tf.reset_default_graph()
         t_x = tf.placeholder(tf.float64, [None, 1], "t_x")
@@ -250,12 +256,19 @@ class MapTable:
             dic_val[key] = dats
         return dic_val
 
-    def plot_lines(self, x: Any, dic1: dict, dic2: dict | None = None) -> None:
+    def plot_lines(self, x: np.ndarray, dic1: dict, dic2: dict | None = None) -> None:
         r"""Plot lines to see accuracy."""
         pass
 
     def build_map_coef(
-        self, cfgs: list, x: Any, ys: Any, grads: Any, grad_grads: Any, Nr: int, Nc: int
+        self,
+        cfgs: list,
+        x: np.ndarray,
+        ys: Any,
+        grads: Any,
+        grad_grads: Any,
+        Nr: int,
+        Nc: int,
     ) -> tuple[Any, Any]:
         r"""Build mapping table coefficient
         cfgs: cfg list
@@ -300,7 +313,7 @@ class MapTable:
             coef_grads = coef_grads[0]
         return coefs, coef_grads
 
-    def cal_coef4(self, cfgs: list, x: Any, y: Any, dy: Any) -> np.ndarray:
+    def cal_coef4(self, cfgs: list, x: np.ndarray, y: Any, dy: Any) -> np.ndarray:
         r"""Build mapping table coefficient for one line
         coef4:
         a x^3 + b x^2 + c x + d = y:
@@ -359,7 +372,7 @@ class MapTable:
             grad_grads = grad_grads[0]
         return grads, grad_grads
 
-    def build_u2s(self, r2: Any) -> Any:
+    def build_u2s(self, r2: tf.Tensor) -> tf.Tensor:
         r"""Build tensor s, s=s(r2)."""
         rmin = nvnmd_cfg.dscp["rcut_smth"]
         rmax = nvnmd_cfg.dscp["rcut"]
@@ -469,7 +482,7 @@ class MapTable:
         sess.close()
         return res_dic, res_dic2
 
-    def build_s2g(self, s: Any) -> Any:
+    def build_s2g(self, s: tf.Tensor) -> tf.Tensor:
         r"""Build s->G
         s is switch function
         G is embedding net output.
@@ -612,8 +625,8 @@ class MapTable:
         return res_dic
 
     def build_embedding_net(
-        self, xx: Any, wbs: list, activation_fn: Any = tf.tanh
-    ) -> Any:
+        self, xx: tf.Tensor, wbs: list, activation_fn: "Callable | None" = tf.tanh
+    ) -> tf.Tensor:
         for ll in range(len(wbs)):
             # weight and bias
             w, b, t = wbs[ll]
