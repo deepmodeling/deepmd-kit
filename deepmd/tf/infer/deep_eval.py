@@ -59,6 +59,8 @@ if TYPE_CHECKING:
         Path,
     )
 
+    import ase.neighborlist
+
     from deepmd.infer.deep_eval import DeepEval as DeepEvalWrapper
 
 
@@ -98,7 +100,7 @@ class DeepEval(DeepEvalBackend):
         default_tf_graph: bool = False,
         auto_batch_size: bool | int | AutoBatchSize = False,
         input_map: dict | None = None,
-        neighbor_list: Any = None,
+        neighbor_list: "ase.neighborlist.NeighborList | None" = None,
         **kwargs: dict,
     ) -> None:
         self.graph = self._load_graph(
@@ -526,7 +528,7 @@ class DeepEval(DeepEvalBackend):
         cell: np.ndarray | None,
         atype: np.ndarray,
         imap: np.ndarray,
-        neighbor_list: Any,
+        neighbor_list: "ase.neighborlist.NeighborList | None",
     ) -> tuple[np.ndarray, np.ndarray]:
         """Make the mesh with neighbor list for a single frame.
 
@@ -1161,7 +1163,7 @@ class DeepEvalOld:
         default_tf_graph: bool = False,
         auto_batch_size: bool | int | AutoBatchSize = False,
         input_map: dict | None = None,
-        neighbor_list: Any = None,
+        neighbor_list: "ase.neighborlist.NeighborList | None" = None,
     ) -> None:
         self.graph = self._load_graph(
             model_file,
@@ -1472,7 +1474,7 @@ class DeepEvalOld:
         cell: np.ndarray | None,
         atype: np.ndarray,
         imap: np.ndarray,
-        neighbor_list: Any,
+        neighbor_list: "ase.neighborlist.NeighborList | None",
     ) -> tuple[np.ndarray, np.ndarray]:
         """Make the mesh with neighbor list for a single frame.
 
