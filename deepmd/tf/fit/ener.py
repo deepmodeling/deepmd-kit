@@ -822,10 +822,10 @@ class EnerFitting(Fitting):
 
     def change_energy_bias(
         self,
-        data: Any,
-        frozen_model: Any,
-        origin_type_map: Any,
-        full_type_map: Any,
+        data: DeepmdDataSystem,
+        frozen_model: str,
+        origin_type_map: list,
+        full_type_map: list,
         bias_adjust_mode: str = "change-by-statistic",
         ntest: int = 10,
     ) -> None:

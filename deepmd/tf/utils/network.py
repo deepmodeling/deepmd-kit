@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
 )
@@ -19,10 +22,10 @@ def one_layer_rand_seed_shift() -> int:
 
 
 def one_layer(
-    inputs: Any,
+    inputs: tf.Tensor,
     outputs_size: int,
-    activation_fn: Any = tf.nn.tanh,
-    precision: Any = GLOBAL_TF_FLOAT_PRECISION,
+    activation_fn: Callable[[tf.Tensor], tf.Tensor] | None = tf.nn.tanh,
+    precision: tf.DType = GLOBAL_TF_FLOAT_PRECISION,
     stddev: float = 1.0,
     bavg: float = 0.0,
     name: str = "linear",
@@ -33,10 +36,10 @@ def one_layer(
     trainable: bool = True,
     useBN: bool = False,
     uniform_seed: bool = False,
-    initial_variables: Any | None = None,
-    mixed_prec: Any | None = None,
+    initial_variables: dict | None = None,
+    mixed_prec: dict | None = None,
     final_layer: bool = False,
-) -> Any:
+) -> tf.Tensor:
     # For good accuracy, the last layer of the fitting network uses a higher precision neuron network.
     if mixed_prec is not None and final_layer:
         inputs = tf.cast(inputs, get_precision(mixed_prec["output_prec"]))
@@ -215,10 +218,10 @@ def embedding_net_rand_seed_shift(network_size: list) -> int:
 
 
 def embedding_net(
-    xx: Any,
+    xx: tf.Tensor,
     network_size: list,
-    precision: Any,
-    activation_fn: Any = tf.nn.tanh,
+    precision: tf.DType,
+    activation_fn: Callable[[tf.Tensor], tf.Tensor] = tf.nn.tanh,
     resnet_dt: bool = False,
     name_suffix: str = "",
     stddev: float = 1.0,
@@ -226,10 +229,10 @@ def embedding_net(
     seed: int | None = None,
     trainable: bool = True,
     uniform_seed: bool = False,
-    initial_variables: Any | None = None,
-    mixed_prec: Any | None = None,
+    initial_variables: dict | None = None,
+    mixed_prec: dict | None = None,
     bias: bool = True,
-) -> Any:
+) -> tf.Tensor:
     r"""The embedding network.
 
     The embedding network function :math:`\mathcal{N}` is constructed by is the

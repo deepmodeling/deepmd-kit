@@ -2,21 +2,18 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Gradients for prod force."""
 
-from typing import (
-    Any,
-)
-
 from tensorflow.python.framework import (
     ops,
 )
 
 from deepmd.tf.env import (
     op_grads_module,
+    tf,
 )
 
 
 @ops.RegisterGradient("ProdForce")
-def _prod_force_grad_cc(op: Any, grad: Any) -> list[Any]:
+def _prod_force_grad_cc(op: tf.Operation, grad: tf.Tensor) -> list[tf.Tensor | None]:
     net_grad = op_grads_module.prod_force_grad(
         grad,
         op.inputs[0],

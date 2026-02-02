@@ -2,21 +2,20 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Gradients for prod virial."""
 
-from typing import (
-    Any,
-)
-
 from tensorflow.python.framework import (
     ops,
 )
 
 from deepmd.tf.env import (
     op_grads_module,
+    tf,
 )
 
 
 @ops.RegisterGradient("ProdVirialSeA")
-def _prod_virial_se_a_grad_cc(op: Any, grad: Any, grad_atom: Any) -> list[Any]:
+def _prod_virial_se_a_grad_cc(
+    op: tf.Operation, grad: tf.Tensor, grad_atom: tf.Tensor
+) -> list[tf.Tensor | None]:
     net_grad = op_grads_module.prod_virial_se_a_grad(
         grad,
         op.inputs[0],
