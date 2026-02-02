@@ -24,6 +24,9 @@ from deepmd.tf.loss.loss import (
 from deepmd.tf.model.model import (
     Model,
 )
+from deepmd.tf.utils.learning_rate import (
+    LearningRateExp,
+)
 from deepmd.tf.utils.pair_tab import (
     PairTab,
 )
@@ -241,7 +244,7 @@ class PairTabModel(Model):
         # nothing needs to do
         return {}
 
-    def get_loss(self, loss: dict, lr: Any) -> Loss | dict | None:
+    def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss | dict | None:
         """Get the loss function(s)."""
         # nothing needs to do
         return
