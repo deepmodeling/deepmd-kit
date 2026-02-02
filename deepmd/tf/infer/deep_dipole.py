@@ -15,6 +15,8 @@ if TYPE_CHECKING:
         Path,
     )
 
+    import ase.neighborlist
+
 __all__ = [
     "DeepDipole",
 ]
@@ -50,7 +52,7 @@ class DeepDipoleOld(DeepTensor):
         load_prefix: str = "load",
         default_tf_graph: bool = False,
         input_map: dict | None = None,
-        neighbor_list: object | None = None,
+        neighbor_list: "ase.neighborlist.NeighborList | None" = None,
     ) -> None:
         # use this in favor of dict update to move attribute from class to
         # instance namespace
