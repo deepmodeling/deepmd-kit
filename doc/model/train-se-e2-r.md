@@ -56,15 +56,15 @@ The training input script is very similar to that of [`se_e2_a`](train-se-e2-a.m
 
 ```json
 "descriptor" : {
-    "type" : "se_e2_r",
-    "sel" : [ 46, 92 ],
-    "rcut_smth" : 0.50,
-    "rcut" : 6.00,
-    "neuron" : [ 5, 10, 20 ],
-    "type_one_side" : true,
-    "resnet_dt" : false,
-    "seed" : 1,
-    "_comment" : " that's all"
+  "type" : "se_e2_r",
+  "sel" : [ 46, 92 ],
+  "rcut_smth" : 0.50,
+  "rcut" : 6.00,
+  "neuron" : [ 5, 10, 20 ],
+  "type_one_side" : true,
+  "resnet_dt" : false,
+  "seed" : 1,
+  "_comment" : " that's all"
 },
 ```
 

@@ -33,13 +33,13 @@ The construction of the descriptor is given by section {ref}`descriptor <model[s
 
 ```json
 "descriptor" : {
-    "type" : "se_a_mask",
-    "sel" : [ 36, 16, 24, 64, 6, 1 ],
-    "neuron" : [ 25, 50, 100 ],
-    "axis_neuron" : 16,
-    "type_one_side" : false,
-    "resnet_dt" : false,
-    "seed" : 1
+  "type" : "se_a_mask",
+  "sel" : [ 36, 16, 24, 64, 6, 1 ],
+  "neuron" : [ 25, 50, 100 ],
+  "axis_neuron" : 16,
+  "type_one_side" : false,
+  "resnet_dt" : false,
+  "seed" : 1
 }
 ```
 
@@ -54,9 +54,12 @@ The construction of the descriptor is given by section {ref}`descriptor <model[s
 To make the `aparam.npy` used for descriptor `se_a_mask`, two variables in `fitting_net` section are needed.
 
 ```json
-"fitting_net":
-{
-    "neuron" : [ 240, 240, 240 ], "resnet_dt" : true, "seed" : 1, "numb_aparam" : 1, "use_aparam_as_mask" : true
+"fitting_net" : {
+  "neuron" : [ 240, 240, 240 ],
+             "resnet_dt" : true,
+                           "seed" : 1,
+                           "numb_aparam" : 1,
+                           "use_aparam_as_mask" : true
 }
 ```
 
@@ -71,14 +74,14 @@ And the `loss` section in the training input script should be set as follows.
 
 ```json
 "loss" : {
-    "type" : "ener",
-    "start_pref_e" : 0.0,
-    "limit_pref_e" : 0.0,
-    "start_pref_f" : 0.0,
-    "limit_pref_f" : 0.0,
-    "start_pref_pf" : 1.0,
-    "limit_pref_pf" : 1.0,
-    "_comment" : " that's all"
+  "type" : "ener",
+  "start_pref_e" : 0.0,
+  "limit_pref_e" : 0.0,
+  "start_pref_f" : 0.0,
+  "limit_pref_f" : 0.0,
+  "start_pref_pf" : 1.0,
+  "limit_pref_pf" : 1.0,
+  "_comment" : " that's all"
 }
 ```
 

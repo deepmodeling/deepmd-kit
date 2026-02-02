@@ -8,9 +8,12 @@ One can linearly combine existing models with arbitrary coefficients:
 
 ```json
 "model" : {
-    "type" : "linear_ener",
-    "models" : [ {"type" : "frozen", "model_file" : "model0.pb"}, {"type" : "frozen", "model_file" : "model1.pb"} ],
-    "weights" : [ 0.5, 0.5 ]
+  "type" : "linear_ener",
+  "models" : [
+    {"type" : "frozen", "model_file" : "model0.pb"},
+    {"type" : "frozen", "model_file" : "model1.pb"}
+  ],
+  "weights" : [ 0.5, 0.5 ]
 },
 ```
 

@@ -26,13 +26,13 @@ The JSON of `dos` type should be provided like
 
 ```json
 "fitting_net" : {
-    "type" : "dos",
-    "numb_dos" : 250,
-    "sel_type" : [0],
-    "neuron" : [ 120, 120, 120 ],
-    "resnet_dt" : true,
-    "fparam" : 0,
-    "seed" : 1,
+  "type" : "dos",
+  "numb_dos" : 250,
+  "sel_type" : [0],
+  "neuron" : [ 120, 120, 120 ],
+  "resnet_dt" : true,
+  "fparam" : 0,
+  "seed" : 1,
 },
 ```
 
@@ -54,15 +54,15 @@ The loss section should be provided like
 
 ```json
 "loss" : {
-    "type" : "dos",
-    "start_pref_dos" : 0.0,
-    "limit_pref_dos" : 0.0,
-    "start_pref_cdf" : 0.0,
-    "limit_pref_cdf" : 0.0,
-    "start_pref_ados" : 1.0,
-    "limit_pref_ados" : 1.0,
-    "start_pref_acdf" : 0.0,
-    "limit_pref_acdf" : 0.0
+  "type" : "dos",
+  "start_pref_dos" : 0.0,
+  "limit_pref_dos" : 0.0,
+  "start_pref_cdf" : 0.0,
+  "limit_pref_cdf" : 0.0,
+  "start_pref_ados" : 1.0,
+  "limit_pref_ados" : 1.0,
+  "start_pref_acdf" : 0.0,
+  "limit_pref_acdf" : 0.0
 },
 ```
 

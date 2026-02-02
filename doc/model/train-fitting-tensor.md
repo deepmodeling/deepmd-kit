@@ -83,11 +83,11 @@ The JSON of `dipole` type should be provided like
 
 ```json
 "fitting_net" : {
-    "type" : "dipole",
-    "sel_type" : [0],
-    "neuron" : [ 100, 100, 100 ],
-    "resnet_dt" : true,
-    "seed" : 1,
+  "type" : "dipole",
+  "sel_type" : [0],
+  "neuron" : [ 100, 100, 100 ],
+  "resnet_dt" : true,
+  "seed" : 1,
 },
 ```
 
@@ -95,11 +95,11 @@ The JSON of `polar` type should be provided like
 
 ```json
 "fitting_net" : {
-    "type" : "polar",
-    "sel_type" : [0],
-    "neuron" : [ 100, 100, 100 ],
-    "resnet_dt" : true,
-    "seed" : 1,
+  "type" : "polar",
+  "sel_type" : [0],
+  "neuron" : [ 100, 100, 100 ],
+  "resnet_dt" : true,
+  "seed" : 1,
 },
 ```
 
@@ -115,10 +115,10 @@ The JSON of `dipole` type should be provided like
 
 ```json
 "atom_exclude_types" : [1], "fitting_net" : {
-    "type" : "dipole",
-    "neuron" : [ 100, 100, 100 ],
-    "resnet_dt" : true,
-    "seed" : 1,
+  "type" : "dipole",
+  "neuron" : [ 100, 100, 100 ],
+  "resnet_dt" : true,
+  "seed" : 1,
 },
 ```
 
@@ -126,10 +126,10 @@ The JSON of `polar` type should be provided like
 
 ```json
 "atom_exclude_types" : [1], "fitting_net" : {
-    "type" : "polar",
-    "neuron" : [ 100, 100, 100 ],
-    "resnet_dt" : true,
-    "seed" : 1,
+  "type" : "polar",
+  "neuron" : [ 100, 100, 100 ],
+  "resnet_dt" : true,
+  "seed" : 1,
 },
 ```
 

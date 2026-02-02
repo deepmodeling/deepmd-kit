@@ -50,7 +50,12 @@ It is noted that **the tutorial dataset is not enough for training a productive 
 Two settings make the training input script different from an energy training input:
 
 ```json
-"fitting_net" : {"type" : "dipole", "dipole_type" : [0], "neuron" : [ 128, 128, 128 ], "seed" : 1},
+"fitting_net" : {
+  "type" : "dipole",
+  "dipole_type" : [0],
+  "neuron" : [ 128, 128, 128 ],
+  "seed" : 1
+},
 ```
 
 The type of fitting is set to {ref}`dipole <model[standard]/fitting_net[dipole]>`. The dipole is associated with type 0 atoms (oxygens), by the setting `"dipole_type": [0]`. What we trained is the displacement of the WC from the corresponding oxygen atom. It shares the same training input as the atomic dipole because both are 3-dimensional vectors defined on atoms.
@@ -74,12 +79,12 @@ The training of the DPLR model is very similar to the standard short-range DP mo
 
 ```json
 "modifier" : {
-    "type" : "dipole_charge",
-    "model_name" : "dw.pb",
-    "model_charge_map" : [-8],
-    "sys_charge_map" : [ 6, 1 ],
-    "ewald_h" : 1.00,
-    "ewald_beta" : 0.40
+  "type" : "dipole_charge",
+  "model_name" : "dw.pb",
+  "model_charge_map" : [-8],
+  "sys_charge_map" : [ 6, 1 ],
+  "ewald_h" : 1.00,
+  "ewald_beta" : 0.40
 },
 ```
 

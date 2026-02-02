@@ -31,9 +31,10 @@ For example, if $y_i$ represents the potential energy contribution of atom $i$, 
 A model has two parts, a descriptor that maps atomic configuration to a set of symmetry invariant features, and a fitting net that takes descriptor as input and predicts the atomic contribution to the target physical property. It's defined in the {ref}`model <model>` section of the `input.json`, for example,
 
 ```json
-"model":
-{
-    "type_map" : [ "O", "H" ], "descriptor" : {"..." : "..."}, "fitting_net" : {"..." : "..."}
+"model" : {
+  "type_map" : [ "O", "H" ],
+               "descriptor" : {"..." : "..."},
+                              "fitting_net" : {"..." : "..."}
 }
 ```
 

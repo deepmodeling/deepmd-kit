@@ -74,15 +74,15 @@ The construction of the descriptor is given by section {ref}`descriptor <model[s
 
 ```json
 "descriptor" : {
-    "type" : "se_e2_a",
-    "rcut_smth" : 0.50,
-    "rcut" : 6.00,
-    "sel" : [ 46, 92 ],
-    "neuron" : [ 25, 50, 100 ],
-    "type_one_side" : true,
-    "axis_neuron" : 16,
-    "resnet_dt" : false,
-    "seed" : 1
+  "type" : "se_e2_a",
+  "rcut_smth" : 0.50,
+  "rcut" : 6.00,
+  "sel" : [ 46, 92 ],
+  "neuron" : [ 25, 50, 100 ],
+  "type_one_side" : true,
+  "axis_neuron" : 16,
+  "resnet_dt" : false,
+  "seed" : 1
 }
 ```
 

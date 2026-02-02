@@ -11,15 +11,14 @@ The C++ interface of DeePMD-kit is also available for the model interface, which
 ```cpp
 #include "deepmd/DeepPot.h"
 
-int main()
-{
-    deepmd::DeepPot dp("graph.pb");
-    std::vector<double> coord = {1., 0., 0., 0., 0., 1.5, 1., 0., 3.};
-    std::vector<double> cell = {10., 0., 0., 0., 10., 0., 0., 0., 10.};
-    std::vector<int> atype = {1, 0, 1};
-    double e;
-    std::vector<double> f, v;
-    dp.compute(e, f, v, coord, atype, cell);
+int main() {
+  deepmd::DeepPot dp("graph.pb");
+  std::vector<double> coord = {1., 0., 0., 0., 0., 1.5, 1., 0., 3.};
+  std::vector<double> cell = {10., 0., 0., 0., 10., 0., 0., 0., 10.};
+  std::vector<int> atype = {1, 0, 1};
+  double e;
+  std::vector<double> f, v;
+  dp.compute(e, f, v, coord, atype, cell);
 }
 ```
 
@@ -45,38 +44,40 @@ Although C is harder to write, the C library will not be affected by different v
 An example `infer_water.c` is given below:
 
 ```cpp
-#include "deepmd/c_api.h"
 #include <stdio.h>
 #include <stdlib.h>
 
-int main()
-{
-    const char *model = "graph.pb";
-    double coord[] = {1., 0., 0., 0., 0., 1.5, 1., 0., 3.};
-    double cell[] = {10., 0., 0., 0., 10., 0., 0., 0., 10.};
-    int atype[] = {1, 0, 1};
-    // init C pointers with given memory
-    double *e = malloc(sizeof(*e));
-    double *f = malloc(sizeof(*f) * 9); // natoms * 3
-    double *v = malloc(sizeof(*v) * 9);
-    double *ae = malloc(sizeof(*ae) * 9);  // natoms
-    double *av = malloc(sizeof(*av) * 27); // natoms * 9
-    // DP model
-    DP_DeepPot *dp = DP_NewDeepPot(model);
-    DP_DeepPotCompute(dp, 3, coord, atype, cell, e, f, v, ae, av);
-    // print results
-    printf("energy: %f\n", *e);
-    for (int ii = 0; ii < 9; ++ii)
-        printf("force[%d]: %f\n", ii, f[ii]);
-    for (int ii = 0; ii < 9; ++ii)
-        printf("force[%d]: %f\n", ii, v[ii]);
-    // free memory
-    free(e);
-    free(f);
-    free(v);
-    free(ae);
-    free(av);
-    DP_DeleteDeepPot(dp);
+#include "deepmd/c_api.h"
+
+int main() {
+  const char* model = "graph.pb";
+  double coord[] = {1., 0., 0., 0., 0., 1.5, 1., 0., 3.};
+  double cell[] = {10., 0., 0., 0., 10., 0., 0., 0., 10.};
+  int atype[] = {1, 0, 1};
+  // init C pointers with given memory
+  double* e = malloc(sizeof(*e));
+  double* f = malloc(sizeof(*f) * 9);  // natoms * 3
+  double* v = malloc(sizeof(*v) * 9);
+  double* ae = malloc(sizeof(*ae) * 9);   // natoms
+  double* av = malloc(sizeof(*av) * 27);  // natoms * 9
+  // DP model
+  DP_DeepPot* dp = DP_NewDeepPot(model);
+  DP_DeepPotCompute(dp, 3, coord, atype, cell, e, f, v, ae, av);
+  // print results
+  printf("energy: %f\n", *e);
+  for (int ii = 0; ii < 9; ++ii) {
+    printf("force[%d]: %f\n", ii, f[ii]);
+  }
+  for (int ii = 0; ii < 9; ++ii) {
+    printf("force[%d]: %f\n", ii, v[ii]);
+  }
+  // free memory
+  free(e);
+  free(f);
+  free(v);
+  free(ae);
+  free(av);
+  DP_DeleteDeepPot(dp);
 }
 ```
 
@@ -105,15 +106,14 @@ To use it, include `deepmd/deepmd.hpp`.
 ```cpp
 #include "deepmd/deepmd.hpp"
 
-int main()
-{
-    deepmd::hpp::DeepPot dp("graph.pb");
-    std::vector<double> coord = {1., 0., 0., 0., 0., 1.5, 1., 0., 3.};
-    std::vector<double> cell = {10., 0., 0., 0., 10., 0., 0., 0., 10.};
-    std::vector<int> atype = {1, 0, 1};
-    double e;
-    std::vector<double> f, v;
-    dp.compute(e, f, v, coord, atype, cell);
+int main() {
+  deepmd::hpp::DeepPot dp("graph.pb");
+  std::vector<double> coord = {1., 0., 0., 0., 0., 1.5, 1., 0., 3.};
+  std::vector<double> cell = {10., 0., 0., 0., 10., 0., 0., 0., 10.};
+  std::vector<int> atype = {1, 0, 1};
+  double e;
+  std::vector<double> f, v;
+  dp.compute(e, f, v, coord, atype, cell);
 }
 ```
 
@@ -138,7 +138,7 @@ In some cases, one may want to pass the custom neighbor list instead of the nati
 // neighbor list
 std::vector<std::vector<int>> nlist_vec = {{1, 2}, {0, 2}, {0, 1}};
 std::vector<int> ilist(3), numneigh(3);
-std::vector<int *> firstneigh(3);
+std::vector<int*> firstneigh(3);
 InputNlist nlist(3, &ilist[0], &numneigh[0], &firstneigh[0]);
 convert_nlist(nlist, nlist_vec);
 dp.compute(e, f, v, coord, atype, cell, 0, nlist, 0);

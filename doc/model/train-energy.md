@@ -109,12 +109,12 @@ The {ref}`loss <loss>` section in the `input.json` is
 
 ```json
 "loss" : {
-    "start_pref_e" : 0.02,
-    "limit_pref_e" : 1,
-    "start_pref_f" : 1000,
-    "limit_pref_f" : 1,
-    "start_pref_v" : 0,
-    "limit_pref_v" : 0
+  "start_pref_e" : 0.02,
+  "limit_pref_e" : 1,
+  "start_pref_f" : 1000,
+  "limit_pref_f" : 1,
+  "start_pref_v" : 0,
+  "limit_pref_v" : 0
 }
 ```
 

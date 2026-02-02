@@ -33,9 +33,9 @@ The implementation in TensorFlow only supports `se_e2_a` descriptor. See example
 
 ```json
 "spin" : {
-    "use_spin" : [ true, false ],
-    "virtual_len" : [0.4],
-    "spin_norm" : [1.2737],
+  "use_spin" : [ true, false ],
+  "virtual_len" : [0.4],
+  "spin_norm" : [1.2737],
 },
 ```
 
@@ -103,15 +103,15 @@ The {ref}`loss <loss>` section in the `input.json` is
 
 ```json
 "loss" : {
-    "type" : "ener_spin",
-    "start_pref_e" : 0.02,
-    "limit_pref_e" : 1,
-    "start_pref_fr" : 1000,
-    "limit_pref_fr" : 1.0,
-    "start_pref_fm" : 10000,
-    "limit_pref_fm" : 10.0,
-    "start_pref_v" : 0,
-    "limit_pref_v" : 0,
+  "type" : "ener_spin",
+  "start_pref_e" : 0.02,
+  "limit_pref_e" : 1,
+  "start_pref_fr" : 1000,
+  "limit_pref_fr" : 1.0,
+  "start_pref_fm" : 10000,
+  "limit_pref_fm" : 10.0,
+  "start_pref_v" : 0,
+  "limit_pref_v" : 0,
 },
 ```
 

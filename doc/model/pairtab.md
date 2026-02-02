@@ -70,11 +70,11 @@ In instances where the interaction at the cut-off distance is not delineated wit
 
 ```json
 "model" : {
-    "use_srtab" : "H2O_tab_potential.txt",
-    "smin_alpha" : 0.1,
-    "sw_rmin" : 0.8,
-    "sw_rmax" : 1.0,
-    "_comment" : "Below uses a normal DP model"
+  "use_srtab" : "H2O_tab_potential.txt",
+  "smin_alpha" : 0.1,
+  "sw_rmin" : 0.8,
+  "sw_rmax" : 1.0,
+  "_comment" : "Below uses a normal DP model"
 }
 ```
 
@@ -85,12 +85,11 @@ In instances where the interaction at the cut-off distance is not delineated wit
 To combine with a pairwise potential, use the [linear model](./linear.md):
 
 ```json
-"model":
-{
-    "type" : "linear_ener", "weights" : "sum", "models" : [
-        {"_comment" : "Here uses a normal DP model"},
-        {"type" : "pairtab", "tab_file" : "dftd3.txt", "rcut" : 10.0, "sel" : 534}
-    ]
+"model" : {
+  "type" : "linear_ener", "weights" : "sum", "models" : [
+    {"_comment" : "Here uses a normal DP model"},
+    {"type" : "pairtab", "tab_file" : "dftd3.txt", "rcut" : 10.0, "sel" : 534}
+  ]
 }
 ```
 

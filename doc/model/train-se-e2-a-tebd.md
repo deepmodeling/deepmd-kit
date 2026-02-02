@@ -69,12 +69,13 @@ In the TensorFlow backend, the type embedding is at the model level.
 The {ref}`model <model>` defines how the model is constructed, adding a section of type embedding net:
 
 ```json
-"model":
-{
-    "type_map" : [ "O", "H" ], "type_embedding" : {...}, "descriptor" : {...}, "fitting_net":
-    {
-        ...
-    }
+"model" : {
+  "type_map" : [ "O", "H" ],
+               "type_embedding" : {...},
+                                  "descriptor" : {...},
+                                                 "fitting_net" : {
+    ...
+  }
 }
 ```
 
