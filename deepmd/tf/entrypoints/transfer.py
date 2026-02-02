@@ -184,7 +184,7 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
 
 
 class CopyNodeAttr:
-    def __init__(self, node: Any) -> None:
+    def __init__(self, node: tf.compat.v1.NodeDef) -> None:
         self.node = node
 
     def from_array(
