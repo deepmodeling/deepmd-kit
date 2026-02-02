@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
 )
@@ -397,7 +400,7 @@ class DescrptSeA(DescrptSe):
             }
             self.merge_input_stats(stat_dict)
 
-    def merge_input_stats(self, stat_dict: Any) -> None:
+    def merge_input_stats(self, stat_dict: dict[str, Any]) -> None:
         """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
 
         Parameters
@@ -756,10 +759,10 @@ class DescrptSeA(DescrptSe):
         atype: tf.Tensor,
         natoms: tf.Tensor,
         input_dict: dict,
-        reuse: Any = None,
+        reuse: bool | None = None,
         suffix: str = "",
         trainable: bool = True,
-    ) -> Any:
+    ) -> tuple[tf.Tensor, tf.Tensor]:
         if input_dict is not None:
             type_embedding = input_dict.get("type_embedding", None)
             if type_embedding is not None:
@@ -846,12 +849,12 @@ class DescrptSeA(DescrptSe):
 
     def _compute_dstats_sys_smth(
         self,
-        data_coord: Any,
-        data_box: Any,
-        data_atype: Any,
-        natoms_vec: Any,
-        mesh: Any,
-    ) -> Any:
+        data_coord: np.ndarray,
+        data_box: np.ndarray,
+        data_atype: np.ndarray,
+        natoms_vec: np.ndarray,
+        mesh: np.ndarray,
+    ) -> tuple[list[float], list[float], list[float], list[float], list[int]]:
         dd_all = run_sess(
             self.sub_sess,
             self.stat_descrpt,
@@ -892,7 +895,7 @@ class DescrptSeA(DescrptSe):
             sysa2.append(suma2)
         return sysr, sysr2, sysa, sysa2, sysn
 
-    def _compute_std(self, sumv2: Any, sumv: Any, sumn: Any) -> Any:
+    def _compute_std(self, sumv2: float, sumv: float, sumn: int) -> float:
         if sumn == 0:
             return 1.0 / self.rcut_r
         val = np.sqrt(sumv2 / sumn - np.multiply(sumv / sumn, sumv / sumn))
@@ -902,11 +905,11 @@ class DescrptSeA(DescrptSe):
 
     def _concat_type_embedding(
         self,
-        xyz_scatter: Any,
-        nframes: Any,
-        natoms: Any,
-        type_embedding: Any,
-    ) -> Any:
+        xyz_scatter: tf.Tensor,
+        nframes: tf.Tensor,
+        natoms: tf.Tensor,
+        type_embedding: tf.Tensor,
+    ) -> tf.Tensor:
         """Concatenate `type_embedding` of neighbors and `xyz_scatter`.
         If not self.type_one_side, concatenate `type_embedding` of center atoms as well.
 
@@ -955,21 +958,21 @@ class DescrptSeA(DescrptSe):
 
     def _filter_lower(
         self,
-        type_i: Any,
-        type_input: Any,
-        start_index: Any,
-        incrs_index: Any,
-        inputs: Any,
-        nframes: Any,
-        natoms: Any,
-        type_embedding: Any = None,
+        type_i: int,
+        type_input: int,
+        start_index: int,
+        incrs_index: int,
+        inputs: tf.Tensor,
+        nframes: tf.Tensor,
+        natoms: tf.Tensor,
+        type_embedding: tf.Tensor | None = None,
         is_exclude: bool = False,
-        activation_fn: Any = None,
+        activation_fn: Callable[[tf.Tensor], tf.Tensor] | None = None,
         bavg: float = 0.0,
         stddev: float = 1.0,
         trainable: bool = True,
         suffix: str = "",
-    ) -> Any:
+    ) -> tf.Tensor:
         """Input env matrix, returns R.G."""
         outputs_size = [1, *self.filter_neuron]
         # cut-out inputs
@@ -1175,17 +1178,17 @@ class DescrptSeA(DescrptSe):
     @cast_precision
     def _filter(
         self,
-        inputs: Any,
-        type_input: Any,
-        natoms: Any,
-        type_embedding: Any = None,
-        activation_fn: Any = tf.nn.tanh,
+        inputs: tf.Tensor,
+        type_input: int,
+        natoms: tf.Tensor,
+        type_embedding: tf.Tensor | None = None,
+        activation_fn: Callable[[tf.Tensor], tf.Tensor] | None = tf.nn.tanh,
         stddev: float = 1.0,
         bavg: float = 0.0,
         name: str = "linear",
-        reuse: Any = None,
+        reuse: bool | None = None,
         trainable: bool = True,
-    ) -> Any:
+    ) -> tf.Tensor:
         nframes = tf.shape(tf.reshape(inputs, [-1, natoms[0], self.ndescrpt]))[0]
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()
