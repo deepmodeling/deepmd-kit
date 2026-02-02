@@ -4,6 +4,7 @@ import re
 import warnings
 from typing import (
     Any,
+    Callable,
 )
 
 import numpy as np
@@ -707,14 +708,14 @@ class DescrptSeAtten(DescrptSeA):
 
     def _pass_filter(
         self,
-        inputs: Any,
-        atype: Any,
-        natoms: Any,
-        input_dict: Any,
+        inputs: tf.Tensor,
+        atype: tf.Tensor,
+        natoms: tf.Tensor,
+        input_dict: dict,
         reuse: bool | None = None,
         suffix: str = "",
         trainable: bool = True,
-    ) -> Any:
+    ) -> tuple[tf.Tensor, None]:
         assert (
             input_dict is not None
             and input_dict.get("type_embedding", None) is not None
@@ -797,13 +798,13 @@ class DescrptSeAtten(DescrptSeA):
 
     def _compute_dstats_sys_smth(
         self,
-        data_coord: Any,
-        data_box: Any,
-        data_atype: Any,
-        natoms_vec: Any,
-        mesh: Any,
+        data_coord: np.ndarray,
+        data_box: np.ndarray,
+        data_atype: np.ndarray,
+        natoms_vec: np.ndarray,
+        mesh: np.ndarray,
         mixed_type: bool = False,
-        real_natoms_vec: Any = None,
+        real_natoms_vec: np.ndarray | None = None,
     ) -> tuple[Any, Any]:
         dd_all, descrpt_deriv_t, rij_t, nlist_t, nei_type_vec_t, nmask_t = run_sess(
             self.sub_sess,
@@ -893,10 +894,10 @@ class DescrptSeAtten(DescrptSeA):
 
     def _lookup_type_embedding(
         self,
-        xyz_scatter: Any,
-        natype: Any,
-        type_embedding: Any,
-    ) -> Any:
+        xyz_scatter: tf.Tensor,
+        natype: tf.Tensor,
+        type_embedding: tf.Tensor,
+    ) -> tf.Tensor:
         """Concatenate `type_embedding` of neighbors and `xyz_scatter`.
         If not self.type_one_side, concatenate `type_embedding` of center atoms as well.
 
@@ -942,16 +943,16 @@ class DescrptSeAtten(DescrptSeA):
 
     def _scaled_dot_attn(
         self,
-        Q: Any,
-        K: Any,
-        V: Any,
-        temperature: Any,
-        input_r: Any,
+        Q: tf.Tensor,
+        K: tf.Tensor,
+        V: tf.Tensor,
+        temperature: tf.Tensor,
+        input_r: tf.Tensor,
         dotr: bool = False,
         do_mask: bool = False,
         layer: int = 0,
         save_weights: bool = True,
-    ) -> Any:
+    ) -> tf.Tensor:
         attn = tf.matmul(Q / temperature, K, transpose_b=True)
         if self.smooth:
             # (nb x nloc) x nsel
@@ -990,16 +991,16 @@ class DescrptSeAtten(DescrptSeA):
 
     def _attention_layers(
         self,
-        input_xyz: Any,
+        input_xyz: tf.Tensor,
         layer_num: int,
-        shape_i: Any,
-        outputs_size: Any,
-        input_r: Any,
+        shape_i: list[int],
+        outputs_size: list[int],
+        input_r: tf.Tensor,
         dotr: bool = False,
         do_mask: bool = False,
         trainable: bool = True,
         suffix: str = "",
-    ) -> Any:
+    ) -> tf.Tensor:
         sd_k = tf.sqrt(tf.cast(1.0, dtype=self.filter_precision))
         for i in range(layer_num):
             name = f"attention_layer_{i}{suffix}"
@@ -1103,22 +1104,22 @@ class DescrptSeAtten(DescrptSeA):
 
     def _filter_lower(
         self,
-        type_i: Any,
-        type_input: Any,
-        start_index: Any,
-        incrs_index: Any,
-        inputs: Any,
-        type_embedding: Any = None,
-        atype: Any = None,
+        type_i: int,
+        type_input: int,
+        start_index: int,
+        incrs_index: int,
+        inputs: tf.Tensor,
+        type_embedding: tf.Tensor | None = None,
+        atype: tf.Tensor | None = None,
         is_exclude: bool = False,
-        activation_fn: Any = None,
+        activation_fn: Callable[[tf.Tensor], tf.Tensor] | None = None,
         bavg: float = 0.0,
         stddev: float = 1.0,
         trainable: bool = True,
         suffix: str = "",
         name: str = "filter_",
         reuse: bool | None = None,
-    ) -> Any:
+    ) -> tf.Tensor:
         """Input env matrix, returns R.G."""
         outputs_size = [1, *self.filter_neuron]
         # cut-out inputs
@@ -1312,19 +1313,19 @@ class DescrptSeAtten(DescrptSeA):
     @cast_precision
     def _filter(
         self,
-        inputs: Any,
-        type_input: Any,
-        natoms: Any,
-        type_embedding: Any = None,
-        atype: Any = None,
-        activation_fn: Any = tf.nn.tanh,
+        inputs: tf.Tensor,
+        type_input: int,
+        natoms: tf.Tensor,
+        type_embedding: tf.Tensor | None = None,
+        atype: tf.Tensor | None = None,
+        activation_fn: Callable[[tf.Tensor], tf.Tensor] | None = tf.nn.tanh,
         stddev: float = 1.0,
         bavg: float = 0.0,
         suffix: str = "",
         name: str = "linear",
         reuse: bool | None = None,
         trainable: bool = True,
-    ) -> Any:
+    ) -> tf.Tensor:
         nframes = tf.shape(tf.reshape(inputs, [-1, natoms[0], self.ndescrpt]))[0]
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()
