@@ -3,8 +3,14 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.infer import (
+        DeepEval,
+    )
 
 from deepmd.dpmodel.modifier.base_modifier import (
     make_base_modifier,
@@ -21,7 +27,7 @@ class BaseModifier(DeepPot, make_base_modifier()):
 
     @staticmethod
     @abstractmethod
-    def get_params_from_frozen_model(model: Any) -> dict:
+    def get_params_from_frozen_model(model: "DeepEval") -> dict:
         """Extract the modifier parameters from a model.
 
         This method should extract the necessary parameters from a model
