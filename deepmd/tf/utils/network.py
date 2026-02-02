@@ -24,7 +24,7 @@ def one_layer_rand_seed_shift() -> int:
 def one_layer(
     inputs: tf.Tensor,
     outputs_size: int,
-    activation_fn: Callable[[tf.Tensor], tf.Tensor] | None = tf.nn.tanh,
+    activation_fn: Callable[[tf.Tensor], tf.Tensor] = tf.nn.tanh,
     precision: tf.DType = GLOBAL_TF_FLOAT_PRECISION,
     stddev: float = 1.0,
     bavg: float = 0.0,
