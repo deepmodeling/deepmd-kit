@@ -62,6 +62,7 @@ repos:
     rev: v0.4.0
     hooks:
       - id: clang-format-docs
+        args: ["--style=file:.clang-format"]
         additional_dependencies: [clang-format==21.1.8]
   # C++
   - repo: https://github.com/pre-commit/mirrors-clang-format
