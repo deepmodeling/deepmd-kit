@@ -45,8 +45,8 @@ log = logging.getLogger(__name__)
 
 
 def _transfer_fitting_net_trainable_variables(
-    sess: Any, old_graph_def: Any, raw_graph_def: Any
-) -> Any:
+    sess: tf.Session, old_graph_def: tf.GraphDef, raw_graph_def: tf.GraphDef
+) -> list[str]:
     old_pattern = FITTING_NET_PATTERN
     raw_pattern = (
         FITTING_NET_PATTERN.replace("idt", r"idt+_\d+")
@@ -223,8 +223,8 @@ def _make_node_names(
 
 
 def freeze_graph(
-    sess: Any,
-    input_graph: Any,
+    sess: tf.Session,
+    input_graph: tf.GraphDef,
     input_node: list[str],
     freeze_type: str,
     modifier: str | None,
