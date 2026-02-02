@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
 )
@@ -38,7 +41,7 @@ def build_davg_dstd() -> tuple[Any, Any]:
     return davg, dstd
 
 
-def check_switch_range(davg: Any, dstd: Any) -> None:
+def check_switch_range(davg: np.ndarray, dstd: np.ndarray) -> None:
     r"""Check the range of switch, let it in range [-2, 14]."""
     rmin = nvnmd_cfg.dscp["rcut_smth"]
     #
@@ -67,7 +70,7 @@ def check_switch_range(davg: Any, dstd: Any) -> None:
         nvnmd_cfg.get_s_range(davg, dstd)
 
 
-def build_op_descriptor() -> Any:
+def build_op_descriptor() -> Callable:
     r"""Replace se_a.py/DescrptSeA/build."""
     if nvnmd_cfg.quantize_descriptor:
         return op_module.prod_env_mat_a_nvnmd_quantize
@@ -75,7 +78,7 @@ def build_op_descriptor() -> Any:
         return op_module.prod_env_mat_a
 
 
-def descrpt2r4(inputs: tf.Tensor, natoms: Any) -> tf.Tensor:
+def descrpt2r4(inputs: tf.Tensor, natoms: list) -> tf.Tensor:
     r"""Replace :math:`r_{ji} \rightarrow r'_{ji}`
     where :math:`r_{ji} = (x_{ji}, y_{ji}, z_{ji})` and
     :math:`r'_{ji} = (s_{ji}, \frac{s_{ji} x_{ji}}{r_{ji}}, \frac{s_{ji} y_{ji}}{r_{ji}}, \frac{s_{ji} z_{ji}}{r_{ji}})`.
@@ -174,16 +177,16 @@ def filter_lower_R42GR(
     type_input: int,
     inputs_i: tf.Tensor,
     is_exclude: bool,
-    activation_fn: Any,
+    activation_fn: Callable,
     bavg: float,
     stddev: float,
     trainable: bool,
     suffix: str,
-    seed: Any,
+    seed: int | None,
     seed_shift: int,
     uniform_seed: bool,
     filter_neuron: list[int],
-    filter_precision: Any,
+    filter_precision: tf.DType,
     filter_resnet_dt: bool,
     embedding_net_variables: dict[str, Any],
 ) -> tf.Tensor:
