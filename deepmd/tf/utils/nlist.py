@@ -51,10 +51,10 @@ def extend_coord_with_ghosts(
     nloc = tf.shape(atype)[1]
     aidx = tf.tile(tf.expand_dims(tf.range(nloc), 0), [nf, 1])  # pylint: disable=no-explicit-dtype
 
-    def extend_coord_with_ghosts_nopbc(coord: Any, atype: Any, cell: Any) -> tuple:
+    def extend_coord_with_ghosts_nopbc(coord: tf.Tensor, atype: tf.Tensor, cell: tf.Tensor) -> tuple:
         return coord, atype, aidx, nloc
 
-    def extend_coord_with_ghosts_pbc(coord: Any, atype: Any, cell: Any) -> tuple:
+    def extend_coord_with_ghosts_pbc(coord: tf.Tensor, atype: tf.Tensor, cell: tf.Tensor) -> tuple:
         coord = tf.reshape(coord, [nf, nloc, 3])
         cell = tf.reshape(cell, [nf, 3, 3])
         # nf x 3
