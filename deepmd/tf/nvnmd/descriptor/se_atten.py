@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
 )
@@ -34,7 +37,7 @@ def build_davg_dstd() -> tuple[Any, Any]:
     return davg, dstd
 
 
-def check_switch_range(davg: Any, dstd: Any) -> None:
+def check_switch_range(davg: np.ndarray, dstd: np.ndarray) -> None:
     r"""Check the range of switch, let it in range [-2, 14]."""
     rmin = nvnmd_cfg.dscp["rcut_smth"]
     ntype = nvnmd_cfg.dscp["ntype"]
@@ -70,7 +73,7 @@ def check_switch_range(davg: Any, dstd: Any) -> None:
         nvnmd_cfg.get_s_range(davg, dstd)
 
 
-def build_op_descriptor() -> Any:
+def build_op_descriptor() -> Callable:
     r"""Replace se_a.py/DescrptSeA/build."""
     if nvnmd_cfg.quantize_descriptor:
         return op_module.prod_env_mat_a_mix_nvnmd_quantize
