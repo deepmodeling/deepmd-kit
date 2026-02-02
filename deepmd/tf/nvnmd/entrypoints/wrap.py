@@ -439,14 +439,16 @@ class Wrap:
             bbps.append("".join(bbp[::-1]))
         return bfps, bbps
 
-    def wrap_bias(self, bias: Any, NBIT_DATA: Any, NBIT_DATA_FL: Any) -> list[str]:
+    def wrap_bias(
+        self, bias: np.ndarray, NBIT_DATA: int, NBIT_DATA_FL: int
+    ) -> list[str]:
         e = Encode()
         bias = e.qr(bias, NBIT_DATA_FL)
         Bs = e.dec2bin(bias, NBIT_DATA, True)
         return Bs
 
     def wrap_weight(
-        self, weight: Any, NBIT_DISP: Any, NBIT_WEIGHT: Any
+        self, weight: np.ndarray, NBIT_DISP: int, NBIT_WEIGHT: int
     ) -> tuple[list[str], list[str], list[list[str]], list[list[str]]]:
         r"""weight: weights of fittingNet
         NBIT_DISP: nbits of exponent of weight max value
