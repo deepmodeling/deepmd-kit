@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import warnings
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -47,6 +48,11 @@ from deepmd.utils.data import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.train.learning_rate import (
+        LearningRateExp,
+    )
 
 
 @Fitting.register("polar")
@@ -626,7 +632,7 @@ class PolarFittingSeA(Fitting):
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
 
-    def get_loss(self, loss: dict, lr: Any) -> Loss:
+    def get_loss(self, loss: dict, lr: "LearningRateExp") -> Loss:
         """Get the loss function."""
         return TensorLoss(
             loss,
@@ -867,7 +873,7 @@ class GlobalPolarFittingSeA:
         """
         self.polar_fitting.enable_mixed_precision(mixed_prec)
 
-    def get_loss(self, loss: dict, lr: Any) -> Loss:
+    def get_loss(self, loss: dict, lr: "LearningRateExp") -> Loss:
         """Get the loss function.
 
         Parameters
