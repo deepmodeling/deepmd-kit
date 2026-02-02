@@ -1,8 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    Any,
+    TYPE_CHECKING,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import (
+        Callable,
+    )
 
 import numpy as np
 
@@ -24,14 +29,14 @@ from deepmd.tf.utils.network import (
 log = logging.getLogger(__name__)
 
 
-def get_sess() -> Any:
+def get_sess() -> tf.Session:
     init_op = tf.global_variables_initializer()
     sess = tf.Session()
     sess.run(init_op)
     return sess
 
 
-def matmul2_qq(a: Any, b: Any, nbit: int) -> Any:
+def matmul2_qq(a: tf.Tensor, b: tf.Tensor, nbit: int) -> tf.Tensor:
     r"""Quantized matmul operation for 2d tensor.
     a and b is input tensor, nbit represent quantification precision.
     """
@@ -45,7 +50,7 @@ def matmul2_qq(a: Any, b: Any, nbit: int) -> Any:
     return y
 
 
-def matmul3_qq(a: Any, b: Any, nbit: int) -> Any:
+def matmul3_qq(a: tf.Tensor, b: tf.Tensor, nbit: int) -> tf.Tensor:
     r"""Quantized matmul operation for 3d tensor.
     a and b is input tensor, nbit represent quantification precision.
     """
@@ -62,7 +67,7 @@ def matmul3_qq(a: Any, b: Any, nbit: int) -> Any:
     return y
 
 
-def qf(x: Any, nbit: int) -> Any:
+def qf(x: tf.Tensor, nbit: int) -> tf.Tensor:
     r"""Quantize and floor tensor `x` with quantification precision `nbit`."""
     prec = 2**nbit
 
@@ -71,7 +76,7 @@ def qf(x: Any, nbit: int) -> Any:
     return y
 
 
-def qr(x: Any, nbit: int) -> Any:
+def qr(x: tf.Tensor, nbit: int) -> tf.Tensor:
     r"""Quantize and round tensor `x` with quantification precision `nbit`."""
     prec = 2**nbit
 
@@ -80,7 +85,7 @@ def qr(x: Any, nbit: int) -> Any:
     return y
 
 
-def tanh4(x: Any) -> Any:
+def tanh4(x: tf.Tensor) -> tf.Tensor:
     with tf.name_scope("tanh4"):
         sign = tf.sign(x)
         xclp = tf.clip_by_value(x, -2, 2)
@@ -91,17 +96,17 @@ def tanh4(x: Any) -> Any:
 
 
 def one_layer_wb(
-    shape: Any,
+    shape: list[int] | None,
     outputs_size: int,
     bavg: float,
     stddev: float,
-    precision: Any,
+    precision: tf.DType,
     trainable: bool,
-    initial_variables: Any | None,
+    initial_variables: dict | None,
     seed: int | None,
     uniform_seed: bool,
     name: str,
-) -> tuple[Any, Any]:
+) -> tuple[tf.Variable, tf.Variable]:
     if nvnmd_cfg.restore_fitting_net:
         # initializer
         w_initializer = get_constant_initializer(nvnmd_cfg.weight, "matrix")
@@ -137,17 +142,17 @@ def one_layer_wb(
 
 
 def one_layer_t(
-    shape: Any,
+    shape: list[int] | None,
     outputs_size: int,
     bavg: float,
     stddev: float,
-    precision: Any,
+    precision: tf.DType,
     trainable: bool,
-    initial_variables: Any | None,
+    initial_variables: dict | None,
     seed: int | None,
     uniform_seed: bool,
     name: str,
-) -> Any:
+) -> tf.Variable:
     NTAVC = nvnmd_cfg.fitn["NTAVC"]
     if nvnmd_cfg.restore_fitting_net:
         t_initializer = get_constant_initializer(nvnmd_cfg.weight, "tweight")
@@ -172,10 +177,10 @@ def one_layer_t(
 
 
 def one_layer(
-    inputs: Any,
+    inputs: tf.Tensor,
     outputs_size: int,
-    activation_fn: Any = tf.nn.tanh,
-    precision: Any = GLOBAL_TF_FLOAT_PRECISION,
+    activation_fn: "Callable | None" = tf.nn.tanh,
+    precision: tf.DType = GLOBAL_TF_FLOAT_PRECISION,
     stddev: float = 1.0,
     bavg: float = 0.0,
     name: str = "linear",
@@ -185,10 +190,10 @@ def one_layer(
     trainable: bool = True,
     useBN: bool = False,
     uniform_seed: bool = False,
-    initial_variables: Any | None = None,
-    mixed_prec: Any | None = None,
+    initial_variables: dict | None = None,
+    mixed_prec: dict | None = None,
     final_layer: bool = False,
-) -> Any:
+) -> tf.Tensor:
     r"""Build one layer with continuous or quantized value.
     Its weight and bias can be initialed with random or constant value.
     """
