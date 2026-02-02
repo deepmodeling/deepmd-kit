@@ -235,7 +235,7 @@ class Wrap:
         hs = e.extend_hex(hs, NBIT_MODEL_HEAD * nhead)
         return hs
 
-    def wrap_dscp(self) -> Any:
+    def wrap_dscp(self) -> str:
         r"""Wrap the configuration of descriptor.
 
                 version 0:
@@ -330,7 +330,7 @@ class Wrap:
             bs = e.dec2bin(ln2_NIX, NBIT_FLTE, signed=True)[0] + bs
         return bs
 
-    def wrap_fitn(self) -> Any:
+    def wrap_fitn(self) -> tuple[list[str], list[str]]:
         r"""Wrap the weights of fitting net.
 
         w weight
@@ -439,13 +439,15 @@ class Wrap:
             bbps.append("".join(bbp[::-1]))
         return bfps, bbps
 
-    def wrap_bias(self, bias: Any, NBIT_DATA: Any, NBIT_DATA_FL: Any) -> Any:
+    def wrap_bias(self, bias: Any, NBIT_DATA: Any, NBIT_DATA_FL: Any) -> list[str]:
         e = Encode()
         bias = e.qr(bias, NBIT_DATA_FL)
         Bs = e.dec2bin(bias, NBIT_DATA, True)
         return Bs
 
-    def wrap_weight(self, weight: Any, NBIT_DISP: Any, NBIT_WEIGHT: Any) -> Any:
+    def wrap_weight(
+        self, weight: Any, NBIT_DISP: Any, NBIT_WEIGHT: Any
+    ) -> tuple[list[str], list[str], list[list[str]], list[list[str]]]:
         r"""weight: weights of fittingNet
         NBIT_DISP: nbits of exponent of weight max value
         NBIT_WEIGHT: nbits of mantissa of weights.
@@ -480,7 +482,7 @@ class Wrap:
         WCs = [[WCs[nc * rr + cc] for cc in range(nc)] for rr in range(nr)]
         return NRs, NCs, WRs, WCs
 
-    def wrap_map(self) -> Any:
+    def wrap_map(self) -> tuple[list[str], list[str], list[str], list[str]]:
         r"""Wrap the mapping table of embedding network."""
         dscp = nvnmd_cfg.dscp
         maps = nvnmd_cfg.map
@@ -554,7 +556,7 @@ class Wrap:
         bswt, bdsw, bfea, bgra = bss
         return bswt, bdsw, bfea, bgra
 
-    def wrap_lut(self) -> Any:
+    def wrap_lut(self) -> tuple[list[str], list[str], list[str]]:
         r"""Wrap the LUT."""
         dscp = nvnmd_cfg.dscp
         fitn = nvnmd_cfg.fitn
