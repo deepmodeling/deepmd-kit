@@ -22,6 +22,9 @@ from deepmd.tf.fit.fitting import (
 from deepmd.tf.loss.loss import (
     Loss,
 )
+from deepmd.tf.utils.learning_rate import (
+    LearningRateExp,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -69,7 +72,7 @@ class LinearModel(Model):
             f"model{ii}": model.get_fitting() for ii, model in enumerate(self.models)
         }
 
-    def get_loss(self, loss: dict, lr: Any) -> Loss | dict | None:
+    def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss | dict | None:
         """Get the loss function(s)."""
         # the first model that is not None, or None if all models are None
         for model in self.models:
