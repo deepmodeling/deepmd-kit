@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-)
 
 import numpy as np
 
@@ -17,8 +14,12 @@ def r2s(r: float, rmin: float, rmax: float) -> float:
 
 
 def map_nvnmd(
-    x: Any, map_y: Any, map_dy: Any, prec: float, nbit: int | None = None
-) -> Any:
+    x: float,
+    map_y: np.ndarray,
+    map_dy: np.ndarray,
+    prec: float,
+    nbit: int | None = None,
+) -> float:
     r"""Mapping function implemented by numpy."""
     xk = int(np.floor(x / prec))
     dx = x - xk * prec
