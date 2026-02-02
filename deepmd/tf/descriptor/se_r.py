@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
 )
@@ -244,11 +247,11 @@ class DescrptSeR(DescrptSe):
 
     def compute_input_stats(
         self,
-        data_coord: Any,
-        data_box: Any,
-        data_atype: Any,
-        natoms_vec: Any,
-        mesh: Any,
+        data_coord: list[np.ndarray],
+        data_box: list[np.ndarray],
+        data_atype: list[np.ndarray],
+        natoms_vec: list[np.ndarray],
+        mesh: list[np.ndarray],
         input_dict: dict,
         **kwargs: Any,
     ) -> None:
@@ -284,7 +287,7 @@ class DescrptSeR(DescrptSe):
         stat_dict = {"sumr": sumr, "sumn": sumn, "sumr2": sumr2}
         self.merge_input_stats(stat_dict)
 
-    def merge_input_stats(self, stat_dict: Any) -> None:
+    def merge_input_stats(self, stat_dict: dict[str, Any]) -> None:
         """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
 
         Parameters
@@ -535,13 +538,13 @@ class DescrptSeR(DescrptSe):
 
     def _pass_filter(
         self,
-        inputs: Any,
-        atype: Any,
-        natoms: Any,
-        reuse: Any = None,
+        inputs: tf.Tensor,
+        atype: tf.Tensor,
+        natoms: tf.Tensor,
+        reuse: bool | None = None,
         suffix: str = "",
         trainable: bool = True,
-    ) -> Any:
+    ) -> tf.Tensor:
         start_index = 0
         inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
@@ -601,12 +604,12 @@ class DescrptSeR(DescrptSe):
 
     def _compute_dstats_sys_se_r(
         self,
-        data_coord: Any,
-        data_box: Any,
-        data_atype: Any,
-        natoms_vec: Any,
-        mesh: Any,
-    ) -> Any:
+        data_coord: np.ndarray,
+        data_box: np.ndarray,
+        data_atype: np.ndarray,
+        natoms_vec: np.ndarray,
+        mesh: np.ndarray,
+    ) -> tuple[list[float], list[float], list[int]]:
         dd_all = run_sess(
             self.sub_sess,
             self.stat_descrpt,
@@ -640,7 +643,7 @@ class DescrptSeR(DescrptSe):
             sysr2.append(sumr2)
         return sysr, sysr2, sysn
 
-    def _compute_std(self, sumv2: Any, sumv: Any, sumn: Any) -> Any:
+    def _compute_std(self, sumv2: float, sumv: float, sumn: int) -> float:
         val = np.sqrt(sumv2 / sumn - np.multiply(sumv / sumn, sumv / sumn))
         if np.abs(val) < 1e-2:
             val = 1e-2
@@ -649,16 +652,16 @@ class DescrptSeR(DescrptSe):
     @cast_precision
     def _filter_r(
         self,
-        inputs: Any,
-        type_input: Any,
-        natoms: Any,
-        activation_fn: Any = tf.nn.tanh,
+        inputs: tf.Tensor,
+        type_input: int,
+        natoms: tf.Tensor,
+        activation_fn: Callable[[tf.Tensor], tf.Tensor] | None = tf.nn.tanh,
         stddev: float = 1.0,
         bavg: float = 0.0,
         name: str = "linear",
-        reuse: Any = None,
+        reuse: bool | None = None,
         trainable: bool = True,
-    ) -> Any:
+    ) -> tf.Tensor:
         # natom x nei
         outputs_size = [1, *self.filter_neuron]
         with tf.variable_scope(name, reuse=reuse):
