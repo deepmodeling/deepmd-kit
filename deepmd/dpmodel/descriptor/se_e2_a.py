@@ -607,7 +607,11 @@ class DescrptSeAArrayAPI(DescrptSeA):
         sec = self.sel_cumsum
 
         ng = self.neuron[-1]
-        gr = xp.zeros([nf * nloc, ng, 4], dtype=self.dstd.dtype)
+        gr = xp.zeros(
+            [nf * nloc, ng, 4],
+            dtype=self.dstd.dtype,
+            device=array_api_compat.device(coord_ext),
+        )
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         # merge nf and nloc axis, so for type_one_side == False,
         # we don't require atype is the same in all frames
