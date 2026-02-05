@@ -33,6 +33,7 @@ jobs:
         export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
         source/install/uv_with_retry.sh pip install --system -e .[test,jax] mpi4py --group pin_jax
         source/install/uv_with_retry.sh pip install --system --find-links "https://www.paddlepaddle.org.cn/packages/nightly/cpu/paddlepaddle/" --index-url https://pypi.org/simple paddlepaddle==3.3.0.dev20251204
+        source/install/uv_with_retry.sh pip install --system --no-build-isolation source/3rdparty/torch_openreg
       env:
         # Please note that uv has some issues with finding
         # existing TensorFlow package. Currently, it uses
@@ -62,6 +63,7 @@ jobs:
         NUM_WORKERS: 0
         DP_CI_IMPORT_PADDLE_BEFORE_TF: 1
         FLAGS_use_stride_compute_kernel: 0
+        DEVICE: openreg
     - name: Test TF2 eager mode
       run: pytest --cov=deepmd --cov-append source/tests/consistent/io/test_io.py source/jax2tf_tests
       env:

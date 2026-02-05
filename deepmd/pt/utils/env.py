@@ -48,7 +48,11 @@ if multiprocessing.get_start_method() != "fork":
 LOCAL_RANK = os.environ.get("LOCAL_RANK")
 LOCAL_RANK = int(0 if LOCAL_RANK is None else LOCAL_RANK)
 
-if os.environ.get("DEVICE") == "cpu" or torch.cuda.is_available() is False:
+if os.environ.get("DEVICE") == "openreg":
+    if not torch.openreg.is_available():
+        raise RuntimeError("OpenReg backend is not available in this build.")
+    DEVICE = torch.device("openreg")
+elif os.environ.get("DEVICE") == "cpu" or torch.cuda.is_available() is False:
     DEVICE = torch.device("cpu")
 else:
     DEVICE = torch.device(f"cuda:{LOCAL_RANK}")
