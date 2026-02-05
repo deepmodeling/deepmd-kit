@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
 
 import numpy as np
 
@@ -58,7 +61,7 @@ class DescrptLocFrame(Descriptor):
         sel_a: list[int],
         sel_r: list[int],
         axis_rule: list[int],
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         self.sel_a = sel_a
@@ -159,7 +162,7 @@ class DescrptLocFrame(Descriptor):
         natoms_vec: list,
         mesh: list,
         input_dict: dict,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 
@@ -372,8 +375,13 @@ class DescrptLocFrame(Descriptor):
         return force, virial, atom_virial
 
     def _compute_dstats_sys_nonsmth(
-        self, data_coord, data_box, data_atype, natoms_vec, mesh
-    ):
+        self,
+        data_coord: np.ndarray,
+        data_box: np.ndarray,
+        data_atype: np.ndarray,
+        natoms_vec: np.ndarray,
+        mesh: np.ndarray,
+    ) -> tuple[Any, Any]:
         dd_all = run_sess(
             self.sub_sess,
             self.stat_descrpt,
@@ -405,7 +413,7 @@ class DescrptLocFrame(Descriptor):
             sysv2.append(sumv2)
         return sysv, sysv2, sysn
 
-    def _compute_std(self, sumv2, sumv, sumn):
+    def _compute_std(self, sumv2: float, sumv: float, sumn: float) -> float:
         return np.sqrt(sumv2 / sumn - np.multiply(sumv / sumn, sumv / sumn))
 
     def init_variables(

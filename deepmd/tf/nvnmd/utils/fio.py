@@ -3,6 +3,9 @@ import json
 import logging
 import os
 import struct
+from typing import (
+    Any,
+)
 
 import numpy as np
 
@@ -15,28 +18,28 @@ class Fio:
     def __init__(self) -> None:
         pass
 
-    def exits(self, file_name=""):
+    def exits(self, file_name: str = "") -> bool:
         if file_name == "":
             return True
         return os.path.exists(file_name)
 
-    def mkdir(self, path_name="") -> None:
+    def mkdir(self, path_name: str = "") -> None:
         if not self.exits(path_name):
             os.makedirs(path_name)
 
-    def create_file_path(self, file_name="") -> None:
+    def create_file_path(self, file_name: str = "") -> None:
         pars = file_name.split("/")
         if len(pars) > 0:
             path_name = "/".join(pars[:-1])
             self.mkdir(path_name)
 
-    def is_path(self, path):
+    def is_path(self, path: str) -> bool:
         return self.exits(path) and os.path.isdir(path)
 
-    def is_file(self, file_name):
+    def is_file(self, file_name: str) -> bool:
         return self.exits(file_name) and os.path.isfile(file_name)
 
-    def get_file_list(self, path) -> list:
+    def get_file_list(self, path: str) -> list:
         if self.is_file(path):
             return []
         if self.is_path:
@@ -60,7 +63,7 @@ class FioDic:
     def __init__(self) -> None:
         pass
 
-    def load(self, file_name="", default_value={}):
+    def load(self, file_name: str = "", default_value: dict = {}) -> dict:
         if file_name.endswith(".json"):
             return FioJsonDic().load(file_name, default_value)
         elif file_name.endswith(".npy"):
@@ -68,7 +71,7 @@ class FioDic:
         else:
             return FioNpyDic().load(file_name, default_value)
 
-    def save(self, file_name="", dic={}) -> None:
+    def save(self, file_name: str = "", dic: dict = {}) -> None:
         if file_name.endswith(".json"):
             FioJsonDic().save(file_name, dic)
         elif file_name.endswith(".npy"):
@@ -76,13 +79,13 @@ class FioDic:
         else:
             FioNpyDic().save(file_name, dic)
 
-    def get(self, jdata, key, default_value):
+    def get(self, jdata: dict, key: str, default_value: Any) -> Any:
         if key in jdata.keys():
             return jdata[key]
         else:
             return default_value
 
-    def update(self, jdata, jdata_o):
+    def update(self, jdata: dict, jdata_o: dict) -> dict:
         r"""Update key-value pair is key in jdata_o.keys().
 
         Parameters
@@ -107,7 +110,7 @@ class FioNpyDic:
     def __init__(self) -> None:
         pass
 
-    def load(self, file_name="", default_value={}):
+    def load(self, file_name: str = "", default_value: dict = {}) -> dict:
         if Fio().exits(file_name):
             log.info(f"load {file_name}")
             dat = np.load(file_name, allow_pickle=True)[0]
@@ -116,7 +119,7 @@ class FioNpyDic:
             log.warning(f"can not find {file_name}")
             return default_value
 
-    def save(self, file_name="", dic={}) -> None:
+    def save(self, file_name: str = "", dic: dict = {}) -> None:
         Fio().create_file_path(file_name)
         np.save(file_name, [dic])
 
@@ -127,7 +130,7 @@ class FioJsonDic:
     def __init__(self) -> None:
         pass
 
-    def load(self, file_name="", default_value={}):
+    def load(self, file_name: str = "", default_value: dict = {}) -> dict:
         r"""Load .json file into dict."""
         if Fio().exits(file_name):
             log.info(f"load {file_name}")
@@ -139,7 +142,7 @@ class FioJsonDic:
             log.warning(f"can not find {file_name}")
             return default_value
 
-    def save(self, file_name="", dic={}) -> None:
+    def save(self, file_name: str = "", dic: dict = {}) -> None:
         r"""Save dict into .json file."""
         log.info(f"write jdata to {file_name}")
         Fio().create_file_path(file_name)
@@ -153,7 +156,7 @@ class FioBin:
     def __init__(self) -> None:
         pass
 
-    def load(self, file_name="", default_value=""):
+    def load(self, file_name: str = "", default_value: str = "") -> str | bytes:
         r"""Load binary file into bytes value."""
         if Fio().exits(file_name):
             log.info(f"load {file_name}")
@@ -186,7 +189,7 @@ class FioTxt:
     def __init__(self) -> None:
         pass
 
-    def load(self, file_name="", default_value=[]):
+    def load(self, file_name: str = "", default_value: list = []) -> list[str]:
         r"""Load .txt file into string list."""
         if Fio().exits(file_name):
             log.info(f"load {file_name}")
