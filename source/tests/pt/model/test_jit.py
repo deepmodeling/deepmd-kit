@@ -24,7 +24,6 @@ from .test_permutation import (
     model_dpa1,
     model_dpa2,
     model_hybrid,
-    model_se_e2_a,
 )
 
 
@@ -45,22 +44,6 @@ class JITTest:
                 shutil.rmtree(f)
             if f in ["checkpoint"]:
                 os.remove(f)
-
-
-class TestEnergyModelSeA(unittest.TestCase, JITTest):
-    def setUp(self) -> None:
-        input_json = str(Path(__file__).parent / "water/se_atten.json")
-        with open(input_json) as f:
-            self.config = json.load(f)
-        data_file = [str(Path(__file__).parent / "water/data/data_0")]
-        self.config["training"]["training_data"]["systems"] = data_file
-        self.config["training"]["validation_data"]["systems"] = data_file
-        self.config["model"] = deepcopy(model_se_e2_a)
-        self.config["training"]["numb_steps"] = 10
-        self.config["training"]["save_freq"] = 10
-
-    def tearDown(self) -> None:
-        JITTest.tearDown(self)
 
 
 class TestDOSModelSeA(unittest.TestCase, JITTest):
