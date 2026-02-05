@@ -104,7 +104,7 @@ class TestDescrptSeAttenV2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 err_msg=err_msg,
             )
 
-    def test_jit(
+    def test_export(
         self,
     ) -> None:
         rng = np.random.default_rng()
@@ -140,5 +140,10 @@ class TestDescrptSeAttenV2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 seed=GLOBAL_SEED,
             )
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
-            dd0.se_atten.dstd = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
-            _ = torch.jit.script(dd0)
+            dd0.se_atten.stddev = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
+
+            coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE)
+            atype_ext = torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE)
+            nlist = torch.tensor(self.nlist, dtype=int, device=env.DEVICE)
+
+            _ = torch.export.export(dd0, (coord_ext, atype_ext, nlist))

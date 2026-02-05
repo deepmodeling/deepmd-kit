@@ -30,6 +30,7 @@ from deepmd.pt.utils import (
 )
 
 from .test_permutation import (
+    model_dpa1,
     model_se_e2_a,
 )
 
@@ -165,6 +166,22 @@ class ExportIntegrationTest:
                 shutil.rmtree(f)
             if f in ["checkpoint"]:
                 os.remove(f)
+
+
+class TestEnergyModelDPA1IntegrationExport(unittest.TestCase, ExportIntegrationTest):
+    def setUp(self) -> None:
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_dpa1)
+        self.config["training"]["numb_steps"] = 2
+        self.config["training"]["save_freq"] = 2
+
+    def tearDown(self) -> None:
+        ExportIntegrationTest.tearDown(self)
 
 
 class TestEnergyModelSeAIntegrationExport(unittest.TestCase, ExportIntegrationTest):
