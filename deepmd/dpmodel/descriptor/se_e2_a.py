@@ -609,7 +609,7 @@ class DescrptSeAArrayAPI(DescrptSeA):
         ng = self.neuron[-1]
         gr = xp.zeros(
             [nf * nloc, ng, 4],
-            dtype=self.dstd.dtype,
+            dtype=input_dtype,
             device=array_api_compat.device(coord_ext),
         )
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
