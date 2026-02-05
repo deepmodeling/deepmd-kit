@@ -37,6 +37,7 @@ body:
         - docker
         - pip
         - Built from source
+        - dp1s
         - Others (write below)
     validations:
       required: true
