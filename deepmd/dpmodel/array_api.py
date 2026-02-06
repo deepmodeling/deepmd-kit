@@ -100,8 +100,10 @@ def xp_scatter_sum(input: Array, dim: int, index: Array, src: Array) -> Array:
             src,
         )
     elif array_api_compat.is_torch_array(input):
-        # PyTorch: use scatter_add_
-        return input.scatter_add_(dim, index, src)
+        # PyTorch: use scatter_add (non-mutating version)
+        import torch
+
+        return torch.scatter_add(input, dim, index, src)
     else:
         raise NotImplementedError("Only JAX and PyTorch arrays are supported.")
 
@@ -118,8 +120,10 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
         # JAX: functional update, not in-place
         return x.at[indices].add(values)
     elif array_api_compat.is_torch_array(x):
-        # PyTorch: supports index_add_ (in-place)
-        return x.index_add_(0, indices, values)
+        # PyTorch: use index_add (non-mutating version)
+        import torch
+
+        return torch.index_add(x, 0, indices, values)
     else:
         # Fallback for array_api_strict: use basic indexing only
         # may need a more efficient way to do this

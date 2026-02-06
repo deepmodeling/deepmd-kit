@@ -77,6 +77,47 @@ class TestPyTorchArrayAPI(unittest.TestCase):
         expected = torch.tensor([1, 2, 0, 1, 0, 0, 0, 0, 0, 0])
         self.assertTrue(torch.equal(result, expected))
 
+    def test_xp_scatter_sum_non_mutating(self):
+        """Test that xp_scatter_sum does not mutate the input tensor."""
+        input_tensor = torch.zeros(3, 5)
+        input_copy = input_tensor.clone()
+        dim = 0
+        index = torch.tensor([[0, 1, 2, 0, 0]])
+        src = torch.ones(1, 5)
+        result = xp_scatter_sum(input_tensor, dim, index, src)
+        # Verify the original tensor is unchanged
+        self.assertTrue(torch.equal(input_tensor, input_copy))
+        # Verify the result is correct
+        expected = torch.tensor(
+            [
+                [1.0, 0.0, 0.0, 1.0, 1.0],
+                [0.0, 1.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 0.0],
+            ]
+        )
+        self.assertTrue(torch.allclose(result, expected))
+
+    def test_xp_add_at_non_mutating(self):
+        """Test that xp_add_at does not mutate the input tensor."""
+        x = torch.zeros(5, 3)
+        x_copy = x.clone()
+        indices = torch.tensor([0, 1, 1, 3])
+        values = torch.ones(4, 3)
+        result = xp_add_at(x, indices, values)
+        # Verify the original tensor is unchanged
+        self.assertTrue(torch.equal(x, x_copy))
+        # Verify the result is correct
+        expected = torch.tensor(
+            [
+                [1.0, 1.0, 1.0],
+                [2.0, 2.0, 2.0],
+                [0.0, 0.0, 0.0],
+                [1.0, 1.0, 1.0],
+                [0.0, 0.0, 0.0],
+            ]
+        )
+        self.assertTrue(torch.allclose(result, expected))
+
 
 if __name__ == "__main__":
     unittest.main()
