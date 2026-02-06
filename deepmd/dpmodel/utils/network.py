@@ -572,7 +572,7 @@ class LayerNorm(NativeLayer):
 
 
 def make_multilayer_network(T_NetworkLayer: type, ModuleBase: type) -> type:
-    class NN(ModuleBase):
+    class NN(ModuleBase):  # type: ignore[misc,valid-type]
         """Native representation of a neural network.
 
         Parameters
@@ -585,7 +585,7 @@ def make_multilayer_network(T_NetworkLayer: type, ModuleBase: type) -> type:
             super().__init__()
             if layers is None:
                 layers = []
-            self.layers = [T_NetworkLayer.deserialize(layer) for layer in layers]
+            self.layers = [T_NetworkLayer.deserialize(layer) for layer in layers]  # type: ignore[attr-defined]
             self.check_shape_consistency()
 
         def serialize(self) -> dict:
@@ -686,7 +686,7 @@ NativeNet = make_multilayer_network(NativeLayer, NativeOP)
 
 
 def make_embedding_network(T_Network: type, T_NetworkLayer: type) -> type:
-    class EN(T_Network):
+    class EN(T_Network):  # type: ignore[misc,valid-type]
         """The embedding network.
 
         Parameters
@@ -769,7 +769,7 @@ def make_embedding_network(T_Network: type, T_NetworkLayer: type) -> type:
             }
 
         @classmethod
-        def deserialize(cls, data: dict) -> "EmbeddingNet":
+        def deserialize(cls, data: dict) -> "EmbeddingNet":  # type: ignore[name-defined]
             """Deserialize the network from a dict.
 
             Parameters
@@ -1011,7 +1011,7 @@ class NetworkCollection:
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "NetworkCollection":
+    def deserialize(cls, data: dict | None) -> "NetworkCollection":
         """Deserialize the networks from a dict.
 
         Parameters
@@ -1019,6 +1019,8 @@ class NetworkCollection:
         data : dict
             The dict to deserialize from.
         """
+        if data is None:
+            data = {}
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
