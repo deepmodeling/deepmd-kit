@@ -39,7 +39,7 @@ def support_array_api(version: str) -> Callable:
     """
 
     def set_version(func: Callable) -> Callable:
-        func.array_api_version = version
+        func.array_api_version = version  # type: ignore[attr-defined]
         return func
 
     return set_version
@@ -114,7 +114,7 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
 
     elif array_api_compat.is_jax_array(x):
         # JAX: functional update, not in-place
-        return x.at[indices].add(values)
+        return x.at[indices].add(values)  # type: ignore[attr-defined]
     else:
         # Fallback for array_api_strict: use basic indexing only
         # may need a more efficient way to do this
