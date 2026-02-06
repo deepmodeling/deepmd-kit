@@ -99,8 +99,6 @@ jobs:
           ENABLE_PADDLE: ${{ matrix.enable_paddle && '1' || '0' }}
         if: ${{ !matrix.check_memleak }}
       - uses: codecov/codecov-action@v5
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
           use_oidc: true
     permissions:

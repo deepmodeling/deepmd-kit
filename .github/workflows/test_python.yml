@@ -77,8 +77,6 @@ jobs:
           path: .test_durations_${{ matrix.group }}
           include-hidden-files: true
       - uses: codecov/codecov-action@v5
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
           use_oidc: true
     permissions:
