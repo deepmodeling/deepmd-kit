@@ -215,11 +215,11 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         self.rcut_smth = rcut_smth
         self.ntypes = ntypes
         self.nlayers = nlayers
-        sel = [sel] if isinstance(sel, int) else sel
-        self.nnei = sum(sel)
+        sel_list = [sel] if isinstance(sel, int) else sel
+        self.nnei = sum(sel_list)
         self.ndescrpt = self.nnei * 4  # use full descriptor.
-        assert len(sel) == 1
-        self.sel = sel
+        assert len(sel_list) == 1
+        self.sel = sel_list
         self.sec = self.sel
         self.split_sel = self.sel
         self.axis_neuron = axis_neuron
@@ -464,7 +464,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         sw = xp.reshape(sw, (nf, nloc, nnei))
         sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
         # nf x nloc x tebd_dim
-        atype_embd = atype_embd_ext[:, :nloc, :]
+        atype_embd = atype_embd_ext[:, :nloc, :]  # type: ignore[index]
         assert list(atype_embd.shape) == [nf, nloc, self.g1_dim]
 
         g1 = self.act(atype_embd)
@@ -1327,10 +1327,10 @@ class RepformerLayer(NativeOP):
         self.rcut = rcut
         self.rcut_smth = rcut_smth
         self.ntypes = ntypes
-        sel = [sel] if isinstance(sel, int) else sel
-        self.nnei = sum(sel)
-        assert len(sel) == 1
-        self.sel = sel
+        sel_list = [sel] if isinstance(sel, int) else sel
+        self.nnei = sum(sel_list)
+        assert len(sel_list) == 1
+        self.sel = sel_list
         self.sec = self.sel
         self.axis_neuron = axis_neuron
         self.activation_function = activation_function
@@ -1359,6 +1359,8 @@ class RepformerLayer(NativeOP):
         self.use_sqrt_nnei = use_sqrt_nnei
         self.g1_out_conv = g1_out_conv
         self.g1_out_mlp = g1_out_mlp
+        # Ensure ln_eps is not None for type safety
+        ln_eps_value = ln_eps if ln_eps is not None else 1e-5
         self.ln_eps = ln_eps
         self.precision = precision
 
@@ -1512,7 +1514,7 @@ class RepformerLayer(NativeOP):
                 )
                 self.attn2_lm = LayerNorm(
                     g2_dim,
-                    eps=ln_eps,
+                    eps=ln_eps_value,
                     trainable=trainable_ln,
                     precision=precision,
                     seed=child_seed(seed, 9),
