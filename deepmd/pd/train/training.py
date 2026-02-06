@@ -75,6 +75,9 @@ from deepmd.pd.utils.utils import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.finetune import (
+    warn_configuration_mismatch_during_finetune,
+)
 from deepmd.utils.path import (
     DPH5Path,
 )
@@ -117,6 +120,8 @@ class Trainer:
         training_params = config["training"]
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
+        # Store model params for finetune warning comparisons
+        self.model_params = model_params
         self.finetune_update_stat = False
         self.model_keys = (
             list(model_params["model_dict"]) if self.multi_task else ["Default"]
@@ -516,6 +521,37 @@ class Trainer:
                                 )
 
                     # collect model params from the pretrained model
+                    # First check for configuration mismatches and warn if needed
+                    pretrained_model_params = state_dict["_extra_state"]["model_params"]
+                    for model_key in self.model_keys:
+                        finetune_rule_single = self.finetune_links[model_key]
+                        _model_key_from = finetune_rule_single.get_model_branch()
+
+                        # Get current model descriptor config
+                        if self.multi_task:
+                            current_descriptor = self.model_params["model_dict"][
+                                model_key
+                            ].get("descriptor", {})
+                        else:
+                            current_descriptor = self.model_params.get("descriptor", {})
+
+                        # Get pretrained model descriptor config
+                        if "model_dict" in pretrained_model_params:
+                            pretrained_descriptor = pretrained_model_params[
+                                "model_dict"
+                            ][_model_key_from].get("descriptor", {})
+                        else:
+                            pretrained_descriptor = pretrained_model_params.get(
+                                "descriptor", {}
+                            )
+
+                        # Warn about configuration mismatches
+                        warn_configuration_mismatch_during_finetune(
+                            current_descriptor,
+                            pretrained_descriptor,
+                            _model_key_from,
+                        )
+
                     for model_key in self.model_keys:
                         finetune_rule_single = self.finetune_links[model_key]
                         collect_single_finetune_params(
