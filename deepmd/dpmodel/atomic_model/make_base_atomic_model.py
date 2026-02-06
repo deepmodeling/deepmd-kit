@@ -32,7 +32,7 @@ def make_base_atomic_model(
 
     """
 
-    class BAM(ABC, PluginVariant, make_plugin_registry("atomic model")):
+    class BAM(ABC, PluginVariant, make_plugin_registry("atomic model")):  # type: ignore[misc]
         """Base Atomic Model provides the interfaces of an atomic model."""
 
         @abstractmethod
@@ -132,13 +132,13 @@ def make_base_atomic_model(
         @abstractmethod
         def fwd(
             self,
-            extended_coord: t_tensor,
-            extended_atype: t_tensor,
-            nlist: t_tensor,
-            mapping: t_tensor | None = None,
-            fparam: t_tensor | None = None,
-            aparam: t_tensor | None = None,
-        ) -> dict[str, t_tensor]:
+            extended_coord: t_tensor,  # type: ignore[valid-type]
+            extended_atype: t_tensor,  # type: ignore[valid-type]
+            nlist: t_tensor,  # type: ignore[valid-type]
+            mapping: t_tensor | None = None,  # type: ignore[valid-type]
+            fparam: t_tensor | None = None,  # type: ignore[valid-type]
+            aparam: t_tensor | None = None,  # type: ignore[valid-type]
+        ) -> dict[str, t_tensor]:  # type: ignore[valid-type]
             pass
 
         @abstractmethod
@@ -183,8 +183,8 @@ def make_base_atomic_model(
 
         def make_atom_mask(
             self,
-            atype: t_tensor,
-        ) -> t_tensor:
+            atype: t_tensor,  # type: ignore[valid-type]
+        ) -> t_tensor:  # type: ignore[valid-type]
             """The atoms with type < 0 are treated as virtual atoms,
             which serves as place-holders for multi-frame calculations
             with different number of atoms in different frames.
