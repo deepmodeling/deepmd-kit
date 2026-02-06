@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import importlib
 import unittest
 
 import numpy as np
+import torch
 
 from deepmd.pt_expt.utils import (
     env,
@@ -15,8 +15,6 @@ from deepmd.pt_expt.utils.exclude_mask import (
 from ...pt.model.test_env_mat import (
     TestCaseSingleFrameWithNlist,
 )
-
-torch = importlib.import_module("torch")
 
 
 class TestAtomExcludeMask(unittest.TestCase):

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import importlib
 import logging
 import multiprocessing
 import os
@@ -18,7 +17,7 @@ from deepmd.env import (
 )
 
 log = logging.getLogger(__name__)
-torch = importlib.import_module("torch")
+import torch
 
 if sys.platform != "win32":
     try:

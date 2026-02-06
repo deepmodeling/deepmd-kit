@@ -1,16 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import importlib
 from typing import (
     Any,
 )
+
+import torch
 
 from deepmd.dpmodel.utils.exclude_mask import AtomExcludeMask as AtomExcludeMaskDP
 from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask as PairExcludeMaskDP
 from deepmd.pt_expt.utils import (
     env,
 )
-
-torch = importlib.import_module("torch")
 
 
 class AtomExcludeMask(AtomExcludeMaskDP):

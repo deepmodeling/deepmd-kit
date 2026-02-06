@@ -1,17 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import importlib
 from typing import (
     Any,
     overload,
 )
 
 import numpy as np
+import torch
 
 from deepmd.pt_expt.utils import (
     env,
 )
-
-torch = importlib.import_module("torch")
 
 
 @overload

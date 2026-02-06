@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import importlib
 from typing import (
     Any,
     ClassVar,
 )
 
 import numpy as np
+import torch
 
 from deepmd.dpmodel.common import (
     NativeOP,
@@ -21,8 +21,6 @@ from deepmd.dpmodel.utils.network import (
 from deepmd.pt_expt.common import (
     to_torch_array,
 )
-
-torch = importlib.import_module("torch")
 
 
 class TorchArrayParam(torch.nn.Parameter):

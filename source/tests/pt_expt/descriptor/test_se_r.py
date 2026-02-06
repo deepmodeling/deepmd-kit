@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import importlib
 import itertools
 import unittest
 
 import numpy as np
+import torch
 
 from deepmd.dpmodel.descriptor import DescrptSeR as DPDescrptSeR
 from deepmd.pt_expt.descriptor.se_r import (
@@ -25,8 +25,6 @@ from ...pt.model.test_mlp import (
 from ...seed import (
     GLOBAL_SEED,
 )
-
-torch = importlib.import_module("torch")
 
 
 class TestDescrptSeR(unittest.TestCase, TestCaseSingleFrameWithNlist):

@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import importlib
 from typing import (
     Any,
 )
+
+import torch
 
 from deepmd.dpmodel.descriptor.se_r import DescrptSeR as DescrptSeRDP
 from deepmd.pt_expt.descriptor.base_descriptor import (
@@ -17,8 +18,6 @@ from deepmd.pt_expt.utils.exclude_mask import (
 from deepmd.pt_expt.utils.network import (
     NetworkCollection,
 )
-
-torch = importlib.import_module("torch")
 
 
 @BaseDescriptor.register("se_e2_r_expt")

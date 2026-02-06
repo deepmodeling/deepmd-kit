@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import importlib
 
 import numpy as np
+import torch
 
 from deepmd.pt_expt.common import (
     to_torch_array,
@@ -9,8 +9,6 @@ from deepmd.pt_expt.common import (
 from deepmd.pt_expt.utils import (
     env,
 )
-
-torch = importlib.import_module("torch")
 
 
 def test_to_torch_array_moves_device() -> None:

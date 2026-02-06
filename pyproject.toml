@@ -411,6 +411,7 @@ convention = "numpy"
 banned-module-level-imports = [
     "deepmd.tf",
     "deepmd.pt",
+    "deepmd.pt_expt",
     "deepmd.pd",
     "deepmd.jax",
     "tensorflow",
@@ -432,12 +433,14 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "data/**" = ["ANN"]
 "deepmd/tf/**" = ["TID253", "ANN"]
 "deepmd/pt/**" = ["TID253", "B905"]
+"deepmd/pt_expt/**" = ["TID253", "B905"]
 "deepmd/jax/**" = ["TID253"]
 "deepmd/pd/**" = ["TID253", "B905"]
 
 "source/**" = ["ANN"]
 "source/tests/tf/**" = ["TID253", "ANN"]
 "source/tests/pt/**" = ["TID253", "ANN"]
+"source/tests/pt_expt/**" = ["TID253", "ANN"]
 "source/tests/jax/**" = ["TID253", "ANN"]
 "source/tests/pd/**" = ["TID253", "ANN"]
 "source/tests/universal/pt/**" = ["TID253", "ANN"]
