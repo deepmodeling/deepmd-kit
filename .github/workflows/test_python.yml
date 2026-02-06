@@ -90,22 +90,22 @@ jobs:
         python: ["3.10", "3.13"]
     needs: testpython
     steps:
-    - name: Get durations from cache
-      uses: actions/cache@v5
-      with:
-        path: .test_durations
-        # key won't match during the first run for the given commit, but
-        # restore-key will if there's a previous stored durations file,
-        # so cache will both be loaded and stored
-        key: test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
-        restore-keys: test2-durations-combined-${{ matrix.python }}
-    - name: Download artifacts
-      uses: actions/download-artifact@v7
-      with:
-        pattern: split-${{ matrix.python }}-*
-        merge-multiple: true
-    - name: Combine test durations
-      run: jq -s add .test_durations_* > .test_durations
+      - name: Get durations from cache
+        uses: actions/cache@v5
+        with:
+          path: .test_durations
+          # key won't match during the first run for the given commit, but
+          # restore-key will if there's a previous stored durations file,
+          # so cache will both be loaded and stored
+          key: test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
+          restore-keys: test2-durations-combined-${{ matrix.python }}
+      - name: Download artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: split-${{ matrix.python }}-*
+          merge-multiple: true
+      - name: Combine test durations
+        run: jq -s add .test_durations_* > .test_durations
   pass:
     name: Pass testing Python
     needs: [testpython, update_durations]

@@ -128,6 +128,7 @@ def eval_desc(
             atype,
             fparam=fparam,
             aparam=aparam,
+            mixed_type=mixed_type,
         )
 
         # descriptors are kept in 3D format (nframes, natoms, ndesc)

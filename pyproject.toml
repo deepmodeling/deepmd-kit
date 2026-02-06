@@ -45,7 +45,7 @@ dependencies = [
     'scipy',
     'pyyaml',
     'dargs >= 0.4.7',
-    'typing_extensions; python_version < "3.8"',
+    'typing_extensions>=4.0.0',
     'importlib_metadata>=1.4; python_version < "3.8"',
     'h5py',
     "h5py>=3.6.0,!=3.11.0; platform_system=='Linux' and platform_machine=='aarch64'",
@@ -146,7 +146,7 @@ dp = "deepmd.main:main"
 
 [dependency-groups]
 dev = [
-  "pre-commit",
+  "prek",
   "cmake",
   "mpich",
 ]
@@ -430,11 +430,10 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "source/3rdparty/**" = ["ALL"]
 "backend/**" = ["ANN"]
 "data/**" = ["ANN"]
-"deepmd/tf/**" = ["TID253", "ANN"]
+"deepmd/tf/**" = ["TID253"]
 "deepmd/pt/**" = ["TID253", "B905"]
 "deepmd/jax/**" = ["TID253"]
 "deepmd/pd/**" = ["TID253", "B905"]
-
 "source/**" = ["ANN"]
 "source/tests/tf/**" = ["TID253", "ANN"]
 "source/tests/pt/**" = ["TID253", "ANN"]

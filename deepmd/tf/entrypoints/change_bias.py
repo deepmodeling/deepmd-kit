@@ -8,6 +8,9 @@ import tempfile
 from pathlib import (
     Path,
 )
+from typing import (
+    Any,
+)
 
 import numpy as np
 
@@ -58,7 +61,7 @@ def change_bias(
     model_branch: str | None = None,
     output: str | None = None,
     log_level: int = 0,
-    **kwargs,
+    **kwargs: Any,
 ) -> None:
     """Change model out bias according to the input data.
 
