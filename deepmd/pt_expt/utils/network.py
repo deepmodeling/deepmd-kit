@@ -43,6 +43,9 @@ class NativeLayer(NativeLayerDP, torch.nn.Module):
         torch.nn.Module.__init__(self)
         NativeLayerDP.__init__(self, *args, **kwargs)
 
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return torch.nn.Module.__call__(self, *args, **kwargs)
+
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"w", "b", "idt"} and "_parameters" in self.__dict__:
             val = to_torch_array(value)
@@ -73,6 +76,9 @@ class NativeNet(make_multilayer_network(NativeLayer, NativeOP), torch.nn.Module)
         torch.nn.Module.__init__(self)
         super().__init__(layers)
         self.layers = torch.nn.ModuleList(self.layers)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return torch.nn.Module.__call__(self, *args, **kwargs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.call(x)

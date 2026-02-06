@@ -28,6 +28,10 @@ class DescrptSeA(DescrptSeADP, torch.nn.Module):
         torch.nn.Module.__init__(self)
         DescrptSeADP.__init__(self, *args, **kwargs)
 
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        # Ensure torch.nn.Module.__call__ drives forward() for export/tracing.
+        return torch.nn.Module.__call__(self, *args, **kwargs)
+
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"davg", "dstd"} and "_buffers" in self.__dict__:
             tensor = (
@@ -54,9 +58,9 @@ class DescrptSeA(DescrptSeADP, torch.nn.Module):
 
     def forward(
         self,
-        nlist: torch.Tensor,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
         extended_atype_embd: torch.Tensor | None = None,
         mapping: torch.Tensor | None = None,
         type_embedding: torch.Tensor | None = None,
