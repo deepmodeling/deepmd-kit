@@ -212,6 +212,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     nlist_data.padding();
     if (do_message_passing) {
       int nswap = lmp_list.nswap;
+      select_real_atoms_sendlist(lmp_list, fwd_map);
       torch::Tensor sendproc_tensor =
           torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
       torch::Tensor recvproc_tensor =
