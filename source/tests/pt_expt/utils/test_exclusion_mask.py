@@ -39,6 +39,10 @@ class TestAtomExcludeMask(unittest.TestCase):
         mask = des.build_type_exclude_mask(torch.as_tensor(atype, device=env.DEVICE))
         np.testing.assert_equal(mask.detach().cpu().numpy(), expected_mask)
 
+    def test_type_mask_is_buffer(self) -> None:
+        des = AtomExcludeMask(3, exclude_types=[0])
+        assert "type_mask" in des.state_dict()
+
 
 class TestPairExcludeMask(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self) -> None:
@@ -62,3 +66,7 @@ class TestPairExcludeMask(unittest.TestCase, TestCaseSingleFrameWithNlist):
             torch.as_tensor(self.atype_ext, device=env.DEVICE),
         )
         np.testing.assert_equal(mask.detach().cpu().numpy(), expected_mask)
+
+    def test_type_mask_is_buffer(self) -> None:
+        des = PairExcludeMask(self.nt, exclude_types=[[0, 1]])
+        assert "type_mask" in des.state_dict()
