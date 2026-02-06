@@ -88,7 +88,6 @@ def xp_take_along_axis(arr: Array, indices: Array, axis: int) -> Array:
 
 def xp_scatter_sum(input: Array, dim: int, index: Array, src: Array) -> Array:
     """Reduces all values from the src tensor to the indices specified in the index tensor."""
-    # jax only
     if array_api_compat.is_jax_array(input):
         from deepmd.jax.common import (
             scatter_sum,
@@ -100,8 +99,11 @@ def xp_scatter_sum(input: Array, dim: int, index: Array, src: Array) -> Array:
             index,
             src,
         )
+    elif array_api_compat.is_torch_array(input):
+        # PyTorch: use scatter_add_
+        return input.scatter_add_(dim, index, src)
     else:
-        raise NotImplementedError("Only JAX arrays are supported.")
+        raise NotImplementedError("Only JAX and PyTorch arrays are supported.")
 
 
 def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
@@ -115,6 +117,9 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
     elif array_api_compat.is_jax_array(x):
         # JAX: functional update, not in-place
         return x.at[indices].add(values)
+    elif array_api_compat.is_torch_array(x):
+        # PyTorch: supports index_add_ (in-place)
+        return x.index_add_(0, indices, values)
     else:
         # Fallback for array_api_strict: use basic indexing only
         # may need a more efficient way to do this
@@ -128,7 +133,11 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
 def xp_bincount(x: Array, weights: Array | None = None, minlength: int = 0) -> Array:
     """Counts the number of occurrences of each value in x."""
     xp = array_api_compat.array_namespace(x)
-    if array_api_compat.is_numpy_array(x) or array_api_compat.is_jax_array(x):
+    if (
+        array_api_compat.is_numpy_array(x)
+        or array_api_compat.is_jax_array(x)
+        or array_api_compat.is_torch_array(x)
+    ):
         result = xp.bincount(x, weights=weights, minlength=minlength)
     else:
         if weights is None:
