@@ -3,7 +3,6 @@ import importlib
 from typing import (
     Any,
     ClassVar,
-    Self,
 )
 
 import numpy as np
@@ -27,7 +26,9 @@ torch = importlib.import_module("torch")
 
 
 class TorchArrayParam(torch.nn.Parameter):
-    def __new__(cls, data: Any = None, requires_grad: bool = True) -> Self:
+    def __new__(  # noqa: PYI034
+        cls, data: Any = None, requires_grad: bool = True
+    ) -> "TorchArrayParam":
         return torch.nn.Parameter.__new__(cls, data, requires_grad)
 
     def __array__(self, dtype: Any | None = None) -> np.ndarray:
