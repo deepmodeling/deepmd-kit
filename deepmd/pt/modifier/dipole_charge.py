@@ -1,0 +1,456 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+
+import numpy as np
+import torch
+from torch_admp.pme import (
+    CoulombForceModule,
+)
+from torch_admp.utils import (
+    calc_grads,
+)
+
+from deepmd.pt.model.model import (
+    DipoleModel,
+)
+from deepmd.pt.modifier.base_modifier import (
+    BaseModifier,
+)
+from deepmd.pt.modifier.dp_modifier import (
+    DPModifier,
+)
+from deepmd.pt.utils import (
+    env,
+)
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+    to_torch_tensor,
+)
+
+
+@BaseModifier.register("dipole_charge")
+class DipoleChargeModifier(DPModifier):
+    """Modifier for dipole-charge systems using Wannier Function Charge Centers (WFCC).
+
+    This modifier extends a system with Wannier Function Charge Centers (WFCC) by
+    adding dipole vectors to atomic coordinates for selected atom types. It then
+    calculates the electrostatic interactions using Ewald reciprocal summation
+    to obtain energy, force, and virial corrections.
+
+    Parameters
+    ----------
+    dp_model : DipoleModel | None
+        The DeepDipole model to use for dipole prediction
+    model_charge_map : List[float]
+        The amount of charge for the WFCC for each selected atom type
+    sys_charge_map : List[float]
+        The amount of charge for the real atoms for each atom type
+    ewald_h : float, optional
+        Grid spacing of the reciprocal part of Ewald sum. Unit: Å, default is 1.0
+    ewald_beta : float, optional
+        Splitting parameter of the Ewald sum. Unit: Å^{-1}, default is 1.0
+    dp_model_file_name : str | None, optional
+        Path to the model file, by default None
+    use_cache : bool, optional
+        Whether to use cache for computations, by default True
+    """
+
+    def __init__(
+        self,
+        dp_model: DipoleModel | None,
+        model_charge_map: list[float],
+        sys_charge_map: list[float],
+        ewald_h: float = 1.0,
+        ewald_beta: float = 1.0,
+        dp_model_file_name: str | None = None,
+        use_cache: bool = True,
+    ) -> None:
+        """Initialize the DipoleChargeModifier.
+
+        Parameters
+        ----------
+        dp_model : DipoleModel | None
+            The DeepDipole model to use for dipole prediction
+        model_charge_map : List[float]
+            The amount of charge for the WFCC for each selected atom type
+        sys_charge_map : List[float]
+            The amount of charge for the real atoms for each atom type
+        ewald_h : float, optional
+            Grid spacing of the reciprocal part of Ewald sum. Unit: Å, default is 1.0
+        ewald_beta : float, optional
+            Splitting parameter of the Ewald sum. Unit: Å^{-1}, default is 1.0
+        dp_model_file_name : str | None, optional
+            Path to the model file, by default None
+        use_cache : bool, optional
+            Whether to use cache for computations, by default True
+
+        Raises
+        ------
+        ValueError
+            If model_charge_map and sel_type have mismatching lengths
+        """
+        self.modifier_type = "dipole_charge"
+        super().__init__(
+            dp_model=dp_model,
+            dp_model_file_name=dp_model_file_name,
+            use_cache=use_cache,
+        )
+
+        self.rcut = self.model.get_rcut()
+        self.type_map = self.model.get_type_map()
+        sel_type = self.model.get_sel_type()
+        self.sel_type = to_torch_tensor(np.array(sel_type))
+        self.model_charge_map = to_torch_tensor(np.array(model_charge_map))
+        self.sys_charge_map = to_torch_tensor(np.array(sys_charge_map))
+        self._model_charge_map = model_charge_map
+        self._sys_charge_map = sys_charge_map
+
+        # Validate that model_charge_map and sel_type have matching lengths
+        if len(model_charge_map) != len(sel_type):
+            raise ValueError(
+                f"model_charge_map length ({len(model_charge_map)}) must match "
+                f"sel_type length ({len(sel_type)})"
+            )
+
+        # init ewald recp
+        self.ewald_h = ewald_h
+        self.ewald_beta = ewald_beta
+        er = CoulombForceModule(
+            rcut=self.rcut,
+            rspace=False,
+            kappa=ewald_beta,
+            spacing=ewald_h,
+        ).to(device=env.DEVICE, dtype=env.GLOBAL_PT_FLOAT_PRECISION)
+        self.er = torch.jit.script(er)
+        self.er.eval()
+        self.placeholder_pairs = torch.ones((1, 2), device=env.DEVICE, dtype=torch.long)
+        self.placeholder_ds = torch.ones(
+            (1), device=env.DEVICE, dtype=env.GLOBAL_PT_FLOAT_PRECISION
+        )
+        self.placeholder_buffer_scales = torch.zeros(
+            (1), device=env.DEVICE, dtype=env.GLOBAL_PT_FLOAT_PRECISION
+        )
+
+    def serialize(self) -> dict:
+        """Serialize the modifier to a dictionary.
+
+        Returns
+        -------
+        dict
+            The serialized data containing model parameters and configuration
+        """
+        dd = super().serialize()
+        dd.update(
+            {
+                "model_charge_map": self._model_charge_map,
+                "sys_charge_map": self._sys_charge_map,
+                "ewald_h": self.ewald_h,
+                "ewald_beta": self.ewald_beta,
+            }
+        )
+        return dd
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "DipoleChargeModifier":
+        """Deserialize the modifier from a dictionary.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data containing model parameters and configuration
+
+        Returns
+        -------
+        DipoleChargeModifier
+            The deserialized modifier instance
+        """
+        data = data.copy()
+        data.pop("@class", None)
+        data.pop("type", None)
+        data.pop("@version", None)
+        model_obj = DipoleModel.deserialize(data.pop("dp_model"))
+        data["dp_model"] = model_obj
+        data["dp_model_file_name"] = None
+        return cls(**data)
+
+    def forward(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
+    ) -> dict[str, torch.Tensor]:
+        """Compute energy, force, and virial corrections for dipole-charge systems.
+
+        This method extends the system with Wannier Function Charge Centers (WFCC)
+        by adding dipole vectors to atomic coordinates for selected atom types.
+        It then calculates the electrostatic interactions using Ewald reciprocal
+        summation to obtain energy, force, and virial corrections.
+
+        Parameters
+        ----------
+        coord : torch.Tensor
+            The coordinates of atoms with shape (nframes, natoms, 3)
+        atype : torch.Tensor
+            The atom types with shape (nframes, natoms)
+        box : torch.Tensor | None, optional
+            The simulation box with shape (nframes, 3, 3), by default None
+            Note: This modifier can only be applied for periodic systems
+        fparam : torch.Tensor | None, optional
+            Frame parameters with shape (nframes, nfp), by default None
+        aparam : torch.Tensor | None, optional
+            Atom parameters with shape (nframes, natoms, nap), by default None
+        do_atomic_virial : bool, optional
+            Whether to compute atomic virial, by default False
+            Note: This parameter is currently not implemented and is ignored
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Dictionary containing the correction terms:
+            - energy: Energy correction tensor with shape (nframes, 1)
+            - force: Force correction tensor with shape (nframes, natoms, 3)
+            - virial: Virial correction tensor with shape (nframes, 3, 3)
+        """
+        if box is None:
+            raise RuntimeError(
+                "dipole_charge data modifier can only be applied for periodic systems."
+            )
+        modifier_pred = {}
+        nframes = coord.shape[0]
+        natoms = coord.shape[1]
+
+        input_box = box.reshape(nframes, 9)
+        input_box.requires_grad_(True)
+
+        detached_box = input_box.detach()
+        sfactor = torch.matmul(
+            torch.inverse(detached_box.reshape(nframes, 3, 3)),
+            input_box.reshape(nframes, 3, 3),
+        )
+        input_coord = torch.matmul(coord, sfactor).reshape(nframes, -1)
+
+        extended_coord, extended_charge, _atomic_dipole = self.extend_system(
+            input_coord,
+            atype,
+            input_box,
+            fparam,
+            aparam,
+        )
+
+        # add Ewald reciprocal correction
+        placeholder_pairs = torch.tile(
+            self.placeholder_pairs.unsqueeze(0), (nframes, 1, 1)
+        )
+        placeholder_ds = torch.tile(self.placeholder_ds.unsqueeze(0), (nframes, 1))
+        placeholder_buffer_scales = torch.tile(
+            self.placeholder_buffer_scales.unsqueeze(0), (nframes, 1)
+        )
+        self.er(
+            extended_coord.reshape(nframes, 2 * natoms, 3),
+            input_box.reshape(nframes, 3, 3),
+            placeholder_pairs,
+            placeholder_ds,
+            placeholder_buffer_scales,
+            {"charge": extended_charge.reshape(nframes, 2 * natoms)},
+        )
+        # nframe,
+        tot_e = self.er.reciprocal_energy
+        # nframe, nat * 3
+        tot_f = -calc_grads(tot_e, input_coord)
+        # nframe, nat, 3
+        tot_f = torch.reshape(tot_f, (nframes, natoms, 3))
+        # nframe, 9
+        tot_v = calc_grads(tot_e, input_box)
+        tot_v = torch.reshape(tot_v, (nframes, 3, 3))
+        # nframe, 3, 3
+        tot_v = -torch.matmul(tot_v.transpose(2, 1), input_box.reshape(nframes, 3, 3))
+
+        modifier_pred["energy"] = tot_e
+        modifier_pred["force"] = tot_f
+        modifier_pred["virial"] = tot_v
+        return modifier_pred
+
+    def extend_system(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Extend the system with WFCC (Wannier Function Charge Centers).
+
+        Parameters
+        ----------
+        coord : torch.Tensor
+            The coordinates of atoms with shape (nframes, natoms * 3)
+        atype : torch.Tensor
+            The atom types with shape (nframes, natoms)
+        box : torch.Tensor
+            The simulation box with shape (nframes, 9)
+        fparam : torch.Tensor | None, optional
+            Frame parameters with shape (nframes, nfp), by default None
+        aparam : torch.Tensor | None, optional
+            Atom parameters with shape (nframes, natoms, nap), by default None
+
+        Returns
+        -------
+        Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+            A tuple containing three tensors:
+            - extended_coord : torch.Tensor
+                Extended coordinates with shape (nframes, 2 * natoms * 3)
+            - extended_charge : torch.Tensor
+                Extended charges with shape (nframes, 2 * natoms)
+            - atomic_dipole : torch.Tensor
+                Atomic dipoles with shape (nframes, natoms, 3)
+        """
+        # nframes, natoms, 3
+        extended_coord, atomic_dipole = self.extend_system_coord(
+            coord,
+            atype,
+            box,
+            fparam,
+            aparam,
+        )
+        # Get ion charges based on atom types
+        # nframe x nat
+        ion_charge = self.sys_charge_map[atype]
+        # Initialize wfcc charges
+        wc_charge = torch.zeros_like(ion_charge)
+        # Assign charges to selected atom types
+        for ii, charge in enumerate(self.model_charge_map):
+            wc_charge[atype == self.sel_type[ii]] = charge
+        # Concatenate ion charges and wfcc charges
+        extended_charge = torch.cat([ion_charge, wc_charge], dim=1)
+        return extended_coord, extended_charge, atomic_dipole
+
+    def extend_system_coord(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Extend the system with WFCC (Wannier Function Charge Centers).
+
+        This function calculates Wannier Function Charge Centers (WFCC) by adding dipole
+        vectors to atomic coordinates for selected atom types, then concatenates these
+        WFCC coordinates with the original atomic coordinates.
+
+        Parameters
+        ----------
+        coord : torch.Tensor
+            The coordinates of atoms with shape (nframes, natoms * 3)
+        atype : torch.Tensor
+            The atom types with shape (nframes, natoms)
+        box : torch.Tensor
+            The simulation box with shape (nframes, 9)
+        fparam : torch.Tensor | None, optional
+            Frame parameters with shape (nframes, nfp), by default None
+        aparam : torch.Tensor | None, optional
+            Atom parameters with shape (nframes, natoms, nap), by default None
+
+        Returns
+        -------
+        Tuple[torch.Tensor, torch.Tensor]
+            A tuple containing two tensors:
+            - all_coord : torch.Tensor
+                Extended coordinates with shape (nframes, 2 * natoms * 3)
+                where nsel is the number of selected atoms
+            - dipole_reshaped : torch.Tensor
+                Atomic dipoles with shape (nframes, natoms, 3)
+        """
+        nframes = coord.shape[0]
+        natoms = coord.shape[1] // 3
+
+        model_pred = self.model(
+            coord=coord,
+            atype=atype,
+            box=box,
+            do_atomic_virial=False,
+            fparam=fparam if fparam is not None else None,
+            aparam=aparam if aparam is not None else None,
+        )
+
+        # nframe, natoms, 3
+        dipole = model_pred["dipole"]
+        if dipole.shape[0] != nframes:
+            raise RuntimeError(
+                f"Dipole shape mismatch: expected {nframes} frames, got {dipole.shape[0]}"
+            )
+
+        dipole_reshaped = dipole.reshape(nframes, natoms, 3)
+        coord_reshaped = coord.reshape(nframes, natoms, 3)
+        wfcc_coord = coord_reshaped + dipole_reshaped
+        all_coord = torch.cat((coord_reshaped, wfcc_coord), dim=1)
+        return all_coord, dipole_reshaped
+
+    @torch.jit.unused
+    def eval_np(
+        self,
+        coord: np.ndarray,
+        box: np.ndarray,
+        atype: np.ndarray,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Evaluate the modifier with NumPy input and output.
+
+        This method converts NumPy inputs to PyTorch tensors, evaluates the modifier,
+        and converts the results back to NumPy arrays.
+
+        Parameters
+        ----------
+        coord : np.ndarray
+            The coordinates of atoms with shape (nframes, natoms, 3)
+        box : np.ndarray
+            The simulation box with shape (nframes, 3, 3)
+        atype : np.ndarray
+            The atom types with shape (nframes, natoms)
+        fparam : np.ndarray | None, optional
+            Frame parameters with shape (nframes, nfp), by default None
+        aparam : np.ndarray | None, optional
+            Atom parameters with shape (nframes, natoms, nap), by default None
+
+        Returns
+        -------
+        Tuple[np.ndarray, np.ndarray, np.ndarray]
+            A tuple containing three NumPy arrays:
+            - energy: Energy correction with shape (nframes, 1)
+            - force: Force correction with shape (nframes, natoms, 3)
+            - virial: Virial correction with shape (nframes, 3, 3)
+        """
+        nf = coord.shape[0]
+        na = coord.reshape(nf, -1, 3).shape[1]
+
+        if fparam is not None:
+            _fparam = (
+                to_torch_tensor(fparam)
+                .reshape(nf, -1)
+                .to(env.GLOBAL_PT_FLOAT_PRECISION)
+            )
+        else:
+            _fparam = None
+        if aparam is not None:
+            _aparam = (
+                to_torch_tensor(aparam)
+                .reshape(nf, na, -1)
+                .to(env.GLOBAL_PT_FLOAT_PRECISION)
+            )
+        else:
+            _aparam = None
+        modifier_pred = self.forward(
+            to_torch_tensor(coord).reshape(nf, -1, 3).to(env.GLOBAL_PT_FLOAT_PRECISION),
+            to_torch_tensor(atype).reshape(nf, -1).to(torch.long),
+            to_torch_tensor(box).reshape(nf, 3, 3).to(env.GLOBAL_PT_FLOAT_PRECISION),
+            _fparam,
+            _aparam,
+        )
+        return (
+            to_numpy_array(modifier_pred["energy"]),
+            to_numpy_array(modifier_pred["force"]),
+            to_numpy_array(modifier_pred["virial"]),
+        )
