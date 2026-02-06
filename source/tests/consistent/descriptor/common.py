@@ -153,13 +153,17 @@ class DescriptorTest:
         box: np.ndarray,
         mixed_types: bool = False,
     ) -> Any:
-        ext_coords, ext_atype, mapping = extend_coord_with_ghosts(
+        # Use the torch-native neighbor list utilities to avoid array_api_compat
+        # allocations on CUDA. The array_api path can hit torch empty/ones/eye/etc
+        # on CUDA, which all rely on aten::empty_strided and fail in CI builds
+        # where that CUDA kernel is not available.
+        ext_coords, ext_atype, mapping = extend_coord_with_ghosts_pt(
             torch.from_numpy(coords).to(PT_DEVICE).reshape(1, -1, 3),
             torch.from_numpy(atype).to(PT_DEVICE).reshape(1, -1),
             torch.from_numpy(box).to(PT_DEVICE).reshape(1, 3, 3),
             pt_expt_obj.get_rcut(),
         )
-        nlist = build_neighbor_list(
+        nlist = build_neighbor_list_pt(
             ext_coords,
             ext_atype,
             natoms[0],
