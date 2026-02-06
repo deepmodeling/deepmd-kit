@@ -81,6 +81,8 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
           use_oidc: true
+    permissions:
+      id-token: write
   update_durations:
     name: Combine and update integration test durations
     runs-on: ubuntu-22.04
@@ -116,5 +118,3 @@ jobs:
         uses: re-actors/alls-green@release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-permissions:
-  id-token: write

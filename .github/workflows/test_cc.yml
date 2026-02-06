@@ -103,6 +103,8 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
           use_oidc: true
+    permissions:
+      id-token: write
   pass:
     name: Pass testing C++
     needs: [testcc]
@@ -113,5 +115,3 @@ jobs:
         uses: re-actors/alls-green@release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-permissions:
-  id-token: write
