@@ -40,7 +40,9 @@ class DescrptSeA(DescrptSeADP, torch.nn.Module):
             if name in self._buffers:
                 self._buffers[name] = tensor
                 return
-            return super().__setattr__(name, tensor)
+            # Register on first assignment so buffers are in state_dict and moved by .to().
+            self.register_buffer(name, tensor)
+            return
         if name == "embeddings" and "_modules" in self.__dict__:
             if value is not None and not isinstance(value, torch.nn.Module):
                 if hasattr(value, "serialize"):

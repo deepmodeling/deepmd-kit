@@ -64,7 +64,9 @@ class NativeLayer(NativeLayerDP, torch.nn.Module):
             if name in self._buffers:
                 self._buffers[name] = val
                 return
-            return super().__setattr__(name, val)
+            # Register on first assignment so tensors are in state_dict and moved by .to().
+            self.register_buffer(name, val)
+            return
         return super().__setattr__(name, value)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
