@@ -82,6 +82,9 @@ class TypeEmbedNet(NativeOP):
         self.type_map = type_map
         embed_input_dim = ntypes
         if self.use_econf_tebd:
+            assert self.type_map is not None, (
+                "type_map must be provided when use_econf_tebd is True"
+            )
             self.econf_tebd, embed_input_dim = get_econf_tebd(
                 self.type_map, precision=self.precision
             )
@@ -129,7 +132,7 @@ class TypeEmbedNet(NativeOP):
         data_cls = data.pop("@class")
         assert data_cls == "TypeEmbedNet", f"Invalid class {data_cls}"
 
-        embedding_net = EmbeddingNet.deserialize(data.pop("embedding"))
+        embedding_net = EmbeddingNet.deserialize(data.pop("embedding"))  # type: ignore[attr-defined]
         # compat with version 1
         if "use_tebd_bias" not in data:
             data["use_tebd_bias"] = True
