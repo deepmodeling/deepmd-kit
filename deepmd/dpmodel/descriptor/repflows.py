@@ -479,7 +479,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         atype_ext: Array,
         atype_embd_ext: Array | None = None,
         mapping: Array | None = None,
-    ) -> tuple[Array, Array]:
+    ) -> tuple[Array, Array, Array, Array, Array]:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         nframes, nloc, nnei = nlist.shape
         nall = xp.reshape(coord_ext, (nframes, -1)).shape[1] // 3
@@ -528,7 +528,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
         # get node embedding
         # nb x nloc x tebd_dim
-        atype_embd = atype_embd_ext[:, :nloc, :]
+        atype_embd = atype_embd_ext[:, :nloc, :]  # type: ignore[index]
         assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
 
         node_ebd = self.act(atype_embd)
@@ -880,10 +880,10 @@ class RepFlowLayer(NativeOP):
         self.e_rcut = float(e_rcut)
         self.e_rcut_smth = float(e_rcut_smth)
         self.ntypes = ntypes
-        e_sel = [e_sel] if isinstance(e_sel, int) else e_sel
-        self.nnei = sum(e_sel)
-        assert len(e_sel) == 1
-        self.e_sel = e_sel
+        e_sel_list = [e_sel] if isinstance(e_sel, int) else e_sel
+        self.nnei = sum(e_sel_list)
+        assert len(e_sel_list) == 1
+        self.e_sel = e_sel_list
         self.sec = self.e_sel
         self.a_rcut = a_rcut
         self.a_rcut_smth = a_rcut_smth
