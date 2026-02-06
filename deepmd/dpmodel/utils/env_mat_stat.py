@@ -34,8 +34,10 @@ from deepmd.utils.env_mat_stat import (
 )
 
 if TYPE_CHECKING:
-    from deepmd.dpmodel.descriptor import (
-        Descriptor,
+    from deepmd.dpmodel.descriptor.base_descriptor import (
+        BaseDescriptor,
+    )
+    from deepmd.dpmodel.descriptor.descriptor import (
         DescriptorBlock,
     )
 
@@ -70,11 +72,11 @@ class EnvMatStatSe(EnvMatStat):
 
     Parameters
     ----------
-    descriptor : Descriptor or DescriptorBlock
+    descriptor : BaseDescriptor or DescriptorBlock
         The descriptor of the model.
     """
 
-    def __init__(self, descriptor: Union["Descriptor", "DescriptorBlock"]) -> None:
+    def __init__(self, descriptor: Union["BaseDescriptor", "DescriptorBlock"]) -> None:
         super().__init__()
         self.descriptor = descriptor
         self.last_dim = (
@@ -170,7 +172,7 @@ class EnvMatStatSe(EnvMatStat):
             env_mat = xp.reshape(
                 env_mat,
                 (
-                    coord.shape[0] * coord.shape[1],
+                    coord.shape[0] * coord.shape[1],  # type: ignore[attr-defined]
                     self.descriptor.get_nsel(),
                     self.last_dim,
                 ),
