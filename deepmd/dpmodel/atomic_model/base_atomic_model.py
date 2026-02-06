@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import math
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -35,7 +36,11 @@ from .make_base_atomic_model import (
     make_base_atomic_model,
 )
 
-BaseAtomicModel_ = make_base_atomic_model(np.ndarray)
+if TYPE_CHECKING:
+    # For type checking, define BaseAtomicModel_ as Any to avoid type errors
+    BaseAtomicModel_: Any = object
+else:
+    BaseAtomicModel_ = make_base_atomic_model(np.ndarray)
 
 
 class BaseAtomicModel(BaseAtomicModel_, NativeOP):
