@@ -31,5 +31,5 @@ def to_torch_array(array: Any) -> torch.Tensor | None:
     if array is None:
         return None
     if torch.is_tensor(array):
-        return array
+        return array.to(device=env.DEVICE)
     return torch.as_tensor(array, device=env.DEVICE)
