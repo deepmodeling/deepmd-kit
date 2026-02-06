@@ -391,7 +391,9 @@ class DescrptSeR(NativeOP, BaseDescriptor):
 
         ng = self.neuron[-1]
         xyz_scatter = xp.zeros(
-            [nf, nloc, ng], dtype=get_xp_precision(xp, self.precision)
+            [nf, nloc, ng],
+            dtype=get_xp_precision(xp, self.precision),
+            device=array_api_compat.device(coord_ext),
         )
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         rr = xp.astype(rr, xyz_scatter.dtype)

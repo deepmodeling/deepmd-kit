@@ -5,8 +5,12 @@ from .base_descriptor import (
 from .se_e2_a import (
     DescrptSeA,
 )
+from .se_r import (
+    DescrptSeR,
+)
 
 __all__ = [
     "BaseDescriptor",
     "DescrptSeA",
+    "DescrptSeR",
 ]
