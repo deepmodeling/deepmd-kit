@@ -49,11 +49,7 @@ A detailed introduction can be found at [`se_e2_a_tebd`](../model/train-se-e2-a-
 An example of `type_embedding` is like
 
 ```json
-    "type_embedding":{
-       "neuron":    [2, 4, 8],
-       "resnet_dt": false,
-       "seed":      1
-    }
+"type_embedding" : {"neuron" : [ 2, 4, 8 ], "resnet_dt" : false, "seed" : 1}
 ```
 
 ## Code Modification

@@ -168,11 +168,7 @@ def descrpt_some_args() -> list[Argument]:
 allows one to use your new descriptor as below:
 
 ```json
-"descriptor" :{
-    "type": "some_descrpt",
-    "arg1": true,
-    "arg2": 6.0
-}
+"descriptor" : {"type" : "some_descrpt", "arg1" : true, "arg2" : 6.0}
 ```
 
 The arguments here should be consistent with the class arguments of your new component.

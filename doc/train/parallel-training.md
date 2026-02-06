@@ -18,10 +18,7 @@ The number of decay steps required to achieve the same accuracy can decrease by 
 In some cases, it won't work well when scaling the learning rate by worker count in a `linear` way. Then you can try `sqrt` or `none` by setting argument {ref}`scale_by_worker <learning_rate/scale_by_worker>` like below.
 
 ```json
-    "learning_rate" :{
-        "scale_by_worker": "none",
-        "type": "exp"
-    }
+"learning_rate" : {"scale_by_worker" : "none", "type" : "exp"}
 ```
 
 ### Scaling test
