@@ -92,7 +92,7 @@ class CommonTest(ABC):
     """Native DP model class."""
     pt_class: ClassVar[type | None]
     """PyTorch model class."""
-    pt_expt_class: ClassVar[type | None]
+    pt_expt_class: ClassVar[type | None] = None
     """PyTorch exportable model class."""
     jax_class: ClassVar[type | None]
     """JAX model class."""
