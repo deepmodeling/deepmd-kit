@@ -1,22 +1,22 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import importlib
 import itertools
 import unittest
 
 import numpy as np
-import torch  # noqa: TID253
 
 from deepmd.dpmodel.descriptor import DescrptSeA as DPDescrptSeA
-from deepmd.pt.utils import (  # noqa: TID253
-    env,
-)
-from deepmd.pt.utils.env import (  # noqa: TID253
-    PRECISION_DICT,
-)
-from deepmd.pt.utils.exclude_mask import (  # noqa: TID253
-    PairExcludeMask,
-)
 from deepmd.pt_expt.descriptor.se_e2_a import (
     DescrptSeA,
+)
+from deepmd.pt_expt.utils import (
+    env,
+)
+from deepmd.pt_expt.utils.env import (
+    PRECISION_DICT,
+)
+from deepmd.pt_expt.utils.exclude_mask import (
+    PairExcludeMask,
 )
 
 from ...pt.model.test_env_mat import (
@@ -28,6 +28,8 @@ from ...pt.model.test_mlp import (
 from ...seed import (
     GLOBAL_SEED,
 )
+
+torch = importlib.import_module("torch")
 
 
 class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import importlib
 from typing import (
     Any,
     ClassVar,
@@ -6,7 +7,6 @@ from typing import (
 )
 
 import numpy as np
-import torch  # noqa: TID253
 
 from deepmd.dpmodel.common import (
     NativeOP,
@@ -19,9 +19,11 @@ from deepmd.dpmodel.utils.network import (
     make_fitting_network,
     make_multilayer_network,
 )
-from deepmd.pt.utils import (  # noqa: TID253
+from deepmd.pt_expt.utils import (
     env,
 )
+
+torch = importlib.import_module("torch")
 
 
 def _to_torch_array(value: Any) -> torch.Tensor | None:

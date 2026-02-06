@@ -1,23 +1,24 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import importlib
 from typing import (
     Any,
 )
 
-import torch  # noqa: TID253
-
 from deepmd.dpmodel.descriptor.se_e2_a import DescrptSeAArrayAPI as DescrptSeADP
-from deepmd.pt.model.descriptor.base_descriptor import (  # noqa: TID253
+from deepmd.pt_expt.descriptor.base_descriptor import (
     BaseDescriptor,
 )
-from deepmd.pt.utils import (  # noqa: TID253
+from deepmd.pt_expt.utils import (
     env,
 )
-from deepmd.pt.utils.exclude_mask import (  # noqa: TID253
+from deepmd.pt_expt.utils.exclude_mask import (
     PairExcludeMask,
 )
 from deepmd.pt_expt.utils.network import (
     NetworkCollection,
 )
+
+torch = importlib.import_module("torch")
 
 
 @BaseDescriptor.register("se_e2_a_expt")
