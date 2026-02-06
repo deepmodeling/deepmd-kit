@@ -59,7 +59,7 @@ class SpinModel(NativeOP):
         extended_spin: Array,
         nlist: Array,
         mapping: Array | None = None,
-    ) -> tuple[Array, Array]:
+    ) -> tuple[Array, Array, Array, Array | None]:
         """
         Add `extended_spin` into `extended_coord` to generate virtual atoms, and extend `nlist` and `mapping`.
         Note that the final `extended_coord_updated` with shape [nframes, nall + nall, 3] has the following order:
@@ -102,7 +102,7 @@ class SpinModel(NativeOP):
         out_tensor: Array,
         add_mag: bool = True,
         virtual_scale: bool = True,
-    ) -> tuple[Array, Array]:
+    ) -> tuple[Array, Array, Array]:
         """Split the output both real and virtual atoms, and scale the latter."""
         nframes, nloc_double = out_tensor.shape[:2]
         nloc = nloc_double // 2
@@ -126,7 +126,7 @@ class SpinModel(NativeOP):
         nloc: int,
         add_mag: bool = True,
         virtual_scale: bool = True,
-    ) -> tuple[Array, Array]:
+    ) -> tuple[Array, Array, Array]:
         """Split the extended output of both real and virtual atoms with switch, and scale the latter."""
         nframes, nall_double = extended_out_tensor.shape[:2]
         nall = nall_double // 2
@@ -324,7 +324,7 @@ class SpinModel(NativeOP):
 
     @classmethod
     def deserialize(cls, data: dict) -> "SpinModel":
-        backbone_model_obj = make_model(DPAtomicModel).deserialize(
+        backbone_model_obj = make_model(DPAtomicModel).deserialize(  # type: ignore[attr-defined]
             data["backbone_model"]
         )
         spin = Spin.deserialize(data["spin"])
