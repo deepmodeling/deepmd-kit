@@ -138,7 +138,7 @@ def get_default_nthreads() -> tuple[int, int]:
     ), int(
         os.environ.get(
             "DP_INTER_OP_PARALLELISM_THREADS",
-            os.environ.get("TF_INTRA_OP_PARALLELISM_THREADS", "0"),
+            os.environ.get("TF_INTER_OP_PARALLELISM_THREADS", "0"),
         )
     )
 
