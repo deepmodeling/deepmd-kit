@@ -19,19 +19,11 @@ from deepmd.dpmodel.utils.network import (
     make_fitting_network,
     make_multilayer_network,
 )
-from deepmd.pt_expt.utils import (
-    env,
+from deepmd.pt_expt.common import (
+    to_torch_array,
 )
 
 torch = importlib.import_module("torch")
-
-
-def _to_torch_array(value: Any) -> torch.Tensor | None:
-    if value is None:
-        return None
-    if torch.is_tensor(value):
-        return value
-    return torch.as_tensor(value, device=env.DEVICE)
 
 
 class TorchArrayParam(torch.nn.Parameter):
@@ -52,7 +44,7 @@ class NativeLayer(NativeLayerDP, torch.nn.Module):
         for name in ("w", "b", "idt"):
             if name in self._parameters or name in self._buffers:
                 continue
-            val = _to_torch_array(getattr(self, name))
+            val = to_torch_array(getattr(self, name))
             if val is None:
                 continue
             if self.trainable:
@@ -66,7 +58,7 @@ class NativeLayer(NativeLayerDP, torch.nn.Module):
 
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"w", "b", "idt"} and "_parameters" in self.__dict__:
-            val = _to_torch_array(value)
+            val = to_torch_array(value)
             if val is None:
                 return super().__setattr__(name, None)
             if getattr(self, "trainable", False):
