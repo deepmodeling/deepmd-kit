@@ -93,9 +93,20 @@ DEFAULT_PRECISION = "float64"
 set_default_nthreads()
 intra_nthreads, inter_nthreads = get_default_nthreads()
 if inter_nthreads > 0:  # the behavior of 0 is not documented
-    torch.set_num_interop_threads(inter_nthreads)
+    # torch.set_num_interop_threads can only be called once per process.
+    # Guard to avoid RuntimeError when both pt and pt_expt env modules are imported.
+    try:
+        if torch.get_num_interop_threads() != inter_nthreads:
+            torch.set_num_interop_threads(inter_nthreads)
+    except RuntimeError as err:
+        log.warning(f"Could not set torch interop threads: {err}")
 if intra_nthreads > 0:
-    torch.set_num_threads(intra_nthreads)
+    # torch.set_num_threads can also fail if called after threads are created.
+    try:
+        if torch.get_num_threads() != intra_nthreads:
+            torch.set_num_threads(intra_nthreads)
+    except RuntimeError as err:
+        log.warning(f"Could not set torch intra threads: {err}")
 
 __all__ = [
     "CACHE_PER_SYS",
