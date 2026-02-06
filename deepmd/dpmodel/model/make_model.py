@@ -164,14 +164,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             self,
             *args: Any,
             # underscore to prevent conflict with normal inputs
-            atomic_model_: T_AtomicModel | None = None,
+            atomic_model_: T_AtomicModel | None = None,  # type: ignore[valid-type]
             **kwargs: Any,
         ) -> None:
             BaseModel.__init__(self)
             if atomic_model_ is not None:
-                self.atomic_model: T_AtomicModel = atomic_model_
+                self.atomic_model: T_AtomicModel = atomic_model_  # type: ignore[valid-type]
             else:
-                self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)
+                self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)  # type: ignore[valid-type]
             self.precision_dict = PRECISION_DICT
             # not supported by flax
             # self.reverse_precision_dict = RESERVED_PRECISION_DICT
