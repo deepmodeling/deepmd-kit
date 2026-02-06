@@ -37,14 +37,14 @@ class Loss(NativeOP, ABC, make_plugin_registry("loss")):
         """Return data label requirements needed for this loss calculation."""
 
     @staticmethod
-    def display_if_exist(loss: Array, find_property: float) -> Array:
+    def display_if_exist(loss: Array, find_property: Array) -> Array:
         """Display NaN if labeled property is not found.
 
         Parameters
         ----------
         loss : Array
             the loss scalar
-        find_property : float
+        find_property : Array
             whether the property is found
 
         Returns

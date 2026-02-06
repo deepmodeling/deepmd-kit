@@ -90,7 +90,7 @@ class EnergyLoss(Loss):
     def call(
         self,
         learning_rate: float,
-        natoms: int,
+        natoms: Array,
         model_dict: dict[str, Array],
         label_dict: dict[str, Array],
     ) -> dict[str, Array]:
