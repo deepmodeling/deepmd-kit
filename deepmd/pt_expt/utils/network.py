@@ -95,16 +95,18 @@ class NetworkCollection(NetworkCollectionDP, torch.nn.Module):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         torch.nn.Module.__init__(self)
-        super().__init__(*args, **kwargs)
         self._module_networks = torch.nn.ModuleDict()
-        for idx, net in enumerate(self._networks):
-            if isinstance(net, torch.nn.Module):
-                self._module_networks[str(idx)] = net
+        super().__init__(*args, **kwargs)
 
     def __setitem__(self, key: int | tuple, value: Any) -> None:
+        idx = self._convert_key(key)
         super().__setitem__(key, value)
-        if isinstance(value, torch.nn.Module):
-            self._module_networks[str(self._convert_key(key))] = value
+        net = self._networks[idx]
+        key_str = str(idx)
+        if isinstance(net, torch.nn.Module):
+            self._module_networks[key_str] = net
+        elif key_str in self._module_networks:
+            del self._module_networks[key_str]
 
 
 class LayerNorm(LayerNormDP, NativeLayer):
