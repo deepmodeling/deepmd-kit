@@ -1,10 +1,10 @@
 on:
   push:
     branches-ignore:
-    - "gh-readonly-queue/**"
-    - "copilot/**"
-    - "dependabot/**"
-    - "pre-commit-ci-update-config"
+      - "gh-readonly-queue/**"
+      - "copilot/**"
+      - "dependabot/**"
+      - "pre-commit-ci-update-config"
   pull_request:
   merge_group:
 concurrency:
@@ -18,100 +18,100 @@ jobs:
     strategy:
       matrix:
         include:
-        - check_memleak: true
-          enable_tensorflow: true
-          enable_pytorch: true
-          enable_paddle: false
-        - check_memleak: true
-          enable_tensorflow: false
-          enable_pytorch: false
-          enable_paddle: true
-        - check_memleak: false
-          enable_tensorflow: true
-          enable_pytorch: true
-          enable_paddle: false
-        - check_memleak: false
-          enable_tensorflow: false
-          enable_pytorch: false
-          enable_paddle: true
+          - check_memleak: true
+            enable_tensorflow: true
+            enable_pytorch: true
+            enable_paddle: false
+          - check_memleak: true
+            enable_tensorflow: false
+            enable_pytorch: false
+            enable_paddle: true
+          - check_memleak: false
+            enable_tensorflow: true
+            enable_pytorch: true
+            enable_paddle: false
+          - check_memleak: false
+            enable_tensorflow: false
+            enable_pytorch: false
+            enable_paddle: true
     steps:
-    - uses: actions/checkout@v6
-    - uses: actions/setup-python@v6
-      with:
-        python-version: '3.11'
-        cache: 'pip'
-    - uses: lukka/get-cmake@latest
-    - run: python -m pip install uv
-    - name: Install Python dependencies
-      run: |
-        source/install/uv_with_retry.sh pip install --system --group pin_tensorflow_cpu --group pin_pytorch_cpu --group pin_jax --torch-backend cpu
-        export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
-        source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp,jax] mpi4py mpich
-    - name: Convert models
-      run: source/tests/infer/convert-models.sh
-    # https://github.com/actions/runner-images/issues/9491
-    - name: Fix kernel mmap rnd bits
-      run: sudo sysctl vm.mmap_rnd_bits=28
-      if: ${{ matrix.check_memleak }}
-    - run: |
-        source/install/test_cc_local.sh
-      env:
-        OMP_NUM_THREADS: 1
-        TF_INTRA_OP_PARALLELISM_THREADS: 1
-        TF_INTER_OP_PARALLELISM_THREADS: 1
-        CMAKE_GENERATOR: Ninja
-        CXXFLAGS: ${{ matrix.check_memleak && '-fsanitize=leak' || '' }}
-        LSAN_OPTIONS: suppressions=${{ github.workspace }}/.github/workflows/suppr.txt
-        ENABLE_TENSORFLOW: ${{ matrix.enable_tensorflow && 'TRUE' || 'FALSE' }}
-        ENABLE_PYTORCH: ${{ matrix.enable_pytorch && 'TRUE' || 'FALSE' }}
-        ENABLE_PADDLE: ${{ matrix.enable_paddle && 'TRUE' || 'FALSE' }}
-    # test lammps
-    - run: |
-        cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/paddle/lib/*.so ${{ github.workspace }}/dp_test/lib/
-        cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/third_party/install/onednn/lib/* ${{ github.workspace }}/dp_test/lib/
-        cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/third_party/install/mklml/lib/* ${{ github.workspace }}/dp_test/lib/
-      if: matrix.enable_paddle
-    - run: |
-        export LD_LIBRARY_PATH=${{ github.workspace }}/dp_test/lib:$LD_LIBRARY_PATH
-        pytest --cov=deepmd source/lmp/tests
-      env:
-        OMP_NUM_THREADS: 1
-        TF_INTRA_OP_PARALLELISM_THREADS: 1
-        TF_INTER_OP_PARALLELISM_THREADS: 1
-        LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
-        ENABLE_TENSORFLOW: ${{ matrix.enable_tensorflow && '1' || '0' }}
-        ENABLE_PYTORCH: ${{ matrix.enable_pytorch && '1' || '0' }}
-        ENABLE_JAX: ${{ matrix.enable_tensorflow && '1' || '0' }}
-        ENABLE_PADDLE: ${{ matrix.enable_paddle && '1' || '0' }}
-      if: ${{ !matrix.check_memleak }}
-    # test ipi
-    - run: |
-        export PATH=${{ github.workspace }}/dp_test/bin:$PATH
-        pytest --cov=deepmd source/ipi/tests
-      env:
-        OMP_NUM_THREADS: 1
-        TF_INTRA_OP_PARALLELISM_THREADS: 1
-        TF_INTER_OP_PARALLELISM_THREADS: 1
-        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib
-        ENABLE_TENSORFLOW: ${{ matrix.enable_tensorflow && '1' || '0' }}
-        ENABLE_PYTORCH: ${{ matrix.enable_pytorch && '1' || '0' }}
-        ENABLE_JAX: ${{ matrix.enable_tensorflow && '1' || '0' }}
-        ENABLE_PADDLE: ${{ matrix.enable_paddle && '1' || '0' }}
-      if: ${{ !matrix.check_memleak }}
-    - uses: codecov/codecov-action@v5
-      env:
-        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-      with:
-        use_oidc: true
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - uses: lukka/get-cmake@latest
+      - run: python -m pip install uv
+      - name: Install Python dependencies
+        run: |
+          source/install/uv_with_retry.sh pip install --system --group pin_tensorflow_cpu --group pin_pytorch_cpu --group pin_jax --torch-backend cpu
+          export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
+          source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp,jax] mpi4py mpich
+      - name: Convert models
+        run: source/tests/infer/convert-models.sh
+      # https://github.com/actions/runner-images/issues/9491
+      - name: Fix kernel mmap rnd bits
+        run: sudo sysctl vm.mmap_rnd_bits=28
+        if: ${{ matrix.check_memleak }}
+      - run: |
+          source/install/test_cc_local.sh
+        env:
+          OMP_NUM_THREADS: 1
+          TF_INTRA_OP_PARALLELISM_THREADS: 1
+          TF_INTER_OP_PARALLELISM_THREADS: 1
+          CMAKE_GENERATOR: Ninja
+          CXXFLAGS: ${{ matrix.check_memleak && '-fsanitize=leak' || '' }}
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/.github/workflows/suppr.txt
+          ENABLE_TENSORFLOW: ${{ matrix.enable_tensorflow && 'TRUE' || 'FALSE' }}
+          ENABLE_PYTORCH: ${{ matrix.enable_pytorch && 'TRUE' || 'FALSE' }}
+          ENABLE_PADDLE: ${{ matrix.enable_paddle && 'TRUE' || 'FALSE' }}
+      # test lammps
+      - run: |
+          cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/paddle/lib/*.so ${{ github.workspace }}/dp_test/lib/
+          cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/third_party/install/onednn/lib/* ${{ github.workspace }}/dp_test/lib/
+          cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/third_party/install/mklml/lib/* ${{ github.workspace }}/dp_test/lib/
+        if: matrix.enable_paddle
+      - run: |
+          export LD_LIBRARY_PATH=${{ github.workspace }}/dp_test/lib:$LD_LIBRARY_PATH
+          pytest --cov=deepmd source/lmp/tests
+        env:
+          OMP_NUM_THREADS: 1
+          TF_INTRA_OP_PARALLELISM_THREADS: 1
+          TF_INTER_OP_PARALLELISM_THREADS: 1
+          LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
+          ENABLE_TENSORFLOW: ${{ matrix.enable_tensorflow && '1' || '0' }}
+          ENABLE_PYTORCH: ${{ matrix.enable_pytorch && '1' || '0' }}
+          ENABLE_JAX: ${{ matrix.enable_tensorflow && '1' || '0' }}
+          ENABLE_PADDLE: ${{ matrix.enable_paddle && '1' || '0' }}
+        if: ${{ !matrix.check_memleak }}
+      # test ipi
+      - run: |
+          export PATH=${{ github.workspace }}/dp_test/bin:$PATH
+          pytest --cov=deepmd source/ipi/tests
+        env:
+          OMP_NUM_THREADS: 1
+          TF_INTRA_OP_PARALLELISM_THREADS: 1
+          TF_INTER_OP_PARALLELISM_THREADS: 1
+          LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib
+          ENABLE_TENSORFLOW: ${{ matrix.enable_tensorflow && '1' || '0' }}
+          ENABLE_PYTORCH: ${{ matrix.enable_pytorch && '1' || '0' }}
+          ENABLE_JAX: ${{ matrix.enable_tensorflow && '1' || '0' }}
+          ENABLE_PADDLE: ${{ matrix.enable_paddle && '1' || '0' }}
+        if: ${{ !matrix.check_memleak }}
+      - uses: codecov/codecov-action@v5
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          use_oidc: true
   pass:
     name: Pass testing C++
     needs: [testcc]
     runs-on: ubuntu-latest
     if: always()
     steps:
-    - name: Decide whether the needed jobs succeeded or failed
-      uses: re-actors/alls-green@release/v1
-      with:
-        jobs: ${{ toJSON(needs) }}
+      - name: Decide whether the needed jobs succeeded or failed
+        uses: re-actors/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}
 permissions:
   id-token: write
