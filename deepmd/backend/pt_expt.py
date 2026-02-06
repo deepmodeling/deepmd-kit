@@ -76,9 +76,7 @@ class PyTorchExportableBackend(Backend):
         type[DeepEvalBackend]
             The Deep Eval backend of the backend.
         """
-        from deepmd.pt.infer.deep_eval import DeepEval as DeepEvalPT
-
-        return DeepEvalPT
+        raise NotImplementedError
 
     @property
     def neighbor_stat(self) -> type["NeighborStat"]:
@@ -89,11 +87,7 @@ class PyTorchExportableBackend(Backend):
         type[NeighborStat]
             The neighbor statistics of the backend.
         """
-        from deepmd.pt.utils.neighbor_stat import (
-            NeighborStat,
-        )
-
-        return NeighborStat
+        raise NotImplementedError
 
     @property
     def serialize_hook(self) -> Callable[[str], dict]:
@@ -104,11 +98,7 @@ class PyTorchExportableBackend(Backend):
         Callable[[str], dict]
             The serialize hook of the backend.
         """
-        from deepmd.pt.utils.serialization import (
-            serialize_from_file,
-        )
-
-        return serialize_from_file
+        raise NotImplementedError
 
     @property
     def deserialize_hook(self) -> Callable[[str, dict], None]:
@@ -119,8 +109,4 @@ class PyTorchExportableBackend(Backend):
         Callable[[str, dict], None]
             The deserialize hook of the backend.
         """
-        from deepmd.pt.utils.serialization import (
-            deserialize_to_file,
-        )
-
-        return deserialize_to_file
+        raise NotImplementedError
