@@ -350,9 +350,12 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         xp = array_api_compat.array_namespace(self.dstd)
+        device = array_api_compat.device(self.dstd)
         if not self.set_davg_zero:
-            self.davg = xp.asarray(mean, dtype=self.davg.dtype, copy=True)
-        self.dstd = xp.asarray(stddev, dtype=self.dstd.dtype, copy=True)
+            self.davg = xp.asarray(
+                mean, dtype=self.davg.dtype, copy=True, device=device
+            )
+        self.dstd = xp.asarray(stddev, dtype=self.dstd.dtype, copy=True, device=device)
 
     def set_stat_mean_and_stddev(
         self,
