@@ -41,20 +41,6 @@ class NativeLayer(NativeLayerDP, torch.nn.Module):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         torch.nn.Module.__init__(self)
         NativeLayerDP.__init__(self, *args, **kwargs)
-        for name in ("w", "b", "idt"):
-            if name in self._parameters or name in self._buffers:
-                continue
-            val = to_torch_array(getattr(self, name))
-            if val is None:
-                continue
-            if self.trainable:
-                if hasattr(self, name) and name not in self._parameters:
-                    delattr(self, name)
-                self.register_parameter(name, TorchArrayParam(val, requires_grad=True))
-            else:
-                if hasattr(self, name) and name not in self._buffers:
-                    delattr(self, name)
-                self.register_buffer(name, val)
 
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"w", "b", "idt"} and "_parameters" in self.__dict__:
