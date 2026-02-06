@@ -48,6 +48,12 @@ class NativeLayer(NativeLayerDP, torch.nn.Module):
         if name in {"w", "b", "idt"} and "_parameters" in self.__dict__:
             val = to_torch_array(value)
             if val is None:
+                if name in self._parameters:
+                    self._parameters[name] = None
+                    return
+                if name in self._buffers:
+                    self._buffers[name] = None
+                    return
                 return super().__setattr__(name, None)
             if getattr(self, "trainable", False):
                 param = (
