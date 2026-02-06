@@ -805,7 +805,9 @@ class DeepmdData:
             data = path.load_numpy().astype(dtype)
             try:  # YWolfeee: deal with data shape error
                 if atomic:
-                    if type_sel is not None:
+                    if (
+                        type_sel is not None and natoms_sel != natoms
+                    ):  # handle PT all atom case
                         # check the data shape is nsel or natoms
                         if data.size == nframes * natoms_sel * ndof_:
                             if output_natoms_for_type_sel:
