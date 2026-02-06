@@ -118,7 +118,7 @@ def model_call_from_call_lower(
         distinguish_types=False,
     )
     extended_coord = extended_coord.reshape(nframes, -1, 3)
-    model_predict_lower = call_lower(
+    model_predict_lower = call_lower(  # type: ignore[call-arg]
         extended_coord,
         extended_atype,
         nlist,
