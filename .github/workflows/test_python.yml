@@ -77,8 +77,10 @@ jobs:
           path: .test_durations_${{ matrix.group }}
           include-hidden-files: true
       - uses: codecov/codecov-action@v5
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          use_oidc: true
+    permissions:
+      id-token: write
   update_durations:
     name: Combine and update integration test durations
     runs-on: ubuntu-22.04
