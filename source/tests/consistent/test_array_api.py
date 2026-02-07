@@ -8,6 +8,8 @@ from deepmd.dpmodel.array_api import (
     xp_add_at,
     xp_bincount,
     xp_scatter_sum,
+    xp_setitem_at,
+    xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -190,3 +192,61 @@ class TestXpBincountWithMinlengthConsistent(unittest.TestCase):
         x_jax = jnp.array(self.x_np)
         result = xp_bincount(x_jax, minlength=self.minlength)
         np.testing.assert_equal(self.ref, to_numpy_array(result))
+
+
+class TestXpSigmoidConsistent(unittest.TestCase):
+    """Test xp_sigmoid consistency across backends."""
+
+    def setUp(self) -> None:
+        self.x_np = np.array([-2.0, -1.0, 0.0, 1.0, 2.0])
+        # Reference using NumPy sigmoid
+        self.ref = 1 / (1 + np.exp(-self.x_np))
+
+    def test_numpy_consistent_with_ref(self) -> None:
+        result = xp_sigmoid(self.x_np)
+        np.testing.assert_allclose(self.ref, result, atol=1e-10)
+
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_pt_consistent_with_ref(self) -> None:
+        x_pt = torch.from_numpy(self.x_np)
+        result = xp_sigmoid(x_pt)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
+
+    @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
+    def test_jax_consistent_with_ref(self) -> None:
+        x_jax = jnp.array(self.x_np)
+        result = xp_sigmoid(x_jax)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
+
+
+class TestXpSetitemAtConsistent(unittest.TestCase):
+    """Test xp_setitem_at consistency across backends."""
+
+    def setUp(self) -> None:
+        self.x_np = np.zeros((5, 3))
+        self.mask_np = np.array([True, False, True, False, True])
+        self.values_np = np.ones((3, 3))
+        # Reference using NumPy
+        self.ref = self.x_np.copy()
+        self.ref[self.mask_np] = self.values_np
+
+    def test_numpy_consistent_with_ref(self) -> None:
+        x = self.x_np.copy()
+        result = xp_setitem_at(x, self.mask_np, self.values_np)
+        np.testing.assert_allclose(self.ref, result, atol=1e-10)
+
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_pt_consistent_with_ref(self) -> None:
+        x_pt = torch.from_numpy(self.x_np)
+        mask_pt = torch.from_numpy(self.mask_np)
+        values_pt = torch.from_numpy(self.values_np)
+        result = xp_setitem_at(x_pt, mask_pt, values_pt)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
+
+    @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
+    def test_jax_consistent_with_ref(self) -> None:
+        x_jax = jnp.array(self.x_np)
+        mask_jax = jnp.array(self.mask_np)
+        values_jax = jnp.array(self.values_np)
+        result = xp_setitem_at(x_jax, mask_jax, values_jax)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
