@@ -8,7 +8,6 @@ import numpy as np
 
 from deepmd.dpmodel.array_api import (
     Array,
-    support_array_api,
 )
 from deepmd.dpmodel.common import (
     PRECISION_DICT,
@@ -96,7 +95,6 @@ class TypeEmbedNet(NativeOP):
             trainable=trainable,
         )
 
-    @support_array_api(version="2022.12")
     def call(self) -> Array:
         """Compute the type embedding network."""
         sample_array = self.embedding_net[0]["w"]

@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Utilities for the array API."""
 
-from collections.abc import (
-    Callable,
-)
 from typing import (
     Any,
 )
@@ -16,33 +13,6 @@ from packaging.version import (
 
 # Type alias for array_api compatible arrays
 Array = np.ndarray | Any  # Any to support JAX, PyTorch, etc. arrays
-
-
-def support_array_api(version: str) -> Callable:
-    """Mark a function as supporting the specific version of the array API.
-
-    Parameters
-    ----------
-    version : str
-        The version of the array API
-
-    Returns
-    -------
-    Callable
-        The decorated function
-
-    Examples
-    --------
-    >>> @support_array_api(version="2022.12")
-    ... def f(x):
-    ...     pass
-    """
-
-    def set_version(func: Callable) -> Callable:
-        func.array_api_version = version
-        return func
-
-    return set_version
 
 
 # array api adds take_along_axis in https://github.com/data-apis/array-api/pull/816
