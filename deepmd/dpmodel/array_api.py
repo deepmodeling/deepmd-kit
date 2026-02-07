@@ -173,10 +173,9 @@ def xp_setitem_at(x: Array, mask: Array, values: Array) -> Array:
     if array_api_compat.is_jax_array(x):
         # JAX doesn't support in-place item assignment
         return x.at[mask].set(values)
-    else:
-        # Standard item assignment for NumPy, PyTorch, etc.
-        x[mask] = values
-        return x
+    # Standard item assignment for NumPy, PyTorch, etc.
+    x[mask] = values
+    return x
 
 
 def xp_bincount(x: Array, weights: Array | None = None, minlength: int = 0) -> Array:
