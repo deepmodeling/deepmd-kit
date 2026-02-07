@@ -32,8 +32,13 @@ def make_base_atomic_model(
 
     """
 
+    # Dynamic base class from make_plugin_registry - type checker cannot verify MRO
     class BAM(ABC, PluginVariant, make_plugin_registry("atomic model")):  # type: ignore[misc]
-        """Base Atomic Model provides the interfaces of an atomic model."""
+        """Base Atomic Model provides the interfaces of an atomic model.
+
+        The actual tensor type is determined at runtime by the t_tensor parameter.
+        Type annotations use Any to represent the runtime-determined tensor type.
+        """
 
         @abstractmethod
         def fitting_output_def(self) -> FittingOutputDef:
@@ -132,13 +137,18 @@ def make_base_atomic_model(
         @abstractmethod
         def fwd(
             self,
-            extended_coord: t_tensor,  # type: ignore[valid-type]
-            extended_atype: t_tensor,  # type: ignore[valid-type]
-            nlist: t_tensor,  # type: ignore[valid-type]
-            mapping: t_tensor | None = None,  # type: ignore[valid-type]
-            fparam: t_tensor | None = None,  # type: ignore[valid-type]
-            aparam: t_tensor | None = None,  # type: ignore[valid-type]
-        ) -> dict[str, t_tensor]:  # type: ignore[valid-type]
+            extended_coord: Any,
+            extended_atype: Any,
+            nlist: Any,
+            mapping: Any | None = None,
+            fparam: Any | None = None,
+            aparam: Any | None = None,
+        ) -> dict[str, Any]:
+            """Forward pass of the atomic model.
+
+            The tensor types are determined at runtime by the t_tensor parameter
+            passed to make_base_atomic_model.
+            """
             pass
 
         @abstractmethod
@@ -183,8 +193,8 @@ def make_base_atomic_model(
 
         def make_atom_mask(
             self,
-            atype: t_tensor,  # type: ignore[valid-type]
-        ) -> t_tensor:  # type: ignore[valid-type]
+            atype: Any,
+        ) -> Any:
             """The atoms with type < 0 are treated as virtual atoms,
             which serves as place-holders for multi-frame calculations
             with different number of atoms in different frames.

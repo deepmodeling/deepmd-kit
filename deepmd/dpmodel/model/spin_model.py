@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
+    Protocol,
+    cast,
 )
 
 import numpy as np
@@ -23,6 +25,15 @@ from deepmd.dpmodel.output_def import (
 from deepmd.utils.spin import (
     Spin,
 )
+
+
+class ModelWithDeserialize(Protocol):
+    """Protocol for models that support deserialization."""
+
+    @classmethod
+    def deserialize(cls, data: dict) -> Any:
+        """Deserialize from dictionary."""
+        ...
 
 
 class SpinModel(NativeOP):
@@ -324,9 +335,8 @@ class SpinModel(NativeOP):
 
     @classmethod
     def deserialize(cls, data: dict) -> "SpinModel":
-        backbone_model_obj = make_model(DPAtomicModel).deserialize(  # type: ignore[attr-defined]
-            data["backbone_model"]
-        )
+        BackboneModel = cast("type[ModelWithDeserialize]", make_model(DPAtomicModel))
+        backbone_model_obj = BackboneModel.deserialize(data["backbone_model"])
         spin = Spin.deserialize(data["spin"])
         return cls(
             backbone_model=backbone_model_obj,

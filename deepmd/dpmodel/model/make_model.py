@@ -1,9 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from collections.abc import (
-    Callable,
-)
 from typing import (
     Any,
+    Protocol,
 )
 
 import array_api_compat
@@ -45,19 +43,26 @@ from .transform_output import (
 )
 
 
+class CallLower(Protocol):
+    """Protocol for call_lower function signature."""
+
+    def __call__(
+        self,
+        extended_coord: np.ndarray,
+        extended_atype: np.ndarray,
+        nlist: np.ndarray,
+        mapping: np.ndarray | None = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        do_atomic_virial: bool = False,
+    ) -> dict[str, Array]:
+        """Call lower interface."""
+        ...
+
+
 def model_call_from_call_lower(
     *,  # enforce keyword-only arguments
-    call_lower: Callable[
-        [
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray | None,
-            np.ndarray | None,
-            bool,
-        ],
-        dict[str, Array],
-    ],
+    call_lower: CallLower,
     rcut: float,
     sel: list[int],
     mixed_types: bool,
@@ -118,7 +123,7 @@ def model_call_from_call_lower(
         distinguish_types=False,
     )
     extended_coord = extended_coord.reshape(nframes, -1, 3)
-    model_predict_lower = call_lower(  # type: ignore[call-arg]
+    model_predict_lower = call_lower(
         extended_coord,
         extended_atype,
         nlist,
@@ -160,18 +165,23 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
     """
 
     class CM(NativeOP, BaseModel):
+        """Wrapper model class.
+
+        Wraps an atomic model to provide high-level prediction interfaces.
+        """
+
         def __init__(
             self,
             *args: Any,
             # underscore to prevent conflict with normal inputs
-            atomic_model_: T_AtomicModel | None = None,  # type: ignore[valid-type]
+            atomic_model_: BaseAtomicModel | None = None,
             **kwargs: Any,
         ) -> None:
             BaseModel.__init__(self)
             if atomic_model_ is not None:
-                self.atomic_model: T_AtomicModel = atomic_model_  # type: ignore[valid-type]
+                self.atomic_model: BaseAtomicModel = atomic_model_
             else:
-                self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)  # type: ignore[valid-type]
+                self.atomic_model: BaseAtomicModel = T_AtomicModel(*args, **kwargs)
             self.precision_dict = PRECISION_DICT
             # not supported by flax
             # self.reverse_precision_dict = RESERVED_PRECISION_DICT

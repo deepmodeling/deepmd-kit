@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
+    Protocol,
+    cast,
 )
 
 import array_api_compat
@@ -23,6 +25,15 @@ from deepmd.utils.finetune import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+
+class NetworkWithDeserialize(Protocol):
+    """Protocol for networks that support deserialization."""
+
+    @classmethod
+    def deserialize(cls, data: dict) -> Any:
+        """Deserialize from dictionary."""
+        ...
 
 
 class TypeEmbedNet(NativeOP):
@@ -132,7 +143,8 @@ class TypeEmbedNet(NativeOP):
         data_cls = data.pop("@class")
         assert data_cls == "TypeEmbedNet", f"Invalid class {data_cls}"
 
-        embedding_net = EmbeddingNet.deserialize(data.pop("embedding"))  # type: ignore[attr-defined]
+        EmbeddingNetClass = cast("type[NetworkWithDeserialize]", EmbeddingNet)
+        embedding_net = EmbeddingNetClass.deserialize(data.pop("embedding"))
         # compat with version 1
         if "use_tebd_bias" not in data:
             data["use_tebd_bias"] = True

@@ -528,7 +528,8 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
         # get node embedding
         # nb x nloc x tebd_dim
-        atype_embd = atype_embd_ext[:, :nloc, :]  # type: ignore[index]
+        assert atype_embd_ext is not None, "atype_embd_ext must be provided"
+        atype_embd = atype_embd_ext[:, :nloc, :]
         assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
 
         node_ebd = self.act(atype_embd)

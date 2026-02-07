@@ -169,15 +169,17 @@ class EnvMatStatSe(EnvMatStat):
             env_mat *= xp.astype(exclude_mask[..., None], env_mat.dtype)
             # reshape to nframes * nloc at the atom level,
             # so nframes/mixed_type do not matter
+            # coord is an array-like object with shape attribute
+            nframes, nloc = coord.shape[0], coord.shape[1]
             env_mat = xp.reshape(
                 env_mat,
                 (
-                    coord.shape[0] * coord.shape[1],  # type: ignore[attr-defined]
+                    nframes * nloc,
                     self.descriptor.get_nsel(),
                     self.last_dim,
                 ),
             )
-            atype = xp.reshape(atype, (coord.shape[0] * coord.shape[1],))
+            atype = xp.reshape(atype, (nframes * nloc,))
             # (1, nloc) eq (ntypes, 1), so broadcast is possible
             # shape: (ntypes, nloc)
             type_idx = xp.equal(

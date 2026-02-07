@@ -40,6 +40,7 @@ def support_array_api(version: str) -> Callable:
     """
 
     def set_version(func: Callable) -> Callable:
+        # Setting attribute on function object is not type-safe but valid Python
         func.array_api_version = version  # type: ignore[attr-defined]
         return func
 
@@ -115,6 +116,7 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
 
     elif array_api_compat.is_jax_array(x):
         # JAX: functional update, not in-place
+        # JAX arrays have .at attribute for functional updates
         return x.at[indices].add(values)  # type: ignore[attr-defined]
     else:
         # Fallback for array_api_strict: use basic indexing only

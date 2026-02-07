@@ -464,7 +464,8 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         sw = xp.reshape(sw, (nf, nloc, nnei))
         sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
         # nf x nloc x tebd_dim
-        atype_embd = atype_embd_ext[:, :nloc, :]  # type: ignore[index]
+        assert atype_embd_ext is not None, "atype_embd_ext must be provided"
+        atype_embd = atype_embd_ext[:, :nloc, :]
         assert list(atype_embd.shape) == [nf, nloc, self.g1_dim]
 
         g1 = self.act(atype_embd)

@@ -11,6 +11,7 @@ from collections.abc import (
 from typing import (
     Any,
     ClassVar,
+    Protocol,
 )
 
 import array_api_compat
@@ -36,6 +37,15 @@ from deepmd.dpmodel.utils.seed import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+
+class Serializable(Protocol):
+    """Protocol for serializable objects."""
+
+    @classmethod
+    def deserialize(cls, data: dict) -> Any:
+        """Deserialize from dictionary."""
+        ...
 
 
 def sigmoid_t(x):  # noqa: ANN001, ANN201
@@ -571,7 +581,10 @@ class LayerNorm(NativeLayer):
         return x_normalized
 
 
-def make_multilayer_network(T_NetworkLayer: type, ModuleBase: type) -> type:
+def make_multilayer_network(
+    T_NetworkLayer: type[Serializable], ModuleBase: type
+) -> type:
+    # Dynamic base class - type checker cannot verify MRO at static time
     class NN(ModuleBase):  # type: ignore[misc,valid-type]
         """Native representation of a neural network.
 
@@ -585,7 +598,7 @@ def make_multilayer_network(T_NetworkLayer: type, ModuleBase: type) -> type:
             super().__init__()
             if layers is None:
                 layers = []
-            self.layers = [T_NetworkLayer.deserialize(layer) for layer in layers]  # type: ignore[attr-defined]
+            self.layers = [T_NetworkLayer.deserialize(layer) for layer in layers]
             self.check_shape_consistency()
 
         def serialize(self) -> dict:
@@ -686,6 +699,7 @@ NativeNet = make_multilayer_network(NativeLayer, NativeOP)
 
 
 def make_embedding_network(T_Network: type, T_NetworkLayer: type) -> type:
+    # Dynamic base class - type checker cannot verify MRO at static time
     class EN(T_Network):  # type: ignore[misc,valid-type]
         """The embedding network.
 
@@ -769,13 +783,18 @@ def make_embedding_network(T_Network: type, T_NetworkLayer: type) -> type:
             }
 
         @classmethod
-        def deserialize(cls, data: dict) -> "EmbeddingNet":  # type: ignore[name-defined]
+        def deserialize(cls, data: dict) -> Any:
             """Deserialize the network from a dict.
 
             Parameters
             ----------
             data : dict
                 The dict to deserialize from.
+
+            Returns
+            -------
+            EN
+                The deserialized embedding network.
             """
             data = data.copy()
             check_version_compatibility(data.pop("@version", 1), 2, 1)
