@@ -134,6 +134,51 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
         return x
 
 
+def xp_sigmoid(x: Array) -> Array:
+    """Compute the sigmoid function.
+
+    JAX requires using jax.nn.sigmoid for numerical stability.
+    See https://github.com/jax-ml/jax/discussions/15617
+    """
+    if array_api_compat.is_jax_array(x):
+        from deepmd.jax.env import (
+            jax,
+        )
+
+        return jax.nn.sigmoid(x)
+    xp = array_api_compat.array_namespace(x)
+    return 1 / (1 + xp.exp(-x))
+
+
+def xp_setitem_at(x: Array, mask: Array, values: Array) -> Array:
+    """Set items at boolean mask indices.
+
+    For JAX arrays, uses functional .at[mask].set() syntax.
+    For other arrays, uses standard item assignment.
+
+    Parameters
+    ----------
+    x : Array
+        The array to modify
+    mask : Array
+        Boolean mask indicating positions to set
+    values : Array
+        Values to set at masked positions
+
+    Returns
+    -------
+    Array
+        Modified array (new array for JAX, same array for others)
+    """
+    if array_api_compat.is_jax_array(x):
+        # JAX doesn't support in-place item assignment
+        return x.at[mask].set(values)
+    else:
+        # Standard item assignment for NumPy, PyTorch, etc.
+        x[mask] = values
+        return x
+
+
 def xp_bincount(x: Array, weights: Array | None = None, minlength: int = 0) -> Array:
     """Counts the number of occurrences of each value in x."""
     xp = array_api_compat.array_namespace(x)
