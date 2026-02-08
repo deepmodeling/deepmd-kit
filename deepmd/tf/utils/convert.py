@@ -9,6 +9,9 @@ from google.protobuf import (
 from packaging.specifiers import (
     SpecifierSet,
 )
+from packaging.version import (
+    Version,
+)
 from packaging.version import parse as parse_version
 
 from deepmd.tf import (
@@ -21,7 +24,7 @@ from deepmd.tf.env import (
 log = logging.getLogger(__name__)
 
 
-def detect_model_version(input_model: str):
+def detect_model_version(input_model: str) -> Version | None:
     """Detect DP graph version.
 
     Parameters

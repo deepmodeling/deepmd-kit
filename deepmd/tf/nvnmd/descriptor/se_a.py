@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from collections.abc import (
+    Callable,
+)
+from typing import (
+    Any,
+)
 
 import numpy as np
 
@@ -27,7 +33,7 @@ from deepmd.tf.utils.network import (
 log = logging.getLogger(__name__)
 
 
-def build_davg_dstd():
+def build_davg_dstd() -> tuple[Any, Any]:
     r"""Get the davg and dstd from the dictionary nvnmd_cfg.
     The davg and dstd have been obtained by training CNN.
     """
@@ -35,7 +41,7 @@ def build_davg_dstd():
     return davg, dstd
 
 
-def check_switch_range(davg, dstd) -> None:
+def check_switch_range(davg: np.ndarray, dstd: np.ndarray) -> None:
     r"""Check the range of switch, let it in range [-2, 14]."""
     rmin = nvnmd_cfg.dscp["rcut_smth"]
     #
@@ -64,7 +70,7 @@ def check_switch_range(davg, dstd) -> None:
         nvnmd_cfg.get_s_range(davg, dstd)
 
 
-def build_op_descriptor():
+def build_op_descriptor() -> Callable:
     r"""Replace se_a.py/DescrptSeA/build."""
     if nvnmd_cfg.quantize_descriptor:
         return op_module.prod_env_mat_a_nvnmd_quantize
@@ -72,7 +78,7 @@ def build_op_descriptor():
         return op_module.prod_env_mat_a
 
 
-def descrpt2r4(inputs, natoms):
+def descrpt2r4(inputs: tf.Tensor, natoms: list) -> tf.Tensor:
     r"""Replace :math:`r_{ji} \rightarrow r'_{ji}`
     where :math:`r_{ji} = (x_{ji}, y_{ji}, z_{ji})` and
     :math:`r'_{ji} = (s_{ji}, \frac{s_{ji} x_{ji}}{r_{ji}}, \frac{s_{ji} y_{ji}}{r_{ji}}, \frac{s_{ji} z_{ji}}{r_{ji}})`.
@@ -167,23 +173,23 @@ def descrpt2r4(inputs, natoms):
 
 
 def filter_lower_R42GR(
-    type_i,
-    type_input,
-    inputs_i,
-    is_exclude,
-    activation_fn,
-    bavg,
-    stddev,
-    trainable,
-    suffix,
-    seed,
-    seed_shift,
-    uniform_seed,
-    filter_neuron,
-    filter_precision,
-    filter_resnet_dt,
-    embedding_net_variables,
-):
+    type_i: int,
+    type_input: int,
+    inputs_i: tf.Tensor,
+    is_exclude: bool,
+    activation_fn: Callable,
+    bavg: float,
+    stddev: float,
+    trainable: bool,
+    suffix: str,
+    seed: int | None,
+    seed_shift: int,
+    uniform_seed: bool,
+    filter_neuron: list[int],
+    filter_precision: tf.DType,
+    filter_resnet_dt: bool,
+    embedding_net_variables: dict[str, Any],
+) -> tf.Tensor:
     r"""Replace se_a.py/DescrptSeA/_filter_lower."""
     shape_i = inputs_i.get_shape().as_list()
     inputs_reshape = tf.reshape(inputs_i, [-1, 4])
@@ -269,7 +275,7 @@ def filter_lower_R42GR(
         )
 
 
-def filter_GR2D(xyz_scatter_1):
+def filter_GR2D(xyz_scatter_1: tf.Tensor) -> tuple[tf.Tensor, tf.Tensor]:
     r"""Replace se_a.py/_filter."""
     NIX = nvnmd_cfg.dscp["NIX"]
     M1 = nvnmd_cfg.dscp["M1"]

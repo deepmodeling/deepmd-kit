@@ -12,7 +12,7 @@ from deepmd.tf.env import (
 
 
 @ops.RegisterGradient("MulFltNvnmd")
-def _MulFltNvnmdGrad(op, grad):
+def _MulFltNvnmdGrad(op: tf.Operation, grad: tf.Tensor) -> list[tf.Tensor]:
     x = op.inputs[0]
     w = op.inputs[1]
     # transpose for 2-dimension and 3-dimension multiplication

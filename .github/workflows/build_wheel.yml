@@ -67,7 +67,7 @@ jobs:
           DP_VARIANT: ${{ matrix.dp_variant }}
           CUDA_VERSION: ${{ matrix.cuda_version }}
           DP_PKG_NAME: ${{ matrix.dp_pkg_name }}
-          CIBW_BUILD_FRONTEND: 'build[uv]'
+          CIBW_BUILD_FRONTEND: "build[uv]"
       - uses: actions/upload-artifact@v6
         with:
           name: cibw-cp${{ matrix.python }}-${{ matrix.platform_id }}-cu${{ matrix.cuda_version }}-${{ strategy.job-index }}
@@ -157,7 +157,7 @@ jobs:
       - uses: actions/setup-python@v6
         name: Install Python
         with:
-          python-version: '3.11'
+          python-version: "3.11"
       - run: pip install dumb-pypi
       - run: |
           ls dist/packages > package_list.txt
@@ -187,7 +187,7 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     steps:
-    - name: Decide whether the needed jobs succeeded or failed
-      uses: re-actors/alls-green@release/v1
-      with:
-        jobs: ${{ toJSON(needs) }}
+      - name: Decide whether the needed jobs succeeded or failed
+        uses: re-actors/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}
