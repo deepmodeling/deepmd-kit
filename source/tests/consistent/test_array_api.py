@@ -299,6 +299,9 @@ class TestXpSetitemAtConsistent(unittest.TestCase):
         mask_pt = torch.from_numpy(self.mask_np)
         values_pt = torch.from_numpy(self.values_np)
         result = xp_setitem_at(x_pt, mask_pt, values_pt)
+        # Verify original tensor is unchanged (non-mutating)
+        np.testing.assert_allclose(self.x_np, to_numpy_array(x_pt), atol=1e-10)
+        # Verify result matches reference
         np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
 
     @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")

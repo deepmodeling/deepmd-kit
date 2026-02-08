@@ -170,8 +170,8 @@ def xp_sigmoid(x: Array) -> Array:
 def xp_setitem_at(x: Array, mask: Array, values: Array) -> Array:
     """Set items at boolean mask indices.
 
-    For JAX arrays, uses functional .at[mask].set() syntax.
-    For other arrays, uses standard item assignment.
+    For JAX and PyTorch arrays, returns a new array (non-mutating).
+    For NumPy arrays, modifies in-place and returns the same array.
 
     Parameters
     ----------
@@ -185,12 +185,19 @@ def xp_setitem_at(x: Array, mask: Array, values: Array) -> Array:
     Returns
     -------
     Array
-        Modified array (new array for JAX, same array for others)
+        Modified array (new array for JAX/PyTorch, same array for NumPy)
     """
     if array_api_compat.is_jax_array(x):
         # JAX doesn't support in-place item assignment
         return x.at[mask].set(values)
-    # Standard item assignment for NumPy, PyTorch, etc.
+    elif array_api_compat.is_torch_array(x):
+        # PyTorch: clone to avoid mutating the input (non-mutating version)
+        import torch
+
+        result = torch.clone(x)
+        result[mask] = values
+        return result
+    # Standard item assignment for NumPy, array-api-strict, etc.
     x[mask] = values
     return x
 
