@@ -5,6 +5,9 @@ import numpy as np
 import torch
 
 from deepmd.dpmodel.utils.network import EmbeddingNet as DPEmbeddingNet
+from deepmd.pt_expt.utils import (
+    env,
+)
 from deepmd.pt_expt.utils.network import (
     EmbeddingNet,
     NativeLayer,
@@ -87,7 +90,7 @@ class TestEmbeddingNetRefactor(unittest.TestCase):
             precision=self.precision,
             seed=GLOBAL_SEED,
         )
-        x = torch.randn(5, self.in_dim, dtype=torch.float64)
+        x = torch.randn(5, self.in_dim, dtype=torch.float64, device=env.DEVICE)
         out1 = net(x)
 
         # Serialize and deserialize
