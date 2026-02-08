@@ -180,6 +180,76 @@ class TestEmbeddingNet(unittest.TestCase):
             inp = np.ones([ni], dtype=get_xp_precision(np, prec))
             np.testing.assert_allclose(en0.call(inp), en1.call(inp))
 
+    def test_is_concrete_class(self) -> None:
+        """Verify EmbeddingNet is a concrete class, not factory-generated."""
+        in_dim = 4
+        neuron = [8, 16, 32]
+        net = EmbeddingNet(
+            in_dim=in_dim,
+            neuron=neuron,
+            activation_function="tanh",
+            resnet_dt=True,
+            precision="float64",
+        )
+        # Check it's the actual EmbeddingNet class, not a dynamic class
+        self.assertEqual(net.__class__.__name__, "EmbeddingNet")
+        self.assertEqual(net.__class__.__module__, "deepmd.dpmodel.utils.network")
+        # Verify it has the expected attributes
+        self.assertEqual(net.in_dim, in_dim)
+        self.assertEqual(net.neuron, neuron)
+        self.assertEqual(net.activation_function, "tanh")
+        self.assertEqual(net.resnet_dt, True)
+        self.assertEqual(len(net.layers), len(neuron))
+
+    def test_forward_pass(self) -> None:
+        """Test EmbeddingNet forward pass produces correct shapes."""
+        in_dim = 4
+        neuron = [8, 16, 32]
+        net = EmbeddingNet(
+            in_dim=in_dim,
+            neuron=neuron,
+            activation_function="tanh",
+            resnet_dt=True,
+            precision="float64",
+        )
+        rng = np.random.default_rng()
+        x = rng.standard_normal((5, in_dim))
+        out = net.call(x)
+        self.assertEqual(out.shape, (5, neuron[-1]))
+        self.assertEqual(out.dtype, np.float64)
+
+    def test_trainable_parameter_variants(self) -> None:
+        """Test EmbeddingNet with different trainable configurations."""
+        in_dim = 4
+        neuron = [8, 16]
+
+        # All trainable
+        net_trainable = EmbeddingNet(
+            in_dim=in_dim,
+            neuron=neuron,
+            trainable=True,
+        )
+        for layer in net_trainable.layers:
+            self.assertTrue(layer.trainable)
+
+        # All frozen
+        net_frozen = EmbeddingNet(
+            in_dim=in_dim,
+            neuron=neuron,
+            trainable=False,
+        )
+        for layer in net_frozen.layers:
+            self.assertFalse(layer.trainable)
+
+        # Mixed trainable
+        net_mixed = EmbeddingNet(
+            in_dim=in_dim,
+            neuron=neuron,
+            trainable=[True, False],
+        )
+        self.assertTrue(net_mixed.layers[0].trainable)
+        self.assertFalse(net_mixed.layers[1].trainable)
+
 
 class TestFittingNet(unittest.TestCase):
     def test_fitting_net(self) -> None:

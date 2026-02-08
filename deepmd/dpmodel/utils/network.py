@@ -788,7 +788,112 @@ def make_embedding_network(T_Network: type, T_NetworkLayer: type) -> type:
     return EN
 
 
-EmbeddingNet = make_embedding_network(NativeNet, NativeLayer)
+class EmbeddingNet(NativeNet):
+    """The embedding network.
+
+    Parameters
+    ----------
+    in_dim
+        Input dimension.
+    neuron
+        The number of neurons in each layer. The output dimension
+        is the same as the dimension of the last layer.
+    activation_function
+        The activation function.
+    resnet_dt
+        Use time step at the resnet architecture.
+    precision
+        Floating point precision for the model parameters.
+    seed : int, optional
+        Random seed.
+    bias : bool, Optional
+        Whether to use bias in the embedding layer.
+    trainable : bool or list[bool], Optional
+        Whether the weights are trainable. If a list, each element
+        corresponds to a layer.
+    """
+
+    def __init__(
+        self,
+        in_dim: int,
+        neuron: list[int] = [24, 48, 96],
+        activation_function: str = "tanh",
+        resnet_dt: bool = False,
+        precision: str = DEFAULT_PRECISION,
+        seed: int | list[int] | None = None,
+        bias: bool = True,
+        trainable: bool | list[bool] = True,
+    ) -> None:
+        layers = []
+        i_in = in_dim
+        if isinstance(trainable, bool):
+            trainable = [trainable] * len(neuron)
+        for idx, ii in enumerate(neuron):
+            i_ot = ii
+            layers.append(
+                NativeLayer(
+                    i_in,
+                    i_ot,
+                    bias=bias,
+                    use_timestep=resnet_dt,
+                    activation_function=activation_function,
+                    resnet=True,
+                    precision=precision,
+                    seed=child_seed(seed, idx),
+                    trainable=trainable[idx],
+                ).serialize()
+            )
+            i_in = i_ot
+        super().__init__(layers)
+        self.in_dim = in_dim
+        self.neuron = neuron
+        self.activation_function = activation_function
+        self.resnet_dt = resnet_dt
+        self.precision = precision
+        self.bias = bias
+
+    def serialize(self) -> dict:
+        """Serialize the network to a dict.
+
+        Returns
+        -------
+        dict
+            The serialized network.
+        """
+        return {
+            "@class": "EmbeddingNetwork",
+            "@version": 2,
+            "in_dim": self.in_dim,
+            "neuron": self.neuron.copy(),
+            "activation_function": self.activation_function,
+            "resnet_dt": self.resnet_dt,
+            "bias": self.bias,
+            # make deterministic
+            "precision": np.dtype(PRECISION_DICT[self.precision]).name,
+            "layers": [layer.serialize() for layer in self.layers],
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "EmbeddingNet":
+        """Deserialize the network from a dict.
+
+        Parameters
+        ----------
+        data : dict
+            The dict to deserialize from.
+        """
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        data.pop("@class", None)
+        layers = data.pop("layers")
+        obj = cls(**data)
+        # Reinitialize layers from serialized data, using the same layer type
+        # that __init__ created (respects subclass overrides via MRO).
+        layer_type = type(obj.layers[0])
+        obj.layers = type(obj.layers)(
+            [layer_type.deserialize(layer) for layer in layers]
+        )
+        return obj
 
 
 def make_fitting_network(
