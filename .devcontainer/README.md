@@ -13,7 +13,7 @@ The following packages are installed into the Python environment `.venv`:
 - LAMMPS
 - MPICH
 - CMake
-- pre-commit (including hooks)
+- prek (including hooks)
 - Test packages including pytest
 - Doc packages including sphinx
 

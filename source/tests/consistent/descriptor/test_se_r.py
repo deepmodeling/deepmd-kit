@@ -15,6 +15,7 @@ from ..common import (
     INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
     parameterized,
@@ -27,6 +28,10 @@ if INSTALLED_PT:
     from deepmd.pt.model.descriptor.se_r import DescrptSeR as DescrptSeRPT
 else:
     DescrptSeAPT = None
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.descriptor.se_r import DescrptSeR as DescrptSeRPTExpt
+else:
+    DescrptSeRPTExpt = None
 if INSTALLED_TF:
     from deepmd.tf.descriptor.se_r import DescrptSeR as DescrptSeRTF
 else:
@@ -72,6 +77,7 @@ class TestSeR(CommonTest, DescriptorTest, unittest.TestCase):
             "exclude_types": excluded_types,
             "precision": precision,
             "seed": 1145141919810,
+            "activation_function": "relu",
         }
 
     @property
@@ -83,6 +89,16 @@ class TestSeR(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
         ) = self.param
         return not type_one_side or CommonTest.skip_pt
+
+    @property
+    def skip_pt_expt(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+        ) = self.param
+        return not type_one_side or CommonTest.skip_pt_expt
 
     @property
     def skip_dp(self) -> bool:
@@ -117,6 +133,7 @@ class TestSeR(CommonTest, DescriptorTest, unittest.TestCase):
     tf_class = DescrptSeRTF
     dp_class = DescrptSeRDP
     pt_class = DescrptSeRPT
+    pt_expt_class = DescrptSeRPTExpt
     jax_class = DescrptSeRJAX
     array_api_strict_class = DescrptSeRArrayAPIStrict
     args = descrpt_se_r_args()
@@ -177,6 +194,15 @@ class TestSeR(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt(self, pt_obj: Any) -> Any:
         return self.eval_pt_descriptor(
             pt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return self.eval_pt_expt_descriptor(
+            pt_expt_obj,
             self.natoms,
             self.coords,
             self.atype,

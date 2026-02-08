@@ -121,10 +121,11 @@ def to_numpy_array(x: Optional["Array"]) -> np.ndarray | None:
     try:
         # asarray is not within Array API standard, so may fail
         return np.asarray(x)
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError, TypeError):
         xp = array_api_compat.array_namespace(x)
         # to fix BufferError: Cannot export readonly array since signalling readonly is unsupported by DLPack.
-        x = xp.asarray(x, copy=True)
+        # Move to CPU device to ensure numpy compatibility
+        x = xp.asarray(x, device="cpu", copy=True)
         return np.from_dlpack(x)
 
 

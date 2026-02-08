@@ -3,10 +3,16 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from typing_extensions import (
+        Self,
+    )
 
 from deepmd.common import (
     j_get_type,
@@ -48,7 +54,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
     that can be called by other classes.
     """
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> "Self":
         if cls is Descriptor:
             cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
         return super().__new__(cls)
@@ -132,7 +138,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         natoms_vec: list[np.ndarray],
         mesh: list[np.ndarray],
         input_dict: dict[str, list[np.ndarray]],
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be
         normalized by the statistics.

@@ -44,7 +44,7 @@ repos:
     hooks:
       - id: flake8
         additional_dependencies:
-          - torchfix==0.6.0
+          - torchfix==0.7.0
           - flake8-pyproject==1.2.3
   # numpydoc
   - repo: https://github.com/Carreau/velin
@@ -78,7 +78,7 @@ repos:
       - id: prettier
         types_or: [yaml, css]
         # workflow files cannot be modified by pre-commit.ci
-        exclude: ^(source/3rdparty|\.github/workflows|\.clang-format)
+        exclude: ^(source/3rdparty|\.clang-format)
   # Shell
   - repo: https://github.com/scop/pre-commit-shfmt
     rev: v3.12.0-2

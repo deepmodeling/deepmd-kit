@@ -98,6 +98,7 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
             "use_tebd_bias": use_tebd_bias,
             "type_map": ["O", "H"] if use_econf_tebd else None,
             "seed": 1145141919810,
+            "activation_function": "relu",
         }
 
     @property
