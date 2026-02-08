@@ -23,7 +23,6 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     Array,
-    support_array_api,
     xp_add_at,
     xp_bincount,
 )
@@ -259,7 +258,6 @@ class NativeLayer(NativeOP):
     def dim_out(self) -> int:
         return self.w.shape[1]
 
-    @support_array_api(version="2022.12")
     def call(self, x):  # noqa: ANN001, ANN201
         """Forward pass.
 
@@ -296,7 +294,6 @@ class NativeLayer(NativeOP):
         return y
 
 
-@support_array_api(version="2022.12")
 def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.ndarray]:
     activation_function = activation_function.lower()
     if activation_function == "tanh":
