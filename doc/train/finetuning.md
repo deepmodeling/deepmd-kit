@@ -1,6 +1,6 @@
 # Finetune the pre-trained model {{ tensorflow_icon }} {{ pytorch_icon }} {{ paddle_icon }}
 
-:::{note}
+:::\{note}
 **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
 :::
 
@@ -28,7 +28,7 @@ $ dp train input.json --finetune pretrained.pb
 The command above will change the energy bias in the last layer of the fitting net in `pretrained.pb`,
 according to the training dataset in input.json.
 
-:::{warning}
+:::\{warning}
 Note that in TensorFlow, model parameters including the `type_map` will be overwritten based on those in the pre-trained model.
 Please ensure you are familiar with the configurations in the pre-trained model, especially `type_map`, before starting the fine-tuning process.
 The elements in the training dataset must be contained in the pre-trained dataset.
@@ -105,7 +105,7 @@ one can select a specific branch (e.g., `CHOOSEN_BRANCH`) included in `multitask
 $ dp --pt train input.json --finetune multitask_pretrained.pt --model-branch CHOOSEN_BRANCH
 ```
 
-:::{note}
+:::\{note}
 One can check the available model branches in multi-task pre-trained model by referring to the documentation of the pre-trained model or by using the following command:
 
 ```bash
@@ -131,9 +131,9 @@ Then, prepare a suitable input script for multitask fine-tuning `multi_input.jso
 
 1. Refer to the [`multi-task-training`](./multi-task-training) document to prepare a multitask training script for two systems,
    ideally extracting parts (i.e. {ref}`model_dict <model/model_dict>`, {ref}`loss_dict <loss_dict>`, {ref}`data_dict <training/data_dict>` and {ref}`model_prob <training/model_prob>` parts) corresponding to `PRE_DATA1` and `PRE_DATA2` directly from the training script of the pre-trained model.
-2. For `DOWNSTREAM_DATA`, select a desired branch to fine-tune from (e.g., `PRE_DATA1`), copy the configurations of `PRE_DATA1` as the configuration for `DOWNSTREAM_DATA` and insert the corresponding data path into the {ref}`data_dict <training/data_dict>`,
+1. For `DOWNSTREAM_DATA`, select a desired branch to fine-tune from (e.g., `PRE_DATA1`), copy the configurations of `PRE_DATA1` as the configuration for `DOWNSTREAM_DATA` and insert the corresponding data path into the {ref}`data_dict <training/data_dict>`,
    thereby generating a three-system multitask training script.
-3. In the {ref}`model_dict <model/model_dict>` for `DOWNSTREAM_DATA`, specify the branch from which `DOWNSTREAM_DATA` is to fine-tune using:
+1. In the {ref}`model_dict <model/model_dict>` for `DOWNSTREAM_DATA`, specify the branch from which `DOWNSTREAM_DATA` is to fine-tune using:
    `"finetune_head": "PRE_DATA1"`.
 
 The complete `multi_input.json` should appear as follows ("..." means copied from input script of pre-trained model):
@@ -251,7 +251,7 @@ one can select a specific branch (e.g., `CHOOSEN_BRANCH`) included in `multitask
 $ dp --pd train input.json --finetune multitask_pretrained.pd --model-branch CHOOSEN_BRANCH
 ```
 
-:::{note}
+:::\{note}
 One can check the available model branches in multi-task pre-trained model by refering to the documentation of the pre-trained model or by using the following command:
 
 ```bash

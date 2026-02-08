@@ -1,6 +1,6 @@
 # Running MD with GROMACS
 
-:::{note}
+:::\{note}
 See [Environment variables](../env.md) for the runtime environment variables.
 :::
 

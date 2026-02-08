@@ -1,6 +1,6 @@
 # Use deep potential with dpdata
 
-:::{note}
+:::\{note}
 See [Environment variables](../env.md) for the runtime environment variables.
 :::
 

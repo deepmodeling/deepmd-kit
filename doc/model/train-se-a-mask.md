@@ -1,6 +1,6 @@
 # Descriptor `"se_a_mask"` {{ tensorflow_icon }}
 
-:::{note}
+:::\{note}
 **Supported backends**: TensorFlow {{ tensorflow_icon }}
 :::
 
@@ -68,7 +68,7 @@ To make the `aparam.npy` used for descriptor `se_a_mask`, two variables in `fitt
 - {ref}`use_aparam_as_mask <model[standard]/fitting_net[ener]/use_aparam_as_mask>` is set to `true` to use the `aparam.npy` as the mask of the atoms in the descriptor `se_a_mask`.
 
 Finally, to make a reasonable fitting task with `se_a_mask` descriptor for DP/MM simulations, the loss function with `se_a_mask` is designed to include the atomic forces difference in specific atoms of the input particles only.
-More details about the selection of the specific atoms can be found in paper [DP/MM](left to be filled).
+More details about the selection of the specific atoms can be found in paper \[DP/MM\](left to be filled).
 Thus, `atom_pref.npy` ( [ nframes * natoms ] ) is required as the indicator of the specific atoms in the input particles.
 And the `loss` section in the training input script should be set as follows.
 

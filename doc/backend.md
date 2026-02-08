@@ -46,7 +46,7 @@ The `.pd` extension is used for model checkpoint storage, which is commonly util
 
 ### DP {{ dpmodel_icon }}
 
-:::{note}
+:::\{note}
 This backend is only for development and should not take into production.
 :::
 

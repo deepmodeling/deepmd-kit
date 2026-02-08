@@ -36,9 +36,9 @@ source $deepmd_venv/bin/activate
 pip install --upgrade pip
 ```
 
-::::{tab-set}
+::::\{tab-set}
 
-:::{tab-item} TensorFlow {{ tensorflow_icon }}
+:::\{tab-item} TensorFlow {{ tensorflow_icon }}
 
 The full instruction to install TensorFlow can be found on the official [TensorFlow website](https://www.tensorflow.org/install/pip). TensorFlow 2.7 or later is supported.
 
@@ -64,7 +64,7 @@ One can also [build the TensorFlow Python interface from source](https://www.ten
 
 :::
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::\{tab-item} PyTorch {{ pytorch_icon }}
 
 To install PyTorch, run
 
@@ -78,7 +78,7 @@ One can also [use conda](https://docs.deepmodeling.com/faq/conda.html) to instal
 
 :::
 
-:::{tab-item} JAX {{ jax_icon }}
+:::\{tab-item} JAX {{ jax_icon }}
 
 To install [JAX AI Stack](https://github.com/jax-ml/jax-ai-stack), run
 
@@ -93,7 +93,7 @@ One can also [use conda](https://docs.deepmodeling.com/faq/conda.html) to instal
 
 :::
 
-:::{tab-item} Paddle {{ paddle_icon }}
+:::\{tab-item} Paddle {{ paddle_icon }}
 
 To install Paddle, run
 
@@ -146,15 +146,15 @@ gcc --version
 By default, DeePMD-kit uses C++ 14, so the compiler needs to support C++ 14 (GCC 5 or later).
 The backend package may use a higher C++ standard version, and thus require a higher compiler version (for example, GCC 7 for C++ 17).
 
-::::{tab-set}
+::::\{tab-set}
 
-:::{tab-item} TensorFlow {{ tensorflow_icon }}
+:::\{tab-item} TensorFlow {{ tensorflow_icon }}
 
 Note that TensorFlow may have specific requirements for the compiler version to support the C++ standard version and [`_GLIBCXX_USE_CXX11_ABI`](https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html) used by TensorFlow. It is recommended to use [the same compiler version as TensorFlow](https://www.tensorflow.org/install/source#tested_build_configurations), which can be printed by `python -c "import tensorflow;print(tensorflow.version.COMPILER_VERSION)"`.
 
 :::
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::\{tab-item} PyTorch {{ pytorch_icon }}
 
 You can set the environment variable `export DP_ENABLE_PYTORCH=1` to enable customized C++ OPs in the PyTorch backend.
 Note that PyTorch may have specific requirements for the compiler version to support the C++ standard version and [`_GLIBCXX_USE_CXX11_ABI`](https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html) used by PyTorch.
@@ -172,21 +172,21 @@ pip install .
 
 One may set the following environment variables before executing `pip`:
 
-:::{envvar} DP_VARIANT
+:::\{envvar} DP_VARIANT
 
 **Choices**: `cpu`, `cuda`, `rocm`; **Default**: `cpu`
 
 Build CPU variant or GPU variant with CUDA or ROCM support.
 :::
 
-:::{envvar} CUDAToolkit_ROOT
+:::\{envvar} CUDAToolkit_ROOT
 
 **Type**: Path; **Default**: Detected automatically
 
 The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required.
 :::
 
-:::{envvar} ROCM_ROOT
+:::\{envvar} ROCM_ROOT
 
 **Type**: Path; **Default**: Detected automatically
 
@@ -194,49 +194,49 @@ The path to the ROCM toolkit directory. If `ROCM_ROOT` is not set, it will look 
 
 :::
 
-:::{envvar} DP_ENABLE_TENSORFLOW
+:::\{envvar} DP_ENABLE_TENSORFLOW
 
 **Choices**: `0`, `1`; **Default**: `1`
 
 {{ tensorflow_icon }} Enable the TensorFlow backend.
 :::
 
-:::{envvar} DP_ENABLE_PYTORCH
+:::\{envvar} DP_ENABLE_PYTORCH
 
 **Choices**: `0`, `1`; **Default**: `0`
 
 {{ pytorch_icon }} Enable customized C++ OPs for the PyTorch backend. PyTorch can still run without customized C++ OPs, but features will be limited.
 :::
 
-:::{envvar} TENSORFLOW_ROOT
+:::\{envvar} TENSORFLOW_ROOT
 
 **Type**: Path; **Default**: Detected automatically
 
 {{ tensorflow_icon }} The path to TensorFlow Python library. If not given, by default the installer only finds TensorFlow under user site-package directory (`site.getusersitepackages()`) or system site-package directory (`sysconfig.get_path("purelib")`) due to limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest TensorFlow (or the environment variable `TENSORFLOW_VERSION` if given) from PyPI will be built against.
 :::
 
-:::{envvar} PYTORCH_ROOT
+:::\{envvar} PYTORCH_ROOT
 
 **Type**: Path; **Default**: Detected automatically
 
 {{ pytorch_icon }} The path to PyTorch Python library. If not given, by default, the installer only finds PyTorch under the user site-package directory (`site.getusersitepackages()`) or the system site-package directory (`sysconfig.get_path("purelib")`) due to the limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest PyTorch (or the environment variable `PYTORCH_VERSION` if given) from PyPI will be built against.
 :::
 
-:::{envvar} DP_ENABLE_NATIVE_OPTIMIZATION
+:::\{envvar} DP_ENABLE_NATIVE_OPTIMIZATION
 
 **Choices**: `0`, `1`; **Default**: `0`
 
 Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs.
 :::
 
-:::{envvar} CMAKE_ARGS
+:::\{envvar} CMAKE_ARGS
 
 **Type**: string
 
 Additional CMake arguments.
 :::
 
-:::{envvar} <LANG>FLAGS
+:::\{envvar} <LANG>FLAGS
 
 `<LANG>`=`CXX`, `CUDA` or `HIP`
 
@@ -267,7 +267,7 @@ It will print the help information like
 
 ### Install horovod and mpi4py {{ tensorflow_icon }}
 
-:::{warning}
+:::\{warning}
 Horovod has not released a new version for a long time.
 As of December 2025, the latest Horovod release does not support the latest TensorFlow versions.
 You can check the patches required to support the latest TensorFlow at [conda-forge/horovod-feedstock](https://github.com/conda-forge/horovod-feedstock/blob/main/recipe/meta.yaml).
@@ -295,20 +295,20 @@ $ horovodrun --check-build
 Horovod v0.22.1:
 
 Available Frameworks:
-    [X] TensorFlow
-    [X] PyTorch
-    [ ] MXNet
+[X] TensorFlow
+[X] PyTorch
+[ ] MXNet
 
 Available Controllers:
-    [X] MPI
-    [X] Gloo
+[X] MPI
+[X] Gloo
 
 Available Tensor Operations:
-    [X] NCCL
-    [ ] DDL
-    [ ] CCL
-    [X] MPI
-    [X] Gloo
+[X] NCCL
+[ ] DDL
+[ ] CCL
+[X] MPI
+[X] Gloo
 ```
 
 Since version 2.0.1, Horovod and mpi4py with MPICH support are shipped with the installer.
@@ -321,9 +321,9 @@ If one does not need to use DeePMD-kit with LAMMPS or i-PI, then the python inte
 
 ### Install Backends' C++ interface (optional)
 
-::::{tab-set}
+::::\{tab-set}
 
-:::{tab-item} TensorFlow {{ tensorflow_icon }} / JAX {{ jax_icon }}
+:::\{tab-item} TensorFlow {{ tensorflow_icon }} / JAX {{ jax_icon }}
 
 The C++ interfaces of both TensorFlow and JAX backends are based on the TensorFlow C++ library.
 
@@ -335,14 +335,14 @@ First, the C++ interface of TensorFlow should be installed. It is noted that the
 
 :::
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::\{tab-item} PyTorch {{ pytorch_icon }}
 
 If you have installed PyTorch using pip, you can use libtorch inside the PyTorch Python package.
 You can also download libtorch prebuilt library from the [PyTorch website](https://pytorch.org/get-started/locally/).
 
 :::
 
-:::{tab-item} JAX {{ jax_icon }}
+:::\{tab-item} JAX {{ jax_icon }}
 
 The JAX backend only depends on the TensorFlow C API, which is included in both TensorFlow C++ library and [TensorFlow C library](https://www.tensorflow.org/install/lang_c).
 If you want to use the TensorFlow C++ library, just enable the TensorFlow backend (which depends on the TensorFlow C++ library) and nothing else needs to do.
@@ -351,7 +351,7 @@ download the TensorFlow C library from [this page](https://www.tensorflow.org/in
 
 :::
 
-:::{tab-item} Paddle {{ paddle_icon }}
+:::\{tab-item} Paddle {{ paddle_icon }}
 
 If you want to use C++ interface of Paddle, you need to compile the Paddle inference library(C++ interface) manually from the [linux-compile-by-make](https://www.paddlepaddle.org.cn/documentation/docs/zh/develop/install/compile/linux-compile-by-make.html), then use the `.so` and `.a` files in `Paddle/build/paddle_inference_install_dir/`.
 
@@ -385,9 +385,9 @@ You must enable at least one backend.
 If you enable two or more backends, these backend libraries must be built in a compatible way, e.g. using the same `_GLIBCXX_USE_CXX11_ABI` flag.
 We recommend using [conda packages](https://docs.deepmodeling.com/faq/conda.html) from [conda-forge](https://conda-forge.org), which are usually compatible to each other.
 
-::::{tab-set}
+::::\{tab-set}
 
-:::{tab-item} TensorFlow {{ tensorflow_icon }} / JAX {{ jax_icon }}
+:::\{tab-item} TensorFlow {{ tensorflow_icon }} / JAX {{ jax_icon }}
 
 I assume you have activated the TensorFlow Python environment and want to install DeePMD-kit into path `$deepmd_root`, then execute CMake
 
@@ -399,7 +399,7 @@ If you specify `-DUSE_TF_PYTHON_LIBS=FALSE`, you need to give the location where
 
 :::
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::\{tab-item} PyTorch {{ pytorch_icon }}
 
 I assume you have installed the PyTorch (either Python or C++ interface) to `$torch_root`, then execute CMake
 
@@ -415,7 +415,7 @@ cmake -DENABLE_PYTORCH=TRUE -DUSE_PT_PYTHON_LIBS=TRUE -DCMAKE_INSTALL_PREFIX=$de
 
 :::
 
-:::{tab-item} JAX {{ jax_icon }}
+:::\{tab-item} JAX {{ jax_icon }}
 
 If you want to use the TensorFlow C++ library, just enable the TensorFlow backend and nothing else needs to do.
 If you want to use the TensorFlow C library and disable the TensorFlow backend, set {cmake:variable}`ENABLE_JAX` to `ON` and `CMAKE_PREFIX_PATH` to the root directory of the [TensorFlow C library](https://www.tensorflow.org/install/lang_c).
@@ -426,7 +426,7 @@ cmake -DENABLE_JAX=ON -D CMAKE_PREFIX_PATH=${tensorflow_c_root} ..
 
 :::
 
-:::{tab-item} Paddle {{ paddle_icon }}
+:::\{tab-item} Paddle {{ paddle_icon }}
 
 I assume you have get the Paddle inference library(C++ interface) to `$PADDLE_INFERENCE_DIR`, then execute CMake
 
@@ -440,7 +440,7 @@ cmake -DENABLE_PADDLE=ON -DPADDLE_INFERENCE_DIR=$PADDLE_INFERENCE_DIR -DCMAKE_IN
 
 One may add the following CMake variables to `cmake` using the [`-D <var>=<value>` option](https://cmake.org/cmake/help/latest/manual/cmake.1.html#cmdoption-cmake-D):
 
-:::{cmake:variable} ENABLE_TENSORFLOW
+:::\{cmake:variable} ENABLE_TENSORFLOW
 
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
@@ -449,7 +449,7 @@ Setting this option to `ON` will also set {cmake:variable}`ENABLE_JAX` to `ON`.
 
 :::
 
-:::{cmake:variable} ENABLE_PYTORCH
+:::\{cmake:variable} ENABLE_PYTORCH
 
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
@@ -457,7 +457,7 @@ Setting this option to `ON` will also set {cmake:variable}`ENABLE_JAX` to `ON`.
 
 :::
 
-:::{cmake:variable} ENABLE_JAX
+:::\{cmake:variable} ENABLE_JAX
 
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
@@ -467,7 +467,7 @@ If {cmake:variable}`ENABLE_TENSORFLOW` is `OFF`, the TensorFlow C library is use
 
 :::
 
-:::{cmake:variable} ENABLE_PADDLE
+:::\{cmake:variable} ENABLE_PADDLE
 
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
@@ -475,7 +475,7 @@ If {cmake:variable}`ENABLE_TENSORFLOW` is `OFF`, the TensorFlow C library is use
 
 :::
 
-:::{cmake:variable} TENSORFLOW_ROOT
+:::\{cmake:variable} TENSORFLOW_ROOT
 
 **Type**: `PATH`
 
@@ -483,7 +483,7 @@ If {cmake:variable}`ENABLE_TENSORFLOW` is `OFF`, the TensorFlow C library is use
 
 :::
 
-:::{cmake:variable} PADDLE_INFERENCE_DIR
+:::\{cmake:variable} PADDLE_INFERENCE_DIR
 
 **Type**: `PATH`
 
@@ -491,7 +491,7 @@ If {cmake:variable}`ENABLE_TENSORFLOW` is `OFF`, the TensorFlow C library is use
 
 :::
 
-:::{cmake:variable} CMAKE_INSTALL_PREFIX
+:::\{cmake:variable} CMAKE_INSTALL_PREFIX
 
 **Type**: `PATH`
 
@@ -500,7 +500,7 @@ See also [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAK
 
 :::
 
-:::{cmake:variable} USE_CUDA_TOOLKIT
+:::\{cmake:variable} USE_CUDA_TOOLKIT
 
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
@@ -508,7 +508,7 @@ If `TRUE`, Build GPU support with CUDA toolkit.
 
 :::
 
-:::{cmake:variable} CUDAToolkit_ROOT
+:::\{cmake:variable} CUDAToolkit_ROOT
 
 **Type**: `PATH`, **Default**: [Search automatically](https://cmake.org/cmake/help/latest/module/FindCUDAToolkit.html)
 
@@ -517,7 +517,7 @@ See also [CMake documentation](https://cmake.org/cmake/help/latest/module/FindCU
 
 :::
 
-:::{cmake:variable} USE_ROCM_TOOLKIT
+:::\{cmake:variable} USE_ROCM_TOOLKIT
 
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
@@ -525,7 +525,7 @@ If `TRUE`, Build GPU support with ROCM toolkit.
 
 :::
 
-:::{cmake:variable} CMAKE_HIP_COMPILER_ROCM_ROOT
+:::\{cmake:variable} CMAKE_HIP_COMPILER_ROCM_ROOT
 
 **Type**: `PATH`, **Default**: [Search automatically](https://rocm.docs.amd.com/en/latest/conceptual/cmake-packages.html)
 
@@ -534,7 +534,7 @@ See also [ROCm documentation](https://rocm.docs.amd.com/en/latest/conceptual/cma
 
 :::
 
-:::{cmake:variable} LAMMPS_SOURCE_ROOT
+:::\{cmake:variable} LAMMPS_SOURCE_ROOT
 
 **Type**: `PATH`
 
@@ -545,7 +545,7 @@ If not assigned, the plugin mode will not be enabled.
 
 :::
 
-:::{cmake:variable} USE_TF_PYTHON_LIBS
+:::\{cmake:variable} USE_TF_PYTHON_LIBS
 
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
@@ -554,7 +554,7 @@ There's no need for building TensorFlow's C++ interface.
 
 :::
 
-:::{cmake:variable} USE_PT_PYTHON_LIBS
+:::\{cmake:variable} USE_PT_PYTHON_LIBS
 
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
@@ -563,7 +563,7 @@ There's no need for downloading PyTorch's C++ libraries.
 
 :::
 
-:::{cmake:variable} ENABLE_NATIVE_OPTIMIZATION
+:::\{cmake:variable} ENABLE_NATIVE_OPTIMIZATION
 
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
@@ -573,7 +573,8 @@ Do not enable it if generated code will run on different CPUs.
 :::
 
 <!-- prettier-ignore -->
-:::{cmake:variable} CMAKE_<LANG>_FLAGS
+
+:::\{cmake:variable} CMAKE\_<LANG>\_FLAGS
 
 (`<LANG>`=`CXX`, `CUDA` or `HIP`)
 
@@ -584,7 +585,7 @@ See also [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAK
 
 :::
 
----
+______________________________________________________________________
 
 If the CMake has been executed successfully, then run the following make commands to build the package:
 

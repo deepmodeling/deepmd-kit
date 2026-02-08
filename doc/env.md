@@ -1,12 +1,12 @@
 # Runtime environment variables
 
-:::{note}
+:::\{note}
 For build-time environment variables, see [Install from source code](./install/install-from-source.md).
 :::
 
 ## All interfaces
 
-:::{envvar} DP_INTER_OP_PARALLELISM_THREADS
+:::\{envvar} DP_INTER_OP_PARALLELISM_THREADS
 
 **Alias**: `TF_INTER_OP_PARALLELISM_THREADS`
 **Default**: `0`
@@ -15,7 +15,7 @@ Control parallelism within TensorFlow (when TensorFlow is built against Eigen) a
 See [How to control the parallelism of a job](./troubleshooting/howtoset_num_nodes.md) for details.
 :::
 
-:::{envvar} DP_INTRA_OP_PARALLELISM_THREADS
+:::\{envvar} DP_INTRA_OP_PARALLELISM_THREADS
 
 **Alias**: `TF_INTRA_OP_PARALLELISM_THREADS`\*\*
 **Default**: `0`
@@ -35,42 +35,42 @@ See [How to control the parallelism of a job](./troubleshooting/howtoset_num_nod
 
 ## Python interface only
 
-:::{envvar} DP_INTERFACE_PREC
+:::\{envvar} DP_INTERFACE_PREC
 
 **Choices**: `high`, `low`; **Default**: `high`
 
 Control high (double) or low (float) precision of training.
 :::
 
-:::{envvar} DP_AUTO_PARALLELIZATION
+:::\{envvar} DP_AUTO_PARALLELIZATION
 
 **Choices**: `0`, `1`; **Default**: `0`
 
 {{ tensorflow_icon }} Enable auto parallelization for CPU operators.
 :::
 
-:::{envvar} DP_JIT
+:::\{envvar} DP_JIT
 
 **Choices**: `0`, `1`; **Default**: `0`
 
 {{ tensorflow_icon }} Enable JIT. Note that this option may either improve or decrease the performance. Requires TensorFlow to support JIT.
 :::
 
-:::{envvar} DP_INFER_BATCH_SIZE
+:::\{envvar} DP_INFER_BATCH_SIZE
 
 **Default**: `1024` on CPUs and as maximum as possible until out-of-memory on GPUs
 
 Inference batch size, calculated by multiplying the number of frames with the number of atoms.
 :::
 
-:::{envvar} DP_BACKEND
+:::\{envvar} DP_BACKEND
 
 **Default**: `tensorflow`
 
 Default backend.
 :::
 
-:::{envvar} NUM_WORKERS
+:::\{envvar} NUM_WORKERS
 
 **Default**: 4 or the number of cores (whichever is smaller)
 
@@ -83,14 +83,14 @@ See [PyTorch documentation](https://pytorch.org/docs/stable/data.html) for detai
 
 These environment variables also apply to third-party programs using the C++ interface, such as [LAMMPS](./third-party/lammps-command.md).
 
-:::{envvar} DP_PLUGIN_PATH
+:::\{envvar} DP_PLUGIN_PATH
 
 **Type**: List of paths, split by `:` on Unix and `;` on Windows
 
 List of customized OP plugin libraries to load, such as `/path/to/plugin1.so:/path/to/plugin2.so` on Linux and `/path/to/plugin1.dll;/path/to/plugin2.dll` on Windows.
 :::
 
-:::{envvar} DP_PROFILER
+:::\{envvar} DP_PROFILER
 
 {{ pytorch_icon }} Enable the built-in PyTorch Kineto profiler for the PyTorch C++ (inference) backend.
 

@@ -1,6 +1,6 @@
 # Descriptor DPA3 {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
 
-:::{note}
+:::\{note}
 **Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
 :::
 
@@ -42,9 +42,9 @@ Note that we set `float32` in all DPA3 models, while `float64` in other models b
 
 ## Requirements of installation from source code {{ pytorch_icon }} {{ paddle_icon }}
 
-::::{tab-set}
+::::\{tab-set}
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::\{tab-item} PyTorch {{ pytorch_icon }}
 
 To run the DPA3 model on LAMMPS via source code installation
 (users can skip this step if using [easy installation](../install/easy-install.md)),
@@ -59,7 +59,7 @@ otherwise the communication between GPU cards falls back to the slower CPU imple
 
 :::
 
-:::{tab-item} Paddle {{ paddle_icon }}
+:::\{tab-item} Paddle {{ paddle_icon }}
 
 The customized OP library for the Python interface can be installed by
 

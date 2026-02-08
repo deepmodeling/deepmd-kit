@@ -1,6 +1,6 @@
 # Introduction {{ tensorflow_icon }}
 
-:::{note}
+:::\{note}
 **Supported backends**: TensorFlow {{ tensorflow_icon }}
 :::
 
@@ -65,10 +65,16 @@ The "nvnmd" section is defined as
   "version": 0,
   "max_nnei": 128,
   "net_size": 128,
-  "sel": [60, 60],
+  "sel": [
+    60,
+    60
+  ],
   "rcut": 6.0,
   "rcut_smth": 0.5,
-  "type_map": ["Ge", "Te"]
+  "type_map": [
+    "Ge",
+    "Te"
+  ]
 }
 ```
 
@@ -80,15 +86,15 @@ where items are defined as:
 | max_nnei  | the maximum number of neighbors that do not distinguish element types | 128 or 256                                                                   |
 | net_size  | the size of neural network                                            | 128                                                                          |
 | sel       | the number of neighbors                                               | version 0: integer list of lengths 1 to 4 are acceptable; version 1: integer |
-| rcut      | the cutoff radial                                                     | (0, 8.0]                                                                     |
-| rcut_smth | the smooth cutoff parameter                                           | (0, 8.0]                                                                     |
+| rcut      | the cutoff radial                                                     | (0, 8.0\]                                                                    |
+| rcut_smth | the smooth cutoff parameter                                           | (0, 8.0\]                                                                    |
 | type_map  | mapping atom type to the name (str) of the type                       | string list, optional                                                        |
 
 Multiple versions of the nvnmd model correspond to different network structures. `nvnmd-v0` and `nvnmd-v1` differ in the following ways:
 
 1. `nvnmd-v0` and `nvnmd-v1` use the `se_a` descriptor and `se_atten` descriptor, respectively
-2. `nvnmd-v0` has 1 set of parameters for each element and supports up to 4 element types. `nvnmd-v1` shares 1 set of parameters for each element and supports up to 31 types.
-3. `nvnmd-v0` distinguishes between neighboring atoms, so `sel` is a list of integers. `nvnmd-v1` does not distinguish between neighboring atoms, so `sel` is an integer.
+1. `nvnmd-v0` has 1 set of parameters for each element and supports up to 4 element types. `nvnmd-v1` shares 1 set of parameters for each element and supports up to 31 types.
+1. `nvnmd-v0` distinguishes between neighboring atoms, so `sel` is a list of integers. `nvnmd-v1` does not distinguish between neighboring atoms, so `sel` is an integer.
 
 ### learning_rate
 
@@ -97,20 +103,20 @@ The "learning_rate" section is defined as
 ```json
 {
   "type": "exp",
-  "start_lr": 1e-3,
-  "stop_lr": 3e-8,
+  "start_lr": 0.001,
+  "stop_lr": 3e-08,
   "decay_steps": 5000
 }
 ```
 
 where items are defined as:
 
-| Item        | Mean                                                             | Optional Value         |
-| ----------- | ---------------------------------------------------------------- | ---------------------- |
-| type        | learning rate variant type                                       | exp                    |
-| start_lr    | the learning rate at the beginning of the training               | a positive real number |
-| stop_lr     | the desired learning rate at the end of the training             | a positive real number |
-| decay_stops | the learning rate is decaying every {decay_stops} training steps | a positive integer     |
+| Item        | Mean                                                              | Optional Value         |
+| ----------- | ----------------------------------------------------------------- | ---------------------- |
+| type        | learning rate variant type                                        | exp                    |
+| start_lr    | the learning rate at the beginning of the training                | a positive real number |
+| stop_lr     | the desired learning rate at the end of the training              | a positive real number |
+| decay_stops | the learning rate is decaying every \{decay_stops} training steps | a positive integer     |
 
 ### loss
 
@@ -152,8 +158,16 @@ The "training" section is defined as
   "save_ckpt": "model.ckpt",
   "save_freq": 10000,
   "training_data": {
-    "systems": ["system1_path", "system2_path", "..."],
-    "batch_size": ["batch_size_of_system1", "batch_size_of_system2", "..."]
+    "systems": [
+      "system1_path",
+      "system2_path",
+      "..."
+    ],
+    "batch_size": [
+      "batch_size_of_system1",
+      "batch_size_of_system2",
+      "..."
+    ]
   }
 }
 ```
@@ -164,7 +178,7 @@ where items are defined as:
 | ---------- | --------------------------------------------------- | ------------------ |
 | seed       | the random seed                                     | a integer          |
 | stop_batch | the total training steps                            | a positive integer |
-| numb_test  | the accuracy is test by using {numb_test} sample    | a positive integer |
+| numb_test  | the accuracy is test by using \{numb_test} sample   | a positive integer |
 | disp_file  | the log file where the training message display     | a string           |
 | disp_freq  | display frequency                                   | a positive integer |
 | save_ckpt  | path prefix of check point files                    | a string           |

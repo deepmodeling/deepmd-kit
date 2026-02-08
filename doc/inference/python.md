@@ -1,6 +1,6 @@
 # Python interface
 
-:::{note}
+:::\{note}
 See [Environment variables](../env.md) for the runtime environment variables.
 :::
 
@@ -53,7 +53,7 @@ Otherwise, TensorFlow or PyTorch will never release the memory, and this may lea
 
 ## External neighbor list algorithm {{ tensorflow_icon }}
 
-:::{note}
+:::\{note}
 **Supported backends**: TensorFlow {{ tensorflow_icon }}
 :::
 

@@ -1,6 +1,6 @@
 # Install from pre-compiled C library {{ tensorflow_icon }} {{ jax_icon }}
 
-:::{note}
+:::\{note}
 **Supported backends**: TensorFlow {{ tensorflow_icon }}, JAX {{ jax_icon }}
 :::
 
@@ -30,7 +30,7 @@ make install
 Then the i-PI driver `dp_ipi` will be built and installed.
 One can also follow the manual [Install LAMMPS](./install-lammps.md) and/or [Install GROMACS](./install-gromacs.md).
 
-:::{cmake:variable} DEEPMD_C_ROOT
+:::\{cmake:variable} DEEPMD_C_ROOT
 
 **Type**: `Path`
 

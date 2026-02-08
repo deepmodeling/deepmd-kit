@@ -4,12 +4,12 @@ There are various easy methods to install DeePMD-kit. Choose one that you prefer
 
 After your easy installation, DeePMD-kit (`dp`) and LAMMPS (`lmp`) will be available to execute. You can try `dp -h` and `lmp -h` to see the help. `mpirun` is also available considering you may want to train models or run LAMMPS in parallel.
 
-:::{note}
+:::\{note}
 Note: The off-line packages and conda packages require the [GNU C Library](https://www.gnu.org/software/libc/) 2.17 or above. The GPU version requires [compatible NVIDIA driver](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#minor-version-compatibility) to be installed in advance. It is possible to force conda to [override detection](https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-virtual.html#overriding-detected-packages) when installation, but these requirements are still necessary during runtime.
 You can refer to [DeepModeling conda FAQ](https://docs.deepmodeling.com/faq/conda.html) for more information.
 :::
 
-:::{note}
+:::\{note}
 Python 3.10 or above is required for Python interface.
 :::
 
@@ -57,8 +57,8 @@ Read [conda-forge FAQ](https://conda-forge.org/docs/user/tipsandtricks.html#inst
 
 ### Official channel (deprecated)
 
-::::{danger}
-:::{deprecated} 3.0.0
+::::\{danger}
+:::\{deprecated} 3.0.0
 The official channel has been deprecated since 3.0.0, due to the challenging work of building dependencies for [multiple backends](../backend.md).
 Old packages will still be available at https://conda.deepmodeling.com.
 Maintainers will build packages in the conda-forge organization together with other conda-forge members.
@@ -85,13 +85,13 @@ docker pull ghcr.io/deepmodeling/deepmd-kit:2.2.8_cuda12.0_gpu
 
 [Create a new environment](https://docs.deepmodeling.com/faq/conda.html#how-to-create-a-new-conda-pip-environment), and then execute the following command:
 
-:::::::{tab-set}
+:::::::\{tab-set}
 
-::::::{tab-item} TensorFlow {{ tensorflow_icon }}
+::::::\{tab-item} TensorFlow {{ tensorflow_icon }}
 
-:::::{tab-set}
+:::::\{tab-set}
 
-::::{tab-item} CUDA 12
+::::\{tab-item} CUDA 12
 
 ```bash
 pip install deepmd-kit[gpu,cu12]
@@ -101,7 +101,7 @@ pip install deepmd-kit[gpu,cu12]
 
 ::::
 
-::::{tab-item} CPU
+::::\{tab-item} CPU
 
 ```bash
 pip install deepmd-kit[cpu]
@@ -113,11 +113,11 @@ pip install deepmd-kit[cpu]
 
 ::::::
 
-::::::{tab-item} PyTorch {{ pytorch_icon }}
+::::::\{tab-item} PyTorch {{ pytorch_icon }}
 
-:::::{tab-set}
+:::::\{tab-set}
 
-::::{tab-item} CUDA 12
+::::\{tab-item} CUDA 12
 
 ```bash
 pip install deepmd-kit[torch]
@@ -125,7 +125,7 @@ pip install deepmd-kit[torch]
 
 ::::
 
-::::{tab-item} CPU
+::::\{tab-item} CPU
 
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cpu
@@ -138,11 +138,11 @@ pip install deepmd-kit
 
 ::::::
 
-::::::{tab-item} JAX {{ jax_icon }}
+::::::\{tab-item} JAX {{ jax_icon }}
 
-:::::{tab-set}
+:::::\{tab-set}
 
-::::{tab-item} CUDA 12
+::::\{tab-item} CUDA 12
 
 ```bash
 pip install deepmd-kit[jax] jax[cuda12]
@@ -150,7 +150,7 @@ pip install deepmd-kit[jax] jax[cuda12]
 
 ::::
 
-::::{tab-item} CPU
+::::\{tab-item} CPU
 
 ```bash
 pip install deepmd-kit[jax]
@@ -166,11 +166,11 @@ Switch to the TensorFlow {{ tensorflow_icon }} tab for more information.
 
 ::::::
 
-::::::{tab-item} Paddle {{ paddle_icon }}
+::::::\{tab-item} Paddle {{ paddle_icon }}
 
-:::::{tab-set}
+:::::\{tab-set}
 
-::::{tab-item} CUDA 12.6
+::::\{tab-item} CUDA 12.6
 
 ```bash
 # release version
@@ -182,7 +182,7 @@ pip install deepmd-kit
 
 ::::
 
-::::{tab-item} CPU
+::::\{tab-item} CPU
 
 ```bash
 # release version
@@ -202,7 +202,7 @@ pip install deepmd-kit
 
 The supported platform includes Linux x86-64 and aarch64 with GNU C Library 2.28 or above, macOS x86-64 and arm64, and Windows x86-64.
 
-:::{Warning}
+:::\{Warning}
 If your platform is not supported, or you want to build against the installed backends, or you want to enable ROCM support, please [build from source](install-from-source.md).
 :::
 
