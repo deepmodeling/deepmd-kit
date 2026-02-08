@@ -68,6 +68,19 @@ class TestXpScatterSumConsistent(unittest.TestCase):
         result = xp_scatter_sum(input_jax, self.dim, index_jax, src_jax)
         np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
 
+    @unittest.skipUnless(
+        INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed"
+    )
+    @unittest.skipUnless(
+        sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
+    )
+    def test_array_api_strict_consistent_with_ref(self) -> None:
+        input_xp = xp.asarray(self.input_np)
+        index_xp = xp.asarray(self.index_np)
+        src_xp = xp.asarray(self.src_np)
+        result = xp_scatter_sum(input_xp, self.dim, index_xp, src_xp)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
+
 
 class TestXpAddAtConsistent(unittest.TestCase):
     """Test xp_add_at consistency across backends."""
@@ -141,6 +154,17 @@ class TestXpBincountConsistent(unittest.TestCase):
         result = xp_bincount(x_jax)
         np.testing.assert_equal(self.ref, to_numpy_array(result))
 
+    @unittest.skipUnless(
+        INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed"
+    )
+    @unittest.skipUnless(
+        sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
+    )
+    def test_array_api_strict_consistent_with_ref(self) -> None:
+        x_xp = xp.asarray(self.x_np)
+        result = xp_bincount(x_xp)
+        np.testing.assert_equal(self.ref, to_numpy_array(result))
+
 
 class TestXpBincountWithWeightsConsistent(unittest.TestCase):
     """Test xp_bincount with weights consistency across backends."""
@@ -168,6 +192,18 @@ class TestXpBincountWithWeightsConsistent(unittest.TestCase):
         result = xp_bincount(x_jax, weights=weights_jax)
         np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
 
+    @unittest.skipUnless(
+        INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed"
+    )
+    @unittest.skipUnless(
+        sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
+    )
+    def test_array_api_strict_consistent_with_ref(self) -> None:
+        x_xp = xp.asarray(self.x_np)
+        weights_xp = xp.asarray(self.weights_np)
+        result = xp_bincount(x_xp, weights=weights_xp)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
+
 
 class TestXpBincountWithMinlengthConsistent(unittest.TestCase):
     """Test xp_bincount with minlength consistency across backends."""
@@ -191,6 +227,17 @@ class TestXpBincountWithMinlengthConsistent(unittest.TestCase):
     def test_jax_consistent_with_ref(self) -> None:
         x_jax = jnp.array(self.x_np)
         result = xp_bincount(x_jax, minlength=self.minlength)
+        np.testing.assert_equal(self.ref, to_numpy_array(result))
+
+    @unittest.skipUnless(
+        INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed"
+    )
+    @unittest.skipUnless(
+        sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
+    )
+    def test_array_api_strict_consistent_with_ref(self) -> None:
+        x_xp = xp.asarray(self.x_np)
+        result = xp_bincount(x_xp, minlength=self.minlength)
         np.testing.assert_equal(self.ref, to_numpy_array(result))
 
 

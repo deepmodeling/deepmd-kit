@@ -87,25 +87,38 @@ def xp_take_along_axis(arr: Array, indices: Array, axis: int) -> Array:
 
 
 def xp_scatter_sum(input: Array, dim: int, index: Array, src: Array) -> Array:
-    """Reduces all values from the src tensor to the indices specified in the index tensor."""
-    if array_api_compat.is_jax_array(input):
-        from deepmd.jax.common import (
-            scatter_sum,
-        )
+    """Reduces all values from the src tensor to the indices specified in the index tensor.
 
-        return scatter_sum(
-            input,
-            dim,
-            index,
-            src,
-        )
-    elif array_api_compat.is_torch_array(input):
-        # PyTorch: use scatter_add (non-mutating version)
+    This function is similar to PyTorch's scatter_add and JAX's scatter_sum.
+    It adds values from src to input at positions specified by index along the given dimension.
+    """
+    if array_api_compat.is_torch_array(input):
+        # PyTorch: use scatter_add (non-mutating version) for better performance
         import torch
 
         return torch.scatter_add(input, dim, index, src)
-    else:
-        raise NotImplementedError("Only JAX and PyTorch arrays are supported.")
+
+    # Generic array_api implementation (works for JAX, NumPy, array-api-strict, etc.)
+    xp = array_api_compat.array_namespace(input)
+
+    # Create flat index array matching input shape
+    idx = xp.arange(input.size, dtype=xp.int64)
+    idx = xp.reshape(idx, input.shape)
+
+    # Get flat indices where we want to add values
+    new_idx = xp_take_along_axis(idx, index, axis=dim)
+    new_idx = xp.reshape(new_idx, (-1,))
+
+    # Flatten arrays
+    shape = input.shape
+    input_flat = xp.reshape(input, (-1,))
+    src_flat = xp.reshape(src, (-1,))
+
+    # Add values at the specified indices
+    result = xp_add_at(input_flat, new_idx, src_flat)
+
+    # Reshape back to original shape
+    return xp.reshape(result, shape)
 
 
 def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
