@@ -1,6 +1,6 @@
 # Run path-integral MD with i-PI
 
-:::\{note}
+:::{note}
 See [Environment variables](../env.md) for the runtime environment variables.
 :::
 

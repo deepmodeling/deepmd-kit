@@ -1,6 +1,6 @@
 # Deep Potential - Range Correction (DPRc) {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
 
-:::\{note}
+:::{note}
 **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 :::
 
@@ -44,6 +44,8 @@ The fitting network is revised to remove energy bias from MM atoms:
 where $\mathbf{0}$ is a zero matrix.
 It is worth mentioning that usage of DPRc is not limited to its initial design for QM/MM correction and can be expanded to any similar interaction.[^1]
 
+[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
+
 See the [JCTC paper](https://doi.org/10.1021/acs.jctc.1c00201) for details.
 
 ## Training data
@@ -66,9 +68,9 @@ In a DPRc model, QM atoms and MM atoms have different atom types. Assuming we ha
 
 As described in the paper, the DPRc model only corrects $E_\text{QM}$ and $E_\text{QM/MM}$ within the cutoff, so we use a hybrid descriptor to describe them separately:
 
-::::\{tab-set}
+::::{tab-set}
 
-:::\{tab-item} TensorFlow {{ tensorflow_icon }}
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 ```json
 "descriptor" :{
@@ -101,7 +103,7 @@ As described in the paper, the DPRc model only corrects $E_\text{QM}$ and $E_\te
 
 :::
 
-:::\{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch {{ pytorch_icon }}
 
 ```json
 "descriptor" :{
@@ -179,7 +181,7 @@ The DPRc model has the best practices with the [AMBER](../third-party/out-of-dee
 
 ## Pairwise DPRc
 
-:::\{note}
+:::{note}
 **Supported backends**: TensorFlow {{ tensorflow_icon }}
 :::
 
@@ -198,18 +200,9 @@ It is noted that the [`se_atten` descriptor](./train-se-atten.md) should be used
 {
   "model": {
     "type": "pairwise_dprc",
-    "type_map": [
-      "C",
-      "P",
-      "O",
-      "H",
-      "OW",
-      "HW"
-    ],
+    "type_map": ["C", "P", "O", "H", "OW", "HW"],
     "type_embedding": {
-      "neuron": [
-        8
-      ],
+      "neuron": [8],
       "precision": "float32"
     },
     "qm_model": {
@@ -219,11 +212,7 @@ It is noted that the [`se_atten` descriptor](./train-se-atten.md) should be used
         "rcut_smth": 0.5,
         "rcut": 9.0,
         "attn_layer": 0,
-        "neuron": [
-          25,
-          50,
-          100
-        ],
+        "neuron": [25, 50, 100],
         "resnet_dt": false,
         "axis_neuron": 12,
         "precision": "float32",
@@ -231,21 +220,10 @@ It is noted that the [`se_atten` descriptor](./train-se-atten.md) should be used
       },
       "fitting_net": {
         "type": "ener",
-        "neuron": [
-          240,
-          240,
-          240
-        ],
+        "neuron": [240, 240, 240],
         "resnet_dt": true,
         "precision": "float32",
-        "atom_ener": [
-          null,
-          null,
-          null,
-          null,
-          0.0,
-          0.0
-        ],
+        "atom_ener": [null, null, null, null, 0.0, 0.0],
         "seed": 1
       }
     },
@@ -256,89 +234,35 @@ It is noted that the [`se_atten` descriptor](./train-se-atten.md) should be used
         "rcut_smth": 0.5,
         "rcut": 6.0,
         "attn_layer": 0,
-        "neuron": [
-          25,
-          50,
-          100
-        ],
+        "neuron": [25, 50, 100],
         "resnet_dt": false,
         "axis_neuron": 12,
         "set_davg_zero": true,
         "exclude_types": [
-          [
-            0,
-            0
-          ],
-          [
-            0,
-            1
-          ],
-          [
-            0,
-            2
-          ],
-          [
-            0,
-            3
-          ],
-          [
-            1,
-            1
-          ],
-          [
-            1,
-            2
-          ],
-          [
-            1,
-            3
-          ],
-          [
-            2,
-            2
-          ],
-          [
-            2,
-            3
-          ],
-          [
-            3,
-            3
-          ],
-          [
-            4,
-            4
-          ],
-          [
-            4,
-            5
-          ],
-          [
-            5,
-            5
-          ]
+          [0, 0],
+          [0, 1],
+          [0, 2],
+          [0, 3],
+          [1, 1],
+          [1, 2],
+          [1, 3],
+          [2, 2],
+          [2, 3],
+          [3, 3],
+          [4, 4],
+          [4, 5],
+          [5, 5]
         ],
         "precision": "float32",
         "seed": 1
       },
       "fitting_net": {
         "type": "ener",
-        "neuron": [
-          240,
-          240,
-          240
-        ],
+        "neuron": [240, 240, 240],
         "resnet_dt": true,
         "seed": 1,
         "precision": "float32",
-        "atom_ener": [
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ]
+        "atom_ener": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
       }
     }
   }
@@ -349,5 +273,3 @@ The pairwise model needs information for MM residues.
 The model uses [`aparam`](../data/system.md) with the shape of `nframes x natoms` to get the residue index.
 The QM residue should always use `0` as the index.
 For example, `0 0 0 1 1 1 2 2 2` means these 9 atoms are grouped into one QM residue and two MM residues.
-
-[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).

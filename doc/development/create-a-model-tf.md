@@ -5,9 +5,9 @@ If you'd like to create a new model that isn't covered by the existing DeePMD-ki
 To incorporate your custom model you'll need to:
 
 1. Register and implement new components (e.g. descriptor) in a Python file. You may also want to register new TensorFlow OPs if necessary.
-1. Register new arguments for user inputs.
-1. Package new codes into a Python package.
-1. Test new models.
+2. Register new arguments for user inputs.
+3. Package new codes into a Python package.
+4. Test new models.
 
 ## Design a new component
 

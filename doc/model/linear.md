@@ -1,6 +1,6 @@
 ## Linear model {{ tensorflow_icon }} {{ pytorch_icon }}
 
-:::\{note}
+:::{note}
 **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
 :::
 

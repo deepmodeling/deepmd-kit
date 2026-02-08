@@ -3,9 +3,9 @@
 The trained neural network is extracted from a checkpoint and dumped into a model file. This process is called "freezing" a model.
 To freeze a model, typically one does
 
-::::\{tab-set}
+::::{tab-set}
 
-:::\{tab-item} TensorFlow {{ tensorflow_icon }}
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 ```bash
 $ dp freeze -o model.pb
@@ -16,7 +16,7 @@ The idea and part of our code are from [Morgan](https://blog.metaflow.fr/tensorf
 
 :::
 
-:::\{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch {{ pytorch_icon }}
 
 ```bash
 $ dp --pt freeze -o model.pth
@@ -35,7 +35,7 @@ The output model is called `model_branch1.pth`, which is the specifically frozen
 
 :::
 
-:::\{tab-item} Paddle {{ paddle_icon }}
+:::{tab-item} Paddle {{ paddle_icon }}
 
 ```bash
 $ dp --pd freeze -o model

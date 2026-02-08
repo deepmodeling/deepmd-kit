@@ -1,6 +1,6 @@
 # Change the model output bias for trained model {{ tensorflow_icon }} {{ pytorch_icon }}
 
-:::\{note}
+:::{note}
 **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
 :::
 
@@ -12,9 +12,9 @@ or manually setting the output bias.
 
 The `dp change-bias` command supports the following methods for adjusting the bias:
 
-::::\{tab-set}
+::::{tab-set}
 
-:::\{tab-item} TensorFlow Backend {{ tensorflow_icon }}
+:::{tab-item} TensorFlow Backend {{ tensorflow_icon }}
 
 **Changing bias using provided systems for trained checkpoint:**
 
@@ -30,7 +30,7 @@ dp --tf change-bias model.ckpt -b -92.523 -187.66 -o model_updated.pb
 
 :::
 
-:::\{tab-item} PyTorch Backend {{ pytorch_icon }}
+:::{tab-item} PyTorch Backend {{ pytorch_icon }}
 
 **Changing bias using provided systems for trained `.pt`/`.pth` models:**
 

@@ -1,6 +1,6 @@
 # C/C++ interface
 
-:::\{note}
+:::{note}
 See [Environment variables](../env.md) for the runtime environment variables.
 :::
 

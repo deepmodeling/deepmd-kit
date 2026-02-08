@@ -6,7 +6,7 @@ After DeePMD-kit C/C++ library is installed, one can find DeePMD-kit from CMake:
 find_package(DeePMD REQUIRED)
 ```
 
-Note that you may need to add \$\{deepmd_root} to the cached CMake variable `CMAKE_PREFIX_PATH`.
+Note that you may need to add ${deepmd_root} to the cached CMake variable `CMAKE_PREFIX_PATH`.
 
 To link against the C interface library, using
 

@@ -22,7 +22,7 @@ pip install -U --pre deepmd-kit[gpu,cu12,lmp,torch] --extra-index-url https://de
 
 ## Download pre-compiled C Library {{ tensorflow_icon }}
 
-:::\{note}
+:::{note}
 **Supported backends**: TensorFlow {{ tensorflow_icon }}
 :::
 

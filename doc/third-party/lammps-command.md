@@ -1,10 +1,10 @@
 # Run MD with LAMMPS
 
-:::\{note}
+:::{note}
 See [Environment variables](../env.md) for the runtime environment variables.
 :::
 
-:::\{note}
+:::{note}
 Each MPI rank can only use at most one GPU card.
 See [How to control the parallelism of a job](../troubleshooting/howtoset_num_nodes.md) for details.
 :::
@@ -50,7 +50,6 @@ pair_style deepmd models ... keyword value ...
   If multiple models are provided, then only the first model serves to provide energy and force prediction for each timestep of molecular dynamics,
   and the model deviation will be computed among all models every `out_freq` timesteps.
 - keyword = _out_file_ or _out_freq_ or _fparam_ or _fparam_from_compute_ or _aparam_from_compute_ or _atomic_ or _relative_ or _relative_v_ or _aparam_ or _ttm_
-
 <pre>
     <i>out_file</i> value = filename
         filename = The file name for the model deviation output. Default is model_devi.out
@@ -92,7 +91,7 @@ compute    1 all ke/atom
 
 ### Description
 
-Evaluate the interaction of the system by using [Deep Potential][dp] or [Deep Potential Smooth Edition][dp-se]. It is noticed that deep potential is not a "pairwise" interaction, but a multi-body interaction.
+Evaluate the interaction of the system by using [Deep Potential][DP] or [Deep Potential Smooth Edition][DP-SE]. It is noticed that deep potential is not a "pairwise" interaction, but a multi-body interaction.
 
 This pair style takes the deep potential defined in a model file that usually has .pb/.pth/.savedmodel extensions. The model can be trained and frozen from multiple backends by package [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit), which can have either double or single float precision interface.
 
@@ -138,7 +137,7 @@ pair_style deepspin models ... keyword value ...
   and the model deviation will be computed among all models every `out_freq` timesteps.
 - keyword = _out_file_ or _out_freq_ or _fparam_ or _fparam_from_compute_ or _aparam_from_compute_ or _atomic_ or _relative_ or _aparam_ or _ttm_
 
-:::\{note}
+:::{note}
 Please note that the virial and atomic virial are not currently supported in spin models.
 :::
 
@@ -181,7 +180,7 @@ compute    1 all ke/atom
 
 ### Description
 
-Evaluate the interaction of the system with spin by using [DeepSPIN][dpspin] models. It is noticed that deep spin model is not a "pairwise" interaction, but a multi-body interaction.
+Evaluate the interaction of the system with spin by using [DeepSPIN][DPSPIN] models. It is noticed that deep spin model is not a "pairwise" interaction, but a multi-body interaction.
 
 This pair style takes the deep spin model defined in a model file that usually has .pb/.pth/.savedmodel extensions. The model can be trained and frozen from multiple backends by package [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit), which can have either double or single float precision interface.
 
@@ -190,7 +189,7 @@ The unit follows [LAMMPS units](#units) and the [scale factor](https://docs.lamm
 
 Other settings and output for this pair style is the same as `deepmd` pair style, please see the detailed description [above](#pair_style-deepmd).
 
-:::\{note}
+:::{note}
 Please note that the virial and atomic virial are not currently supported in spin models.
 :::
 
@@ -261,7 +260,7 @@ compute ID group-ID centroid/stress/atom NULL virial
 
 see [LAMMPS doc page](https://docs.lammps.org/compute_stress_atom.html#thompson2) for more details on the meaning of the keywords.
 
-:::\{versionchanged} v2.2.3
+:::{versionchanged} v2.2.3
 v2.2.2 or previous versions passed per-atom stress (`cvatom`) with the per-atom pressure tensor, which is inconsistent with [LAMMPS's definition](https://docs.lammps.org/compute_stress_atom.html). LAMMPS defines per-atom stress as the negative of the per-atom pressure tensor. Such behavior is corrected in v2.2.3.
 :::
 
@@ -305,9 +304,13 @@ compute flux all heat/flux ke pe stress
 
 If you use these features please cite [D. Tisi, L. Zhang, R. Bertossa, H. Wang, R. Car, S. Baroni - arXiv preprint arXiv:2108.10850, 2021](https://arxiv.org/abs/2108.10850)
 
+[DP]: https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.143001
+[DP-SE]: https://dl.acm.org/doi/10.5555/3327345.3327356
+[DPSPIN]: https://doi.org/10.1103/PhysRevB.110.064427
+
 ### D3 dispersion
 
-:::\{note}
+:::{note}
 Requires LAMMPS version 4Feb2025 or newer.
 :::
 
@@ -319,7 +322,3 @@ pair_style hybrid/overlay deepmd water.pb dispersion/d3 original pbe0 30.0 20.0
 pair_coeff * * deepmd O H
 pair_coeff * * dispersion/d3 O H
 ```
-
-[dp]: https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.143001
-[dp-se]: https://dl.acm.org/doi/10.5555/3327345.3327356
-[dpspin]: https://doi.org/10.1103/PhysRevB.110.064427

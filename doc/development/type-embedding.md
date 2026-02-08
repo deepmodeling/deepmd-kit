@@ -66,7 +66,7 @@ In trainer.py, it will parse the parameter from the input JSON file. If a `type_
 
 ### model (model/ener.py)
 
-When building the operation graph of the `model` in `model.build`. If a `TypeEmbedNet` is detected, it will build the operation graph of `type embed net`, `embedding net` and `fitting net` by order. The building process of `type embed net` can be found in `TypeEmbedNet.build`, which output the type embedding vector of each atom type (of \[$\text{ntypes} \times \text{nchanl}$\] dimensions). We then save the type embedding vector into `input_dict`, so that they can be fetched later in `embedding net` and `fitting net`.
+When building the operation graph of the `model` in `model.build`. If a `TypeEmbedNet` is detected, it will build the operation graph of `type embed net`, `embedding net` and `fitting net` by order. The building process of `type embed net` can be found in `TypeEmbedNet.build`, which output the type embedding vector of each atom type (of [$\text{ntypes} \times \text{nchanl}$] dimensions). We then save the type embedding vector into `input_dict`, so that they can be fetched later in `embedding net` and `fitting net`.
 
 ### embedding net (descriptor/se\*.py)
 
@@ -84,8 +84,8 @@ build -> _pass_filter -> _filter -> _filter_lower
 
 ### fitting net (fit/ener.py)
 
-In `fitting net`, it takes the descriptor vector as input, whose dimension is \[natoms, $M_1\times M_2$\]. Because we need to involve information on the centric atom in this step, we need to generate a matrix named `atype_embed` (of dim [natoms, nchanl]), in which each row is the type embedding vector of the specific centric atom. The input is sorted by type of centric atom, we also know the number of a particular atom type (stored in `natoms[2+i]`), thus we get the type vector of the centric atom. In the build phase of the fitting net, it will check whether type embedding exists in `input_dict` and fetch them. After that, call `embed_atom_type` function to look up the embedding vector for the type vector of the centric atom to obtain `atype_embed`, and concat input with it ([input, atype_embed]). The modified input goes through `fitting` net\` to get predicted energy.
+In `fitting net`, it takes the descriptor vector as input, whose dimension is [natoms, $M_1\times M_2$]. Because we need to involve information on the centric atom in this step, we need to generate a matrix named `atype_embed` (of dim [natoms, nchanl]), in which each row is the type embedding vector of the specific centric atom. The input is sorted by type of centric atom, we also know the number of a particular atom type (stored in `natoms[2+i]`), thus we get the type vector of the centric atom. In the build phase of the fitting net, it will check whether type embedding exists in `input_dict` and fetch them. After that, call `embed_atom_type` function to look up the embedding vector for the type vector of the centric atom to obtain `atype_embed`, and concat input with it ([input, atype_embed]). The modified input goes through `fitting` net` to get predicted energy.
 
-:::\{note}
+:::{note}
 You can't apply the compression method while using atom-type embedding.
 :::

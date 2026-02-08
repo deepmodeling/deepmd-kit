@@ -1,6 +1,6 @@
 # Deep potential long-range (DPLR) {{ tensorflow_icon }}
 
-:::\{note}
+:::{note}
 **Supported backends**: TensorFlow {{ tensorflow_icon }}
 :::
 
@@ -35,6 +35,8 @@ $L$ is the cutoff in Fourier space and $S(m)$, the structure factor, is given by
 
 where $\imath = \sqrt{-1}$ denotes the imaginary unit, $\boldsymbol r_i$ indicates ion coordinates, $q_i$ is the charge of the ion $i$, and $W_n$ is the $n$-th Wannier centroid (WC) which can be obtained from a separated [dipole model](./train-fitting-tensor.md).
 It can be proved that the error in the electrostatic energy introduced by the Gaussian approximations is dominated by a summation of dipole-quadrupole interactions that decay as $r^{-4}$, where $r$ is the distance between the dipole and quadrupole.[^1]
+
+[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
 
 ## Train a deep Wannier model for Wannier centroids
 
@@ -190,11 +192,9 @@ fix ID group-ID style_name keyword value ...
 ```
 
 <!-- See https://github.com/prettier/prettier/issues/16160 -->
-
 <!-- prettier-ignore -->
-
 - ID, group-ID are documented in :doc:`fix <fix>` command
-- style_name = _dplr_
+- style\_name = _dplr_
 - three or more keyword/value pairs may be appended
 
 ```
@@ -265,7 +265,5 @@ If LAMMPS complains that no model file `ener.pb` exists, it can be copied from t
 The MD simulation lasts for only 20 steps. If one runs a longer simulation, it will blow up, because the model is trained with a very limited dataset for very short training steps, thus is of poor quality.
 
 Another restriction that should be noted is that the energies printed at the zero steps are not correct. This is because at the zero steps the position of the WC has not been updated with the DW model. The energies printed in later steps are correct.
-
-[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
 
 [1]: https://arxiv.org/abs/2112.13327

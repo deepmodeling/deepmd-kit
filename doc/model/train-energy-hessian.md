@@ -1,6 +1,6 @@
 # Fit energy Hessian {{ pytorch_icon }}
 
-:::\{note}
+:::{note}
 **Supported backends**: PyTorch {{ pytorch_icon }}
 :::
 
@@ -43,9 +43,9 @@ set.*/hessian.npy
 
 This system contains `Nframes` frames with the same atom number `Natoms`, the total number of elements contained in all frames is `Ntypes`. Most files are the same as those in [standard formats](../data/system.md), here we only list the distinct ones:
 
-| ID      | Property         | Raw file    | Unit   | Shape                               | Description                                             |
-| ------- | ---------------- | ----------- | ------ | ----------------------------------- | ------------------------------------------------------- |
-| hessian | Hessian matrices | hessian.npy | eV/Å^2 | Nframes * (Natoms * 3 * Natoms * 3) | Second-order derivatives of energies w.r.t coordinates. |
+| ID      | Property         | Raw file    | Unit   | Shape                                   | Description                                             |
+| ------- | ---------------- | ----------- | ------ | --------------------------------------- | ------------------------------------------------------- |
+| hessian | Hessian matrices | hessian.npy | eV/Å^2 | Nframes \* (Natoms \* 3 \* Natoms \* 3) | Second-order derivatives of energies w.r.t coordinates. |
 
 Note that the `hessian.npy` should contain the **full** Hessian matrices with shape of `(3Natoms * 3Natoms)` for each frame, rather than the upper or lower triangular matrices with shape of `(3Natoms * (3Natoms + 1) / 2)` for each frame.
 
@@ -53,9 +53,9 @@ Note that the `hessian.npy` should contain the **full** Hessian matrices with sh
 
 There are two approaches to training a Hessian model. The first method involves training the model from scratch using the same command as in the `ener` mode within the PyTorch backend:
 
-::::\{tab-set}
+::::{tab-set}
 
-:::\{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch {{ pytorch_icon }}
 
 ```bash
 dp --pt train input.json
@@ -67,9 +67,9 @@ dp --pt train input.json
 
 The second approach is to train a Hessian model from a pretrained energy model, following the same command as the `finetune` strategy within the PyTorch backend:
 
-::::\{tab-set}
+::::{tab-set}
 
-:::\{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch {{ pytorch_icon }}
 
 ```bash
 dp --pt train input.json --finetune pretrained_energy.pt
@@ -93,15 +93,15 @@ The detailed loss can be found in `lcurve.out`:
 
 ## Test the Model
 
-:::\{warning}
+:::{warning}
 A model trained with Hessian cannot be frozen. If freezing is enforced, the model will be treated as a standard energy model, and the frozen one will no longer be able to output Hessian predictions.
 :::
 
 If one do freeze and test a Hessian model using the commands:
 
-::::\{tab-set}
+::::{tab-set}
 
-:::\{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch {{ pytorch_icon }}
 
 ```bash
 
@@ -123,9 +123,9 @@ ${output_prefix}.v.out   ${output_prefix}.v_peratom.out
 
 If one intends to use the trained model for Hessian predictions, then he/she is supposed to test the model directly without performing a freezing operation:
 
-::::\{tab-set}
+::::{tab-set}
 
-:::\{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch {{ pytorch_icon }}
 
 ```bash
 

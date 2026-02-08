@@ -8,14 +8,14 @@ One should make sure the product of the parallel numbers is less than or equal t
 
 Parallelism for MPI is optional and used for multiple nodes, multiple GPU cards, or sometimes multiple CPU cores.
 
-::::\{tab-set}
+::::{tab-set}
 
-:::\{tab-item} TensorFlow {{ tensorflow_icon }}
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 To enable MPI support for training in the TensorFlow interface, one should [install horovod](../install/install-from-source.md#install-horovod-and-mpi4py) in advance.
 
 :::
-:::\{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch {{ pytorch_icon }}
 
 Multiprocessing support for training in the PyTorch backend is implemented with [torchrun](https://pytorch.org/docs/stable/elastic/run.html).
 
@@ -68,14 +68,14 @@ export OMP_NUM_THREADS=2
 
 There are several other environment variables for OpenMP, such as `KMP_BLOCKTIME`.
 
-::::\{tab-set}
+::::{tab-set}
 
-:::\{tab-item} TensorFlow {{ tensorflow_icon }}
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 See [Intel documentation](https://www.intel.com/content/www/us/en/developer/articles/technical/maximize-tensorflow-performance-on-cpu-considerations-and-recommendations-for-inference.html) for detailed information.
 
 :::
-:::\{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch {{ pytorch_icon }}
 
 See [PyTorch documentation](https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html) for detailed information.
 
@@ -89,9 +89,9 @@ There is no one general parallel configuration that works for all situations, so
 Here are some empirical examples.
 If you wish to use 3 cores of 2 CPUs on one node, you may set the environment variables and run DeePMD-kit as follows:
 
-::::\{tab-set}
+::::{tab-set}
 
-:::\{tab-item} TensorFlow {{ tensorflow_icon }}
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 ```bash
 export OMP_NUM_THREADS=3
@@ -102,7 +102,7 @@ dp --tf train input.json
 
 :::
 
-:::\{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch {{ pytorch_icon }}
 
 ```bash
 export OMP_NUM_THREADS=3

@@ -1,6 +1,6 @@
 # Fit electronic density of states (DOS) {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
-:::\{note}
+:::{note}
 **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
 :::
 
@@ -82,9 +82,9 @@ To prepare the data, we recommend shifting the DOS data by the Fermi level.
 
 The training command is the same as `ener` mode, i.e.
 
-::::\{tab-set}
+::::{tab-set}
 
-:::\{tab-item} TensorFlow {{ tensorflow_icon }}
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 ```bash
 dp --tf train input.json
@@ -92,7 +92,7 @@ dp --tf train input.json
 
 :::
 
-:::\{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch {{ pytorch_icon }}
 
 ```bash
 dp --pt train input.json
@@ -133,9 +133,9 @@ The detailed loss can be found in `lcurve.out`:
 
 In this earlier version, we can use `dp test` to infer the electronic density of state for given frames.
 
-::::\{tab-set}
+::::{tab-set}
 
-:::\{tab-item} TensorFlow {{ tensorflow_icon }}
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 ```bash
 
@@ -146,7 +146,7 @@ dp --tf test -m frozen_model.pb -s ../data/111/$k -d ${output_prefix} -a -n 100
 
 :::
 
-:::\{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch {{ pytorch_icon }}
 
 ```bash
 
