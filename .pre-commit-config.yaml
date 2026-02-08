@@ -53,23 +53,30 @@ repos:
       - id: velin
         args: ["--write"]
         exclude: ^source/3rdparty
-  # Python inside docs
-  - repo: https://github.com/asottile/blacken-docs
-    rev: 1.20.0
+  # markdown
+  - repo: https://github.com/hukkin/mdformat
+    rev: 1.0.0
     hooks:
-      - id: blacken-docs
+    - id: mdformat
+      additional_dependencies:
+      - mdformat-myst==0.3.0
+      - mdformat-ruff==0.1.3
+      - mdformat-web==0.2.0
+      - mdformat-config==0.2.1
+      - mdformat-beautysh==1.0.0
+      - mdformat-gfm-alerts==2.0.0
   # C++
   - repo: https://github.com/pre-commit/mirrors-clang-format
     rev: v21.1.8
     hooks:
       - id: clang-format
         exclude: ^(source/3rdparty|source/lib/src/gpu/cudart/.+\.inc|.+\.ipynb$|.+\.json$)
-  # markdown, yaml, CSS, javascript
+  # yaml, CSS, javascript
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v4.0.0-alpha.8
     hooks:
       - id: prettier
-        types_or: [markdown, yaml, css]
+        types_or: [yaml, css]
         # workflow files cannot be modified by pre-commit.ci
         exclude: ^(source/3rdparty|\.github/workflows|\.clang-format)
   # Shell
