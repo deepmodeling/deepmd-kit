@@ -1,0 +1,100 @@
+name: Ideas and Suggestions
+description: Share ideas for new features, improvements, or enhancements to DeePMD-kit
+labels: ["idea", "enhancement"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Brief summary of your idea or suggestion
+      placeholder: What's your idea for improving DeePMD-kit?
+      value:
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      description: What area does your suggestion relate to?
+      options:
+        - New feature
+        - Performance improvement
+        - User experience enhancement
+        - Documentation improvement
+        - API/Interface improvement
+        - Integration with other tools
+        - Other (specify in description)
+    validations:
+      required: true
+  - type: textarea
+    id: detailed-description
+    attributes:
+      label: Detailed Description
+      description: |
+        Provide a detailed description of your idea or suggestion.
+        Include:
+        - What problem does this solve?
+        - How would this benefit users?
+        - Are there any alternatives you've considered?
+      placeholder: Describe your idea in detail...
+      value:
+    validations:
+      required: true
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case / Example
+      description: |
+        Provide a concrete use case or example of how this feature would be used.
+        If applicable, include:
+        - Example code or configuration
+        - Workflow description
+        - Expected input/output
+      placeholder: |
+        **Example usage:**
+        ```python
+        # How users might use this feature
+        ```
+        
+        **Use case:**
+        This would help users who...
+      value:
+    validations:
+      required: false
+  - type: textarea
+    id: related-work
+    attributes:
+      label: Related Work / References
+      description: |
+        Are there similar features in other tools, papers, or projects that inspired this idea?
+        Include links to relevant resources, publications, or implementations.
+      placeholder: |
+        - Similar feature in [other tool]: [link]
+        - Relevant paper: [citation/link]
+        - Related discussion: [link]
+      value:
+    validations:
+      required: false
+  - type: textarea
+    id: implementation-thoughts
+    attributes:
+      label: Implementation Thoughts
+      description: |
+        If you have ideas about how this might be implemented, share them here.
+        This could include:
+        - Potential approaches
+        - Technical considerations
+        - Whether you'd be interested in contributing to the implementation
+      placeholder: Any thoughts on how this could be implemented...
+      value:
+    validations:
+      required: false
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other information that would be helpful for understanding or evaluating this suggestion.
+      placeholder: Additional details, context, or considerations...
+      value:
+    validations:
+      required: false
