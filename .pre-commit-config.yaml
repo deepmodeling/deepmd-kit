@@ -58,16 +58,16 @@ repos:
   - repo: https://github.com/hukkin/mdformat
     rev: 1.0.0
     hooks:
-    - id: mdformat
-      additional_dependencies:
-      # - mdformat-myst==0.3.0
-      # See https://github.com/executablebooks/mdformat-myst/issues/13
-      - "git+https://github.com/brunobeltran/mdformat-myst@4b3ff3a800e2877b78c11a9f5d713d667b0ecccf#egg=mdformat-myst"
-      - mdformat-ruff==0.1.3
-      - mdformat-web==0.2.0
-      - mdformat-config==0.2.1
-      - mdformat-beautysh==1.0.0
-      - mdformat-gfm-alerts==2.0.0
+      - id: mdformat
+        additional_dependencies:
+          # - mdformat-myst==0.3.0
+          # See https://github.com/executablebooks/mdformat-myst/issues/13
+          - "git+https://github.com/brunobeltran/mdformat-myst@4b3ff3a800e2877b78c11a9f5d713d667b0ecccf#egg=mdformat-myst"
+          - mdformat-ruff==0.1.3
+          - mdformat-web==0.2.0
+          - mdformat-config==0.2.1
+          - mdformat-beautysh==1.0.0
+          - mdformat-gfm-alerts==2.0.0
   # C++
   - repo: https://github.com/pre-commit/mirrors-clang-format
     rev: v21.1.8

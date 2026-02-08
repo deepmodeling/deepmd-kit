@@ -31,9 +31,7 @@ Then the i-PI driver `dp_ipi` will be built and installed.
 One can also follow the manual [Install LAMMPS](./install-lammps.md) and/or [Install GROMACS](./install-gromacs.md).
 
 :::{cmake:variable} DEEPMD_C_ROOT
-
 **Type**: `Path`
 
 Prefix to the pre-compiled C library.
-
 :::
