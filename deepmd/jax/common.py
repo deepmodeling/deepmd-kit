@@ -94,15 +94,3 @@ class ArrayAPIVariable(nnx.Variable):
 
     def __dlpack_device__(self, *args: Any, **kwargs: Any) -> Any:
         return self.value.__dlpack_device__(*args, **kwargs)
-
-
-def scatter_sum(
-    input: jnp.ndarray, dim: int, index: jnp.ndarray, src: jnp.ndarray
-) -> jnp.ndarray:
-    """Reduces all values from the src tensor to the indices specified in the index tensor."""
-    idx = jnp.arange(input.size, dtype=jnp.int64).reshape(input.shape)
-    new_idx = jnp.take_along_axis(idx, index, axis=dim).ravel()
-    shape = input.shape
-    input = input.ravel()
-    input = input.at[new_idx].add(src.ravel())
-    return input.reshape(shape)
