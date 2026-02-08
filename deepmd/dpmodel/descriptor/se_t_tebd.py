@@ -769,7 +769,9 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         sw = xp.where(
             nlist_mask[:, :, None],
             xp.reshape(sw, (nf * nloc, nnei, 1)),
-            xp.zeros((nf * nloc, nnei, 1), dtype=sw.dtype),
+            xp.zeros(
+                (nf * nloc, nnei, 1), dtype=sw.dtype, device=array_api_compat.device(sw)
+            ),
         )
 
         # nfnl x nnei x 4
@@ -832,6 +834,8 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
 
             # (nf x nl x nt_i x nt_j) x ng
             idx = xp.tile(xp.reshape((idx_i + idx_j), (-1, 1)), (1, ng))
+            # Cast to int64 for PyTorch backend (take_along_dim requires Long indices)
+            idx = xp.astype(idx, xp.int64)
 
             # ntypes * (ntypes) * nt
             type_embedding_i = xp.tile(

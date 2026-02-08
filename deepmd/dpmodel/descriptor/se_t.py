@@ -369,7 +369,11 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         sec = self.sel_cumsum
 
         ng = self.neuron[-1]
-        result = xp.zeros([nf * nloc, ng], dtype=get_xp_precision(xp, self.precision))
+        result = xp.zeros(
+            [nf * nloc, ng],
+            dtype=get_xp_precision(xp, self.precision),
+            device=array_api_compat.device(coord_ext),
+        )
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         # merge nf and nloc axis, so for type_one_side == False,
         # we don't require atype is the same in all frames
