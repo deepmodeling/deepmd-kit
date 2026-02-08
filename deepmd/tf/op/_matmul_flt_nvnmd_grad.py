@@ -12,7 +12,7 @@ from deepmd.tf.env import (
 
 
 @ops.RegisterGradient("MatmulFltNvnmd")
-def _MatmulFltNvnmdGrad(op, grad):
+def _MatmulFltNvnmdGrad(op: tf.Operation, grad: tf.Tensor) -> list[tf.Tensor]:
     x = op.inputs[0]
     w = op.inputs[1]
     normx = op.get_attr("normx")
