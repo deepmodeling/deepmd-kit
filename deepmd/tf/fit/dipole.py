@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
 
 import numpy as np
 
@@ -24,6 +27,9 @@ from deepmd.tf.loss.tensor import (
 )
 from deepmd.tf.utils.graph import (
     get_fitting_net_variables_from_graph_def,
+)
+from deepmd.tf.utils.learning_rate import (
+    LearningRateExp,
 )
 from deepmd.tf.utils.network import (
     one_layer,
@@ -103,7 +109,7 @@ class DipoleFittingSeA(Fitting):
         type_map: list[str] | None = None,  # to be compat with input
         default_fparam: list[float] | None = None,  # to be compat with input
         trainable: list[bool] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         self.ntypes = ntypes
@@ -166,7 +172,15 @@ class DipoleFittingSeA(Fitting):
         return 3
 
     @cast_precision
-    def _build_lower(self, start_index, natoms, inputs, rot_mat, suffix="", reuse=None):
+    def _build_lower(
+        self,
+        start_index: int,
+        natoms: int,
+        inputs: tf.Tensor,
+        rot_mat: tf.Tensor,
+        suffix: str = "",
+        reuse: bool | None = None,
+    ) -> tf.Tensor:
         # cut-out inputs
         inputs_i = tf.slice(inputs, [0, start_index, 0], [-1, natoms, -1])
         inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
@@ -381,7 +395,7 @@ class DipoleFittingSeA(Fitting):
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
 
-    def get_loss(self, loss: dict, lr) -> Loss:
+    def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss:
         """Get the loss function.
 
         Parameters
@@ -467,7 +481,7 @@ class DipoleFittingSeA(Fitting):
         return data
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str):
+    def deserialize(cls, data: dict, suffix: str) -> "DipoleFittingSeA":
         """Deserialize the model.
 
         Parameters

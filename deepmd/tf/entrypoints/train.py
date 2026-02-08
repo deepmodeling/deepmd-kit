@@ -65,7 +65,7 @@ def train(
     skip_neighbor_stat: bool = False,
     finetune: str | None = None,
     use_pretrain_script: bool = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> None:
     """Run DeePMD model training.
 
@@ -274,7 +274,7 @@ def _do_work(
         log.info("finished compressing")
 
 
-def get_modifier(modi_data=None):
+def get_modifier(modi_data: dict | None = None) -> BaseModifier | None:
     modifier: BaseModifier | None
     if modi_data is not None:
         modifier_params = copy.deepcopy(modi_data)
@@ -287,7 +287,7 @@ def get_modifier(modi_data=None):
     return modifier
 
 
-def update_sel(jdata):
+def update_sel(jdata: dict) -> dict:
     log.info(
         "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
     )

@@ -7,6 +7,9 @@ from functools import (
     lru_cache,
     reduce,
 )
+from typing import (
+    Any,
+)
 
 from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
@@ -18,6 +21,9 @@ from deepmd.tf.fit.fitting import (
 )
 from deepmd.tf.loss.loss import (
     Loss,
+)
+from deepmd.tf.utils.learning_rate import (
+    LearningRateExp,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -44,7 +50,7 @@ class LinearModel(Model):
         If "sum", the weights are set to be 1.
     """
 
-    def __init__(self, models: list[dict], weights: list[float], **kwargs) -> None:
+    def __init__(self, models: list[dict], weights: list[float], **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.models = [Model(**model) for model in models]
         if isinstance(weights, list):
@@ -66,7 +72,7 @@ class LinearModel(Model):
             f"model{ii}": model.get_fitting() for ii, model in enumerate(self.models)
         }
 
-    def get_loss(self, loss: dict, lr) -> Loss | dict | None:
+    def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss | dict | None:
         """Get the loss function(s)."""
         # the first model that is not None, or None if all models are None
         for model in self.models:
@@ -75,7 +81,7 @@ class LinearModel(Model):
                 return loss
         return None
 
-    def get_rcut(self):
+    def get_rcut(self) -> float:
         return max([model.get_rcut() for model in self.models])
 
     @lru_cache(maxsize=1)
@@ -86,7 +92,7 @@ class LinearModel(Model):
                 raise ValueError("Models have different ntypes")
         return self.models[0].get_ntypes()
 
-    def data_stat(self, data) -> None:
+    def data_stat(self, data: DeepmdDataSystem) -> None:
         for model in self.models:
             model.data_stat(data)
 

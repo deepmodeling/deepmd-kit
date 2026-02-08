@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 import numpy as np
 
@@ -44,6 +48,11 @@ from deepmd.utils.data import (
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.train.learning_rate import (
+        LearningRateExp,
+    )
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -126,7 +135,7 @@ class DOSFitting(Fitting):
         mixed_types: bool = False,
         type_map: list[str] | None = None,  # to be compat with input
         default_fparam: list[float] | None = None,  # to be compat with input
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         # model param
@@ -214,7 +223,9 @@ class DOSFitting(Fitting):
             all_stat, rcond=self.rcond, mixed_type=mixed_type
         )
 
-    def _compute_output_stats(self, all_stat, rcond=1e-3, mixed_type=False):
+    def _compute_output_stats(
+        self, all_stat: dict, rcond: float = 1e-3, mixed_type: bool = False
+    ) -> np.ndarray:
         data = all_stat["dos"]
         # data[sys_idx][batch_idx][frame_idx]
         sys_dos = []
@@ -296,22 +307,24 @@ class DOSFitting(Fitting):
                     self.aparam_std[ii] = protection
             self.aparam_inv_std = 1.0 / self.aparam_std
 
-    def _compute_std(self, sumv2, sumv, sumn):
+    def _compute_std(
+        self, sumv2: np.ndarray, sumv: np.ndarray, sumn: np.ndarray
+    ) -> np.ndarray:
         return np.sqrt(sumv2 / sumn - np.multiply(sumv / sumn, sumv / sumn))
 
     @cast_precision
     def _build_lower(
         self,
-        start_index,
-        natoms,
-        inputs,
-        fparam=None,
-        aparam=None,
-        bias_dos=0.0,
-        type_suffix="",
-        suffix="",
-        reuse=None,
-    ):
+        start_index: int,
+        natoms: int,
+        inputs: tf.Tensor,
+        fparam: tf.Tensor | None = None,
+        aparam: tf.Tensor | None = None,
+        bias_dos: float = 0.0,
+        type_suffix: str = "",
+        suffix: str = "",
+        reuse: bool | None = None,
+    ) -> tf.Tensor:
         # cut-out inputs
         inputs_i = tf.slice(inputs, [0, start_index, 0], [-1, natoms, -1])
         inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
@@ -648,7 +661,7 @@ class DOSFitting(Fitting):
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
 
-    def get_loss(self, loss: dict, lr) -> Loss:
+    def get_loss(self, loss: dict, lr: "LearningRateExp") -> Loss:
         """Get the loss function.
 
         Parameters
@@ -668,7 +681,7 @@ class DOSFitting(Fitting):
         )
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = ""):
+    def deserialize(cls, data: dict, suffix: str = "") -> "DOSFitting":
         """Deserialize the model.
 
         Parameters
