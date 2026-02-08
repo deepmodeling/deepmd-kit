@@ -59,7 +59,9 @@ repos:
     hooks:
     - id: mdformat
       additional_dependencies:
-      - mdformat-myst==0.3.0
+      # - mdformat-myst==0.3.0
+      # See https://github.com/executablebooks/mdformat-myst/issues/13
+      - "git+https://github.com/brunobeltran/mdformat-myst@4b3ff3a800e2877b78c11a9f5d713d667b0ecccf#egg=mdformat-myst"
       - mdformat-ruff==0.1.3
       - mdformat-web==0.2.0
       - mdformat-config==0.2.1
