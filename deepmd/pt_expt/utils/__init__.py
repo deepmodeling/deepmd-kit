@@ -7,13 +7,9 @@ from .exclude_mask import (
 from .network import (
     NetworkCollection,
 )
-from .type_embed import (
-    TypeEmbedNet,
-)
 
 __all__ = [
     "AtomExcludeMask",
     "NetworkCollection",
     "PairExcludeMask",
-    "TypeEmbedNet",
 ]

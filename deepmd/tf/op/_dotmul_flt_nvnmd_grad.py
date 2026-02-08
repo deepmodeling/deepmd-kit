@@ -12,7 +12,7 @@ from deepmd.tf.env import (
 
 
 @ops.RegisterGradient("DotmulFltNvnmd")
-def _DotmulFltNvnmdGrad(op, grad):
+def _DotmulFltNvnmdGrad(op: tf.Operation, grad: tf.Tensor) -> list[tf.Tensor]:
     x = op.inputs[0]
     w = op.inputs[1]
     # calculate
