@@ -21,10 +21,11 @@ from ..common import (
     INSTALLED_JAX,
     INSTALLED_PD,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     INSTALLED_TF,
 )
 
-if INSTALLED_PT:
+if INSTALLED_PT or INSTALLED_PT_EXPT:
     import torch
 
     from deepmd.pt.utils.env import DEVICE as PT_DEVICE
@@ -141,6 +142,34 @@ class DescriptorTest:
         return [
             x.detach().cpu().numpy() if torch.is_tensor(x) else x
             for x in pt_obj(ext_coords, ext_atype, nlist=nlist, mapping=mapping)
+        ]
+
+    def eval_pt_expt_descriptor(
+        self,
+        pt_expt_obj: Any,
+        natoms: np.ndarray,
+        coords: np.ndarray,
+        atype: np.ndarray,
+        box: np.ndarray,
+        mixed_types: bool = False,
+    ) -> Any:
+        ext_coords, ext_atype, mapping = extend_coord_with_ghosts(
+            torch.from_numpy(coords).to(PT_DEVICE).reshape(1, -1, 3),
+            torch.from_numpy(atype).to(PT_DEVICE).reshape(1, -1),
+            torch.from_numpy(box).to(PT_DEVICE).reshape(1, 3, 3),
+            pt_expt_obj.get_rcut(),
+        )
+        nlist = build_neighbor_list(
+            ext_coords,
+            ext_atype,
+            natoms[0],
+            pt_expt_obj.get_rcut(),
+            pt_expt_obj.get_sel(),
+            distinguish_types=(not mixed_types),
+        )
+        return [
+            x.detach().cpu().numpy() if torch.is_tensor(x) else x
+            for x in pt_expt_obj(ext_coords, ext_atype, nlist=nlist, mapping=mapping)
         ]
 
     def eval_jax_descriptor(

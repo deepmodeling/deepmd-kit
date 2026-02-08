@@ -16,6 +16,7 @@ from ..common import (
     INSTALLED_JAX,
     INSTALLED_PD,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
     parameterized,
@@ -33,6 +34,10 @@ if INSTALLED_PT:
     )
 else:
     DescrptSeAPT = None
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.descriptor.se_e2_a import DescrptSeA as DescrptSeAPTExpt
+else:
+    DescrptSeAPTExpt = None
 if INSTALLED_TF:
     from deepmd.tf.descriptor.se_a import DescrptSeA as DescrptSeATF
 else:
@@ -108,6 +113,17 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
         return CommonTest.skip_pt
 
     @property
+    def skip_pt_expt(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+            env_protection,
+        ) = self.param
+        return (not type_one_side) or CommonTest.skip_pt_expt
+
+    @property
     def skip_dp(self) -> bool:
         (
             resnet_dt,
@@ -165,6 +181,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
     tf_class = DescrptSeATF
     dp_class = DescrptSeADP
     pt_class = DescrptSeAPT
+    pt_expt_class = DescrptSeAPTExpt
     jax_class = DescrptSeAJAX
     pd_class = DescrptSeAPD
     array_api_strict_class = DescrptSeAArrayAPIStrict
@@ -238,6 +255,15 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt(self, pt_obj: Any) -> Any:
         return self.eval_pt_descriptor(
             pt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return self.eval_pt_expt_descriptor(
+            pt_expt_obj,
             self.natoms,
             self.coords,
             self.atype,
@@ -352,6 +378,17 @@ class TestSeAStat(CommonTest, DescriptorTest, unittest.TestCase):
         return CommonTest.skip_pt
 
     @property
+    def skip_pt_expt(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+            env_protection,
+        ) = self.param
+        return (not type_one_side) or CommonTest.skip_pt_expt
+
+    @property
     def skip_dp(self) -> bool:
         (
             resnet_dt,
@@ -402,6 +439,7 @@ class TestSeAStat(CommonTest, DescriptorTest, unittest.TestCase):
     tf_class = DescrptSeATF
     dp_class = DescrptSeADP
     pt_class = DescrptSeAPT
+    pt_expt_class = DescrptSeAPTExpt
     jax_class = DescrptSeAJAX
     pd_class = DescrptSeAPD
     array_api_strict_class = DescrptSeAArrayAPIStrict
@@ -499,6 +537,28 @@ class TestSeAStat(CommonTest, DescriptorTest, unittest.TestCase):
         )
         return self.eval_pt_descriptor(
             pt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        pt_expt_obj.compute_input_stats(
+            [
+                {
+                    "r0": None,
+                    "coord": torch.from_numpy(self.coords)
+                    .reshape(-1, self.natoms[0], 3)
+                    .to(env.DEVICE),
+                    "atype": torch.from_numpy(self.atype.reshape(1, -1)).to(env.DEVICE),
+                    "box": torch.from_numpy(self.box.reshape(1, 3, 3)).to(env.DEVICE),
+                    "natoms": self.natoms[0],
+                }
+            ]
+        )
+        return self.eval_pt_expt_descriptor(
+            pt_expt_obj,
             self.natoms,
             self.coords,
             self.atype,

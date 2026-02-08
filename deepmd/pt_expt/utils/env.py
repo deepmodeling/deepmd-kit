@@ -5,7 +5,6 @@ import os
 import sys
 
 import numpy as np
-import torch
 
 from deepmd.common import (
     VALID_PRECISION,
@@ -18,6 +17,7 @@ from deepmd.env import (
 )
 
 log = logging.getLogger(__name__)
+import torch
 
 if sys.platform != "win32":
     try:
@@ -94,7 +94,7 @@ set_default_nthreads()
 intra_nthreads, inter_nthreads = get_default_nthreads()
 if inter_nthreads > 0:  # the behavior of 0 is not documented
     # torch.set_num_interop_threads can only be called once per process.
-    # Guard to avoid RuntimeError when multiple backends are imported.
+    # Guard to avoid RuntimeError when both pt and pt_expt env modules are imported.
     try:
         if torch.get_num_interop_threads() != inter_nthreads:
             torch.set_num_interop_threads(inter_nthreads)
