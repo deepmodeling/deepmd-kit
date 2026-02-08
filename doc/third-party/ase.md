@@ -9,7 +9,6 @@ Deep potential can be set up as a calculator with ASE to obtain potential energi
 ::::{tab-set}
 
 :::{tab-item} TensorFlow {{ tensorflow_icon }}
-
 ```python
 from ase import Atoms
 from deepmd.calculator import DP
@@ -23,11 +22,9 @@ water = Atoms(
 print(water.get_potential_energy())
 print(water.get_forces())
 ```
-
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
-
 ```python
 from ase import Atoms
 from deepmd.calculator import DP
@@ -41,11 +38,9 @@ water = Atoms(
 print(water.get_potential_energy())
 print(water.get_forces())
 ```
-
 :::
 
 :::{tab-item} Paddle {{ paddle_icon }}
-
 ```python
 from ase import Atoms
 from deepmd.calculator import DP
@@ -59,7 +54,6 @@ water = Atoms(
 print(water.get_potential_energy())
 print(water.get_forces())
 ```
-
 :::
 
 ::::

@@ -121,11 +121,9 @@ The training command is the same as `ener` mode, i.e.
 ::::{tab-set}
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
-
 ```bash
 dp --pt train input.json
 ```
-
 :::
 
 ::::
@@ -155,14 +153,12 @@ We can use `dp test` to infer the properties for given frames.
 ::::{tab-set}
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
-
 ```bash
 
 dp --pt freeze -o frozen_model.pth
 
 dp --pt test -m frozen_model.pth -s ../data/data_0/ -d ${output_prefix} -n 100
 ```
-
 :::
 
 ::::
@@ -185,10 +181,10 @@ for `*.property.out.*`, it contains matrix with shape of `(2, task_dim)`,
 ## Data Normalization
 
 When `fitting_net/type` is `ener`, the energy bias layer “$e_{bias}$” adds a constant bias to the atomic energy contribution according to the atomic number.i.e.,
-$$e_{bias} (Z_i) (MLP(D_i))= MLP(D_i) + e_{bias} (Z_i)$$
+\$$e_{bias} (Z_i) (MLP(D_i))= MLP(D_i) + e_{bias} (Z_i)$\$
 
 But when `fitting_net/type` is `property`. The property bias layer is used to normalize the property output of the model.i.e.,
-$$p_{bias} (MLP(D_i))= MLP(D_i) * std+ mean$$
+\$$p_{bias} (MLP(D_i))= MLP(D_i) * std+ mean$\$
 
 1. `std`: The standard deviation of the property label
-2. `mean`: The average value of the property label
+1. `mean`: The average value of the property label

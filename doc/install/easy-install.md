@@ -58,11 +58,13 @@ Read [conda-forge FAQ](https://conda-forge.org/docs/user/tipsandtricks.html#inst
 ### Official channel (deprecated)
 
 ::::{danger}
+
 :::{deprecated} 3.0.0
 The official channel has been deprecated since 3.0.0, due to the challenging work of building dependencies for [multiple backends](../backend.md).
 Old packages will still be available at https://conda.deepmodeling.com.
 Maintainers will build packages in the conda-forge organization together with other conda-forge members.
 :::
+
 ::::
 
 ## Install with docker
@@ -85,93 +87,79 @@ docker pull ghcr.io/deepmodeling/deepmd-kit:2.2.8_cuda12.0_gpu
 
 [Create a new environment](https://docs.deepmodeling.com/faq/conda.html#how-to-create-a-new-conda-pip-environment), and then execute the following command:
 
-:::::::{tab-set}
+::::::{tab-set}
 
-::::::{tab-item} TensorFlow {{ tensorflow_icon }}
+:::::{tab-item} TensorFlow {{ tensorflow_icon }}
 
-:::::{tab-set}
+::::{tab-set}
 
-::::{tab-item} CUDA 12
-
+:::{tab-item} CUDA 12
 ```bash
 pip install deepmd-kit[gpu,cu12]
 ```
 
 `cu12` is required only when CUDA Toolkit and cuDNN were not installed.
+:::
 
-::::
-
-::::{tab-item} CPU
-
+:::{tab-item} CPU
 ```bash
 pip install deepmd-kit[cpu]
 ```
+:::
 
 ::::
 
 :::::
 
-::::::
+:::::{tab-item} PyTorch {{ pytorch_icon }}
 
-::::::{tab-item} PyTorch {{ pytorch_icon }}
+::::{tab-set}
 
-:::::{tab-set}
-
-::::{tab-item} CUDA 12
-
+:::{tab-item} CUDA 12
 ```bash
 pip install deepmd-kit[torch]
 ```
+:::
 
-::::
-
-::::{tab-item} CPU
-
+:::{tab-item} CPU
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install deepmd-kit
 ```
+:::
 
 ::::
 
 :::::
 
-::::::
+:::::{tab-item} JAX {{ jax_icon }}
 
-::::::{tab-item} JAX {{ jax_icon }}
+::::{tab-set}
 
-:::::{tab-set}
-
-::::{tab-item} CUDA 12
-
+:::{tab-item} CUDA 12
 ```bash
 pip install deepmd-kit[jax] jax[cuda12]
 ```
+:::
 
-::::
-
-::::{tab-item} CPU
-
+:::{tab-item} CPU
 ```bash
 pip install deepmd-kit[jax]
 ```
+:::
 
 ::::
-
-:::::
 
 To generate a SavedModel and use [the LAMMPS module](../third-party/lammps-command.md) and [the i-PI driver](../third-party/ipi.md),
 you need to install the TensorFlow.
 Switch to the TensorFlow {{ tensorflow_icon }} tab for more information.
+:::::
 
-::::::
+:::::{tab-item} Paddle {{ paddle_icon }}
 
-::::::{tab-item} Paddle {{ paddle_icon }}
+::::{tab-set}
 
-:::::{tab-set}
-
-::::{tab-item} CUDA 12.6
-
+:::{tab-item} CUDA 12.6
 ```bash
 # release version
 pip install paddlepaddle-gpu==3.1.1 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
@@ -179,11 +167,9 @@ pip install paddlepaddle-gpu==3.1.1 -i https://www.paddlepaddle.org.cn/packages/
 # pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/cu126/
 pip install deepmd-kit
 ```
+:::
 
-::::
-
-::::{tab-item} CPU
-
+:::{tab-item} CPU
 ```bash
 # release version
 pip install paddlepaddle==3.1.1 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
@@ -191,14 +177,13 @@ pip install paddlepaddle==3.1.1 -i https://www.paddlepaddle.org.cn/packages/stab
 # pip install --pre paddlepaddle -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/
 pip install deepmd-kit
 ```
+:::
 
 ::::
 
 :::::
 
 ::::::
-
-:::::::
 
 The supported platform includes Linux x86-64 and aarch64 with GNU C Library 2.28 or above, macOS x86-64 and arm64, and Windows x86-64.
 

@@ -32,12 +32,12 @@ energy = dp.compute(energy, v_forces, v_virials, v_coord, v_atype, v_cell);
 
 console.log("energy:", energy);
 console.log(
-  "forces:",
-  [...Array(v_forces.size()).keys()].map((i) => v_forces.get(i)),
+    "forces:",
+    [...Array(v_forces.size()).keys()].map((i) => v_forces.get(i)),
 );
 console.log(
-  "virials:",
-  [...Array(v_virials.size()).keys()].map((i) => v_virials.get(i)),
+    "virials:",
+    [...Array(v_virials.size()).keys()].map((i) => v_virials.get(i)),
 );
 ```
 

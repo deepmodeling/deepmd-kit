@@ -23,8 +23,8 @@ DeePMD-kit is a deep learning package for many-body potential energy representat
 ### Lint and Format Code
 
 - Install linter: `uv pip install ruff`
-- Run linting: `ruff check .` -- takes <1 second
-- Format code: `ruff format .` -- takes <1 second
+- Run linting: `ruff check .` -- takes \<1 second
+- Format code: `ruff format .` -- takes \<1 second
 - **Always run `ruff check .` and `ruff format .` before committing changes or the CI will fail.**
 
 ### Training and Validation
@@ -40,19 +40,19 @@ DeePMD-kit is a deep learning package for many-body potential energy representat
 ### Basic Functionality Validation
 
 1. **CLI Interface**: Run `dp --version` and `dp -h` to verify installation
-2. **Python Interface**: Run `python -c "import deepmd; import deepmd.tf; print('Both interfaces work')"`
-3. **Backend Selection**: Test `dp --tf -h`, `dp --pt -h`, `dp --jax -h`, `dp --pd -h`
+1. **Python Interface**: Run `python -c "import deepmd; import deepmd.tf; print('Both interfaces work')"`
+1. **Backend Selection**: Test `dp --tf -h`, `dp --pt -h`, `dp --jax -h`, `dp --pd -h`
 
 ### Training Workflow Validation
 
 1. **TensorFlow Training**: `cd examples/water/se_e2_a && timeout 60 dp train input.json --skip-neighbor-stat` -- should start training and show decreasing loss
-2. **PyTorch Training**: `cd examples/water/se_e2_a && timeout 60 dp --pt train input_torch.json --skip-neighbor-stat` -- should start training and show decreasing loss
-3. **Verify training output**: Look for "batch X: trn: rmse" messages showing decreasing error values
+1. **PyTorch Training**: `cd examples/water/se_e2_a && timeout 60 dp --pt train input_torch.json --skip-neighbor-stat` -- should start training and show decreasing loss
+1. **Verify training output**: Look for "batch X: trn: rmse" messages showing decreasing error values
 
 ### Test-Based Validation
 
 1. **Core Tests**: `pytest source/tests/tf/test_dp_test.py::TestDPTestEner::test_1frame -v` -- should pass in ~10 seconds
-2. **Multi-backend**: Test both TensorFlow and PyTorch components work
+1. **Multi-backend**: Test both TensorFlow and PyTorch components work
 
 ## Common Commands and Timing
 
@@ -127,8 +127,8 @@ source/               # C++ source code and tests
 
 ### Linting and Formatting
 
-- **Ruff check**: <1 second
-- **Ruff format**: <1 second
+- **Ruff check**: \<1 second
+- **Ruff format**: \<1 second
 - **Pre-commit hooks**: May have network issues, use individual tools
 
 ### Commit Messages and PR Titles

@@ -111,7 +111,6 @@ One can check the available model branches in multi-task pre-trained model by re
 ```bash
 $ dp --pt show multitask_pretrained.pt model-branch
 ```
-
 :::
 
 This command will start fine-tuning based on the pre-trained model's descriptor and the selected branch's fitting net.
@@ -131,9 +130,9 @@ Then, prepare a suitable input script for multitask fine-tuning `multi_input.jso
 
 1. Refer to the [`multi-task-training`](./multi-task-training) document to prepare a multitask training script for two systems,
    ideally extracting parts (i.e. {ref}`model_dict <model/model_dict>`, {ref}`loss_dict <loss_dict>`, {ref}`data_dict <training/data_dict>` and {ref}`model_prob <training/model_prob>` parts) corresponding to `PRE_DATA1` and `PRE_DATA2` directly from the training script of the pre-trained model.
-2. For `DOWNSTREAM_DATA`, select a desired branch to fine-tune from (e.g., `PRE_DATA1`), copy the configurations of `PRE_DATA1` as the configuration for `DOWNSTREAM_DATA` and insert the corresponding data path into the {ref}`data_dict <training/data_dict>`,
+1. For `DOWNSTREAM_DATA`, select a desired branch to fine-tune from (e.g., `PRE_DATA1`), copy the configurations of `PRE_DATA1` as the configuration for `DOWNSTREAM_DATA` and insert the corresponding data path into the {ref}`data_dict <training/data_dict>`,
    thereby generating a three-system multitask training script.
-3. In the {ref}`model_dict <model/model_dict>` for `DOWNSTREAM_DATA`, specify the branch from which `DOWNSTREAM_DATA` is to fine-tune using:
+1. In the {ref}`model_dict <model/model_dict>` for `DOWNSTREAM_DATA`, specify the branch from which `DOWNSTREAM_DATA` is to fine-tune using:
    `"finetune_head": "PRE_DATA1"`.
 
 The complete `multi_input.json` should appear as follows ("..." means copied from input script of pre-trained model):
@@ -257,7 +256,6 @@ One can check the available model branches in multi-task pre-trained model by re
 ```bash
 $ dp --pd show multitask_pretrained.pd model-branch
 ```
-
 :::
 
 This command will start fine-tuning based on the pre-trained model's descriptor and the selected branch's fitting net.

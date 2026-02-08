@@ -125,5 +125,4 @@ If `${tensorflow_root}`, `${deepmd_root}`, or the path to TensorFlow Python pack
 ```sh
 patchelf --add-rpath "${tensorflow_root}/lib" liblammps.so
 ```
-
 :::

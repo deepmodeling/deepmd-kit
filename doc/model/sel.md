@@ -9,35 +9,27 @@ To determine a proper `sel`, one can calculate the neighbor stat of the training
 ::::{tab-set}
 
 :::{tab-item} TensorFlow {{ tensorflow_icon }}
-
 ```sh
 dp --tf neighbor-stat -s data -r 6.0 -t O H
 ```
-
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
-
 ```sh
 dp --pt neighbor-stat -s data -r 6.0 -t O H
 ```
-
 :::
 
 :::{tab-item} JAX {{ jax_icon }}
-
 ```sh
 dp --jax neighbor-stat -s data -r 6.0 -t O H
 ```
-
 :::
 
 :::{tab-item} Paddle {{ paddle_icon }}
-
 ```sh
 dp --pd neighbor-stat -s data -r 6.0 -t O H
 ```
-
 :::
 
 ::::
