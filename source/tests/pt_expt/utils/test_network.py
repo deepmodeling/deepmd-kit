@@ -74,7 +74,7 @@ class TestEmbeddingNetRefactor(unittest.TestCase):
             precision=self.precision,
             seed=GLOBAL_SEED,
         )
-        x = torch.randn(5, self.in_dim, dtype=torch.float64)
+        x = torch.randn(5, self.in_dim, dtype=torch.float64, device=env.DEVICE)
         out = net(x)
         self.assertIsInstance(out, torch.Tensor)
         self.assertEqual(out.shape, (5, self.neuron[-1]))
