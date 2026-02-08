@@ -281,3 +281,124 @@ class TestEmbeddingNetRefactor(unittest.TestCase):
         for layer in net_frozen.layers:
             if layer.w is not None:
                 self.assertFalse(layer.w.requires_grad)
+
+
+class TestFittingNetRefactor(unittest.TestCase):
+    """Tests for the refactored FittingNet pt_expt wrapper."""
+
+    def setUp(self) -> None:
+        self.in_dim = 4
+        self.out_dim = 1
+        self.neuron = [8, 16]
+        self.activation = "tanh"
+        self.resnet_dt = True
+        self.precision = "float64"
+
+    def test_pt_expt_fitting_net_wraps_dpmodel(self) -> None:
+        """Verify pt_expt FittingNet correctly wraps dpmodel."""
+        from deepmd.pt_expt.utils.network import (
+            FittingNet,
+        )
+
+        net = FittingNet(
+            in_dim=self.in_dim,
+            out_dim=self.out_dim,
+            neuron=self.neuron,
+            activation_function=self.activation,
+            resnet_dt=self.resnet_dt,
+            precision=self.precision,
+            seed=GLOBAL_SEED,
+        )
+        # Check it's a torch.nn.Module
+        self.assertIsInstance(net, torch.nn.Module)
+        # Check layers are converted to pt_expt NativeLayer (torch modules)
+        self.assertIsInstance(net.layers, torch.nn.ModuleList)
+        for layer in net.layers:
+            self.assertIsInstance(layer, torch.nn.Module)
+
+    def test_pt_expt_fitting_net_forward(self) -> None:
+        """Test pt_expt FittingNet forward pass returns torch.Tensor."""
+        from deepmd.pt_expt.utils.network import (
+            FittingNet,
+        )
+
+        net = FittingNet(
+            in_dim=self.in_dim,
+            out_dim=self.out_dim,
+            neuron=self.neuron,
+            activation_function=self.activation,
+            resnet_dt=self.resnet_dt,
+            precision=self.precision,
+            seed=GLOBAL_SEED,
+        )
+        x = torch.randn(5, self.in_dim, dtype=torch.float64, device=env.DEVICE)
+        out = net(x)
+        self.assertIsInstance(out, torch.Tensor)
+        self.assertEqual(out.shape, (5, self.out_dim))
+        self.assertEqual(out.dtype, torch.float64)
+
+    def test_serialization_round_trip_pt_expt(self) -> None:
+        """Test pt_expt FittingNet serialization/deserialization."""
+        from deepmd.pt_expt.utils.network import (
+            FittingNet,
+        )
+
+        net = FittingNet(
+            in_dim=self.in_dim,
+            out_dim=self.out_dim,
+            neuron=self.neuron,
+            activation_function=self.activation,
+            resnet_dt=self.resnet_dt,
+            precision=self.precision,
+            seed=GLOBAL_SEED,
+        )
+        x = torch.randn(5, self.in_dim, dtype=torch.float64, device=env.DEVICE)
+        out1 = net(x)
+
+        # Serialize and deserialize
+        serialized = net.serialize()
+        net2 = FittingNet.deserialize(serialized)
+
+        # Verify layers are still pt_expt NativeLayer modules
+        self.assertIsInstance(net2.layers, torch.nn.ModuleList)
+        for layer in net2.layers:
+            self.assertIsInstance(layer, torch.nn.Module)
+
+        out2 = net2(x)
+        np.testing.assert_allclose(
+            out1.detach().cpu().numpy(),
+            out2.detach().cpu().numpy(),
+        )
+
+    def test_registry_converts_dpmodel_to_pt_expt(self) -> None:
+        """Test that dpmodel FittingNet can be converted to pt_expt via registry."""
+        from deepmd.dpmodel.utils.network import FittingNet as DPFittingNet
+        from deepmd.pt_expt.common import (
+            try_convert_module,
+        )
+        from deepmd.pt_expt.utils.network import (
+            FittingNet,
+        )
+
+        # Create dpmodel FittingNet
+        dp_net = DPFittingNet(
+            in_dim=self.in_dim,
+            out_dim=self.out_dim,
+            neuron=self.neuron,
+            activation_function=self.activation,
+            resnet_dt=self.resnet_dt,
+            precision=self.precision,
+            seed=GLOBAL_SEED,
+        )
+
+        # Try to convert via registry
+        converted = try_convert_module(dp_net)
+
+        # Should return pt_expt FittingNet
+        self.assertIsNotNone(converted)
+        self.assertIsInstance(converted, torch.nn.Module)
+        self.assertIsInstance(converted, FittingNet)
+
+        # Verify layers are pt_expt modules
+        for layer in converted.layers:
+            self.assertIsInstance(layer, torch.nn.Module)
