@@ -4,8 +4,12 @@ from .exclude_mask import (
     AtomExcludeMask,
     PairExcludeMask,
 )
+from .network import (
+    NetworkCollection,
+)
 
 __all__ = [
     "AtomExcludeMask",
+    "NetworkCollection",
     "PairExcludeMask",
 ]

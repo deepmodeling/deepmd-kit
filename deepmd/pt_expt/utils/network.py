@@ -19,6 +19,7 @@ from deepmd.dpmodel.utils.network import (
     make_multilayer_network,
 )
 from deepmd.pt_expt.common import (
+    register_dpmodel_mapping,
     to_torch_array,
 )
 
@@ -119,6 +120,12 @@ class NetworkCollection(NetworkCollectionDP, torch.nn.Module):
             self._module_networks[key_str] = net
         elif key_str in self._module_networks:
             del self._module_networks[key_str]
+
+
+register_dpmodel_mapping(
+    NetworkCollectionDP,
+    lambda v: NetworkCollection.deserialize(v.serialize()),
+)
 
 
 class LayerNorm(LayerNormDP, NativeLayer):
