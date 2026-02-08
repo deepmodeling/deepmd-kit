@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
 
 import numpy as np
 
@@ -13,6 +16,9 @@ from deepmd.tf.env import (
 )
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 
 from .model import (
@@ -55,7 +61,7 @@ class TensorModel(StandardModel):
         type_map: list[str] | None = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         super().__init__(
@@ -69,28 +75,28 @@ class TensorModel(StandardModel):
         )
         self.model_type = tensor_name
 
-    def get_rcut(self):
+    def get_rcut(self) -> float:
         return self.rcut
 
-    def get_ntypes(self):
+    def get_ntypes(self) -> int:
         return self.ntypes
 
-    def get_type_map(self):
+    def get_type_map(self) -> list[str]:
         return self.type_map
 
-    def get_sel_type(self):
+    def get_sel_type(self) -> list[int]:
         return self.fitting.get_sel_type()
 
-    def get_out_size(self):
+    def get_out_size(self) -> int:
         return self.fitting.get_out_size()
 
-    def data_stat(self, data) -> None:
+    def data_stat(self, data: DeepmdDataSystem) -> None:
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)
         m_all_stat = merge_sys_stat(all_stat)
         self._compute_input_stat(m_all_stat, protection=self.data_stat_protect)
         self._compute_output_stat(m_all_stat)
 
-    def _compute_input_stat(self, all_stat, protection=1e-2) -> None:
+    def _compute_input_stat(self, all_stat: dict, protection: float = 1e-2) -> None:
         self.descrpt.compute_input_stats(
             all_stat["coord"],
             all_stat["box"],
@@ -102,23 +108,23 @@ class TensorModel(StandardModel):
         if hasattr(self.fitting, "compute_input_stats"):
             self.fitting.compute_input_stats(all_stat, protection=protection)
 
-    def _compute_output_stat(self, all_stat) -> None:
+    def _compute_output_stat(self, all_stat: dict) -> None:
         if hasattr(self.fitting, "compute_output_stats"):
             self.fitting.compute_output_stats(all_stat)
 
     def build(
         self,
-        coord_,
-        atype_,
-        natoms,
-        box,
-        mesh,
-        input_dict,
-        frz_model=None,
+        coord_: tf.Tensor,
+        atype_: tf.Tensor,
+        natoms: tf.Tensor,
+        box: tf.Tensor,
+        mesh: tf.Tensor,
+        input_dict: dict,
+        frz_model: str | None = None,
         ckpt_meta: str | None = None,
-        suffix="",
-        reuse=None,
-    ):
+        suffix: str = "",
+        reuse: bool | None = None,
+    ) -> dict:
         if input_dict is None:
             input_dict = {}
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):
@@ -275,22 +281,22 @@ class TensorModel(StandardModel):
 
 
 class WFCModel(TensorModel):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         TensorModel.__init__(self, "wfc", *args, **kwargs)
 
 
 @StandardModel.register("dipole")
 class DipoleModel(TensorModel):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         TensorModel.__init__(self, "dipole", *args, **kwargs)
 
 
 @StandardModel.register("polar")
 class PolarModel(TensorModel):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         TensorModel.__init__(self, "polar", *args, **kwargs)
 
 
 class GlobalPolarModel(TensorModel):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         TensorModel.__init__(self, "global_polar", *args, **kwargs)

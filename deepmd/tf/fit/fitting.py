@@ -3,6 +3,15 @@ import re
 from abc import (
     abstractmethod,
 )
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
+
+if TYPE_CHECKING:
+    from typing_extensions import (
+        Self,
+    )
 
 from deepmd.common import (
     j_get_type,
@@ -21,6 +30,9 @@ from deepmd.tf.loss.loss import (
 from deepmd.tf.utils import (
     PluginVariant,
 )
+from deepmd.tf.utils.learning_rate import (
+    LearningRateExp,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -30,7 +42,7 @@ from deepmd.utils.plugin import (
 
 
 class Fitting(PluginVariant, make_plugin_registry("fitting")):
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> "Self":
         if cls is Fitting:
             cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
         return super().__new__(cls)
@@ -66,7 +78,7 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
         )
 
     @abstractmethod
-    def get_loss(self, loss: dict, lr) -> Loss:
+    def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss:
         """Get the loss function.
 
         Parameters

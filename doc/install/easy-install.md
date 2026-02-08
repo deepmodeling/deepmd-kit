@@ -13,10 +13,15 @@ You can refer to [DeepModeling conda FAQ](https://docs.deepmodeling.com/faq/cond
 Python 3.10 or above is required for Python interface.
 :::
 
-- [Install off-line packages](#install-off-line-packages)
-- [Install with conda](#install-with-conda)
-- [Install with docker](#install-with-docker)
-- [Install Python interface with pip](#install-python-interface-with-pip)
+## Install DeePMD-kit in 1s
+
+Just copy and paste in 1s, and let it run.
+
+```sh
+curl -fsSL https://dp1s.deepmodeling.com | bash
+```
+
+More options are provided, as documented in the [dp1s repository](https://github.com/deepmodeling-activity/dp1s).
 
 ## Install off-line packages
 

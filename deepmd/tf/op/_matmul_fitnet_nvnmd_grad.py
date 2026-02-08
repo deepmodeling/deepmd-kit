@@ -12,7 +12,7 @@ from deepmd.tf.env import (
 
 
 @ops.RegisterGradient("MatmulFitnetNvnmd")
-def _MatmulFitnetNvnmdGrad(op, grad):
+def _MatmulFitnetNvnmdGrad(op: tf.Operation, grad: tf.Tensor) -> list[tf.Tensor]:
     x = op.inputs[0]
     w = op.inputs[1]
     nbitx = op.get_attr("nbitx")
