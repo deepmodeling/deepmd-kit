@@ -85,7 +85,7 @@ def register_dpmodel_mapping(
 def try_convert_module(value: Any) -> torch.nn.Module | None:
     """Convert a dpmodel object to its pt_expt wrapper if a converter is registered.
 
-    This function looks up the type of *value* in the _DPMODEL_TO_PT_EXPT
+    This function looks up the exact type of *value* in the _DPMODEL_TO_PT_EXPT
     registry. If a converter is found, it invokes it to produce a torch.nn.Module
     wrapper; otherwise it returns None.
 
@@ -103,8 +103,9 @@ def try_convert_module(value: Any) -> torch.nn.Module | None:
 
     Notes
     -----
-    This function uses exact type matching. Each dpmodel class must be explicitly
-    registered via register_dpmodel_mapping.
+    This function uses exact type matching (not isinstance checks) to ensure
+    predictable behavior. Each dpmodel class must be explicitly registered via
+    register_dpmodel_mapping.
 
     The function is called by dpmodel_setattr when it encounters an object that
     might be a dpmodel instance. If conversion succeeds, the caller should use

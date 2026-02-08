@@ -15,7 +15,6 @@ from ..common import (
     INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
     INSTALLED_PT,
-    INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
     parameterized,
@@ -28,10 +27,6 @@ if INSTALLED_PT:
     from deepmd.pt.model.descriptor.se_t import DescrptSeT as DescrptSeTPT
 else:
     DescrptSeTPT = None
-if INSTALLED_PT_EXPT:
-    from deepmd.pt_expt.descriptor.se_t import DescrptSeT as DescrptSeTPTExpt
-else:
-    DescrptSeTPTExpt = None
 if INSTALLED_TF:
     from deepmd.tf.descriptor.se_t import DescrptSeT as DescrptSeTTF
 else:
@@ -97,16 +92,6 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
         return CommonTest.skip_dp
 
     @property
-    def skip_pt_expt(self) -> bool:
-        (
-            resnet_dt,
-            excluded_types,
-            precision,
-            env_protection,
-        ) = self.param
-        return CommonTest.skip_pt_expt
-
-    @property
     def skip_tf(self) -> bool:
         (
             resnet_dt,
@@ -122,7 +107,6 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
     tf_class = DescrptSeTTF
     dp_class = DescrptSeTDP
     pt_class = DescrptSeTPT
-    pt_expt_class = DescrptSeTPTExpt
     jax_class = DescrptSeTJAX
     array_api_strict_class = DescrptSeTStrict
     args = descrpt_se_t_args()
@@ -193,15 +177,6 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt(self, pt_obj: Any) -> Any:
         return self.eval_pt_descriptor(
             pt_obj,
-            self.natoms,
-            self.coords,
-            self.atype,
-            self.box,
-        )
-
-    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
-        return self.eval_pt_expt_descriptor(
-            pt_expt_obj,
             self.natoms,
             self.coords,
             self.atype,
