@@ -77,6 +77,7 @@ class TestSeR(CommonTest, DescriptorTest, unittest.TestCase):
             "exclude_types": excluded_types,
             "precision": precision,
             "seed": 1145141919810,
+            "activation_function": "relu",
         }
 
     @property
