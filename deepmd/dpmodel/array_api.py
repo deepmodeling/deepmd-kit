@@ -137,7 +137,7 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
 def xp_sigmoid(x: Array) -> Array:
     """Compute the sigmoid function.
 
-    JAX requires using jax.nn.sigmoid for numerical stability.
+    JAX and PyTorch have optimized sigmoid implementations.
     See https://github.com/jax-ml/jax/discussions/15617
     """
     if array_api_compat.is_jax_array(x):
@@ -146,6 +146,10 @@ def xp_sigmoid(x: Array) -> Array:
         )
 
         return jax.nn.sigmoid(x)
+    elif array_api_compat.is_torch_array(x):
+        import torch
+
+        return torch.sigmoid(x)
     xp = array_api_compat.array_namespace(x)
     return 1 / (1 + xp.exp(-x))
 

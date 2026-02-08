@@ -218,6 +218,17 @@ class TestXpSigmoidConsistent(unittest.TestCase):
         result = xp_sigmoid(x_jax)
         np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
 
+    @unittest.skipUnless(
+        INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed"
+    )
+    @unittest.skipUnless(
+        sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
+    )
+    def test_array_api_strict_consistent_with_ref(self) -> None:
+        x_xp = xp.asarray(self.x_np)
+        result = xp_sigmoid(x_xp)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
+
 
 class TestXpSetitemAtConsistent(unittest.TestCase):
     """Test xp_setitem_at consistency across backends."""
@@ -249,4 +260,17 @@ class TestXpSetitemAtConsistent(unittest.TestCase):
         mask_jax = jnp.array(self.mask_np)
         values_jax = jnp.array(self.values_np)
         result = xp_setitem_at(x_jax, mask_jax, values_jax)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
+
+    @unittest.skipUnless(
+        INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed"
+    )
+    @unittest.skipUnless(
+        sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
+    )
+    def test_array_api_strict_consistent_with_ref(self) -> None:
+        x_xp = xp.asarray(self.x_np)
+        mask_xp = xp.asarray(self.mask_np)
+        values_xp = xp.asarray(self.values_np)
+        result = xp_setitem_at(x_xp, mask_xp, values_xp)
         np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
