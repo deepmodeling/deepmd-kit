@@ -57,20 +57,31 @@
         "type_map": "type_map_all",
         "descriptor": "dpa3_descriptor",
         "fitting_net": "shared_fit_with_id",
-        "model_branch_alias": ["Default","Water"],
+        "model_branch_alias": [
+          "Default",
+          "Water"
+        ],
         "info": {
-            "description": "Water model with DPA3 descriptor and shared fitting net",
-            "observed_type": ["H", "O"]
+          "description": "Water model with DPA3 descriptor and shared fitting net",
+          "observed_type": [
+            "H",
+            "O"
+          ]
         }
       },
       "water_2": {
         "type_map": "type_map_all",
         "descriptor": "dpa3_descriptor",
         "fitting_net": "shared_fit_with_id",
-        "model_branch_alias": ["Water2"],
+        "model_branch_alias": [
+          "Water2"
+        ],
         "info": {
-            "description": "Water duplicated model with DPA3 descriptor and shared fitting net",
-            "observed_type": ["H", "O"]
+          "description": "Water duplicated model with DPA3 descriptor and shared fitting net",
+          "observed_type": [
+            "H",
+            "O"
+          ]
         }
       }
     }
