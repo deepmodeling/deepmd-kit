@@ -87,6 +87,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             "task_dim": task_dim,
             "intensive": intensive,
             "property_name": "foo",
+            "activation_function": "relu",
         }
 
     @property
