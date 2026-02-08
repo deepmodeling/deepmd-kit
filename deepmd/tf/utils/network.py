@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 
 import numpy as np
 
@@ -16,24 +19,24 @@ def one_layer_rand_seed_shift() -> int:
 
 
 def one_layer(
-    inputs,
-    outputs_size,
-    activation_fn=tf.nn.tanh,
-    precision=GLOBAL_TF_FLOAT_PRECISION,
-    stddev=1.0,
-    bavg=0.0,
-    name="linear",
-    scope="",
-    reuse=None,
-    seed=None,
-    use_timestep=False,
-    trainable=True,
-    useBN=False,
-    uniform_seed=False,
-    initial_variables=None,
-    mixed_prec=None,
-    final_layer=False,
-):
+    inputs: tf.Tensor,
+    outputs_size: int,
+    activation_fn: Callable[[tf.Tensor], tf.Tensor] | None = tf.nn.tanh,
+    precision: tf.DType = GLOBAL_TF_FLOAT_PRECISION,
+    stddev: float = 1.0,
+    bavg: float = 0.0,
+    name: str = "linear",
+    scope: str = "",
+    reuse: bool | None = None,
+    seed: int | None = None,
+    use_timestep: bool = False,
+    trainable: bool = True,
+    useBN: bool = False,
+    uniform_seed: bool = False,
+    initial_variables: dict | None = None,
+    mixed_prec: dict | None = None,
+    final_layer: bool = False,
+) -> tf.Tensor:
     # For good accuracy, the last layer of the fitting network uses a higher precision neuron network.
     if mixed_prec is not None and final_layer:
         inputs = tf.cast(inputs, get_precision(mixed_prec["output_prec"]))
@@ -106,7 +109,13 @@ def one_layer(
         return hidden
 
 
-def layer_norm_tf(x, shape, weight=None, bias=None, eps=1e-5):
+def layer_norm_tf(
+    x: tf.Tensor,
+    shape: tuple,
+    weight: tf.Tensor | None = None,
+    bias: tf.Tensor | None = None,
+    eps: float = 1e-5,
+) -> tf.Tensor:
     """
     Layer normalization implementation in TensorFlow.
 
@@ -145,19 +154,19 @@ def layer_norm_tf(x, shape, weight=None, bias=None, eps=1e-5):
 
 
 def layernorm(
-    inputs,
-    outputs_size,
-    precision=GLOBAL_TF_FLOAT_PRECISION,
-    name="linear",
-    scope="",
-    reuse=None,
-    seed=None,
-    uniform_seed=False,
-    uni_init=True,
-    eps=1e-5,
-    trainable=True,
-    initial_variables=None,
-):
+    inputs: tf.Tensor,
+    outputs_size: int,
+    precision: tf.DType = GLOBAL_TF_FLOAT_PRECISION,
+    name: str = "linear",
+    scope: str = "",
+    reuse: bool | None = None,
+    seed: int | None = None,
+    uniform_seed: bool = False,
+    uni_init: bool = True,
+    eps: float = 1e-5,
+    trainable: bool = True,
+    initial_variables: dict[str, np.ndarray] | None = None,
+) -> tf.Tensor:
     with tf.variable_scope(name, reuse=reuse):
         shape = inputs.get_shape().as_list()
         if uni_init:
@@ -200,27 +209,27 @@ def layernorm(
         return output
 
 
-def embedding_net_rand_seed_shift(network_size):
+def embedding_net_rand_seed_shift(network_size: list) -> int:
     shift = 3 * (len(network_size) + 1)
     return shift
 
 
 def embedding_net(
-    xx,
-    network_size,
-    precision,
-    activation_fn=tf.nn.tanh,
-    resnet_dt=False,
-    name_suffix="",
-    stddev=1.0,
-    bavg=0.0,
-    seed=None,
-    trainable=True,
-    uniform_seed=False,
-    initial_variables=None,
-    mixed_prec=None,
-    bias=True,
-):
+    xx: tf.Tensor,
+    network_size: list,
+    precision: tf.DType,
+    activation_fn: Callable[[tf.Tensor], tf.Tensor] = tf.nn.tanh,
+    resnet_dt: bool = False,
+    name_suffix: str = "",
+    stddev: float = 1.0,
+    bavg: float = 0.0,
+    seed: int | None = None,
+    trainable: bool = True,
+    uniform_seed: bool = False,
+    initial_variables: dict | None = None,
+    mixed_prec: dict | None = None,
+    bias: bool = True,
+) -> tf.Tensor:
     r"""The embedding network.
 
     The embedding network function :math:`\mathcal{N}` is constructed by is the

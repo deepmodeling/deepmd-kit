@@ -12,7 +12,7 @@ from deepmd.tf.env import (
 
 
 @ops.RegisterGradient("MapFltNvnmd")
-def _MapFltNvnmdGrad(op, grad):
+def _MapFltNvnmdGrad(op: tf.Operation, grad: tf.Tensor) -> list[tf.Tensor | None]:
     x = op.inputs[0]
     table = op.inputs[1]
     table_grad = op.inputs[2]
