@@ -61,6 +61,7 @@ class TestHybrid(CommonTest, DescriptorTest, unittest.TestCase):
                     "type_one_side": True,
                     "precision": "float64",
                     "seed": 20240229,
+                    "activation_function": "relu",
                 },
                 {
                     "type": "se_e2_a",
@@ -73,6 +74,7 @@ class TestHybrid(CommonTest, DescriptorTest, unittest.TestCase):
                     "type_one_side": True,
                     "precision": "float64",
                     "seed": 20240229,
+                    "activation_function": "relu",
                 },
             ]
         }

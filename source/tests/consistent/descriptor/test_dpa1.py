@@ -127,6 +127,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             "type_map": ["O", "H"] if use_econf_tebd else None,
             "seed": 1145141919810,
             "trainable": False,
+            "activation_function": "relu",
         }
 
     def is_meaningless_zero_attention_layer_tests(
