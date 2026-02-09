@@ -99,6 +99,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             "env_protection": env_protection,
             "precision": precision,
             "seed": 1145141919810,
+            "activation_function": "relu",
         }
 
     @property
