@@ -216,12 +216,19 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
 
     # dpmodel object → pt_expt module
     if "_modules" in obj.__dict__:
-        converted = try_convert_module(value)
-        if converted is not None:
-            return False, converted
-        # Note: Some NativeOP objects (like EnvMat) don't need conversion and can
-        # be used directly. If a NativeOP truly needs conversion but isn't registered,
-        # it will fail at runtime when the object is actually used.
+        # Try to convert dpmodel objects that aren't already torch.nn.Modules
+        if not isinstance(value, torch.nn.Module):
+            converted = try_convert_module(value)
+            if converted is not None:
+                return False, converted
+            # If this is a NativeOP that should have been registered but wasn't, raise error
+            if isinstance(value, NativeOP):
+                raise TypeError(
+                    f"Attempted to assign a dpmodel object of type {type(value).__name__} "
+                    f"but no converter is registered. Please call register_dpmodel_mapping "
+                    f"for this type. If this object doesn't need conversion, register it "
+                    f"with an identity converter: lambda v: v"
+                )
 
     return False, value
 
@@ -283,3 +290,18 @@ def to_torch_array(array: Any) -> torch.Tensor | None:
     if torch.is_tensor(array):
         return array.to(device=env.DEVICE)
     return torch.as_tensor(array, device=env.DEVICE)
+
+
+# Import utils to trigger dpmodel→pt_expt converter registrations
+# This must happen after the functions above are defined to avoid circular imports
+def _ensure_registrations() -> None:
+    """Import pt_expt.utils modules to register converters.
+
+    This function is called on module import to ensure all dpmodel→pt_expt
+    converters are registered before any descriptors/fittings try to use them.
+    """
+    # Import triggers registration of NetworkCollection, ExcludeMask, EnvMat
+    from deepmd.pt_expt import utils  # noqa: F401
+
+
+_ensure_registrations()
