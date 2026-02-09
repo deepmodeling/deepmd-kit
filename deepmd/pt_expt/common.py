@@ -302,12 +302,12 @@ def torch_module(
 
     Parameters
     ----------
-    module : NativeOP
+    module : type[NativeOP]
         The NativeOP to convert.
 
     Returns
     -------
-    torch.nn.Module
+    type[torch.nn.Module]
         The torch.nn.Module.
 
     Examples

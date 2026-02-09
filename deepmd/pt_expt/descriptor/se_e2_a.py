@@ -14,7 +14,7 @@ from deepmd.pt_expt.descriptor.base_descriptor import (
 @BaseDescriptor.register("se_e2_a_expt")
 @BaseDescriptor.register("se_a_expt")
 @torch_module
-class DescrptSeA(DescrptSeADP, torch.nn.Module):
+class DescrptSeA(DescrptSeADP):
     def forward(
         self,
         extended_coord: torch.Tensor,

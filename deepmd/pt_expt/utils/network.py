@@ -75,6 +75,10 @@ class NativeLayer(NativeLayerDP):
 
 @torch_module
 class NativeNet(make_multilayer_network(NativeLayer, NativeOP)):
+    def __init__(self, layers: list[dict] | None = None) -> None:
+        super().__init__(layers)
+        self.layers = torch.nn.ModuleList(self.layers)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.call(x)
 
