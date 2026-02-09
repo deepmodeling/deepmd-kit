@@ -84,22 +84,7 @@ NS_COEFF_B: float = -4.7750
 NS_COEFF_C: float = 2.0315
 
 
-def _maybe_compile(
-    fn: callable,
-) -> callable:
-    """Compile a function if torch.compile is available."""
-    if not hasattr(torch, "compile"):
-        return fn
-    # Skip compile if default device is CUDA but CUDA is unavailable.
-    if hasattr(torch, "get_default_device"):
-        default_device = torch.get_default_device()
-        if default_device.type == "cuda" and not torch.cuda.is_available():
-            return fn
-    return torch.compile(fn, fullgraph=True, dynamic=True)
-
-
-@_maybe_compile
-def _zeropower_via_newtonschulz5_2d(
+def _newton_schulz_orth(
     G: torch.Tensor,
 ) -> torch.Tensor:
     """
@@ -130,70 +115,6 @@ def _zeropower_via_newtonschulz5_2d(
         X = X.transpose(-2, -1)
 
     return X
-
-
-@_maybe_compile
-def _zeropower_via_newtonschulz5_3d(
-    G: torch.Tensor,
-) -> torch.Tensor:
-    """
-    Orthogonalize a 3D batch of matrices via quintic Newton-Schulz iteration.
-
-    Mathematical formulation:
-        X_0 = G / ||G||_F
-        X_{k+1} = a*X_k + (b*A_k + c*A_k^2) @ X_k,  where A_k = X_k @ X_k^T
-        Coefficients: a=3.4445, b=-4.7750, c=2.0315
-    """
-    # === Step 1. Cast to bf16 and transpose tall matrices ===
-    X = G.to(dtype=torch.bfloat16)
-    transposed = X.size(-2) > X.size(-1)
-    if transposed:
-        X = X.transpose(-2, -1)
-
-    # === Step 2. Normalize Frobenius norm to at most 1 ===
-    X = X / X.norm(dim=(-2, -1), keepdim=True).clamp(min=EPS)
-
-    # === Step 3. Newton-Schulz iterations with batched fused GEMM ===
-    for _ in range(NS_STEPS):
-        A = torch.bmm(X, X.transpose(-2, -1))
-        gram_update = torch.baddbmm(A, A, A, beta=NS_COEFF_B, alpha=NS_COEFF_C)
-        X = torch.baddbmm(X, gram_update, X, beta=NS_COEFF_A, alpha=1.0)
-
-    # === Step 4. Transpose back if needed ===
-    if transposed:
-        X = X.transpose(-2, -1)
-
-    return X
-
-
-def zeropower_via_newtonschulz5(
-    G: torch.Tensor,
-) -> torch.Tensor:
-    """
-    Compute the zeroth power (orthogonalization) via Newton-Schulz iteration.
-
-    Dispatches to compiled 2D or 3D kernels for best performance.
-
-    Parameters
-    ----------
-    G : torch.Tensor
-        Input matrix with shape (M, N) or batched input with shape (B, M, N).
-
-    Returns
-    -------
-    torch.Tensor
-        Orthogonalized tensor in bfloat16 with same shape as input.
-
-    Raises
-    ------
-    ValueError
-        If input is not 2D or 3D.
-    """
-    if G.ndim == 2:
-        return _zeropower_via_newtonschulz5_2d(G)
-    if G.ndim == 3:
-        return _zeropower_via_newtonschulz5_3d(G)
-    raise ValueError("Input must be 2D or 3D for Newton-Schulz orthogonalization.")
 
 
 def should_fallback_to_adam_for_matrix(
@@ -478,9 +399,11 @@ class HybridMuonOptimizer(Optimizer):
 
                 # exp_avg = beta1 * exp_avg + (1 - beta1) * grad
                 # exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad^2
-                torch._foreach_lerp_(adam_exp_avgs, adam_grads_fp32, 1 - adam_betas[0])
-                grad_sq = torch._foreach_mul(adam_grads_fp32, adam_grads_fp32)
-                torch._foreach_lerp_(adam_exp_avg_sqs, grad_sq, 1 - adam_betas[1])
+                for ea, g in zip(adam_exp_avgs, adam_grads_fp32):
+                    ea.lerp_(g, 1 - adam_betas[0])
+                grad_sq = [g * g for g in adam_grads_fp32]
+                for eas, gsq in zip(adam_exp_avg_sqs, grad_sq):
+                    eas.lerp_(gsq, 1 - adam_betas[1])
 
                 # === Step 1.3. Bias correction and parameter update ===
                 for i, p in enumerate(adam_params):
@@ -531,11 +454,11 @@ class HybridMuonOptimizer(Optimizer):
 
                 # exp_avg = beta1 * exp_avg + (1 - beta1) * grad
                 # exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad^2
-                torch._foreach_lerp_(
-                    adam_nd_exp_avgs, adam_nd_grads_fp32, 1 - adam_betas[0]
-                )
-                grad_sq = torch._foreach_mul(adam_nd_grads_fp32, adam_nd_grads_fp32)
-                torch._foreach_lerp_(adam_nd_exp_avg_sqs, grad_sq, 1 - adam_betas[1])
+                for ea, g in zip(adam_nd_exp_avgs, adam_nd_grads_fp32):
+                    ea.lerp_(g, 1 - adam_betas[0])
+                grad_sq = [g * g for g in adam_nd_grads_fp32]
+                for eas, gsq in zip(adam_nd_exp_avg_sqs, grad_sq):
+                    eas.lerp_(gsq, 1 - adam_betas[1])
 
                 # === Step 2.3. Bias correction and parameter update ===
                 for i, p in enumerate(adam_nd_params):
@@ -589,15 +512,11 @@ class HybridMuonOptimizer(Optimizer):
 
                 # exp_avg = beta1 * exp_avg + (1 - beta1) * grad
                 # exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad^2
-                torch._foreach_lerp_(
-                    adam_matrix_exp_avgs, adam_matrix_grads_fp32, 1 - adam_betas[0]
-                )
-                grad_sq_m = torch._foreach_mul(
-                    adam_matrix_grads_fp32, adam_matrix_grads_fp32
-                )
-                torch._foreach_lerp_(
-                    adam_matrix_exp_avg_sqs, grad_sq_m, 1 - adam_betas[1]
-                )
+                for ea, g in zip(adam_matrix_exp_avgs, adam_matrix_grads_fp32):
+                    ea.lerp_(g, 1 - adam_betas[0])
+                grad_sq_m = [g * g for g in adam_matrix_grads_fp32]
+                for eas, gsq in zip(adam_matrix_exp_avg_sqs, grad_sq_m):
+                    eas.lerp_(gsq, 1 - adam_betas[1])
 
                 # === Step 3.3. Compute unclipped deltas ===
                 raw_deltas: list[torch.Tensor] = []
@@ -611,8 +530,8 @@ class HybridMuonOptimizer(Optimizer):
 
                 # === Step 3.4. Clip updates by relative norm and apply ===
                 max_rel_change = 0.05
-                p_norms = torch.stack(torch._foreach_norm(adam_matrix_params))
-                delta_norms = torch.stack(torch._foreach_norm(raw_deltas))
+                p_norms = torch.stack([p.norm() for p in adam_matrix_params])
+                delta_norms = torch.stack([d.norm() for d in raw_deltas])
                 floors = torch.tensor(
                     adam_matrix_abs_floor,
                     device=p_norms.device,
@@ -653,18 +572,21 @@ class HybridMuonOptimizer(Optimizer):
 
             # === Step 4.2. Apply weight decay (Muon path only) ===
             if weight_decay > 0 and muon_params_for_decay:
-                torch._foreach_mul_(muon_params_for_decay, 1.0 - lr * weight_decay)
+                for p in muon_params_for_decay:
+                    p.mul_(1.0 - lr * weight_decay)
 
             if not active_entries:
                 continue
 
             # === Step 4.3. Momentum update (Nesterov) ===
             # m_t = beta * m_{t-1} + (1 - beta) * g_t
-            torch._foreach_lerp_(muon_momentum_buffers, muon_grads, 1 - momentum)
+            for buf, g in zip(muon_momentum_buffers, muon_grads):
+                buf.lerp_(g, 1 - momentum)
             # update = beta * m_t + (1 - beta) * g_t
-            muon_updates = torch._foreach_lerp(
-                muon_grads, muon_momentum_buffers, momentum
-            )
+            muon_updates = [
+                torch.lerp(g, buf, momentum)
+                for g, buf in zip(muon_grads, muon_momentum_buffers)
+            ]
 
             # === Step 4.4. Bucket by shape/device/dtype for batched NS ===
             buckets: dict[
@@ -689,37 +611,16 @@ class HybridMuonOptimizer(Optimizer):
                 else:
                     scale = max(1.0, rows / cols) ** 0.5
 
-                if len(bucket_entries) == 1:
-                    entry, update_tensor = bucket_entries[0]
+                # Process each entry individually with _newton_schulz_orth.
+                # compatible with sharding propagation under FSDP2.
+                for entry, update_tensor in bucket_entries:
                     update_matrix = update_tensor.reshape(rows, cols)
                     if not update_matrix.is_contiguous():
                         update_matrix = update_matrix.contiguous()
 
-                    orth = _zeropower_via_newtonschulz5_2d(update_matrix)
+                    orth = _newton_schulz_orth(update_matrix)
                     orth.mul_(scale)
                     delta = orth.reshape(entry["param"].shape)
                     entry["param"].add_(delta, alpha=-lr)
-                    continue
-
-                matrices: list[torch.Tensor] = []
-                params: list[torch.Tensor] = []
-                orig_shapes: list[tuple[int, ...]] = []
-
-                for entry, update_tensor in bucket_entries:
-                    update_matrix = update_tensor.reshape(rows, cols)
-                    matrices.append(
-                        update_matrix
-                        if update_matrix.is_contiguous()
-                        else update_matrix.contiguous()
-                    )
-                    params.append(entry["param"])
-                    orig_shapes.append(entry["param"].shape)
-
-                stacked = torch.stack(matrices, dim=0)
-                orth = _zeropower_via_newtonschulz5_3d(stacked)
-                orth.mul_(scale)
-
-                for i, _ in enumerate(bucket_entries):
-                    params[i].add_(orth[i].reshape(orig_shapes[i]), alpha=-lr)
 
         return loss
