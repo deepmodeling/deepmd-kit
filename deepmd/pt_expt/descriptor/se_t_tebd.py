@@ -14,7 +14,7 @@ from deepmd.pt_expt.descriptor.base_descriptor import (
 )
 
 
-@BaseDescriptor.register("se_e3_tebd_expt")
+@BaseDescriptor.register("se_e3_tebd")
 class DescrptSeTTebd(DescrptSeTTebdDP, torch.nn.Module):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         torch.nn.Module.__init__(self)

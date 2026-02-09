@@ -14,8 +14,8 @@ from deepmd.pt_expt.descriptor.base_descriptor import (
 )
 
 
-@BaseDescriptor.register("se_e2_r_expt")
-@BaseDescriptor.register("se_r_expt")
+@BaseDescriptor.register("se_e2_r")
+@BaseDescriptor.register("se_r")
 class DescrptSeR(DescrptSeRDP, torch.nn.Module):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         torch.nn.Module.__init__(self)
