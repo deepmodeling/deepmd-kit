@@ -1,27 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-)
 
-import torch
 
 from deepmd.dpmodel.utils.exclude_mask import AtomExcludeMask as AtomExcludeMaskDP
 from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask as PairExcludeMaskDP
 from deepmd.pt_expt.common import (
-    dpmodel_setattr,
     register_dpmodel_mapping,
+    torch_module,
 )
 
 
-class AtomExcludeMask(AtomExcludeMaskDP, torch.nn.Module):
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        torch.nn.Module.__init__(self)
-        AtomExcludeMaskDP.__init__(self, *args, **kwargs)
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        handled, value = dpmodel_setattr(self, name, value)
-        if not handled:
-            super().__setattr__(name, value)
+@torch_module
+class AtomExcludeMask(AtomExcludeMaskDP):
+    pass
 
 
 register_dpmodel_mapping(
@@ -30,15 +20,9 @@ register_dpmodel_mapping(
 )
 
 
-class PairExcludeMask(PairExcludeMaskDP, torch.nn.Module):
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        torch.nn.Module.__init__(self)
-        PairExcludeMaskDP.__init__(self, *args, **kwargs)
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        handled, value = dpmodel_setattr(self, name, value)
-        if not handled:
-            super().__setattr__(name, value)
+@torch_module
+class PairExcludeMask(PairExcludeMaskDP):
+    pass
 
 
 register_dpmodel_mapping(

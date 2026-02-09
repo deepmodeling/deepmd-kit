@@ -17,6 +17,9 @@ new attributes.
 from collections.abc import (
     Callable,
 )
+from functools import (
+    wraps,
+)
 from typing import (
     Any,
     overload,
@@ -290,6 +293,46 @@ def to_torch_array(array: Any) -> torch.Tensor | None:
     if torch.is_tensor(array):
         return array.to(device=env.DEVICE)
     return torch.as_tensor(array, device=env.DEVICE)
+
+
+def torch_module(
+    module: type[NativeOP],
+) -> type[torch.nn.Module]:
+    """Convert a NativeOP to a torch.nn.Module.
+
+    Parameters
+    ----------
+    module : NativeOP
+        The NativeOP to convert.
+
+    Returns
+    -------
+    torch.nn.Module
+        The torch.nn.Module.
+
+    Examples
+    --------
+    >>> @torch_module
+    ... class MyModule(NativeOP):
+    ...     pass
+    """
+
+    @wraps(module, updated=())
+    class TorchModule(module, torch.nn.Module):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            torch.nn.Module.__init__(self)
+            module.__init__(self, *args, **kwargs)
+
+        def __call__(self, *args: Any, **kwargs: Any) -> Any:
+            # Ensure torch.nn.Module.__call__ drives forward() for export/tracing.
+            return torch.nn.Module.__call__(self, *args, **kwargs)
+
+        def __setattr__(self, name: str, value: Any) -> None:
+            handled, value = dpmodel_setattr(self, name, value)
+            if not handled:
+                super().__setattr__(name, value)
+
+    return TorchModule
 
 
 # Import utils to trigger dpmodel→pt_expt converter registrations
