@@ -25,10 +25,14 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.common import (
+    NativeOP,
+)
+
 # ---------------------------------------------------------------------------
 # dpmodel → pt_expt converter registry
 # ---------------------------------------------------------------------------
-_DPMODEL_TO_PT_EXPT: dict[type, Callable[[Any], torch.nn.Module]] = {}
+_DPMODEL_TO_PT_EXPT: dict[type[NativeOP], Callable[[NativeOP], torch.nn.Module]] = {}
 """Registry mapping dpmodel classes to their pt_expt converter functions.
 
 This registry is populated at module import time via `register_dpmodel_mapping`
@@ -43,7 +47,7 @@ Examples of registered mappings:
 
 
 def register_dpmodel_mapping(
-    dpmodel_cls: type, converter: Callable[[Any], torch.nn.Module]
+    dpmodel_cls: type[NativeOP], converter: Callable[[NativeOP], torch.nn.Module]
 ) -> None:
     """Register a converter that turns a dpmodel instance into a pt_expt Module.
 
@@ -54,10 +58,10 @@ def register_dpmodel_mapping(
 
     Parameters
     ----------
-    dpmodel_cls : type
+    dpmodel_cls : type[NativeOP]
         The dpmodel class to register (e.g., AtomExcludeMaskDP, NetworkCollectionDP).
         This is the key used for lookup in dpmodel_setattr.
-    converter : Callable[[Any], torch.nn.Module]
+    converter : Callable[[NativeOP], torch.nn.Module]
         A callable that converts a dpmodel instance to a pt_expt module.
         Common patterns:
         - Reconstruct from constructor args: lambda v: PtExptClass(v.ntypes, ...)
@@ -212,9 +216,17 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
 
     # dpmodel object → pt_expt module
     if "_modules" in obj.__dict__:
-        converted = try_convert_module(value)
-        if converted is not None:
-            return False, converted
+        # Check if this is a NativeOP that needs conversion
+        if isinstance(value, NativeOP) and not isinstance(value, torch.nn.Module):
+            converted = try_convert_module(value)
+            if converted is not None:
+                return False, converted
+            # If it's a NativeOP but not registered, this is likely a bug
+            raise TypeError(
+                f"Attempted to assign a dpmodel object of type {type(value).__name__} "
+                f"but no converter is registered. Please call register_dpmodel_mapping "
+                f"for this type."
+            )
 
     return False, value
 
