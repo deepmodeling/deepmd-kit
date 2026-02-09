@@ -78,6 +78,7 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
             "precision": precision,
             "sel_type": sel_type,
             "seed": 20240217,
+            "activation_function": "relu",
         }
         return data
 
