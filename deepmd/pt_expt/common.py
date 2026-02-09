@@ -216,17 +216,12 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
 
     # dpmodel object → pt_expt module
     if "_modules" in obj.__dict__:
-        # Check if this is a NativeOP that needs conversion
-        if isinstance(value, NativeOP) and not isinstance(value, torch.nn.Module):
-            converted = try_convert_module(value)
-            if converted is not None:
-                return False, converted
-            # If it's a NativeOP but not registered, this is likely a bug
-            raise TypeError(
-                f"Attempted to assign a dpmodel object of type {type(value).__name__} "
-                f"but no converter is registered. Please call register_dpmodel_mapping "
-                f"for this type."
-            )
+        converted = try_convert_module(value)
+        if converted is not None:
+            return False, converted
+        # Note: Some NativeOP objects (like EnvMat) don't need conversion and can
+        # be used directly. If a NativeOP truly needs conversion but isn't registered,
+        # it will fail at runtime when the object is actually used.
 
     return False, value
 
