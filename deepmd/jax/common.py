@@ -44,9 +44,12 @@ def to_jax_array(array: np.ndarray | None) -> jnp.ndarray | None:
     return jnp.array(array)
 
 
+T = TypeVar('T')
+
+
 def flax_module(
-    module: type[NativeOP],
-) -> type[nnx.Module]:
+    module: type[T],
+) -> type[T]:   # runtime: actually returns type[T & nnx.Module]
     """Convert a NativeOP to a Flax module.
 
     Parameters
