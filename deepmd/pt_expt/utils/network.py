@@ -16,6 +16,7 @@ from deepmd.dpmodel.utils.network import LayerNorm as LayerNormDP
 from deepmd.dpmodel.utils.network import NativeLayer as NativeLayerDP
 from deepmd.dpmodel.utils.network import NetworkCollection as NetworkCollectionDP
 from deepmd.dpmodel.utils.network import (
+    make_fitting_network,
     make_multilayer_network,
 )
 from deepmd.pt_expt.common import (

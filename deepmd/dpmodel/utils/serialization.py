@@ -106,9 +106,9 @@ def save_dp_model(filename: str, model_dict: dict) -> None:
         with h5py.File(filename, "w") as f:
             model_dict = traverse_model_dict(
                 model_dict,
-                lambda x: f.create_dataset(
-                    f"variable_{variable_counter():04d}", data=x
-                ).name,
+                lambda x: (
+                    f.create_dataset(f"variable_{variable_counter():04d}", data=x).name
+                ),
             )
             save_dict = {
                 **extra_dict,
@@ -118,15 +118,17 @@ def save_dp_model(filename: str, model_dict: dict) -> None:
     elif filename_extension in {".yaml", ".yml"}:
         model_dict = traverse_model_dict(
             model_dict,
-            lambda x: {
-                "@class": "np.ndarray",
-                "@is_variable": True,
-                "@version": 1,
-                "dtype": x.dtype.name,
-                "value": x.tolist(),
-            }
-            if isinstance(x, np.ndarray)
-            else x,
+            lambda x: (
+                {
+                    "@class": "np.ndarray",
+                    "@is_variable": True,
+                    "@version": 1,
+                    "dtype": x.dtype.name,
+                    "value": x.tolist(),
+                }
+                if isinstance(x, np.ndarray)
+                else x
+            ),
         )
         with open(filename, "w") as f:
             yaml.safe_dump(
