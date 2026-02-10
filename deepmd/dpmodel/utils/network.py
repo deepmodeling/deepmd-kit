@@ -886,10 +886,13 @@ class EmbeddingNet(NativeNet):
         obj = cls(**data)
         # Reinitialize layers from serialized data, using the same layer type
         # that __init__ created (respects subclass overrides via MRO).
-        layer_type = type(obj.layers[0])
-        obj.layers = type(obj.layers)(
-            [layer_type.deserialize(layer) for layer in layers]
-        )
+        if obj.layers:
+            layer_type = type(obj.layers[0])
+            obj.layers = type(obj.layers)(
+                [layer_type.deserialize(layer) for layer in layers]
+            )
+        else:
+            obj.layers = type(obj.layers)([])
         return obj
 
 
