@@ -9,9 +9,6 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.common import (
-    NativeOP,
-)
 from deepmd.jax.env import (
     jnp,
     nnx,
@@ -44,12 +41,12 @@ def to_jax_array(array: np.ndarray | None) -> jnp.ndarray | None:
     return jnp.array(array)
 
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 def flax_module(
     module: type[T],
-) -> type[T]:   # runtime: actually returns type[T & nnx.Module]
+) -> type[T]:  # runtime: actually returns type[T & nnx.Module]
     """Convert a NativeOP to a Flax module.
 
     Parameters
