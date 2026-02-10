@@ -29,7 +29,7 @@ repos:
         exclude: ^source/3rdparty
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.14.14
+    rev: v0.15.0
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -63,7 +63,7 @@ repos:
     rev: v21.1.8
     hooks:
       - id: clang-format
-        exclude: ^(source/3rdparty|source/lib/src/gpu/cudart/.+\.inc|.+\.ipynb$|.+\.json$)
+        exclude: ^(source/3rdparty|source/lib/src/gpu/cudart/.+\.inc|.+\.ipynb$|source/tests/infer/.+\.json$)
   # markdown, yaml, CSS, javascript
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v4.0.0-alpha.8

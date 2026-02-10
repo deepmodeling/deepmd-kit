@@ -103,6 +103,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             "seed": 20240217,
             "atom_ener": atom_ener,
             "use_aparam_as_mask": use_aparam_as_mask,
+            "activation_function": "relu",
         }
 
     @property

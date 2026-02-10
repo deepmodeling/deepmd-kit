@@ -150,8 +150,10 @@ def preprocess_shared_params(model_config: dict) -> tuple[dict, dict]:
     for shared_key in shared_links:
         shared_links[shared_key]["links"] = sorted(
             shared_links[shared_key]["links"],
-            key=lambda x: x["shared_level"]
-            - ("spin" in model_config["model_dict"][x["model_key"]]) * 100,
+            key=lambda x: (
+                x["shared_level"]
+                - ("spin" in model_config["model_dict"][x["model_key"]]) * 100
+            ),
         )
         # little trick to make spin models in the front to be the base models,
         # because its type embeddings are more general.
