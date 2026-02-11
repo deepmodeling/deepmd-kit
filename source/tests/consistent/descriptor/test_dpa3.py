@@ -125,7 +125,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
                 }
             ),
             # kwargs for descriptor
-            "activation_function": "silu",
+            "activation_function": "relu",
             "precision": precision,
             "exclude_types": exclude_types,
             "env_protection": 0.0,
