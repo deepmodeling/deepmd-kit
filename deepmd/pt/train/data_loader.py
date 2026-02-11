@@ -27,7 +27,6 @@ from typing import (
     Any,
     ClassVar,
     Protocol,
-    Self,
     runtime_checkable,
 )
 
@@ -62,13 +61,9 @@ class DataLoaderInterface(Protocol):
     This allows gradual migration from DpLoaderSet to new implementations.
     """
 
-    def __iter__(self) -> Self:
-        """Return iterator over batches.
-
-        Returns self as required by the iterator protocol.
-        This makes the object both an iterable and an iterator.
-        """
-        ...
+    def __iter__(self) -> Iterator[dict[str, Any]]:
+        """Return iterator over batches."""
+        return self
 
     def __next__(self) -> dict[str, Any]:
         """Get next batch."""
