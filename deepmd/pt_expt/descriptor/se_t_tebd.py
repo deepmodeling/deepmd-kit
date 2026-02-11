@@ -34,9 +34,7 @@ class DescrptSeTTebd(DescrptSeTTebdDP, torch.nn.Module):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        extended_atype_embd: torch.Tensor | None = None,
         mapping: torch.Tensor | None = None,
-        type_embedding: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -44,11 +42,10 @@ class DescrptSeTTebd(DescrptSeTTebdDP, torch.nn.Module):
         torch.Tensor | None,
         torch.Tensor | None,
     ]:
-        del extended_atype_embd, mapping, type_embedding
         descrpt, rot_mat, g2, h2, sw = self.call(
             extended_coord,
             extended_atype,
             nlist,
-            mapping=None,
+            mapping=mapping,
         )
         return descrpt, rot_mat, g2, h2, sw

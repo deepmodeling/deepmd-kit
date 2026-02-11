@@ -58,23 +58,16 @@ class TestDescrptSeTTebd(unittest.TestCase, TestCaseSingleFrameWithNlist):
             dd0.davg = torch.tensor(davg, dtype=dtype, device=self.device)
             dd0.dstd = torch.tensor(dstd, dtype=dtype, device=self.device)
 
-            # Type embedding input
-            type_embedding = torch.randn(
-                [self.nt, dd0.tebd_dim], dtype=dtype, device=self.device
-            )
-
             rd0, _, _, _, _ = dd0(
                 torch.tensor(self.coord_ext, dtype=dtype, device=self.device),
                 torch.tensor(self.atype_ext, dtype=int, device=self.device),
                 torch.tensor(self.nlist, dtype=int, device=self.device),
-                type_embedding=type_embedding,
             )
             dd1 = DescrptSeTTebd.deserialize(dd0.serialize())
             rd1, gr1, _, _, sw1 = dd1(
                 torch.tensor(self.coord_ext, dtype=dtype, device=self.device),
                 torch.tensor(self.atype_ext, dtype=int, device=self.device),
                 torch.tensor(self.nlist, dtype=int, device=self.device),
-                type_embedding=type_embedding,
             )
             np.testing.assert_allclose(
                 rd0.detach().cpu().numpy(),
@@ -146,14 +139,9 @@ class TestDescrptSeTTebd(unittest.TestCase, TestCaseSingleFrameWithNlist):
             dd0.dstd = torch.tensor(dstd, dtype=dtype, device=self.device)
             dd0 = dd0.eval()
 
-            type_embedding = torch.randn(
-                [self.nt, dd0.tebd_dim], dtype=dtype, device=self.device
-            )
-
             inputs = (
                 torch.tensor(self.coord_ext, dtype=dtype, device=self.device),
                 torch.tensor(self.atype_ext, dtype=int, device=self.device),
                 torch.tensor(self.nlist, dtype=int, device=self.device),
-                type_embedding,
             )
             torch.export.export(dd0, inputs)
