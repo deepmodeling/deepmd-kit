@@ -165,7 +165,7 @@ class TestEmbeddingNetRefactor(unittest.TestCase):
         # Test forward pass
         rng = np.random.default_rng()
         x_np = rng.standard_normal((5, self.in_dim))
-        x_torch = torch.from_numpy(x_np)
+        x_torch = torch.from_numpy(x_np).to(env.DEVICE)
 
         out_dp = dp_net.call(x_np)
         out_pt = pt_net(x_torch).detach().cpu().numpy()

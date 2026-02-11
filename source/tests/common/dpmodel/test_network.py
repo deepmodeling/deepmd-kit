@@ -250,6 +250,44 @@ class TestEmbeddingNet(unittest.TestCase):
         self.assertTrue(net_mixed.layers[0].trainable)
         self.assertFalse(net_mixed.layers[1].trainable)
 
+    def test_empty_layers_round_trip(self) -> None:
+        """Test EmbeddingNet with empty neuron list (edge case for deserialize).
+
+        This tests the fix for IndexError when neuron=[] results in empty layers.
+        The deserialize method should handle this case without trying to access
+        layers[0] when the list is empty.
+        """
+        in_dim = 4
+        neuron = []  # Empty neuron list
+
+        # Create network with empty layers
+        net = EmbeddingNet(
+            in_dim=in_dim,
+            neuron=neuron,
+            activation_function="tanh",
+            resnet_dt=True,
+            precision="float64",
+        )
+
+        # Verify it has no layers
+        self.assertEqual(len(net.layers), 0)
+
+        # Serialize and deserialize
+        serialized = net.serialize()
+        net_restored = EmbeddingNet.deserialize(serialized)
+
+        # Verify restored network also has no layers
+        self.assertEqual(len(net_restored.layers), 0)
+        self.assertEqual(net_restored.in_dim, in_dim)
+        self.assertEqual(net_restored.neuron, neuron)
+
+        # Verify forward pass works (should return input unchanged)
+        rng = np.random.default_rng()
+        x = rng.standard_normal((5, in_dim))
+        out = net_restored.call(x)
+        # With no layers, output should equal input
+        np.testing.assert_allclose(out, x)
+
 
 class TestFittingNet(unittest.TestCase):
     def test_fitting_net(self) -> None:
