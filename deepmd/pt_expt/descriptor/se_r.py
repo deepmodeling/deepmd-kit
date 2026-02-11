@@ -20,9 +20,7 @@ class DescrptSeR(DescrptSeRDP):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        extended_atype_embd: torch.Tensor | None = None,
         mapping: torch.Tensor | None = None,
-        type_embedding: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -30,7 +28,6 @@ class DescrptSeR(DescrptSeRDP):
         torch.Tensor | None,
         torch.Tensor | None,
     ]:
-        del extended_atype_embd, type_embedding
         descrpt, rot_mat, g2, h2, sw = self.call(
             extended_coord,
             extended_atype,

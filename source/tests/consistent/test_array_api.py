@@ -8,6 +8,8 @@ from deepmd.dpmodel.array_api import (
     xp_add_at,
     xp_bincount,
     xp_scatter_sum,
+    xp_setitem_at,
+    xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -64,6 +66,19 @@ class TestXpScatterSumConsistent(unittest.TestCase):
         index_jax = jnp.array(self.index_np)
         src_jax = jnp.array(self.src_np)
         result = xp_scatter_sum(input_jax, self.dim, index_jax, src_jax)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
+
+    @unittest.skipUnless(
+        INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed"
+    )
+    @unittest.skipUnless(
+        sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
+    )
+    def test_array_api_strict_consistent_with_ref(self) -> None:
+        input_xp = xp.asarray(self.input_np)
+        index_xp = xp.asarray(self.index_np)
+        src_xp = xp.asarray(self.src_np)
+        result = xp_scatter_sum(input_xp, self.dim, index_xp, src_xp)
         np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
 
 
@@ -139,6 +154,17 @@ class TestXpBincountConsistent(unittest.TestCase):
         result = xp_bincount(x_jax)
         np.testing.assert_equal(self.ref, to_numpy_array(result))
 
+    @unittest.skipUnless(
+        INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed"
+    )
+    @unittest.skipUnless(
+        sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
+    )
+    def test_array_api_strict_consistent_with_ref(self) -> None:
+        x_xp = xp.asarray(self.x_np)
+        result = xp_bincount(x_xp)
+        np.testing.assert_equal(self.ref, to_numpy_array(result))
+
 
 class TestXpBincountWithWeightsConsistent(unittest.TestCase):
     """Test xp_bincount with weights consistency across backends."""
@@ -166,6 +192,18 @@ class TestXpBincountWithWeightsConsistent(unittest.TestCase):
         result = xp_bincount(x_jax, weights=weights_jax)
         np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
 
+    @unittest.skipUnless(
+        INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed"
+    )
+    @unittest.skipUnless(
+        sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
+    )
+    def test_array_api_strict_consistent_with_ref(self) -> None:
+        x_xp = xp.asarray(self.x_np)
+        weights_xp = xp.asarray(self.weights_np)
+        result = xp_bincount(x_xp, weights=weights_xp)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
+
 
 class TestXpBincountWithMinlengthConsistent(unittest.TestCase):
     """Test xp_bincount with minlength consistency across backends."""
@@ -190,3 +228,99 @@ class TestXpBincountWithMinlengthConsistent(unittest.TestCase):
         x_jax = jnp.array(self.x_np)
         result = xp_bincount(x_jax, minlength=self.minlength)
         np.testing.assert_equal(self.ref, to_numpy_array(result))
+
+    @unittest.skipUnless(
+        INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed"
+    )
+    @unittest.skipUnless(
+        sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
+    )
+    def test_array_api_strict_consistent_with_ref(self) -> None:
+        x_xp = xp.asarray(self.x_np)
+        result = xp_bincount(x_xp, minlength=self.minlength)
+        np.testing.assert_equal(self.ref, to_numpy_array(result))
+
+
+class TestXpSigmoidConsistent(unittest.TestCase):
+    """Test xp_sigmoid consistency across backends."""
+
+    def setUp(self) -> None:
+        self.x_np = np.array([-2.0, -1.0, 0.0, 1.0, 2.0])
+        # Reference using NumPy sigmoid
+        self.ref = 1 / (1 + np.exp(-self.x_np))
+
+    def test_numpy_consistent_with_ref(self) -> None:
+        result = xp_sigmoid(self.x_np)
+        np.testing.assert_allclose(self.ref, result, atol=1e-10)
+
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_pt_consistent_with_ref(self) -> None:
+        x_pt = torch.from_numpy(self.x_np)
+        result = xp_sigmoid(x_pt)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
+
+    @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
+    def test_jax_consistent_with_ref(self) -> None:
+        x_jax = jnp.array(self.x_np)
+        result = xp_sigmoid(x_jax)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
+
+    @unittest.skipUnless(
+        INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed"
+    )
+    @unittest.skipUnless(
+        sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
+    )
+    def test_array_api_strict_consistent_with_ref(self) -> None:
+        x_xp = xp.asarray(self.x_np)
+        result = xp_sigmoid(x_xp)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
+
+
+class TestXpSetitemAtConsistent(unittest.TestCase):
+    """Test xp_setitem_at consistency across backends."""
+
+    def setUp(self) -> None:
+        self.x_np = np.zeros((5, 3))
+        self.mask_np = np.array([True, False, True, False, True])
+        self.values_np = np.ones((3, 3))
+        # Reference using NumPy
+        self.ref = self.x_np.copy()
+        self.ref[self.mask_np] = self.values_np
+
+    def test_numpy_consistent_with_ref(self) -> None:
+        x = self.x_np.copy()
+        result = xp_setitem_at(x, self.mask_np, self.values_np)
+        np.testing.assert_allclose(self.ref, result, atol=1e-10)
+
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_pt_consistent_with_ref(self) -> None:
+        x_pt = torch.from_numpy(self.x_np)
+        mask_pt = torch.from_numpy(self.mask_np)
+        values_pt = torch.from_numpy(self.values_np)
+        result = xp_setitem_at(x_pt, mask_pt, values_pt)
+        # Verify original tensor is unchanged (non-mutating)
+        np.testing.assert_allclose(self.x_np, to_numpy_array(x_pt), atol=1e-10)
+        # Verify result matches reference
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
+
+    @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
+    def test_jax_consistent_with_ref(self) -> None:
+        x_jax = jnp.array(self.x_np)
+        mask_jax = jnp.array(self.mask_np)
+        values_jax = jnp.array(self.values_np)
+        result = xp_setitem_at(x_jax, mask_jax, values_jax)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)
+
+    @unittest.skipUnless(
+        INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed"
+    )
+    @unittest.skipUnless(
+        sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
+    )
+    def test_array_api_strict_consistent_with_ref(self) -> None:
+        x_xp = xp.asarray(self.x_np)
+        mask_xp = xp.asarray(self.mask_np)
+        values_xp = xp.asarray(self.values_np)
+        result = xp_setitem_at(x_xp, mask_xp, values_xp)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-10)

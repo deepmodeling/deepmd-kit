@@ -14,6 +14,9 @@ from .exclude_mask import (
 from .network import (
     NetworkCollection,
 )
+from .type_embed import (
+    TypeEmbedNet,
+)
 
 # Register EnvMat with identity converter - it doesn't need wrapping
 # as it's a stateless utility class
@@ -23,4 +26,5 @@ __all__ = [
     "AtomExcludeMask",
     "NetworkCollection",
     "PairExcludeMask",
+    "TypeEmbedNet",
 ]

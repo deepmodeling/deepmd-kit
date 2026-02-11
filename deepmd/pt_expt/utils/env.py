@@ -34,7 +34,7 @@ try:
     # only linux
     ncpus = len(os.sched_getaffinity(0))
 except AttributeError:
-    ncpus = os.cpu_count()
+    ncpus = os.cpu_count() or 1
 NUM_WORKERS = int(os.environ.get("NUM_WORKERS", min(4, ncpus)))
 if multiprocessing.get_start_method() != "fork":
     # spawn or forkserver does not support NUM_WORKERS > 0 for DataLoader

@@ -10,12 +10,12 @@ import torch
 from deepmd.dpmodel.common import (
     NativeOP,
 )
+from deepmd.dpmodel.utils.network import EmbeddingNet as EmbeddingNetDP
+from deepmd.dpmodel.utils.network import FittingNet as FittingNetDP
 from deepmd.dpmodel.utils.network import LayerNorm as LayerNormDP
 from deepmd.dpmodel.utils.network import NativeLayer as NativeLayerDP
 from deepmd.dpmodel.utils.network import NetworkCollection as NetworkCollectionDP
 from deepmd.dpmodel.utils.network import (
-    make_embedding_network,
-    make_fitting_network,
     make_multilayer_network,
 )
 from deepmd.pt_expt.common import (
@@ -83,12 +83,49 @@ class NativeNet(make_multilayer_network(NativeLayer, NativeOP)):
         return self.call(x)
 
 
-class EmbeddingNet(make_embedding_network(NativeNet, NativeLayer)):
-    pass
+class EmbeddingNet(EmbeddingNetDP, torch.nn.Module):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        torch.nn.Module.__init__(self)
+        EmbeddingNetDP.__init__(self, *args, **kwargs)
+        # EmbeddingNetDP.__init__ creates dpmodel NativeLayer instances.
+        # Convert to pt_expt NativeLayer and wrap in ModuleList.
+        self.layers = torch.nn.ModuleList(
+            [NativeLayer.deserialize(layer.serialize()) for layer in self.layers]
+        )
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return torch.nn.Module.__call__(self, *args, **kwargs)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.call(x)
 
 
-class FittingNet(make_fitting_network(EmbeddingNet, NativeNet, NativeLayer)):
-    pass
+register_dpmodel_mapping(
+    EmbeddingNetDP,
+    lambda v: EmbeddingNet.deserialize(v.serialize()),
+)
+
+
+class FittingNet(FittingNetDP, torch.nn.Module):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        torch.nn.Module.__init__(self)
+        FittingNetDP.__init__(self, *args, **kwargs)
+        # Convert dpmodel layers to pt_expt NativeLayer
+        self.layers = torch.nn.ModuleList(
+            [NativeLayer.deserialize(layer.serialize()) for layer in self.layers]
+        )
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return torch.nn.Module.__call__(self, *args, **kwargs)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.call(x)
+
+
+register_dpmodel_mapping(
+    FittingNetDP,
+    lambda v: FittingNet.deserialize(v.serialize()),
+)
 
 
 @torch_module
