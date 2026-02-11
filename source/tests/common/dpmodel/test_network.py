@@ -313,6 +313,104 @@ class TestFittingNet(unittest.TestCase):
             en1.call(inp)
             np.testing.assert_allclose(en0.call(inp), en1.call(inp))
 
+    def test_is_concrete_class(self) -> None:
+        """Verify FittingNet is a concrete class, not factory-generated."""
+        in_dim = 4
+        out_dim = 1
+        neuron = [8, 16]
+        net = FittingNet(
+            in_dim=in_dim,
+            out_dim=out_dim,
+            neuron=neuron,
+            activation_function="tanh",
+            resnet_dt=True,
+            precision="float64",
+            bias_out=True,
+        )
+        # Check it's the actual FittingNet class, not a dynamic class
+        self.assertEqual(net.__class__.__name__, "FittingNet")
+        self.assertEqual(net.__class__.__module__, "deepmd.dpmodel.utils.network")
+        # Verify it has the expected attributes
+        self.assertEqual(net.in_dim, in_dim)
+        self.assertEqual(net.out_dim, out_dim)
+        self.assertEqual(net.neuron, neuron)
+        self.assertEqual(net.activation_function, "tanh")
+        self.assertEqual(net.resnet_dt, True)
+        self.assertEqual(net.bias_out, True)
+        # FittingNet has len(neuron) embedding layers + 1 output layer
+        self.assertEqual(len(net.layers), len(neuron) + 1)
+
+    def test_forward_pass(self) -> None:
+        """Test FittingNet forward pass produces correct output shape."""
+        in_dim = 4
+        out_dim = 3
+        neuron = [8, 16, 32]
+        net = FittingNet(
+            in_dim=in_dim,
+            out_dim=out_dim,
+            neuron=neuron,
+            activation_function="tanh",
+            resnet_dt=True,
+            precision="float64",
+        )
+        # Single sample
+        rng = np.random.default_rng()
+        x = rng.standard_normal(in_dim)
+        out = net.call(x)
+        self.assertEqual(out.shape, (out_dim,))
+
+        # Batch of samples
+        batch_size = 5
+        x_batch = rng.standard_normal((batch_size, in_dim))
+        out_batch = net.call(x_batch)
+        self.assertEqual(out_batch.shape, (batch_size, out_dim))
+
+    def test_trainable_parameter_variants(self) -> None:
+        """Test FittingNet with different trainable configurations."""
+        in_dim = 4
+        out_dim = 2
+        neuron = [8, 16]
+
+        # Test 1: All layers trainable (default)
+        net_all_trainable = FittingNet(
+            in_dim=in_dim,
+            out_dim=out_dim,
+            neuron=neuron,
+            trainable=True,
+        )
+        for layer in net_all_trainable.layers:
+            self.assertTrue(layer.trainable)
+
+        # Test 2: All layers frozen
+        net_all_frozen = FittingNet(
+            in_dim=in_dim,
+            out_dim=out_dim,
+            neuron=neuron,
+            trainable=False,
+        )
+        for layer in net_all_frozen.layers:
+            self.assertFalse(layer.trainable)
+
+        # Test 3: Mixed trainable (embedding layers frozen, output layer trainable)
+        trainable_list = [False, False, True]  # 2 embedding layers + 1 output layer
+        net_mixed = FittingNet(
+            in_dim=in_dim,
+            out_dim=out_dim,
+            neuron=neuron,
+            trainable=trainable_list,
+        )
+        self.assertFalse(net_mixed.layers[0].trainable)  # First embedding layer
+        self.assertFalse(net_mixed.layers[1].trainable)  # Second embedding layer
+        self.assertTrue(net_mixed.layers[2].trainable)  # Output layer
+
+        # Test 4: Serialize/deserialize preserves trainable
+        serialized = net_mixed.serialize()
+        net_restored = FittingNet.deserialize(serialized)
+        for orig_layer, restored_layer in zip(
+            net_mixed.layers, net_restored.layers, strict=True
+        ):
+            self.assertEqual(orig_layer.trainable, restored_layer.trainable)
+
 
 class TestNetworkCollection(unittest.TestCase):
     def setUp(self) -> None:

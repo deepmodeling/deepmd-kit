@@ -1003,7 +1003,118 @@ def make_fitting_network(
     return FN
 
 
-FittingNet = make_fitting_network(EmbeddingNet, NativeNet, NativeLayer)
+class FittingNet(EmbeddingNet):
+    """The fitting network. It may be implemented as an embedding
+    net connected with a linear output layer.
+
+    Parameters
+    ----------
+    in_dim
+        Input dimension.
+    out_dim
+        Output dimension
+    neuron
+        The number of neurons in each hidden layer.
+    activation_function
+        The activation function.
+    resnet_dt
+        Use time step at the resnet architecture.
+    precision
+        Floating point precision for the model parameters.
+    bias_out
+        The last linear layer has bias.
+    seed : int, optional
+        Random seed.
+    trainable : bool or list[bool], optional
+        Whether the network is trainable.
+    """
+
+    def __init__(
+        self,
+        in_dim: int,
+        out_dim: int,
+        neuron: list[int] = [24, 48, 96],
+        activation_function: str = "tanh",
+        resnet_dt: bool = False,
+        precision: str = DEFAULT_PRECISION,
+        bias_out: bool = True,
+        seed: int | list[int] | None = None,
+        trainable: bool | list[bool] = True,
+    ) -> None:
+        if trainable is None:
+            trainable = [True] * (len(neuron) + 1)
+        elif isinstance(trainable, bool):
+            trainable = [trainable] * (len(neuron) + 1)
+        else:
+            pass
+        super().__init__(
+            in_dim,
+            neuron=neuron,
+            activation_function=activation_function,
+            resnet_dt=resnet_dt,
+            precision=precision,
+            seed=seed,
+            trainable=trainable[:-1],
+        )
+        i_in = neuron[-1] if len(neuron) > 0 else in_dim
+        i_ot = out_dim
+        self.layers.append(
+            NativeLayer(
+                i_in,
+                i_ot,
+                bias=bias_out,
+                use_timestep=False,
+                activation_function=None,
+                resnet=False,
+                precision=precision,
+                seed=child_seed(seed, len(neuron)),
+                trainable=trainable[-1],
+            )
+        )
+        self.out_dim = out_dim
+        self.bias_out = bias_out
+
+    def serialize(self) -> dict:
+        """Serialize the network to a dict.
+
+        Returns
+        -------
+        dict
+            The serialized network.
+        """
+        return {
+            "@class": "FittingNetwork",
+            "@version": 1,
+            "in_dim": self.in_dim,
+            "out_dim": self.out_dim,
+            "neuron": self.neuron.copy(),
+            "activation_function": self.activation_function,
+            "resnet_dt": self.resnet_dt,
+            "precision": self.precision,
+            "bias_out": self.bias_out,
+            "layers": [layer.serialize() for layer in self.layers],
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "FittingNet":
+        """Deserialize the network from a dict.
+
+        Parameters
+        ----------
+        data : dict
+            The dict to deserialize from.
+        """
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data.pop("@class", None)
+        layers = data.pop("layers")
+        obj = cls(**data)
+        # Use type(obj.layers[0]) to respect subclass layer types
+        layer_type = type(obj.layers[0])
+        obj.layers = type(obj.layers)(
+            [layer_type.deserialize(layer) for layer in layers]
+        )
+        return obj
 
 
 class NetworkCollection:
