@@ -5,7 +5,7 @@ from typing import (
 
 import torch
 
-from deepmd.dpmodel.descriptor.se_e2_a import DescrptSeAArrayAPI as DescrptSeADP
+from deepmd.dpmodel.descriptor.se_t_tebd import DescrptSeTTebd as DescrptSeTTebdDP
 from deepmd.pt_expt.common import (
     dpmodel_setattr,
 )
@@ -14,12 +14,11 @@ from deepmd.pt_expt.descriptor.base_descriptor import (
 )
 
 
-@BaseDescriptor.register("se_e2_a_expt")
-@BaseDescriptor.register("se_a_expt")
-class DescrptSeA(DescrptSeADP, torch.nn.Module):
+@BaseDescriptor.register("se_e3_tebd_expt")
+class DescrptSeTTebd(DescrptSeTTebdDP, torch.nn.Module):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         torch.nn.Module.__init__(self)
-        DescrptSeADP.__init__(self, *args, **kwargs)
+        DescrptSeTTebdDP.__init__(self, *args, **kwargs)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         # Ensure torch.nn.Module.__call__ drives forward() for export/tracing.

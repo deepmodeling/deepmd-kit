@@ -12,7 +12,7 @@ from typing import (
     NoReturn,
 )
 
-import numpy as np
+import array_api_compat
 
 from deepmd.dpmodel.array_api import (
     Array,
@@ -173,7 +173,18 @@ def extend_descrpt_stat(
         extend_dstd = des_with_stat["dstd"]
     else:
         extend_shape = [len(type_map), *list(des["davg"].shape[1:])]
-        extend_davg = np.zeros(extend_shape, dtype=des["davg"].dtype)
-        extend_dstd = np.ones(extend_shape, dtype=des["dstd"].dtype)
-    des["davg"] = np.concatenate([des["davg"], extend_davg], axis=0)
-    des["dstd"] = np.concatenate([des["dstd"], extend_dstd], axis=0)
+        # Use array_api_compat to infer device and dtype from context
+        xp = array_api_compat.array_namespace(des["davg"])
+        extend_davg = xp.zeros(
+            extend_shape,
+            dtype=des["davg"].dtype,
+            device=array_api_compat.device(des["davg"]),
+        )
+        extend_dstd = xp.ones(
+            extend_shape,
+            dtype=des["dstd"].dtype,
+            device=array_api_compat.device(des["dstd"]),
+        )
+    xp = array_api_compat.array_namespace(des["davg"])
+    des["davg"] = xp.concat([des["davg"], extend_davg], axis=0)
+    des["dstd"] = xp.concat([des["dstd"], extend_dstd], axis=0)

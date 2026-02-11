@@ -19,6 +19,7 @@ from ..common import (
     INSTALLED_JAX,
     INSTALLED_PD,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     CommonTest,
     parameterized,
 )
@@ -30,6 +31,12 @@ if INSTALLED_PT:
     from deepmd.pt.model.descriptor.se_t_tebd import DescrptSeTTebd as DescrptSeTTebdPT
 else:
     DescrptSeTTebdPT = None
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.descriptor.se_t_tebd import (
+        DescrptSeTTebd as DescrptSeTTebdPTExpt,
+    )
+else:
+    DescrptSeTTebdPTExpt = None
 DescrptSeTTebdTF = None
 if INSTALLED_JAX:
     from deepmd.jax.descriptor.se_t_tebd import DescrptSeTTebd as DescrptSeTTebdJAX
@@ -119,6 +126,23 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
         return CommonTest.skip_pt
 
     @property
+    def skip_pt_expt(self) -> bool:
+        (
+            tebd_dim,
+            tebd_input_mode,
+            resnet_dt,
+            excluded_types,
+            env_protection,
+            set_davg_zero,
+            smooth,
+            concat_output_tebd,
+            precision,
+            use_econf_tebd,
+            use_tebd_bias,
+        ) = self.param
+        return CommonTest.skip_pt_expt
+
+    @property
     def skip_dp(self) -> bool:
         (
             tebd_dim,
@@ -159,6 +183,7 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
     tf_class = DescrptSeTTebdTF
     dp_class = DescrptSeTTebdDP
     pt_class = DescrptSeTTebdPT
+    pt_expt_class = DescrptSeTTebdPTExpt
     pd_class = DescrptSeTTebdPD
     jax_class = DescrptSeTTebdJAX
     array_api_strict_class = DescrptSeTTebdStrict
@@ -234,6 +259,16 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt(self, pt_obj: Any) -> Any:
         return self.eval_pt_descriptor(
             pt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return self.eval_pt_expt_descriptor(
+            pt_expt_obj,
             self.natoms,
             self.coords,
             self.atype,
