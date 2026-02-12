@@ -7,6 +7,13 @@ import torch
 from deepmd.dpmodel.descriptor import DescrptSeA as DPDescrptSeA
 from deepmd.dpmodel.fitting import InvarFitting as DPInvarFitting
 from deepmd.dpmodel.model.ener_model import EnergyModel as DPEnergyModel
+from deepmd.dpmodel.utils.nlist import (
+    build_neighbor_list,
+    extend_coord_with_ghosts,
+)
+from deepmd.dpmodel.utils.region import (
+    normalize_coord,
+)
 from deepmd.pt_expt.descriptor.se_e2_a import (
     DescrptSeA,
 )
@@ -92,34 +99,106 @@ class TestEnergyModel(unittest.TestCase):
         self.assertEqual(ret["virial"].shape, (1, 9))
 
     @unittest.expectedFailure
-    def test_exportable(self) -> None:
-        """Test that EnergyModel can be exported with torch.export.
+    def test_forward_lower_exportable(self) -> None:
+        """Test that EnergyModel.forward_lower can be exported with torch.export.
 
-        Currently expected to fail because the full model's call() path includes
-        extend_coord_with_ghosts and neighbor list building, which involve
-        data-dependent shapes (item() calls) that torch.export cannot trace.
-        Individual components (descriptor, fitting, atomic model) are exportable.
+        The full model's forward() is not exportable because extend_coord_with_ghosts
+        involves data-dependent shapes. forward_lower(), which takes pre-computed
+        extended coords and neighbor lists, bypasses this.
+
+        However, force/virial computation via torch.autograd.grad is currently
+        incompatible with torch.export (PyTorch 2.10). During export tracing,
+        the backward pass captures forward-pass intermediates (e.g. tanh outputs)
+        as FakeTensor constants instead of reconnecting them to the forward
+        computation graph. This causes the exported model to fail at runtime.
+        See https://github.com/pytorch/pytorch/issues/153251 for context.
+        When PyTorch fixes autograd.grad tracing in torch.export, this test
+        should be updated to remove @unittest.expectedFailure.
         """
         md = self._make_model()
         md.eval()
-        coord = self.coord.clone().requires_grad_(True)
-        cell = self.cell.reshape(1, 9)
 
-        # Test forward pass
-        ret0 = md(coord, self.atype, cell)
+        # Prepare extended coords and neighbor list using dpmodel utilities
+        coord_np = self.coord.detach().cpu().numpy()
+        atype_np = self.atype.detach().cpu().numpy()
+        cell_np = self.cell.reshape(1, 9).detach().cpu().numpy()
+        coord_normalized = normalize_coord(
+            coord_np.reshape(1, self.natoms, 3),
+            cell_np.reshape(1, 3, 3),
+        )
+        extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
+            coord_normalized,
+            atype_np,
+            cell_np,
+            self.rcut,
+        )
+        nlist = build_neighbor_list(
+            extended_coord,
+            extended_atype,
+            self.natoms,
+            self.rcut,
+            self.sel,
+            distinguish_types=True,
+        )
+        extended_coord = extended_coord.reshape(1, -1, 3)
+
+        # Convert to torch tensors
+        ext_coord = torch.tensor(
+            extended_coord,
+            dtype=torch.float64,
+            device=self.device,
+        ).requires_grad_(True)
+        ext_atype = torch.tensor(
+            extended_atype,
+            dtype=torch.int64,
+            device=self.device,
+        )
+        nlist_t = torch.tensor(nlist, dtype=torch.int64, device=self.device)
+        mapping_t = torch.tensor(mapping, dtype=torch.int64, device=self.device)
+
+        # Test forward_lower pass with atomic virial
+        ret0 = md.forward_lower(
+            ext_coord,
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            do_atomic_virial=True,
+        )
         self.assertIn("energy", ret0)
+        self.assertIn("extended_force", ret0)
+        self.assertIn("virial", ret0)
+        self.assertIn("extended_virial", ret0)
 
-        # Test torch.export
+        # Export forward_lower via a wrapper module
+        class ForwardLowerWrapper(torch.nn.Module):
+            def __init__(self, model):
+                super().__init__()
+                self.model = model
+
+            def forward(self, extended_coord, extended_atype, nlist, mapping):
+                return self.model.forward_lower(
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                    mapping,
+                    do_atomic_virial=True,
+                )
+
+        wrapper = ForwardLowerWrapper(md)
         exported = torch.export.export(
-            md,
-            (coord, self.atype, cell),
+            wrapper,
+            (ext_coord, ext_atype, nlist_t, mapping_t),
             strict=False,
         )
         self.assertIsNotNone(exported)
 
         # Test exported model produces same output
-        coord2 = self.coord.clone().requires_grad_(True)
-        ret1 = exported.module()(coord2, self.atype, cell)
+        ext_coord2 = torch.tensor(
+            extended_coord,
+            dtype=torch.float64,
+            device=self.device,
+        ).requires_grad_(True)
+        ret1 = exported.module()(ext_coord2, ext_atype, nlist_t, mapping_t)
         np.testing.assert_allclose(
             ret0["energy"].detach().cpu().numpy(),
             ret1["energy"].detach().cpu().numpy(),
@@ -127,8 +206,20 @@ class TestEnergyModel(unittest.TestCase):
             atol=1e-10,
         )
         np.testing.assert_allclose(
-            ret0["force"].detach().cpu().numpy(),
-            ret1["force"].detach().cpu().numpy(),
+            ret0["extended_force"].detach().cpu().numpy(),
+            ret1["extended_force"].detach().cpu().numpy(),
+            rtol=1e-10,
+            atol=1e-10,
+        )
+        np.testing.assert_allclose(
+            ret0["virial"].detach().cpu().numpy(),
+            ret1["virial"].detach().cpu().numpy(),
+            rtol=1e-10,
+            atol=1e-10,
+        )
+        np.testing.assert_allclose(
+            ret0["extended_virial"].detach().cpu().numpy(),
+            ret1["extended_virial"].detach().cpu().numpy(),
             rtol=1e-10,
             atol=1e-10,
         )

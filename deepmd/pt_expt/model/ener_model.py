@@ -59,3 +59,37 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
         return model_predict
+
+    def forward_lower(
+        self,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
+    ) -> dict[str, torch.Tensor]:
+        model_ret = self.call_lower(
+            extended_coord,
+            extended_atype,
+            nlist,
+            mapping,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
+        )
+        model_predict = {}
+        model_predict["atom_energy"] = model_ret["energy"]
+        model_predict["energy"] = model_ret["energy_redu"]
+        if self.do_grad_r("energy"):
+            model_predict["extended_force"] = model_ret["energy_derv_r"].squeeze(-2)
+        if self.do_grad_c("energy"):
+            model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
+            if do_atomic_virial:
+                model_predict["extended_virial"] = model_ret["energy_derv_c"].squeeze(
+                    -3
+                )
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
+        return model_predict
