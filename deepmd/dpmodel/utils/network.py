@@ -25,6 +25,8 @@ from deepmd.dpmodel.array_api import (
     Array,
     xp_add_at,
     xp_bincount,
+    xp_setitem_at,
+    xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -39,15 +41,7 @@ from deepmd.utils.version import (
 
 def sigmoid_t(x):  # noqa: ANN001, ANN201
     """Sigmoid."""
-    if array_api_compat.is_jax_array(x):
-        from deepmd.jax.env import (
-            jax,
-        )
-
-        # see https://github.com/jax-ml/jax/discussions/15617
-        return jax.nn.sigmoid(x)
-    xp = array_api_compat.array_namespace(x)
-    return 1 / (1 + xp.exp(-x))
+    return xp_sigmoid(x)
 
 
 class Identity(NativeOP):
@@ -1365,11 +1359,7 @@ def get_graph_index(  # noqa: ANN201
     # edge(ij) to angle(ijk) index_select; angle(ijk) to edge(ij) aggregate
     edge_id = xp.arange(n_edge, dtype=nlist.dtype)
     edge_index = xp.zeros((nf, nloc, nnei), dtype=nlist.dtype)
-    if array_api_compat.is_jax_array(nlist):
-        # JAX doesn't support in-place item assignment
-        edge_index = edge_index.at[xp.astype(nlist_mask, xp.bool)].set(edge_id)
-    else:
-        edge_index[xp.astype(nlist_mask, xp.bool)] = edge_id
+    edge_index = xp_setitem_at(edge_index, xp.astype(nlist_mask, xp.bool), edge_id)
     # only cut a_nnei neighbors, to avoid nnei x nnei
     edge_index = edge_index[:, :, :a_nnei]
     edge_index_ij = xp.broadcast_to(
