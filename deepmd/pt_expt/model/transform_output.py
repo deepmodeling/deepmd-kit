@@ -18,47 +18,33 @@ def atomic_virial_corr(
     atom_energy: torch.Tensor,
 ) -> torch.Tensor:
     nall = extended_coord.shape[1]
+    nf = extended_coord.shape[0]
     nloc = atom_energy.shape[1]
     coord, _ = torch.split(extended_coord, [nloc, nall - nloc], dim=1)
     # no derivative with respect to the loc coord.
     coord = coord.detach()
     ce = coord * atom_energy
-    sumce0, sumce1, sumce2 = torch.split(torch.sum(ce, dim=1), [1, 1, 1], dim=-1)
-    faked_grad = torch.ones_like(sumce0)
-    lst: list[torch.Tensor | None] = [faked_grad]
-    extended_virial_corr0 = torch.autograd.grad(
-        [sumce0],
-        [extended_coord],
-        grad_outputs=lst,
-        create_graph=False,
-        retain_graph=True,
-    )[0]
-    assert extended_virial_corr0 is not None
-    extended_virial_corr1 = torch.autograd.grad(
-        [sumce1],
-        [extended_coord],
-        grad_outputs=lst,
-        create_graph=False,
-        retain_graph=True,
-    )[0]
-    assert extended_virial_corr1 is not None
-    extended_virial_corr2 = torch.autograd.grad(
-        [sumce2],
-        [extended_coord],
-        grad_outputs=lst,
-        create_graph=False,
-        retain_graph=True,
-    )[0]
-    assert extended_virial_corr2 is not None
-    extended_virial_corr = torch.concat(
-        [
-            extended_virial_corr0.unsqueeze(-1),
-            extended_virial_corr1.unsqueeze(-1),
-            extended_virial_corr2.unsqueeze(-1),
-        ],
-        dim=-1,
-    )
-    return extended_virial_corr
+    sumce = torch.sum(ce, dim=1)  # [nf, 3]
+
+    # Use vmap to batch the 3 backward passes (one per spatial component)
+    basis = torch.eye(3, dtype=sumce.dtype, device=sumce.device)  # [3, 3]
+    basis = basis.unsqueeze(1).expand(3, nf, 3)  # [3, nf, 3]
+
+    def grad_fn(grad_output: torch.Tensor) -> torch.Tensor:
+        result = torch.autograd.grad(
+            [sumce],
+            [extended_coord],
+            grad_outputs=[grad_output],
+            create_graph=False,
+            retain_graph=True,
+        )[0]
+        assert result is not None
+        return result
+
+    # [3, nf, nall, 3] — batched over the 3 spatial components
+    extended_virial_corr = torch.vmap(grad_fn)(basis)
+    # [3, nf, nall, 3] -> [nf, nall, 3, 3]
+    return extended_virial_corr.permute(1, 2, 3, 0)
 
 
 def task_deriv_one(
