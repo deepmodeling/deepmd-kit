@@ -10,7 +10,7 @@ from deepmd.dpmodel.atomic_model.base_atomic_model import (
 )
 from deepmd.dpmodel.model.make_model import make_model as make_model_dp
 from deepmd.pt_expt.common import (
-    dpmodel_setattr,
+    torch_module,
 )
 
 from .transform_output import (
@@ -37,24 +37,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
     """
     DPModel = make_model_dp(T_AtomicModel)
 
-    class CM(DPModel, torch.nn.Module):
-        def __init__(
-            self,
-            *args: Any,
-            **kwargs: Any,
-        ) -> None:
-            torch.nn.Module.__init__(self)
-            DPModel.__init__(self, *args, **kwargs)
-
-        def __call__(self, *args: Any, **kwargs: Any) -> Any:
-            # Ensure torch.nn.Module.__call__ drives forward() for export/tracing.
-            return torch.nn.Module.__call__(self, *args, **kwargs)
-
-        def __setattr__(self, name: str, value: Any) -> None:
-            handled, value = dpmodel_setattr(self, name, value)
-            if not handled:
-                super().__setattr__(name, value)
-
+    @torch_module
+    class CM(DPModel):
         def forward(self, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor]:
             """Default forward delegates to call().
 
