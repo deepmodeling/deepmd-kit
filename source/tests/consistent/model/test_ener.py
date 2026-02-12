@@ -26,6 +26,7 @@ from ..common import (
     INSTALLED_JAX,
     INSTALLED_PD,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     INSTALLED_TF,
     SKIP_FLAG,
     CommonTest,
@@ -53,6 +54,11 @@ if INSTALLED_PD:
     from deepmd.pd.utils.utils import to_paddle_tensor as numpy_to_paddle
 else:
     EnergyModelPD = None
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.common import to_torch_array as pt_expt_numpy_to_torch
+    from deepmd.pt_expt.model import EnergyModel as EnergyModelPTExpt
+else:
+    EnergyModelPTExpt = None
 from deepmd.utils.argcheck import (
     model_args,
 )
@@ -115,6 +121,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
     pd_class = EnergyModelPD
+    pt_expt_class = EnergyModelPTExpt
     jax_class = EnergyModelJAX
     pd_class = EnergyModelPD
     args = model_args()
@@ -128,6 +135,8 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             return self.RefBackend.PT
         if not self.skip_tf:
             return self.RefBackend.TF
+        if not self.skip_pt_expt and self.pt_expt_class is not None:
+            return self.RefBackend.PT_EXPT
         if not self.skip_jax:
             return self.RefBackend.JAX
         if not self.skip_pd:
@@ -156,6 +165,9 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             model = get_model_pt(data)
             model.atomic_model.out_bias.uniform_()
             return model
+        elif cls is EnergyModelPTExpt:
+            dp_model = get_model_dp(data)
+            return EnergyModelPTExpt.deserialize(dp_model.serialize())
         elif cls is EnergyModelJAX:
             return get_model_jax(data)
         elif cls is EnergyModelPD:
@@ -229,6 +241,15 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return self.eval_pt_expt_model(
+            pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_model(
             jax_obj,
@@ -258,6 +279,14 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
                 SKIP_FLAG,
             )
         elif backend is self.RefBackend.PT:
+            return (
+                ret["energy"].ravel(),
+                ret["atom_energy"].ravel(),
+                ret["force"].ravel(),
+                ret["virial"].ravel(),
+                ret["atom_virial"].ravel(),
+            )
+        elif backend is self.RefBackend.PT_EXPT:
             return (
                 ret["energy"].ravel(),
                 ret["atom_energy"].ravel(),
@@ -339,6 +368,7 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
     tf_class = EnergyModelTF
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
+    pt_expt_class = EnergyModelPTExpt
     jax_class = EnergyModelJAX
     pd_class = EnergyModelPD
     args = model_args()
@@ -350,6 +380,8 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         """
         if not self.skip_pt:
             return self.RefBackend.PT
+        if not self.skip_pt_expt and self.pt_expt_class is not None:
+            return self.RefBackend.PT_EXPT
         if not self.skip_jax:
             return self.RefBackend.JAX
         if not self.skip_dp:
@@ -374,6 +406,9 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
             return get_model_dp(data)
         elif cls is EnergyModelPT:
             return get_model_pt(data)
+        elif cls is EnergyModelPTExpt:
+            dp_model = get_model_dp(data)
+            return EnergyModelPTExpt.deserialize(dp_model.serialize())
         elif cls is EnergyModelJAX:
             return get_model_jax(data)
         elif cls is EnergyModelPD:
@@ -460,6 +495,20 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
             ).items()
         }
 
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        coord_tensor = pt_expt_numpy_to_torch(self.extended_coord)
+        coord_tensor.requires_grad_(True)
+        return {
+            kk: vv.detach().cpu().numpy() if vv is not None else None
+            for kk, vv in pt_expt_obj.call_lower(
+                coord_tensor,
+                pt_expt_numpy_to_torch(self.extended_atype),
+                pt_expt_numpy_to_torch(self.nlist),
+                pt_expt_numpy_to_torch(self.mapping),
+                do_atomic_virial=True,
+            ).items()
+        }
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return {
             kk: to_numpy_array(vv)
@@ -501,6 +550,14 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
                 ret["extended_force"].ravel(),
                 ret["virial"].ravel(),
                 ret["extended_virial"].ravel(),
+            )
+        elif backend is self.RefBackend.PT_EXPT:
+            return (
+                ret["energy_redu"].ravel(),
+                ret["energy"].ravel(),
+                ret["energy_derv_r"].ravel(),
+                ret["energy_derv_c_redu"].ravel(),
+                ret["energy_derv_c"].ravel(),
             )
         elif backend is self.RefBackend.JAX:
             return (

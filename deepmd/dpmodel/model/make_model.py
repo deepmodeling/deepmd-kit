@@ -21,6 +21,7 @@ from deepmd.dpmodel.common import (
     PRECISION_DICT,
     RESERVED_PRECISION_DICT,
     NativeOP,
+    get_xp_precision,
 )
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
@@ -103,7 +104,8 @@ def model_call_from_call_lower(
             bb.reshape(nframes, 3, 3),
         )
     else:
-        coord_normalized = cc.copy()
+        xp = array_api_compat.array_namespace(cc)
+        coord_normalized = xp.reshape(cc, (nframes, nloc, 3))
     extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
         coord_normalized, atype, bb, rcut
     )
@@ -371,39 +373,57 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             box: Array | None = None,
             fparam: Array | None = None,
             aparam: Array | None = None,
-        ) -> tuple[Array, Array, np.ndarray | None, np.ndarray | None, str]:
+        ) -> tuple[Array, Array | None, Array | None, Array | None, Any]:
             """Cast the input data to global float type."""
-            input_prec = RESERVED_PRECISION_DICT[self.precision_dict[coord.dtype.name]]
+            xp = array_api_compat.array_namespace(coord)
+            input_dtype = coord.dtype
+            global_dtype = get_xp_precision(
+                xp, RESERVED_PRECISION_DICT[self.global_np_float_precision]
+            )
             ###
             ### type checking would not pass jit, convert to coord prec anyway
             ###
-            _lst: list[np.ndarray | None] = [
-                vv.astype(coord.dtype) if vv is not None else None
+            _lst: list[Array | None] = [
+                xp.astype(vv, input_dtype) if vv is not None else None
                 for vv in [box, fparam, aparam]
             ]
             box, fparam, aparam = _lst
-            if input_prec == RESERVED_PRECISION_DICT[self.global_np_float_precision]:
-                return coord, box, fparam, aparam, input_prec
+            if input_dtype == global_dtype:
+                return coord, box, fparam, aparam, input_dtype
             else:
-                pp = self.global_np_float_precision
                 return (
-                    coord.astype(pp),
-                    box.astype(pp) if box is not None else None,
-                    fparam.astype(pp) if fparam is not None else None,
-                    aparam.astype(pp) if aparam is not None else None,
-                    input_prec,
+                    xp.astype(coord, global_dtype),
+                    xp.astype(box, global_dtype) if box is not None else None,
+                    xp.astype(fparam, global_dtype) if fparam is not None else None,
+                    xp.astype(aparam, global_dtype) if aparam is not None else None,
+                    input_dtype,
                 )
 
         def output_type_cast(
             self,
             model_ret: dict[str, Array],
-            input_prec: str,
+            input_prec: Any,
         ) -> dict[str, Array]:
-            """Convert the model output to the input prec."""
-            do_cast = (
-                input_prec != RESERVED_PRECISION_DICT[self.global_np_float_precision]
+            """Convert the model output to the input prec.
+
+            Parameters
+            ----------
+            model_ret
+                The model output.
+            input_prec
+                The input dtype returned by ``input_type_cast``.
+            """
+            model_ret_not_none = [vv for vv in model_ret.values() if vv is not None]
+            if not model_ret_not_none:
+                return model_ret
+            xp = array_api_compat.array_namespace(model_ret_not_none[0])
+            global_dtype = get_xp_precision(
+                xp, RESERVED_PRECISION_DICT[self.global_np_float_precision]
             )
-            pp = self.precision_dict[input_prec]
+            ener_dtype = get_xp_precision(
+                xp, RESERVED_PRECISION_DICT[self.global_ener_float_precision]
+            )
+            do_cast = input_prec != global_dtype
             odef = self.model_output_def()
             for kk in odef.keys():
                 if kk not in model_ret.keys():
@@ -411,13 +431,15 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                     continue
                 if check_operation_applied(odef[kk], OutputVariableOperation.REDU):
                     model_ret[kk] = (
-                        model_ret[kk].astype(self.global_ener_float_precision)
+                        xp.astype(model_ret[kk], ener_dtype)
                         if model_ret[kk] is not None
                         else None
                     )
                 elif do_cast:
                     model_ret[kk] = (
-                        model_ret[kk].astype(pp) if model_ret[kk] is not None else None
+                        xp.astype(model_ret[kk], input_prec)
+                        if model_ret[kk] is not None
+                        else None
                     )
             return model_ret
 
