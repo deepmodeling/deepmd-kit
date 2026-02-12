@@ -38,8 +38,15 @@ class TorchArrayParam(torch.nn.Parameter):
         return arr.astype(dtype)
 
 
-@torch_module
-class NativeLayer(NativeLayerDP):
+# do not apply torch_module until its setattr working to register parameters
+class NativeLayer(NativeLayerDP, torch.nn.Module):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        torch.nn.Module.__init__(self)
+        NativeLayerDP.__init__(self, *args, **kwargs)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return torch.nn.Module.__call__(self, *args, **kwargs)
+
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"w", "b", "idt"} and "_parameters" in self.__dict__:
             val = to_torch_array(value)
