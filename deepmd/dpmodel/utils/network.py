@@ -1110,10 +1110,13 @@ class FittingNet(EmbeddingNet):
         layers = data.pop("layers")
         obj = cls(**data)
         # Use type(obj.layers[0]) to respect subclass layer types
-        layer_type = type(obj.layers[0])
-        obj.layers = type(obj.layers)(
-            [layer_type.deserialize(layer) for layer in layers]
-        )
+        if obj.layers:
+            layer_type = type(obj.layers[0])
+            obj.layers = type(obj.layers)(
+                [layer_type.deserialize(layer) for layer in layers]
+            )
+        else:
+            obj.layers = type(obj.layers)([])
         return obj
 
 

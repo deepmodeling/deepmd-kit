@@ -11,9 +11,9 @@ from deepmd.pt_expt.descriptor.base_descriptor import (
 )
 
 
-@BaseDescriptor.register("se_e3_expt")
-@BaseDescriptor.register("se_at_expt")
-@BaseDescriptor.register("se_a_3be_expt")
+@BaseDescriptor.register("se_e3")
+@BaseDescriptor.register("se_at")
+@BaseDescriptor.register("se_a_3be")
 @torch_module
 class DescrptSeT(DescrptSeTDP):
     def forward(

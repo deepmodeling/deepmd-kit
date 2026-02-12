@@ -261,8 +261,18 @@ class GeneralFitting(NativeOP, BaseFitting):
                 fparam_std,
             )
             fparam_inv_std = 1.0 / fparam_std
-            self.fparam_avg = fparam_avg.astype(self.fparam_avg.dtype)
-            self.fparam_inv_std = fparam_inv_std.astype(self.fparam_inv_std.dtype)
+            # Use array_api_compat to handle both numpy and torch
+            xp = array_api_compat.array_namespace(self.fparam_avg)
+            self.fparam_avg = xp.asarray(
+                fparam_avg,
+                dtype=self.fparam_avg.dtype,
+                device=array_api_compat.device(self.fparam_avg),
+            )
+            self.fparam_inv_std = xp.asarray(
+                fparam_inv_std,
+                dtype=self.fparam_inv_std.dtype,
+                device=array_api_compat.device(self.fparam_inv_std),
+            )
         # stat aparam
         if self.numb_aparam > 0:
             sys_sumv = []
@@ -284,8 +294,18 @@ class GeneralFitting(NativeOP, BaseFitting):
                 aparam_std,
             )
             aparam_inv_std = 1.0 / aparam_std
-            self.aparam_avg = aparam_avg.astype(self.aparam_avg.dtype)
-            self.aparam_inv_std = aparam_inv_std.astype(self.aparam_inv_std.dtype)
+            # Use array_api_compat to handle both numpy and torch
+            xp = array_api_compat.array_namespace(self.aparam_avg)
+            self.aparam_avg = xp.asarray(
+                aparam_avg,
+                dtype=self.aparam_avg.dtype,
+                device=array_api_compat.device(self.aparam_avg),
+            )
+            self.aparam_inv_std = xp.asarray(
+                aparam_inv_std,
+                dtype=self.aparam_inv_std.dtype,
+                device=array_api_compat.device(self.aparam_inv_std),
+            )
 
     @abstractmethod
     def _net_out_dim(self) -> int:
@@ -566,7 +586,9 @@ class GeneralFitting(NativeOP, BaseFitting):
         # calculate the prediction
         if not self.mixed_types:
             outs = xp.zeros(
-                [nf, nloc, net_dim_out], dtype=get_xp_precision(xp, self.precision)
+                [nf, nloc, net_dim_out],
+                dtype=get_xp_precision(xp, self.precision),
+                device=array_api_compat.device(descriptor),
             )
             for type_i in range(self.ntypes):
                 mask = xp.tile(

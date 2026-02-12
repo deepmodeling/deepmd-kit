@@ -11,7 +11,7 @@ from deepmd.pt_expt.descriptor.base_descriptor import (
 )
 
 
-@BaseDescriptor.register("se_e3_tebd_expt")
+@BaseDescriptor.register("se_e3_tebd")
 @torch_module
 class DescrptSeTTebd(DescrptSeTTebdDP):
     def forward(

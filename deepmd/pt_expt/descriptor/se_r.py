@@ -11,8 +11,8 @@ from deepmd.pt_expt.descriptor.base_descriptor import (
 )
 
 
-@BaseDescriptor.register("se_e2_r_expt")
-@BaseDescriptor.register("se_r_expt")
+@BaseDescriptor.register("se_e2_r")
+@BaseDescriptor.register("se_r")
 @torch_module
 class DescrptSeR(DescrptSeRDP):
     def forward(
