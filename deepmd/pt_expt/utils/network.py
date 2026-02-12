@@ -21,6 +21,7 @@ from deepmd.dpmodel.utils.network import (
 from deepmd.pt_expt.common import (
     register_dpmodel_mapping,
     to_torch_array,
+    torch_module,
 )
 
 
@@ -37,6 +38,7 @@ class TorchArrayParam(torch.nn.Parameter):
         return arr.astype(dtype)
 
 
+# do not apply torch_module until its setattr working to register parameters
 class NativeLayer(NativeLayerDP, torch.nn.Module):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         torch.nn.Module.__init__(self)
@@ -78,14 +80,11 @@ class NativeLayer(NativeLayerDP, torch.nn.Module):
         return self.call(x)
 
 
-class NativeNet(make_multilayer_network(NativeLayer, NativeOP), torch.nn.Module):
+@torch_module
+class NativeNet(make_multilayer_network(NativeLayer, NativeOP)):
     def __init__(self, layers: list[dict] | None = None) -> None:
-        torch.nn.Module.__init__(self)
         super().__init__(layers)
         self.layers = torch.nn.ModuleList(self.layers)
-
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        return torch.nn.Module.__call__(self, *args, **kwargs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.call(x)
@@ -136,7 +135,8 @@ register_dpmodel_mapping(
 )
 
 
-class NetworkCollection(NetworkCollectionDP, torch.nn.Module):
+@torch_module
+class NetworkCollection(NetworkCollectionDP):
     NETWORK_TYPE_MAP: ClassVar[dict[str, type]] = {
         "network": NativeNet,
         "embedding_network": EmbeddingNet,
@@ -144,7 +144,6 @@ class NetworkCollection(NetworkCollectionDP, torch.nn.Module):
     }
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        torch.nn.Module.__init__(self)
         self._module_networks = torch.nn.ModuleDict()
         super().__init__(*args, **kwargs)
 
