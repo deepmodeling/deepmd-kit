@@ -172,7 +172,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     fparam=ifp,
                     aparam=iap,
                 )
-                self.assertIn("input descriptor", str(context.exception))
+            self.assertIn("input descriptor", str(context.exception))
 
             if nfp > 0:
                 ifp = torch.from_numpy(rng.normal(size=(self.nf, nfp - 1))).to(
@@ -185,9 +185,14 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                         fparam=ifp,
                         aparam=iap,
                     )
-                    self.assertIn("input fparam", str(context.exception))
+                self.assertIn("input fparam", str(context.exception))
 
             if nap > 0:
+                # restore correct ifp before testing aparam
+                if nfp > 0:
+                    ifp = torch.from_numpy(rng.normal(size=(self.nf, nfp))).to(
+                        self.device
+                    )
                 iap = torch.from_numpy(
                     rng.normal(size=(self.nf, self.nloc, nap - 1))
                 ).to(self.device)
@@ -198,7 +203,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                         fparam=ifp,
                         aparam=iap,
                     )
-                    self.assertIn("input aparam", str(context.exception))
+                self.assertIn("input aparam", str(context.exception))
 
     def test_get_set(self) -> None:
         ifn0 = InvarFitting(
