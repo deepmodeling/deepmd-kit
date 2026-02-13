@@ -35,7 +35,7 @@ class _SerialPool:
     def __init__(self, *args, **kwargs) -> None:
         pass
 
-    def __enter__(self) -> "_SerialPool":
+    def __enter__(self) -> "_SerialPool":  # noqa: PYI034
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool:

@@ -79,7 +79,7 @@ Specifically, there are several parts that need to be modified:
 
 - (Optional) {ref}`training/model_prob <training/model_prob>`: The sampling weight settings corresponding to each `model_key`, i.e., the probability weight in the training step.
   You can specify any positive real number weight for each task. The higher the weight, the higher the probability of being sampled in each training.
-  This setting is optional, and if not set, tasks will be sampled with equal weights. It is only used when `num_epoch_dict` is not set.
+  This setting is optional, and if not set, tasks will be sampled with weights proportional to the number of systems in each task. It is only used when `num_epoch_dict` is not set.
 
 - (Optional) {ref}`training/num_epoch_dict <training/num_epoch_dict>`: The number of training epochs for each model branch, specified as a dictionary mapping `model_key` to epoch values (can be fractional).
   This allows different tasks to train for different numbers of epochs, which is particularly useful for multi-task fine-tuning scenarios
