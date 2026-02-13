@@ -4,6 +4,9 @@ from typing import (
 )
 
 import torch
+from torch.fx.experimental.proxy_tensor import (
+    make_fx,
+)
 
 from deepmd.dpmodel.model.dp_model import (
     DPModelCommon,
@@ -60,7 +63,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             model_predict["mask"] = model_ret["mask"]
         return model_predict
 
-    def forward_lower(
+    def _forward_lower(
         self,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
@@ -93,3 +96,52 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
         return model_predict
+
+    def forward_lower(
+        self,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
+    ) -> torch.nn.Module:
+        """Trace ``_forward_lower`` into an exportable module.
+
+        Uses ``make_fx`` to trace through ``torch.autograd.grad``,
+        decomposing the backward pass into primitive ops.  The returned
+        module can be passed directly to ``torch.export.export``.
+
+        Parameters
+        ----------
+        extended_coord, extended_atype, nlist, mapping, fparam, aparam, do_atomic_virial
+            Sample inputs with representative shapes (used for tracing).
+
+        Returns
+        -------
+        torch.nn.Module
+            A traced module whose ``forward`` accepts
+            ``(extended_coord, extended_atype, nlist, mapping)`` and
+            returns a dict with the same keys as ``_forward_lower``.
+        """
+        model = self
+
+        def fn(
+            extended_coord: torch.Tensor,
+            extended_atype: torch.Tensor,
+            nlist: torch.Tensor,
+            mapping: torch.Tensor | None,
+        ) -> dict[str, torch.Tensor]:
+            extended_coord = extended_coord.detach().requires_grad_(True)
+            return model._forward_lower(
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping,
+                fparam=fparam,
+                aparam=aparam,
+                do_atomic_virial=do_atomic_virial,
+            )
+
+        return make_fx(fn)(extended_coord, extended_atype, nlist, mapping)

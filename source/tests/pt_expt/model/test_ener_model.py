@@ -98,22 +98,12 @@ class TestEnergyModel(unittest.TestCase):
         self.assertEqual(ret["force"].shape, (1, self.natoms, 3))
         self.assertEqual(ret["virial"].shape, (1, 9))
 
-    @unittest.expectedFailure
     def test_forward_lower_exportable(self) -> None:
-        """Test that EnergyModel.forward_lower can be exported with torch.export.
+        """Test that EnergyModel.forward_lower returns an exportable module.
 
-        The full model's forward() is not exportable because extend_coord_with_ghosts
-        involves data-dependent shapes. forward_lower(), which takes pre-computed
-        extended coords and neighbor lists, bypasses this.
-
-        However, force/virial computation via torch.autograd.grad is currently
-        incompatible with torch.export (PyTorch 2.10). During export tracing,
-        the backward pass captures forward-pass intermediates (e.g. tanh outputs)
-        as FakeTensor constants instead of reconnecting them to the forward
-        computation graph. This causes the exported model to fail at runtime.
-        See https://github.com/pytorch/pytorch/issues/153251 for context.
-        When PyTorch fixes autograd.grad tracing in torch.export, this test
-        should be updated to remove @unittest.expectedFailure.
+        forward_lower() uses make_fx to trace through torch.autograd.grad,
+        decomposing the backward pass into primitive ops. The returned module
+        can be passed directly to torch.export.export.
         """
         md = self._make_model()
         md.eval()
@@ -147,7 +137,7 @@ class TestEnergyModel(unittest.TestCase):
             extended_coord,
             dtype=torch.float64,
             device=self.device,
-        ).requires_grad_(True)
+        )
         ext_atype = torch.tensor(
             extended_atype,
             dtype=torch.int64,
@@ -156,9 +146,9 @@ class TestEnergyModel(unittest.TestCase):
         nlist_t = torch.tensor(nlist, dtype=torch.int64, device=self.device)
         mapping_t = torch.tensor(mapping, dtype=torch.int64, device=self.device)
 
-        # Test forward_lower pass with atomic virial
-        ret0 = md.forward_lower(
-            ext_coord,
+        # Eager reference via _forward_lower
+        ret0 = md._forward_lower(
+            ext_coord.requires_grad_(True),
             ext_atype,
             nlist_t,
             mapping_t,
@@ -169,36 +159,26 @@ class TestEnergyModel(unittest.TestCase):
         self.assertIn("virial", ret0)
         self.assertIn("extended_virial", ret0)
 
-        # Export forward_lower via a wrapper module
-        class ForwardLowerWrapper(torch.nn.Module):
-            def __init__(self, model):
-                super().__init__()
-                self.model = model
+        # forward_lower returns a traced module
+        traced = md.forward_lower(
+            ext_coord,
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            do_atomic_virial=True,
+        )
+        self.assertIsInstance(traced, torch.nn.Module)
 
-            def forward(self, extended_coord, extended_atype, nlist, mapping):
-                return self.model.forward_lower(
-                    extended_coord,
-                    extended_atype,
-                    nlist,
-                    mapping,
-                    do_atomic_virial=True,
-                )
-
-        wrapper = ForwardLowerWrapper(md)
+        # The traced module should be directly exportable
         exported = torch.export.export(
-            wrapper,
+            traced,
             (ext_coord, ext_atype, nlist_t, mapping_t),
             strict=False,
         )
         self.assertIsNotNone(exported)
 
-        # Test exported model produces same output
-        ext_coord2 = torch.tensor(
-            extended_coord,
-            dtype=torch.float64,
-            device=self.device,
-        ).requires_grad_(True)
-        ret1 = exported.module()(ext_coord2, ext_atype, nlist_t, mapping_t)
+        # Verify exported model produces same output
+        ret1 = exported.module()(ext_coord, ext_atype, nlist_t, mapping_t)
         np.testing.assert_allclose(
             ret0["energy"].detach().cpu().numpy(),
             ret1["energy"].detach().cpu().numpy(),
