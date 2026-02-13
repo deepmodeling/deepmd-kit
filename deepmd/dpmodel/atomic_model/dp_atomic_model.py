@@ -3,6 +3,8 @@ from typing import (
     Any,
 )
 
+import array_api_compat
+
 from deepmd.dpmodel.array_api import (
     Array,
 )
@@ -54,6 +56,10 @@ class DPAtomicModel(BaseAtomicModel):
         if hasattr(self.fitting, "reinit_exclude"):
             self.fitting.reinit_exclude(self.atom_exclude_types)
         self.type_map = type_map
+        self.enable_eval_descriptor_hook = False
+        self.enable_eval_fitting_last_layer_hook = False
+        self.eval_descriptor_list: list[Array] = []
+        self.eval_fitting_last_layer_list: list[Array] = []
         super().init_out_stat()
 
     def fitting_output_def(self) -> FittingOutputDef:
@@ -126,6 +132,27 @@ class DPAtomicModel(BaseAtomicModel):
             check_frequency,
         )
 
+    def set_eval_descriptor_hook(self, enable: bool) -> None:
+        """Set the hook for evaluating descriptor and clear the cache."""
+        self.enable_eval_descriptor_hook = enable
+        self.eval_descriptor_list.clear()
+
+    def eval_descriptor(self) -> Array:
+        """Evaluate the descriptor by concatenating cached results."""
+        xp = array_api_compat.array_namespace(self.eval_descriptor_list[0])
+        return xp.concat(self.eval_descriptor_list, axis=0)
+
+    def set_eval_fitting_last_layer_hook(self, enable: bool) -> None:
+        """Set the hook for evaluating fitting last layer output and clear the cache."""
+        self.enable_eval_fitting_last_layer_hook = enable
+        self.fitting.set_return_middle_output(enable)
+        self.eval_fitting_last_layer_list.clear()
+
+    def eval_fitting_last_layer(self) -> Array:
+        """Evaluate the fitting last layer output by concatenating cached results."""
+        xp = array_api_compat.array_namespace(self.eval_fitting_last_layer_list[0])
+        return xp.concat(self.eval_fitting_last_layer_list, axis=0)
+
     def forward_atomic(
         self,
         extended_coord: Array,
@@ -166,6 +193,8 @@ class DPAtomicModel(BaseAtomicModel):
             nlist,
             mapping=mapping,
         )
+        if self.enable_eval_descriptor_hook:
+            self.eval_descriptor_list.append(descriptor)
         ret = self.fitting(
             descriptor,
             atype,
@@ -175,6 +204,11 @@ class DPAtomicModel(BaseAtomicModel):
             fparam=fparam,
             aparam=aparam,
         )
+        if self.enable_eval_fitting_last_layer_hook:
+            assert "middle_output" in ret, (
+                "eval_fitting_last_layer not supported for this fitting net!"
+            )
+            self.eval_fitting_last_layer_list.append(ret.pop("middle_output"))
         return ret
 
     def change_type_map(

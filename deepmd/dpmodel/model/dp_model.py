@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 
+from deepmd.dpmodel.array_api import (
+    Array,
+)
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
 )
@@ -48,3 +51,23 @@ class DPModelCommon:
     def get_fitting_net(self) -> BaseFitting:
         """Get the fitting network."""
         return self.atomic_model.fitting
+
+    def get_descriptor(self) -> BaseDescriptor:
+        """Get the descriptor."""
+        return self.atomic_model.descriptor
+
+    def set_eval_descriptor_hook(self, enable: bool) -> None:
+        """Set the hook for evaluating descriptor."""
+        self.atomic_model.set_eval_descriptor_hook(enable)
+
+    def eval_descriptor(self) -> Array:
+        """Evaluate the descriptor."""
+        return self.atomic_model.eval_descriptor()
+
+    def set_eval_fitting_last_layer_hook(self, enable: bool) -> None:
+        """Set the hook for evaluating fitting last layer output."""
+        self.atomic_model.set_eval_fitting_last_layer_hook(enable)
+
+    def eval_fitting_last_layer(self) -> Array:
+        """Evaluate the fitting last layer output."""
+        return self.atomic_model.eval_fitting_last_layer()

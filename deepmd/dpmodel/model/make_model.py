@@ -257,7 +257,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 The keys are defined by the `ModelOutputDef`.
 
             """
-            cc, bb, fp, ap, input_prec = self.input_type_cast(
+            cc, bb, fp, ap, input_prec = self._input_type_cast(
                 coord, box=box, fparam=fparam, aparam=aparam
             )
             del coord, box, fparam, aparam
@@ -274,7 +274,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 aparam=ap,
                 do_atomic_virial=do_atomic_virial,
             )
-            model_predict = self.output_type_cast(model_predict, input_prec)
+            model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
 
         def call_lower(
@@ -323,7 +323,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 nlist,
                 extra_nlist_sort=self.need_sorted_nlist_for_lower(),
             )
-            cc_ext, _, fp, ap, input_prec = self.input_type_cast(
+            cc_ext, _, fp, ap, input_prec = self._input_type_cast(
                 extended_coord, fparam=fparam, aparam=aparam
             )
             del extended_coord, fparam, aparam
@@ -336,7 +336,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 aparam=ap,
                 do_atomic_virial=do_atomic_virial,
             )
-            model_predict = self.output_type_cast(model_predict, input_prec)
+            model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
 
         def forward_common_atomic(
@@ -366,8 +366,35 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             )
 
         forward_lower = call_lower
+        forward_common = call
+        forward_common_lower = call_lower
 
-        def input_type_cast(
+        def get_out_bias(self) -> Array:
+            """Get the output bias."""
+            return self.atomic_model.out_bias
+
+        def set_out_bias(self, out_bias: Array) -> None:
+            """Set the output bias."""
+            self.atomic_model.out_bias = out_bias
+
+        def change_out_bias(
+            self,
+            merged: Any,
+            bias_adjust_mode: str = "change-by-statistic",
+        ) -> None:
+            """Change the output bias according to the input data and the pretrained model.
+
+            Parameters
+            ----------
+            merged
+                The merged data samples.
+            bias_adjust_mode : str
+                The mode for changing output bias:
+                'change-by-statistic' or 'set-by-statistic'.
+            """
+            self.atomic_model.change_out_bias(merged, bias_adjust_mode=bias_adjust_mode)
+
+        def _input_type_cast(
             self,
             coord: Array,
             box: Array | None = None,
@@ -399,7 +426,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                     input_dtype,
                 )
 
-        def output_type_cast(
+        def _output_type_cast(
             self,
             model_ret: dict[str, Array],
             input_prec: Any,
@@ -411,7 +438,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             model_ret
                 The model output.
             input_prec
-                The input dtype returned by ``input_type_cast``.
+                The input dtype returned by ``_input_type_cast``.
             """
             model_ret_not_none = [vv for vv in model_ret.values() if vv is not None]
             if not model_ret_not_none:
