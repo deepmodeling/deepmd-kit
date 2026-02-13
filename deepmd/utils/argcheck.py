@@ -3217,7 +3217,7 @@ def training_args(
         "Number of training steps (num_step). Each training uses one batch of data. "
         "Mutually exclusive with num_epoch in single-task mode. In multi-task "
         "mode, this is mutually exclusive with num_epoch_dict. "
-        "Accepted names: num_step, num_steps, numb_step, numb_steps."
+        "Accepted names: num_step, num_steps, numb_step, numb_steps, stop_batch."
     )
     doc_num_epoch = (
         "Number of training epochs (num_epoch; can be fractional) for single-task "
@@ -3631,7 +3631,7 @@ def training_args(
         if data is None:
             return True
         num_steps = data.get("numb_steps")
-        num_epoch = data.get("num_epoch")
+        num_epoch = data.get("numb_epoch")
         num_epoch_dict = data.get("num_epoch_dict", {})
         model_prob = data.get("model_prob", {})
         if multi_task:
