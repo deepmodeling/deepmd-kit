@@ -728,7 +728,7 @@ class Trainer:
                 self.wrapper = DDP(
                     self.wrapper,
                     device_ids=[LOCAL_RANK],
-                    find_unused_parameters=self.multi_task,
+                    find_unused_parameters=True,
                     output_device=LOCAL_RANK,
                 )
 
