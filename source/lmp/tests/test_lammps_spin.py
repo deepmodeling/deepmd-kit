@@ -306,9 +306,10 @@ def test_pair_deepmd_virial(lammps) -> None:
             lammps.variables[f"pressure{jj}"].value
         ) / constants.nktv2p == pytest.approx(-expected_v[:, jj].sum(axis=0) / vol)
     for ii in range(9):
+        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
         assert np.array(
-            lammps.variables[f"virial{ii}"].value
-        ) / constants.nktv2p == pytest.approx(expected_v[idx_map, ii])
+            lammps.variables[f"virial{jj}"].value
+        ) / constants.nktv2p == pytest.approx(expected_v[idx_map, jj])
 
 
 def test_pair_deepmd_model_devi(lammps) -> None:
