@@ -259,7 +259,7 @@ def _do_work(
     # get training info
     training_params = jdata["training"]
     stop_batch = training_params.get("numb_steps")
-    num_epoch = training_params.get("num_epoch")
+    num_epoch = training_params.get("numb_epoch")
     if stop_batch is None:
         if num_epoch is None:
             raise ValueError(

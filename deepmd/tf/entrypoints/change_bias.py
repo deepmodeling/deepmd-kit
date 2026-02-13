@@ -195,7 +195,7 @@ def _change_bias_checkpoint_file(
     # Get stop_batch and origin_type_map like in train.py
     training_params = jdata.get("training", {})
     stop_batch = training_params.get("numb_steps")
-    num_epoch = training_params.get("num_epoch")
+    num_epoch = training_params.get("numb_epoch")
     if stop_batch is None and num_epoch is not None:
         if num_epoch <= 0:
             raise ValueError("training.num_epoch must be positive.")
