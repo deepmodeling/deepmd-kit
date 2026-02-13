@@ -1391,7 +1391,7 @@ class DescrptSeA(DescrptSe):
                 )
             )
 
-    def natoms_match(self, coord, natoms):
+    def natoms_match(self, coord: tf.Tensor, natoms: tf.Tensor) -> tf.Tensor:
         natoms_index = tf.concat([[0], tf.cumsum(natoms[2:])], axis=0)
         diff_coord_loc = []
         for i in range(self.ntypes):
@@ -1415,10 +1415,20 @@ class DescrptSeA(DescrptSe):
         diff_coord_loc = tf.concat(diff_coord_loc, axis=1)
         return diff_coord_loc
 
-    def natoms_not_match(self, coord, natoms, atype):
+    def natoms_not_match(
+        self, coord: tf.Tensor, natoms: tf.Tensor, atype: tf.Tensor
+    ) -> tf.Tensor:
         diff_coord_loc = self.natoms_match(coord, natoms)
         diff_coord_ghost = []
-        aatype = atype[0, :]
+        # Check that all frames have the same atype vector (homogeneous batch)
+        # to ensure ghost atom layout is consistent across frames.
+        atype_equal = tf.reduce_all(tf.equal(atype, atype[0:1, :]))
+        atype_equal = tf.Assert(
+            atype_equal,
+            ["natoms_not_match requires all frames to have the same atype vector"],
+        )
+        with tf.control_dependencies([atype_equal]):
+            aatype = atype[0, :]
         ghost_atype = aatype[natoms[0] :]
         _, _, ghost_natoms = tf.unique_with_counts(ghost_atype)
         ghost_natoms_index = tf.concat([[0], tf.cumsum(ghost_natoms)], axis=0)
