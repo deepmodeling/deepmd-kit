@@ -381,7 +381,7 @@ TYPED_TEST(TestInferDeepSpinNopbc, cpu_lmp_nlist_atomic) {
   EXPECT_EQ(force_mag.size(), natoms * 3);
   EXPECT_EQ(virial.size(), 9);
   EXPECT_EQ(atom_ener.size(), natoms);
-  EXPECT_EQ(atom_vir.size(), natoms * 9);
+  EXPECT_EQ(atom_vir.size(), (natoms + 2) * 9);
 
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
   for (int ii = 0; ii < natoms * 3; ++ii) {
@@ -394,7 +394,7 @@ TYPED_TEST(TestInferDeepSpinNopbc, cpu_lmp_nlist_atomic) {
   for (int ii = 0; ii < natoms; ++ii) {
     EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
   }
-  for (int ii = 0; ii < natoms * 9; ++ii) {
+  for (int ii = 0; ii < (natoms + 2) * 9; ++ii) {
     EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
   }
 }
