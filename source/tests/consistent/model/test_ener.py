@@ -1164,7 +1164,23 @@ class TestEnerModelAPIs(unittest.TestCase):
         self.assertEqual(self.dp_model.get_ntypes(), 2)
 
     def test_compute_or_load_out_stat(self) -> None:
-        """compute_or_load_out_stat should produce consistent bias on dp and pt."""
+        """compute_or_load_out_stat should produce consistent bias on dp and pt.
+
+        Tests both the compute path (from data) and the load path (from file).
+        Both backends should save the same stat file content and load identical
+        biases from file.
+        """
+        import tempfile
+        from pathlib import (
+            Path,
+        )
+
+        import h5py
+
+        from deepmd.utils.path import (
+            DPPath,
+        )
+
         nframes = 2
         nloc = 6
         coords_2f = np.tile(self.coords, (nframes, 1, 1))
@@ -1203,15 +1219,75 @@ class TestEnerModelAPIs(unittest.TestCase):
             dp_bias_before, pt_bias_before, rtol=1e-10, atol=1e-10
         )
 
-        self.dp_model.atomic_model.compute_or_load_out_stat(dp_merged)
-        self.pt_model.atomic_model.compute_or_load_out_stat(pt_merged)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create separate h5 files for dp and pt
+            dp_h5 = str((Path(tmpdir) / "dp_stat.h5").resolve())
+            pt_h5 = str((Path(tmpdir) / "pt_stat.h5").resolve())
+            with h5py.File(dp_h5, "w"):
+                pass
+            with h5py.File(pt_h5, "w"):
+                pass
+            dp_stat_path = DPPath(dp_h5, "a")
+            pt_stat_path = DPPath(pt_h5, "a")
 
-        dp_bias_after = to_numpy_array(self.dp_model.get_out_bias())
-        pt_bias_after = torch_to_numpy(self.pt_model.get_out_bias())
-        np.testing.assert_allclose(dp_bias_after, pt_bias_after, rtol=1e-10, atol=1e-10)
+            # 1. Compute stats and save to file
+            self.dp_model.atomic_model.compute_or_load_out_stat(
+                dp_merged, stat_file_path=dp_stat_path
+            )
+            self.pt_model.atomic_model.compute_or_load_out_stat(
+                pt_merged, stat_file_path=pt_stat_path
+            )
 
-        # Verify bias actually changed (not still all zeros)
-        self.assertFalse(
-            np.allclose(dp_bias_after, dp_bias_before),
-            "compute_or_load_out_stat did not change the bias",
-        )
+            dp_bias_after = to_numpy_array(self.dp_model.get_out_bias())
+            pt_bias_after = torch_to_numpy(self.pt_model.get_out_bias())
+            np.testing.assert_allclose(
+                dp_bias_after, pt_bias_after, rtol=1e-10, atol=1e-10
+            )
+
+            # Verify bias actually changed (not still all zeros)
+            self.assertFalse(
+                np.allclose(dp_bias_after, dp_bias_before),
+                "compute_or_load_out_stat did not change the bias",
+            )
+
+            # 2. Verify both backends saved the same file content
+            with h5py.File(dp_h5, "r") as dp_f, h5py.File(pt_h5, "r") as pt_f:
+                dp_keys = sorted(dp_f.keys())
+                pt_keys = sorted(pt_f.keys())
+                self.assertEqual(dp_keys, pt_keys)
+                for key in dp_keys:
+                    np.testing.assert_allclose(
+                        np.array(dp_f[key]),
+                        np.array(pt_f[key]),
+                        rtol=1e-10,
+                        atol=1e-10,
+                        err_msg=f"Stat file content mismatch for key {key}",
+                    )
+
+            # 3. Reset biases to zero, then load from file
+            zero_bias = np.zeros_like(dp_bias_after)
+            self.dp_model.set_out_bias(zero_bias)
+            self.pt_model.set_out_bias(numpy_to_torch(zero_bias))
+
+            # Use a callable that raises to ensure it loads from file, not recomputes
+            def raise_error():
+                raise RuntimeError("Should not recompute — should load from file")
+
+            self.dp_model.atomic_model.compute_or_load_out_stat(
+                raise_error, stat_file_path=dp_stat_path
+            )
+            self.pt_model.atomic_model.compute_or_load_out_stat(
+                raise_error, stat_file_path=pt_stat_path
+            )
+
+            dp_bias_loaded = to_numpy_array(self.dp_model.get_out_bias())
+            pt_bias_loaded = torch_to_numpy(self.pt_model.get_out_bias())
+
+            # Loaded biases should match between backends
+            np.testing.assert_allclose(
+                dp_bias_loaded, pt_bias_loaded, rtol=1e-10, atol=1e-10
+            )
+            # Loaded biases should match the originally computed biases
+            np.testing.assert_allclose(
+                dp_bias_loaded, dp_bias_after, rtol=1e-10, atol=1e-10
+            )
