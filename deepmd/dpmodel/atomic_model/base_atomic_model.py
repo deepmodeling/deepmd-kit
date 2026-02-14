@@ -387,34 +387,18 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             xp = array_api_compat.array_namespace(ref_array)
 
             # Convert numpy inputs to the model's array type with correct device
-            device = getattr(ref_array, "device", None)
-            if device is not None:
-                # For torch tensors
-                coord = xp.asarray(coord, device=device)
-                atype = xp.asarray(atype, device=device)
-                if box is not None:
-                    # Check if box is all zeros before converting
-                    if np.allclose(box, 0.0):
-                        box = None
-                    else:
-                        box = xp.asarray(box, device=device)
-                if fparam is not None:
-                    fparam = xp.asarray(fparam, device=device)
-                if aparam is not None:
-                    aparam = xp.asarray(aparam, device=device)
-            else:
-                # For numpy arrays
-                coord = xp.asarray(coord)
-                atype = xp.asarray(atype)
-                if box is not None:
-                    if np.allclose(box, 0.0):
-                        box = None
-                    else:
-                        box = xp.asarray(box)
-                if fparam is not None:
-                    fparam = xp.asarray(fparam)
-                if aparam is not None:
-                    aparam = xp.asarray(aparam)
+            device = array_api_compat.device(ref_array)
+            coord = xp.asarray(coord, device=device)
+            atype = xp.asarray(atype, device=device)
+            if box is not None:
+                if np.allclose(box, 0.0):
+                    box = None
+                else:
+                    box = xp.asarray(box, device=device)
+            if fparam is not None:
+                fparam = xp.asarray(fparam, device=device)
+            if aparam is not None:
+                aparam = xp.asarray(aparam, device=device)
 
             (
                 extended_coord,
