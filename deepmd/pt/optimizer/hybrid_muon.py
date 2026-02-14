@@ -96,6 +96,10 @@ EPS: float = 1e-7
 NS_COEFF_A: float = 3.4445
 NS_COEFF_B: float = -4.7750
 NS_COEFF_C: float = 2.0315
+# Minimum matrix dimension for flash path to be beneficial.
+# Below this threshold, triton kernel launch overhead dominates over compute,
+# and cuBLAS (via torch.mm/addmm) is faster for small matrices.
+FLASH_MIN_DIM: int = 1024
 
 
 # ============================================================================
@@ -817,10 +821,14 @@ class HybridMuonOptimizer(Optimizer):
                 else:
                     scale = max(1.0, rows / cols) ** 0.5
 
-                # Determine if flash path is usable for this bucket
-                use_flash = self._use_flash and _device.type == "cuda"
+                # Determine if flash path is usable for this bucket.
+                # Only beneficial when min(rows, cols) >= FLASH_MIN_DIM;
+                # for small matrices, triton launch overhead > compute savings.
+                M = min(rows, cols)
+                use_flash = (
+                    self._use_flash and _device.type == "cuda" and M >= FLASH_MIN_DIM
+                )
                 if use_flash:
-                    M = min(rows, cols)
                     buf1, buf2 = self._get_ns_buffers(M, _device)
 
                 # Process each entry individually with Newton-Schulz orth.

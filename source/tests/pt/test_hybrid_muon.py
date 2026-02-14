@@ -296,15 +296,21 @@ class TestFlashMuon(unittest.TestCase):
     )
     def test_flash_path_actually_used(self) -> None:
         """Verify that flash path is actually active when triton + CUDA available."""
+        from deepmd.pt.optimizer.hybrid_muon import (
+            FLASH_MIN_DIM,
+        )
+
         torch.manual_seed(42)
-        model = torch.nn.Linear(32, 64, device=self.device)
+        # Use matrix large enough to exceed FLASH_MIN_DIM threshold
+        dim = max(FLASH_MIN_DIM, 128)
+        model = torch.nn.Linear(dim, dim * 2, device=self.device)
         optimizer = HybridMuonOptimizer(model.parameters(), lr=0.02, flash_muon=True)
         # _use_flash should be True when triton is available
         self.assertTrue(optimizer._use_flash)
         # _ns_buffers should be empty before first step
         self.assertEqual(len(optimizer._ns_buffers), 0)
 
-        x = torch.randn(4, 32, device=self.device)
+        x = torch.randn(4, dim, device=self.device)
         model(x).sum().backward()
         optimizer.step()
 
