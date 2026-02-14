@@ -48,6 +48,8 @@ References
        https://arxiv.org/abs/2502.16982
 .. [3] Moonlight GitHub Repository.
        https://github.com/MoonshotAI/Moonlight
+.. [4] Flash-Muon: Triton-accelerated symmetric matmul for Newton-Schulz.
+       https://github.com/lintianyang/flash-muon (MIT License, Tianyang Lin)
 """
 
 from __future__ import (
@@ -71,6 +73,18 @@ if TYPE_CHECKING:
     )
 
 # ============================================================================
+# Triton availability detection
+# ============================================================================
+
+try:
+    import triton
+    import triton.language as tl
+
+    TRITON_AVAILABLE = True
+except ImportError:
+    TRITON_AVAILABLE = False
+
+# ============================================================================
 # Constants
 # ============================================================================
 
@@ -82,6 +96,156 @@ EPS: float = 1e-7
 NS_COEFF_A: float = 3.4445
 NS_COEFF_B: float = -4.7750
 NS_COEFF_C: float = 2.0315
+
+
+# ============================================================================
+# Triton-accelerated symmetric matmul kernel (from flash-muon [4])
+# ============================================================================
+
+if TRITON_AVAILABLE:
+
+    def _get_autotune_config():  # noqa: ANN202
+        return [
+            triton.Config(
+                {
+                    "BLOCK_SIZE_M": blk_m,
+                    "BLOCK_SIZE_K": blk_k,
+                    "GROUP_SIZE_M": 8,
+                },
+                num_stages=n_stages,
+                num_warps=n_warps,
+            )
+            for blk_m in [32, 64, 128]
+            for blk_k in [32, 64]
+            for n_stages in [3, 4, 5]
+            for n_warps in [4, 8]
+        ]
+
+    @triton.autotune(configs=_get_autotune_config(), key=["M", "K"])
+    @triton.jit
+    def _mmt_kernel(
+        x,  # noqa: ANN001
+        y,  # noqa: ANN001
+        M,  # noqa: ANN001
+        K,  # noqa: ANN001
+        stride_xm,  # noqa: ANN001
+        stride_xk,  # noqa: ANN001
+        stride_ym,  # noqa: ANN001
+        stride_yn,  # noqa: ANN001
+        BLOCK_SIZE_M: tl.constexpr,
+        BLOCK_SIZE_K: tl.constexpr,
+        GROUP_SIZE_M: tl.constexpr,
+    ) -> None:
+        """Compute y = x @ x.T, exploiting symmetry (upper triangle only)."""
+        pid = tl.program_id(axis=0)
+        num_pid_m = tl.cdiv(M, BLOCK_SIZE_M)
+        num_pid_n = tl.cdiv(M, BLOCK_SIZE_M)
+        num_pid_in_group = GROUP_SIZE_M * num_pid_n
+        group_id = pid // num_pid_in_group
+        first_pid_m = group_id * GROUP_SIZE_M
+        group_size_m = min(num_pid_m - first_pid_m, GROUP_SIZE_M)
+        pid_m = first_pid_m + ((pid % num_pid_in_group) % group_size_m)
+        pid_n = (pid % num_pid_in_group) // group_size_m
+        # Skip lower triangle — mirror from upper triangle instead
+        if pid_m > pid_n:
+            return
+
+        offs_xm = (pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)) % M
+        offs_xn = (pid_n * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)) % M
+        offs_k = tl.arange(0, BLOCK_SIZE_K)
+        a_ptrs = x + (offs_xm[:, None] * stride_xm + offs_k[None, :] * stride_xk)
+        b_ptrs = x + (offs_xn[:, None] * stride_xm + offs_k[None, :] * stride_xk)
+
+        accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_M), dtype=tl.float32)
+        for k in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
+            a = tl.load(a_ptrs, mask=offs_k[None, :] < K - k * BLOCK_SIZE_K, other=0.0)
+            b = tl.load(b_ptrs, mask=offs_k[None, :] < K - k * BLOCK_SIZE_K, other=0.0)
+            accumulator = tl.dot(a, tl.permute(b, (1, 0)), accumulator)
+            a_ptrs += BLOCK_SIZE_K * stride_xk
+            b_ptrs += BLOCK_SIZE_K * stride_xk
+
+        c = accumulator.to(x.dtype.element_ty)
+        offs_cm = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+        offs_cn = pid_n * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+        c_ptrs = y + stride_ym * offs_cm[:, None] + stride_yn * offs_cn[None, :]
+        c_mask = (offs_cm[:, None] < M) & (offs_cn[None, :] < M)
+        tl.store(c_ptrs, c, mask=c_mask)
+
+        # Transpose-and-copy: mirror upper triangle to lower
+        if pid_m < pid_n:
+            ct_ptrs = y + stride_ym * offs_cn[:, None] + stride_yn * offs_cm[None, :]
+            ct_mask = (offs_cn[:, None] < M) & (offs_cm[None, :] < M)
+            tl.store(ct_ptrs, tl.permute(c, (1, 0)), mask=ct_mask)
+
+    def _matmul_transpose_assign(d_in: torch.Tensor, d_out: torch.Tensor) -> None:
+        """Compute d_out = d_in @ d_in.T using triton symmetric matmul kernel."""
+        d_in = d_in.contiguous()
+        M, K = d_in.shape
+        grid = lambda META: (  # noqa: E731
+            triton.cdiv(M, META["BLOCK_SIZE_M"]) * triton.cdiv(M, META["BLOCK_SIZE_M"]),
+        )
+        with torch.cuda.device(d_in.device.index):
+            _mmt_kernel[grid](
+                d_in,
+                d_out,
+                M,
+                K,
+                d_in.stride(0),
+                d_in.stride(1),
+                d_out.stride(0),
+                d_out.stride(1),
+            )
+
+
+# ============================================================================
+# Flash Newton-Schulz orthogonalization (triton-accelerated)
+# ============================================================================
+
+
+def _flash_newton_schulz_orth(
+    G: torch.Tensor,
+    buf1: torch.Tensor,
+    buf2: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Orthogonalize a 2D matrix via quintic Newton-Schulz with triton-accelerated
+    symmetric matmul. Mathematically equivalent to ``_newton_schulz_orth``.
+
+    Parameters
+    ----------
+    G : torch.Tensor
+        Input 2D gradient/update matrix with shape (m, n).
+    buf1 : torch.Tensor
+        Pre-allocated buffer with shape (M, M) where M = min(m, n), in bfloat16.
+    buf2 : torch.Tensor
+        Pre-allocated buffer with shape (M, M) where M = min(m, n), in bfloat16.
+
+    Returns
+    -------
+    torch.Tensor
+        Orthogonalized matrix in bfloat16 with shape (m, n).
+    """
+    # === Step 1. Cast to bf16 and transpose tall matrices ===
+    X = G.to(dtype=torch.bfloat16)
+    transposed = X.size(-2) > X.size(-1)
+    if transposed:
+        X = X.transpose(-2, -1)
+
+    # === Step 2. Normalize Frobenius norm to at most 1 ===
+    X = X / X.norm(dim=(-2, -1), keepdim=True).clamp(min=EPS)
+
+    # === Step 3. Newton-Schulz iterations with triton symmetric matmul ===
+    for _ in range(NS_STEPS):
+        _matmul_transpose_assign(X, buf1)  # buf1 = X @ X.T = A
+        _matmul_transpose_assign(buf1, buf2)  # buf2 = A @ A.T = A² (A symmetric)
+        B = NS_COEFF_B * buf1 + NS_COEFF_C * buf2
+        X = NS_COEFF_A * X + B @ X
+
+    # === Step 4. Transpose back if needed ===
+    if transposed:
+        X = X.transpose(-2, -1)
+
+    return X
 
 
 def _newton_schulz_orth(
@@ -219,6 +383,11 @@ class HybridMuonOptimizer(Optimizer):
         Must be >= 1.
         Set to 1 to disable fallback.
         Default is 1.
+    flash_muon : bool
+        Enable triton-accelerated Newton-Schulz orthogonalization.
+        Requires triton and CUDA. Falls back to PyTorch implementation
+        when triton is unavailable or running on CPU.
+        Default is True.
 
     Examples
     --------
@@ -240,6 +409,7 @@ class HybridMuonOptimizer(Optimizer):
         lr_adjust_coeff: float = 0.2,
         muon_2d_only: bool = True,
         min_2d_dim: int = 1,
+        flash_muon: bool = True,
     ) -> None:
         if min_2d_dim < 1:
             raise ValueError("min_2d_dim must be >= 1.")
@@ -258,6 +428,42 @@ class HybridMuonOptimizer(Optimizer):
         # Static parameter routing: built once on first step() call.
         self._routing_built = False
         self._routing: list[dict[str, Any]] = []
+
+        # Flash-Muon: triton-accelerated Newton-Schulz
+        self._use_flash = flash_muon and TRITON_AVAILABLE
+        # Lazily allocated NS iteration buffers, keyed by (M, device)
+        self._ns_buffers: dict[
+            tuple[int, torch.device],
+            tuple[torch.Tensor, torch.Tensor],
+        ] = {}
+
+    def _get_ns_buffers(
+        self,
+        M: int,
+        device: torch.device,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Get or lazily allocate pre-allocated buffers for flash Newton-Schulz.
+
+        Parameters
+        ----------
+        M : int
+            Square buffer dimension (= min(rows, cols) of the update matrix).
+        device : torch.device
+            Target CUDA device.
+
+        Returns
+        -------
+        tuple[torch.Tensor, torch.Tensor]
+            (buf1, buf2), each with shape (M, M) in bfloat16.
+        """
+        key = (M, device)
+        if key not in self._ns_buffers:
+            self._ns_buffers[key] = (
+                torch.empty(M, M, dtype=torch.bfloat16, device=device),
+                torch.empty(M, M, dtype=torch.bfloat16, device=device),
+            )
+        return self._ns_buffers[key]
 
     def _build_param_routing(self) -> None:
         """
@@ -611,14 +817,23 @@ class HybridMuonOptimizer(Optimizer):
                 else:
                     scale = max(1.0, rows / cols) ** 0.5
 
-                # Process each entry individually with _newton_schulz_orth.
-                # compatible with sharding propagation under FSDP2.
+                # Determine if flash path is usable for this bucket
+                use_flash = self._use_flash and _device.type == "cuda"
+                if use_flash:
+                    M = min(rows, cols)
+                    buf1, buf2 = self._get_ns_buffers(M, _device)
+
+                # Process each entry individually with Newton-Schulz orth.
+                # Compatible with sharding propagation under FSDP2.
                 for entry, update_tensor in bucket_entries:
                     update_matrix = update_tensor.reshape(rows, cols)
                     if not update_matrix.is_contiguous():
                         update_matrix = update_matrix.contiguous()
 
-                    orth = _newton_schulz_orth(update_matrix)
+                    if use_flash:
+                        orth = _flash_newton_schulz_orth(update_matrix, buf1, buf2)
+                    else:
+                        orth = _newton_schulz_orth(update_matrix)
                     orth.mul_(scale)
                     delta = orth.reshape(entry["param"].shape)
                     entry["param"].add_(delta, alpha=-lr)

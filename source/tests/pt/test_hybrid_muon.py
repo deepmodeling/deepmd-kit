@@ -4,6 +4,7 @@ import unittest
 import torch
 
 from deepmd.pt.optimizer.hybrid_muon import (
+    TRITON_AVAILABLE,
     HybridMuonOptimizer,
     _newton_schulz_orth,
 )
@@ -227,6 +228,88 @@ class TestHybridMuonOptimizerStateDict(unittest.TestCase):
                     self.assertTrue(torch.allclose(s1[key], s2[key]))
                 else:
                     self.assertEqual(s1[key], s2[key])
+
+
+@unittest.skipIf(not BF16_SUPPORTED, "bf16 matmul not supported on this device")
+class TestFlashMuon(unittest.TestCase):
+    """Test flash_muon triton-accelerated Newton-Schulz path."""
+
+    def setUp(self) -> None:
+        self.device = env.DEVICE
+
+    def test_flash_muon_false_runs(self) -> None:
+        """Test that flash_muon=False uses pure PyTorch path without error."""
+        torch.manual_seed(42)
+        model = torch.nn.Linear(10, 20, device=self.device)
+        optimizer = HybridMuonOptimizer(model.parameters(), lr=0.02, flash_muon=False)
+        x = torch.randn(4, 10, device=self.device)
+        model(x).sum().backward()
+        optimizer.step()
+        # Should complete without error
+
+    def test_flash_muon_true_runs(self) -> None:
+        """Test that flash_muon=True runs (falls back on CPU, uses triton on CUDA)."""
+        torch.manual_seed(42)
+        model = torch.nn.Linear(10, 20, device=self.device)
+        optimizer = HybridMuonOptimizer(model.parameters(), lr=0.02, flash_muon=True)
+        x = torch.randn(4, 10, device=self.device)
+        model(x).sum().backward()
+        optimizer.step()
+
+    def test_flash_vs_pytorch_consistency(self) -> None:
+        """Test that flash and non-flash paths produce consistent results.
+
+        On CPU (no triton), both paths are identical (PyTorch fallback).
+        On CUDA with triton, results should be close (same math, bf16 rounding).
+        """
+        torch.manual_seed(42)
+        model1 = torch.nn.Linear(32, 64, device=self.device)
+        model2 = torch.nn.Linear(32, 64, device=self.device)
+        model2.load_state_dict(model1.state_dict())
+
+        opt1 = HybridMuonOptimizer(model1.parameters(), lr=0.02, flash_muon=False)
+        opt2 = HybridMuonOptimizer(model2.parameters(), lr=0.02, flash_muon=True)
+
+        x = torch.randn(4, 32, device=self.device)
+
+        opt1.zero_grad()
+        model1(x).sum().backward()
+        opt1.step()
+
+        opt2.zero_grad()
+        model2(x).sum().backward()
+        opt2.step()
+
+        # Both paths should produce similar results
+        self.assertTrue(
+            torch.allclose(model1.weight, model2.weight, atol=1e-2),
+            f"Flash and non-flash weight diff: {(model1.weight - model2.weight).abs().max().item():.6f}",
+        )
+        self.assertTrue(
+            torch.allclose(model1.bias, model2.bias, atol=1e-2),
+            f"Flash and non-flash bias diff: {(model1.bias - model2.bias).abs().max().item():.6f}",
+        )
+
+    @unittest.skipIf(
+        not (TRITON_AVAILABLE and env.DEVICE.type == "cuda"),
+        "Triton + CUDA required for flash path verification",
+    )
+    def test_flash_path_actually_used(self) -> None:
+        """Verify that flash path is actually active when triton + CUDA available."""
+        torch.manual_seed(42)
+        model = torch.nn.Linear(32, 64, device=self.device)
+        optimizer = HybridMuonOptimizer(model.parameters(), lr=0.02, flash_muon=True)
+        # _use_flash should be True when triton is available
+        self.assertTrue(optimizer._use_flash)
+        # _ns_buffers should be empty before first step
+        self.assertEqual(len(optimizer._ns_buffers), 0)
+
+        x = torch.randn(4, 32, device=self.device)
+        model(x).sum().backward()
+        optimizer.step()
+
+        # After step, buffers should have been allocated for the weight matrix
+        self.assertGreater(len(optimizer._ns_buffers), 0)
 
 
 if __name__ == "__main__":

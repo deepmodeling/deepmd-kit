@@ -3554,6 +3554,16 @@ def training_args(
                             "those with min(m, n) < min_2d_dim use Adam fallback. "
                             "Set to 1 to disable fallback.",
                         ),
+                        Argument(
+                            "flash_muon",
+                            bool,
+                            optional=True,
+                            default=True,
+                            doc=doc_only_pt_supported
+                            + "Enable triton-accelerated Newton-Schulz orthogonalization. "
+                            "Requires triton and CUDA. Falls back to PyTorch implementation "
+                            "when triton is unavailable or running on CPU.",
+                        ),
                     ],
                     [],
                     optional=True,
