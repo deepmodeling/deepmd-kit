@@ -54,6 +54,7 @@ from deepmd.pt.modifier import (
 from deepmd.pt.train import (
     training,
 )
+from deepmd.pt.train.trainer import Trainer as NewTrainer
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
 )
@@ -106,6 +107,7 @@ def get_trainer(
     init_frz_model: str | None = None,
     shared_links: dict[str, Any] | None = None,
     finetune_links: dict[str, Any] | None = None,
+    use_legacy: bool = False,
 ) -> training.Trainer:
     multi_task = "model_dict" in config.get("model", {})
 
@@ -200,19 +202,34 @@ def get_trainer(
                 seed=data_seed,
             )
 
-    trainer = training.Trainer(
-        config,
-        train_data,
-        stat_file_path=stat_file_path,
-        validation_data=validation_data,
-        init_model=init_model,
-        restart_model=restart_model,
-        finetune_model=finetune_model,
-        force_load=force_load,
-        shared_links=shared_links,
-        finetune_links=finetune_links,
-        init_frz_model=init_frz_model,
-    )
+    if use_legacy:
+        trainer = training.Trainer(
+            config,
+            train_data,
+            stat_file_path=stat_file_path,
+            validation_data=validation_data,
+            init_model=init_model,
+            restart_model=restart_model,
+            finetune_model=finetune_model,
+            force_load=force_load,
+            shared_links=shared_links,
+            finetune_links=finetune_links,
+            init_frz_model=init_frz_model,
+        )
+    else:
+        trainer = NewTrainer(
+            config,
+            train_data,
+            stat_file_path=stat_file_path,
+            validation_data=validation_data,
+            init_model=init_model,
+            restart_model=restart_model,
+            finetune_model=finetune_model,
+            force_load=force_load,
+            shared_links=shared_links,
+            finetune_links=finetune_links,
+            init_frz_model=init_frz_model,
+        )
     return trainer
 
 
