@@ -16,6 +16,9 @@ from deepmd.common import (
 from deepmd.dpmodel.array_api import (
     Array,
 )
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 from deepmd.utils.plugin import (
     PluginVariant,
     make_plugin_registry,
@@ -177,8 +180,12 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
         xp = array_api_compat.array_namespace(step)
 
         # === Step 1. Handle no-warmup case directly ===
-        # Use input dtype to avoid type mismatch with TensorFlow/PyTorch
-        step_dtype = step.dtype
+        # Use input dtype for floating point, or default to GLOBAL_NP_FLOAT_PRECISION for integers
+        step_dtype = (
+            step.dtype
+            if np.issubdtype(step.dtype, np.floating)
+            else GLOBAL_NP_FLOAT_PRECISION
+        )
         if self.warmup_steps == 0:
             lr = self._decay_value(xp.astype(step, step_dtype))
         else:
@@ -367,8 +374,12 @@ class LearningRateExp(BaseLR):
             step = np.asarray(step)
         xp = array_api_compat.array_namespace(step)
         # === Step 1. Compute exponent based on smooth mode ===
-        # Use input dtype to avoid type mismatch with TensorFlow/PyTorch
-        step_dtype = step.dtype
+        # Use input dtype for floating point, or default to GLOBAL_NP_FLOAT_PRECISION for integers
+        step_dtype = (
+            step.dtype
+            if np.issubdtype(step.dtype, np.floating)
+            else GLOBAL_NP_FLOAT_PRECISION
+        )
         if self.smooth:
             exponent = xp.astype(step, step_dtype) / self.decay_steps
         else:
@@ -479,8 +490,12 @@ class LearningRateCosine(BaseLR):
             step = np.asarray(step)
         xp = array_api_compat.array_namespace(step)
         min_lr = self._start_lr * self.lr_min_factor
-        # Use input dtype to avoid type mismatch with TensorFlow/PyTorch
-        step_dtype = step.dtype
+        # Use input dtype for floating point, or default to GLOBAL_NP_FLOAT_PRECISION for integers
+        step_dtype = (
+            step.dtype
+            if np.issubdtype(step.dtype, np.floating)
+            else GLOBAL_NP_FLOAT_PRECISION
+        )
         # Handle decay_num_steps=0 (no training steps) - return start_lr
         if self.decay_num_steps == 0:
             return xp.full_like(step, self._start_lr, dtype=step_dtype)
