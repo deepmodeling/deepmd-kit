@@ -10,18 +10,15 @@ from deepmd.pt_expt.common import (
     dpmodel_setattr,
     register_dpmodel_mapping,
 )
+from deepmd.pt_expt.descriptor.base_descriptor import (
+    BaseDescriptor,
+)
+from deepmd.pt_expt.fitting.base_fitting import (
+    BaseFitting,
+)
 
 
 class DPAtomicModel(DPAtomicModelDP, torch.nn.Module):
-    # Import at class level to set base classes for deserialization
-    # These will be used by the dpmodel deserialize method to create pt_expt instances
-    from deepmd.pt_expt.descriptor.base_descriptor import (
-        BaseDescriptor,
-    )
-    from deepmd.pt_expt.fitting.base_fitting import (
-        BaseFitting,
-    )
-
     base_descriptor_cls = BaseDescriptor
     base_fitting_cls = BaseFitting
 
