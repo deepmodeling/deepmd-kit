@@ -352,8 +352,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     ) -> None:
         """Store output bias and std into the model."""
         ntypes = self.get_ntypes()
-        out_bias_data = np.copy(self.out_bias)
-        out_std_data = np.copy(self.out_std)
+        out_bias_data = np.array(to_numpy_array(self.out_bias))
+        out_std_data = np.array(to_numpy_array(self.out_std))
         for kk in out_bias.keys():
             assert kk in out_std.keys()
             idx = self._get_bias_index(kk)
