@@ -41,27 +41,41 @@ if INSTALLED_ARRAY_API_STRICT:
             "start_lr": 1e-3,
             "stop_lr": 1e-8,
             "decay_steps": 1000,
-            "stop_steps": 1000000,
+            "num_steps": 1000000,
+            "warmup_steps": 10000,
         },
         {
             "type": "cosine",
             "start_lr": 1e-3,
             "stop_lr": 1e-8,
-            "decay_steps": 1000,
-            "stop_steps": 1000000,
+            "num_steps": 1000000,
+            "warmup_steps": 10000,
         },
     ),
 )
 class TestLearningRateConsistent(unittest.TestCase):
+    """Test learning rate consistency across different array backends."""
+
     def setUp(self) -> None:
         (lr_param,) = self.param
         self.lr = BaseLR(**lr_param)
         self.step = 500000
         self.ref = self.lr.value(self.step)
+        self.warmup_step = None
+        self.warmup_ref = None
+        if self.lr.warmup_steps > 0:
+            self.warmup_step = self.lr.warmup_steps // 2
+            self.warmup_ref = self.lr.value(self.warmup_step)
 
     def compare_test_with_ref(self, step: Array) -> None:
         test = self.lr.value(step)
         np.testing.assert_allclose(self.ref, to_numpy_array(test), atol=1e-10)
+
+    def compare_test_with_warmup_ref(self, step: Array) -> None:
+        if self.warmup_ref is None:
+            self.skipTest("warmup not enabled")
+        test = self.lr.value(step)
+        np.testing.assert_allclose(self.warmup_ref, to_numpy_array(test), atol=1e-10)
 
     def compare_numpy_with_ref(self, step: Array) -> None:
         self.compare_test_with_ref(np.asarray(step))
@@ -69,6 +83,8 @@ class TestLearningRateConsistent(unittest.TestCase):
     @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
     def test_pt_consistent_with_ref(self) -> None:
         self.compare_test_with_ref(to_torch_tensor(self.step))
+        if self.warmup_step is not None:
+            self.compare_test_with_warmup_ref(to_torch_tensor(self.warmup_step))
 
     @unittest.skipUnless(
         INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed"
@@ -78,7 +94,11 @@ class TestLearningRateConsistent(unittest.TestCase):
     )
     def test_array_api_strict(self) -> None:
         self.compare_test_with_ref(xp.asarray(self.step))
+        if self.warmup_step is not None:
+            self.compare_test_with_warmup_ref(xp.asarray(self.warmup_step))
 
     @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
     def test_jax_consistent_with_ref(self) -> None:
         self.compare_test_with_ref(jnp.array(self.step))
+        if self.warmup_step is not None:
+            self.compare_test_with_warmup_ref(jnp.array(self.warmup_step))
