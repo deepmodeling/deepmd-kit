@@ -30,6 +30,11 @@ from paddle.io import (
 from deepmd.common import (
     symlink_prefix_files,
 )
+from deepmd.dpmodel.utils import (
+    compute_total_numb_batch,
+    resolve_model_prob,
+    resolve_model_prob_from_epochs,
+)
 from deepmd.dpmodel.utils.learning_rate import (
     BaseLR,
 )
@@ -130,9 +135,12 @@ class Trainer:
             else 1
         )
         self.num_model = len(self.model_keys)
+        self.model_prob = None
 
         # Iteration config
-        self.num_steps = training_params["numb_steps"]
+        self.num_steps = training_params.get("numb_steps")
+        self.num_epoch = training_params.get("num_epoch")
+        self.num_epoch_dict = training_params.get("num_epoch_dict")
         self.acc_freq: int = training_params.get(
             "acc_freq", 1
         )  # gradient accumulation steps
@@ -390,6 +398,75 @@ class Trainer:
                         ),
                     )
 
+        per_task_total = []
+        if not self.multi_task:
+            sampler_weights = to_numpy_array(
+                self.training_dataloader.batch_sampler.sampler.weights
+            )
+            total_numb_batch = compute_total_numb_batch(
+                training_data.index,
+                sampler_weights,
+            )
+            if self.num_steps is None:
+                if self.num_epoch is None:
+                    raise ValueError(
+                        "Either training.numb_steps or training.num_epoch must be set."
+                    )
+                if self.num_epoch <= 0:
+                    raise ValueError("training.num_epoch must be positive.")
+                if total_numb_batch <= 0:
+                    raise ValueError(
+                        "Total number of training batches must be positive."
+                    )
+                self.num_steps = int(np.ceil(self.num_epoch * total_numb_batch))
+                log.info(
+                    "Computed num_steps=%d from num_epoch=%s and total_numb_batch=%d.",
+                    self.num_steps,
+                    self.num_epoch,
+                    total_numb_batch,
+                )
+        else:
+            for model_key in self.model_keys:
+                sampler_weights = to_numpy_array(
+                    self.training_dataloader[model_key].batch_sampler.sampler.weights
+                )
+                per_task_total.append(
+                    compute_total_numb_batch(
+                        training_data[model_key].index,
+                        sampler_weights,
+                    )
+                )
+            if self.num_epoch_dict:
+                (
+                    self.model_prob,
+                    self.num_steps,
+                    per_task_steps,
+                ) = resolve_model_prob_from_epochs(
+                    self.model_keys,
+                    self.num_epoch_dict,
+                    np.asarray(per_task_total, dtype=np.float64),
+                )
+                log.info(
+                    "Computed model_prob=%s and num_steps=%d from num_epoch_dict=%s "
+                    "with per-task target steps: %s.",
+                    self.model_prob,
+                    self.num_steps,
+                    self.num_epoch_dict,
+                    {k: int(np.ceil(v)) for k, v in per_task_steps.items()},
+                )
+            else:
+                if self.num_steps is None:
+                    raise ValueError(
+                        "Either training.numb_steps (multi-task only) or "
+                        "training.num_epoch_dict must be set."
+                    )
+                self.model_prob = resolve_model_prob(
+                    self.model_keys,
+                    training_params.get("model_prob"),
+                    training_data,
+                    rank=self.rank,
+                )
+
         # Learning rate
         self.warmup_steps = training_params.get("warmup_steps", 0)
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
@@ -575,6 +652,15 @@ class Trainer:
             frz_model = paddle.jit.load(init_frz_model)
             self.model.set_state_dict(frz_model.state_dict())
 
+        # Get model prob for multi-task
+        if self.multi_task and self.model_prob is None:
+            self.model_prob = resolve_model_prob(
+                self.model_keys,
+                training_params.get("model_prob"),
+                training_data,
+                rank=self.rank,
+            )
+
         # Multi-task share params
         if shared_links is not None:
             self.wrapper.share_params(
@@ -681,21 +767,6 @@ class Trainer:
                 # find_unused_parameters=True,
             )
             self.optimizer = fleet.distributed_optimizer(self.optimizer)
-
-        # Get model prob for multi-task
-        if self.multi_task:
-            self.model_prob = np.array([0.0 for key in self.model_keys])
-            if training_params.get("model_prob", None) is not None:
-                model_prob = training_params["model_prob"]
-                for ii, model_key in enumerate(self.model_keys):
-                    if model_key in model_prob:
-                        self.model_prob[ii] += float(model_prob[model_key])
-            else:
-                for ii, model_key in enumerate(self.model_keys):
-                    self.model_prob[ii] += float(len(self.training_data[model_key]))
-            sum_prob = np.sum(self.model_prob)
-            assert sum_prob > 0.0, "Sum of model prob must be larger than 0!"
-            self.model_prob = self.model_prob / sum_prob
 
         # Tensorboard
         self.enable_tensorboard = training_params.get("tensorboard", False)
