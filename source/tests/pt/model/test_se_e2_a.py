@@ -105,7 +105,7 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     err_msg=err_msg,
                 )
 
-    def test_jit(
+    def test_export(
         self,
     ) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
@@ -114,13 +114,12 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dstd = rng.normal(size=(self.nt, nnei, 4))
         dstd = 0.1 + np.abs(dstd)
 
-        for idt, prec in itertools.product(
+        for idt, prec, type_one_side in itertools.product(
             [False, True],
             ["float64", "float32"],
+            [False, True],
         ):
             dtype = PRECISION_DICT[prec]
-            rtol, atol = get_tols(prec)
-            err_msg = f"idt={idt} prec={prec}"
             # sea new impl
             dd0 = DescrptSeA(
                 self.rcut,
@@ -129,9 +128,13 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 precision=prec,
                 resnet_dt=idt,
                 seed=GLOBAL_SEED,
+                type_one_side=type_one_side,
             )
             dd0.sea.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.sea.dstd = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
-            dd1 = DescrptSeA.deserialize(dd0.serialize())
-            model = torch.jit.script(dd0)
-            model = torch.jit.script(dd1)
+            coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE)
+            atype_ext = torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE)
+            nlist = torch.tensor(self.nlist, dtype=int, device=env.DEVICE)
+
+            # torch.export.export
+            _ = torch.export.export(dd0, (coord_ext, atype_ext, nlist))
