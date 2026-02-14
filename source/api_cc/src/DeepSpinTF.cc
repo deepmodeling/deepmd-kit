@@ -809,11 +809,11 @@ void DeepSpinTF::compute(ENERGYVTYPE& dener,
   datom_energy_.resize(static_cast<size_t>(nframes) * nall);
   datom_virial_.resize(static_cast<size_t>(nframes) * nall * 9);
   for (int ii = 0; ii < nall; ++ii) {
+    int new_idx = new_idx_map[ii];
     for (int dd = 0; dd < 3; ++dd) {
-      int new_idx = new_idx_map[ii];
       dforce_[3 * ii + dd] = dforce_tmp[3 * new_idx + dd];
       datom_energy_[ii] = datom_energy_tmp[new_idx];
-      datom_virial_[ii] = datom_virial_tmp[new_idx];
+
       if (datype_[ii] < ntypes_spin && ii < nloc) {
         dforce_mag_[3 * ii + dd] = dforce_tmp[3 * (new_idx + nloc) + dd];
       } else if (datype_[ii] < ntypes_spin) {
@@ -821,6 +821,9 @@ void DeepSpinTF::compute(ENERGYVTYPE& dener,
       } else {
         dforce_mag_[3 * ii + dd] = 0.0;
       }
+    }
+    for (int dd = 0; dd < 9; ++dd) {
+      datom_virial_[ii * 9 + dd] = datom_virial_tmp[new_idx * 9 + dd];
     }
   }
 }

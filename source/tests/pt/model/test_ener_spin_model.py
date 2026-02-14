@@ -115,7 +115,7 @@ class SpinTest:
         nframes, nloc = self.coord.shape[:2]
         self.real_ntypes = self.model.spin.get_ntypes_real()
         # 1. test forward input process
-        coord_updated, atype_updated = self.model.process_spin_input(
+        coord_updated, atype_updated, _ = self.model.process_spin_input(
             self.coord, self.atype, self.spin
         )
         # compare atypes of real and virtual atoms
@@ -174,6 +174,7 @@ class SpinTest:
             extended_atype_updated,
             nlist_updated,
             mapping_updated,
+            _,
         ) = self.model.process_spin_input_lower(
             extended_coord, extended_atype, extended_spin, nlist, mapping=mapping
         )

@@ -71,6 +71,124 @@ expected_fm2 = np.array(
     ]
 )
 
+expected_v = -np.array(
+    [
+        0.0021380771762615,
+        -0.0008956809792447,
+        -0.0016180043496033,
+        -0.0008956809792447,
+        0.0003752177075214,
+        0.0006778126329419,
+        -0.0014520530654550,
+        0.0006082925003933,
+        0.0010988509684524,
+        0.0034592108484302,
+        -0.0014491288689370,
+        -0.0026177811825959,
+        -0.0014491288689370,
+        0.0006070674991493,
+        0.0010966380629793,
+        -0.0027640824464858,
+        0.0011579264302846,
+        0.0020917380676109,
+        -0.0037083572971367,
+        -0.0034643864223251,
+        0.0050745941960818,
+        -0.0034643864223251,
+        -0.0032364662629616,
+        0.0047407393147607,
+        0.0050745941960818,
+        0.0047407393147607,
+        -0.0069441815314804,
+        -0.0037083572971367,
+        -0.0034643864223251,
+        0.0050745941960818,
+        -0.0034643864223251,
+        -0.0032364662629616,
+        0.0047407393147607,
+        0.0050745941960818,
+        0.0047407393147607,
+        -0.0069441815314804,
+        0.0103691205704445,
+        -0.0043438207795105,
+        -0.0078469020533093,
+        -0.0043438207795105,
+        0.0018197087049301,
+        0.0032872157250350,
+        -0.0076002352547860,
+        0.0031838823364644,
+        0.0057515293820002,
+        0.0045390015662654,
+        -0.0019014736291112,
+        -0.0034349201042009,
+        -0.0019014736291112,
+        0.0007965632770601,
+        0.0014389530166247,
+        -0.0038334654556754,
+        0.0016059112044046,
+        0.0029010008853761,
+    ]
+).reshape(6, 9)
+
+expected_v2 = -np.array(
+    [
+        -0.0036598018779382,
+        0.0015331602461633,
+        0.0027695797995208,
+        0.0015331602461633,
+        -0.0006422698328522,
+        -0.0011602293754749,
+        0.0034588126662543,
+        -0.0014489620628903,
+        -0.0026174798555438,
+        -0.0041745421140984,
+        0.0017487946694196,
+        0.0031591129512096,
+        0.0017487946694196,
+        -0.0007326031723244,
+        -0.0013234121822635,
+        0.0025379870399672,
+        -0.0010632107870133,
+        -0.0019206388410563,
+        -0.0007732439105683,
+        -0.0007223726006625,
+        0.0010581232460408,
+        -0.0007223726006625,
+        -0.0006748480874610,
+        0.0009885098745908,
+        0.0010581232460408,
+        0.0009885098745908,
+        -0.0014479581261611,
+        -0.0007732439105683,
+        -0.0007223726006625,
+        0.0010581232460408,
+        -0.0007223726006625,
+        -0.0006748480874610,
+        0.0009885098745908,
+        0.0010581232460408,
+        0.0009885098745908,
+        -0.0014479581261611,
+        0.0041056015792389,
+        -0.0017199141750866,
+        -0.0031069417356403,
+        -0.0017199141750866,
+        0.0007205045868606,
+        0.0013015566730385,
+        -0.0043680668171685,
+        0.0018298658288138,
+        0.0033055640778573,
+        0.0021812275849517,
+        -0.0009137575018041,
+        -0.0016506587129364,
+        -0.0009137575018041,
+        0.0003827903048098,
+        0.0006914921635274,
+        -0.0017789317520491,
+        0.0007452281663989,
+        0.0013462186231723,
+    ]
+).reshape(6, 9)
+
 box = np.array([0, 100, 0, 100, 0, 100, 0, 0, 0])
 coord = np.array(
     [
@@ -174,6 +292,13 @@ def test_pair_deepmd_model_devi(lammps) -> None:
     assert md[7] == pytest.approx(np.max(expected_md_fm))
     assert md[8] == pytest.approx(np.min(expected_md_fm))
     assert md[9] == pytest.approx(np.mean(expected_md_fm))
+    expected_md_v = (
+        np.std([np.sum(expected_v[:], axis=0), np.sum(expected_v2[:], axis=0)], axis=0)
+        / 4
+    )
+    assert md[1] == pytest.approx(np.max(expected_md_v))
+    assert md[2] == pytest.approx(np.min(expected_md_v))
+    assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
 
 
 def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
@@ -202,6 +327,42 @@ def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
     assert md[7] == pytest.approx(np.max(expected_md_fm))
     assert md[8] == pytest.approx(np.min(expected_md_fm))
     assert md[9] == pytest.approx(np.mean(expected_md_fm))
+
+
+def test_pair_deepmd_model_devi_atomic_relative_v(lammps) -> None:
+    relative = 1.0
+    lammps.pair_style(
+        f"deepspin {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic relative_v {relative}"
+    )
+    lammps.pair_coeff("* *")
+    lammps.run(0)
+    assert lammps.eval("pe") == pytest.approx(expected_e)
+    for ii in range(4):
+        assert lammps.atoms[ii].force == pytest.approx(
+            expected_f[lammps.atoms[ii].id - 1]
+        )
+    md = np.loadtxt(md_file.resolve())
+    expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
+    expected_md_fm = np.linalg.norm(np.std([expected_fm, expected_fm2], axis=0), axis=1)
+    assert md[4] == pytest.approx(np.max(expected_md_f))
+    assert md[5] == pytest.approx(np.min(expected_md_f))
+    assert md[6] == pytest.approx(np.mean(expected_md_f))
+    assert md[7] == pytest.approx(np.max(expected_md_fm))
+    assert md[8] == pytest.approx(np.min(expected_md_fm))
+    assert md[9] == pytest.approx(np.mean(expected_md_fm))
+    expected_md_v = (
+        np.std([np.sum(expected_v, axis=0), np.sum(expected_v2, axis=0)], axis=0) / 4
+    )
+    norm = (
+        np.abs(
+            np.mean([np.sum(expected_v, axis=0), np.sum(expected_v2, axis=0)], axis=0)
+        )
+        / 4
+    )
+    expected_md_v /= norm + relative
+    assert md[1] == pytest.approx(np.max(expected_md_v))
+    assert md[2] == pytest.approx(np.min(expected_md_v))
+    assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
 
 
 @pytest.mark.skipif(
