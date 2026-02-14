@@ -61,6 +61,12 @@
     "stop_lr": 3.51e-08,
     "_comment": "that's all"
   },
+  "optimizer": {
+    "type": "Adam",
+    "adam_beta1": 0.9,
+    "adam_beta2": 0.999,
+    "weight_decay": 0.0
+  },
   "loss_dict": {
     "model_1": {
       "type": "ener",
