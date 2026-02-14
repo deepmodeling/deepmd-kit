@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import argparse
 import copy
-import io
 import json
 import logging
 import os
+import pickle
 from pathlib import (
     Path,
 )
@@ -401,17 +401,13 @@ def freeze(
     model.eval()
     model = torch.jit.script(model)
 
-    dm_output = "data_modifier.pth"
-    extra_files = {dm_output: ""}
-    if tester.modifier is not None:
-        dm = tester.modifier
-        dm.eval()
-        buffer = io.BytesIO()
-        torch.jit.save(
-            torch.jit.script(dm),
-            buffer,
-        )
-        extra_files = {dm_output: buffer.getvalue()}
+    extra_files = {"modifier_data": ""}
+    dm = tester.modifier
+    if dm is not None:
+        # dict from dm.serialize() includes np.ndarray
+        # use pickle rather than json
+        bytes_data = pickle.dumps(dm.serialize())
+        extra_files = {"modifier_data": bytes_data}
     torch.jit.save(
         model,
         output,

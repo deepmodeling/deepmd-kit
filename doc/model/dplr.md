@@ -1,10 +1,10 @@
-# Deep potential long-range (DPLR) {{ tensorflow_icon }}
+# Deep potential long-range (DPLR) {{ tensorflow_icon }} {{ pytorch_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
 :::
 
-Notice: **The interfaces of DPLR are not stable and subject to change**
+Notice: **The interfaces of DPLR are not stable and subject to change. In addition, DP/LAMMPS interface does not yet support PyTorch DPLR models.**
 
 The method of DPLR is described in [this paper][1]. One is recommended to read the paper before using the DPLR.
 
