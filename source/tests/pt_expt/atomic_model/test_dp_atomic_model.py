@@ -142,6 +142,7 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
         self.assertIn("energy", ret0)
 
         # Test torch.export
+        # Use strict=False for now to handle dynamic shapes
         exported = torch.export.export(
             md0,
             (coord, atype, nlist),

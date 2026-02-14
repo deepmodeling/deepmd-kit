@@ -210,7 +210,6 @@ class TypeEmbedNet(NativeOP):
                 # Create random params with same dtype and device as first_layer_matrix
                 extend_type_params = np.random.default_rng().random(
                     [len(type_map), first_layer_matrix.shape[-1]],
-                    dtype=PRECISION_DICT[self.precision],
                 )
                 extend_type_params = xp.asarray(
                     extend_type_params,
