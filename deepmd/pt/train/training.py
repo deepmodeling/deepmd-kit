@@ -162,6 +162,10 @@ class Trainer:
             "change_bias_after_training", False
         )
         self.zero_stage = int(training_params.get("zero_stage", 0))
+        if self.zero_stage not in (0, 1, 2, 3):
+            raise ValueError(
+                f"training.zero_stage must be 0, 1, 2, or 3, got {self.zero_stage}"
+            )
         if self.zero_stage > 0 and not self.is_distributed:
             raise ValueError(
                 "training.zero_stage requires distributed launch via torchrun."
@@ -722,7 +726,7 @@ class Trainer:
                 for b in self.wrapper.buffers():
                     dist.broadcast(b.data, src=0)
                 reshard = self.zero_stage >= 3
-                fully_shard(self.wrapper, reshard_after_forward=reshard)
+                self.wrapper = fully_shard(self.wrapper, reshard_after_forward=reshard)
             else:
                 # zero_stage=0 or 1: standard DDP (ZeRO-1 will wrap the optimizer)
                 self.wrapper = DDP(
@@ -985,9 +989,7 @@ class Trainer:
                 )
                 loss.backward()
                 if self.gradient_max_norm > 0.0:
-                    # Avoid error_if_nonfinite=True: FSDP2 sharded
-                    # DTensor gradients may not support it. Manual
-                    # isfinite check achieves the same fail-fast behavior.
+                    # FSDP2 sharded DTensor gradients don't support error_if_nonfinite; use manual isfinite check instead.
                     total_norm = torch.nn.utils.clip_grad_norm_(
                         self.wrapper.parameters(),
                         self.gradient_max_norm,
