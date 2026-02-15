@@ -6,6 +6,7 @@ import torch
 from deepmd.pt.optimizer.hybrid_muon import (
     TRITON_AVAILABLE,
     HybridMuonOptimizer,
+    _batched_newton_schulz_orth,
     _newton_schulz_orth,
 )
 from deepmd.pt.utils import (
@@ -75,6 +76,14 @@ class TestNewtonSchulzOrthogonalization(unittest.TestCase):
             self.assertEqual(X.shape, G.shape)
             self.assertEqual(X.dtype, torch.bfloat16)
 
+    def test_batched_shape_and_dtype(self) -> None:
+        """Test batched NS preserves shape and returns bf16."""
+        torch.manual_seed(42)
+        G = torch.randn(3, 6, 4, dtype=torch.float32, device=self.device)
+        X = _batched_newton_schulz_orth(G)
+        self.assertEqual(X.shape, G.shape)
+        self.assertEqual(X.dtype, torch.bfloat16)
+
     def test_invalid_input(self) -> None:
         """Test that 1D input raises error."""
         G_1d = torch.randn(10, dtype=torch.float32, device=self.device)
@@ -143,30 +152,6 @@ class TestHybridMuonOptimizer(unittest.TestCase):
         self.assertIn("exp_avg_sq", optimizer.state[model.bias])
         self.assertNotIn("momentum_buffer", optimizer.state[model.bias])
 
-    def test_muon_adam_fallback_small_2d(self) -> None:
-        """Test Adam fallback for small 2D matrices when min_2d_dim is set."""
-        torch.manual_seed(42)
-        linear_small = torch.nn.Linear(10, 1, bias=False, device=self.device)
-        linear_large = torch.nn.Linear(10, 10, bias=False, device=self.device)
-        optimizer = HybridMuonOptimizer(
-            list(linear_small.parameters()) + list(linear_large.parameters()),
-            lr=0.02,
-            min_2d_dim=2,
-        )
-
-        x = torch.randn(4, 10, device=self.device)
-        loss = linear_small(x).sum() + linear_large(x).sum()
-        loss.backward()
-        optimizer.step()
-
-        # Small 2D weight should use Adam fallback.
-        self.assertIn("exp_avg", optimizer.state[linear_small.weight])
-        self.assertNotIn("momentum_buffer", optimizer.state[linear_small.weight])
-
-        # Large 2D weight should use Muon.
-        self.assertIn("momentum_buffer", optimizer.state[linear_large.weight])
-        self.assertNotIn("exp_avg", optimizer.state[linear_large.weight])
-
     def test_lr_adjust_modes(self) -> None:
         """Test lr_adjust modes: match-RMS (<=0) vs rectangular (>0)."""
         torch.manual_seed(42)
@@ -192,6 +177,133 @@ class TestHybridMuonOptimizer(unittest.TestCase):
             torch.allclose(model1.weight, model2.weight),
             "Different lr_adjust modes should produce different updates",
         )
+
+    def test_slice_mode_uses_muon_for_3d_weight(self) -> None:
+        """Test muon_mode='slice' + name rules route params as expected."""
+        torch.manual_seed(42)
+
+        class ToySliceModule(torch.nn.Module):
+            def __init__(self, device: torch.device) -> None:
+                super().__init__()
+                self.weight = torch.nn.Parameter(
+                    torch.randn(2, 6, 4, dtype=torch.float32, device=device)
+                )
+                self.adam_scale = torch.nn.Parameter(
+                    torch.ones(2, 6, dtype=torch.float32, device=device)
+                )
+                self.adam_stack = torch.nn.ParameterList(
+                    [
+                        torch.nn.Parameter(
+                            torch.ones(2, 6, dtype=torch.float32, device=device)
+                        )
+                    ]
+                )
+                self.adamw_layer_scale = torch.nn.Parameter(
+                    torch.ones(2, 6, dtype=torch.float32, device=device)
+                )
+                # Contains "bias" (case-insensitive) but not prefix.
+                self.gateBiAsScale = torch.nn.Parameter(
+                    torch.ones(2, 6, dtype=torch.float32, device=device)
+                )
+                # Module name contains "bias", but parameter leaf is "weight".
+                self.bias_proj = torch.nn.Linear(4, 6, bias=False, device=device)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = torch.einsum("bi,foi->bfo", x, self.weight)
+                y = y * self.adam_scale.unsqueeze(0)
+                y = y * self.adam_stack[0].unsqueeze(0)
+                y = y * self.adamw_layer_scale.unsqueeze(0)
+                y = y * self.gateBiAsScale.unsqueeze(0)
+                y = y + self.bias_proj(x).unsqueeze(1)
+                return y.sum()
+
+        model = ToySliceModule(self.device)
+        optimizer = HybridMuonOptimizer(
+            model.parameters(),
+            lr=0.02,
+            muon_mode="slice",
+            named_parameters=tuple(model.named_parameters()),
+        )
+
+        x = torch.randn(4, 4, device=self.device)
+        model(x).backward()
+        optimizer.step()
+
+        # 3D weight → Muon (slice mode)
+        self.assertIn("momentum_buffer", optimizer.state[model.weight])
+        self.assertNotIn("exp_avg", optimizer.state[model.weight])
+        # adam_ prefix → Adam (no weight decay)
+        self.assertIn("exp_avg", optimizer.state[model.adam_scale])
+        self.assertNotIn("momentum_buffer", optimizer.state[model.adam_scale])
+        self.assertIn("exp_avg", optimizer.state[model.adam_stack[0]])
+        self.assertNotIn("momentum_buffer", optimizer.state[model.adam_stack[0]])
+        # adamw_ prefix → AdamW (decoupled weight decay)
+        self.assertIn("exp_avg", optimizer.state[model.adamw_layer_scale])
+        self.assertNotIn("momentum_buffer", optimizer.state[model.adamw_layer_scale])
+        # Contains "bias" (case-insensitive) → Adam
+        self.assertIn("exp_avg", optimizer.state[model.gateBiAsScale])
+        self.assertNotIn("momentum_buffer", optimizer.state[model.gateBiAsScale])
+        # Module name "bias_proj" but leaf is "weight" → Muon
+        self.assertIn("momentum_buffer", optimizer.state[model.bias_proj.weight])
+        self.assertNotIn("exp_avg", optimizer.state[model.bias_proj.weight])
+
+    def test_2d_mode_routes_3d_weight_to_adam(self) -> None:
+        """Test muon_mode='2d' routes 3D matrix weights to Adam."""
+        torch.manual_seed(42)
+
+        class Toy2DModeModule(torch.nn.Module):
+            def __init__(self, device: torch.device) -> None:
+                super().__init__()
+                self.weight = torch.nn.Parameter(
+                    torch.randn(2, 6, 4, dtype=torch.float32, device=device)
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.einsum("bi,foi->bfo", x, self.weight).sum()
+
+        model = Toy2DModeModule(self.device)
+        optimizer = HybridMuonOptimizer(
+            model.parameters(),
+            lr=0.02,
+            muon_mode="2d",
+            named_parameters=tuple(model.named_parameters()),
+        )
+
+        x = torch.randn(4, 4, device=self.device)
+        model(x).backward()
+        optimizer.step()
+
+        self.assertIn("exp_avg", optimizer.state[model.weight])
+        self.assertNotIn("momentum_buffer", optimizer.state[model.weight])
+
+    def test_2d_mode_singleton_3d_routes_to_muon(self) -> None:
+        """Test muon_mode='2d' treats singleton-expanded matrix as 2D."""
+        torch.manual_seed(42)
+
+        class ToySingleton2DModeModule(torch.nn.Module):
+            def __init__(self, device: torch.device) -> None:
+                super().__init__()
+                self.weight = torch.nn.Parameter(
+                    torch.randn(1, 6, 4, dtype=torch.float32, device=device)
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.einsum("bi,foi->bfo", x, self.weight).sum()
+
+        model = ToySingleton2DModeModule(self.device)
+        optimizer = HybridMuonOptimizer(
+            model.parameters(),
+            lr=0.02,
+            muon_mode="2d",
+            named_parameters=tuple(model.named_parameters()),
+        )
+
+        x = torch.randn(4, 4, device=self.device)
+        model(x).backward()
+        optimizer.step()
+
+        self.assertIn("momentum_buffer", optimizer.state[model.weight])
+        self.assertNotIn("exp_avg", optimizer.state[model.weight])
 
 
 @unittest.skipIf(not BF16_SUPPORTED, "bf16 matmul not supported on this device")

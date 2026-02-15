@@ -3,18 +3,29 @@
 HybridMuon optimizer for DeePMD-kit PyTorch backend.
 
 HybridMuon is a hybrid optimizer that automatically combines Muon and Adam.
-Routing is controlled by parameter dimensionality and ``muon_2d_only``:
+Routing is controlled by parameter dimensionality, parameter names, and
+``muon_mode``:
 
-- 1D parameters (biases, norms): Adam (no weight decay).
-- When ``muon_2d_only=True`` (default):
-  - 2D parameters: Muon if ``min(m, n) >= min_2d_dim``, else Adam fallback.
-  - >2D parameters: Adam.
-- When ``muon_2d_only=False``:
-  - >=2D parameters use matrix-view routing:
-    Muon if ``min(m, n) >= min_2d_dim``, else Adam fallback.
-
-For matrix-view routing, any parameter with ndim >= 2 is reshaped as:
-``(rows, cols) = (numel // shape[-1], shape[-1])``.
+- Parameters whose final effective name segment contains ``bias``
+  (case-insensitive), or starts with ``adam_`` (case-insensitive): Adam.
+- Parameters whose final effective name segment starts with ``adamw_``
+  (case-insensitive): Adam with decoupled weight decay (AdamW-style).
+  The final effective segment means the last non-numeric segment in the full
+  parameter path (split by ``"."``), so trailing ParameterList indices are
+  ignored.
+- 1D parameters (biases, norms, scales): Adam (no weight decay).
+- ``muon_mode="2d"``:
+  - Matrix parameters with effective rank 2 (after dropping singleton dims)
+    use Muon.
+  - Effective rank >2 parameters use Adam with decoupled weight decay fallback.
+- ``muon_mode="flat"``:
+  - >=2D matrix parameters use flattened matrix-view routing:
+    ``(rows, cols) = (prod(effective_shape[:-1]), effective_shape[-1])``.
+- ``muon_mode="slice"`` (default):
+  - Effective rank 2 matrix parameters: same as ``"2d"``.
+  - Effective rank >=3 matrix parameters: treat leading axes as batch and apply Muon
+    independently on each ``(..., m, n)`` slice (no cross-slice mixing).
+  - Routing shape is computed on effective shape (singleton dims removed).
 
 This is different from PyTorch's torch.optim.Muon, which ONLY supports 2D parameters
 and requires manual configuration of AdamW for 1D parameters. HybridMuon provides
@@ -79,6 +90,7 @@ from torch.optim.optimizer import (
 
 if TYPE_CHECKING:
     from collections.abc import (
+        Callable,
         Iterable,
     )
 
@@ -295,59 +307,195 @@ def _newton_schulz_orth(
     return X
 
 
-def should_fallback_to_adam_for_matrix(
-    p: torch.Tensor,
-    min_2d_dim: int,
-) -> bool:
+def _batched_newton_schulz_orth(
+    G: torch.Tensor,
+) -> torch.Tensor:
     """
-    Check if a parameter should fallback to Adam based on matrix-view dimensions.
+    Orthogonalize a batch of matrices via quintic Newton-Schulz iteration.
 
     Parameters
     ----------
-    p : torch.Tensor
-        Parameter tensor with ndim >= 2.
-    min_2d_dim : int
-        Minimum min(m, n) threshold for Muon. Matrices with min(m, n) >=
-        min_2d_dim use Muon; those with min(m, n) < min_2d_dim use Adam.
+    G : torch.Tensor
+        Input tensor with shape (B, m, n), where B is batch size.
 
     Returns
     -------
-    bool
-        True if min(m, n) < min_2d_dim, False otherwise.
-
-    Raises
-    ------
-    ValueError
-        If tensor has ndim < 2.
+    torch.Tensor
+        Orthogonalized tensor in bfloat16 with shape (B, m, n).
     """
-    # === Step 1. Validate ===
-    if p.ndim < 2:
-        raise ValueError("Parameter must have ndim >= 2 for Muon suitability check.")
+    # === Step 1. Validate and prepare matrix orientation ===
+    if G.ndim != 3:
+        raise ValueError(
+            "Batched Newton-Schulz expects a 3D tensor with shape (B, m, n)."
+        )
 
-    # === Step 2. Derive matrix shape consistent with Muon reshape ===
-    # Flatten all leading axes into rows and keep the last axis as cols.
-    # This preserves the "input-channel axis" as the NS orthogonalization space
-    # for N-D linear weights (e.g., (..., C_out, C_in) -> (-1, C_in)).
-    m = int(p.numel() // p.shape[-1])
-    n = int(p.shape[-1])
+    X = G.to(dtype=torch.bfloat16)
+    transposed = X.size(-2) > X.size(-1)
+    if transposed:
+        X = X.transpose(-2, -1)
 
-    # === Step 3. Check if any dimension too small for Muon ===
-    return min(m, n) < min_2d_dim
+    # === Step 2. Normalize each slice by Frobenius norm ===
+    X = X / X.norm(dim=(-2, -1), keepdim=True).clamp(min=EPS)
+
+    # === Step 3. Batched Newton-Schulz iterations ===
+    for _ in range(NS_STEPS):
+        A = torch.bmm(X, X.transpose(-2, -1))
+        gram_update = torch.baddbmm(A, A, A, beta=NS_COEFF_B, alpha=NS_COEFF_C)
+        X = torch.baddbmm(X, gram_update, X, beta=NS_COEFF_A, alpha=1.0)
+
+    # === Step 4. Restore original orientation ===
+    if transposed:
+        X = X.transpose(-2, -1)
+
+    return X
+
+
+def get_adam_route(
+    param_name: str | None,
+) -> str:
+    """
+    Determine the optimizer route for a parameter based on its name.
+
+    Parameters
+    ----------
+    param_name : str | None
+        Parameter name. If None, fallback behavior treats parameter as
+        matrix (Muon-eligible).
+
+    Returns
+    -------
+    str
+        ``"muon"`` if this parameter is eligible as matrix weight by name,
+        ``"adam"`` for Adam path (no weight decay),
+        ``"adamw"`` for AdamW path (decoupled weight decay).
+
+    Notes
+    -----
+    Name-based routing rules (case-insensitive, applied to the final
+    effective name segment after stripping trailing numeric ParameterList
+    indices):
+
+    1. Contains ``"bias"`` -> ``"adam"`` (no weight decay).
+    2. Starts with ``"adam_"`` -> ``"adam"`` (no weight decay).
+       Typical: norm scales, radial frequencies.
+    3. Starts with ``"adamw_"`` -> ``"adamw"`` (decoupled weight decay).
+       Typical: LayerScale parameters.
+    4. Otherwise -> ``"muon"`` (eligible for Muon).
+    """
+    if param_name is None:
+        return "muon"
+    param_name_lower = param_name.lower()
+    name_segments = param_name_lower.split(".")
+    leaf_name_idx = len(name_segments) - 1
+    while leaf_name_idx > 0 and name_segments[leaf_name_idx].isdigit():
+        leaf_name_idx -= 1
+    leaf_name = name_segments[leaf_name_idx]
+    if "bias" in leaf_name:
+        return "adam"
+    if leaf_name.startswith("adam_"):
+        return "adam"
+    if leaf_name.startswith("adamw_"):
+        return "adamw"
+    return "muon"
+
+
+def get_effective_shape(
+    shape: torch.Size | tuple[int, ...],
+) -> tuple[int, ...]:
+    """
+    Remove singleton dimensions from a tensor shape for routing decisions.
+
+    Parameters
+    ----------
+    shape
+        Original tensor shape.
+
+    Returns
+    -------
+    tuple[int, ...]
+        Shape without dimensions equal to 1.
+        If all dims are 1, returns ``(1,)``.
+    """
+    effective = tuple(int(dim) for dim in shape if int(dim) != 1)
+    if len(effective) == 0:
+        return (1,)
+    return effective
+
+
+def get_matrix_view_shape(
+    effective_shape: tuple[int, ...],
+    muon_mode: str,
+) -> tuple[int, int, int] | None:
+    """
+    Derive Muon matrix-view shape from effective tensor shape.
+
+    Parameters
+    ----------
+    effective_shape
+        Shape with singleton dimensions removed.
+    muon_mode
+        One of {"2d", "flat", "slice"}.
+
+    Returns
+    -------
+    tuple[int, int, int] | None
+        ``(batch_size, rows, cols)`` when Muon is applicable, otherwise ``None``.
+    """
+    if len(effective_shape) < 2:
+        return None
+
+    if muon_mode == "2d":
+        if len(effective_shape) != 2:
+            return None
+        return (1, int(effective_shape[-2]), int(effective_shape[-1]))
+    if muon_mode == "flat":
+        rows = int(math.prod(effective_shape[:-1]))
+        cols = int(effective_shape[-1])
+        return (1, rows, cols)
+    if muon_mode == "slice":
+        if len(effective_shape) == 2:
+            return (1, int(effective_shape[-2]), int(effective_shape[-1]))
+        batch_size = int(math.prod(effective_shape[:-2]))
+        rows = int(effective_shape[-2])
+        cols = int(effective_shape[-1])
+        return (batch_size, rows, cols)
+    raise ValueError(
+        f"Unsupported muon_mode '{muon_mode}'. Expected one of ['2d', 'flat', 'slice']."
+    )
 
 
 class HybridMuonOptimizer(Optimizer):
     """
-    HybridMuon optimizer with small-matrix Adam fallback and 1D Adam path.
+    HybridMuon optimizer with 1D Adam path and matrix Muon path.
 
-    This optimizer applies different update rules based on parameter dimensionality
-    and ``muon_2d_only``:
-    - 1D parameters (biases, layer norms): standard Adam update.
-    - When ``muon_2d_only=True``:
-      - 2D parameters use Muon/Adam-fallback according to ``min_2d_dim``.
-      - >2D parameters use Adam.
-    - When ``muon_2d_only=False``:
-      - >=2D parameters use matrix-view Muon/Adam-fallback according to
-        ``min_2d_dim``.
+    This optimizer applies different update rules based on parameter dimensionality,
+    parameter names, and ``muon_mode``:
+    - Parameters with final effective name segment containing ``bias``
+      (case-insensitive), or starting with ``adam_`` (case-insensitive):
+      standard Adam update.
+    - Parameters with final effective name segment starting with ``adamw_``
+      (case-insensitive): Adam with decoupled weight decay (AdamW-style).
+    - 1D parameters: standard Adam update.
+    - Parameters are routed by effective shape (singleton dimensions removed).
+    - ``muon_mode="2d"``:
+      - effective rank 2 parameters use Muon.
+      - effective rank >2 parameters use Adam.
+    - ``muon_mode="flat"``:
+      - effective rank >=2 parameters use flattened matrix-view Muon.
+    - ``muon_mode="slice"``:
+      - effective rank 2 parameters use Muon.
+      - effective rank >=3 parameters apply Muon independently on each trailing
+        ``(m, n)`` slice.
+
+    Naming convention for explicit Adam routing:
+    - Parameters representing bias terms should include ``bias`` in their
+      final effective name segment (case-insensitive).
+    - Parameters that are not semantic bias but should still use Adam should
+      use an ``adam_`` prefix in their final effective name segment
+      (case-insensitive).
+    - Parameters that should use Adam with decoupled weight decay should use
+      an ``adamw_`` prefix in their final effective name segment
+      (case-insensitive).
 
     This hybrid approach is effective because Muon's orthogonalization is designed
     for weight matrices, while Adam is more suitable for biases and normalization params.
@@ -387,24 +535,20 @@ class HybridMuonOptimizer(Optimizer):
           scale = sqrt(max(1.0, m/n)). Adam uses lr/lr_adjust.
         Default is 10.0 (Adam lr = lr/10).
     lr_adjust_coeff : float
-        Dual-purpose coefficient with default 0.2:
-        1. For Muon (when lr_adjust <= 0): match-RMS scaling factor,
-           scale = lr_adjust_coeff * sqrt(max(m, n)).
-        2. For matrix Adam fallback: learning rate multiplier,
-           adam_lr_matrix = adam_lr * min(lr_adjust_coeff, 0.1).
-           The min(., 0.1) cap ensures conservative updates for small matrices.
-    muon_2d_only : bool
-        If True, only 2D parameters use Muon (matching PyTorch's torch.optim.Muon).
-        Parameters with ndim > 2 use AdamW-style updates.
-        If False, all >=2D parameters are eligible for Muon via matrix-view routing.
-        Default is True.
-    min_2d_dim : int
-        Minimum min(m, n) threshold for Muon on eligible matrix-view parameters.
-        Eligible parameters with min(m, n) >= min_2d_dim use Muon;
-        those with min(m, n) < min_2d_dim use Adam fallback.
-        Must be >= 1.
-        Set to 1 to disable fallback.
-        Default is 1.
+        Coefficient with default 0.2 for match-RMS scaling when
+        ``lr_adjust <= 0``:
+        ``scale = lr_adjust_coeff * sqrt(max(m, n))``.
+    muon_mode : str
+        Muon routing mode with default ``"slice"``.
+        - ``"2d"``: only 2D parameters are Muon candidates.
+        - ``"flat"``: >=2D parameters use flattened matrix-view routing.
+        - ``"slice"``: >=3D parameters use per-slice Muon routing on last two dims.
+    named_parameters : iterable[tuple[str, torch.Tensor]] | None
+        Optional named parameter iterable used for name-based routing.
+        Parameters with final effective name segment containing ``bias``
+        (case-insensitive), or starting with ``adam_`` (case-insensitive),
+        are forced to Adam (no weight decay). Parameters starting with
+        ``adamw_`` are forced to AdamW-style decoupled decay path.
     flash_muon : bool
         Enable triton-accelerated Newton-Schulz orthogonalization.
         Requires triton and CUDA. Falls back to PyTorch implementation
@@ -429,13 +573,16 @@ class HybridMuonOptimizer(Optimizer):
         adam_betas: tuple[float, float] = (0.9, 0.95),
         lr_adjust: float = 10.0,
         lr_adjust_coeff: float = 0.2,
-        muon_2d_only: bool = True,
-        min_2d_dim: int = 1,
+        muon_mode: str = "slice",
+        named_parameters: Iterable[tuple[str, torch.Tensor]] | None = None,
         flash_muon: bool = True,
     ) -> None:
-        if min_2d_dim < 1:
-            raise ValueError("min_2d_dim must be >= 1.")
+        # === Step 1. Validate routing mode ===
+        muon_mode = str(muon_mode).lower()
+        if muon_mode not in {"2d", "flat", "slice"}:
+            raise ValueError("muon_mode must be one of ['2d', 'flat', 'slice'].")
 
+        # === Step 2. Register optimizer defaults ===
         defaults = {
             "lr": lr,
             "momentum": momentum,
@@ -443,15 +590,21 @@ class HybridMuonOptimizer(Optimizer):
             "adam_betas": adam_betas,
             "lr_adjust": lr_adjust,
             "lr_adjust_coeff": lr_adjust_coeff,
-            "muon_2d_only": muon_2d_only,
-            "min_2d_dim": min_2d_dim,
+            "muon_mode": muon_mode,
         }
         super().__init__(params, defaults)
+
+        # === Step 3. Build parameter id -> name mapping ===
+        self._param_name_map: dict[int, str] = {}
+        if named_parameters is not None:
+            for name, param in named_parameters:
+                self._param_name_map[id(param)] = str(name)
+
         # Static parameter routing: built once on first step() call.
         self._routing_built = False
         self._routing: list[dict[str, Any]] = []
 
-        # Flash-Muon: triton-accelerated Newton-Schulz
+        # === Step 4. Flash-Muon setup ===
         self._use_flash = flash_muon and TRITON_AVAILABLE
         # Lazily allocated NS iteration buffers, keyed by (M, device)
         self._ns_buffers: dict[
@@ -489,13 +642,14 @@ class HybridMuonOptimizer(Optimizer):
 
     def _build_param_routing(self) -> None:
         """
-        Classify parameters into Muon and Adam routes (static routing).
+        Classify parameters into Muon, Adam, and AdamW routes (static routing).
 
         Routing logic:
-        - 1D parameters → Adam path
-        - >2D parameters (when muon_2d_only=True) → Adam path
-        - >=2D parameters with min(m, n) < min_2d_dim → Adam fallback path
-        - remaining >=2D parameters → Muon path
+        - name-based ``adam_`` prefix or contains ``bias`` → Adam (no decay)
+        - name-based ``adamw_`` prefix → AdamW (decoupled weight decay)
+        - effective shape rank <2 → Adam (no decay)
+        - non-matrix effective shape for current muon_mode → AdamW (decoupled)
+        - remaining eligible matrix params → Muon path
         """
         if self._routing_built:
             return
@@ -503,49 +657,52 @@ class HybridMuonOptimizer(Optimizer):
         self._routing = []
         for group in self.param_groups:
             muon_params: list[dict[str, Any]] = []
-            adam_1d: list[dict[str, Any]] = []
-            adam_matrix: list[dict[str, Any]] = []
-            adam_nd: list[dict[str, Any]] = []
+            adam_no_decay: list[dict[str, Any]] = []
+            adam_decay: list[dict[str, Any]] = []
 
-            min_2d_dim = group["min_2d_dim"]
-            muon_2d_only = group["muon_2d_only"]
+            muon_mode = group["muon_mode"]
 
             for p in group["params"]:
-                # === Step 1. 1D parameters → Adam ===
-                if p.ndim < 2:
-                    adam_1d.append({"param": p})
+                param_name = self._param_name_map.get(id(p))
+
+                # === Step 1. Name-based explicit route ===
+                route = get_adam_route(param_name)
+                if route == "adam":
+                    adam_no_decay.append({"param": p, "name": param_name})
+                    continue
+                if route == "adamw":
+                    adam_decay.append({"param": p, "name": param_name})
                     continue
 
-                # === Step 2. >2D parameters (when muon_2d_only=True) → Adam ===
-                if muon_2d_only and p.ndim > 2:
-                    adam_nd.append({"param": p})
+                # === Step 2. Effective <2D parameters → Adam ===
+                effective_shape = get_effective_shape(p.shape)
+                if len(effective_shape) < 2:
+                    adam_no_decay.append({"param": p, "name": param_name})
                     continue
 
-                # === Step 3. Small matrix-view params → Adam fallback ===
-                if should_fallback_to_adam_for_matrix(p, min_2d_dim=min_2d_dim):
-                    adam_matrix.append(
-                        {
-                            "param": p,
-                            "abs_floor": 1e-3 * math.sqrt(float(p.numel())),
-                        }
-                    )
+                # === Step 3. Non-matrix effective shape in current mode → AdamW-style ===
+                matrix_shape = get_matrix_view_shape(effective_shape, muon_mode)
+                if matrix_shape is None:
+                    adam_decay.append({"param": p, "name": param_name})
                     continue
 
-                # === Step 4. >=2D (or 2D only when muon_2d_only=True) → Muon ===
+                # === Step 4. Eligible matrix params → Muon ===
+                batch_size, rows, cols = matrix_shape
                 muon_params.append(
                     {
                         "param": p,
-                        "rows": int(p.numel() // p.shape[-1]),
-                        "cols": int(p.shape[-1]),
+                        "name": param_name,
+                        "batch_size": batch_size,
+                        "rows": rows,
+                        "cols": cols,
                     }
                 )
 
             self._routing.append(
                 {
                     "muon_params": muon_params,
-                    "adam_1d": adam_1d,
-                    "adam_matrix": adam_matrix,
-                    "adam_nd": adam_nd,
+                    "adam_no_decay": adam_no_decay,
+                    "adam_decay": adam_decay,
                 }
             )
 
@@ -554,7 +711,7 @@ class HybridMuonOptimizer(Optimizer):
     @torch.no_grad()
     def step(
         self,
-        closure: callable | None = None,
+        closure: Callable[[], torch.Tensor] | None = None,
     ) -> torch.Tensor | None:
         """
         Perform a single optimization step.
@@ -586,15 +743,15 @@ class HybridMuonOptimizer(Optimizer):
             lr_adjust = group["lr_adjust"]
             lr_adjust_coeff = group["lr_adjust_coeff"]
 
-            # === Step 1. Adam update for 1D parameters (biases, norms, etc.) ===
+            # === Step 1. Adam update for non-decay Adam path ===
             # === Step 1.1. Collect gradients and initialize state ===
-            adam_params: list[torch.Tensor] = []
-            adam_grads_fp32: list[torch.Tensor] = []
-            adam_exp_avgs: list[torch.Tensor] = []
-            adam_exp_avg_sqs: list[torch.Tensor] = []
-            adam_states: list[dict[str, Any]] = []
+            adam_no_decay_params: list[torch.Tensor] = []
+            adam_no_decay_grads_fp32: list[torch.Tensor] = []
+            adam_no_decay_exp_avgs: list[torch.Tensor] = []
+            adam_no_decay_exp_avg_sqs: list[torch.Tensor] = []
+            adam_no_decay_states: list[dict[str, Any]] = []
 
-            for entry in route["adam_1d"]:
+            for entry in route["adam_no_decay"]:
                 p = entry["param"]
                 grad = p.grad
                 if grad is None:
@@ -612,44 +769,44 @@ class HybridMuonOptimizer(Optimizer):
                 state["beta1_pow"] *= adam_betas[0]
                 state["beta2_pow"] *= adam_betas[1]
 
-                adam_params.append(p)
-                adam_grads_fp32.append(grad_fp32)
-                adam_exp_avgs.append(state["exp_avg"])
-                adam_exp_avg_sqs.append(state["exp_avg_sq"])
-                adam_states.append(state)
+                adam_no_decay_params.append(p)
+                adam_no_decay_grads_fp32.append(grad_fp32)
+                adam_no_decay_exp_avgs.append(state["exp_avg"])
+                adam_no_decay_exp_avg_sqs.append(state["exp_avg_sq"])
+                adam_no_decay_states.append(state)
 
-            if adam_params:
+            if adam_no_decay_params:
                 # === Step 1.2. Update exp_avg / exp_avg_sq ===
                 adam_lr = lr if lr_adjust <= 0 else lr / lr_adjust
 
                 # exp_avg = beta1 * exp_avg + (1 - beta1) * grad
                 # exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad^2
-                for ea, g in zip(adam_exp_avgs, adam_grads_fp32):
+                for ea, g in zip(adam_no_decay_exp_avgs, adam_no_decay_grads_fp32):
                     ea.lerp_(g, 1 - adam_betas[0])
-                grad_sq = [g * g for g in adam_grads_fp32]
-                for eas, gsq in zip(adam_exp_avg_sqs, grad_sq):
+                grad_sq = [g * g for g in adam_no_decay_grads_fp32]
+                for eas, gsq in zip(adam_no_decay_exp_avg_sqs, grad_sq):
                     eas.lerp_(gsq, 1 - adam_betas[1])
 
                 # === Step 1.3. Bias correction and parameter update ===
-                for i, p in enumerate(adam_params):
-                    state = adam_states[i]
+                for i, p in enumerate(adam_no_decay_params):
+                    state = adam_no_decay_states[i]
                     bias_corr1 = 1 - state["beta1_pow"]
                     bias_corr2 = 1 - state["beta2_pow"]
                     step_size = adam_lr / bias_corr1
                     # delta = -step_size * m_hat / (sqrt(v_hat) + eps)
-                    denom = (adam_exp_avg_sqs[i] / bias_corr2).sqrt().add_(EPS)
-                    delta_fp32 = -step_size * (adam_exp_avgs[i] / denom)
+                    denom = (adam_no_decay_exp_avg_sqs[i] / bias_corr2).sqrt().add_(EPS)
+                    delta_fp32 = -step_size * (adam_no_decay_exp_avgs[i] / denom)
                     p.add_(delta_fp32.to(p.dtype))
 
-            # === Step 2. Adam update for >2D parameters (when muon_2d_only=True) ===
+            # === Step 2. AdamW-style update for decay-enabled Adam path ===
             # === Step 2.1. Collect gradients and initialize state ===
-            adam_nd_params: list[torch.Tensor] = []
-            adam_nd_grads_fp32: list[torch.Tensor] = []
-            adam_nd_exp_avgs: list[torch.Tensor] = []
-            adam_nd_exp_avg_sqs: list[torch.Tensor] = []
-            adam_nd_states: list[dict[str, Any]] = []
+            adam_decay_params: list[torch.Tensor] = []
+            adam_decay_grads_fp32: list[torch.Tensor] = []
+            adam_decay_exp_avgs: list[torch.Tensor] = []
+            adam_decay_exp_avg_sqs: list[torch.Tensor] = []
+            adam_decay_states: list[dict[str, Any]] = []
 
-            for entry in route.get("adam_nd", []):
+            for entry in route.get("adam_decay", []):
                 p = entry["param"]
                 grad = p.grad
                 if grad is None:
@@ -667,118 +824,41 @@ class HybridMuonOptimizer(Optimizer):
                 state["beta1_pow"] *= adam_betas[0]
                 state["beta2_pow"] *= adam_betas[1]
 
-                adam_nd_params.append(p)
-                adam_nd_grads_fp32.append(grad_fp32)
-                adam_nd_exp_avgs.append(state["exp_avg"])
-                adam_nd_exp_avg_sqs.append(state["exp_avg_sq"])
-                adam_nd_states.append(state)
+                adam_decay_params.append(p)
+                adam_decay_grads_fp32.append(grad_fp32)
+                adam_decay_exp_avgs.append(state["exp_avg"])
+                adam_decay_exp_avg_sqs.append(state["exp_avg_sq"])
+                adam_decay_states.append(state)
 
-            if adam_nd_params:
+            if adam_decay_params:
                 # === Step 2.2. Update exp_avg / exp_avg_sq ===
                 adam_lr = lr if lr_adjust <= 0 else lr / lr_adjust
                 # AdamW decay for >=2D Adam path.
                 if weight_decay > 0:
-                    for p in adam_nd_params:
+                    for p in adam_decay_params:
                         p.mul_(1.0 - lr * weight_decay)
 
                 # exp_avg = beta1 * exp_avg + (1 - beta1) * grad
                 # exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad^2
-                for ea, g in zip(adam_nd_exp_avgs, adam_nd_grads_fp32):
+                for ea, g in zip(adam_decay_exp_avgs, adam_decay_grads_fp32):
                     ea.lerp_(g, 1 - adam_betas[0])
-                grad_sq = [g * g for g in adam_nd_grads_fp32]
-                for eas, gsq in zip(adam_nd_exp_avg_sqs, grad_sq):
+                grad_sq = [g * g for g in adam_decay_grads_fp32]
+                for eas, gsq in zip(adam_decay_exp_avg_sqs, grad_sq):
                     eas.lerp_(gsq, 1 - adam_betas[1])
 
                 # === Step 2.3. Bias correction and parameter update ===
-                for i, p in enumerate(adam_nd_params):
-                    state = adam_nd_states[i]
+                for i, p in enumerate(adam_decay_params):
+                    state = adam_decay_states[i]
                     bias_corr1 = 1 - state["beta1_pow"]
                     bias_corr2 = 1 - state["beta2_pow"]
                     step_size = adam_lr / bias_corr1
                     # delta = -step_size * m_hat / (sqrt(v_hat) + eps)
-                    denom = (adam_nd_exp_avg_sqs[i] / bias_corr2).sqrt().add_(EPS)
-                    delta_fp32 = -step_size * (adam_nd_exp_avgs[i] / denom)
+                    denom = (adam_decay_exp_avg_sqs[i] / bias_corr2).sqrt().add_(EPS)
+                    delta_fp32 = -step_size * (adam_decay_exp_avgs[i] / denom)
                     p.add_(delta_fp32.to(p.dtype))
 
-            # === Step 3. Adam update for small matrix-view params (fallback path) ===
-            # === Step 3.1. Collect gradients and initialize state ===
-            adam_matrix_params: list[torch.Tensor] = []
-            adam_matrix_grads_fp32: list[torch.Tensor] = []
-            adam_matrix_exp_avgs: list[torch.Tensor] = []
-            adam_matrix_exp_avg_sqs: list[torch.Tensor] = []
-            adam_matrix_states: list[dict[str, Any]] = []
-            adam_matrix_abs_floor: list[float] = []
-
-            for entry in route["adam_matrix"]:
-                p = entry["param"]
-                grad = p.grad
-                if grad is None:
-                    continue
-
-                grad_fp32 = grad.float()
-
-                state = self.state[p]
-                if "exp_avg" not in state:
-                    state["exp_avg"] = torch.zeros_like(p, dtype=torch.float32)
-                    state["exp_avg_sq"] = torch.zeros_like(p, dtype=torch.float32)
-                    state["beta1_pow"] = 1.0
-                    state["beta2_pow"] = 1.0
-
-                state["beta1_pow"] *= adam_betas[0]
-                state["beta2_pow"] *= adam_betas[1]
-
-                adam_matrix_params.append(p)
-                adam_matrix_grads_fp32.append(grad_fp32)
-                adam_matrix_exp_avgs.append(state["exp_avg"])
-                adam_matrix_exp_avg_sqs.append(state["exp_avg_sq"])
-                adam_matrix_states.append(state)
-                adam_matrix_abs_floor.append(entry["abs_floor"])
-
-            if adam_matrix_params:
-                # === Step 3.2. Update exp_avg / exp_avg_sq with scaled lr ===
-                adam_lr = lr if lr_adjust <= 0 else lr / lr_adjust
-                adam_lr_matrix = adam_lr * min(lr_adjust_coeff, 0.1)
-                # AdamW decay for matrix fallback path.
-                if weight_decay > 0:
-                    for p in adam_matrix_params:
-                        p.mul_(1.0 - lr * weight_decay)
-
-                # exp_avg = beta1 * exp_avg + (1 - beta1) * grad
-                # exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad^2
-                for ea, g in zip(adam_matrix_exp_avgs, adam_matrix_grads_fp32):
-                    ea.lerp_(g, 1 - adam_betas[0])
-                grad_sq_m = [g * g for g in adam_matrix_grads_fp32]
-                for eas, gsq in zip(adam_matrix_exp_avg_sqs, grad_sq_m):
-                    eas.lerp_(gsq, 1 - adam_betas[1])
-
-                # === Step 3.3. Compute unclipped deltas ===
-                raw_deltas: list[torch.Tensor] = []
-                for i in range(len(adam_matrix_params)):
-                    state = adam_matrix_states[i]
-                    bias_corr1 = 1 - state["beta1_pow"]
-                    bias_corr2 = 1 - state["beta2_pow"]
-                    step_size = adam_lr_matrix / bias_corr1
-                    denom = (adam_matrix_exp_avg_sqs[i] / bias_corr2).sqrt().add_(EPS)
-                    raw_deltas.append(-step_size * (adam_matrix_exp_avgs[i] / denom))
-
-                # === Step 3.4. Clip updates by relative norm and apply ===
-                max_rel_change = 0.05
-                p_norms = torch.stack([p.norm() for p in adam_matrix_params])
-                delta_norms = torch.stack([d.norm() for d in raw_deltas])
-                floors = torch.tensor(
-                    adam_matrix_abs_floor,
-                    device=p_norms.device,
-                    dtype=p_norms.dtype,
-                )
-                max_delta = torch.maximum(max_rel_change * p_norms, floors)
-                scales_tensor = torch.clamp(max_delta / (delta_norms + 1e-12), max=1.0)
-                for i, (p, delta) in enumerate(
-                    zip(adam_matrix_params, raw_deltas, strict=False)
-                ):
-                    p.add_(delta.mul_(scales_tensor[i]).to(p.dtype))
-
-            # === Step 4. Muon update for >=2D parameters (weight matrices) ===
-            # === Step 4.1. Collect gradients and initialize momentum ===
+            # === Step 3. Muon update for matrix parameters ===
+            # === Step 3.1. Collect gradients and initialize momentum ===
             muon_params_for_decay: list[torch.Tensor] = []
             muon_grads: list[torch.Tensor] = []
             muon_momentum_buffers: list[torch.Tensor] = []
@@ -803,7 +883,7 @@ class HybridMuonOptimizer(Optimizer):
                 muon_momentum_buffers.append(buf)
                 active_entries.append((entry, grad))
 
-            # === Step 4.2. Apply weight decay on Muon path ===
+            # === Step 3.2. Apply weight decay on Muon path ===
             if weight_decay > 0 and muon_params_for_decay:
                 for p in muon_params_for_decay:
                     p.mul_(1.0 - lr * weight_decay)
@@ -811,7 +891,7 @@ class HybridMuonOptimizer(Optimizer):
             if not active_entries:
                 continue
 
-            # === Step 4.3. Momentum update (Nesterov) ===
+            # === Step 3.3. Momentum update (Nesterov) ===
             # m_t = beta * m_{t-1} + (1 - beta) * g_t
             for buf, g in zip(muon_momentum_buffers, muon_grads):
                 buf.lerp_(g, 1 - momentum)
@@ -821,22 +901,28 @@ class HybridMuonOptimizer(Optimizer):
                 for g, buf in zip(muon_grads, muon_momentum_buffers)
             ]
 
-            # === Step 4.4. Bucket by shape/device/dtype for batched NS ===
+            # === Step 3.4. Bucket by (batch_size, rows, cols, device, dtype) ===
             buckets: dict[
-                tuple[int, int, torch.device, torch.dtype],
+                tuple[int, int, int, torch.device, torch.dtype],
                 list[tuple[dict[str, Any], torch.Tensor]],
             ] = {}
 
             for idx, entry_info in enumerate(active_entries):
                 entry, _ = entry_info
                 p = entry["param"]
-                bucket_key = (entry["rows"], entry["cols"], p.device, p.dtype)
+                bucket_key = (
+                    entry["batch_size"],
+                    entry["rows"],
+                    entry["cols"],
+                    p.device,
+                    p.dtype,
+                )
                 if bucket_key not in buckets:
                     buckets[bucket_key] = []
                 buckets[bucket_key].append((entry, muon_updates[idx]))
 
-            # === Step 4.5. Newton-Schulz orthogonalization and update ===
-            for (rows, cols, _device, _), bucket_entries in buckets.items():
+            # === Step 3.5. Newton-Schulz orthogonalization and update ===
+            for (batch_size, rows, cols, _device, _), bucket_entries in buckets.items():
                 # scale = coeff * sqrt(max(m, n))  [match-RMS mode]
                 # scale = sqrt(max(1, m/n))        [rectangular mode]
                 if lr_adjust <= 0:
@@ -845,11 +931,15 @@ class HybridMuonOptimizer(Optimizer):
                     scale = max(1.0, rows / cols) ** 0.5
 
                 # Determine if flash path is usable for this bucket.
+                # Flash path is enabled only for single-matrix updates.
                 # Only beneficial when min(rows, cols) >= FLASH_MIN_DIM;
                 # for small matrices, triton launch overhead > compute savings.
                 M = min(rows, cols)
                 use_flash = (
-                    self._use_flash and _device.type == "cuda" and M >= FLASH_MIN_DIM
+                    batch_size == 1
+                    and self._use_flash
+                    and _device.type == "cuda"
+                    and M >= FLASH_MIN_DIM
                 )
                 if use_flash:
                     buf1, buf2 = self._get_ns_buffers(M, _device)
@@ -857,14 +947,19 @@ class HybridMuonOptimizer(Optimizer):
                 # Process each entry individually with Newton-Schulz orth.
                 # Compatible with sharding propagation under FSDP2.
                 for entry, update_tensor in bucket_entries:
-                    update_matrix = update_tensor.reshape(rows, cols)
-                    if not update_matrix.is_contiguous():
-                        update_matrix = update_matrix.contiguous()
-
-                    if use_flash:
-                        orth = _flash_newton_schulz_orth(update_matrix, buf1, buf2)
+                    if batch_size > 1:
+                        update_batch = update_tensor.reshape(batch_size, rows, cols)
+                        if not update_batch.is_contiguous():
+                            update_batch = update_batch.contiguous()
+                        orth = _batched_newton_schulz_orth(update_batch)
                     else:
-                        orth = _newton_schulz_orth(update_matrix)
+                        update_matrix = update_tensor.reshape(rows, cols)
+                        if not update_matrix.is_contiguous():
+                            update_matrix = update_matrix.contiguous()
+                        if use_flash:
+                            orth = _flash_newton_schulz_orth(update_matrix, buf1, buf2)
+                        else:
+                            orth = _newton_schulz_orth(update_matrix)
                     orth.mul_(scale)
                     delta = orth.reshape(entry["param"].shape)
                     entry["param"].add_(delta, alpha=-lr)
