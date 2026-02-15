@@ -815,9 +815,9 @@ class Trainer:
                     "momentum": float(self.opt_param["momentum"]),
                     "lr_adjust": float(self.opt_param["lr_adjust"]),
                     "lr_adjust_coeff": float(self.opt_param["lr_adjust_coeff"]),
-                    "muon_2d_only": bool(self.opt_param["muon_2d_only"]),
-                    "min_2d_dim": int(self.opt_param["min_2d_dim"]),
-                    "flash_muon": bool(self.opt_param["flash_muon"]),
+                    "muon_mode": str(self.opt_param.get("muon_mode", "slice")),
+                    "named_parameters": tuple(self.wrapper.named_parameters()),
+                    "flash_muon": bool(self.opt_param.get("flash_muon", True)),
                 }
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
