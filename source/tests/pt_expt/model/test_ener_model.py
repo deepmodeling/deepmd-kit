@@ -143,11 +143,11 @@ class TestEnergyModel(unittest.TestCase):
         return ext_coord, ext_atype, nlist_t, mapping_t
 
     def test_forward_lower_exportable(self) -> None:
-        """Test that EnergyModel.forward_lower returns an exportable module.
+        """Test that EnergyModel.forward_lower_exportable returns an exportable module.
 
-        forward_lower() uses make_fx to trace through torch.autograd.grad,
-        decomposing the backward pass into primitive ops.  The returned module
-        can be passed directly to torch.export.export.
+        forward_lower_exportable() uses make_fx to trace through
+        torch.autograd.grad, decomposing the backward pass into primitive ops.
+        The returned module can be passed directly to torch.export.export.
 
         The test builds a model with numb_fparam > 0 and numb_aparam > 0 and
         verifies that:
@@ -184,7 +184,7 @@ class TestEnergyModel(unittest.TestCase):
         )
 
         # --- eager reference with zero params ---
-        ret_eager_zero = md._forward_lower(
+        ret_eager_zero = md.forward_lower(
             ext_coord.requires_grad_(True),
             ext_atype,
             nlist_t,
@@ -197,7 +197,7 @@ class TestEnergyModel(unittest.TestCase):
             self.assertIn(key, ret_eager_zero)
 
         # --- trace and export ---
-        traced = md.forward_lower(
+        traced = md.forward_lower_exportable(
             ext_coord,
             ext_atype,
             nlist_t,
@@ -262,7 +262,7 @@ class TestEnergyModel(unittest.TestCase):
             dtype=torch.float64,
             device=self.device,
         )
-        ret_eager_nz = md._forward_lower(
+        ret_eager_nz = md.forward_lower(
             ext_coord.requires_grad_(True),
             ext_atype,
             nlist_t,
@@ -364,13 +364,13 @@ class TestEnergyModel(unittest.TestCase):
         ret_pt = md_pt(coord, self.atype, self.cell.reshape(1, 9))
 
         np.testing.assert_allclose(
-            ret_dp["energy_redu"],
+            ret_dp["energy"],
             ret_pt["energy"].detach().cpu().numpy(),
             rtol=1e-10,
             atol=1e-10,
         )
         np.testing.assert_allclose(
-            ret_dp["energy"],
+            ret_dp["atom_energy"],
             ret_pt["atom_energy"].detach().cpu().numpy(),
             rtol=1e-10,
             atol=1e-10,

@@ -271,8 +271,8 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         # shape not matched. ravel...
         if backend is self.RefBackend.DP:
             return (
-                ret["energy_redu"].ravel(),
                 ret["energy"].ravel(),
+                ret["atom_energy"].ravel(),
                 SKIP_FLAG,
                 SKIP_FLAG,
                 SKIP_FLAG,
@@ -303,11 +303,11 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             )
         elif backend is self.RefBackend.JAX:
             return (
-                ret["energy_redu"].ravel(),
                 ret["energy"].ravel(),
-                ret["energy_derv_r"].ravel(),
-                ret["energy_derv_c_redu"].ravel(),
-                ret["energy_derv_c"].ravel(),
+                ret["atom_energy"].ravel(),
+                ret["force"].ravel(),
+                ret["virial"].ravel(),
+                ret["atom_virial"].ravel(),
             )
         elif backend is self.RefBackend.PD:
             return (
@@ -499,7 +499,7 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         coord_tensor.requires_grad_(True)
         return {
             kk: vv.detach().cpu().numpy() if vv is not None else None
-            for kk, vv in pt_expt_obj.call_lower(
+            for kk, vv in pt_expt_obj.forward_lower(
                 coord_tensor,
                 pt_expt_numpy_to_torch(self.extended_atype),
                 pt_expt_numpy_to_torch(self.nlist),
@@ -536,8 +536,8 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         # shape not matched. ravel...
         if backend is self.RefBackend.DP:
             return (
-                ret["energy_redu"].ravel(),
                 ret["energy"].ravel(),
+                ret["atom_energy"].ravel(),
                 SKIP_FLAG,
                 SKIP_FLAG,
                 SKIP_FLAG,
@@ -552,19 +552,19 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
             )
         elif backend is self.RefBackend.PT_EXPT:
             return (
-                ret["energy_redu"].ravel(),
                 ret["energy"].ravel(),
-                ret["energy_derv_r"].ravel(),
-                ret["energy_derv_c_redu"].ravel(),
-                ret["energy_derv_c"].ravel(),
+                ret["atom_energy"].ravel(),
+                ret["extended_force"].ravel(),
+                ret["virial"].ravel(),
+                ret["extended_virial"].ravel(),
             )
         elif backend is self.RefBackend.JAX:
             return (
-                ret["energy_redu"].ravel(),
                 ret["energy"].ravel(),
-                ret["energy_derv_r"].ravel(),
-                ret["energy_derv_c_redu"].ravel(),
-                ret["energy_derv_c"].ravel(),
+                ret["atom_energy"].ravel(),
+                ret["extended_force"].ravel(),
+                ret["virial"].ravel(),
+                ret["extended_virial"].ravel(),
             )
         elif backend is self.RefBackend.PD:
             return (
@@ -726,8 +726,8 @@ class TestEnerModelAPIs(unittest.TestCase):
         )
 
     def test_forward_common_alias(self) -> None:
-        """forward_common should be the same as call on dpmodel."""
-        ret_call = self.dp_model.call(
+        """forward_common should be the same as call_common on dpmodel."""
+        ret_call = self.dp_model.call_common(
             self.coords,
             self.atype,
             box=self.box,
@@ -741,8 +741,8 @@ class TestEnerModelAPIs(unittest.TestCase):
             np.testing.assert_equal(ret_call[key], ret_fc[key])
 
     def test_forward_common_lower_alias(self) -> None:
-        """forward_common_lower should be the same as call_lower on dpmodel."""
-        ret_call = self.dp_model.call_lower(
+        """forward_common_lower should be the same as call_common_lower on dpmodel."""
+        ret_call = self.dp_model.call_common_lower(
             self.extended_coord,
             self.extended_atype,
             self.nlist,

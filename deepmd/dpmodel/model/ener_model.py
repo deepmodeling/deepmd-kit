@@ -6,6 +6,9 @@ from typing import (
     Any,
 )
 
+from deepmd.dpmodel.array_api import (
+    Array,
+)
 from deepmd.dpmodel.atomic_model import (
     DPEnergyAtomicModel,
 )
@@ -47,6 +50,99 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         if self._enable_hessian:
             return self.hess_fitting_def
         return super().atomic_output_def()
+
+    def call_lower(
+        self,
+        extended_coord: Array,
+        extended_atype: Array,
+        nlist: Array,
+        mapping: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+        do_atomic_virial: bool = False,
+    ) -> dict[str, Array]:
+        model_ret = self.call_common_lower(
+            extended_coord,
+            extended_atype,
+            nlist,
+            mapping,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
+        )
+        model_predict = {}
+        model_predict["atom_energy"] = model_ret["energy"]
+        model_predict["energy"] = model_ret["energy_redu"]
+        if self.do_grad_r("energy"):
+            if model_ret["energy_derv_r"] is not None:
+                model_predict["extended_force"] = model_ret["energy_derv_r"].squeeze(-2)
+            else:
+                model_predict["extended_force"] = model_ret["energy_derv_r"]
+        if self.do_grad_c("energy"):
+            derv_c_redu = model_ret.get("energy_derv_c_redu")
+            if derv_c_redu is not None:
+                model_predict["virial"] = derv_c_redu.squeeze(-2)
+            else:
+                model_predict["virial"] = derv_c_redu
+            if do_atomic_virial:
+                if model_ret["energy_derv_c"] is not None:
+                    model_predict["extended_virial"] = model_ret[
+                        "energy_derv_c"
+                    ].squeeze(-3)
+                else:
+                    model_predict["extended_virial"] = model_ret["energy_derv_c"]
+        else:
+            if model_ret.get("dforce") is not None:
+                model_predict["dforce"] = model_ret["dforce"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
+        return model_predict
+
+    def call(
+        self,
+        coord: Array,
+        atype: Array,
+        box: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+        do_atomic_virial: bool = False,
+    ) -> dict[str, Array]:
+        model_ret = self.call_common(
+            coord,
+            atype,
+            box,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
+        )
+        model_predict = {}
+        model_predict["atom_energy"] = model_ret["energy"]
+        model_predict["energy"] = model_ret["energy_redu"]
+        if self.do_grad_r("energy"):
+            if model_ret.get("energy_derv_r") is not None:
+                model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
+            else:
+                model_predict["force"] = model_ret.get("energy_derv_r")
+        if self.do_grad_c("energy"):
+            derv_c_redu = model_ret.get("energy_derv_c_redu")
+            if derv_c_redu is not None:
+                model_predict["virial"] = derv_c_redu.squeeze(-2)
+            else:
+                model_predict["virial"] = derv_c_redu
+            if do_atomic_virial:
+                derv_c = model_ret.get("energy_derv_c")
+                if derv_c is not None:
+                    model_predict["atom_virial"] = derv_c.squeeze(-3)
+                else:
+                    model_predict["atom_virial"] = derv_c
+        else:
+            if model_ret.get("dforce") is not None:
+                model_predict["force"] = model_ret["dforce"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
+        return model_predict
+
+    forward_lower = call_lower
 
     def translated_output_def(self) -> dict[str, Any]:
         """Get the translated output definition.
