@@ -139,6 +139,11 @@ class DPAtomicModel(BaseAtomicModel):
 
     def eval_descriptor(self) -> Array:
         """Evaluate the descriptor by concatenating cached results."""
+        if not self.eval_descriptor_list:
+            raise RuntimeError(
+                "eval_descriptor_list is empty. "
+                "Call set_eval_descriptor_hook(True) and perform a forward pass first."
+            )
         xp = array_api_compat.array_namespace(self.eval_descriptor_list[0])
         return xp.concat(self.eval_descriptor_list, axis=0)
 
@@ -150,6 +155,11 @@ class DPAtomicModel(BaseAtomicModel):
 
     def eval_fitting_last_layer(self) -> Array:
         """Evaluate the fitting last layer output by concatenating cached results."""
+        if not self.eval_fitting_last_layer_list:
+            raise RuntimeError(
+                "eval_fitting_last_layer_list is empty. "
+                "Call set_eval_fitting_last_layer_hook(True) and perform a forward pass first."
+            )
         xp = array_api_compat.array_namespace(self.eval_fitting_last_layer_list[0])
         return xp.concat(self.eval_fitting_last_layer_list, axis=0)
 
