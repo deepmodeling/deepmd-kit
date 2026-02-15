@@ -195,7 +195,6 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.default_fparam_tensor = np.array(self.default_fparam, dtype=self.prec)
         else:
             self.default_fparam_tensor = None
-        self.eval_return_middle_output = False
         # init networks
         in_dim = (
             self.dim_descrpt
@@ -411,10 +410,6 @@ class GeneralFitting(NativeOP, BaseFitting):
         else:
             raise KeyError(key)
 
-    def set_return_middle_output(self, return_middle_output: bool = True) -> None:
-        """Set whether to return the output of the last hidden layer."""
-        self.eval_return_middle_output = return_middle_output
-
     def reinit_exclude(
         self,
         exclude_types: list[int] = [],
@@ -596,12 +591,6 @@ class GeneralFitting(NativeOP, BaseFitting):
                 dtype=get_xp_precision(xp, self.precision),
                 device=array_api_compat.device(descriptor),
             )
-            if self.eval_return_middle_output:
-                outs_middle = xp.zeros(
-                    [nf, nloc, self.neuron[-1]],
-                    dtype=get_xp_precision(xp, self.precision),
-                    device=array_api_compat.device(descriptor),
-                )
             for type_i in range(self.ntypes):
                 mask = xp.tile(
                     xp.reshape((atype == type_i), (nf, nloc, 1)), (1, 1, net_dim_out)
@@ -617,26 +606,10 @@ class GeneralFitting(NativeOP, BaseFitting):
                     mask, atom_property, xp.zeros_like(atom_property)
                 )
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
-                if self.eval_return_middle_output:
-                    middle_output_type = self.nets[(type_i,)].call_until_last(xx)
-                    middle_mask = xp.tile(
-                        xp.reshape((atype == type_i), (nf, nloc, 1)),
-                        (1, 1, self.neuron[-1]),
-                    )
-                    middle_output_type = xp.where(
-                        middle_mask,
-                        middle_output_type,
-                        xp.zeros_like(middle_output_type),
-                    )
-                    outs_middle = outs_middle + middle_output_type
-            if self.eval_return_middle_output:
-                results["middle_output"] = outs_middle
         else:
             outs = self.nets[()](xx)
             if xx_zeros is not None:
                 outs -= self.nets[()](xx_zeros)
-            if self.eval_return_middle_output:
-                results["middle_output"] = self.nets[()].call_until_last(xx)
         outs += xp.reshape(
             xp.take(
                 xp.astype(self.bias_atom_e[...], outs.dtype),
