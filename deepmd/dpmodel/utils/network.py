@@ -280,11 +280,11 @@ class NativeLayer(NativeOP):
             y = xp.astype(y, x.dtype)
         y = fn(y)
         if self.idt is not None:
-            y *= self.idt
+            y = y * self.idt
         if self.resnet and self.w.shape[1] == self.w.shape[0]:
-            y += x
+            y = y + x
         elif self.resnet and self.w.shape[1] == 2 * self.w.shape[0]:
-            y += xp.concat([x, x], axis=-1)
+            y = y + xp.concat([x, x], axis=-1)
         return y
 
 

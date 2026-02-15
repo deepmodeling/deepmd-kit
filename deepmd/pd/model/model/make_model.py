@@ -162,7 +162,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 The keys are defined by the `ModelOutputDef`.
 
             """
-            cc, bb, fp, ap, input_prec = self.input_type_cast(
+            cc, bb, fp, ap, input_prec = self._input_type_cast(
                 coord, box=box, fparam=fparam, aparam=aparam
             )
             del coord, box, fparam, aparam
@@ -196,7 +196,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 mapping,
                 do_atomic_virial=do_atomic_virial,
             )
-            model_predict = self.output_type_cast(model_predict, input_prec)
+            model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
 
         def get_out_bias(self) -> paddle.Tensor:
@@ -283,7 +283,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             nlist = self.format_nlist(
                 extended_coord, extended_atype, nlist, extra_nlist_sort=extra_nlist_sort
             )
-            cc_ext, _, fp, ap, input_prec = self.input_type_cast(
+            cc_ext, _, fp, ap, input_prec = self._input_type_cast(
                 extended_coord, fparam=fparam, aparam=aparam
             )
             del extended_coord, fparam, aparam
@@ -303,10 +303,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
             )
-            model_predict = self.output_type_cast(model_predict, input_prec)
+            model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
 
-        def input_type_cast(
+        def _input_type_cast(
             self,
             coord: paddle.Tensor,
             box: paddle.Tensor | None = None,
@@ -351,7 +351,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                     input_prec,
                 )
 
-        def output_type_cast(
+        def _output_type_cast(
             self,
             model_ret: dict[str, paddle.Tensor],
             input_prec: str,

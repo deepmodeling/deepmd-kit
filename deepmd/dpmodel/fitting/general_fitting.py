@@ -584,6 +584,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                 )
 
         # calculate the prediction
+        results: dict[str, Array] = {}
         if not self.mixed_types:
             outs = xp.zeros(
                 [nf, nloc, net_dim_out],
@@ -622,4 +623,5 @@ class GeneralFitting(NativeOP, BaseFitting):
         exclude_mask = xp.astype(exclude_mask, xp.bool)
         # nf x nloc x nod
         outs = xp.where(exclude_mask[:, :, None], outs, xp.zeros_like(outs))
-        return {self.var_name: outs}
+        results[self.var_name] = outs
+        return results
