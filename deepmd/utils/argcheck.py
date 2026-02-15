@@ -3511,7 +3511,7 @@ def training_args(
                             optional=True,
                             default=0.001,
                             doc=doc_only_pt_supported
-                            + "Weight decay coefficient. Applied only to Muon-routed parameters",
+                            + "Weight decay coefficient. Applied to Muon-routed parameters and >=2D Adam-routed parameters (AdamW-style decoupled decay). Not applied to 1D Adam parameters.",
                         ),
                         Argument(
                             "lr_adjust",
@@ -3539,8 +3539,8 @@ def training_args(
                             default=True,
                             doc=doc_only_pt_supported
                             + "If True, only 2D parameters use Muon (matching PyTorch's torch.optim.Muon). "
-                            + "Parameters with ndim > 2 use Adam without weight decay. "
-                            + "If False, all >=2D parameters use Muon.",
+                            + "Parameters with ndim > 2 use AdamW-style updates. "
+                            + "If False, all >=2D parameters are eligible for Muon (with min_2d_dim fallback to AdamW-style updates).",
                         ),
                         Argument(
                             "min_2d_dim",
@@ -3549,8 +3549,8 @@ def training_args(
                             default=1,
                             alias=["muon_min_2d_dim"],
                             doc=doc_only_pt_supported
-                            + "Minimum min(m, n) threshold for HybridMuon on 2D matrices. "
-                            "Matrices with min(m, n) >= min_2d_dim use HybridMuon; "
+                            + "Minimum min(m, n) threshold for HybridMuon on matrix-view parameters. "
+                            "Parameters with min(m, n) >= min_2d_dim use HybridMuon; "
                             "those with min(m, n) < min_2d_dim use Adam fallback. "
                             "Set to 1 to disable fallback.",
                         ),
@@ -3570,7 +3570,7 @@ def training_args(
                     doc=doc_only_pt_supported
                     + "HybridMuon optimizer (DeePMD-kit custom implementation). "
                     + "This is a Hybrid optimizer that automatically combines Muon and Adam. "
-                    + "For >=2D params: Muon update with Newton-Schulz. "
+                    + "For >=2D params: Muon update with Newton-Schulz (or Adam fallback when matrix-view dimensions are too small). "
                     + "For 1D params: Standard Adam. "
                     + "This is DIFFERENT from PyTorch's torch.optim.Muon which ONLY supports 2D parameters.",
                 ),

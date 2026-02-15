@@ -2,10 +2,19 @@
 """
 HybridMuon optimizer for DeePMD-kit PyTorch backend.
 
-HybridMuon is a HYBRID optimizer that automatically combines Muon and Adam:
-- For >=2D parameters with min(m,n) >= min_2d_dim: Muon update with Newton-Schulz
-- For 2D parameters with min(m,n) < min_2d_dim: Adam fallback with update clipping
-- For 1D parameters (biases, layer norms): Standard Adam
+HybridMuon is a hybrid optimizer that automatically combines Muon and Adam.
+Routing is controlled by parameter dimensionality and ``muon_2d_only``:
+
+- 1D parameters (biases, norms): Adam (no weight decay).
+- When ``muon_2d_only=True`` (default):
+  - 2D parameters: Muon if ``min(m, n) >= min_2d_dim``, else Adam fallback.
+  - >2D parameters: Adam.
+- When ``muon_2d_only=False``:
+  - >=2D parameters use matrix-view routing:
+    Muon if ``min(m, n) >= min_2d_dim``, else Adam fallback.
+
+For matrix-view routing, any parameter with ndim >= 2 is reshaped as:
+``(rows, cols) = (numel // shape[-1], shape[-1])``.
 
 This is different from PyTorch's torch.optim.Muon, which ONLY supports 2D parameters
 and requires manual configuration of AdamW for 1D parameters. HybridMuon provides
@@ -13,7 +22,7 @@ automatic routing based on parameter dimensionality.
 
 Algorithm
 ---------
-For >=2D parameters (weight matrices), the Muon update is:
+For Muon-routed parameters, the update is:
 
     1. Momentum update (Nesterov):
        m_t = beta * m_{t-1} + (1 - beta) * g_t
@@ -29,7 +38,8 @@ For >=2D parameters (weight matrices), the Muon update is:
 
     4. Parameter update: theta -= lr * scale * orth(update)
 
-For 1D parameters (biases, norms), standard Adam is used.
+For Adam-routed parameters, standard Adam moments are used.
+AdamW behavior (decoupled weight decay) is applied only on >=2D Adam paths.
 
 Dtype Behavior
 --------------
@@ -290,7 +300,7 @@ def should_fallback_to_adam_for_matrix(
     min_2d_dim: int,
 ) -> bool:
     """
-    Check if a 2D matrix should fallback to Adam due to small dimensions.
+    Check if a parameter should fallback to Adam based on matrix-view dimensions.
 
     Parameters
     ----------
@@ -315,8 +325,11 @@ def should_fallback_to_adam_for_matrix(
         raise ValueError("Parameter must have ndim >= 2 for Muon suitability check.")
 
     # === Step 2. Derive matrix shape consistent with Muon reshape ===
-    m = int(p.shape[0])
-    n = int(p.numel() // p.shape[0])
+    # Flatten all leading axes into rows and keep the last axis as cols.
+    # This preserves the "input-channel axis" as the NS orthogonalization space
+    # for N-D linear weights (e.g., (..., C_out, C_in) -> (-1, C_in)).
+    m = int(p.numel() // p.shape[-1])
+    n = int(p.shape[-1])
 
     # === Step 3. Check if any dimension too small for Muon ===
     return min(m, n) < min_2d_dim
@@ -324,15 +337,17 @@ def should_fallback_to_adam_for_matrix(
 
 class HybridMuonOptimizer(Optimizer):
     """
-    HybridMuon optimizer with small-2D Adam fallback and 1D Adam path.
+    HybridMuon optimizer with small-matrix Adam fallback and 1D Adam path.
 
-    This optimizer applies different update rules based on parameter dimensionality:
-    - For >=2D parameters with min(m, n) >= min_2d_dim:
-      Muon update with Newton-Schulz orthogonalization.
-    - For 2D parameters with min(m, n) < min_2d_dim (small matrices):
-      Adam update with scaled learning rate and update clipping.
-    - For 1D parameters (biases, layer norms):
-      Standard Adam update.
+    This optimizer applies different update rules based on parameter dimensionality
+    and ``muon_2d_only``:
+    - 1D parameters (biases, layer norms): standard Adam update.
+    - When ``muon_2d_only=True``:
+      - 2D parameters use Muon/Adam-fallback according to ``min_2d_dim``.
+      - >2D parameters use Adam.
+    - When ``muon_2d_only=False``:
+      - >=2D parameters use matrix-view Muon/Adam-fallback according to
+        ``min_2d_dim``.
 
     This hybrid approach is effective because Muon's orthogonalization is designed
     for weight matrices, while Adam is more suitable for biases and normalization params.
@@ -346,8 +361,9 @@ class HybridMuonOptimizer(Optimizer):
         4. Scaling: scale = coeff*sqrt(max(m,n)) or sqrt(max(1, m/n))
         5. Parameter update: theta -= lr * scale * orth
 
-    Adam (1D params):
+    Adam:
         Standard Adam with bias correction, all computations in float32.
+        Decoupled weight decay is applied only to >=2D Adam-routed parameters.
 
     Parameters
     ----------
@@ -358,7 +374,9 @@ class HybridMuonOptimizer(Optimizer):
     momentum : float
         Momentum coefficient for Muon with default 0.95.
     weight_decay : float
-        Weight decay coefficient (applied only to Muon-routed parameters) with default 0.001.
+        Weight decay coefficient with default 0.001.
+        Applied to Muon-routed parameters and >=2D Adam-routed parameters
+        with AdamW-style decoupled decay. Not applied to 1D Adam parameters.
     adam_betas : tuple[float, float]
         Adam beta coefficients with default (0.9, 0.95).
     lr_adjust : float
@@ -372,17 +390,17 @@ class HybridMuonOptimizer(Optimizer):
         Dual-purpose coefficient with default 0.2:
         1. For Muon (when lr_adjust <= 0): match-RMS scaling factor,
            scale = lr_adjust_coeff * sqrt(max(m, n)).
-        2. For 2D Adam fallback: learning rate multiplier,
+        2. For matrix Adam fallback: learning rate multiplier,
            adam_lr_matrix = adam_lr * min(lr_adjust_coeff, 0.1).
            The min(., 0.1) cap ensures conservative updates for small matrices.
     muon_2d_only : bool
         If True, only 2D parameters use Muon (matching PyTorch's torch.optim.Muon).
-        Parameters with ndim > 2 use Adam without weight decay.
-        If False, all >=2D parameters use Muon (default behavior).
+        Parameters with ndim > 2 use AdamW-style updates.
+        If False, all >=2D parameters are eligible for Muon via matrix-view routing.
         Default is True.
     min_2d_dim : int
-        Minimum min(m, n) threshold for Muon on 2D matrices.
-        Matrices with min(m, n) >= min_2d_dim use Muon;
+        Minimum min(m, n) threshold for Muon on eligible matrix-view parameters.
+        Eligible parameters with min(m, n) >= min_2d_dim use Muon;
         those with min(m, n) < min_2d_dim use Adam fallback.
         Must be >= 1.
         Set to 1 to disable fallback.
@@ -476,9 +494,8 @@ class HybridMuonOptimizer(Optimizer):
         Routing logic:
         - 1D parameters → Adam path
         - >2D parameters (when muon_2d_only=True) → Adam path
-        - 2D parameters with min(m, n) < min_2d_dim → Adam fallback path
-        - 2D parameters with min(m, n) >= min_2d_dim → Muon path
-        - >=2D parameters (when muon_2d_only=False) → Muon path
+        - >=2D parameters with min(m, n) < min_2d_dim → Adam fallback path
+        - remaining >=2D parameters → Muon path
         """
         if self._routing_built:
             return
@@ -504,10 +521,8 @@ class HybridMuonOptimizer(Optimizer):
                     adam_nd.append({"param": p})
                     continue
 
-                # === Step 3. 2D small matrices → Adam fallback ===
-                if (p.ndim == 2) and should_fallback_to_adam_for_matrix(
-                    p, min_2d_dim=min_2d_dim
-                ):
+                # === Step 3. Small matrix-view params → Adam fallback ===
+                if should_fallback_to_adam_for_matrix(p, min_2d_dim=min_2d_dim):
                     adam_matrix.append(
                         {
                             "param": p,
@@ -520,8 +535,8 @@ class HybridMuonOptimizer(Optimizer):
                 muon_params.append(
                     {
                         "param": p,
-                        "rows": int(p.shape[0]),
-                        "cols": int(p.numel() // p.shape[0]),
+                        "rows": int(p.numel() // p.shape[-1]),
+                        "cols": int(p.shape[-1]),
                     }
                 )
 
@@ -661,6 +676,10 @@ class HybridMuonOptimizer(Optimizer):
             if adam_nd_params:
                 # === Step 2.2. Update exp_avg / exp_avg_sq ===
                 adam_lr = lr if lr_adjust <= 0 else lr / lr_adjust
+                # AdamW decay for >=2D Adam path.
+                if weight_decay > 0:
+                    for p in adam_nd_params:
+                        p.mul_(1.0 - lr * weight_decay)
 
                 # exp_avg = beta1 * exp_avg + (1 - beta1) * grad
                 # exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad^2
@@ -681,7 +700,7 @@ class HybridMuonOptimizer(Optimizer):
                     delta_fp32 = -step_size * (adam_nd_exp_avgs[i] / denom)
                     p.add_(delta_fp32.to(p.dtype))
 
-            # === Step 3. Adam update for small 2D matrices (fallback path) ===
+            # === Step 3. Adam update for small matrix-view params (fallback path) ===
             # === Step 3.1. Collect gradients and initialize state ===
             adam_matrix_params: list[torch.Tensor] = []
             adam_matrix_grads_fp32: list[torch.Tensor] = []
@@ -719,6 +738,10 @@ class HybridMuonOptimizer(Optimizer):
                 # === Step 3.2. Update exp_avg / exp_avg_sq with scaled lr ===
                 adam_lr = lr if lr_adjust <= 0 else lr / lr_adjust
                 adam_lr_matrix = adam_lr * min(lr_adjust_coeff, 0.1)
+                # AdamW decay for matrix fallback path.
+                if weight_decay > 0:
+                    for p in adam_matrix_params:
+                        p.mul_(1.0 - lr * weight_decay)
 
                 # exp_avg = beta1 * exp_avg + (1 - beta1) * grad
                 # exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad^2
@@ -780,7 +803,7 @@ class HybridMuonOptimizer(Optimizer):
                 muon_momentum_buffers.append(buf)
                 active_entries.append((entry, grad))
 
-            # === Step 4.2. Apply weight decay (Muon path only) ===
+            # === Step 4.2. Apply weight decay on Muon path ===
             if weight_decay > 0 and muon_params_for_decay:
                 for p in muon_params_for_decay:
                     p.mul_(1.0 - lr * weight_decay)
