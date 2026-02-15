@@ -123,7 +123,6 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
     pd_class = EnergyModelPD
     pt_expt_class = EnergyModelPTExpt
     jax_class = EnergyModelJAX
-    pd_class = EnergyModelPD
     args = model_args()
 
     def get_reference_backend(self):
@@ -979,7 +978,6 @@ class TestEnerModelAPIs(unittest.TestCase):
     def test_change_out_bias(self) -> None:
         """change_out_bias should produce consistent bias on dp and pt."""
         nframes = 2
-        nloc = 6
         # Use realistic coords (from setUp, tiled for 2 frames)
         coords_2f = np.tile(self.coords, (nframes, 1, 1))  # (2, 6, 3)
         atype_2f = np.array([[0, 0, 1, 1, 1, 1], [0, 1, 1, 0, 1, 1]], dtype=np.int32)
@@ -1182,7 +1180,6 @@ class TestEnerModelAPIs(unittest.TestCase):
         )
 
         nframes = 2
-        nloc = 6
         coords_2f = np.tile(self.coords, (nframes, 1, 1))
         atype_2f = np.array([[0, 0, 1, 1, 1, 1], [0, 1, 1, 0, 1, 1]], dtype=np.int32)
         box_2f = np.tile(self.box.reshape(1, 3, 3), (nframes, 1, 1))

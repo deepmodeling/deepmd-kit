@@ -122,8 +122,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         -------
         torch.nn.Module
             A traced module whose ``forward`` accepts
-            ``(extended_coord, extended_atype, nlist, mapping)`` and
-            returns a dict with the same keys as ``_forward_lower``.
+            ``(extended_coord, extended_atype, nlist, mapping, fparam, aparam)``
+            and returns a dict with the same keys as ``_forward_lower``.
         """
         model = self
 
@@ -132,6 +132,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             extended_atype: torch.Tensor,
             nlist: torch.Tensor,
             mapping: torch.Tensor | None,
+            fparam: torch.Tensor | None,
+            aparam: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
             extended_coord = extended_coord.detach().requires_grad_(True)
             return model._forward_lower(
@@ -144,4 +146,6 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 do_atomic_virial=do_atomic_virial,
             )
 
-        return make_fx(fn)(extended_coord, extended_atype, nlist, mapping)
+        return make_fx(fn)(
+            extended_coord, extended_atype, nlist, mapping, fparam, aparam
+        )

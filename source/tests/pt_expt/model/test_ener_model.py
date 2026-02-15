@@ -60,7 +60,11 @@ class TestEnergyModel(unittest.TestCase):
             [[0, 0, 0, 1, 1]], dtype=torch.int64, device=self.device
         )
 
-    def _make_model(self) -> EnergyModel:
+    def _make_model(
+        self,
+        numb_fparam: int = 0,
+        numb_aparam: int = 0,
+    ) -> EnergyModel:
         ds = DescrptSeA(
             self.rcut,
             self.rcut_smth,
@@ -71,6 +75,8 @@ class TestEnergyModel(unittest.TestCase):
             self.nt,
             ds.get_dim_out(),
             1,
+            numb_fparam=numb_fparam,
+            numb_aparam=numb_aparam,
             mixed_types=ds.mixed_types(),
             seed=GLOBAL_SEED,
         ).to(self.device)
@@ -98,17 +104,8 @@ class TestEnergyModel(unittest.TestCase):
         self.assertEqual(ret["force"].shape, (1, self.natoms, 3))
         self.assertEqual(ret["virial"].shape, (1, 9))
 
-    def test_forward_lower_exportable(self) -> None:
-        """Test that EnergyModel.forward_lower returns an exportable module.
-
-        forward_lower() uses make_fx to trace through torch.autograd.grad,
-        decomposing the backward pass into primitive ops. The returned module
-        can be passed directly to torch.export.export.
-        """
-        md = self._make_model()
-        md.eval()
-
-        # Prepare extended coords and neighbor list using dpmodel utilities
+    def _prepare_lower_inputs(self):
+        """Build extended coords, atype, nlist, mapping as torch tensors."""
         coord_np = self.coord.detach().cpu().numpy()
         atype_np = self.atype.detach().cpu().numpy()
         cell_np = self.cell.reshape(1, 9).detach().cpu().numpy()
@@ -131,8 +128,6 @@ class TestEnergyModel(unittest.TestCase):
             distinguish_types=True,
         )
         extended_coord = extended_coord.reshape(1, -1, 3)
-
-        # Convert to torch tensors
         ext_coord = torch.tensor(
             extended_coord,
             dtype=torch.float64,
@@ -145,63 +140,195 @@ class TestEnergyModel(unittest.TestCase):
         )
         nlist_t = torch.tensor(nlist, dtype=torch.int64, device=self.device)
         mapping_t = torch.tensor(mapping, dtype=torch.int64, device=self.device)
+        return ext_coord, ext_atype, nlist_t, mapping_t
 
-        # Eager reference via _forward_lower
-        ret0 = md._forward_lower(
+    def test_forward_lower_exportable(self) -> None:
+        """Test that EnergyModel.forward_lower returns an exportable module.
+
+        forward_lower() uses make_fx to trace through torch.autograd.grad,
+        decomposing the backward pass into primitive ops.  The returned module
+        can be passed directly to torch.export.export.
+
+        The test builds a model with numb_fparam > 0 and numb_aparam > 0 and
+        verifies that:
+        1. The traced / exported module reproduces eager results (zero params).
+        2. The traced / exported module reproduces eager results with non-zero
+           fparam and aparam (ruling out baked-in constants).
+        3. Changing fparam or aparam at runtime actually changes the output.
+        """
+        numb_fparam = 2
+        numb_aparam = 3
+        md = self._make_model(
+            numb_fparam=numb_fparam,
+            numb_aparam=numb_aparam,
+        )
+        md.eval()
+
+        ext_coord, ext_atype, nlist_t, mapping_t = self._prepare_lower_inputs()
+        nframes = ext_coord.shape[0]
+        nloc = self.natoms
+        output_keys = ("energy", "extended_force", "virial", "extended_virial")
+
+        fparam_zero = torch.zeros(
+            nframes,
+            numb_fparam,
+            dtype=torch.float64,
+            device=self.device,
+        )
+        aparam_zero = torch.zeros(
+            nframes,
+            nloc,
+            numb_aparam,
+            dtype=torch.float64,
+            device=self.device,
+        )
+
+        # --- eager reference with zero params ---
+        ret_eager_zero = md._forward_lower(
             ext_coord.requires_grad_(True),
             ext_atype,
             nlist_t,
             mapping_t,
+            fparam=fparam_zero,
+            aparam=aparam_zero,
             do_atomic_virial=True,
         )
-        self.assertIn("energy", ret0)
-        self.assertIn("extended_force", ret0)
-        self.assertIn("virial", ret0)
-        self.assertIn("extended_virial", ret0)
+        for key in output_keys:
+            self.assertIn(key, ret_eager_zero)
 
-        # forward_lower returns a traced module
+        # --- trace and export ---
         traced = md.forward_lower(
             ext_coord,
             ext_atype,
             nlist_t,
             mapping_t,
+            fparam=fparam_zero,
+            aparam=aparam_zero,
             do_atomic_virial=True,
         )
         self.assertIsInstance(traced, torch.nn.Module)
 
-        # The traced module should be directly exportable
         exported = torch.export.export(
             traced,
-            (ext_coord, ext_atype, nlist_t, mapping_t),
+            (ext_coord, ext_atype, nlist_t, mapping_t, fparam_zero, aparam_zero),
             strict=False,
         )
         self.assertIsNotNone(exported)
 
-        # Verify exported model produces same output
-        ret1 = exported.module()(ext_coord, ext_atype, nlist_t, mapping_t)
-        np.testing.assert_allclose(
-            ret0["energy"].detach().cpu().numpy(),
-            ret1["energy"].detach().cpu().numpy(),
-            rtol=1e-10,
-            atol=1e-10,
+        # --- verify traced/exported match eager (zero params) ---
+        ret_traced_zero = traced(
+            ext_coord,
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            fparam_zero,
+            aparam_zero,
         )
-        np.testing.assert_allclose(
-            ret0["extended_force"].detach().cpu().numpy(),
-            ret1["extended_force"].detach().cpu().numpy(),
-            rtol=1e-10,
-            atol=1e-10,
+        ret_exported_zero = exported.module()(
+            ext_coord,
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            fparam_zero,
+            aparam_zero,
         )
-        np.testing.assert_allclose(
-            ret0["virial"].detach().cpu().numpy(),
-            ret1["virial"].detach().cpu().numpy(),
-            rtol=1e-10,
-            atol=1e-10,
+        for key in output_keys:
+            np.testing.assert_allclose(
+                ret_eager_zero[key].detach().cpu().numpy(),
+                ret_traced_zero[key].detach().cpu().numpy(),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"traced vs eager (zero params): {key}",
+            )
+            np.testing.assert_allclose(
+                ret_eager_zero[key].detach().cpu().numpy(),
+                ret_exported_zero[key].detach().cpu().numpy(),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"exported vs eager (zero params): {key}",
+            )
+
+        # --- verify traced/exported match eager (non-zero params) ---
+        fparam_nz = torch.ones(
+            nframes,
+            numb_fparam,
+            dtype=torch.float64,
+            device=self.device,
         )
-        np.testing.assert_allclose(
-            ret0["extended_virial"].detach().cpu().numpy(),
-            ret1["extended_virial"].detach().cpu().numpy(),
-            rtol=1e-10,
-            atol=1e-10,
+        aparam_nz = torch.ones(
+            nframes,
+            nloc,
+            numb_aparam,
+            dtype=torch.float64,
+            device=self.device,
+        )
+        ret_eager_nz = md._forward_lower(
+            ext_coord.requires_grad_(True),
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            fparam=fparam_nz,
+            aparam=aparam_nz,
+            do_atomic_virial=True,
+        )
+        ret_traced_nz = traced(
+            ext_coord,
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            fparam_nz,
+            aparam_nz,
+        )
+        ret_exported_nz = exported.module()(
+            ext_coord,
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            fparam_nz,
+            aparam_nz,
+        )
+        for key in output_keys:
+            np.testing.assert_allclose(
+                ret_eager_nz[key].detach().cpu().numpy(),
+                ret_traced_nz[key].detach().cpu().numpy(),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"traced vs eager (non-zero params): {key}",
+            )
+            np.testing.assert_allclose(
+                ret_eager_nz[key].detach().cpu().numpy(),
+                ret_exported_nz[key].detach().cpu().numpy(),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"exported vs eager (non-zero params): {key}",
+            )
+
+        # --- verify fparam is dynamic (changing it changes the output) ---
+        self.assertFalse(
+            np.allclose(
+                ret_traced_zero["energy"].detach().cpu().numpy(),
+                ret_traced_nz["energy"].detach().cpu().numpy(),
+            ),
+            "Changing fparam did not change output — "
+            "fparam may be baked in as a constant",
+        )
+
+        # --- verify aparam is dynamic (changing it changes the output) ---
+        ret_traced_ap = traced(
+            ext_coord,
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            fparam_zero,
+            aparam_nz,
+        )
+        self.assertFalse(
+            np.allclose(
+                ret_traced_zero["energy"].detach().cpu().numpy(),
+                ret_traced_ap["energy"].detach().cpu().numpy(),
+            ),
+            "Changing aparam did not change output — "
+            "aparam may be baked in as a constant",
         )
 
     def test_dp_consistency(self) -> None:
