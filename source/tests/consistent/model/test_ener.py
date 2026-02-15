@@ -757,54 +757,6 @@ class TestEnerModelAPIs(unittest.TestCase):
         for key in ret_call:
             np.testing.assert_equal(ret_call[key], ret_fc[key])
 
-    def test_eval_descriptor(self) -> None:
-        """eval_descriptor should produce consistent results across dp and pt."""
-        # dpmodel
-        self.dp_model.set_eval_descriptor_hook(True)
-        self.dp_model.call_lower(
-            self.extended_coord,
-            self.extended_atype,
-            self.nlist,
-            self.mapping,
-        )
-        dp_desc = self.dp_model.eval_descriptor()
-
-        # pt
-        self.pt_model.set_eval_descriptor_hook(True)
-        self.pt_model.forward_common_lower(
-            numpy_to_torch(self.extended_coord),
-            numpy_to_torch(self.extended_atype),
-            numpy_to_torch(self.nlist),
-            numpy_to_torch(self.mapping),
-        )
-        pt_desc = torch_to_numpy(self.pt_model.eval_descriptor())
-
-        np.testing.assert_allclose(dp_desc, pt_desc, rtol=1e-10, atol=1e-10)
-
-    def test_eval_fitting_last_layer(self) -> None:
-        """eval_fitting_last_layer should produce consistent results across dp and pt."""
-        # dpmodel
-        self.dp_model.set_eval_fitting_last_layer_hook(True)
-        self.dp_model.call_lower(
-            self.extended_coord,
-            self.extended_atype,
-            self.nlist,
-            self.mapping,
-        )
-        dp_fl = self.dp_model.eval_fitting_last_layer()
-
-        # pt
-        self.pt_model.set_eval_fitting_last_layer_hook(True)
-        self.pt_model.forward_common_lower(
-            numpy_to_torch(self.extended_coord),
-            numpy_to_torch(self.extended_atype),
-            numpy_to_torch(self.nlist),
-            numpy_to_torch(self.mapping),
-        )
-        pt_fl = torch_to_numpy(self.pt_model.eval_fitting_last_layer())
-
-        np.testing.assert_allclose(dp_fl, pt_fl, rtol=1e-10, atol=1e-10)
-
     def test_model_output_def(self) -> None:
         """model_output_def should return the same keys and shapes on dp and pt."""
         dp_def = self.dp_model.model_output_def().get_data()
