@@ -66,7 +66,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             output_def["virial"] = out_def_data["energy_derv_c_redu"]
             output_def["virial"].squeeze(-2)
             output_def["atom_virial"] = out_def_data["energy_derv_c"]
-            output_def["atom_virial"].squeeze(-3)
+            output_def["atom_virial"].squeeze(-2)
         if "mask" in out_def_data:
             output_def["mask"] = out_def_data["mask"]
         if self._enable_hessian:

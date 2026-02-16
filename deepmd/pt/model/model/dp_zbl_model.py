@@ -49,7 +49,7 @@ class DPZBLModel(DPZBLModel_):
             output_def["virial"] = out_def_data["energy_derv_c_redu"]
             output_def["virial"].squeeze(-2)
             output_def["atom_virial"] = out_def_data["energy_derv_c"]
-            output_def["atom_virial"].squeeze(-3)
+            output_def["atom_virial"].squeeze(-2)
         if "mask" in out_def_data:
             output_def["mask"] = out_def_data["mask"]
         return output_def
@@ -80,7 +80,7 @@ class DPZBLModel(DPZBLModel_):
         if self.do_grad_c("energy"):
             model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
             if do_atomic_virial:
-                model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-3)
+                model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-2)
         else:
             model_predict["force"] = model_ret["dforce"]
         if "mask" in model_ret:
