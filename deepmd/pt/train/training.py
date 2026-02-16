@@ -995,7 +995,23 @@ class Trainer:
                         self.gradient_max_norm,
                     )
                     if not torch.isfinite(total_norm):
-                        raise RuntimeError(f"Non-finite gradient norm: {total_norm}")
+                        bad_params = []
+                        for name, p in self.wrapper.named_parameters():
+                            if p.grad is not None:
+                                grad_norm = p.grad.data.norm()
+                                if not torch.isfinite(grad_norm):
+                                    bad_params.append(
+                                        f"  {name}: grad_norm={grad_norm}, shape={list(p.shape)}"
+                                    )
+                        detail = (
+                            "\n".join(bad_params)
+                            if bad_params
+                            else "  (all individual grads finite, overflow in norm reduction)"
+                        )
+                        raise RuntimeError(
+                            f"Non-finite gradient norm: {total_norm}\n"
+                            f"Parameters with non-finite gradients:\n{detail}"
+                        )
                 with torch.device(DEVICE):
                     self.optimizer.step()
                 self.scheduler.step()
