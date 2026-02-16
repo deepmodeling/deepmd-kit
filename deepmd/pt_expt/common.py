@@ -300,6 +300,20 @@ def torch_module(
 ) -> type[torch.nn.Module]:
     """Convert a NativeOP to a torch.nn.Module.
 
+    This decorator wraps a NativeOP class to make it a PyTorch module, handling
+    initialization, attribute setting, and method delegation automatically.
+
+    **Auto-generated methods:**
+
+    - If the wrapped class has a ``call()`` method but does not explicitly define
+      ``forward()``, a ``forward()`` method will be auto-generated that delegates
+      to ``call()``.
+    - If the wrapped class has a ``call_lower()`` method but does not explicitly
+      define ``forward_lower()``, a ``forward_lower()`` method will be auto-generated
+      that delegates to ``call_lower()``.
+    - Explicit ``forward()`` or ``forward_lower()`` definitions in the wrapped class
+      are always respected and will not be overridden.
+
     Parameters
     ----------
     module : type[NativeOP]
@@ -308,13 +322,13 @@ def torch_module(
     Returns
     -------
     type[torch.nn.Module]
-        The torch.nn.Module.
+        The torch.nn.Module with auto-generated delegation methods if applicable.
 
     Examples
     --------
     >>> @torch_module
     ... class MyModule(NativeOP):
-    ...     pass
+    ...     pass  # forward() auto-generated from call() if it exists
     """
 
     @wraps(module, updated=())

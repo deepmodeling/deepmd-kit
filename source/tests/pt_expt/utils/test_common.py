@@ -40,7 +40,7 @@ def test_torch_module_auto_generates_forward() -> None:
 
     module = MockModule()
     input_tensor = torch.tensor([1.0, 2.0, 3.0], device=torch.device("cpu"))
-    output = module.forward(input_tensor)
+    output = module(input_tensor)
     expected = input_tensor * 2
     assert torch.allclose(output, expected)
 
@@ -82,7 +82,7 @@ def test_torch_module_respects_explicit_forward() -> None:
 
     module = MockModule()
     input_tensor = torch.tensor([1.0, 2.0, 3.0], device=torch.device("cpu"))
-    output = module.forward(input_tensor)
+    output = module(input_tensor)
     expected = input_tensor * 3  # Should use the explicit forward, not call()
     assert torch.allclose(output, expected)
 
