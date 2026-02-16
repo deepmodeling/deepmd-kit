@@ -88,7 +88,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 if model_ret["energy_derv_c"] is not None:
                     model_predict["extended_virial"] = model_ret[
                         "energy_derv_c"
-                    ].squeeze(-3)
+                    ].squeeze(-2)
                 else:
                     model_predict["extended_virial"] = model_ret["energy_derv_c"]
         else:
@@ -96,6 +96,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 model_predict["dforce"] = model_ret["dforce"]
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
+        if self._enable_hessian:
+            model_predict["hessian"] = model_ret["energy_derv_r_derv_r"]
         return model_predict
 
     def call(
@@ -132,7 +134,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             if do_atomic_virial:
                 derv_c = model_ret.get("energy_derv_c")
                 if derv_c is not None:
-                    model_predict["atom_virial"] = derv_c.squeeze(-3)
+                    model_predict["atom_virial"] = derv_c.squeeze(-2)
                 else:
                     model_predict["atom_virial"] = derv_c
         else:
@@ -140,6 +142,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 model_predict["force"] = model_ret["dforce"]
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
+        if self._enable_hessian:
+            model_predict["hessian"] = model_ret["energy_derv_r_derv_r"]
         return model_predict
 
     forward_lower = call_lower
@@ -162,7 +166,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             output_def["virial"] = out_def_data["energy_derv_c_redu"]
             output_def["virial"].squeeze(-2)
             output_def["atom_virial"] = out_def_data["energy_derv_c"]
-            output_def["atom_virial"].squeeze(-3)
+            output_def["atom_virial"].squeeze(-2)
         if "mask" in out_def_data:
             output_def["mask"] = out_def_data["mask"]
         if self._enable_hessian:

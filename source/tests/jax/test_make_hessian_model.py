@@ -100,7 +100,7 @@ class HessianTest:
         )
         # compare hess and value models
         np.testing.assert_allclose(ret_dict0["energy"], ret_dict1["energy"])
-        ana_hess = ret_dict0["energy_derv_r_derv_r"]
+        ana_hess = ret_dict0["hessian"]
 
         # compute finite difference
         fnt_hess = []
@@ -121,7 +121,7 @@ class HessianTest:
                 return ret
 
             def ff(xx):
-                return np_infer(xx)["energy_redu"]
+                return np_infer(xx)["energy"]
 
             xx = to_numpy_array(coord[ii])
             fnt_hess.append(finite_hessian(ff, xx, delta=delta).squeeze())

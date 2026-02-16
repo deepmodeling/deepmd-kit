@@ -46,8 +46,8 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         md0 = EnergyModel(ds, ft, type_map=type_map)
         md1 = EnergyModel.deserialize(md0.serialize())
 
-        ret0 = md0.call_lower(self.coord_ext, self.atype_ext, self.nlist)
-        ret1 = md1.call_lower(self.coord_ext, self.atype_ext, self.nlist)
+        ret0 = md0.call_common_lower(self.coord_ext, self.atype_ext, self.nlist)
+        ret1 = md1.call_common_lower(self.coord_ext, self.atype_ext, self.nlist)
 
         np.testing.assert_allclose(ret0["energy"], ret1["energy"])
         np.testing.assert_allclose(ret0["energy_redu"], ret1["energy_redu"])
@@ -80,8 +80,8 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         args32 = [self.coord_ext, self.atype_ext, self.nlist]
         args32[0] = args32[0].astype(np.float32)
 
-        model_l_ret_64 = md1.call_lower(*args64, fparam=fparam, aparam=aparam)
-        model_l_ret_32 = md1.call_lower(*args32, fparam=fparam, aparam=aparam)
+        model_l_ret_64 = md1.call_common_lower(*args64, fparam=fparam, aparam=aparam)
+        model_l_ret_32 = md1.call_common_lower(*args32, fparam=fparam, aparam=aparam)
 
         for ii in model_l_ret_32.keys():
             if model_l_ret_32[ii] is None:
@@ -134,8 +134,8 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         args32[0] = args32[0].astype(np.float32)
         args32[2] = args32[2].astype(np.float32)
 
-        model_l_ret_64 = md1.call(*args64, fparam=fparam, aparam=aparam)
-        model_l_ret_32 = md1.call(*args32, fparam=fparam, aparam=aparam)
+        model_l_ret_64 = md1.call_common(*args64, fparam=fparam, aparam=aparam)
+        model_l_ret_32 = md1.call_common(*args32, fparam=fparam, aparam=aparam)
 
         for ii in model_l_ret_32.keys():
             if model_l_ret_32[ii] is None:
