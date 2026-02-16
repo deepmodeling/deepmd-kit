@@ -309,12 +309,19 @@ class SpinModel(NativeOP):
         backbone_model_atomic_output_def[var_name].magnetic = True
         return ModelOutputDef(backbone_model_atomic_output_def)
 
+    def translated_output_def(self) -> dict:
+        """Get the translated output definition.
+
+        SpinModel returns raw keys from call(), so translated_output_def
+        returns the raw model output definition.
+        """
+        return self.model_output_def().get_data()
+
     def __getattr__(self, name: str) -> Any:
         """Get attribute from the wrapped model."""
-        if name in self.__dict__:
-            return self.__dict__[name]
-        else:
-            return getattr(self.backbone_model, name)
+        if "backbone_model" not in self.__dict__:
+            raise AttributeError(name)
+        return getattr(self.backbone_model, name)
 
     def serialize(self) -> dict:
         return {

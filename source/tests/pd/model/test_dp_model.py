@@ -313,7 +313,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         args1 = [
             to_paddle_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
         ]
-        ret0 = md0.call_lower(*args0)
+        ret0 = md0.call_common_lower(*args0)
         ret1 = md1.forward_common_lower(*args1)
         np.testing.assert_allclose(
             ret0["energy"],
