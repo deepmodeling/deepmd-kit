@@ -186,8 +186,8 @@ class TestProperty(CommonTest, ModelTest, unittest.TestCase):
         property_name = self.data["fitting_net"]["property_name"]
         if backend in {self.RefBackend.DP, self.RefBackend.JAX}:
             return (
-                ret[f"{property_name}_redu"].ravel(),
                 ret[property_name].ravel(),
+                ret[f"atom_{property_name}"].ravel(),
             )
         elif backend is self.RefBackend.PT:
             return (
