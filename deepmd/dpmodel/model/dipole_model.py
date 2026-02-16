@@ -75,22 +75,11 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             model_predict["dipole"] = model_ret["dipole"]
             model_predict["global_dipole"] = model_ret["dipole_redu"]
             if self.do_grad_r("dipole"):
-                if model_ret.get("dipole_derv_r") is not None:
-                    model_predict["force"] = model_ret["dipole_derv_r"].squeeze(-2)
-                else:
-                    model_predict["force"] = model_ret.get("dipole_derv_r")
+                model_predict["force"] = model_ret.get("dipole_derv_r")
             if self.do_grad_c("dipole"):
-                derv_c_redu = model_ret.get("dipole_derv_c_redu")
-                if derv_c_redu is not None:
-                    model_predict["virial"] = derv_c_redu.squeeze(-2)
-                else:
-                    model_predict["virial"] = derv_c_redu
+                model_predict["virial"] = model_ret.get("dipole_derv_c_redu")
                 if do_atomic_virial:
-                    derv_c = model_ret.get("dipole_derv_c")
-                    if derv_c is not None:
-                        model_predict["atom_virial"] = derv_c.squeeze(-2)
-                    else:
-                        model_predict["atom_virial"] = derv_c
+                    model_predict["atom_virial"] = model_ret.get("dipole_derv_c")
             if "mask" in model_ret:
                 model_predict["mask"] = model_ret["mask"]
         else:
@@ -122,24 +111,11 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             model_predict["dipole"] = model_ret["dipole"]
             model_predict["global_dipole"] = model_ret["dipole_redu"]
             if self.do_grad_r("dipole"):
-                if model_ret.get("dipole_derv_r") is not None:
-                    model_predict["extended_force"] = model_ret[
-                        "dipole_derv_r"
-                    ].squeeze(-2)
-                else:
-                    model_predict["extended_force"] = model_ret.get("dipole_derv_r")
+                model_predict["extended_force"] = model_ret.get("dipole_derv_r")
             if self.do_grad_c("dipole"):
-                derv_c_redu = model_ret.get("dipole_derv_c_redu")
-                if derv_c_redu is not None:
-                    model_predict["virial"] = derv_c_redu.squeeze(-2)
-                else:
-                    model_predict["virial"] = derv_c_redu
+                model_predict["virial"] = model_ret.get("dipole_derv_c_redu")
                 if do_atomic_virial:
-                    derv_c = model_ret.get("dipole_derv_c")
-                    if derv_c is not None:
-                        model_predict["extended_virial"] = derv_c.squeeze(-2)
-                    else:
-                        model_predict["extended_virial"] = derv_c
+                    model_predict["extended_virial"] = model_ret.get("dipole_derv_c")
         else:
             model_predict = model_ret
         return model_predict
