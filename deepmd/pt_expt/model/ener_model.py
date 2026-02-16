@@ -91,7 +91,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
             if do_atomic_virial:
                 model_predict["extended_virial"] = model_ret["energy_derv_c"].squeeze(
-                    -3
+                    -2
                 )
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]

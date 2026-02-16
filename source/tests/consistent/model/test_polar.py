@@ -184,8 +184,8 @@ class TestPolar(CommonTest, ModelTest, unittest.TestCase):
         # shape not matched. ravel...
         if backend in {self.RefBackend.DP, self.RefBackend.JAX}:
             return (
-                ret["polarizability_redu"].ravel(),
-                ret["polarizability"].ravel(),
+                ret["global_polar"].ravel(),
+                ret["polar"].ravel(),
             )
         elif backend is self.RefBackend.PT:
             return (

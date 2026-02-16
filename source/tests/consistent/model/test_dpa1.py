@@ -223,8 +223,8 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
         # shape not matched. ravel...
         if backend is self.RefBackend.DP:
             return (
-                ret["energy_redu"].ravel(),
                 ret["energy"].ravel(),
+                ret["atom_energy"].ravel(),
                 SKIP_FLAG,
                 SKIP_FLAG,
                 SKIP_FLAG,
@@ -255,10 +255,10 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
             )
         elif backend is self.RefBackend.JAX:
             return (
-                ret["energy_redu"].ravel(),
                 ret["energy"].ravel(),
-                ret["energy_derv_r"].ravel(),
-                ret["energy_derv_c_redu"].ravel(),
-                ret["energy_derv_c"].ravel(),
+                ret["atom_energy"].ravel(),
+                ret["force"].ravel(),
+                ret["virial"].ravel(),
+                ret["atom_virial"].ravel(),
             )
         raise ValueError(f"Unknown backend: {backend}")

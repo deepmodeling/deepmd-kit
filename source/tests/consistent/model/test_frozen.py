@@ -151,7 +151,7 @@ class TestFrozen(CommonTest, ModelTest, unittest.TestCase):
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         # shape not matched. ravel...
         if backend is self.RefBackend.DP:
-            return (ret["energy_redu"].ravel(), ret["energy"].ravel())
+            return (ret["energy"].ravel(), ret["atom_energy"].ravel())
         elif backend is self.RefBackend.PT:
             return (ret["energy"].ravel(), ret["atom_energy"].ravel())
         elif backend is self.RefBackend.TF:

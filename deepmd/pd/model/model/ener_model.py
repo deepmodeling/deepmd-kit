@@ -92,7 +92,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
                 if do_atomic_virial:
                     model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(
-                        -3
+                        -2
                     )
                 else:
                     model_predict["atom_virial"] = paddle.zeros(

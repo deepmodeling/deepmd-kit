@@ -79,7 +79,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
                 model_predict["virial"] = model_ret["dipole_derv_c_redu"].squeeze(-2)
                 if do_atomic_virial:
                     model_predict["atom_virial"] = model_ret["dipole_derv_c"].squeeze(
-                        -3
+                        -2
                     )
             if "mask" in model_ret:
                 model_predict["mask"] = model_ret["mask"]

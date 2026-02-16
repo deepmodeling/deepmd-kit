@@ -184,8 +184,8 @@ class TestDOS(CommonTest, ModelTest, unittest.TestCase):
         # shape not matched. ravel...
         if backend in {self.RefBackend.DP, self.RefBackend.JAX}:
             return (
-                ret["dos_redu"].ravel(),
                 ret["dos"].ravel(),
+                ret["atom_dos"].ravel(),
             )
         elif backend is self.RefBackend.PT:
             return (

@@ -190,7 +190,7 @@ class TestDipole(CommonTest, ModelTest, unittest.TestCase):
         # shape not matched. ravel...
         if backend in {self.RefBackend.DP, self.RefBackend.JAX}:
             return (
-                ret["dipole_redu"].ravel(),
+                ret["global_dipole"].ravel(),
                 ret["dipole"].ravel(),
             )
         elif backend is self.RefBackend.PT:
