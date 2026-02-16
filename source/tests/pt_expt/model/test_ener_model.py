@@ -197,7 +197,7 @@ class TestEnergyModel(unittest.TestCase):
             self.assertIn(key, ret_eager_zero)
 
         # --- trace and export ---
-        traced = md.forward_lower(
+        traced = md.forward_lower_exportable(
             ext_coord,
             ext_atype,
             nlist_t,
