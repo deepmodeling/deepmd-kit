@@ -332,6 +332,22 @@ def torch_module(
             if not handled:
                 super().__setattr__(name, value)
 
+    # Auto-generate forward -> call redirect if not explicitly defined
+    if hasattr(module, "call") and "forward" not in module.__dict__:
+
+        def forward(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN001
+            return self.call(*args, **kwargs)
+
+        TorchModule.forward = forward
+
+    # Auto-generate forward_lower -> call_lower redirect if not explicitly defined
+    if hasattr(module, "call_lower") and "forward_lower" not in module.__dict__:
+
+        def forward_lower(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN001
+            return self.call_lower(*args, **kwargs)
+
+        TorchModule.forward_lower = forward_lower
+
     return TorchModule
 
 
