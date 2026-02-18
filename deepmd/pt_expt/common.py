@@ -160,7 +160,14 @@ def _auto_wrap_native_op(value: NativeOP) -> torch.nn.Module:
             {"forward": lambda self, *args, **kwargs: self.call(*args, **kwargs)},
         )
         _AUTO_WRAPPED_CLASSES[cls] = torch_module(wrapped)
-    return _AUTO_WRAPPED_CLASSES[cls].deserialize(value.serialize())
+    wrapped_cls = _AUTO_WRAPPED_CLASSES[cls]
+    if not (hasattr(value, "serialize") and hasattr(wrapped_cls, "deserialize")):
+        raise TypeError(
+            f"Cannot auto-wrap {cls.__name__}: "
+            "it must implement serialize()/deserialize() or be explicitly "
+            "registered via register_dpmodel_mapping()."
+        )
+    return wrapped_cls.deserialize(value.serialize())
 
 
 def _try_convert_list(name: str, value: list) -> torch.nn.Module | None:
