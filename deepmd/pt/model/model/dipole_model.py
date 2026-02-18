@@ -47,7 +47,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             output_def["virial"] = out_def_data["dipole_derv_c_redu"]
             output_def["virial"].squeeze(-2)
             output_def["atom_virial"] = out_def_data["dipole_derv_c"]
-            output_def["atom_virial"].squeeze(-3)
+            output_def["atom_virial"].squeeze(-2)
         if "mask" in out_def_data:
             output_def["mask"] = out_def_data["mask"]
         return output_def
@@ -122,7 +122,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
                 if do_atomic_virial:
                     model_predict["extended_virial"] = model_ret[
                         "dipole_derv_c"
-                    ].squeeze(-3)
+                    ].squeeze(-2)
         else:
             model_predict = model_ret
         return model_predict

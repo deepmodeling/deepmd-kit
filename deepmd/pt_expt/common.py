@@ -300,6 +300,20 @@ def torch_module(
 ) -> type[torch.nn.Module]:
     """Convert a NativeOP to a torch.nn.Module.
 
+    This decorator wraps a NativeOP class to make it a PyTorch module, handling
+    initialization, attribute setting, and method delegation automatically.
+
+    **Auto-generated methods:**
+
+    - If the wrapped class has a ``call()`` method but does not explicitly define
+      ``forward()``, a ``forward()`` method will be auto-generated that delegates
+      to ``call()``.
+    - If the wrapped class has a ``call_lower()`` method but does not explicitly
+      define ``forward_lower()``, a ``forward_lower()`` method will be auto-generated
+      that delegates to ``call_lower()``.
+    - Explicit ``forward()`` or ``forward_lower()`` definitions in the wrapped class
+      are always respected and will not be overridden.
+
     Parameters
     ----------
     module : type[NativeOP]
@@ -308,13 +322,13 @@ def torch_module(
     Returns
     -------
     type[torch.nn.Module]
-        The torch.nn.Module.
+        The torch.nn.Module with auto-generated delegation methods if applicable.
 
     Examples
     --------
     >>> @torch_module
     ... class MyModule(NativeOP):
-    ...     pass
+    ...     pass  # forward() auto-generated from call() if it exists
     """
 
     @wraps(module, updated=())
@@ -331,6 +345,22 @@ def torch_module(
             handled, value = dpmodel_setattr(self, name, value)
             if not handled:
                 super().__setattr__(name, value)
+
+    # Auto-generate forward -> call redirect if not explicitly defined
+    if hasattr(module, "call") and "forward" not in module.__dict__:
+
+        def forward(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN001
+            return self.call(*args, **kwargs)
+
+        TorchModule.forward = forward
+
+    # Auto-generate forward_lower -> call_lower redirect if not explicitly defined
+    if hasattr(module, "call_lower") and "forward_lower" not in module.__dict__:
+
+        def forward_lower(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN001
+            return self.call_lower(*args, **kwargs)
+
+        TorchModule.forward_lower = forward_lower
 
     return TorchModule
 

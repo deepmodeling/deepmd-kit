@@ -3273,6 +3273,23 @@ def training_args(
     doc_model_prob = "The visiting probability of each model for each training step in the multi-task mode."
     doc_data_dict = "The multiple definition of the data, used in the multi-task mode."
     doc_acc_freq = "Gradient accumulation steps (number of steps to accumulate gradients before performing an update)."
+    doc_zero_stage = (
+        "ZeRO optimization stage for distributed training memory reduction. "
+        "0: standard DDP, lowest communication overhead but highest memory usage "
+        "(full optimizer states, gradients, and parameters replicated on every GPU). "
+        "1: DDP + ZeRO stage-1, shards optimizer states across GPUs via "
+        "ZeroRedundancyOptimizer; same communication volume as DDP (2x model size) "
+        "but reduces optimizer memory to 1/N per GPU. "
+        "2: FSDP2 stage-2, shards optimizer states and gradients; same communication "
+        "volume as stage-1 but further reduces gradient memory to 1/N per GPU. "
+        "Note: FSDP2 introduces DTensor dispatch overhead that can slow down "
+        "models with many small layers; use torch.compile to mitigate. "
+        "3: FSDP2 stage-3, shards parameters as well; maximum memory savings but "
+        "50% more communication (3x model size) due to parameter all-gather in "
+        "both forward and backward passes. "
+        "Default is 0. Requires distributed launch via torchrun. "
+        "Currently supports single-task training; does not support LKF or change_bias_after_training."
+    )
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
@@ -3394,6 +3411,13 @@ def training_args(
             optional=True,
             default=1,
             doc=doc_only_pd_supported + doc_acc_freq,
+        ),
+        Argument(
+            "zero_stage",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_only_pt_supported + doc_zero_stage,
         ),
     ]
     variants = [
