@@ -6,8 +6,11 @@
 
 ```python
 import unittest
+
 import numpy as np
+
 from deepmd.dpmodel.descriptor import DescrptYourName
+
 from ...seed import GLOBAL_SEED
 from .case_single_frame_with_nlist import TestCaseSingleFrameWithNlist
 
@@ -40,156 +43,167 @@ Reference: `source/tests/common/dpmodel/test_descriptor_se_t.py`
 
 **Create** `source/tests/pt_expt/descriptor/test_<name>.py`
 
-Three test types: consistency, exportable, make_fx. Use `itertools.product` loops inside methods (not `pytest.mark.parametrize`) when the class inherits `unittest.TestCase`.
+Three test types: consistency, exportable, make_fx. Use `pytest.mark.parametrize` with trailing comments explaining each parameter. Do **not** inherit from `unittest.TestCase`. Use `setup_method` instead of `setUp`.
 
 ```python
-import itertools
-import unittest
 import numpy as np
+import pytest
 import torch
 from torch.fx.experimental.proxy_tensor import make_fx
+
 from deepmd.dpmodel.descriptor import DescrptYourName as DPDescrptYourName
 from deepmd.pt_expt.descriptor.your_name import DescrptYourName
 from deepmd.pt_expt.utils import env
 from deepmd.pt_expt.utils.env import PRECISION_DICT
+
 from ...pt.model.test_env_mat import TestCaseSingleFrameWithNlist
 from ...pt.model.test_mlp import get_tols
 from ...seed import GLOBAL_SEED
 
 
-class TestDescrptYourName(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def setUp(self) -> None:
+class TestDescrptYourName(TestCaseSingleFrameWithNlist):
+    def setup_method(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
         self.device = env.DEVICE
 
-    def test_consistency(self) -> None:
+    @pytest.mark.parametrize("idt", [False, True])  # resnet_dt
+    @pytest.mark.parametrize("prec", ["float64", "float32"])  # precision
+    def test_consistency(self, idt, prec) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         _, _, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
-        dstd = 0.1 + np.abs(rng.normal(size=(self.nt, nnei, 4)))
+        dstd = rng.normal(size=(self.nt, nnei, 4))
+        dstd = 0.1 + np.abs(dstd)
 
-        for idt, prec in itertools.product([False, True], ["float64", "float32"]):
-            dtype = PRECISION_DICT[prec]
-            rtol, atol = get_tols(prec)
-            dd0 = DescrptYourName(
-                self.rcut,
-                self.rcut_smth,
-                self.sel,
-                precision=prec,
-                resnet_dt=idt,
-                seed=GLOBAL_SEED,
-            ).to(self.device)
-            dd0.davg = torch.tensor(davg, dtype=dtype, device=self.device)
-            dd0.dstd = torch.tensor(dstd, dtype=dtype, device=self.device)
-            # Forward
-            rd0, _, _, _, _ = dd0(
-                torch.tensor(self.coord_ext, dtype=dtype, device=self.device),
-                torch.tensor(self.atype_ext, dtype=int, device=self.device),
-                torch.tensor(self.nlist, dtype=int, device=self.device),
-            )
-            # Serialize/deserialize round-trip
-            dd1 = DescrptYourName.deserialize(dd0.serialize())
-            rd1, _, _, _, sw1 = dd1(
-                torch.tensor(self.coord_ext, dtype=dtype, device=self.device),
-                torch.tensor(self.atype_ext, dtype=int, device=self.device),
-                torch.tensor(self.nlist, dtype=int, device=self.device),
-            )
-            np.testing.assert_allclose(
-                rd0.detach().cpu().numpy(),
-                rd1.detach().cpu().numpy(),
-                rtol=rtol,
-                atol=atol,
-            )
-            # Permutation equivariance
-            np.testing.assert_allclose(
-                rd0.detach().cpu().numpy()[0][self.perm[: self.nloc]],
-                rd0.detach().cpu().numpy()[1],
-                rtol=rtol,
-                atol=atol,
-            )
-            # Compare with dpmodel
-            dd2 = DPDescrptYourName.deserialize(dd0.serialize())
-            rd2, _, _, _, sw2 = dd2.call(self.coord_ext, self.atype_ext, self.nlist)
-            np.testing.assert_allclose(
-                rd1.detach().cpu().numpy(), rd2, rtol=rtol, atol=atol
-            )
-            np.testing.assert_allclose(
-                sw1.detach().cpu().numpy(), sw2, rtol=rtol, atol=atol
-            )
+        dtype = PRECISION_DICT[prec]
+        rtol, atol = get_tols(prec)
+        err_msg = f"idt={idt} prec={prec}"
+        dd0 = DescrptYourName(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+            precision=prec,
+            resnet_dt=idt,
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        dd0.davg = torch.tensor(davg, dtype=dtype, device=self.device)
+        dd0.dstd = torch.tensor(dstd, dtype=dtype, device=self.device)
+        rd0, _, _, _, _ = dd0(
+            torch.tensor(self.coord_ext, dtype=dtype, device=self.device),
+            torch.tensor(self.atype_ext, dtype=int, device=self.device),
+            torch.tensor(self.nlist, dtype=int, device=self.device),
+        )
+        # Serialize/deserialize round-trip
+        dd1 = DescrptYourName.deserialize(dd0.serialize())
+        rd1, _, _, _, sw1 = dd1(
+            torch.tensor(self.coord_ext, dtype=dtype, device=self.device),
+            torch.tensor(self.atype_ext, dtype=int, device=self.device),
+            torch.tensor(self.nlist, dtype=int, device=self.device),
+        )
+        np.testing.assert_allclose(
+            rd0.detach().cpu().numpy(),
+            rd1.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+            err_msg=err_msg,
+        )
+        # Permutation equivariance
+        np.testing.assert_allclose(
+            rd0.detach().cpu().numpy()[0][self.perm[: self.nloc]],
+            rd0.detach().cpu().numpy()[1],
+            rtol=rtol,
+            atol=atol,
+            err_msg=err_msg,
+        )
+        # Compare with dpmodel
+        dd2 = DPDescrptYourName.deserialize(dd0.serialize())
+        rd2, _, _, _, sw2 = dd2.call(
+            self.coord_ext,
+            self.atype_ext,
+            self.nlist,
+        )
+        np.testing.assert_allclose(
+            rd1.detach().cpu().numpy(), rd2, rtol=rtol, atol=atol, err_msg=err_msg
+        )
+        np.testing.assert_allclose(
+            sw1.detach().cpu().numpy(), sw2, rtol=rtol, atol=atol, err_msg=err_msg
+        )
 
-    def test_exportable(self) -> None:
+    @pytest.mark.parametrize("idt", [False, True])  # resnet_dt
+    @pytest.mark.parametrize("prec", ["float64", "float32"])  # precision
+    def test_exportable(self, idt, prec) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         _, _, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
-        dstd = 0.1 + np.abs(rng.normal(size=(self.nt, nnei, 4)))
+        dstd = rng.normal(size=(self.nt, nnei, 4))
+        dstd = 0.1 + np.abs(dstd)
 
-        for idt, prec in itertools.product([False, True], ["float64", "float32"]):
-            dtype = PRECISION_DICT[prec]
-            dd0 = DescrptYourName(
-                self.rcut,
-                self.rcut_smth,
-                self.sel,
-                precision=prec,
-                resnet_dt=idt,
-                seed=GLOBAL_SEED,
-            ).to(self.device)
-            dd0.davg = torch.tensor(davg, dtype=dtype, device=self.device)
-            dd0.dstd = torch.tensor(dstd, dtype=dtype, device=self.device)
-            dd0 = dd0.eval()
-            inputs = (
-                torch.tensor(self.coord_ext, dtype=dtype, device=self.device),
-                torch.tensor(self.atype_ext, dtype=int, device=self.device),
-                torch.tensor(self.nlist, dtype=int, device=self.device),
-            )
-            torch.export.export(dd0, inputs)
+        dtype = PRECISION_DICT[prec]
+        dd0 = DescrptYourName(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+            precision=prec,
+            resnet_dt=idt,
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        dd0.davg = torch.tensor(davg, dtype=dtype, device=self.device)
+        dd0.dstd = torch.tensor(dstd, dtype=dtype, device=self.device)
+        dd0 = dd0.eval()
+        inputs = (
+            torch.tensor(self.coord_ext, dtype=dtype, device=self.device),
+            torch.tensor(self.atype_ext, dtype=int, device=self.device),
+            torch.tensor(self.nlist, dtype=int, device=self.device),
+        )
+        torch.export.export(dd0, inputs)
 
-    def test_make_fx(self) -> None:
+    @pytest.mark.parametrize("prec", ["float64"])  # precision — float64 only
+    def test_make_fx(self, prec) -> None:
         """Verify make_fx traces forward + autograd (for forward_lower)."""
         rng = np.random.default_rng(GLOBAL_SEED)
         _, _, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
-        dstd = 0.1 + np.abs(rng.normal(size=(self.nt, nnei, 4)))
+        dstd = rng.normal(size=(self.nt, nnei, 4))
+        dstd = 0.1 + np.abs(dstd)
 
-        for idt, prec in itertools.product([False, True], ["float64", "float32"]):
-            dtype = PRECISION_DICT[prec]
-            rtol, atol = get_tols(prec)
-            dd0 = DescrptYourName(
-                self.rcut,
-                self.rcut_smth,
-                self.sel,
-                precision=prec,
-                resnet_dt=idt,
-                seed=GLOBAL_SEED,
-            ).to(self.device)
-            dd0.davg = torch.tensor(davg, dtype=dtype, device=self.device)
-            dd0.dstd = torch.tensor(dstd, dtype=dtype, device=self.device)
-            dd0 = dd0.eval()
+        dtype = PRECISION_DICT[prec]
+        rtol, atol = get_tols(prec)
+        dd0 = DescrptYourName(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+            precision=prec,
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        dd0.davg = torch.tensor(davg, dtype=dtype, device=self.device)
+        dd0.dstd = torch.tensor(dstd, dtype=dtype, device=self.device)
+        dd0 = dd0.eval()
 
-            coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
-            atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
-            nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
 
-            def fn(coord_ext, atype_ext, nlist):
-                coord_ext = coord_ext.detach().requires_grad_(True)
-                rd = dd0(coord_ext, atype_ext, nlist)[0]
-                grad = torch.autograd.grad(rd.sum(), coord_ext, create_graph=False)[0]
-                return rd, grad
+        def fn(coord_ext, atype_ext, nlist):
+            coord_ext = coord_ext.detach().requires_grad_(True)
+            rd = dd0(coord_ext, atype_ext, nlist)[0]
+            grad = torch.autograd.grad(rd.sum(), coord_ext, create_graph=False)[0]
+            return rd, grad
 
-            rd_eager, grad_eager = fn(coord_ext, atype_ext, nlist)
-            traced = make_fx(fn)(coord_ext, atype_ext, nlist)
-            rd_traced, grad_traced = traced(coord_ext, atype_ext, nlist)
-            np.testing.assert_allclose(
-                rd_eager.detach().cpu().numpy(),
-                rd_traced.detach().cpu().numpy(),
-                rtol=rtol,
-                atol=atol,
-            )
-            np.testing.assert_allclose(
-                grad_eager.detach().cpu().numpy(),
-                grad_traced.detach().cpu().numpy(),
-                rtol=rtol,
-                atol=atol,
-            )
+        rd_eager, grad_eager = fn(coord_ext, atype_ext, nlist)
+        traced = make_fx(fn)(coord_ext, atype_ext, nlist)
+        rd_traced, grad_traced = traced(coord_ext, atype_ext, nlist)
+        np.testing.assert_allclose(
+            rd_eager.detach().cpu().numpy(),
+            rd_traced.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+        )
+        np.testing.assert_allclose(
+            grad_eager.detach().cpu().numpy(),
+            grad_traced.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+        )
 ```
 
 Reference: `source/tests/pt_expt/descriptor/test_se_t.py`
@@ -200,7 +214,9 @@ Reference: `source/tests/pt_expt/descriptor/test_se_t.py`
 
 ```python
 from typing import Any
+
 from deepmd.dpmodel.descriptor.your_name import DescrptYourName as DescrptYourNameDP
+
 from ..common import to_array_api_strict_array
 from ..utils.exclude_mask import PairExcludeMask
 from ..utils.network import NetworkCollection
@@ -230,13 +246,18 @@ Reference: `source/tests/array_api_strict/descriptor/se_e2_r.py`
 
 **Create** `source/tests/consistent/descriptor/test_<name>.py`
 
+Two test classes: one for numerical consistency (`CommonTest`), one for API consistency (`DescriptorAPITest`).
+
 ```python
 import unittest
 from typing import Any
+
 import numpy as np
+
 from deepmd.dpmodel.descriptor.your_name import DescrptYourName as DescrptYourNameDP
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.utils.argcheck import descrpt_your_name_args
+
 from ..common import (
     INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
@@ -246,7 +267,7 @@ from ..common import (
     CommonTest,
     parameterized,
 )
-from .common import DescriptorTest
+from .common import DescriptorAPITest, DescriptorTest
 
 # Conditional imports for each backend
 if INSTALLED_PT:
@@ -292,25 +313,26 @@ class TestYourName(CommonTest, DescriptorTest, unittest.TestCase):
             "activation_function": "relu",
         }
 
-    # Set skip_* properties based on which backends are available
     @property
-    def skip_pt(self):
+    def skip_pt(self) -> bool:
         return not INSTALLED_PT
 
     @property
-    def skip_pt_expt(self):
+    def skip_pt_expt(self) -> bool:
+        # Add parameter-based skips here if needed, e.g.:
+        # return (not some_supported_param) or CommonTest.skip_pt_expt
         return CommonTest.skip_pt_expt
 
     @property
-    def skip_dp(self):
+    def skip_dp(self) -> bool:
         return CommonTest.skip_dp
 
     @property
-    def skip_jax(self):
+    def skip_jax(self) -> bool:
         return not INSTALLED_JAX
 
     @property
-    def skip_array_api_strict(self):
+    def skip_array_api_strict(self) -> bool:
         return not INSTALLED_ARRAY_API_STRICT
 
     tf_class = YourNameTF
@@ -354,37 +376,36 @@ class TestYourName(CommonTest, DescriptorTest, unittest.TestCase):
         )
         self.natoms = np.array([6, 6, 2, 4], dtype=np.int32)
 
-    # Implement eval_* methods using self.eval_*_descriptor() helpers
-    def eval_dp(self, dp_obj):
+    # Implement eval_* methods using self.eval_*_descriptor() helpers.
+    # For mixed_types descriptors (dpa1, dpa2, dpa3, se_atten_v2),
+    # pass mixed_types=True to each eval call.
+    def eval_dp(self, dp_obj: Any) -> Any:
         return self.eval_dp_descriptor(
             dp_obj, self.natoms, self.coords, self.atype, self.box
         )
 
-    def eval_pt(self, pt_obj):
+    def eval_pt(self, pt_obj: Any) -> Any:
         return self.eval_pt_descriptor(
             pt_obj, self.natoms, self.coords, self.atype, self.box
         )
 
-    def eval_pt_expt(self, pt_expt_obj):
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
         return self.eval_pt_expt_descriptor(
             pt_expt_obj, self.natoms, self.coords, self.atype, self.box
         )
 
-    def eval_jax(self, jax_obj):
+    def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_descriptor(
             jax_obj, self.natoms, self.coords, self.atype, self.box
         )
 
-    def eval_array_api_strict(self, obj):
+    def eval_array_api_strict(self, obj: Any) -> Any:
         return self.eval_array_api_strict_descriptor(
             obj, self.natoms, self.coords, self.atype, self.box
         )
 
-    def extract_ret(self, ret, backend):
+    def extract_ret(self, ret: Any, backend: Any) -> tuple:
         return (ret[0],)
-
-    # For mixed_types descriptors (dpa1, dpa2, dpa3, se_atten_v2),
-    # pass mixed_types=True to eval_*_descriptor calls.
 
     @property
     def rtol(self) -> float:
@@ -395,6 +416,37 @@ class TestYourName(CommonTest, DescriptorTest, unittest.TestCase):
     def atol(self) -> float:
         _, precision = self.param
         return 1e-10 if precision == "float64" else 1e-4
+
+
+@parameterized(
+    ("float64",),  # precision — API test only needs one precision
+)
+class TestYourNameAPI(DescriptorAPITest, unittest.TestCase):
+    @property
+    def data(self) -> dict:
+        (precision,) = self.param
+        return {
+            "sel": [9, 10],
+            "rcut_smth": 5.80,
+            "rcut": 6.00,
+            "neuron": [6, 12, 24],
+            "precision": precision,
+            "seed": 1145141919810,
+        }
+
+    dp_class = DescrptYourNameDP
+    pt_class = YourNamePT
+    pt_expt_class = YourNamePTExpt
+    args = descrpt_your_name_args()
+    ntypes = 2
+
+    @property
+    def skip_pt(self) -> bool:
+        return not INSTALLED_PT
+
+    @property
+    def skip_pt_expt(self) -> bool:
+        return not INSTALLED_PT_EXPT
 ```
 
-Reference: `source/tests/consistent/descriptor/test_se_r.py`
+Reference: `source/tests/consistent/descriptor/test_se_t.py`

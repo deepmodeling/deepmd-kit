@@ -5,7 +5,7 @@ license: LGPL-3.0-or-later
 compatibility: Requires Python 3.10+, numpy, pytest. Optional backends for full testing (torch, jax, paddle).
 metadata:
   author: deepmd-kit
-  version: "1.0"
+  version: "2.0"
 ---
 
 # Adding a New Descriptor to deepmd-kit
@@ -172,16 +172,18 @@ Reference: `deepmd/pd/model/descriptor/se_a.py`
 
 Seven test categories. See [references/test-patterns.md](references/test-patterns.md) for full code templates.
 
-| Test                  | File                                                           | Purpose                             |
-| --------------------- | -------------------------------------------------------------- | ----------------------------------- |
-| 7a. dpmodel           | `source/tests/common/dpmodel/test_descriptor_<name>.py`        | Serialize/deserialize round-trip    |
-| 7b. pt_expt           | `source/tests/pt_expt/descriptor/test_<name>.py`               | Consistency + exportable + make_fx  |
-| 7c. PT                | `source/tests/pt/model/test_descriptor_<name>.py`              | PT hard-coded tests (if applicable) |
-| 7d. PD                | `source/tests/pd/model/test_descriptor_<name>.py`              | PD hard-coded tests (if applicable) |
-| 7e. array_api_strict  | `source/tests/array_api_strict/descriptor/<name>.py`           | Wrapper for consistency tests       |
-| 7f. Universal dpmodel | `source/tests/universal/dpmodel/descriptor/test_descriptor.py` | Add parameterized entry             |
-| 7g. Universal PT      | `source/tests/universal/pt/descriptor/test_descriptor.py`      | Add parameterized entry             |
-| 7h. Consistency       | `source/tests/consistent/descriptor/test_<name>.py`            | Cross-backend comparison            |
+pt_expt tests use `pytest.mark.parametrize` (not `itertools.product`), do not inherit from `unittest.TestCase`, and use `setup_method` (not `setUp`).
+
+| Test                  | File                                                           | Purpose                                           |
+| --------------------- | -------------------------------------------------------------- | ------------------------------------------------- |
+| 7a. dpmodel           | `source/tests/common/dpmodel/test_descriptor_<name>.py`        | Serialize/deserialize round-trip                  |
+| 7b. pt_expt           | `source/tests/pt_expt/descriptor/test_<name>.py`               | Consistency + exportable + make_fx (float64 only) |
+| 7c. PT                | `source/tests/pt/model/test_descriptor_<name>.py`              | PT hard-coded tests (if applicable)               |
+| 7d. PD                | `source/tests/pd/model/test_descriptor_<name>.py`              | PD hard-coded tests (if applicable)               |
+| 7e. array_api_strict  | `source/tests/array_api_strict/descriptor/<name>.py`           | Wrapper for consistency tests                     |
+| 7f. Universal dpmodel | `source/tests/universal/dpmodel/descriptor/test_descriptor.py` | Add parameterized entry                           |
+| 7g. Universal PT      | `source/tests/universal/pt/descriptor/test_descriptor.py`      | Add parameterized entry                           |
+| 7h. Consistency       | `source/tests/consistent/descriptor/test_<name>.py`            | Cross-backend + API consistency                   |
 
 ## Verification
 
