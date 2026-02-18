@@ -194,9 +194,6 @@ class NativeNet(make_multilayer_network(NativeLayer, NativeOP)):
         super().__init__(layers)
         self.layers = torch.nn.ModuleList(self.layers)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.call(x)
-
 
 class EmbeddingNet(EmbeddingNetDP, torch.nn.Module):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
