@@ -103,7 +103,13 @@ For nested sub-components, define wrapper classes bottom-up. See `deepmd/jax/des
 
 **Create** `deepmd/pt_expt/descriptor/<name>.py`
 
-Pattern: `@torch_module` decorator + `forward()` method delegating to `call()`.
+The `@torch_module` decorator handles everything automatically:
+
+- Auto-generates `forward()` delegating to `call()` (and `forward_lower()` from `call_lower()`)
+- Auto-generates `__setattr__` that converts numpy arrays to torch buffers and dpmodel objects to pt_expt modules via a converter registry
+- Any unregistered `NativeOP` assigned as an attribute will raise `TypeError` — register it first
+
+Simple descriptors (no custom sub-components) need only an empty body:
 
 ```python
 from deepmd.dpmodel.descriptor.your_name import DescrptYourName as DescrptYourNameDP
@@ -114,11 +120,33 @@ from deepmd.pt_expt.descriptor.base_descriptor import BaseDescriptor
 @BaseDescriptor.register("your_name")
 @torch_module
 class DescrptYourName(DescrptYourNameDP):
-    def forward(self, *args, **kwargs):
-        return self.call(*args, **kwargs)
+    pass
 ```
 
-For nested sub-components, wrap and register bottom-up with `register_dpmodel_mapping`. See `deepmd/pt_expt/descriptor/se_t_tebd.py` + `se_t_tebd_block.py`.
+Standard dpmodel sub-components (`NetworkCollection`, `EmbeddingNet`, `PairExcludeMask`, `EnvMat`, `TypeEmbedNet`) are pre-registered in `deepmd/pt_expt/utils/` and converted automatically. No `__setattr__` override needed.
+
+For **custom sub-components** (e.g., a new block class inheriting `NativeOP`), create a separate wrapper file and register bottom-up with `register_dpmodel_mapping`:
+
+```python
+# deepmd/pt_expt/descriptor/your_block.py
+from deepmd.dpmodel.descriptor.your_block import YourBlock as YourBlockDP
+from deepmd.pt_expt.common import register_dpmodel_mapping, torch_module
+
+
+@torch_module
+class YourBlock(YourBlockDP):
+    pass
+
+
+register_dpmodel_mapping(
+    YourBlockDP,
+    lambda v: YourBlock.deserialize(v.serialize()),
+)
+```
+
+Then import this module in `deepmd/pt_expt/descriptor/__init__.py` for its side effect (the registration must happen before the parent descriptor is instantiated).
+
+Reference: `deepmd/pt_expt/descriptor/se_t_tebd.py` + `se_t_tebd_block.py`
 
 **Edit** `deepmd/pt_expt/descriptor/__init__.py` — add import and `__all__` entry.
 
