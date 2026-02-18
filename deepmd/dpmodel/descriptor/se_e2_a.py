@@ -138,9 +138,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
     -----------
     The currently implementation does not support the following features
 
-    1. type_one_side == False
-    2. exclude_types != []
-    3. spin is not None
+    1. exclude_types != []
+    2. spin is not None
 
     References
     ----------
