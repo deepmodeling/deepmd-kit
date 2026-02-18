@@ -453,30 +453,47 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         rr = xp.reshape(rr, (nf * nloc, nnei, 4))
         rr = xp.astype(rr, self.dstd.dtype)
 
-        if not self.type_one_side:
-            # nf x nloc -> (nf * nloc)
+        if self.type_one_side:
+            for tt in range(self.ntypes):
+                mm = exclude_mask[:, sec[tt] : sec[tt + 1]]
+                tr = rr[:, sec[tt] : sec[tt + 1], :]
+                tr = tr * xp.astype(mm[:, :, None], tr.dtype)
+                ss = tr[..., 0:1]
+                gg = self.cal_g(ss, (tt,))
+                gr += xp.sum(gg[:, :, :, None] * tr[:, :, None, :], axis=1)
+        else:
+            # Sort atoms by center type so each type forms a contiguous block.
+            # Slice indexing (arr[s:e]) is array-api compatible and lets us
+            # run cal_g only on atoms of the matching center type, keeping the
+            # same O(nf*nloc) total embedding cost as the original numpy code.
             atype_loc = xp.reshape(atype_ext[:, :nloc], (nf * nloc,))
-
-        for embedding_idx in itertools.product(
-            range(self.ntypes), repeat=self.embeddings.ndim
-        ):
-            if self.type_one_side:
-                (tt,) = embedding_idx
-            else:
-                ti, tt = embedding_idx
-            mm = exclude_mask[:, sec[tt] : sec[tt + 1]]
-            tr = rr[:, sec[tt] : sec[tt + 1], :]
-            tr = tr * xp.astype(mm[:, :, None], tr.dtype)
-            ss = tr[..., 0:1]
-            gg = self.cal_g(ss, embedding_idx)
-            gr_tmp = xp.sum(gg[:, :, :, None] * tr[:, :, None, :], axis=1)
-            if not self.type_one_side:
-                # (nf * nloc) x 1 x 1
-                ti_mask = xp.astype(
-                    xp.reshape(atype_loc == ti, (nf * nloc, 1, 1)), gr_tmp.dtype
-                )
-                gr_tmp = gr_tmp * ti_mask
-            gr += gr_tmp
+            sort_idx = xp.argsort(atype_loc)
+            unsort_idx = xp.argsort(sort_idx)
+            rr_s = xp.take(rr, sort_idx, axis=0)
+            mask_s = xp.take(exclude_mask, sort_idx, axis=0)
+            dev = array_api_compat.device(coord_ext)
+            gr_s = xp.zeros([nf * nloc, ng, 4], dtype=input_dtype, device=dev)
+            # Per-type boundaries in sorted order
+            type_ends = []
+            offset = 0
+            for ti in range(self.ntypes):
+                offset += int(xp.sum(xp.astype(atype_loc == ti, xp.int32)))
+                type_ends.append(offset)
+            type_starts = [0, *type_ends[:-1]]
+            for ti in range(self.ntypes):
+                s, e = type_starts[ti], type_ends[ti]
+                if s == e:
+                    continue
+                for tt in range(self.ntypes):
+                    mm = mask_s[s:e, sec[tt] : sec[tt + 1]]
+                    tr = rr_s[s:e, sec[tt] : sec[tt + 1], :]
+                    tr = tr * xp.astype(mm[:, :, None], tr.dtype)
+                    ss = tr[..., 0:1]
+                    gg = self.cal_g(ss, (ti, tt))
+                    gr_s[s:e] = gr_s[s:e] + xp.sum(
+                        gg[:, :, :, None] * tr[:, :, None, :], axis=1
+                    )
+            gr = xp.take(gr_s, unsort_idx, axis=0)
         gr = xp.reshape(gr, (nf, nloc, ng, 4))
         # nf x nloc x ng x 4
         gr /= self.nnei
