@@ -189,18 +189,19 @@ def _try_convert_list(name: str, value: list) -> torch.nn.Module | None:
                 )
             converted.append(c)
         return torch.nn.ModuleList(converted)
-    # List of numpy arrays → ParameterList (non-trainable)
+    # List of numpy arrays → ParameterList
     if all(isinstance(v, np.ndarray) for v in value):
         from deepmd.pt_expt.utils import env  # deferred - avoids circular import
 
-        return torch.nn.ParameterList(
-            [
+        params = []
+        for v in value:
+            t = torch.as_tensor(v, device=env.DEVICE)
+            params.append(
                 torch.nn.Parameter(
-                    torch.as_tensor(v, device=env.DEVICE), requires_grad=False
+                    t, requires_grad=t.is_floating_point() or t.is_complex()
                 )
-                for v in value
-            ]
-        )
+            )
+        return torch.nn.ParameterList(params)
     return None
 
 
