@@ -29,6 +29,9 @@ def xp_swapaxes(a: Array, axis1: int, axis2: int) -> Array:
 
 def xp_take_along_axis(arr: Array, indices: Array, axis: int) -> Array:
     xp = array_api_compat.array_namespace(arr)
+    # torch.take_along_dim requires int64 indices
+    if array_api_compat.is_torch_array(indices):
+        indices = xp.astype(indices, xp.int64)
     if Version(xp.__array_api_version__) >= Version("2024.12"):
         # see: https://github.com/data-apis/array-api-strict/blob/d086c619a58f35c38240592ef994aa19ca7beebc/array_api_strict/_indexing_functions.py#L30-L39
         return xp.take_along_axis(arr, indices, axis=axis)

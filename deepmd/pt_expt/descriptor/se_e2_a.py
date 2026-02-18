@@ -2,7 +2,7 @@
 
 import torch
 
-from deepmd.dpmodel.descriptor.se_e2_a import DescrptSeAArrayAPI as DescrptSeADP
+from deepmd.dpmodel.descriptor.se_e2_a import DescrptSeA as DescrptSeADP
 from deepmd.pt_expt.common import (
     torch_module,
 )

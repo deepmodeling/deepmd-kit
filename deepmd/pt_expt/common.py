@@ -90,11 +90,16 @@ def register_dpmodel_mapping(
 
 
 def try_convert_module(value: Any) -> torch.nn.Module | None:
-    """Convert a dpmodel object to its pt_expt wrapper if a converter is registered.
+    """Convert a dpmodel object to its pt_expt wrapper.
 
     This function looks up the exact type of *value* in the _DPMODEL_TO_PT_EXPT
     registry. If a converter is found, it invokes it to produce a torch.nn.Module
-    wrapper; otherwise it returns None.
+    wrapper.  Otherwise, if *value* is a ``NativeOP``, it is automatically
+    wrapped via ``_auto_wrap_native_op`` so that internal helper classes
+    (e.g. ``RepformerLayer``, ``DescrptBlockRepformers``) don't need explicit
+    registrations.
+
+    Returns None only for non-NativeOP values.
 
     Parameters
     ----------
@@ -106,13 +111,13 @@ def try_convert_module(value: Any) -> torch.nn.Module | None:
     -------
     torch.nn.Module or None
         The converted pt_expt module if a converter is registered for value's
-        type, otherwise None.
+        type or if the value is a NativeOP (auto-wrapped), otherwise None.
 
     Notes
     -----
-    This function uses exact type matching (not isinstance checks) to ensure
-    predictable behavior. Each dpmodel class must be explicitly registered via
-    register_dpmodel_mapping.
+    For explicitly registered types, exact type matching is used (not isinstance
+    checks).  For unregistered types, isinstance(value, NativeOP) triggers the
+    auto-wrap fallback.
 
     The function is called by dpmodel_setattr when it encounters an object that
     might be a dpmodel instance. If conversion succeeds, the caller should use
@@ -121,6 +126,81 @@ def try_convert_module(value: Any) -> torch.nn.Module | None:
     converter = _DPMODEL_TO_PT_EXPT.get(type(value))
     if converter is not None:
         return converter(value)
+    if isinstance(value, NativeOP):
+        return _auto_wrap_native_op(value)
+    return None
+
+
+# Cache of auto-wrapped classes so each dpmodel class is wrapped at most once.
+_AUTO_WRAPPED_CLASSES: dict[type, type] = {}
+
+
+def _auto_wrap_native_op(value: NativeOP) -> torch.nn.Module:
+    """Auto-wrap any NativeOP as a torch.nn.Module via ``torch_module``.
+
+    Creates a subclass with a generic ``forward`` that delegates to ``call``,
+    then applies ``torch_module`` to get full ``__setattr__`` / post-init
+    list conversion.  The wrapped class is cached per dpmodel type.
+
+    Parameters
+    ----------
+    value : NativeOP
+        The dpmodel object to wrap.
+
+    Returns
+    -------
+    torch.nn.Module
+        The wrapped pt_expt module, deserialized from value's serialized state.
+    """
+    cls = type(value)
+    if cls not in _AUTO_WRAPPED_CLASSES:
+        wrapped = type(
+            cls.__name__,
+            (cls,),
+            {"forward": lambda self, *args, **kwargs: self.call(*args, **kwargs)},
+        )
+        _AUTO_WRAPPED_CLASSES[cls] = torch_module(wrapped)
+    return _AUTO_WRAPPED_CLASSES[cls].deserialize(value.serialize())
+
+
+def _try_convert_list(name: str, value: list) -> torch.nn.Module | None:
+    """Try to convert a plain list to ModuleList or ParameterList.
+
+    Returns the converted container, or None if no conversion is needed
+    (e.g., empty list, list of scalars/strings).
+    """
+    if not value:
+        return None
+    # List of torch.nn.Module → ModuleList
+    if all(isinstance(v, torch.nn.Module) for v in value):
+        return torch.nn.ModuleList(value)
+    # List of NativeOP (not yet Module) → convert each + ModuleList
+    if all(
+        isinstance(v, NativeOP) and not isinstance(v, torch.nn.Module) for v in value
+    ):
+        converted = []
+        for v in value:
+            c = try_convert_module(v)
+            if c is None:
+                raise TypeError(
+                    f"Failed to convert {type(v).__name__} "
+                    f"in list attribute '{name}'. Please call "
+                    f"register_dpmodel_mapping for this type."
+                )
+            converted.append(c)
+        return torch.nn.ModuleList(converted)
+    # List of numpy arrays → ParameterList (non-trainable)
+    if all(isinstance(v, np.ndarray) for v in value):
+        from deepmd.pt_expt.utils import env  # deferred - avoids circular import
+
+        return torch.nn.ParameterList(
+            [
+                torch.nn.Parameter(
+                    torch.as_tensor(v, device=env.DEVICE), requires_grad=False
+                )
+                for v in value
+            ]
+        )
     return None
 
 
@@ -217,21 +297,18 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
         obj._buffers[name] = None
         return True, None
 
-    # dpmodel object → pt_expt module
+    # list of modules / NativeOP / numpy arrays → ModuleList / ParameterList
+    if isinstance(value, list) and "_modules" in obj.__dict__:
+        converted_list = _try_convert_list(name, value)
+        if converted_list is not None:
+            return False, converted_list
+
+    # dpmodel object → pt_expt module (uses auto-wrap for unregistered NativeOP)
     if "_modules" in obj.__dict__:
-        # Try to convert dpmodel objects that aren't already torch.nn.Modules
         if not isinstance(value, torch.nn.Module):
             converted = try_convert_module(value)
             if converted is not None:
                 return False, converted
-            # If this is a NativeOP that should have been registered but wasn't, raise error
-            if isinstance(value, NativeOP):
-                raise TypeError(
-                    f"Attempted to assign a dpmodel object of type {type(value).__name__} "
-                    f"but no converter is registered. Please call register_dpmodel_mapping "
-                    f"for this type. If this object doesn't need conversion, register it "
-                    f"with an identity converter: lambda v: v"
-                )
 
     return False, value
 
@@ -322,6 +399,15 @@ def torch_module(
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             torch.nn.Module.__init__(self)
             module.__init__(self, *args, **kwargs)
+            # Convert any plain lists built incrementally during __init__.
+            # (list.append() bypasses __setattr__, so dpmodel_setattr never
+            # sees the complete list; we scan __dict__ here to catch them.)
+            for name in list(self.__dict__):
+                value = self.__dict__[name]
+                if isinstance(value, list):
+                    converted = _try_convert_list(name, value)
+                    if converted is not None:
+                        setattr(self, name, converted)
 
         def __call__(self, *args: Any, **kwargs: Any) -> Any:
             # Ensure torch.nn.Module.__call__ drives forward() for export/tracing.

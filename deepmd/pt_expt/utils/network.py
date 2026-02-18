@@ -274,3 +274,29 @@ register_dpmodel_mapping(
 
 class LayerNorm(LayerNormDP, NativeLayer):
     pass
+
+
+register_dpmodel_mapping(
+    NativeLayerDP,
+    lambda v: NativeLayer.deserialize(v.serialize()),
+)
+
+register_dpmodel_mapping(
+    LayerNormDP,
+    lambda v: LayerNorm.deserialize(v.serialize()),
+)
+
+
+from deepmd.dpmodel.utils.network import Identity as IdentityDP
+
+
+@torch_module
+class Identity(IdentityDP):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.call(x)
+
+
+register_dpmodel_mapping(
+    IdentityDP,
+    lambda v: Identity.deserialize(v.serialize()),
+)
