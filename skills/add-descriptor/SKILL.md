@@ -75,6 +75,8 @@ Pattern: `@flax_module` decorator + custom `__setattr__` for attribute conversio
 from deepmd.dpmodel.descriptor.your_name import DescrptYourName as DescrptYourNameDP
 from deepmd.jax.common import ArrayAPIVariable, flax_module, to_jax_array
 from deepmd.jax.descriptor.base_descriptor import BaseDescriptor
+from deepmd.jax.utils.exclude_mask import PairExcludeMask
+from deepmd.jax.utils.network import NetworkCollection
 
 
 @BaseDescriptor.register("your_name")
@@ -170,7 +172,7 @@ Reference: `deepmd/pd/model/descriptor/se_a.py`
 
 ## Step 7: Write tests
 
-Seven test categories. See [references/test-patterns.md](references/test-patterns.md) for full code templates.
+Eight test categories. See [references/test-patterns.md](references/test-patterns.md) for full code templates.
 
 pt_expt tests use `pytest.mark.parametrize` (not `itertools.product`), do not inherit from `unittest.TestCase`, and use `setup_method` (not `setUp`).
 
@@ -181,8 +183,8 @@ pt_expt tests use `pytest.mark.parametrize` (not `itertools.product`), do not in
 | 7c. PT                | `source/tests/pt/model/test_descriptor_<name>.py`              | PT hard-coded tests (if applicable)               |
 | 7d. PD                | `source/tests/pd/model/test_descriptor_<name>.py`              | PD hard-coded tests (if applicable)               |
 | 7e. array_api_strict  | `source/tests/array_api_strict/descriptor/<name>.py`           | Wrapper for consistency tests                     |
-| 7f. Universal dpmodel | `source/tests/universal/dpmodel/descriptor/test_descriptor.py` | Add parameterized entry                           |
-| 7g. Universal PT      | `source/tests/universal/pt/descriptor/test_descriptor.py`      | Add parameterized entry                           |
+| 7f. Universal dpmodel | `source/tests/universal/dpmodel/descriptor/test_descriptor.py` | Add parametrized entry                            |
+| 7g. Universal PT      | `source/tests/universal/pt/descriptor/test_descriptor.py`      | Add parametrized entry                            |
 | 7h. Consistency       | `source/tests/consistent/descriptor/test_<name>.py`            | Cross-backend + API consistency                   |
 
 ## Verification

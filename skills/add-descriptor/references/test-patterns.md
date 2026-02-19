@@ -88,7 +88,7 @@ class TestDescrptYourName(TestCaseSingleFrameWithNlist):
         ).to(self.device)
         dd0.davg = torch.tensor(davg, dtype=dtype, device=self.device)
         dd0.dstd = torch.tensor(dstd, dtype=dtype, device=self.device)
-        rd0, _, _, _, _ = dd0(
+        rd0, _, _, _, sw0 = dd0(
             torch.tensor(self.coord_ext, dtype=dtype, device=self.device),
             torch.tensor(self.atype_ext, dtype=int, device=self.device),
             torch.tensor(self.nlist, dtype=int, device=self.device),
@@ -103,6 +103,13 @@ class TestDescrptYourName(TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(
             rd0.detach().cpu().numpy(),
             rd1.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+            err_msg=err_msg,
+        )
+        np.testing.assert_allclose(
+            sw0.detach().cpu().numpy(),
+            sw1.detach().cpu().numpy(),
             rtol=rtol,
             atol=atol,
             err_msg=err_msg,
