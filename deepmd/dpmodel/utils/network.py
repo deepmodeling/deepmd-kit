@@ -60,7 +60,7 @@ class Identity(NativeOP):
 
     @classmethod
     def deserialize(cls, data: dict) -> "Identity":
-        return Identity()
+        return cls()
 
 
 class NativeLayer(NativeOP):

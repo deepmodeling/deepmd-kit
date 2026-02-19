@@ -295,5 +295,5 @@ class Identity(IdentityDP):
 
 register_dpmodel_mapping(
     IdentityDP,
-    lambda v: Identity.deserialize(v.serialize()),
+    lambda v: Identity(),
 )
