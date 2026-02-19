@@ -221,23 +221,7 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         # shape not matched. ravel...
-        if backend is self.RefBackend.DP:
-            return (
-                ret["energy_redu"].ravel(),
-                ret["energy"].ravel(),
-                SKIP_FLAG,
-                SKIP_FLAG,
-                SKIP_FLAG,
-            )
-        elif backend is self.RefBackend.PT:
-            return (
-                ret["energy"].ravel(),
-                ret["atom_energy"].ravel(),
-                ret["force"].ravel(),
-                ret["virial"].ravel(),
-                ret["atom_virial"].ravel(),
-            )
-        elif backend is self.RefBackend.TF:
+        if backend is self.RefBackend.TF:
             return (
                 ret[0].ravel(),
                 ret[1].ravel(),
@@ -245,20 +229,24 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
                 ret[3].ravel(),
                 ret[4].ravel(),
             )
-        elif backend is self.RefBackend.PD:
+        elif backend is self.RefBackend.DP:
             return (
-                ret["energy"].flatten(),
-                ret["atom_energy"].flatten(),
-                ret["force"].flatten(),
-                ret["virial"].flatten(),
-                ret["atom_virial"].flatten(),
-            )
-        elif backend is self.RefBackend.JAX:
-            return (
-                ret["energy_redu"].ravel(),
                 ret["energy"].ravel(),
-                ret["energy_derv_r"].ravel(),
-                ret["energy_derv_c_redu"].ravel(),
-                ret["energy_derv_c"].ravel(),
+                ret["atom_energy"].ravel(),
+                SKIP_FLAG,
+                SKIP_FLAG,
+                SKIP_FLAG,
+            )
+        elif backend in {
+            self.RefBackend.PT,
+            self.RefBackend.PD,
+            self.RefBackend.JAX,
+        }:
+            return (
+                ret["energy"].ravel(),
+                ret["atom_energy"].ravel(),
+                ret["force"].ravel(),
+                ret["virial"].ravel(),
+                ret["atom_virial"].ravel(),
             )
         raise ValueError(f"Unknown backend: {backend}")

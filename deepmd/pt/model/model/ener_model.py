@@ -124,7 +124,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             if "mask" in model_ret:
                 model_predict["mask"] = model_ret["mask"]
             if self._hessian_enabled:
-                model_predict["hessian"] = model_ret["energy_derv_r_derv_r"].squeeze(-2)
+                model_predict["hessian"] = model_ret["energy_derv_r_derv_r"].squeeze(-3)
         else:
             model_predict = model_ret
             model_predict["updated_coord"] += coord

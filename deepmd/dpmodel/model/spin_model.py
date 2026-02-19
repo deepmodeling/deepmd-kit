@@ -377,7 +377,7 @@ class SpinModel(NativeOP):
         coord_updated, atype_updated = self.process_spin_input(coord, atype, spin)
         if aparam is not None:
             aparam = self.expand_aparam(aparam, nloc * 2)
-        model_predict = self.backbone_model.call(
+        model_predict = self.backbone_model.call_common(
             coord_updated,
             atype_updated,
             box,
@@ -447,7 +447,7 @@ class SpinModel(NativeOP):
         )
         if aparam is not None:
             aparam = self.expand_aparam(aparam, nloc * 2)
-        model_predict = self.backbone_model.call_lower(
+        model_predict = self.backbone_model.call_common_lower(
             extended_coord_updated,
             extended_atype_updated,
             nlist_updated,
@@ -465,5 +465,3 @@ class SpinModel(NativeOP):
         )[0]
         # for now omit the grad output
         return model_predict
-
-    forward_lower = call_lower

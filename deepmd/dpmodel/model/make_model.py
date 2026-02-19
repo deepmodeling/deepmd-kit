@@ -223,7 +223,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 check_frequency,
             )
 
-        def call(
+        def call_common(
             self,
             coord: Array,
             atype: Array,
@@ -262,7 +262,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             )
             del coord, box, fparam, aparam
             model_predict = model_call_from_call_lower(
-                call_lower=self.call_lower,
+                call_lower=self.call_common_lower,
                 rcut=self.get_rcut(),
                 sel=self.get_sel(),
                 mixed_types=self.mixed_types(),
@@ -277,7 +277,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
 
-        def call_lower(
+        def call_common_lower(
             self,
             extended_coord: Array,
             extended_atype: Array,
@@ -365,9 +365,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
             )
 
+        call = call_common
+        call_lower = call_common_lower
         forward_lower = call_lower
-        forward_common = call
-        forward_common_lower = call_lower
+        forward_common = call_common
+        forward_common_lower = call_common_lower
 
         def get_out_bias(self) -> Array:
             """Get the output bias."""

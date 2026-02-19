@@ -182,20 +182,19 @@ class TestPolar(CommonTest, ModelTest, unittest.TestCase):
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         # shape not matched. ravel...
-        if backend in {self.RefBackend.DP, self.RefBackend.JAX}:
-            return (
-                ret["polarizability_redu"].ravel(),
-                ret["polarizability"].ravel(),
-            )
-        elif backend is self.RefBackend.PT:
-            return (
-                ret["global_polar"].ravel(),
-                ret["polar"].ravel(),
-            )
-        elif backend is self.RefBackend.TF:
+        if backend is self.RefBackend.TF:
             return (
                 ret[0].ravel(),
                 ret[1].ravel(),
+            )
+        elif backend in {
+            self.RefBackend.DP,
+            self.RefBackend.PT,
+            self.RefBackend.JAX,
+        }:
+            return (
+                ret["global_polar"].ravel(),
+                ret["polar"].ravel(),
             )
         raise ValueError(f"Unknown backend: {backend}")
 

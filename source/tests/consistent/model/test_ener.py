@@ -269,31 +269,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         # shape not matched. ravel...
-        if backend is self.RefBackend.DP:
-            return (
-                ret["energy_redu"].ravel(),
-                ret["energy"].ravel(),
-                SKIP_FLAG,
-                SKIP_FLAG,
-                SKIP_FLAG,
-            )
-        elif backend is self.RefBackend.PT:
-            return (
-                ret["energy"].ravel(),
-                ret["atom_energy"].ravel(),
-                ret["force"].ravel(),
-                ret["virial"].ravel(),
-                ret["atom_virial"].ravel(),
-            )
-        elif backend is self.RefBackend.PT_EXPT:
-            return (
-                ret["energy"].ravel(),
-                ret["atom_energy"].ravel(),
-                ret["force"].ravel(),
-                ret["virial"].ravel(),
-                ret["atom_virial"].ravel(),
-            )
-        elif backend is self.RefBackend.TF:
+        if backend is self.RefBackend.TF:
             return (
                 ret[0].ravel(),
                 ret[1].ravel(),
@@ -301,21 +277,26 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
                 ret[3].ravel(),
                 ret[4].ravel(),
             )
-        elif backend is self.RefBackend.JAX:
+        elif backend is self.RefBackend.DP:
             return (
-                ret["energy_redu"].ravel(),
                 ret["energy"].ravel(),
-                ret["energy_derv_r"].ravel(),
-                ret["energy_derv_c_redu"].ravel(),
-                ret["energy_derv_c"].ravel(),
+                ret["atom_energy"].ravel(),
+                SKIP_FLAG,
+                SKIP_FLAG,
+                SKIP_FLAG,
             )
-        elif backend is self.RefBackend.PD:
+        elif backend in {
+            self.RefBackend.PT,
+            self.RefBackend.PT_EXPT,
+            self.RefBackend.JAX,
+            self.RefBackend.PD,
+        }:
             return (
-                ret["energy"].flatten(),
-                ret["atom_energy"].flatten(),
-                ret["force"].flatten(),
-                ret["virial"].flatten(),
-                ret["atom_virial"].flatten(),
+                ret["energy"].ravel(),
+                ret["atom_energy"].ravel(),
+                ret["force"].ravel(),
+                ret["virial"].ravel(),
+                ret["atom_virial"].ravel(),
             )
         raise ValueError(f"Unknown backend: {backend}")
 
@@ -536,19 +517,11 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         # shape not matched. ravel...
         if backend is self.RefBackend.DP:
             return (
-                ret["energy_redu"].ravel(),
-                ret["energy"].ravel(),
-                SKIP_FLAG,
-                SKIP_FLAG,
-                SKIP_FLAG,
-            )
-        elif backend is self.RefBackend.PT:
-            return (
                 ret["energy"].ravel(),
                 ret["atom_energy"].ravel(),
-                ret["extended_force"].ravel(),
-                ret["virial"].ravel(),
-                ret["extended_virial"].ravel(),
+                SKIP_FLAG,
+                SKIP_FLAG,
+                SKIP_FLAG,
             )
         elif backend is self.RefBackend.PT_EXPT:
             return (
@@ -558,21 +531,17 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
                 ret["energy_derv_c_redu"].ravel(),
                 ret["energy_derv_c"].ravel(),
             )
-        elif backend is self.RefBackend.JAX:
+        elif backend in {
+            self.RefBackend.PT,
+            self.RefBackend.JAX,
+            self.RefBackend.PD,
+        }:
             return (
-                ret["energy_redu"].ravel(),
                 ret["energy"].ravel(),
-                ret["energy_derv_r"].ravel(),
-                ret["energy_derv_c_redu"].ravel(),
-                ret["energy_derv_c"].ravel(),
-            )
-        elif backend is self.RefBackend.PD:
-            return (
-                ret["energy"].flatten(),
-                ret["atom_energy"].flatten(),
-                ret["extended_force"].flatten(),
-                ret["virial"].flatten(),
-                ret["extended_virial"].flatten(),
+                ret["atom_energy"].ravel(),
+                ret["extended_force"].ravel(),
+                ret["virial"].ravel(),
+                ret["extended_virial"].ravel(),
             )
         raise ValueError(f"Unknown backend: {backend}")
 
@@ -726,8 +695,8 @@ class TestEnerModelAPIs(unittest.TestCase):
         )
 
     def test_forward_common_alias(self) -> None:
-        """forward_common should be the same as call on dpmodel."""
-        ret_call = self.dp_model.call(
+        """forward_common should be the same as call_common on dpmodel."""
+        ret_call = self.dp_model.call_common(
             self.coords,
             self.atype,
             box=self.box,
@@ -741,8 +710,8 @@ class TestEnerModelAPIs(unittest.TestCase):
             np.testing.assert_equal(ret_call[key], ret_fc[key])
 
     def test_forward_common_lower_alias(self) -> None:
-        """forward_common_lower should be the same as call_lower on dpmodel."""
-        ret_call = self.dp_model.call_lower(
+        """forward_common_lower should be the same as call_common_lower on dpmodel."""
+        ret_call = self.dp_model.call_common_lower(
             self.extended_coord,
             self.extended_atype,
             self.nlist,

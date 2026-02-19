@@ -42,7 +42,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
-        model_ret = self.call(
+        model_ret = self.call_common(
             coord,
             atype,
             box,
@@ -73,7 +73,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
-        model_ret = self.call_lower(
+        model_ret = self.call_common_lower(
             extended_coord,
             extended_atype,
             nlist,
