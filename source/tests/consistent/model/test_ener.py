@@ -694,38 +694,6 @@ class TestEnerModelAPIs(unittest.TestCase):
             atol=1e-10,
         )
 
-    def test_forward_common_alias(self) -> None:
-        """forward_common should be the same as call_common on dpmodel."""
-        ret_call = self.dp_model.call_common(
-            self.coords,
-            self.atype,
-            box=self.box,
-        )
-        ret_fc = self.dp_model.forward_common(
-            self.coords,
-            self.atype,
-            box=self.box,
-        )
-        for key in ret_call:
-            np.testing.assert_equal(ret_call[key], ret_fc[key])
-
-    def test_forward_common_lower_alias(self) -> None:
-        """forward_common_lower should be the same as call_common_lower on dpmodel."""
-        ret_call = self.dp_model.call_common_lower(
-            self.extended_coord,
-            self.extended_atype,
-            self.nlist,
-            self.mapping,
-        )
-        ret_fc = self.dp_model.forward_common_lower(
-            self.extended_coord,
-            self.extended_atype,
-            self.nlist,
-            self.mapping,
-        )
-        for key in ret_call:
-            np.testing.assert_equal(ret_call[key], ret_fc[key])
-
     def test_model_output_def(self) -> None:
         """model_output_def should return the same keys and shapes on dp and pt."""
         dp_def = self.dp_model.model_output_def().get_data()

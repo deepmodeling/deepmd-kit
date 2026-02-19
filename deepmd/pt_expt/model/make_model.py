@@ -46,6 +46,16 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             """
             return self.call(*args, **kwargs)
 
+        def forward_common(self, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor]:
+            """Forward common delegates to call_common()."""
+            return self.call_common(*args, **kwargs)
+
+        def forward_common_lower(
+            self, *args: Any, **kwargs: Any
+        ) -> dict[str, torch.Tensor]:
+            """Forward common lower delegates to call_common_lower()."""
+            return self.call_common_lower(*args, **kwargs)
+
         def forward_common_atomic(
             self,
             extended_coord: torch.Tensor,

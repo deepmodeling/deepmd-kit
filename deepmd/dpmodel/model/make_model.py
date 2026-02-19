@@ -367,9 +367,6 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
 
         call = call_common
         call_lower = call_common_lower
-        forward_lower = call_lower
-        forward_common = call_common
-        forward_common_lower = call_common_lower
 
         def get_out_bias(self) -> Array:
             """Get the output bias."""
