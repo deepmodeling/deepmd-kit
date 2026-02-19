@@ -51,7 +51,10 @@ def xp_take_along_axis(arr: Array, indices: Array, axis: int) -> Array:
     else:
         indices = xp.reshape(indices, (0, 0))
 
-    offset = (xp.arange(indices.shape[0], dtype=indices.dtype) * m)[:, xp.newaxis]
+    dev = array_api_compat.device(indices)
+    offset = (xp.arange(indices.shape[0], dtype=indices.dtype, device=dev) * m)[
+        :, xp.newaxis
+    ]
     indices = xp.reshape(offset + indices, (-1,))
 
     out = xp.take(arr, indices)

@@ -540,7 +540,12 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 ret = xp.concat(
                     [
                         nlist,
-                        -1 * xp.ones([n_nf, n_nloc, nnei - n_nnei], dtype=nlist.dtype),
+                        -1
+                        * xp.ones(
+                            [n_nf, n_nloc, nnei - n_nnei],
+                            dtype=nlist.dtype,
+                            device=array_api_compat.device(nlist),
+                        ),
                     ],
                     axis=-1,
                 )
