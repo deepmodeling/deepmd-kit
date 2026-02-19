@@ -119,6 +119,8 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
                 model_predict["virial"] = model_ret["dipole_derv_c_redu"]
                 if do_atomic_virial:
                     model_predict["extended_virial"] = model_ret["dipole_derv_c"]
+            if "mask" in model_ret:
+                model_predict["mask"] = model_ret["mask"]
         else:
             model_predict = model_ret
         return model_predict

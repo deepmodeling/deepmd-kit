@@ -168,6 +168,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             else:
                 assert model_ret["dforce"] is not None
                 model_predict["dforce"] = model_ret["dforce"]
+            if "mask" in model_ret:
+                model_predict["mask"] = model_ret["mask"]
         else:
             model_predict = model_ret
         return model_predict
