@@ -70,6 +70,20 @@ xp = array_api_compat.array_namespace(coord_ext)
 device = array_api_compat.device(coord_ext)
 ```
 
+To check whether a method is within the [array API standard](https://data-apis.org/array-api/), use the following command (query `zeros_like` for example):
+
+```sh
+uvx --from array-api-strict python -c "import array_api_strict,pydoc;print(pydoc.render_doc(array_api_strict.zeros_like))"
+```
+
+If the method exists, its doc will be printed; otherwise, `AttributeError` is thrown.
+
+For methods of an `Array` class, call (query `Array.shape` for example):
+
+```sh
+uvx --from array-api-strict python -c "import array_api_strict,pydoc;print(pydoc.render_doc(array_api_strict._array_object.Array.shape))"
+```
+
 Rules:
 
 1. **Never use `np.einsum` on arrays that might be torch tensors** — torch disables `__array_function__` so `np.einsum` fails on tensors with `requires_grad=True`. Use `xp.sum` with broadcasting:
