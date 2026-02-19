@@ -1,6 +1,6 @@
 # Test Patterns for Descriptors
 
-## 7a. dpmodel self-consistency test
+## 8a. dpmodel self-consistency test
 
 **Create** `source/tests/common/dpmodel/test_descriptor_<name>.py`
 
@@ -25,7 +25,9 @@ class TestDescrptYourName(unittest.TestCase, TestCaseSingleFrameWithNlist):
         davg = rng.normal(
             size=(self.nt, nnei, 4)
         )  # 4 for full env mat, 1 for radial-only
-        dstd = 0.1 + np.abs(rng.normal(size=(self.nt, nnei, 4)))
+        dstd = 0.1 + np.abs(
+            rng.normal(size=(self.nt, nnei, 4))
+        )  # 4 for full env mat, 1 for radial-only
 
         em0 = DescrptYourName(self.rcut, self.rcut_smth, self.sel)
         em0.davg = davg
@@ -39,7 +41,7 @@ class TestDescrptYourName(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
 Reference: `source/tests/common/dpmodel/test_descriptor_se_t.py`
 
-## 7b. pt_expt unit tests
+## 8b. pt_expt unit tests
 
 **Create** `source/tests/pt_expt/descriptor/test_<name>.py`
 
@@ -215,7 +217,7 @@ class TestDescrptYourName(TestCaseSingleFrameWithNlist):
 
 Reference: `source/tests/pt_expt/descriptor/test_se_t.py`
 
-## 7e. array_api_strict wrapper
+## 8e. array_api_strict wrapper
 
 **Create** `source/tests/array_api_strict/descriptor/<name>.py`
 
@@ -249,7 +251,7 @@ class DescrptYourName(DescrptYourNameDP):
 
 Reference: `source/tests/array_api_strict/descriptor/se_e2_r.py`
 
-## 7h. Cross-backend consistency test
+## 8h. Cross-backend consistency test
 
 **Create** `source/tests/consistent/descriptor/test_<name>.py`
 
@@ -276,7 +278,8 @@ from ..common import (
 )
 from .common import DescriptorAPITest, DescriptorTest
 
-# Conditional imports for each backend
+# Conditional imports for each backend.
+# Omit any backend that has no implementation for this descriptor.
 if INSTALLED_PT:
     from deepmd.pt.model.descriptor.your_name import DescrptYourName as YourNamePT
 else:
@@ -322,7 +325,7 @@ class TestYourName(CommonTest, DescriptorTest, unittest.TestCase):
 
     @property
     def skip_pt(self) -> bool:
-        return not INSTALLED_PT
+        return CommonTest.skip_pt
 
     @property
     def skip_pt_expt(self) -> bool:
@@ -336,11 +339,11 @@ class TestYourName(CommonTest, DescriptorTest, unittest.TestCase):
 
     @property
     def skip_jax(self) -> bool:
-        return not INSTALLED_JAX
+        return CommonTest.skip_jax
 
     @property
     def skip_array_api_strict(self) -> bool:
-        return not INSTALLED_ARRAY_API_STRICT
+        return CommonTest.skip_array_api_strict
 
     tf_class = YourNameTF
     dp_class = DescrptYourNameDP

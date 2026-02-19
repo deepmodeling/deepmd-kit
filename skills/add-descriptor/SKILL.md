@@ -162,7 +162,17 @@ PT descriptors are fully reimplemented in PyTorch (not wrapping dpmodel). They i
 
 Reference: `deepmd/pt/model/descriptor/se_a.py`
 
-## Step 6: Hard-code for PD backend (if needed)
+## Step 6: Hard-code for TF backend (if needed)
+
+**Create** `deepmd/tf/descriptor/<name>.py`
+
+TF descriptors are fully reimplemented in TensorFlow. They inherit from `BaseDescriptor` and implement the TF computation graph.
+
+**Edit** `deepmd/tf/descriptor/__init__.py` — add import.
+
+Reference: `deepmd/tf/descriptor/se_a.py`
+
+## Step 7: Hard-code for PD backend (if needed)
 
 Same as PT but using Paddle. Inherit from `BaseDescriptor` and `paddle.nn.Layer`.
 
@@ -170,7 +180,7 @@ Same as PT but using Paddle. Inherit from `BaseDescriptor` and `paddle.nn.Layer`
 
 Reference: `deepmd/pd/model/descriptor/se_a.py`
 
-## Step 7: Write tests
+## Step 8: Write tests
 
 Eight test categories. See [references/test-patterns.md](references/test-patterns.md) for full code templates.
 
@@ -178,14 +188,14 @@ pt_expt tests use `pytest.mark.parametrize` (not `itertools.product`), do not in
 
 | Test                  | File                                                           | Purpose                                           |
 | --------------------- | -------------------------------------------------------------- | ------------------------------------------------- |
-| 7a. dpmodel           | `source/tests/common/dpmodel/test_descriptor_<name>.py`        | Serialize/deserialize round-trip                  |
-| 7b. pt_expt           | `source/tests/pt_expt/descriptor/test_<name>.py`               | Consistency + exportable + make_fx (float64 only) |
-| 7c. PT                | `source/tests/pt/model/test_descriptor_<name>.py`              | PT hard-coded tests (if applicable)               |
-| 7d. PD                | `source/tests/pd/model/test_descriptor_<name>.py`              | PD hard-coded tests (if applicable)               |
-| 7e. array_api_strict  | `source/tests/array_api_strict/descriptor/<name>.py`           | Wrapper for consistency tests                     |
-| 7f. Universal dpmodel | `source/tests/universal/dpmodel/descriptor/test_descriptor.py` | Add parametrized entry                            |
-| 7g. Universal PT      | `source/tests/universal/pt/descriptor/test_descriptor.py`      | Add parametrized entry                            |
-| 7h. Consistency       | `source/tests/consistent/descriptor/test_<name>.py`            | Cross-backend + API consistency                   |
+| 8a. dpmodel           | `source/tests/common/dpmodel/test_descriptor_<name>.py`        | Serialize/deserialize round-trip                  |
+| 8b. pt_expt           | `source/tests/pt_expt/descriptor/test_<name>.py`               | Consistency + exportable + make_fx (float64 only) |
+| 8c. PT                | `source/tests/pt/model/test_descriptor_<name>.py`              | PT hard-coded tests (if applicable)               |
+| 8d. PD                | `source/tests/pd/model/test_descriptor_<name>.py`              | PD hard-coded tests (if applicable)               |
+| 8e. array_api_strict  | `source/tests/array_api_strict/descriptor/<name>.py`           | Wrapper for consistency tests                     |
+| 8f. Universal dpmodel | `source/tests/universal/dpmodel/descriptor/test_descriptor.py` | Add parametrized entry                            |
+| 8g. Universal PT      | `source/tests/universal/pt/descriptor/test_descriptor.py`      | Add parametrized entry                            |
+| 8h. Consistency       | `source/tests/consistent/descriptor/test_<name>.py`            | Cross-backend + API consistency                   |
 
 ## Verification
 
@@ -225,14 +235,16 @@ print('Round-trip OK:', d.get_dim_out() == d2.get_dim_out())
 | 4    | Edit   | `deepmd/pt_expt/descriptor/__init__.py`                        |
 | 5    | Create | `deepmd/pt/model/descriptor/<name>.py` (if needed)             |
 | 5    | Edit   | `deepmd/pt/model/descriptor/__init__.py` (if needed)           |
-| 6    | Create | `deepmd/pd/model/descriptor/<name>.py` (if needed)             |
-| 6    | Edit   | `deepmd/pd/model/descriptor/__init__.py` (if needed)           |
-| 7a   | Create | `source/tests/common/dpmodel/test_descriptor_<name>.py`        |
-| 7b   | Create | `source/tests/pt_expt/descriptor/test_<name>.py`               |
-| 7c   | Create | `source/tests/pt/model/test_descriptor_<name>.py` (if PT)      |
-| 7d   | Create | `source/tests/pd/model/test_descriptor_<name>.py` (if PD)      |
-| 7e   | Create | `source/tests/array_api_strict/descriptor/<name>.py`           |
-| 7e   | Edit   | `source/tests/array_api_strict/descriptor/__init__.py`         |
-| 7f   | Edit   | `source/tests/universal/dpmodel/descriptor/test_descriptor.py` |
-| 7g   | Edit   | `source/tests/universal/pt/descriptor/test_descriptor.py`      |
-| 7h   | Create | `source/tests/consistent/descriptor/test_<name>.py`            |
+| 6    | Create | `deepmd/tf/descriptor/<name>.py` (if needed)                   |
+| 6    | Edit   | `deepmd/tf/descriptor/__init__.py` (if needed)                 |
+| 7    | Create | `deepmd/pd/model/descriptor/<name>.py` (if needed)             |
+| 7    | Edit   | `deepmd/pd/model/descriptor/__init__.py` (if needed)           |
+| 8a   | Create | `source/tests/common/dpmodel/test_descriptor_<name>.py`        |
+| 8b   | Create | `source/tests/pt_expt/descriptor/test_<name>.py`               |
+| 8c   | Create | `source/tests/pt/model/test_descriptor_<name>.py` (if PT)      |
+| 8d   | Create | `source/tests/pd/model/test_descriptor_<name>.py` (if PD)      |
+| 8e   | Create | `source/tests/array_api_strict/descriptor/<name>.py`           |
+| 8e   | Edit   | `source/tests/array_api_strict/descriptor/__init__.py`         |
+| 8f   | Edit   | `source/tests/universal/dpmodel/descriptor/test_descriptor.py` |
+| 8g   | Edit   | `source/tests/universal/pt/descriptor/test_descriptor.py`      |
+| 8h   | Create | `source/tests/consistent/descriptor/test_<name>.py`            |
