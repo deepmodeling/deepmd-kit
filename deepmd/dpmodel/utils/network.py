@@ -1265,11 +1265,14 @@ def aggregate(  # noqa: ANN201
     bin_count = xp_bincount(owners)
     bin_count = xp.where(bin_count == 0, xp.ones_like(bin_count), bin_count)
 
+    dev = array_api_compat.device(data)
     if num_owner is not None and bin_count.shape[0] != num_owner:
         difference = num_owner - bin_count.shape[0]
-        bin_count = xp.concat([bin_count, xp.ones(difference, dtype=bin_count.dtype)])
+        bin_count = xp.concat(
+            [bin_count, xp.ones(difference, dtype=bin_count.dtype, device=dev)]
+        )
 
-    output = xp.zeros((bin_count.shape[0], data.shape[1]), dtype=data.dtype)
+    output = xp.zeros((bin_count.shape[0], data.shape[1]), dtype=data.dtype, device=dev)
     output = xp_add_at(output, owners, data)
 
     if average:
