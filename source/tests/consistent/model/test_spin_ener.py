@@ -333,7 +333,6 @@ class TestSpinEnerLower(CommonTest, ModelTest, unittest.TestCase):
         self.mapping = mapping
 
         # Build extended spin from mapping
-        nall = extended_coord.shape[1]
         self.extended_spin = np.take_along_axis(
             self.spin,
             np.repeat(mapping[:, :, np.newaxis], 3, axis=2),
