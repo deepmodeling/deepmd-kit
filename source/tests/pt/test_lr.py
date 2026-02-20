@@ -7,6 +7,7 @@ import tensorflow.compat.v1 as tf
 tf.disable_eager_execution()
 
 from deepmd.pt.utils.learning_rate import (
+    LearningRateCosine,
     LearningRateExp,
 )
 from deepmd.tf.utils import (
@@ -100,6 +101,22 @@ class TestLearningRate(unittest.TestCase):
         self.assertTrue(
             np.allclose(my_vals_decay_trunc, np.clip(my_vals, a_min=min_lr, a_max=None))
         )
+
+
+class TestLearningRateCosine(unittest.TestCase):
+    def test_basic_curve(self) -> None:
+        start_lr = 1.0
+        stop_lr = 0.1
+        stop_steps = 10
+        lr = LearningRateCosine(start_lr, stop_lr, stop_steps)
+
+        self.assertTrue(np.allclose(lr.value(0), start_lr))
+        self.assertTrue(np.allclose(lr.value(stop_steps), stop_lr))
+        self.assertTrue(np.allclose(lr.value(stop_steps + 5), stop_lr))
+
+        mid_step = stop_steps // 2
+        expected_mid = stop_lr + (start_lr - stop_lr) * 0.5
+        self.assertTrue(np.allclose(lr.value(mid_step), expected_mid))
 
 
 if __name__ == "__main__":

@@ -75,6 +75,7 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
             "resnet_dt": resnet_dt,
             "precision": precision,
             "seed": 20240217,
+            "activation_function": "relu",
         }
 
     @property

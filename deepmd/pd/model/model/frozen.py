@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 from typing import (
-    Optional,
+    Any,
+    NoReturn,
 )
 
 import paddle
@@ -27,7 +28,7 @@ class FrozenModel(BaseModel):
         The path to the frozen model
     """
 
-    def __init__(self, model_file: str, **kwargs):
+    def __init__(self, model_file: str, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.model_file = model_file
         if model_file.endswith(".json"):
@@ -99,11 +100,11 @@ class FrozenModel(BaseModel):
 
     def forward(
         self,
-        coord,
-        atype,
-        box: Optional[paddle.Tensor] = None,
-        fparam: Optional[paddle.Tensor] = None,
-        aparam: Optional[paddle.Tensor] = None,
+        coord: paddle.Tensor,
+        atype: paddle.Tensor,
+        box: paddle.Tensor | None = None,
+        fparam: paddle.Tensor | None = None,
+        aparam: paddle.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, paddle.Tensor]:
         return self.model.forward(
@@ -123,7 +124,7 @@ class FrozenModel(BaseModel):
         # be a problem
         return self.model.get_model_def_script()
 
-    def get_min_nbor_dist(self) -> Optional[float]:
+    def get_min_nbor_dist(self) -> float | None:
         """Get the minimum neighbor distance."""
         return self.model.get_min_nbor_dist()
 
@@ -139,7 +140,7 @@ class FrozenModel(BaseModel):
         return model.serialize()
 
     @classmethod
-    def deserialize(cls, data: dict):
+    def deserialize(cls, data: dict) -> NoReturn:
         raise RuntimeError("Should not touch here.")
 
     def get_nnei(self) -> int:
@@ -154,9 +155,9 @@ class FrozenModel(BaseModel):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

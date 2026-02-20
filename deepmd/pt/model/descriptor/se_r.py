@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
+from collections.abc import (
     Callable,
-    Optional,
-    Union,
+)
+from typing import (
+    Any,
 )
 
 import numpy as np
@@ -81,10 +82,10 @@ if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_r"):
 class DescrptSeR(BaseDescriptor, torch.nn.Module):
     def __init__(
         self,
-        rcut,
-        rcut_smth,
-        sel,
-        neuron=[25, 50, 100],
+        rcut: float,
+        rcut_smth: float,
+        sel: list[int] | int,
+        neuron: list[int] = [25, 50, 100],
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "float64",
@@ -92,9 +93,9 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
-        type_map: Optional[list[str]] = None,
-        **kwargs,
+        seed: int | list[int] | None = None,
+        type_map: list[str] | None = None,
+        **kwargs: Any,
     ) -> None:
         super().__init__()
         self.rcut = float(rcut)
@@ -226,7 +227,9 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         """Returns the protection of building environment matrix."""
         return self.env_protection
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: Any, shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -268,7 +271,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -281,8 +284,8 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -330,7 +333,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             )
         return self.stats
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -338,7 +341,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -422,9 +425,15 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         coord_ext: torch.Tensor,
         atype_ext: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
-    ):
+        mapping: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+    ]:
         """Compute the descriptor.
 
         Parameters
@@ -575,7 +584,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         env_mat = data.pop("env_mat")
         obj = cls(**data)
 
-        def t_cvt(xx):
+        def t_cvt(xx: Any) -> torch.Tensor:
             return torch.tensor(xx, dtype=obj.prec, device=env.DEVICE)
 
         obj["davg"] = t_cvt(variables["davg"])
@@ -587,9 +596,9 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

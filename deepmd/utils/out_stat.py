@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Output statistics."""
 
-from typing import (
-    Optional,
-)
-
 import numpy as np
 
 from deepmd.env import (
@@ -15,8 +11,8 @@ from deepmd.env import (
 def compute_stats_from_redu(
     output_redu: np.ndarray,
     natoms: np.ndarray,
-    assigned_bias: Optional[np.ndarray] = None,
-    rcond: Optional[float] = None,
+    assigned_bias: np.ndarray | None = None,
+    rcond: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute the output statistics.
 
@@ -135,7 +131,7 @@ def compute_stats_from_atomic(
 def compute_stats_do_not_distinguish_types(
     output_redu: np.ndarray,
     natoms: np.ndarray,
-    assigned_bias: Optional[np.ndarray] = None,
+    assigned_bias: np.ndarray | None = None,
     intensive: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute element-independent statistics for property fitting.

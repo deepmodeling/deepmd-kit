@@ -2,6 +2,9 @@
 from copy import (
     deepcopy,
 )
+from typing import (
+    Any,
+)
 
 from deepmd.dpmodel.atomic_model import (
     DPEnergyAtomicModel,
@@ -27,15 +30,15 @@ DPEnergyModel_ = make_model(DPEnergyAtomicModel)
 class EnergyModel(DPModelCommon, DPEnergyModel_):
     def __init__(
         self,
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         DPModelCommon.__init__(self)
         DPEnergyModel_.__init__(self, *args, **kwargs)
         self._enable_hessian = False
         self.hess_fitting_def = None
 
-    def enable_hessian(self):
+    def enable_hessian(self) -> None:
         self.hess_fitting_def = deepcopy(self.atomic_output_def())
         self.hess_fitting_def["energy"].r_hessian = True
         self._enable_hessian = True
@@ -44,3 +47,28 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         if self._enable_hessian:
             return self.hess_fitting_def
         return super().atomic_output_def()
+
+    def translated_output_def(self) -> dict[str, Any]:
+        """Get the translated output definition.
+
+        Maps internal output names to user-facing names, e.g.
+        ``energy_redu`` -> ``energy``, ``energy_derv_r`` -> ``force``.
+        """
+        out_def_data = self.model_output_def().get_data()
+        output_def = {
+            "atom_energy": out_def_data["energy"],
+            "energy": out_def_data["energy_redu"],
+        }
+        if self.do_grad_r("energy"):
+            output_def["force"] = out_def_data["energy_derv_r"]
+            output_def["force"].squeeze(-2)
+        if self.do_grad_c("energy"):
+            output_def["virial"] = out_def_data["energy_derv_c_redu"]
+            output_def["virial"].squeeze(-2)
+            output_def["atom_virial"] = out_def_data["energy_derv_c"]
+            output_def["atom_virial"].squeeze(-2)
+        if "mask" in out_def_data:
+            output_def["mask"] = out_def_data["mask"]
+        if self._enable_hessian:
+            output_def["hessian"] = out_def_data["energy_derv_r_derv_r"]
+        return output_def

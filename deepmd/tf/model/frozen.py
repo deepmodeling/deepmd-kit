@@ -6,9 +6,8 @@ from enum import (
     Enum,
 )
 from typing import (
+    Any,
     NoReturn,
-    Optional,
-    Union,
 )
 
 from deepmd.entrypoints.convert_backend import (
@@ -35,6 +34,9 @@ from deepmd.tf.utils.graph import (
     get_tensor_by_name_from_graph,
     load_graph_def,
 )
+from deepmd.tf.utils.learning_rate import (
+    LearningRateExp,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -57,7 +59,7 @@ class FrozenModel(Model):
         The path to the frozen model
     """
 
-    def __init__(self, model_file: str, **kwargs) -> None:
+    def __init__(self, model_file: str, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.model_file = model_file
         if not model_file.endswith(".pb"):
@@ -83,10 +85,10 @@ class FrozenModel(Model):
         box: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        frz_model: Optional[str] = None,
-        ckpt_meta: Optional[str] = None,
+        frz_model: str | None = None,
+        ckpt_meta: str | None = None,
         suffix: str = "",
-        reuse: Optional[Union[bool, Enum]] = None,
+        reuse: bool | Enum | None = None,
     ) -> dict:
         """Build the model.
 
@@ -185,22 +187,22 @@ class FrozenModel(Model):
                 "Contribution is welcome!"
             )
 
-    def get_fitting(self) -> Union[Fitting, dict]:
+    def get_fitting(self) -> Fitting | dict:
         """Get the fitting(s)."""
         return {}
 
-    def get_loss(self, loss: dict, lr) -> Optional[Union[Loss, dict]]:
+    def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss | dict | None:
         """Get the loss function(s)."""
         # loss should be never used for a frozen model
         return
 
-    def get_rcut(self):
+    def get_rcut(self) -> float:
         return self.model.get_rcut()
 
     def get_ntypes(self) -> int:
         return self.model.get_ntypes()
 
-    def data_stat(self, data) -> None:
+    def data_stat(self, data: DeepmdDataSystem) -> None:
         pass
 
     def init_variables(
@@ -243,9 +245,9 @@ class FrozenModel(Model):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

@@ -4,6 +4,11 @@ from typing import (
     ClassVar,
 )
 
+import numpy as np
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.common import (
     NativeOP,
 )
@@ -21,21 +26,22 @@ from deepmd.jax.common import (
     to_jax_array,
 )
 from deepmd.jax.env import (
+    flax_version,
     nnx,
 )
 
 
 class ArrayAPIParam(nnx.Param):
-    def __array__(self, *args, **kwargs):
+    def __array__(self, *args: Any, **kwargs: Any) -> np.ndarray:
         return self.value.__array__(*args, **kwargs)
 
-    def __array_namespace__(self, *args, **kwargs):
+    def __array_namespace__(self, *args: Any, **kwargs: Any) -> Any:
         return self.value.__array_namespace__(*args, **kwargs)
 
-    def __dlpack__(self, *args, **kwargs):
+    def __dlpack__(self, *args: Any, **kwargs: Any) -> Any:
         return self.value.__dlpack__(*args, **kwargs)
 
-    def __dlpack_device__(self, *args, **kwargs):
+    def __dlpack_device__(self, *args: Any, **kwargs: Any) -> Any:
         return self.value.__dlpack_device__(*args, **kwargs)
 
 
@@ -54,7 +60,10 @@ class NativeLayer(NativeLayerDP):
 
 @flax_module
 class NativeNet(make_multilayer_network(NativeLayer, NativeOP)):
-    pass
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in {"layers"} and Version(flax_version) >= Version("0.12.0"):
+            value = nnx.List(value)
+        return super().__setattr__(name, value)
 
 
 class EmbeddingNet(make_embedding_network(NativeNet, NativeLayer)):
@@ -72,6 +81,11 @@ class NetworkCollection(NetworkCollectionDP):
         "embedding_network": EmbeddingNet,
         "fitting_network": FittingNet,
     }
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in {"_networks"} and Version(flax_version) >= Version("0.12.0"):
+            value = nnx.List([nnx.data(item) for item in value])
+        return super().__setattr__(name, value)
 
 
 class LayerNorm(LayerNormDP, NativeLayer):

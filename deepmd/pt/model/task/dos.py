@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-from typing import (
-    Optional,
-    Union,
-)
 
 import torch
 
@@ -48,15 +44,16 @@ class DOSFittingNet(InvarFitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        rcond: Optional[float] = None,
-        bias_dos: Optional[torch.Tensor] = None,
-        trainable: Union[bool, list[bool]] = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        rcond: float | None = None,
+        bias_dos: torch.Tensor | None = None,
+        trainable: bool | list[bool] = True,
+        seed: int | list[int] | None = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         exclude_types: list[int] = [],
         mixed_types: bool = True,
-        type_map: Optional[list[str]] = None,
+        type_map: list[str] | None = None,
+        default_fparam: list | None = None,
     ) -> None:
         if bias_dos is not None:
             self.bias_dos = bias_dos
@@ -83,6 +80,7 @@ class DOSFittingNet(InvarFitting):
             exclude_types=exclude_types,
             trainable=trainable,
             type_map=type_map,
+            default_fparam=default_fparam,
         )
 
     def output_def(self) -> FittingOutputDef:
@@ -101,7 +99,7 @@ class DOSFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "DOSFittingNet":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         data.pop("@class", None)
         data.pop("var_name", None)
         data.pop("tot_ener_zero", None)

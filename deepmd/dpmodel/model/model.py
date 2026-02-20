@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
+from typing import (
+    Any,
+)
 
 from deepmd.dpmodel.atomic_model.dp_atomic_model import (
     DPAtomicModel,
@@ -45,7 +48,9 @@ from deepmd.utils.spin import (
 )
 
 
-def _get_standard_model_components(data, ntypes):
+def _get_standard_model_components(
+    data: dict[str, Any], ntypes: int
+) -> tuple[BaseDescriptor, BaseFitting, str]:
     # descriptor
     data["descriptor"]["ntypes"] = ntypes
     data["descriptor"]["type_map"] = copy.deepcopy(data["type_map"])
@@ -181,7 +186,7 @@ def get_spin_model(data: dict) -> SpinModel:
     return SpinModel(backbone_model=backbone_model, spin=spin)
 
 
-def get_model(data: dict):
+def get_model(data: dict) -> BaseModel:
     """Get a model from a dictionary.
 
     Parameters

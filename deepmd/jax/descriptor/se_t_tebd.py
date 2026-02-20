@@ -3,6 +3,10 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.descriptor.se_t_tebd import (
     DescrptBlockSeTTebd as DescrptBlockSeTTebdDP,
 )
@@ -14,6 +18,10 @@ from deepmd.jax.common import (
 )
 from deepmd.jax.descriptor.base_descriptor import (
     BaseDescriptor,
+)
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
 )
 from deepmd.jax.utils.exclude_mask import (
     PairExcludeMask,
@@ -33,6 +41,8 @@ class DescrptBlockSeTTebd(DescrptBlockSeTTebdDP):
             value = to_jax_array(value)
             if value is not None:
                 value = ArrayAPIVariable(value)
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name in {"embeddings", "embeddings_strip"}:
             if value is not None:
                 value = NetworkCollection.deserialize(value.serialize())

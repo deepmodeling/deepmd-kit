@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    Optional,
+    Any,
 )
 
 from deepmd.tf.utils.spin import (
@@ -35,15 +35,15 @@ class DescrptSeAEbdV2(DescrptSeA):
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         type_one_side: bool = True,
         exclude_types: list[list[int]] = [],
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        spin: Optional[Spin] = None,
-        **kwargs,
+        spin: Spin | None = None,
+        **kwargs: Any,
     ) -> None:
         DescrptSeA.__init__(
             self,

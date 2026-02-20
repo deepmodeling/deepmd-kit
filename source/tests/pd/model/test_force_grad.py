@@ -5,9 +5,6 @@ import unittest
 from pathlib import (
     Path,
 )
-from typing import (
-    Optional,
-)
 
 import numpy as np
 import paddle
@@ -31,7 +28,7 @@ class CheckSymmetry(DeepmdData):
     def __init__(
         self,
         sys_path: str,
-        type_map: Optional[list[str]] = None,
+        type_map: list[str] | None = None,
     ):
         super().__init__(sys_path=sys_path, type_map=type_map)
         self.add("energy", 1, atomic=False, must=False, high_prec=True)

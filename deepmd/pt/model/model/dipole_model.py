@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Optional,
+    Any,
 )
 
 import torch
@@ -28,13 +28,13 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
 
     def __init__(
         self,
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         DPModelCommon.__init__(self)
         DPDipoleModel_.__init__(self, *args, **kwargs)
 
-    def translated_output_def(self):
+    def translated_output_def(self) -> dict[str, Any]:
         out_def_data = self.model_output_def().get_data()
         output_def = {
             "dipole": out_def_data["dipole"],
@@ -47,18 +47,18 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             output_def["virial"] = out_def_data["dipole_derv_c_redu"]
             output_def["virial"].squeeze(-2)
             output_def["atom_virial"] = out_def_data["dipole_derv_c"]
-            output_def["atom_virial"].squeeze(-3)
+            output_def["atom_virial"].squeeze(-2)
         if "mask" in out_def_data:
             output_def["mask"] = out_def_data["mask"]
         return output_def
 
     def forward(
         self,
-        coord,
-        atype,
-        box: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common(
@@ -91,15 +91,15 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
     @torch.jit.export
     def forward_lower(
         self,
-        extended_coord,
-        extended_atype,
-        nlist,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
-    ):
+        comm_dict: dict[str, torch.Tensor] | None = None,
+    ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,
@@ -122,7 +122,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
                 if do_atomic_virial:
                     model_predict["extended_virial"] = model_ret[
                         "dipole_derv_c"
-                    ].squeeze(-3)
+                    ].squeeze(-2)
         else:
             model_predict = model_ret
         return model_predict

@@ -2,7 +2,7 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
   message(STATUS "enable LAMMPS plugin mode")
   add_library(lammps_interface INTERFACE)
   if(DEFINED LAMMPS_VERSION)
-    cmake_minimum_required(VERSION 3.14)
+    cmake_minimum_required(VERSION 3.25.2)
     include(FetchContent)
     FetchContent_Declare(
       lammps_download

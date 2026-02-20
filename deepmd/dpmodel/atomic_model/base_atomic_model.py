@@ -1,12 +1,18 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import math
+from collections.abc import (
+    Callable,
+)
 from typing import (
-    Optional,
+    Any,
 )
 
 import array_api_compat
 import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    Array,
+)
 from deepmd.dpmodel.common import (
     NativeOP,
     to_numpy_array,
@@ -27,6 +33,9 @@ from deepmd.utils.finetune import (
     map_atom_exclude_types,
     map_pair_exclude_types,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 from .make_base_atomic_model import (
     make_base_atomic_model,
@@ -41,8 +50,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         type_map: list[str],
         atom_exclude_types: list[int] = [],
         pair_exclude_types: list[tuple[int, int]] = [],
-        rcond: Optional[float] = None,
-        preset_out_bias: Optional[dict[str, np.ndarray]] = None,
+        rcond: float | None = None,
+        preset_out_bias: dict[str, Array] | None = None,
     ) -> None:
         super().__init__()
         self.type_map = type_map
@@ -68,7 +77,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.out_bias = out_bias_data
         self.out_std = out_std_data
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Array) -> None:
         if key in ["out_bias"]:
             self.out_bias = value
         elif key in ["out_std"]:
@@ -76,7 +85,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Array:
         if key in ["out_bias"]:
             return self.out_bias
         elif key in ["out_std"]:
@@ -87,6 +96,14 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
+
+    def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
+        return False
+
+    def get_default_fparam(self) -> list[float] | None:
+        """Get the default frame parameters."""
+        return None
 
     def reinit_atom_exclude(
         self,
@@ -125,7 +142,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         )
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -143,13 +160,13 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
     def forward_common_atomic(
         self,
-        extended_coord: np.ndarray,
-        extended_atype: np.ndarray,
-        nlist: np.ndarray,
-        mapping: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        extended_coord: Array,
+        extended_atype: Array,
+        nlist: Array,
+        mapping: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+    ) -> dict[str, Array]:
         """Common interface for atomic inference.
 
         This method accept extended coordinates, extended atom typs, neighbor list,
@@ -219,13 +236,13 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
     def call(
         self,
-        extended_coord: np.ndarray,
-        extended_atype: np.ndarray,
-        nlist: np.ndarray,
-        mapping: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        extended_coord: Array,
+        extended_atype: Array,
+        nlist: Array,
+        mapping: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+    ) -> dict[str, Array]:
         return self.forward_common_atomic(
             extended_coord,
             extended_atype,
@@ -234,6 +251,180 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             fparam=fparam,
             aparam=aparam,
         )
+
+    def get_intensive(self) -> bool:
+        """Whether the fitting property is intensive."""
+        return False
+
+    def get_compute_stats_distinguish_types(self) -> bool:
+        """Get whether the fitting net computes stats which are not distinguished between different types of atoms."""
+        return True
+
+    def compute_or_load_out_stat(
+        self,
+        merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
+    ) -> None:
+        """
+        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `np.ndarray`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
+
+        """
+        self.change_out_bias(
+            merged,
+            stat_file_path=stat_file_path,
+            bias_adjust_mode="set-by-statistic",
+        )
+
+    def change_out_bias(
+        self,
+        sample_merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
+        bias_adjust_mode: str = "change-by-statistic",
+    ) -> None:
+        """Change the output bias according to the input data and the pretrained model.
+
+        Parameters
+        ----------
+        sample_merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `np.ndarray`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        bias_adjust_mode : str
+            The mode for changing output bias : ['change-by-statistic', 'set-by-statistic']
+            'change-by-statistic' : perform predictions on labels of target dataset,
+                    and do least square on the errors to obtain the target shift as bias.
+            'set-by-statistic' : directly use the statistic output bias in the target dataset.
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
+        """
+        from deepmd.dpmodel.utils.stat import (
+            compute_output_stats,
+        )
+
+        if bias_adjust_mode == "change-by-statistic":
+            delta_bias, out_std = compute_output_stats(
+                sample_merged,
+                self.get_ntypes(),
+                keys=list(self.atomic_output_def().keys()),
+                stat_file_path=stat_file_path,
+                model_forward=self._get_forward_wrapper_func(),
+                rcond=self.rcond,
+                preset_bias=self.preset_out_bias,
+                stats_distinguish_types=self.get_compute_stats_distinguish_types(),
+                intensive=self.get_intensive(),
+            )
+            self._store_out_stat(delta_bias, out_std, add=True)
+        elif bias_adjust_mode == "set-by-statistic":
+            bias_out, std_out = compute_output_stats(
+                sample_merged,
+                self.get_ntypes(),
+                keys=list(self.atomic_output_def().keys()),
+                stat_file_path=stat_file_path,
+                rcond=self.rcond,
+                preset_bias=self.preset_out_bias,
+                stats_distinguish_types=self.get_compute_stats_distinguish_types(),
+                intensive=self.get_intensive(),
+            )
+            self._store_out_stat(bias_out, std_out)
+        else:
+            raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
+
+    def _store_out_stat(
+        self,
+        out_bias: dict[str, np.ndarray],
+        out_std: dict[str, np.ndarray],
+        add: bool = False,
+    ) -> None:
+        """Store output bias and std into the model."""
+        ntypes = self.get_ntypes()
+        out_bias_data = np.array(to_numpy_array(self.out_bias))
+        out_std_data = np.array(to_numpy_array(self.out_std))
+        for kk in out_bias.keys():
+            assert kk in out_std.keys()
+            idx = self._get_bias_index(kk)
+            size = self._varsize(self.atomic_output_def()[kk].shape)
+            if not add:
+                out_bias_data[idx, :, :size] = out_bias[kk].reshape(ntypes, size)
+            else:
+                out_bias_data[idx, :, :size] += out_bias[kk].reshape(ntypes, size)
+            out_std_data[idx, :, :size] = out_std[kk].reshape(ntypes, size)
+        self.out_bias = out_bias_data
+        self.out_std = out_std_data
+
+    def _get_forward_wrapper_func(self) -> Callable[..., dict[str, np.ndarray]]:
+        """Get a forward wrapper of the atomic model for output bias calculation."""
+        import array_api_compat
+
+        from deepmd.dpmodel.utils.nlist import (
+            extend_input_and_build_neighbor_list,
+        )
+
+        def model_forward(
+            coord: np.ndarray,
+            atype: np.ndarray,
+            box: np.ndarray | None,
+            fparam: np.ndarray | None = None,
+            aparam: np.ndarray | None = None,
+        ) -> dict[str, np.ndarray]:
+            # Get reference array to determine the target array type and device
+            # Use out_bias as reference since it's always present
+            ref_array = self.out_bias
+            xp = array_api_compat.array_namespace(ref_array)
+
+            # Convert numpy inputs to the model's array type with correct device
+            device = array_api_compat.device(ref_array)
+            coord = xp.asarray(coord, device=device)
+            atype = xp.asarray(atype, device=device)
+            if box is not None:
+                if np.allclose(box, 0.0):
+                    box = None
+                else:
+                    box = xp.asarray(box, device=device)
+            if fparam is not None:
+                fparam = xp.asarray(fparam, device=device)
+            if aparam is not None:
+                aparam = xp.asarray(aparam, device=device)
+
+            (
+                extended_coord,
+                extended_atype,
+                mapping,
+                nlist,
+            ) = extend_input_and_build_neighbor_list(
+                coord,
+                atype,
+                self.get_rcut(),
+                self.get_sel(),
+                mixed_types=self.mixed_types(),
+                box=box,
+            )
+            atomic_ret = self.forward_common_atomic(
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping=mapping,
+                fparam=fparam,
+                aparam=aparam,
+            )
+            # Convert outputs back to numpy arrays
+            return {kk: to_numpy_array(vv) for kk, vv in atomic_ret.items()}
+
+        return model_forward
 
     def serialize(self) -> dict:
         return {
@@ -260,9 +451,9 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
     def apply_out_stat(
         self,
-        ret: dict[str, np.ndarray],
-        atype: np.ndarray,
-    ):
+        ret: dict[str, Array],
+        atype: Array,
+    ) -> dict[str, Array]:
         """Apply the stat to each atomic output.
         The developer may override the method to define how the bias is applied
         to the atomic output of the model.
@@ -305,7 +496,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     def _fetch_out_stat(
         self,
         keys: list[str],
-    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+    ) -> tuple[dict[str, Array], dict[str, Array]]:
         ret_bias = {}
         ret_std = {}
         ntypes = self.get_ntypes()

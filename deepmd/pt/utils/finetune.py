@@ -3,6 +3,9 @@ import logging
 from copy import (
     deepcopy,
 )
+from typing import (
+    Any,
+)
 
 import torch
 
@@ -12,18 +15,21 @@ from deepmd.pt.utils import (
 from deepmd.utils.finetune import (
     FinetuneRuleItem,
 )
+from deepmd.utils.model_branch_dict import (
+    get_model_dict,
+)
 
 log = logging.getLogger(__name__)
 
 
 def get_finetune_rule_single(
-    _single_param_target,
-    _model_param_pretrained,
-    from_multitask=False,
-    model_branch="Default",
-    model_branch_from="",
-    change_model_params=False,
-):
+    _single_param_target: dict[str, Any],
+    _model_param_pretrained: dict[str, Any],
+    from_multitask: bool = False,
+    model_branch: str = "Default",
+    model_branch_from: str = "",
+    change_model_params: bool = False,
+) -> tuple[dict[str, Any], FinetuneRuleItem]:
     single_config = deepcopy(_single_param_target)
     new_fitting = False
     model_branch_chosen = "Default"
@@ -44,10 +50,13 @@ def get_finetune_rule_single(
             )
         else:
             model_branch_chosen = model_branch_from
-        assert model_branch_chosen in model_dict_params, (
-            f"No model branch named '{model_branch_chosen}'! "
+        model_alias_dict, model_branch_dict = get_model_dict(model_dict_params)
+        assert model_branch_chosen in model_alias_dict, (
+            f"No model branch or alias named '{model_branch_chosen}'! "
             f"Available ones are {list(model_dict_params.keys())}."
+            f"Use `dp --pt show your_model.pt model-branch` to show detail information."
         )
+        model_branch_chosen = model_alias_dict[model_branch_chosen]
         single_config_chosen = deepcopy(model_dict_params[model_branch_chosen])
     old_type_map, new_type_map = (
         single_config_chosen["type_map"],
@@ -80,8 +89,11 @@ def get_finetune_rule_single(
 
 
 def get_finetune_rules(
-    finetune_model, model_config, model_branch="", change_model_params=True
-):
+    finetune_model: str,
+    model_config: dict[str, Any],
+    model_branch: str = "",
+    change_model_params: bool = True,
+) -> tuple[dict[str, Any], dict[str, FinetuneRuleItem]]:
     """
     Get fine-tuning rules and (optionally) change the model_params according to the pretrained one.
 

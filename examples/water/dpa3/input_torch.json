@@ -34,7 +34,8 @@
       "activation_function": "silut:10.0",
       "use_tebd_bias": false,
       "precision": "float32",
-      "concat_output_tebd": false
+      "concat_output_tebd": false,
+      "seed": 1
     },
     "fitting_net": {
       "neuron": [

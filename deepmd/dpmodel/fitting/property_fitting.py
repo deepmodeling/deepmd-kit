@@ -1,11 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
+
+from deepmd.dpmodel.array_api import (
+    Array,
 )
-
-import numpy as np
-
 from deepmd.dpmodel.common import (
     DEFAULT_PRECISION,
 )
@@ -65,6 +62,9 @@ class PropertyFittingNet(InvarFitting):
             Atomic contributions of the excluded atom types are set zero.
     type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
+    default_fparam: list[float], optional
+            The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+            this value will be used as the default value for the frame parameter in the fitting net.
     """
 
     def __init__(
@@ -73,9 +73,9 @@ class PropertyFittingNet(InvarFitting):
         dim_descrpt: int,
         task_dim: int = 1,
         neuron: list[int] = [128, 128, 128],
-        bias_atom_p: Optional[np.ndarray] = None,
-        rcond: Optional[float] = None,
-        trainable: Union[bool, list[bool]] = True,
+        bias_atom_p: Array | None = None,
+        rcond: float | None = None,
+        trainable: bool | list[bool] = True,
         intensive: bool = False,
         property_name: str = "property",
         resnet_dt: bool = True,
@@ -86,9 +86,10 @@ class PropertyFittingNet(InvarFitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
         exclude_types: list[int] = [],
-        type_map: Optional[list[str]] = None,
+        type_map: list[str] | None = None,
+        default_fparam: list | None = None,
         # not used
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> None:
         self.task_dim = task_dim
         self.intensive = intensive
@@ -110,6 +111,7 @@ class PropertyFittingNet(InvarFitting):
             mixed_types=mixed_types,
             exclude_types=exclude_types,
             type_map=type_map,
+            default_fparam=default_fparam,
         )
 
     def output_def(self) -> FittingOutputDef:
@@ -129,7 +131,7 @@ class PropertyFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "PropertyFittingNet":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 4, 1)
+        check_version_compatibility(data.pop("@version"), 5, 1)
         data.pop("dim_out")
         data["property_name"] = data.pop("var_name")
         data.pop("tot_ener_zero")
@@ -149,6 +151,6 @@ class PropertyFittingNet(InvarFitting):
             "task_dim": self.task_dim,
             "intensive": self.intensive,
         }
-        dd["@version"] = 4
+        dd["@version"] = 5
 
         return dd

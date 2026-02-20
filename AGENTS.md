@@ -94,7 +94,7 @@ source/               # C++ source code and tests
 
 ### Build Dependencies and Setup
 
-- **Python 3.9+** required
+- **Python 3.10+** required
 - **Virtual environment** strongly recommended: `uv venv venv && source venv/bin/activate`
 - **Backend dependencies**: TensorFlow, PyTorch, JAX, or Paddle (install before building)
 - **Build tools**: CMake, C++ compiler, scikit-build-core

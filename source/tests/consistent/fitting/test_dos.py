@@ -83,6 +83,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             "numb_aparam": numb_aparam,
             "seed": 20240217,
             "numb_dos": numb_dos,
+            "activation_function": "relu",
         }
 
     @property

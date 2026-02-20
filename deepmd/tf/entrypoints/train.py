@@ -10,7 +10,6 @@ import logging
 import time
 from typing import (
     Any,
-    Optional,
 )
 
 from deepmd.common import (
@@ -55,18 +54,18 @@ log = logging.getLogger(__name__)
 def train(
     *,
     INPUT: str,
-    init_model: Optional[str],
-    restart: Optional[str],
+    init_model: str | None,
+    restart: str | None,
     output: str,
     init_frz_model: str,
     mpi_log: str,
     log_level: int,
-    log_path: Optional[str],
+    log_path: str | None,
     is_compress: bool = False,
     skip_neighbor_stat: bool = False,
-    finetune: Optional[str] = None,
+    finetune: str | None = None,
     use_pretrain_script: bool = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> None:
     """Run DeePMD model training.
 
@@ -275,8 +274,8 @@ def _do_work(
         log.info("finished compressing")
 
 
-def get_modifier(modi_data=None):
-    modifier: Optional[BaseModifier]
+def get_modifier(modi_data: dict | None = None) -> BaseModifier | None:
+    modifier: BaseModifier | None
     if modi_data is not None:
         modifier_params = copy.deepcopy(modi_data)
         modifier_type = modifier_params.pop("type")
@@ -288,7 +287,7 @@ def get_modifier(modi_data=None):
     return modifier
 
 
-def update_sel(jdata):
+def update_sel(jdata: dict) -> dict:
     log.info(
         "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
     )

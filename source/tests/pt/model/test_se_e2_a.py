@@ -96,7 +96,7 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 self.atype_ext,
                 self.nlist,
             )
-            for aa, bb in zip([rd1, gr1, sw1], [rd2, gr2, sw2]):
+            for aa, bb in zip([rd1, gr1, sw1], [rd2, gr2, sw2], strict=True):
                 np.testing.assert_allclose(
                     aa.detach().cpu().numpy(),
                     bb,

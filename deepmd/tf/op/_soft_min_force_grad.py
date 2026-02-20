@@ -8,11 +8,14 @@ from tensorflow.python.framework import (
 
 from deepmd.tf.env import (
     op_grads_module,
+    tf,
 )
 
 
 @ops.RegisterGradient("SoftMinForce")
-def _soft_min_force_grad_cc(op, grad):
+def _soft_min_force_grad_cc(
+    op: tf.Operation, grad: tf.Tensor
+) -> list[tf.Tensor | None]:
     net_grad = op_grads_module.soft_min_force_grad(
         grad,
         op.inputs[0],

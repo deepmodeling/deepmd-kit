@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Optional,
-    Union,
+    Any,
 )
 
 from deepmd.tf.common import (
@@ -21,6 +20,9 @@ from deepmd.tf.model.model import (
 )
 from deepmd.tf.utils.graph import (
     load_graph_def,
+)
+from deepmd.tf.utils.learning_rate import (
+    LearningRateExp,
 )
 from deepmd.tf.utils.spin import (
     Spin,
@@ -49,18 +51,18 @@ class PairwiseDPRc(Model):
         self,
         qm_model: dict,
         qmmm_model: dict,
-        type_embedding: Union[dict, TypeEmbedNet],
+        type_embedding: dict | TypeEmbedNet,
         type_map: list[str],
         data_stat_nbatch: int = 10,
         data_stat_nsample: int = 10,
         data_stat_protect: float = 1e-2,
-        use_srtab: Optional[str] = None,
-        smin_alpha: Optional[float] = None,
-        sw_rmin: Optional[float] = None,
-        sw_rmax: Optional[float] = None,
-        spin: Optional[Spin] = None,
-        compress: Optional[dict] = None,
-        **kwargs,
+        use_srtab: str | None = None,
+        smin_alpha: float | None = None,
+        sw_rmin: float | None = None,
+        sw_rmax: float | None = None,
+        spin: Spin | None = None,
+        compress: dict | None = None,
+        **kwargs: Any,
     ) -> None:
         # internal variable to compare old and new behavior
         # expect they give the same results
@@ -115,11 +117,11 @@ class PairwiseDPRc(Model):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        frz_model=None,
-        ckpt_meta: Optional[str] = None,
+        frz_model: str | None = None,
+        ckpt_meta: str | None = None,
         suffix: str = "",
-        reuse: Optional[bool] = None,
-    ):
+        reuse: bool | None = None,
+    ) -> dict:
         feed_dict = self.get_feed_dict(
             coord_, atype_, natoms, box_, mesh, aparam=input_dict["aparam"]
         )
@@ -300,24 +302,24 @@ class PairwiseDPRc(Model):
         model_dict["atype"] = atype_
         return model_dict
 
-    def get_fitting(self) -> Union[str, dict]:
+    def get_fitting(self) -> str | dict:
         """Get the fitting(s)."""
         return {
             "qm": self.qm_model.get_fitting(),
             "qmmm": self.qmmm_model.get_fitting(),
         }
 
-    def get_loss(self, loss: dict, lr) -> Union[Loss, dict]:
+    def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss | dict:
         """Get the loss function(s)."""
         return self.qm_model.get_loss(loss, lr)
 
-    def get_rcut(self):
+    def get_rcut(self) -> float:
         return max(self.qm_model.get_rcut(), self.qmmm_model.get_rcut())
 
     def get_ntypes(self) -> int:
         return self.ntypes
 
-    def data_stat(self, data) -> None:
+    def data_stat(self, data: dict) -> None:
         self.qm_model.data_stat(data)
         self.qmmm_model.data_stat(data)
 
@@ -369,7 +371,7 @@ class PairwiseDPRc(Model):
         natoms: tf.Tensor,
         box: tf.Tensor,
         mesh: tf.Tensor,
-        **kwargs,
+        **kwargs: Any,
     ) -> dict[str, tf.Tensor]:
         """Generate the feed_dict for current descriptor.
 
@@ -413,9 +415,9 @@ class PairwiseDPRc(Model):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -449,7 +451,7 @@ class PairwiseDPRc(Model):
 
 
 def gather_placeholder(
-    params: tf.Tensor, indices: tf.Tensor, placeholder: float = 0.0, **kwargs
+    params: tf.Tensor, indices: tf.Tensor, placeholder: float = 0.0, **kwargs: Any
 ) -> tf.Tensor:
     """Call tf.gather but allow indices to contain placeholders (-1)."""
     # (nframes, x, 2, 3) -> (nframes, 1, 2, 3)

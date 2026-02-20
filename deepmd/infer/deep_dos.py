@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -61,11 +59,11 @@ class DeepDOS(DeepEval):
     def eval(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
-        atom_types: Union[list[int], np.ndarray],
+        cells: np.ndarray | None,
+        atom_types: list[int] | np.ndarray,
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         mixed_type: bool = False,
         **kwargs: Any,
     ) -> tuple[np.ndarray, ...]:

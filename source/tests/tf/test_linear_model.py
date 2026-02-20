@@ -37,7 +37,7 @@ class TestLinearModel(tf.test.TestCase):
             os.path.join(infer_path, "deeppot-1.pbtxt"),
         ]
         self.graph_dirs = [pbtxt.replace("pbtxt", "pb") for pbtxt in self.pbtxts]
-        for pbtxt, pb in zip(self.pbtxts, self.graph_dirs):
+        for pbtxt, pb in zip(self.pbtxts, self.graph_dirs, strict=True):
             convert_pbtxt_to_pb(pbtxt, pb)
         self.graphs = [DeepPotential(pb) for pb in self.graph_dirs]
 

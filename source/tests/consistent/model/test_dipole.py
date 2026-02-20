@@ -73,6 +73,7 @@ class TestDipole(CommonTest, ModelTest, unittest.TestCase):
     pt_class = DipoleModelPT
     jax_class = DipoleModelJAX
     args = model_args()
+    atol = 1e-8
 
     def get_reference_backend(self):
         """Get the reference backend.
@@ -89,7 +90,7 @@ class TestDipole(CommonTest, ModelTest, unittest.TestCase):
 
     @property
     def skip_tf(self):
-        return True  # need to fix tf consistency
+        return not INSTALLED_TF
 
     @property
     def skip_jax(self) -> bool:
@@ -203,3 +204,15 @@ class TestDipole(CommonTest, ModelTest, unittest.TestCase):
                 ret[1].ravel(),
             )
         raise ValueError(f"Unknown backend: {backend}")
+
+    def test_atom_exclude_types(self):
+        if self.skip_pt:
+            self.skipTest("Unsupported backend")
+        if self.skip_tf:
+            self.skipTest("Unsupported backend")
+        _ret, data = self.get_reference_ret_serialization(self.RefBackend.PT)
+        data["atom_exclude_types"] = [1]
+        self.reset_unique_id()
+        tf_obj = self.tf_class.deserialize(data, suffix=self.unique_id)
+        pt_obj = self.pt_class.deserialize(data)
+        self.assertEqual(tf_obj.get_sel_type(), pt_obj.get_sel_type())

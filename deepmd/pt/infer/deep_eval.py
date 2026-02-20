@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import io
 import json
+import logging
+from collections.abc import (
+    Callable,
+)
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Optional,
-    Union,
 )
 
 import numpy as np
@@ -67,9 +70,18 @@ from deepmd.pt.utils.utils import (
 from deepmd.utils.econf_embd import (
     sort_element_type,
 )
+from deepmd.utils.model_branch_dict import (
+    get_model_dict,
+)
 
 if TYPE_CHECKING:
     import ase.neighborlist
+
+    from deepmd.pt.model.model.model import (
+        BaseModel,
+    )
+
+log = logging.getLogger(__name__)
 
 
 class DeepEval(DeepEvalBackend):
@@ -98,9 +110,9 @@ class DeepEval(DeepEvalBackend):
         model_file: str,
         output_def: ModelOutputDef,
         *args: Any,
-        auto_batch_size: Union[bool, int, AutoBatchSize] = True,
+        auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
-        head: Optional[Union[str, int]] = None,
+        head: str | int | None = None,
         no_jit: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -116,15 +128,36 @@ class DeepEval(DeepEvalBackend):
             self.model_def_script = self.input_param
             self.multi_task = "model_dict" in self.input_param
             if self.multi_task:
+                model_alias_dict, model_branch_dict = get_model_dict(
+                    self.input_param["model_dict"]
+                )
                 model_keys = list(self.input_param["model_dict"].keys())
+                if head is None and "Default" in model_alias_dict:
+                    head = "Default"
+                    log.info(
+                        f"Using default head {model_alias_dict[head]} for multitask model."
+                    )
                 if isinstance(head, int):
                     head = model_keys[0]
                 assert head is not None, (
-                    f"Head must be set for multitask model! Available heads are: {model_keys}"
+                    f"Head must be set for multitask model! Available heads are: {model_keys}, "
+                    f"use `dp --pt show your_model.pt model-branch` to show detail information."
                 )
-                assert head in model_keys, (
-                    f"No head named {head} in model! Available heads are: {model_keys}"
+                if head not in model_alias_dict:
+                    # preprocess with potentially case-insensitive input
+                    head_lower = head.lower()
+                    for mk in model_alias_dict:
+                        if mk.lower() == head_lower:
+                            # mapped the first matched head
+                            head = mk
+                            break
+                # replace with alias
+                assert head in model_alias_dict, (
+                    f"No head or alias named {head} in model! Available heads are: {model_keys},"
+                    f"use `dp --pt show your_model.pt model-branch` to show detail information."
                 )
+                head = model_alias_dict[head]
+
                 self.input_param = self.input_param["model_dict"][head]
                 state_dict_head = {"_extra_state": state_dict["_extra_state"]}
                 for item in state_dict:
@@ -139,8 +172,21 @@ class DeepEval(DeepEvalBackend):
             self.dp = ModelWrapper(model)
             self.dp.load_state_dict(state_dict)
         elif str(self.model_path).endswith(".pth"):
-            model = torch.jit.load(model_file, map_location=env.DEVICE)
-            self.dp = ModelWrapper(model)
+            extra_files = {"data_modifier.pth": ""}
+            model = torch.jit.load(
+                model_file, map_location=env.DEVICE, _extra_files=extra_files
+            )
+            modifier = None
+            # Load modifier if it exists in extra_files
+            if len(extra_files["data_modifier.pth"]) > 0:
+                # Create a file-like object from the in-memory data
+                modifier_data = extra_files["data_modifier.pth"]
+                if isinstance(modifier_data, bytes):
+                    modifier_data = io.BytesIO(modifier_data)
+                # Load the modifier directly from the file-like object
+                modifier = torch.jit.load(modifier_data, map_location=env.DEVICE)
+            self.dp = ModelWrapper(model, modifier=modifier)
+            self.modifier = modifier
             model_def_script = self.dp.model["Default"].get_model_def_script()
             if model_def_script:
                 self.model_def_script = json.loads(model_def_script)
@@ -187,6 +233,14 @@ class DeepEval(DeepEvalBackend):
         """Get the number (dimension) of atomic parameters of this DP."""
         return self.dp.model["Default"].get_dim_aparam()
 
+    def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
+        try:
+            return self.dp.model["Default"].has_default_fparam()
+        except AttributeError:
+            # for compatibility with old models
+            return False
+
     def get_intensive(self) -> bool:
         return self.dp.model["Default"].get_intensive()
 
@@ -209,7 +263,7 @@ class DeepEval(DeepEvalBackend):
             return DeepDOS
         elif "dipole" in model_output_type:
             return DeepDipole
-        elif "polar" in model_output_type:
+        elif "polar" in model_output_type or "polarizability" in model_output_type:
             return DeepPolar
         elif "global_polar" in model_output_type:
             return DeepGlobalPolar
@@ -245,22 +299,33 @@ class DeepEval(DeepEvalBackend):
         """Get the number of spin atom types of this model. Only used in old implement."""
         return 0
 
-    def get_has_spin(self):
+    def get_has_spin(self) -> bool:
         """Check if the model has spin atom types."""
         return self._has_spin
 
-    def get_has_hessian(self):
+    def get_has_hessian(self) -> bool:
         """Check if the model has hessian."""
         return self._has_hessian
+
+    def get_model_branch(self) -> tuple[dict[str, str], dict[str, dict[str, Any]]]:
+        """Get the model branch information."""
+        if "model_dict" in self.model_def_script:
+            model_alias_dict, model_branch_dict = get_model_dict(
+                self.model_def_script["model_dict"]
+            )
+            return model_alias_dict, model_branch_dict
+        else:
+            # single-task model
+            return {"Default": "Default"}, {"Default": {"alias": [], "info": {}}}
 
     def eval(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         **kwargs: Any,
     ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
@@ -347,9 +412,9 @@ class DeepEval(DeepEvalBackend):
             The requested output definitions.
         """
         if atomic:
-            return list(self.output_def.var_defs.values())
+            output_defs = list(self.output_def.var_defs.values())
         else:
-            return [
+            output_defs = [
                 x
                 for x in self.output_def.var_defs.values()
                 if x.category
@@ -361,6 +426,13 @@ class DeepEval(DeepEvalBackend):
                     OutputVariableCategory.DERV_R_DERV_R,
                 )
             ]
+        if not self.get_has_hessian():
+            output_defs = [
+                x
+                for x in output_defs
+                if x.category != OutputVariableCategory.DERV_R_DERV_R
+            ]
+        return output_defs
 
     def _eval_func(self, inner_func: Callable, numb_test: int, natoms: int) -> Callable:
         """Wrapper method with auto batch size.
@@ -381,7 +453,7 @@ class DeepEval(DeepEvalBackend):
         """
         if self.auto_batch_size is not None:
 
-            def eval_func(*args, **kwargs):
+            def eval_func(*args: Any, **kwargs: Any) -> Any:
                 return self.auto_batch_size.execute_all(
                     inner_func, numb_test, natoms, *args, **kwargs
                 )
@@ -410,12 +482,12 @@ class DeepEval(DeepEvalBackend):
     def _eval_model(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray],
-        aparam: Optional[np.ndarray],
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
-    ):
+    ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
         prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
 
@@ -487,13 +559,13 @@ class DeepEval(DeepEvalBackend):
     def _eval_model_spin(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
         spins: np.ndarray,
-        fparam: Optional[np.ndarray],
-        aparam: Optional[np.ndarray],
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
-    ):
+    ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
 
         nframes = coords.shape[0]
@@ -570,7 +642,9 @@ class DeepEval(DeepEvalBackend):
                 )  # this is kinda hacky
         return tuple(results)
 
-    def _get_output_shape(self, odef, nframes, natoms):
+    def _get_output_shape(
+        self, odef: OutputVariableDef, nframes: int, natoms: int
+    ) -> list[int]:
         if odef.category == OutputVariableCategory.DERV_C_REDU:
             # virial
             return [nframes, *odef.shape[:-1], 9]
@@ -624,7 +698,7 @@ class DeepEval(DeepEvalBackend):
         typeebd = torch.cat(out, dim=1)
         return to_numpy_array(typeebd)
 
-    def get_model_def_script(self) -> str:
+    def get_model_def_script(self) -> dict:
         """Get model definition script."""
         return self.model_def_script
 
@@ -668,13 +742,23 @@ class DeepEval(DeepEvalBackend):
             "observed_type": sort_element_type(observed_type_list),
         }
 
+    def get_model(self) -> "BaseModel":
+        """Get the PyTorch model.
+
+        Returns
+        -------
+        BaseModel
+            The PyTorch model instance.
+        """
+        return self.dp.model["Default"]
+
     def eval_descriptor(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate descriptors by using this DP.
@@ -726,10 +810,10 @@ class DeepEval(DeepEvalBackend):
     def eval_fitting_last_layer(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate fitting before last layer by using this DP.

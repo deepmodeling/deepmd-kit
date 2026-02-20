@@ -8,6 +8,9 @@ from abc import (
     ABC,
     abstractmethod,
 )
+from collections.abc import (
+    Callable,
+)
 from enum import (
     Enum,
 )
@@ -16,10 +19,7 @@ from importlib.util import (
 )
 from typing import (
     Any,
-    Callable,
     ClassVar,
-    Optional,
-    Union,
 )
 from uuid import (
     uuid4,
@@ -41,6 +41,11 @@ from ..utils import (
 
 INSTALLED_TF = Backend.get_backend("tensorflow")().is_available()
 INSTALLED_PT = Backend.get_backend("pytorch")().is_available()
+try:
+    _PT_EXPT_BACKEND = Backend.get_backend("pytorch-exportable")
+except (KeyError, RuntimeError):
+    _PT_EXPT_BACKEND = None
+INSTALLED_PT_EXPT = _PT_EXPT_BACKEND is not None and _PT_EXPT_BACKEND().is_available()
 INSTALLED_JAX = Backend.get_backend("jax")().is_available()
 INSTALLED_PD = Backend.get_backend("paddle")().is_available()
 INSTALLED_ARRAY_API_STRICT = find_spec("array_api_strict") is not None
@@ -67,6 +72,7 @@ __all__ = [
     "INSTALLED_JAX",
     "INSTALLED_PD",
     "INSTALLED_PT",
+    "INSTALLED_PT_EXPT",
     "INSTALLED_TF",
     "CommonTest",
     "CommonTest",
@@ -80,18 +86,20 @@ class CommonTest(ABC):
     """Arguments data."""
     additional_data: ClassVar[dict] = {}
     """Additional data that will not be checked."""
-    tf_class: ClassVar[Optional[type]]
+    tf_class: ClassVar[type | None]
     """TensorFlow model class."""
-    dp_class: ClassVar[Optional[type]]
+    dp_class: ClassVar[type | None]
     """Native DP model class."""
-    pt_class: ClassVar[Optional[type]]
+    pt_class: ClassVar[type | None]
     """PyTorch model class."""
-    jax_class: ClassVar[Optional[type]]
+    pt_expt_class: ClassVar[type | None] = None
+    """PyTorch exportable model class."""
+    jax_class: ClassVar[type | None]
     """JAX model class."""
-    pd_class: ClassVar[Optional[type]]
+    pd_class: ClassVar[type | None]
     """Paddle model class."""
-    array_api_strict_class: ClassVar[Optional[type]]
-    args: ClassVar[Optional[Union[Argument, list[Argument]]]]
+    array_api_strict_class: ClassVar[type | None]
+    args: ClassVar[Argument | list[Argument] | None]
     """Arguments that maps to the `data`."""
     skip_dp: ClassVar[bool] = False
     """Whether to skip the native DP model."""
@@ -99,6 +107,8 @@ class CommonTest(ABC):
     """Whether to skip the TensorFlow model."""
     skip_pt: ClassVar[bool] = not INSTALLED_PT
     """Whether to skip the PyTorch model."""
+    skip_pt_expt: ClassVar[bool] = not INSTALLED_PT_EXPT
+    """Whether to skip the PyTorch exportable model."""
     # we may usually skip jax before jax is fully supported
     skip_jax: ClassVar[bool] = True
     """Whether to skip the JAX model."""
@@ -176,6 +186,16 @@ class CommonTest(ABC):
             The object of PT
         """
 
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        """Evaluate the return value of PT exportable.
+
+        Parameters
+        ----------
+        pt_expt_obj : Any
+            The object of PT exportable
+        """
+        raise NotImplementedError("Not implemented")
+
     def eval_jax(self, jax_obj: Any) -> Any:
         """Evaluate the return value of JAX.
 
@@ -212,9 +232,10 @@ class CommonTest(ABC):
         TF = 1
         DP = 2
         PT = 3
-        PD = 4
-        JAX = 5
-        ARRAY_API_STRICT = 6
+        PT_EXPT = 4
+        PD = 5
+        JAX = 6
+        ARRAY_API_STRICT = 7
 
     @abstractmethod
     def extract_ret(self, ret: Any, backend: RefBackend) -> tuple[np.ndarray, ...]:
@@ -275,6 +296,11 @@ class CommonTest(ABC):
         data = obj.serialize()
         return ret, data
 
+    def get_pt_expt_ret_serialization_from_cls(self, obj):
+        ret = self.eval_pt_expt(obj)
+        data = obj.serialize()
+        return ret, data
+
     def get_jax_ret_serialization_from_cls(self, obj):
         ret = self.eval_jax(obj)
         data = obj.serialize()
@@ -301,6 +327,8 @@ class CommonTest(ABC):
             return self.RefBackend.TF
         if not self.skip_pt:
             return self.RefBackend.PT
+        if not self.skip_pt_expt and self.pt_expt_class is not None:
+            return self.RefBackend.PT_EXPT
         if not self.skip_jax:
             return self.RefBackend.JAX
         if not self.skip_pd:
@@ -320,6 +348,11 @@ class CommonTest(ABC):
         if ref == self.RefBackend.PT:
             obj = self.init_backend_cls(self.pt_class)
             return self.get_pt_ret_serialization_from_cls(obj)
+        if ref == self.RefBackend.PT_EXPT:
+            if self.pt_expt_class is None:
+                raise ValueError("PT exportable class is not set")
+            obj = self.init_backend_cls(self.pt_expt_class)
+            return self.get_pt_expt_ret_serialization_from_cls(obj)
         if ref == self.RefBackend.JAX:
             obj = self.init_backend_cls(self.jax_class)
             return self.get_jax_ret_serialization_from_cls(obj)
@@ -354,11 +387,8 @@ class CommonTest(ABC):
         data1.pop("@version")
         data2.pop("@version")
 
-        if tf_obj.__class__.__name__.startswith("Polar"):
-            data1["@variables"].pop("bias_atom_e")
-
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=True):
             np.testing.assert_allclose(
                 rr1.ravel(), rr2.ravel(), rtol=self.rtol, atol=self.atol
             )
@@ -375,7 +405,7 @@ class CommonTest(ABC):
         obj2 = self.tf_class.deserialize(data1, suffix=self.unique_id)
         ret2, data2 = self.get_tf_ret_serialization_from_cls(obj2)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=True):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
             assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
@@ -394,7 +424,7 @@ class CommonTest(ABC):
         ret2 = self.extract_ret(ret2, self.RefBackend.DP)
         data2 = dp_obj.serialize()
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=True):
             if rr1 is SKIP_FLAG or rr2 is SKIP_FLAG:
                 continue
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
@@ -410,7 +440,7 @@ class CommonTest(ABC):
         obj1 = self.dp_class.deserialize(data1)
         ret2, data2 = self.get_dp_ret_serialization_from_cls(obj1)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=True):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
                 np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
                 assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
@@ -439,7 +469,7 @@ class CommonTest(ABC):
         data1.pop("@variables", None)
         data2.pop("@variables", None)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=True):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
             assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
@@ -452,7 +482,48 @@ class CommonTest(ABC):
         obj2 = self.pt_class.deserialize(data1)
         ret2, data2 = self.get_pt_ret_serialization_from_cls(obj2)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=True):
+            if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
+                np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+                assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+            else:
+                self.assertEqual(rr1, rr2)
+
+    def test_pt_expt_consistent_with_ref(self) -> None:
+        """Test whether PT exportable and reference are consistent."""
+        if self.skip_pt_expt or self.pt_expt_class is None:
+            self.skipTest("Unsupported backend")
+        ref_backend = self.get_reference_backend()
+        if ref_backend == self.RefBackend.PT_EXPT:
+            self.skipTest("Reference is self")
+        ret1, data1 = self.get_reference_ret_serialization(ref_backend)
+        ret1 = self.extract_ret(ret1, ref_backend)
+        obj = self.pt_expt_class.deserialize(data1)
+        ret2 = self.eval_pt_expt(obj)
+        ret2 = self.extract_ret(ret2, self.RefBackend.PT_EXPT)
+        data2 = obj.serialize()
+        if obj.__class__.__name__.startswith(("Polar", "Dipole", "DOS")):
+            common_keys = set(data1.keys()) & set(data2.keys())
+            data1 = {k: data1[k] for k in common_keys}
+            data2 = {k: data2[k] for k in common_keys}
+        # drop @variables since they are not equal
+        data1.pop("@variables", None)
+        data2.pop("@variables", None)
+        np.testing.assert_equal(data1, data2)
+        for rr1, rr2 in zip(ret1, ret2, strict=True):
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+
+    def test_pt_expt_self_consistent(self) -> None:
+        """Test whether PT exportable is self consistent."""
+        if self.skip_pt_expt or self.pt_expt_class is None:
+            self.skipTest("Unsupported backend")
+        obj1 = self.init_backend_cls(self.pt_expt_class)
+        ret1, data1 = self.get_pt_expt_ret_serialization_from_cls(obj1)
+        obj2 = self.pt_expt_class.deserialize(data1)
+        ret2, data2 = self.get_pt_expt_ret_serialization_from_cls(obj2)
+        np.testing.assert_equal(data1, data2)
+        for rr1, rr2 in zip(ret1, ret2, strict=True):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
                 np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
                 assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
@@ -476,7 +547,7 @@ class CommonTest(ABC):
         data1.pop("@variables", None)
         data2.pop("@variables", None)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=True):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
             assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
@@ -489,7 +560,7 @@ class CommonTest(ABC):
         obj1 = self.jax_class.deserialize(data1)
         ret2, data2 = self.get_jax_ret_serialization_from_cls(obj1)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=True):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
                 np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
                 assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
@@ -518,7 +589,7 @@ class CommonTest(ABC):
         data1.pop("@variables", None)
         data2.pop("@variables", None)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=True):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
             assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
@@ -531,7 +602,7 @@ class CommonTest(ABC):
         obj2 = self.pd_class.deserialize(data1)
         ret2, data2 = self.get_pd_ret_serialization_from_cls(obj2)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=True):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
                 np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
                 assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
@@ -553,7 +624,7 @@ class CommonTest(ABC):
         ret2 = self.extract_ret(ret2, self.RefBackend.ARRAY_API_STRICT)
         data2 = array_api_strict_obj.serialize()
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=True):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
             assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
@@ -567,7 +638,7 @@ class CommonTest(ABC):
         obj1 = self.array_api_strict_class.deserialize(data1)
         ret2, data2 = self.get_array_api_strict_ret_serialization_from_cls(obj1)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2):
+        for rr1, rr2 in zip(ret1, ret2, strict=True):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
                 np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
                 assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"

@@ -53,7 +53,8 @@
         "g1_out_mlp": true
       },
       "precision": "float64",
-      "add_tebd_to_repinit_out": false
+      "add_tebd_to_repinit_out": false,
+      "seed": 1
     },
     "fitting_net": {
       "neuron": [

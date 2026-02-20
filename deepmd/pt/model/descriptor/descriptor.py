@@ -4,14 +4,18 @@ from abc import (
     ABC,
     abstractmethod,
 )
-from typing import (
+from collections.abc import (
     Callable,
+)
+from typing import (
+    Any,
     NoReturn,
-    Optional,
-    Union,
 )
 
 import torch
+from typing_extensions import (
+    Self,
+)
 
 from deepmd.pt.model.network.network import (
     TypeEmbedNet,
@@ -43,7 +47,7 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
 
     local_cluster = False
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         if cls is DescriptorBlock:
             try:
                 descrpt_type = kwargs["type"]
@@ -101,8 +105,8 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> NoReturn:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -126,7 +130,9 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         """Get the statistics of the descriptor."""
         raise NotImplementedError
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: "DescriptorBlock", shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -175,10 +181,16 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         nlist: torch.Tensor,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
-        type_embedding: Optional[torch.Tensor] = None,
-    ):
+        extended_atype_embd: torch.Tensor | None = None,
+        mapping: torch.Tensor | None = None,
+        type_embedding: torch.Tensor | None = None,
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+    ]:
         """Calculate DescriptorBlock."""
         pass
 
@@ -192,14 +204,18 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
 
 
 def make_default_type_embedding(
-    ntypes,
-):
+    ntypes: int,
+) -> tuple[TypeEmbedNet, dict[str, Any]]:
     aux = {}
     aux["tebd_dim"] = 8
     return TypeEmbedNet(ntypes, aux["tebd_dim"]), aux
 
 
-def extend_descrpt_stat(des, type_map, des_with_stat=None) -> None:
+def extend_descrpt_stat(
+    des: DescriptorBlock,
+    type_map: list[str],
+    des_with_stat: DescriptorBlock | None = None,
+) -> None:
     r"""
     Extend the statistics of a descriptor block with types from newly provided `type_map`.
 

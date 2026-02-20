@@ -229,6 +229,10 @@ sp.check_output(
 
 
 def setup_module() -> None:
+    if os.environ.get("ENABLE_PYTORCH", "1") != "1":
+        pytest.skip(
+            "Skip test because PyTorch support is not enabled.",
+        )
     write_lmp_data(box, coord, type_OH, data_file)
     write_lmp_data(box, coord, type_HO, data_type_map_file)
     write_lmp_data(
@@ -340,6 +344,10 @@ def test_pair_deepmd_virial(lammps) -> None:
         ) / constants.nktv2p == pytest.approx(expected_v[idx_map, ii])
 
 
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
+)
 def test_pair_deepmd_model_devi(lammps) -> None:
     lammps.pair_style(
         f"deepmd {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic"
@@ -366,6 +374,10 @@ def test_pair_deepmd_model_devi(lammps) -> None:
     assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
 
 
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
+)
 def test_pair_deepmd_model_devi_virial(lammps) -> None:
     lammps.pair_style(
         f"deepmd {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic"
@@ -404,6 +416,10 @@ def test_pair_deepmd_model_devi_virial(lammps) -> None:
     assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
 
 
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
+)
 def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
     relative = 1.0
     lammps.pair_style(
@@ -433,6 +449,10 @@ def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
     assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
 
 
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
+)
 def test_pair_deepmd_model_devi_atomic_relative_v(lammps) -> None:
     relative = 1.0
     lammps.pair_style(
@@ -519,6 +539,10 @@ def test_pair_deepmd_virial_real(lammps_real) -> None:
         )
 
 
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
+)
 def test_pair_deepmd_model_devi_real(lammps_real) -> None:
     lammps_real.pair_style(
         f"deepmd {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic"
@@ -549,6 +573,10 @@ def test_pair_deepmd_model_devi_real(lammps_real) -> None:
     )
 
 
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
+)
 def test_pair_deepmd_model_devi_virial_real(lammps_real) -> None:
     lammps_real.pair_style(
         f"deepmd {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic"
@@ -593,6 +621,10 @@ def test_pair_deepmd_model_devi_virial_real(lammps_real) -> None:
     )
 
 
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
+)
 def test_pair_deepmd_model_devi_atomic_relative_real(lammps_real) -> None:
     relative = 1.0
     lammps_real.pair_style(
@@ -626,6 +658,10 @@ def test_pair_deepmd_model_devi_atomic_relative_real(lammps_real) -> None:
     )
 
 
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
+)
 def test_pair_deepmd_model_devi_atomic_relative_v_real(lammps_real) -> None:
     relative = 1.0
     lammps_real.pair_style(

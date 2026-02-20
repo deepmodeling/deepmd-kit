@@ -8,10 +8,12 @@ from typing import (
     Any,
     ClassVar,
     Optional,
-    Union,
 )
 
 import numpy as np
+from typing_extensions import (
+    Self,
+)
 
 from deepmd.backend.backend import (
     Backend,
@@ -84,13 +86,13 @@ class DeepEvalBackend(ABC):
         model_file: str,
         output_def: ModelOutputDef,
         *args: Any,
-        auto_batch_size: Union[bool, int, AutoBatchSize] = True,
+        auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         **kwargs: Any,
     ) -> None:
         pass
 
-    def __new__(cls, model_file: str, *args, **kwargs):
+    def __new__(cls, model_file: str, *args: object, **kwargs: object) -> Self:
         if cls is DeepEvalBackend:
             backend = Backend.detect_backend_by_model(model_file)
             return super().__new__(backend().deep_eval)
@@ -100,11 +102,11 @@ class DeepEvalBackend(ABC):
     def eval(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         **kwargs: Any,
     ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
@@ -160,6 +162,10 @@ class DeepEvalBackend(ABC):
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this DP."""
 
+    def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
+        return False
+
     @abstractmethod
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
@@ -167,11 +173,11 @@ class DeepEvalBackend(ABC):
     def eval_descriptor(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-        efield: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        efield: np.ndarray | None = None,
         mixed_type: bool = False,
         **kwargs: Any,
     ) -> np.ndarray:
@@ -218,10 +224,10 @@ class DeepEvalBackend(ABC):
     def eval_fitting_last_layer(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate fitting before last layer by using this DP.
@@ -317,7 +323,7 @@ class DeepEvalBackend(ABC):
         """Check if the model has spin atom types."""
         return False
 
-    def get_has_hessian(self):
+    def get_has_hessian(self) -> bool:
         """Check if the model has hessian."""
         return False
 
@@ -340,6 +346,20 @@ class DeepEvalBackend(ABC):
     def get_observed_types(self) -> dict:
         """Get observed types (elements) of the model during data statistics."""
         raise NotImplementedError("Not implemented in this backend.")
+
+    @abstractmethod
+    def get_model(self) -> Any:
+        """Get the model module implemented by the deep learning framework.
+
+        For PyTorch, this returns the nn.Module. For Paddle, this returns
+        the paddle.nn.Layer. For TensorFlow, this returns the graph.
+        For dpmodel, this returns the BaseModel.
+
+        Returns
+        -------
+        model
+            The model module implemented by the deep learning framework.
+        """
 
 
 class DeepEval(ABC):
@@ -365,7 +385,7 @@ class DeepEval(ABC):
         Keyword arguments.
     """
 
-    def __new__(cls, model_file: str, *args, **kwargs):
+    def __new__(cls, model_file: str, *args: object, **kwargs: object) -> Self:
         if cls is DeepEval:
             deep_eval = DeepEvalBackend(
                 model_file,
@@ -380,7 +400,7 @@ class DeepEval(ABC):
         self,
         model_file: str,
         *args: Any,
-        auto_batch_size: Union[bool, int, AutoBatchSize] = True,
+        auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         **kwargs: Any,
     ) -> None:
@@ -416,6 +436,10 @@ class DeepEval(ABC):
         """Get the number (dimension) of frame parameters of this DP."""
         return self.deep_eval.get_dim_fparam()
 
+    def has_default_fparam(self) -> bool:
+        """Check if the model has default frame parameters."""
+        return self.deep_eval.has_default_fparam()
+
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
         return self.deep_eval.get_dim_aparam()
@@ -437,7 +461,9 @@ class DeepEval(ABC):
         nframes = coords.shape[0]
         return natoms, nframes
 
-    def _expande_atype(self, atype: np.ndarray, nframes: int, mixed_type: bool):
+    def _expande_atype(
+        self, atype: np.ndarray, nframes: int, mixed_type: bool
+    ) -> np.ndarray:
         if not mixed_type:
             atype = np.tile(atype.reshape(1, -1), (nframes, 1))
         return atype
@@ -445,10 +471,10 @@ class DeepEval(ABC):
     def eval_descriptor(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         mixed_type: bool = False,
         **kwargs: Any,
     ) -> np.ndarray:
@@ -512,10 +538,10 @@ class DeepEval(ABC):
     def eval_fitting_last_layer(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         mixed_type: bool = False,
         **kwargs: Any,
     ) -> np.ndarray:
@@ -605,7 +631,21 @@ class DeepEval(ABC):
         """
         return self.deep_eval.eval_typeebd()
 
-    def _standard_input(self, coords, cells, atom_types, fparam, aparam, mixed_type):
+    def _standard_input(
+        self,
+        coords: np.ndarray | list,
+        cells: np.ndarray | list | None,
+        atom_types: np.ndarray | list,
+        fparam: np.ndarray | list | None,
+        aparam: np.ndarray | list | None,
+        mixed_type: bool,
+    ) -> tuple[
+        np.ndarray,
+        np.ndarray | None,
+        np.ndarray,
+        np.ndarray | None,
+        np.ndarray | None,
+    ]:
         coords = np.array(coords)
         if cells is not None:
             cells = np.array(cells)
@@ -652,7 +692,7 @@ class DeepEval(ABC):
         """
         return self.deep_eval.get_sel_type()
 
-    def _get_sel_natoms(self, atype) -> int:
+    def _get_sel_natoms(self, atype: np.ndarray) -> int:
         return np.sum(np.isin(atype, self.get_sel_type()).astype(int))
 
     @property
@@ -685,3 +725,17 @@ class DeepEval(ABC):
     def get_observed_types(self) -> dict:
         """Get observed types (elements) of the model during data statistics."""
         return self.deep_eval.get_observed_types()
+
+    def get_model(self) -> Any:
+        """Get the model module implemented by the deep learning framework.
+
+        For PyTorch, this returns the nn.Module. For Paddle, this returns
+        the paddle.nn.Layer. For TensorFlow, this returns the graph.
+        For dpmodel, this returns the BaseModel.
+
+        Returns
+        -------
+        model
+            The model module implemented by the deep learning framework.
+        """
+        return self.deep_eval.get_model()

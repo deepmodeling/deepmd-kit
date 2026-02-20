@@ -2,15 +2,15 @@
 import logging
 import os
 import textwrap
-from typing import (
-    Optional,
-)
 
 from google.protobuf import (
     text_format,
 )
 from packaging.specifiers import (
     SpecifierSet,
+)
+from packaging.version import (
+    Version,
 )
 from packaging.version import parse as parse_version
 
@@ -24,7 +24,7 @@ from deepmd.tf.env import (
 log = logging.getLogger(__name__)
 
 
-def detect_model_version(input_model: str):
+def detect_model_version(input_model: str) -> Version | None:
     """Detect DP graph version.
 
     Parameters
@@ -60,7 +60,7 @@ def detect_model_version(input_model: str):
 
 
 def convert_to_21(
-    input_model: str, output_model: str, version: Optional[str] = None
+    input_model: str, output_model: str, version: str | None = None
 ) -> None:
     """Convert DP graph to 2.1 graph.
 

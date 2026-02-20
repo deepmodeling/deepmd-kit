@@ -117,7 +117,7 @@ static const char cite_user_deepmd_package[] =
     "  doi =      {10.1021/acs.jctc.5c00340},\n"
     "}\n\n";
 
-PairDeepSpin::PairDeepSpin(LAMMPS *lmp)
+PairDeepSpin::PairDeepSpin(LAMMPS* lmp)
     : PairDeepBaseModel(
           lmp, cite_user_deepmd_package, deep_spin, deep_spin_model_devi) {
   // Constructor body can be empty
@@ -141,10 +141,10 @@ void PairDeepSpin::compute(int eflag, int vflag) {
   }
   bool do_ghost = true;
   //  dpa2 communication
-  commdata_ = (CommBrickDeepSpin *)comm;
-  double **x = atom->x;
-  double **f = atom->f;
-  int *type = atom->type;
+  commdata_ = (CommBrickDeepSpin*)comm;
+  double** x = atom->x;
+  double** f = atom->f;
+  int* type = atom->type;
   int nlocal = atom->nlocal;
   int nghost = 0;
   if (do_ghost) {
@@ -155,8 +155,8 @@ void PairDeepSpin::compute(int eflag, int vflag) {
 
   vector<double> dspin(nall * 3, 0.);
   vector<double> dfm(nall * 3, 0.);
-  double **sp = atom->sp;
-  double **fm = atom->fm;
+  double** sp = atom->sp;
+  double** fm = atom->fm;
   // spin initialize
   if (atom->sp_flag) {
     // get spin
@@ -251,7 +251,7 @@ void PairDeepSpin::compute(int eflag, int vflag) {
           deep_spin.compute(dener, dforce, dforce_mag, dvirial, dcoord, dspin,
                             dtype, dbox, nghost, lmp_list, ago, fparam,
                             daparam);
-        } catch (deepmd_compat::deepmd_exception &e) {
+        } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
         }
       }
@@ -263,7 +263,7 @@ void PairDeepSpin::compute(int eflag, int vflag) {
           deep_spin.compute(dener, dforce, dforce_mag, dvirial, deatom, dvatom,
                             dcoord, dspin, dtype, dbox, nghost, lmp_list, ago,
                             fparam, daparam);
-        } catch (deepmd_compat::deepmd_exception &e) {
+        } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
         }
         if (eflag_atom) {
@@ -315,7 +315,7 @@ void PairDeepSpin::compute(int eflag, int vflag) {
           deep_spin_model_devi.compute(all_energy, all_force, all_force_mag,
                                        all_virial, dcoord, dspin, dtype, dbox,
                                        nghost, lmp_list, ago, fparam, daparam);
-        } catch (deepmd_compat::deepmd_exception &e) {
+        } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
         }
       } else {
@@ -324,7 +324,7 @@ void PairDeepSpin::compute(int eflag, int vflag) {
               all_energy, all_force, all_force_mag, all_virial, all_atom_energy,
               all_atom_virial, dcoord, dspin, dtype, dbox, nghost, lmp_list,
               ago, fparam, daparam);
-        } catch (deepmd_compat::deepmd_exception &e) {
+        } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
         }
       }
@@ -473,7 +473,7 @@ void PairDeepSpin::compute(int eflag, int vflag) {
           // need support for spin atomic force.
           vector<double> std_f_all(atom->natoms);
           // Gather std_f and tags
-          tagint *tag = atom->tag;
+          tagint* tag = atom->tag;
           int nprocs = comm->nprocs;
           // Grow arrays if necessary
           if (atom->natoms > stdf_comm_buff_size) {
@@ -521,7 +521,7 @@ void PairDeepSpin::compute(int eflag, int vflag) {
       try {
         deep_spin.compute(dener, dforce, dforce_mag, dvirial, dcoord, dspin,
                           dtype, dbox);
-      } catch (deepmd_compat::deepmd_exception &e) {
+      } catch (deepmd_compat::deepmd_exception& e) {
         error->one(FLERR, e.what());
       }
     } else {
@@ -558,7 +558,7 @@ void PairDeepSpin::compute(int eflag, int vflag) {
   }
 }
 
-static bool is_key(const string &input) {
+static bool is_key(const string& input) {
   vector<string> keys;
   keys.push_back("out_freq");
   keys.push_back("out_file");
@@ -581,7 +581,7 @@ static bool is_key(const string &input) {
   return false;
 }
 
-void PairDeepSpin::settings(int narg, char **arg) {
+void PairDeepSpin::settings(int narg, char** arg) {
   if (narg <= 0) {
     error->all(FLERR, "Illegal pair_style command");
   }
@@ -601,7 +601,7 @@ void PairDeepSpin::settings(int narg, char **arg) {
   if (numb_models == 1) {
     try {
       deep_spin.init(arg[0], get_node_rank(), get_file_content(arg[0]));
-    } catch (deepmd_compat::deepmd_exception &e) {
+    } catch (deepmd_compat::deepmd_exception& e) {
       error->one(FLERR, e.what());
     }
     cutoff = deep_spin.cutoff() * dist_unit_cvt_factor;
@@ -614,7 +614,7 @@ void PairDeepSpin::settings(int narg, char **arg) {
       deep_spin.init(arg[0], get_node_rank(), get_file_content(arg[0]));
       deep_spin_model_devi.init(models, get_node_rank(),
                                 get_file_content(models));
-    } catch (deepmd_compat::deepmd_exception &e) {
+    } catch (deepmd_compat::deepmd_exception& e) {
       error->one(FLERR, e.what());
     }
     cutoff = deep_spin_model_devi.cutoff() * dist_unit_cvt_factor;
@@ -828,7 +828,7 @@ void PairDeepSpin::settings(int narg, char **arg) {
    set coeffs for one or more type pairs
 ------------------------------------------------------------------------- */
 
-void PairDeepSpin::coeff(int narg, char **arg) {
+void PairDeepSpin::coeff(int narg, char** arg) {
   if (!allocated) {
     allocate();
   }
@@ -919,7 +919,7 @@ void PairDeepSpin::coeff(int narg, char **arg) {
 
 /* ---------------------------------------------------------------------- */
 
-int PairDeepSpin::pack_reverse_comm(int n, int first, double *buf) {
+int PairDeepSpin::pack_reverse_comm(int n, int first, double* buf) {
   int i, m, last;
 
   m = 0;
@@ -946,7 +946,7 @@ int PairDeepSpin::pack_reverse_comm(int n, int first, double *buf) {
 
 /* ---------------------------------------------------------------------- */
 
-void PairDeepSpin::unpack_reverse_comm(int n, int *list, double *buf) {
+void PairDeepSpin::unpack_reverse_comm(int n, int* list, double* buf) {
   int i, j, m;
 
   m = 0;

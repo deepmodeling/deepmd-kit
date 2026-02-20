@@ -249,6 +249,7 @@ class TestDPA1(unittest.TestCase):
         # this is an old state dict, modify manually
         state_dict["compress_info.0"] = des.compress_info[0]
         state_dict["compress_data.0"] = des.compress_data[0]
+        state_dict["type_embd_data"] = des.type_embd_data
         des.load_state_dict(state_dict)
         coord = self.coord
         atype = self.atype
@@ -377,5 +378,6 @@ def translate_se_atten_and_type_embd_dicts_to_dpa1(
         target_dict[tk] = type_embd_dict[kk]
     record[all_keys.index("se_atten.compress_data.0")] = True
     record[all_keys.index("se_atten.compress_info.0")] = True
+    record[all_keys.index("se_atten.type_embd_data")] = True
     assert all(record)
     return target_dict

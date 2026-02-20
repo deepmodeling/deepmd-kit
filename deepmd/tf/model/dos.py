@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Optional,
-    Union,
+    Any,
 )
 
 from deepmd.tf.env import (
@@ -11,6 +10,9 @@ from deepmd.tf.env import (
 )
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 
 from .model import (
@@ -49,11 +51,11 @@ class DOSModel(StandardModel):
         self,
         descriptor: dict,
         fitting_net: dict,
-        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[list[str]] = None,
+        type_embedding: dict | TypeEmbedNet | None = None,
+        type_map: list[str] | None = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         super().__init__(
@@ -70,16 +72,16 @@ class DOSModel(StandardModel):
         self.numb_fparam = self.fitting.get_numb_fparam()
         self.numb_aparam = self.fitting.get_numb_aparam()
 
-    def get_numb_dos(self):
+    def get_numb_dos(self) -> int:
         return self.numb_dos
 
-    def get_rcut(self):
+    def get_rcut(self) -> float:
         return self.rcut
 
-    def get_ntypes(self):
+    def get_ntypes(self) -> int:
         return self.ntypes
 
-    def get_type_map(self):
+    def get_type_map(self) -> list[str]:
         return self.type_map
 
     def get_numb_fparam(self) -> int:
@@ -90,7 +92,7 @@ class DOSModel(StandardModel):
         """Get the number of atomic parameters."""
         return self.numb_aparam
 
-    def data_stat(self, data) -> None:
+    def data_stat(self, data: DeepmdDataSystem) -> None:
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)
         m_all_stat = merge_sys_stat(all_stat)
         self._compute_input_stat(
@@ -99,7 +101,9 @@ class DOSModel(StandardModel):
         # self._compute_output_stat(all_stat, mixed_type=data.mixed_type)
         # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
-    def _compute_input_stat(self, all_stat, protection=1e-2, mixed_type=False) -> None:
+    def _compute_input_stat(
+        self, all_stat: dict, protection: float = 1e-2, mixed_type: bool = False
+    ) -> None:
         if mixed_type:
             self.descrpt.compute_input_stats(
                 all_stat["coord"],
@@ -122,7 +126,7 @@ class DOSModel(StandardModel):
             )
         self.fitting.compute_input_stats(all_stat, protection=protection)
 
-    def _compute_output_stat(self, all_stat, mixed_type=False) -> None:
+    def _compute_output_stat(self, all_stat: dict, mixed_type: bool = False) -> None:
         if mixed_type:
             self.fitting.compute_output_stats(all_stat, mixed_type=mixed_type)
         else:
@@ -130,17 +134,17 @@ class DOSModel(StandardModel):
 
     def build(
         self,
-        coord_,
-        atype_,
-        natoms,
-        box,
-        mesh,
-        input_dict,
-        frz_model=None,
-        ckpt_meta: Optional[str] = None,
-        suffix="",
-        reuse=None,
-    ):
+        coord_: tf.Tensor,
+        atype_: tf.Tensor,
+        natoms: tf.Tensor,
+        box: tf.Tensor,
+        mesh: tf.Tensor,
+        input_dict: dict,
+        frz_model: str | None = None,
+        ckpt_meta: str | None = None,
+        suffix: str = "",
+        reuse: bool | None = None,
+    ) -> dict:
         if input_dict is None:
             input_dict = {}
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):
@@ -148,6 +152,9 @@ class DOSModel(StandardModel):
             t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
             t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
             t_od = tf.constant(self.numb_dos, name="output_dim", dtype=tf.int32)
+
+            # Initialize out_bias and out_std for DOS models
+            self.init_out_stat(suffix=suffix)
 
         coord = tf.reshape(coord_, [-1, natoms[1] * 3])
         atype = tf.reshape(atype_, [-1, natoms[1]])
@@ -181,6 +188,10 @@ class DOSModel(StandardModel):
         atom_dos = self.fitting.build(
             dout, natoms, input_dict, reuse=reuse, suffix=suffix
         )
+
+        # Apply out_bias and out_std directly to DOS output
+        atom_dos = self._apply_out_bias_std(atom_dos, atype, natoms, coord)
+
         self.atom_dos = atom_dos
 
         dos_raw = atom_dos

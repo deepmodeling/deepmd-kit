@@ -10,9 +10,6 @@ from collections import (
 from collections.abc import (
     Iterator,
 )
-from typing import (
-    Optional,
-)
 
 import numpy as np
 
@@ -28,7 +25,7 @@ class StatItem:
 
     Parameters
     ----------
-    number : int
+    number : float
         The total size of given array.
     sum : float
         The sum value of the matrix.
@@ -36,7 +33,9 @@ class StatItem:
         The sum squared value of the matrix.
     """
 
-    def __init__(self, number: int = 0, sum: float = 0, squared_sum: float = 0) -> None:
+    def __init__(
+        self, number: float = 0, sum: float = 0, squared_sum: float = 0
+    ) -> None:
         self.number = number
         self.sum = sum
         self.squared_sum = squared_sum
@@ -46,6 +45,13 @@ class StatItem:
             number=self.number + other.number,
             sum=self.sum + other.sum,
             squared_sum=self.squared_sum + other.squared_sum,
+        )
+
+    def __mul__(self, scalar: float) -> "StatItem":
+        return StatItem(
+            number=self.number * scalar,
+            sum=self.sum * scalar,
+            squared_sum=self.squared_sum * scalar,
         )
 
     def compute_avg(self, default: float = 0) -> float:
@@ -160,7 +166,7 @@ class EnvMatStat(ABC):
             )
 
     def load_or_compute_stats(
-        self, data: list[dict[str, np.ndarray]], path: Optional[DPPath] = None
+        self, data: list[dict[str, np.ndarray]], path: DPPath | None = None
     ) -> None:
         """Load the statistics of the environment matrix if it exists, otherwise compute and save it.
 

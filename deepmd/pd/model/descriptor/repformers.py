@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
+from collections.abc import (
     Callable,
-    Optional,
-    Union,
 )
 
 import paddle
@@ -55,15 +53,15 @@ from .repformer_layer import (
 if not ENABLE_CUSTOMIZED_OP:
 
     def border_op(
-        argument0,
-        argument1,
-        argument2,
-        argument3,
-        argument4,
-        argument5,
-        argument6,
-        argument7,
-        argument8,
+        argument0: paddle.Tensor,
+        argument1: paddle.Tensor,
+        argument2: paddle.Tensor,
+        argument3: paddle.Tensor,
+        argument4: paddle.Tensor,
+        argument5: paddle.Tensor,
+        argument6: paddle.Tensor,
+        argument7: paddle.Tensor,
+        argument8: paddle.Tensor,
     ) -> paddle.Tensor:
         raise NotImplementedError(
             "The 'border_op' operator is unavailable because the custom Paddle OP library was not built when freezing the model.\n"
@@ -82,13 +80,13 @@ else:
 class DescrptBlockRepformers(DescriptorBlock):
     def __init__(
         self,
-        rcut,
-        rcut_smth,
+        rcut: float,
+        rcut_smth: float,
         sel: int,
         ntypes: int,
         nlayers: int = 3,
-        g1_dim=128,
-        g2_dim=16,
+        g1_dim: int = 128,
+        g2_dim: int = 16,
         axis_neuron: int = 4,
         direct_dist: bool = False,
         update_g1_has_conv: bool = True,
@@ -113,8 +111,8 @@ class DescrptBlockRepformers(DescriptorBlock):
         env_protection: float = 0.0,
         precision: str = "float64",
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
-        seed: Optional[Union[int, list[int]]] = None,
+        ln_eps: float | None = 1e-5,
+        seed: int | list[int] | None = None,
         use_sqrt_nnei: bool = True,
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
@@ -210,8 +208,14 @@ class DescrptBlockRepformers(DescriptorBlock):
         """
         super().__init__()
         self.rcut = float(rcut)
+        self.register_buffer("buffer_rcut", paddle.to_tensor(self.rcut))
         self.rcut_smth = float(rcut_smth)
+        self.register_buffer("buffer_rcut_smth", paddle.to_tensor(self.rcut_smth))
         self.ntypes = ntypes
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
+
         self.nlayers = nlayers
         sel = [sel] if isinstance(sel, int) else sel
         self.nnei = sum(sel)
@@ -323,6 +327,14 @@ class DescrptBlockRepformers(DescriptorBlock):
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.rcut_smth
 
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Returns the cut-off radius as a buffer-style Tensor."""
+        return self.buffer_rcut
+
+    def get_buffer_rcut_smth(self) -> paddle.Tensor:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0 as a buffer-style Tensor."""
+        return self.buffer_rcut_smth
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
@@ -333,7 +345,7 @@ class DescrptBlockRepformers(DescriptorBlock):
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.ntypes
+        return self.ntypes if paddle.in_dynamic_mode() else self.buffer_ntypes
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
@@ -347,7 +359,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         """Returns the embedding dimension g2."""
         return self.g2_dim
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: paddle.Tensor) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -355,7 +367,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> paddle.Tensor:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -380,17 +392,17 @@ class DescrptBlockRepformers(DescriptorBlock):
         return self.env_protection
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.g1_dim
 
     @property
-    def dim_in(self):
+    def dim_in(self) -> int:
         """Returns the atomic input dimension of this descriptor."""
         return self.g1_dim
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
@@ -406,11 +418,11 @@ class DescrptBlockRepformers(DescriptorBlock):
         nlist: paddle.Tensor,
         extended_coord: paddle.Tensor,
         extended_atype: paddle.Tensor,
-        extended_atype_embd: Optional[paddle.Tensor] = None,
-        mapping: Optional[paddle.Tensor] = None,
-        type_embedding: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[list[paddle.Tensor]] = None,
-    ):
+        extended_atype_embd: paddle.Tensor | None = None,
+        mapping: paddle.Tensor | None = None,
+        type_embedding: paddle.Tensor | None = None,
+        comm_dict: list[paddle.Tensor] | None = None,
+    ) -> paddle.Tensor:
         if (comm_dict is None or len(comm_dict) == 0) and paddle.in_dynamic_mode():
             assert mapping is not None
             assert extended_atype_embd is not None
@@ -585,8 +597,8 @@ class DescrptBlockRepformers(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.

@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
 
 from deepmd.dpmodel.atomic_model import (
     DPDOSAtomicModel,
@@ -23,8 +26,8 @@ class DOSModel(DPModelCommon, DPDOSModel_):
 
     def __init__(
         self,
-        *args,
-        **kwargs,
-    ):
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
         DPModelCommon.__init__(self)
         DPDOSModel_.__init__(self, *args, **kwargs)

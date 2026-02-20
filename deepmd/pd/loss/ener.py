@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Optional,
+    Any,
 )
 
 import paddle
@@ -23,7 +23,9 @@ from deepmd.utils.version import (
 )
 
 
-def custom_huber_loss(predictions, targets, delta=1.0):
+def custom_huber_loss(
+    predictions: paddle.Tensor, targets: paddle.Tensor, delta: float = 1.0
+) -> paddle.Tensor:
     error = targets - predictions
     abs_error = paddle.abs(error)
     quadratic_loss = 0.5 * paddle.pow(error, 2)
@@ -35,27 +37,27 @@ def custom_huber_loss(predictions, targets, delta=1.0):
 class EnergyStdLoss(TaskLoss):
     def __init__(
         self,
-        starter_learning_rate=1.0,
-        start_pref_e=0.0,
-        limit_pref_e=0.0,
-        start_pref_f=0.0,
-        limit_pref_f=0.0,
-        start_pref_v=0.0,
-        limit_pref_v=0.0,
+        starter_learning_rate: float = 1.0,
+        start_pref_e: float = 0.0,
+        limit_pref_e: float = 0.0,
+        start_pref_f: float = 0.0,
+        limit_pref_f: float = 0.0,
+        start_pref_v: float = 0.0,
+        limit_pref_v: float = 0.0,
         start_pref_ae: float = 0.0,
         limit_pref_ae: float = 0.0,
         start_pref_pf: float = 0.0,
         limit_pref_pf: float = 0.0,
-        relative_f: Optional[float] = None,
+        relative_f: float | None = None,
         enable_atom_ener_coeff: bool = False,
         start_pref_gf: float = 0.0,
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
         use_l1_all: bool = False,
-        inference=False,
-        use_huber=False,
-        huber_delta=0.01,
-        **kwargs,
+        inference: bool = False,
+        use_huber: bool = False,
+        huber_delta: float = 0.01,
+        **kwargs: Any,
     ) -> None:
         r"""Construct a layer to compute loss on energy, force and virial.
 
@@ -149,7 +151,15 @@ class EnergyStdLoss(TaskLoss):
                 "Huber loss is not implemented for force with atom_pref, generalized force and relative force. "
             )
 
-    def forward(self, input_dict, model, label, natoms, learning_rate, mae=False):
+    def forward(
+        self,
+        input_dict: dict[str, paddle.Tensor],
+        model: paddle.nn.Layer,
+        label: dict[str, paddle.Tensor],
+        natoms: int,
+        learning_rate: float,
+        mae: bool = False,
+    ) -> tuple[dict[str, paddle.Tensor], paddle.Tensor, dict[str, paddle.Tensor]]:
         """Return loss on energy and force.
 
         Parameters
@@ -214,8 +224,8 @@ class EnergyStdLoss(TaskLoss):
                     loss += atom_norm * (pref_e * l2_ener_loss)
                 else:
                     l_huber_loss = custom_huber_loss(
-                        atom_norm * model_pred["energy"],
-                        atom_norm * label["energy"],
+                        atom_norm * energy_pred,
+                        atom_norm * energy_label,
                         delta=self.huber_delta,
                     )
                     loss += pref_e * l_huber_loss
@@ -538,10 +548,10 @@ class EnergyStdLoss(TaskLoss):
 class EnergyHessianStdLoss(EnergyStdLoss):
     def __init__(
         self,
-        start_pref_h=0.0,
-        limit_pref_h=0.0,
-        **kwargs,
-    ):
+        start_pref_h: float = 0.0,
+        limit_pref_h: float = 0.0,
+        **kwargs: Any,
+    ) -> None:
         r"""Enable the layer to compute loss on hessian.
 
         Parameters
@@ -559,7 +569,15 @@ class EnergyHessianStdLoss(EnergyStdLoss):
         self.start_pref_h = start_pref_h
         self.limit_pref_h = limit_pref_h
 
-    def forward(self, input_dict, model, label, natoms, learning_rate, mae=False):
+    def forward(
+        self,
+        input_dict: dict[str, paddle.Tensor],
+        model: paddle.nn.Module,
+        label: dict[str, paddle.Tensor],
+        natoms: int,
+        learning_rate: float,
+        mae: bool = False,
+    ) -> tuple[dict[str, paddle.Tensor], paddle.Tensor, dict[str, paddle.Tensor]]:
         model_pred, loss, more_loss = super().forward(
             input_dict, model, label, natoms, learning_rate, mae=mae
         )

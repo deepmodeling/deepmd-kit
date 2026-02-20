@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import pathlib
-from typing import (
-    Optional,
-    Union,
-)
 
 import numpy as np
 import torch
@@ -51,10 +47,10 @@ def run_dp(cmd: str) -> int:
 
 def eval_model(
     model,
-    coords: Union[np.ndarray, torch.Tensor],
-    cells: Optional[Union[np.ndarray, torch.Tensor]],
-    atom_types: Union[np.ndarray, torch.Tensor, list[int]],
-    spins: Optional[Union[np.ndarray, torch.Tensor]] = None,
+    coords: np.ndarray | torch.Tensor,
+    cells: np.ndarray | torch.Tensor | None,
+    atom_types: np.ndarray | torch.Tensor | list[int],
+    spins: np.ndarray | torch.Tensor | None = None,
     atomic: bool = False,
     infer_batch_size: int = 2,
     denoise: bool = False,

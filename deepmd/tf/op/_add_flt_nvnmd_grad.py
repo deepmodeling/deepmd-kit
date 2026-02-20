@@ -7,11 +7,12 @@ from tensorflow.python.framework import (
 
 from deepmd.tf.env import (
     op_module,
+    tf,
 )
 
 
 @ops.RegisterGradient("AddFltNvnmd")
-def _AddFltNvnmdGrad(op, grad):
+def _AddFltNvnmdGrad(op: tf.Operation, grad: tf.Tensor) -> list[tf.Tensor]:
     dx = op_module.flt_nvnmd(grad)
     dw = dx
     return [dx, dw]

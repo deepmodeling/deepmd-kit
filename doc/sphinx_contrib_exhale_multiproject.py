@@ -78,14 +78,22 @@ import os.path
 from pprint import (
     pprint,
 )
+from typing import (
+    TYPE_CHECKING,
+)
 
 import exhale
 import exhale.configs
 import exhale.deploy
 import exhale.utils
 
+if TYPE_CHECKING:
+    from sphinx.application import (
+        Sphinx,
+    )
 
-def exhale_environment_ready(app) -> None:
+
+def exhale_environment_ready(app: "Sphinx") -> None:
     default_project = app.config.breathe_default_project
     default_exhale_args = dict(app.config.exhale_args)
 

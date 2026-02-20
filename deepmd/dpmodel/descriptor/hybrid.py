@@ -3,13 +3,14 @@ import math
 from typing import (
     Any,
     NoReturn,
-    Optional,
-    Union,
 )
 
 import array_api_compat
 import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    Array,
+)
 from deepmd.dpmodel.common import (
     NativeOP,
 )
@@ -43,9 +44,9 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
 
     def __init__(
         self,
-        list: list[Union[BaseDescriptor, dict[str, Any]]],
-        type_map: Optional[list[str]] = None,
-        ntypes: Optional[int] = None,  # to be compat with input
+        list: list[BaseDescriptor | dict[str, Any]],
+        type_map: list[str] | None = None,
+        ntypes: int | None = None,  # to be compat with input
     ) -> None:
         super().__init__()
         # warning: list is conflict with built-in list
@@ -76,7 +77,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             )
         # if hybrid sel is larger than sub sel, the nlist needs to be cut for each type
         hybrid_sel = self.get_sel()
-        nlist_cut_idx: list[np.ndarray] = []
+        nlist_cut_idx: list[Array] = []
         if self.mixed_types() and not all(
             descrpt.mixed_types() for descrpt in self.descrpt_list
         ):
@@ -100,7 +101,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             start_idx = np.cumsum(np.pad(hybrid_sel, (1, 0), "constant"))[:-1]
             end_idx = start_idx + np.array(sub_sel)
             cut_idx = np.concatenate(
-                [range(ss, ee) for ss, ee in zip(start_idx, end_idx)]
+                [range(ss, ee) for ss, ee in zip(start_idx, end_idx, strict=True)]
             )
             nlist_cut_idx.append(cut_idx)
         self.nlist_cut_idx = nlist_cut_idx
@@ -144,7 +145,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """Returns the output dimension."""
         return np.sum([descrpt.get_dim_emb() for descrpt in self.descrpt_list]).item()
 
-    def mixed_types(self):
+    def mixed_types(self) -> bool:
         """Returns if the descriptor requires a neighbor list that distinguish different
         atomic types or not.
         """
@@ -168,7 +169,9 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             )
         return all_protection[0]
 
-    def share_params(self, base_class, shared_level, resume=False) -> NoReturn:
+    def share_params(
+        self, base_class: Any, shared_level: Any, resume: bool = False
+    ) -> NoReturn:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -177,7 +180,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -191,7 +194,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             )
 
     def compute_input_stats(
-        self, merged: list[dict], path: Optional[DPPath] = None
+        self, merged: list[dict], path: DPPath | None = None
     ) -> None:
         """Update mean and stddev for descriptor elements."""
         for descrpt in self.descrpt_list:
@@ -199,8 +202,8 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: list[Union[np.ndarray, list[np.ndarray]]],
-        stddev: list[Union[np.ndarray, list[np.ndarray]]],
+        mean: list[np.ndarray | list[Array]],
+        stddev: list[np.ndarray | list[Array]],
     ) -> None:
         """Update mean and stddev for descriptor."""
         for ii, descrpt in enumerate(self.descrpt_list):
@@ -209,8 +212,8 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
     def get_stat_mean_and_stddev(
         self,
     ) -> tuple[
-        list[Union[np.ndarray, list[np.ndarray]]],
-        list[Union[np.ndarray, list[np.ndarray]]],
+        list[Array | list[Array]],
+        list[Array | list[Array]],
     ]:
         """Get mean and stddev for descriptor."""
         mean_list = []
@@ -255,11 +258,17 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
 
     def call(
         self,
-        coord_ext,
-        atype_ext,
-        nlist,
-        mapping: Optional[np.ndarray] = None,
-    ):
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+        mapping: Array | None = None,
+    ) -> tuple[
+        Array,
+        Array | None,
+        Array | None,
+        Array | None,
+        Array | None,
+    ]:
         """Compute the descriptor.
 
         Parameters
@@ -301,7 +310,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             )
         else:
             nl_distinguish_types = None
-        for descrpt, nci in zip(self.descrpt_list, self.nlist_cut_idx):
+        for descrpt, nci in zip(self.descrpt_list, self.nlist_cut_idx, strict=True):
             # cut the nlist to the correct length
             if self.mixed_types() == descrpt.mixed_types():
                 nl = xp.take(nlist, nci, axis=2)
@@ -322,9 +331,9 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[Array, Array]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

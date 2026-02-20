@@ -7,7 +7,6 @@ from abc import (
 )
 from typing import (
     Any,
-    Optional,
 )
 
 from deepmd.utils.data_system import (
@@ -36,7 +35,7 @@ def make_base_model() -> type[object]:
             BaseModel class for DPModel backend.
         """
 
-        def __new__(cls, *args, **kwargs):
+        def __new__(cls, *args: Any, **kwargs: Any) -> "BaseModel":
             if inspect.isabstract(cls):
                 # getting model type based on fitting type
                 model_type = kwargs.get("type", "standard")
@@ -68,15 +67,15 @@ def make_base_model() -> type[object]:
             """Get the type map."""
 
         @abstractmethod
-        def get_rcut(self):
+        def get_rcut(self) -> float:
             """Get the cut-off radius."""
 
         @abstractmethod
-        def get_dim_fparam(self):
+        def get_dim_fparam(self) -> int:
             """Get the number (dimension) of frame parameters of this atomic model."""
 
         @abstractmethod
-        def get_dim_aparam(self):
+        def get_dim_aparam(self) -> int:
             """Get the number (dimension) of atomic parameters of this atomic model."""
 
         @abstractmethod
@@ -133,7 +132,7 @@ def make_base_model() -> type[object]:
 
         model_def_script: str
         """The model definition script."""
-        min_nbor_dist: Optional[float]
+        min_nbor_dist: float | None
         """The minimum distance between two atoms. Used for model compression.
         None when skipping neighbor statistics.
         """
@@ -143,7 +142,7 @@ def make_base_model() -> type[object]:
             """Get the model definition script."""
             pass
 
-        def get_min_nbor_dist(self) -> Optional[float]:
+        def get_min_nbor_dist(self) -> float | None:
             """Get the minimum distance between two atoms."""
             return self.min_nbor_dist
 
@@ -163,9 +162,9 @@ def make_base_model() -> type[object]:
         def update_sel(
             cls,
             train_data: DeepmdDataSystem,
-            type_map: Optional[list[str]],
+            type_map: list[str] | None,
             local_jdata: dict,
-        ) -> tuple[dict, Optional[float]]:
+        ) -> tuple[dict, float | None]:
             """Update the selection and perform neighbor statistics.
 
             Parameters

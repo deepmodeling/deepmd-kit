@@ -2,8 +2,7 @@
 import copy
 import logging
 from typing import (
-    Optional,
-    Union,
+    Any,
 )
 
 import paddle
@@ -38,7 +37,7 @@ class EnergyFittingNet(InvarFitting):
         ntypes: int,
         dim_descrpt: int,
         neuron: list[int] = [128, 128, 128],
-        bias_atom_e: Optional[paddle.Tensor] = None,
+        bias_atom_e: paddle.Tensor | None = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -46,10 +45,10 @@ class EnergyFittingNet(InvarFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
-        type_map: Optional[list[str]] = None,
-        **kwargs,
-    ):
+        seed: int | list[int] | None = None,
+        type_map: list[str] | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(
             "energy",
             ntypes,
@@ -72,7 +71,7 @@ class EnergyFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         data.pop("var_name")
         data.pop("dim_out")
         return super().deserialize(data)

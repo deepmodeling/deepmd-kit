@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     NoReturn,
-    Optional,
 )
 
 import torch
@@ -18,7 +18,7 @@ from deepmd.utils.path import (
 
 
 class BaseModel(torch.nn.Module, make_base_model()):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Construct a basic model for different tasks."""
         torch.nn.Module.__init__(self)
         self.model_def_script = ""
@@ -28,8 +28,8 @@ class BaseModel(torch.nn.Module, make_base_model()):
 
     def compute_or_load_stat(
         self,
-        sampled_func,
-        stat_file_path: Optional[DPPath] = None,
+        sampled_func: Any,
+        stat_file_path: DPPath | None = None,
     ) -> NoReturn:
         """
         Compute or load the statistics parameters of the model,
@@ -64,13 +64,13 @@ class BaseModel(torch.nn.Module, make_base_model()):
         return self.model_def_script
 
     @torch.jit.export
-    def get_min_nbor_dist(self) -> Optional[float]:
+    def get_min_nbor_dist(self) -> float | None:
         """Get the minimum distance between two atoms."""
         if self.min_nbor_dist.item() == -1.0:
             return None
         return self.min_nbor_dist.item()
 
     @torch.jit.export
-    def get_ntypes(self):
+    def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return len(self.get_type_map())

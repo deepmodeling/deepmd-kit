@@ -90,7 +90,7 @@ class TestDOS(CommonTest, ModelTest, unittest.TestCase):
 
     @property
     def skip_tf(self):
-        return True  # need to fix tf consistency
+        return not INSTALLED_TF
 
     @property
     def skip_jax(self) -> bool:

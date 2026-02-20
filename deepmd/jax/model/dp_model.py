@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
 )
 
 from deepmd.dpmodel.model import (
@@ -52,11 +51,11 @@ def make_jax_dp_model_from_dpmodel(
             extended_coord: jnp.ndarray,
             extended_atype: jnp.ndarray,
             nlist: jnp.ndarray,
-            mapping: Optional[jnp.ndarray] = None,
-            fparam: Optional[jnp.ndarray] = None,
-            aparam: Optional[jnp.ndarray] = None,
+            mapping: jnp.ndarray | None = None,
+            fparam: jnp.ndarray | None = None,
+            aparam: jnp.ndarray | None = None,
             do_atomic_virial: bool = False,
-        ):
+        ) -> dict[str, jnp.ndarray]:
             return forward_common_atomic(
                 self,
                 extended_coord,
@@ -74,7 +73,7 @@ def make_jax_dp_model_from_dpmodel(
             extended_atype: jnp.ndarray,
             nlist: jnp.ndarray,
             extra_nlist_sort: bool = False,
-        ):
+        ) -> jnp.ndarray:
             return dpmodel_model.format_nlist(
                 self,
                 jax.lax.stop_gradient(extended_coord),

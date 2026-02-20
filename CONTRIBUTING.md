@@ -36,13 +36,6 @@ You can help other users of deepmd-kit in the following way
 
 ## Before you contribute
 
-### Overview of DeePMD-kit
-
-Currently, we maintain two main branch:
-
-- master: stable branch with version tag
-- devel : branch for developers
-
 ### Developer guide
 
 See [documentation](https://deepmd.readthedocs.io/) for coding conventions, API and other needs-to-know of the code.
@@ -58,13 +51,11 @@ Please perform the following steps to create your Pull Request to this repositor
 
 ### Step 2: Clone the forked repository to local storage and set configurations
 
-1. Clone your own repo, not the public repo (from deepmodeling) ! And change the branch to devel.
+1. Clone your own repo, not the public repo (from deepmodeling) !
 
    ```bash
    git clone https://github.com/$username/deepmd-kit.git
    # Replace `$username` with your GitHub ID
-
-   git checkout devel
    ```
 
 2. Add deepmodeling's repo as your remote repo, we can name it "upstream". And fetch upstream's latest codes to your workstation.
@@ -76,15 +67,15 @@ Please perform the following steps to create your Pull Request to this repositor
    git fetch upstream
 
    # If your current codes are behind the latest codes, you should merge latest codes first.
-   # Notice you should merge from "devel"!
-   git merge upstream/devel
+   git merge upstream/master
    ```
 
 3. Modify your codes and design unit tests.
 
-4. Commit your changes
+4. Commit your changes to a new branch
 
    ```bash
+   git checkout -b branch1
    git status # Checks the local status
    git add <file> ... # Adds the file(s) you want to commit. If you want to commit all changes, you can directly use `git add.`
    git commit -m "commit-message: update the xx"
@@ -92,7 +83,7 @@ Please perform the following steps to create your Pull Request to this repositor
 
 5. Push the changed codes to your original repo on github.
    ```bash
-   git push origin devel
+   git push origin branch1
    ```
 
 ### Alternatively: Create a new branch
@@ -145,4 +136,4 @@ Now, your PR is successfully submitted! After this PR is merged, you will automa
 
 ## Contact us
 
-E-mail: contact@deepmodeling.org
+E-mail: deepmodeling@deepmodeling.com

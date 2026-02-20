@@ -3,6 +3,10 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.descriptor.dpa3 import DescrptDPA3 as DescrptDPA3DP
 from deepmd.jax.common import (
     ArrayAPIVariable,
@@ -14,6 +18,10 @@ from deepmd.jax.descriptor.base_descriptor import (
 )
 from deepmd.jax.descriptor.repflows import (
     DescrptBlockRepflows,
+)
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
 )
 from deepmd.jax.utils.type_embed import (
     TypeEmbedNet,
@@ -28,6 +36,8 @@ class DescrptDPA3(DescrptDPA3DP):
             value = to_jax_array(value)
             if value is not None:
                 value = ArrayAPIVariable(value)
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name in {"repflows"}:
             value = DescrptBlockRepflows.deserialize(value.serialize())
         elif name in {"type_embedding"}:

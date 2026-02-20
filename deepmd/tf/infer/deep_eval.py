@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+import logging
+from collections.abc import (
+    Callable,
+)
 from functools import (
     cached_property,
 )
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -51,10 +52,14 @@ from deepmd.tf.utils.sess import (
     run_sess,
 )
 
+log = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from pathlib import (
         Path,
     )
+
+    import ase.neighborlist
 
     from deepmd.infer.deep_eval import DeepEval as DeepEvalWrapper
 
@@ -93,9 +98,9 @@ class DeepEval(DeepEvalBackend):
         *args: list,
         load_prefix: str = "load",
         default_tf_graph: bool = False,
-        auto_batch_size: Union[bool, int, AutoBatchSize] = False,
-        input_map: Optional[dict] = None,
-        neighbor_list=None,
+        auto_batch_size: bool | int | AutoBatchSize = False,
+        input_map: dict | None = None,
+        neighbor_list: "ase.neighborlist.NeighborList | None" = None,
         **kwargs: dict,
     ) -> None:
         self.graph = self._load_graph(
@@ -137,37 +142,25 @@ class DeepEval(DeepEvalBackend):
         self.has_aparam = self.tensors["aparam"] is not None
         self.has_spin = self.ntypes_spin > 0
 
-        # looks ugly...
-        if self.modifier_type == "dipole_charge":
-            from deepmd.tf.modifier import (
-                DipoleChargeModifier,
-            )
+        if kwargs.get("skip_modifier", False):
+            self.modifier_type = None
 
-            t_mdl_name = self._get_tensor("modifier_attr/mdl_name:0")
-            t_mdl_charge_map = self._get_tensor("modifier_attr/mdl_charge_map:0")
-            t_sys_charge_map = self._get_tensor("modifier_attr/sys_charge_map:0")
-            t_ewald_h = self._get_tensor("modifier_attr/ewald_h:0")
-            t_ewald_beta = self._get_tensor("modifier_attr/ewald_beta:0")
-            [mdl_name, mdl_charge_map, sys_charge_map, ewald_h, ewald_beta] = run_sess(
-                self.sess,
-                [
-                    t_mdl_name,
-                    t_mdl_charge_map,
-                    t_sys_charge_map,
-                    t_ewald_h,
-                    t_ewald_beta,
-                ],
-            )
-            mdl_name = mdl_name.decode("UTF-8")
-            mdl_charge_map = [int(ii) for ii in mdl_charge_map.decode("UTF-8").split()]
-            sys_charge_map = [int(ii) for ii in sys_charge_map.decode("UTF-8").split()]
-            self.dm = DipoleChargeModifier(
-                mdl_name,
-                mdl_charge_map,
-                sys_charge_map,
-                ewald_h=ewald_h,
-                ewald_beta=ewald_beta,
-            )
+        from deepmd.tf.modifier import (
+            BaseModifier,
+        )
+
+        self.dm = None
+        if self.modifier_type is not None:
+            try:
+                modifier = BaseModifier.get_class_by_type(self.modifier_type)
+                modifier_params = modifier.get_params_from_frozen_model(self)
+                self.dm = modifier.get_modifier(modifier_params)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Failed to load data modifier '{self.modifier_type}'. "
+                    f"Use skip_modifier=True to load the model without the modifier. "
+                    f"Error: {exc}"
+                ) from exc
 
     def _init_tensors(self) -> None:
         tensor_names = {
@@ -358,8 +351,8 @@ class DeepEval(DeepEvalBackend):
         frozen_graph_filename: "Path",
         prefix: str = "load",
         default_tf_graph: bool = False,
-        input_map: Optional[dict] = None,
-    ):
+        input_map: dict | None = None,
+    ) -> Any:
         # We load the protobuf file from the disk and parse it to retrieve the
         # unserialized graph_def
         with tf.gfile.GFile(str(frozen_graph_filename), "rb") as f:
@@ -393,8 +386,8 @@ class DeepEval(DeepEvalBackend):
     def sort_input(
         coord: np.ndarray,
         atom_type: np.ndarray,
-        sel_atoms: Optional[list[int]] = None,
-    ):
+        sel_atoms: list[int] | None = None,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[int]]:
         """Sort atoms in the system according their types.
 
         Parameters
@@ -532,11 +525,11 @@ class DeepEval(DeepEvalBackend):
     def build_neighbor_list(
         self,
         coords: np.ndarray,
-        cell: Optional[np.ndarray],
+        cell: np.ndarray | None,
         atype: np.ndarray,
         imap: np.ndarray,
-        neighbor_list,
-    ):
+        neighbor_list: "ase.neighborlist.NeighborList | None",
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Make the mesh with neighbor list for a single frame.
 
         Parameters
@@ -634,7 +627,7 @@ class DeepEval(DeepEvalBackend):
         """Get the type map (element name of the atom types) of this model."""
         return self.tmap
 
-    def get_sel_type(self) -> Optional[np.ndarray]:
+    def get_sel_type(self) -> np.ndarray | None:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -670,7 +663,7 @@ class DeepEval(DeepEvalBackend):
         """
         if self.auto_batch_size is not None:
 
-            def eval_func(*args, **kwargs):
+            def eval_func(*args: Any, **kwargs: Any) -> Any:
                 return self.auto_batch_size.execute_all(
                     inner_func, numb_test, natoms, *args, **kwargs
                 )
@@ -682,9 +675,10 @@ class DeepEval(DeepEvalBackend):
     def _get_natoms_and_nframes(
         self,
         coords: np.ndarray,
-        atom_types: Union[list[int], np.ndarray],
+        atom_types: list[int] | np.ndarray,
     ) -> tuple[int, int]:
-        natoms = len(atom_types[0])
+        # (natoms,) or (nframes, natoms,)
+        natoms = np.shape(atom_types)[-1]
         if natoms == 0:
             assert coords.size == 0
         else:
@@ -695,12 +689,12 @@ class DeepEval(DeepEvalBackend):
     def eval(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-        efield: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        efield: np.ndarray | None = None,
         **kwargs: Any,
     ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
@@ -760,7 +754,8 @@ class DeepEval(DeepEvalBackend):
             output = (output,)
 
         output_dict = {
-            odef.name: oo for oo, odef in zip(output, self.output_def.var_defs.values())
+            odef.name: oo
+            for oo, odef in zip(output, self.output_def.var_defs.values(), strict=True)
         }
         # ugly!!
         if self.modifier_type is not None and issubclass(self.model_type, DeepPot):
@@ -778,13 +773,13 @@ class DeepEval(DeepEvalBackend):
 
     def _prepare_feed_dict(
         self,
-        coords,
-        cells,
-        atom_types,
-        fparam=None,
-        aparam=None,
-        efield=None,
-    ):
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray | list[int],
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        efield: np.ndarray | None = None,
+    ) -> tuple[dict, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         # standardize the shape of inputs
         natoms, nframes = self._get_natoms_and_nframes(
             coords,
@@ -898,14 +893,14 @@ class DeepEval(DeepEvalBackend):
 
     def _eval_inner(
         self,
-        coords,
-        cells,
-        atom_types,
-        fparam=None,
-        aparam=None,
-        efield=None,
-        **kwargs,
-    ):
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray | list[int],
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        efield: np.ndarray | None = None,
+        **kwargs: Any,
+    ) -> tuple:
         natoms, nframes = self._get_natoms_and_nframes(
             coords,
             atom_types,
@@ -1001,7 +996,7 @@ class DeepEval(DeepEvalBackend):
                 raise RuntimeError("unknown category")
         return tuple(v_out)
 
-    def _get_output_shape(self, odef, nframes, natoms):
+    def _get_output_shape(self, odef: Any, nframes: int, natoms: int) -> list[int]:
         if odef.category == OutputVariableCategory.DERV_C_REDU:
             # virial
             return [nframes, *odef.shape[:-1], 9]
@@ -1025,11 +1020,11 @@ class DeepEval(DeepEvalBackend):
     def eval_descriptor(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-        efield: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        efield: np.ndarray | None = None,
     ) -> np.ndarray:
         """Evaluate descriptors by using this DP.
 
@@ -1082,11 +1077,11 @@ class DeepEval(DeepEvalBackend):
     def _eval_descriptor_inner(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-        efield: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        efield: np.ndarray | None = None,
     ) -> np.ndarray:
         natoms, nframes = self._get_natoms_and_nframes(
             coords,
@@ -1126,6 +1121,16 @@ class DeepEval(DeepEvalBackend):
         model_def_script = script.decode("utf-8")
         return json.loads(model_def_script)["model"]
 
+    def get_model(self) -> "tf.Graph":
+        """Get the TensorFlow graph.
+
+        Returns
+        -------
+        tf.Graph
+            The TensorFlow graph.
+        """
+        return self.graph
+
 
 class DeepEvalOld:
     # old class for DipoleChargeModifier only
@@ -1156,9 +1161,9 @@ class DeepEvalOld:
         model_file: "Path",
         load_prefix: str = "load",
         default_tf_graph: bool = False,
-        auto_batch_size: Union[bool, int, AutoBatchSize] = False,
-        input_map: Optional[dict] = None,
-        neighbor_list=None,
+        auto_batch_size: bool | int | AutoBatchSize = False,
+        input_map: dict | None = None,
+        neighbor_list: "ase.neighborlist.NeighborList | None" = None,
     ) -> None:
         self.graph = self._load_graph(
             model_file,
@@ -1244,9 +1249,7 @@ class DeepEvalOld:
         else:
             return True
 
-    def _get_tensor(
-        self, tensor_name: str, attr_name: Optional[str] = None
-    ) -> tf.Tensor:
+    def _get_tensor(self, tensor_name: str, attr_name: str | None = None) -> tf.Tensor:
         """Get TF graph tensor and assign it to class namespace.
 
         Parameters
@@ -1276,8 +1279,8 @@ class DeepEvalOld:
         frozen_graph_filename: "Path",
         prefix: str = "load",
         default_tf_graph: bool = False,
-        input_map: Optional[dict] = None,
-    ):
+        input_map: dict | None = None,
+    ) -> Any:
         # We load the protobuf file from the disk and parse it to retrieve the
         # unserialized graph_def
         with tf.gfile.GFile(str(frozen_graph_filename), "rb") as f:
@@ -1311,9 +1314,9 @@ class DeepEvalOld:
     def sort_input(
         coord: np.ndarray,
         atom_type: np.ndarray,
-        sel_atoms: Optional[list[int]] = None,
+        sel_atoms: list[int] | None = None,
         mixed_type: bool = False,
-    ):
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[int]]:
         """Sort atoms in the system according their types.
 
         Parameters
@@ -1468,11 +1471,11 @@ class DeepEvalOld:
     def build_neighbor_list(
         self,
         coords: np.ndarray,
-        cell: Optional[np.ndarray],
+        cell: np.ndarray | None,
         atype: np.ndarray,
         imap: np.ndarray,
-        neighbor_list,
-    ):
+        neighbor_list: "ase.neighborlist.NeighborList | None",
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Make the mesh with neighbor list for a single frame.
 
         Parameters

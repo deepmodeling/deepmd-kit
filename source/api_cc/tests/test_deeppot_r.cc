@@ -70,6 +70,9 @@ class TestInferDeepPotR : public ::testing::Test {
   deepmd::DeepPot dp;
 
   void SetUp() override {
+#ifndef BUILD_TENSORFLOW
+    GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
+#endif
     std::string file_name = "../../tests/infer/deeppot-r.pbtxt";
     deepmd::convert_pbtxt_to_pb("../../tests/infer/deeppot-r.pbtxt",
                                 "deeppot.pb");
@@ -539,6 +542,9 @@ class TestInferDeepPotRNoPbc : public ::testing::Test {
   deepmd::DeepPot dp;
 
   void SetUp() override {
+#ifndef BUILD_TENSORFLOW
+    GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
+#endif
     std::string file_name = "../../tests/infer/deeppot-r.pbtxt";
     deepmd::convert_pbtxt_to_pb("../../tests/infer/deeppot-r.pbtxt",
                                 "deeppot.pb");
