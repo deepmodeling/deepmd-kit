@@ -152,7 +152,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
-    def _sort_rcuts_sels(self) -> tuple[tuple[Array, Array], list[int]]:
+    def _sort_rcuts_sels(self) -> tuple[list[float], list[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = sorted(
             zip(self.get_model_rcuts(), self.get_model_nsels(), strict=True),

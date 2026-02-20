@@ -484,7 +484,8 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         atype_ext: Array,
         atype_embd_ext: Array | None = None,
         mapping: Array | None = None,
-    ) -> tuple[Array, Array]:
+        type_embedding: Array | None = None,
+    ) -> tuple[Array, Array, Array, Array, Array]:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         nframes, nloc, nnei = nlist.shape
         nall = xp.reshape(coord_ext, (nframes, -1)).shape[1] // 3
@@ -858,7 +859,7 @@ class RepFlowLayer(NativeOP):
         self,
         e_rcut: float,
         e_rcut_smth: float,
-        e_sel: int,
+        e_sel: int | list[int],
         a_rcut: float,
         a_rcut_smth: float,
         a_sel: int,
@@ -1326,7 +1327,7 @@ class RepFlowLayer(NativeOP):
         a_sw: Array,  # switch func, nf x nloc x a_nnei
         edge_index: Array,  # 2 x n_edge
         angle_index: Array,  # 3 x n_angle
-    ) -> tuple[Array, Array]:
+    ) -> tuple[Array, Array, Array]:
         """
         Parameters
         ----------
