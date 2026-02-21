@@ -23,6 +23,9 @@ from deepmd.tf.train.trainer import (
 from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.utils.argcheck import (
+    normalize,
+)
 
 from ..seed import (
     GLOBAL_SEED,
@@ -58,6 +61,7 @@ class TestDataModifier(tf.test.TestCase):
             restart=None, init_model=None, log_path=None, log_level=30, mpi_log="master"
         )
         jdata = self._setUp_jdata()
+        jdata = normalize(jdata)
         self._setUp_data()
 
         # init model
