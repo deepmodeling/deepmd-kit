@@ -13,7 +13,6 @@ from deepmd.dpmodel.utils.learning_rate import (
     LearningRateExp,
 )
 from deepmd.tf.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
     tf,
 )
 from deepmd.tf.utils.learning_rate import (
@@ -49,7 +48,7 @@ class TestLearningRateScheduleBuild(unittest.TestCase):
         lr_tensor = lr_schedule.build(global_step, num_steps=10000)
 
         self.assertIsInstance(lr_tensor, tf.Tensor)
-        self.assertEqual(lr_tensor.dtype, GLOBAL_TF_FLOAT_PRECISION)
+        self.assertEqual(lr_tensor.dtype, tf.float32)
 
     def test_default_type_exp(self) -> None:
         """Test that default type is 'exp' when not specified."""
