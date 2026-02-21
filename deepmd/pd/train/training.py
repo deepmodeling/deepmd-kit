@@ -400,13 +400,6 @@ class Trainer:
 
         per_task_total = []
         if not self.multi_task:
-            sampler_weights = to_numpy_array(
-                self.training_dataloader.batch_sampler.sampler.weights
-            )
-            total_numb_batch = compute_total_numb_batch(
-                training_data.index,
-                sampler_weights,
-            )
             if self.num_steps is None:
                 if self.num_epoch is None:
                     raise ValueError(
@@ -414,6 +407,13 @@ class Trainer:
                     )
                 if self.num_epoch <= 0:
                     raise ValueError("training.num_epoch must be positive.")
+                sampler_weights = to_numpy_array(
+                    self.training_dataloader.batch_sampler.sampler.weights
+                )
+                total_numb_batch = compute_total_numb_batch(
+                    training_data.index,
+                    sampler_weights,
+                )
                 if total_numb_batch <= 0:
                     raise ValueError(
                         "Total number of training batches must be positive."
@@ -426,17 +426,24 @@ class Trainer:
                     total_numb_batch,
                 )
         else:
-            for model_key in self.model_keys:
-                sampler_weights = to_numpy_array(
-                    self.training_dataloader[model_key].batch_sampler.sampler.weights
-                )
-                per_task_total.append(
-                    compute_total_numb_batch(
-                        training_data[model_key].index,
-                        sampler_weights,
-                    )
-                )
             if self.num_epoch_dict:
+                if self.num_steps is not None:
+                    raise ValueError(
+                        "training.numb_steps and training.num_epoch_dict "
+                        "are mutually exclusive."
+                    )
+                for model_key in self.model_keys:
+                    sampler_weights = to_numpy_array(
+                        self.training_dataloader[
+                            model_key
+                        ].batch_sampler.sampler.weights
+                    )
+                    per_task_total.append(
+                        compute_total_numb_batch(
+                            training_data[model_key].index,
+                            sampler_weights,
+                        )
+                    )
                 (
                     self.model_prob,
                     self.num_steps,
@@ -651,15 +658,6 @@ class Trainer:
         if init_frz_model is not None:
             frz_model = paddle.jit.load(init_frz_model)
             self.model.set_state_dict(frz_model.state_dict())
-
-        # Get model prob for multi-task
-        if self.multi_task and self.model_prob is None:
-            self.model_prob = resolve_model_prob(
-                self.model_keys,
-                training_params.get("model_prob"),
-                training_data,
-                rank=self.rank,
-            )
 
         # Multi-task share params
         if shared_links is not None:
