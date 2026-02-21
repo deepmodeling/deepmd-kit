@@ -16,8 +16,8 @@ from deepmd.common import (
 from deepmd.dpmodel.array_api import (
     Array,
 )
-from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
+from deepmd.dpmodel.common import (
+    get_xp_precision,
 )
 from deepmd.utils.plugin import (
     PluginVariant,
@@ -183,8 +183,8 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
         # Use input dtype for floating point, or default to GLOBAL_NP_FLOAT_PRECISION for integers
         step_dtype = (
             step.dtype
-            if np.issubdtype(step.dtype, np.floating)
-            else GLOBAL_NP_FLOAT_PRECISION
+            if xp.isdtype(step.dtype, "real floating")
+            else get_xp_precision(xp, "global")
         )
         if self.warmup_steps == 0:
             lr = self._decay_value(xp.astype(step, step_dtype))
@@ -377,8 +377,8 @@ class LearningRateExp(BaseLR):
         # Use input dtype for floating point, or default to GLOBAL_NP_FLOAT_PRECISION for integers
         step_dtype = (
             step.dtype
-            if np.issubdtype(step.dtype, np.floating)
-            else GLOBAL_NP_FLOAT_PRECISION
+            if xp.isdtype(step.dtype, "real floating")
+            else get_xp_precision(xp, "global")
         )
         if self.smooth:
             exponent = xp.astype(step, step_dtype) / self.decay_steps
@@ -493,8 +493,8 @@ class LearningRateCosine(BaseLR):
         # Use input dtype for floating point, or default to GLOBAL_NP_FLOAT_PRECISION for integers
         step_dtype = (
             step.dtype
-            if np.issubdtype(step.dtype, np.floating)
-            else GLOBAL_NP_FLOAT_PRECISION
+            if xp.isdtype(step.dtype, "real floating")
+            else get_xp_precision(xp, "global")
         )
         # Handle decay_num_steps=0 (no training steps) - return start_lr
         if self.decay_num_steps == 0:
