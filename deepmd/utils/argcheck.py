@@ -3776,6 +3776,17 @@ def training_args(
                             "Requires triton and CUDA. Falls back to PyTorch implementation "
                             "when triton is unavailable or running on CPU.",
                         ),
+                        Argument(
+                            "magma_muon",
+                            bool,
+                            optional=True,
+                            default=False,
+                            doc=doc_only_pt_supported
+                            + "Enable Magma-lite damping on the Muon route only. "
+                            "When enabled, HybridMuon computes momentum-gradient alignment "
+                            "per Muon block, applies EMA smoothing, and rescales Muon updates "
+                            "to improve stability. Adam/AdamW routes are unchanged.",
+                        ),
                     ],
                     [],
                     optional=True,

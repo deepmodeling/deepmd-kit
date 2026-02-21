@@ -203,6 +203,7 @@ class Trainer:
                 "lr_adjust_coeff": params.get("lr_adjust_coeff", 0.2),
                 "muon_mode": str(params.get("muon_mode", "slice")).lower(),
                 "flash_muon": params.get("flash_muon", True),
+                "magma_muon": params.get("magma_muon", False),
             }
             return opt_type, opt_param
 
@@ -856,6 +857,7 @@ class Trainer:
                 muon_mode=str(self.opt_param["muon_mode"]),
                 named_parameters=tuple(self.wrapper.named_parameters()),
                 flash_muon=bool(self.opt_param["flash_muon"]),
+                magma_muon=bool(self.opt_param["magma_muon"]),
             )
             self._load_optimizer_state(optimizer_state_dict)
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
