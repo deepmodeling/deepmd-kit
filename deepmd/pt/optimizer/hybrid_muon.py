@@ -71,6 +71,14 @@ References
        https://github.com/MoonshotAI/Moonlight
 .. [4] Flash-Muon: Triton-accelerated symmetric matmul for Newton-Schulz.
        https://github.com/lintianyang/flash-muon (MIT License, Tianyang Lin)
+.. [5] Magma: Momentum-Aligned Gradient Masking for Stable Optimizer Updates.
+       arXiv:2602.15322, 2025.
+       https://arxiv.org/abs/2602.15322
+       Implements block-wise momentum-gradient alignment scoring with EMA smoothing
+       and soft scaling for improved stability under heavy-tailed gradient noise.
+       HybridMuon uses a stabilized variant (Magma-lite) with sigmoid range stretching
+       and continuous soft scaling [0.1, 1.0] instead of Bernoulli masking, optimized
+       for MLIP force-field training.
 """
 
 from __future__ import (
@@ -122,6 +130,13 @@ NS_COEFF_C: float = 2.0315
 # Below this threshold, triton kernel launch overhead dominates over compute,
 # and cuBLAS (via torch.mm/addmm) is faster for small matrices.
 FLASH_MIN_DIM: int = 1024
+# Magma-lite constants (Muon path update damping only)
+MAGMA_TAU: float = 2.0
+MAGMA_EMA_DECAY: float = 0.9
+MAGMA_MIN_SCALE: float = 0.1
+MAGMA_EPS: float = 1e-12
+MAGMA_SIGMOID_MIN: float = 1.0 / (1.0 + math.exp(1.0 / MAGMA_TAU))
+MAGMA_SIGMOID_MAX: float = 1.0 / (1.0 + math.exp(-1.0 / MAGMA_TAU))
 
 
 # ============================================================================
@@ -554,6 +569,11 @@ class HybridMuonOptimizer(Optimizer):
         Requires triton and CUDA. Falls back to PyTorch implementation
         when triton is unavailable or running on CPU.
         Default is True.
+    magma_muon : bool
+        Enable Magma-lite damping on Muon updates with default False.
+        This computes momentum-gradient cosine alignment per Muon block,
+        applies EMA smoothing, and rescales Muon updates in [0.1, 1.0].
+        Adam/AdamW paths are unchanged.
 
     Examples
     --------
@@ -576,6 +596,7 @@ class HybridMuonOptimizer(Optimizer):
         muon_mode: str = "slice",
         named_parameters: Iterable[tuple[str, torch.Tensor]] | None = None,
         flash_muon: bool = True,
+        magma_muon: bool = False,
     ) -> None:
         # === Step 1. Validate routing mode ===
         muon_mode = str(muon_mode).lower()
@@ -591,6 +612,7 @@ class HybridMuonOptimizer(Optimizer):
             "lr_adjust": lr_adjust,
             "lr_adjust_coeff": lr_adjust_coeff,
             "muon_mode": muon_mode,
+            "magma_muon": bool(magma_muon),
         }
         super().__init__(params, defaults)
 
@@ -611,6 +633,226 @@ class HybridMuonOptimizer(Optimizer):
             tuple[int, torch.device],
             tuple[torch.Tensor, torch.Tensor],
         ] = {}
+
+    def _compute_magma_scale(
+        self,
+        param: torch.Tensor,
+        grad: torch.Tensor,
+        momentum_buffer: torch.Tensor,
+        batch_size: int,
+        rows: int,
+        cols: int,
+    ) -> torch.Tensor:
+        """
+        Compute Magma-lite Muon damping scales from momentum-gradient alignment.
+
+        Implements a stabilized version of Magma (Momentum-Aligned Gradient Masking)
+        adapted for MLIP force-field training. Computes block-wise alignment scores
+        between Muon momentum and current gradients, applies EMA smoothing, and
+        rescales Muon updates to improve stability under heavy-tailed gradient noise.
+
+        Notes
+        -----
+        For each Muon block b:
+
+        1. Compute cosine similarity between momentum and gradient:
+
+           cos(b) = <μ_t^(b), g_t^(b)> / (||μ_t^(b)|| * ||g_t^(b)||)
+
+        2. Apply sigmoid with range stretching to [0, 1]:
+
+           s_raw^(b) = (sigmoid(cos(b) / τ) - s_min) / (s_max - s_min)
+
+           where τ=2.0, s_min=sigmoid(-1/τ), s_max=sigmoid(1/τ).
+           This stretches the narrow sigmoid range [0.38, 0.62] to [0, 1].
+
+        3. Apply EMA smoothing:
+
+           s̃_t^(b) = a * s̃_{t-1}^(b) + (1-a) * s_raw^(b)
+
+           where a=0.9 (MAGMA_EMA_DECAY).
+
+        4. Map to damping scale in [s_min_scale, 1.0]:
+
+           scale^(b) = s_min_scale + (1 - s_min_scale) * s̃_t^(b)
+
+           where s_min_scale=0.1 (MAGMA_MIN_SCALE).
+
+        5. Apply damping to Muon update:
+
+           Δ̃^(b) = scale^(b) * Δ^(b)  (soft scaling, no Bernoulli masking)
+
+        Key differences from the original Magma paper:
+
+        - Sigmoid range stretching: Paper uses raw sigmoid with narrow range [0.38, 0.62].
+          We stretch to [0, 1] for better discrimination between aligned/misaligned blocks.
+        - Soft scaling: Paper uses Bernoulli masking (50% skip probability).
+          We use continuous soft scaling [0.1, 1.0] for stability in MLIP training.
+        - Minimum scale: Paper allows scale=0 (complete skip).
+          We enforce scale >= 0.1 to guarantee minimum learning rate.
+
+        Parameters
+        ----------
+        param : torch.Tensor
+            Parameter updated by Muon.
+        grad : torch.Tensor
+            Current gradient tensor with shape compatible with ``(batch_size, rows, cols)``.
+        momentum_buffer : torch.Tensor
+            Muon momentum buffer (updated m_t) with same shape as ``grad``.
+        batch_size : int
+            Number of Muon blocks (1 for 2d/flat mode, >1 for slice mode).
+        rows : int
+            Matrix row count per block.
+        cols : int
+            Matrix column count per block.
+
+        Returns
+        -------
+        torch.Tensor
+            Damping scales with shape (batch_size,) in [MAGMA_MIN_SCALE, 1.0].
+        """
+        # === Step 1. Restore or initialize EMA score state ===
+        state = self.state[param]
+        magma_score = state.get("magma_score")
+        if (
+            magma_score is None
+            or magma_score.ndim != 1
+            or magma_score.numel() != batch_size
+            or magma_score.device != param.device
+        ):
+            magma_score = torch.full(
+                (batch_size,),
+                0.5,
+                dtype=torch.float32,
+                device=param.device,
+            )
+        else:
+            magma_score = magma_score.to(dtype=torch.float32, device=param.device)
+
+        # === Step 2. Build matrix-view for block-wise cosine ===
+        grad_view = grad.reshape(batch_size, rows, cols).reshape(batch_size, -1)
+        momentum_view = momentum_buffer.reshape(batch_size, rows, cols).reshape(
+            batch_size, -1
+        )
+        grad_view = grad_view.to(dtype=torch.float32)
+        momentum_view = momentum_view.to(dtype=torch.float32)
+
+        # === Step 3. Compute cosine alignment with numerical protection ===
+        dot = (momentum_view * grad_view).sum(dim=1)
+        denom = (momentum_view.norm(dim=1) * grad_view.norm(dim=1)).clamp(min=MAGMA_EPS)
+        cosine = (dot / denom).clamp(min=-1.0, max=1.0)
+
+        # === Step 4. Sigmoid mapping + range stretching to [0, 1] ===
+        raw_sigmoid = torch.sigmoid(cosine / MAGMA_TAU)
+        raw_score = (raw_sigmoid - MAGMA_SIGMOID_MIN) / (
+            MAGMA_SIGMOID_MAX - MAGMA_SIGMOID_MIN
+        )
+        raw_score = raw_score.clamp(min=0.0, max=1.0)
+
+        # === Step 5. Update EMA score and convert to damping scale ===
+        magma_score = (
+            MAGMA_EMA_DECAY * magma_score + (1.0 - MAGMA_EMA_DECAY) * raw_score
+        )
+        state["magma_score"] = magma_score
+        return MAGMA_MIN_SCALE + (1.0 - MAGMA_MIN_SCALE) * magma_score
+
+    def _compute_magma_scales_for_bucket(
+        self,
+        bucket_entries: list[
+            tuple[dict[str, Any], torch.Tensor, torch.Tensor, torch.Tensor]
+        ],
+        batch_size: int,
+        rows: int,
+        cols: int,
+    ) -> list[torch.Tensor]:
+        """
+        Compute Magma-lite damping scales for one Muon bucket in a batched way.
+
+        Parameters
+        ----------
+        bucket_entries : list[tuple[dict[str, Any], torch.Tensor, torch.Tensor, torch.Tensor]]
+            Bucket entries as ``(entry, update_tensor, grad, momentum_buffer)``.
+        batch_size : int
+            Number of Muon blocks per parameter in this bucket.
+        rows : int
+            Matrix row count for this bucket.
+        cols : int
+            Matrix column count for this bucket.
+
+        Returns
+        -------
+        list[torch.Tensor]
+            Magma scales for each bucket entry. Each tensor has shape (batch_size,).
+        """
+        # === Step 0. Fast path for single-entry bucket ===
+        if len(bucket_entries) == 1:
+            entry, _update_tensor, grad, momentum_buffer = bucket_entries[0]
+            return [
+                self._compute_magma_scale(
+                    param=entry["param"],
+                    grad=grad,
+                    momentum_buffer=momentum_buffer,
+                    batch_size=batch_size,
+                    rows=rows,
+                    cols=cols,
+                )
+            ]
+
+        # === Step 1. Build batched matrix views ===
+        grad_views: list[torch.Tensor] = []
+        momentum_views: list[torch.Tensor] = []
+        for _, _, grad, momentum_buffer in bucket_entries:
+            grad_view = grad.reshape(batch_size, rows, cols).reshape(batch_size, -1)
+            momentum_view = momentum_buffer.reshape(batch_size, rows, cols).reshape(
+                batch_size, -1
+            )
+            grad_views.append(grad_view.to(dtype=torch.float32))
+            momentum_views.append(momentum_view.to(dtype=torch.float32))
+
+        grad_batch = torch.stack(grad_views, dim=0)
+        momentum_batch = torch.stack(momentum_views, dim=0)
+
+        # === Step 2. Compute cosine alignment for all entries ===
+        dot = (momentum_batch * grad_batch).sum(dim=2)
+        denom = (momentum_batch.norm(dim=2) * grad_batch.norm(dim=2)).clamp(
+            min=MAGMA_EPS
+        )
+        cosine = (dot / denom).clamp(min=-1.0, max=1.0)
+        raw_sigmoid = torch.sigmoid(cosine / MAGMA_TAU)
+        raw_scores = (raw_sigmoid - MAGMA_SIGMOID_MIN) / (
+            MAGMA_SIGMOID_MAX - MAGMA_SIGMOID_MIN
+        )
+        raw_scores = raw_scores.clamp(min=0.0, max=1.0)
+
+        # === Step 3. Update per-parameter EMA score state ===
+        scales: list[torch.Tensor] = []
+        for idx, (entry, _, _, _) in enumerate(bucket_entries):
+            param = entry["param"]
+            state = self.state[param]
+            magma_score = state.get("magma_score")
+            if (
+                magma_score is None
+                or magma_score.ndim != 1
+                or magma_score.numel() != batch_size
+                or magma_score.device != param.device
+            ):
+                magma_score = torch.full(
+                    (batch_size,),
+                    0.5,
+                    dtype=torch.float32,
+                    device=param.device,
+                )
+                state["magma_score"] = magma_score
+            elif magma_score.dtype != torch.float32:
+                magma_score = magma_score.to(dtype=torch.float32, device=param.device)
+                state["magma_score"] = magma_score
+
+            magma_score.mul_(MAGMA_EMA_DECAY).add_(
+                raw_scores[idx], alpha=(1.0 - MAGMA_EMA_DECAY)
+            )
+            scales.append(MAGMA_MIN_SCALE + (1.0 - MAGMA_MIN_SCALE) * magma_score)
+
+        return scales
 
     def _get_ns_buffers(
         self,
@@ -742,6 +984,7 @@ class HybridMuonOptimizer(Optimizer):
             adam_betas = group["adam_betas"]
             lr_adjust = group["lr_adjust"]
             lr_adjust_coeff = group["lr_adjust_coeff"]
+            magma_muon = bool(group.get("magma_muon", False))
 
             # === Step 1. Adam update for non-decay Adam path ===
             # === Step 1.1. Collect gradients and initialize state ===
@@ -836,7 +1079,7 @@ class HybridMuonOptimizer(Optimizer):
                 # AdamW decay for >=2D Adam path.
                 if weight_decay > 0:
                     for p in adam_decay_params:
-                        p.mul_(1.0 - lr * weight_decay)
+                        p.mul_(1.0 - adam_lr * weight_decay)
 
                 # exp_avg = beta1 * exp_avg + (1 - beta1) * grad
                 # exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad^2
@@ -904,7 +1147,7 @@ class HybridMuonOptimizer(Optimizer):
             # === Step 3.4. Bucket by (batch_size, rows, cols, device, dtype) ===
             buckets: dict[
                 tuple[int, int, int, torch.device, torch.dtype],
-                list[tuple[dict[str, Any], torch.Tensor]],
+                list[tuple[dict[str, Any], torch.Tensor, torch.Tensor, torch.Tensor]],
             ] = {}
 
             for idx, entry_info in enumerate(active_entries):
@@ -919,7 +1162,14 @@ class HybridMuonOptimizer(Optimizer):
                 )
                 if bucket_key not in buckets:
                     buckets[bucket_key] = []
-                buckets[bucket_key].append((entry, muon_updates[idx]))
+                buckets[bucket_key].append(
+                    (
+                        entry,
+                        muon_updates[idx],
+                        muon_grads[idx],
+                        muon_momentum_buffers[idx],
+                    )
+                )
 
             # === Step 3.5. Newton-Schulz orthogonalization and update ===
             for (batch_size, rows, cols, _device, _), bucket_entries in buckets.items():
@@ -944,24 +1194,57 @@ class HybridMuonOptimizer(Optimizer):
                 if use_flash:
                     buf1, buf2 = self._get_ns_buffers(M, _device)
 
+                if magma_muon:
+                    bucket_magma_scales = self._compute_magma_scales_for_bucket(
+                        bucket_entries=bucket_entries,
+                        batch_size=batch_size,
+                        rows=rows,
+                        cols=cols,
+                    )
+                else:
+                    bucket_magma_scales = [None] * len(bucket_entries)
+
                 # Process each entry individually with Newton-Schulz orth.
                 # Compatible with sharding propagation under FSDP2.
-                for entry, update_tensor in bucket_entries:
+                for (entry, update_tensor, _grad, _buffer), magma_scale in zip(
+                    bucket_entries, bucket_magma_scales, strict=True
+                ):
                     if batch_size > 1:
-                        update_batch = update_tensor.reshape(batch_size, rows, cols)
-                        if not update_batch.is_contiguous():
-                            update_batch = update_batch.contiguous()
+                        if update_tensor.is_contiguous():
+                            update_batch = update_tensor.view(batch_size, rows, cols)
+                        else:
+                            update_batch = update_tensor.reshape(
+                                batch_size, rows, cols
+                            ).contiguous()
                         orth = _batched_newton_schulz_orth(update_batch)
                     else:
-                        update_matrix = update_tensor.reshape(rows, cols)
-                        if not update_matrix.is_contiguous():
-                            update_matrix = update_matrix.contiguous()
+                        if update_tensor.is_contiguous():
+                            update_matrix = update_tensor.view(rows, cols)
+                        else:
+                            update_matrix = update_tensor.reshape(
+                                rows, cols
+                            ).contiguous()
                         if use_flash:
                             orth = _flash_newton_schulz_orth(update_matrix, buf1, buf2)
                         else:
                             orth = _newton_schulz_orth(update_matrix)
                     orth.mul_(scale)
-                    delta = orth.reshape(entry["param"].shape)
+                    if batch_size > 1:
+                        orth_view = orth.reshape(batch_size, rows, cols)
+                        if magma_scale is not None:
+                            orth_view.mul_(
+                                magma_scale.view(batch_size, 1, 1).to(
+                                    dtype=orth.dtype,
+                                    device=orth.device,
+                                )
+                            )
+                        delta = orth_view.reshape(entry["param"].shape)
+                    else:
+                        if magma_scale is not None:
+                            orth.mul_(
+                                magma_scale[0].to(dtype=orth.dtype, device=orth.device)
+                            )
+                        delta = orth.reshape(entry["param"].shape)
                     entry["param"].add_(delta, alpha=-lr)
 
         return loss

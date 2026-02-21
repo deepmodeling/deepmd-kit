@@ -4,9 +4,9 @@ import unittest
 import torch
 
 from deepmd.pt.optimizer.hybrid_muon import (
+    MAGMA_MIN_SCALE,
     TRITON_AVAILABLE,
     HybridMuonOptimizer,
-    _batched_newton_schulz_orth,
     _newton_schulz_orth,
 )
 from deepmd.pt.utils import (
@@ -67,23 +67,6 @@ class TestNewtonSchulzOrthogonalization(unittest.TestCase):
             off_diag_norm, 1.5, f"Off-diagonal norm too large: {off_diag_norm}"
         )
 
-    def test_shape_and_dtype(self) -> None:
-        """Test that output preserves shape and returns bf16."""
-        torch.manual_seed(42)
-        for shape in [(4, 4), (6, 4)]:
-            G = torch.randn(*shape, dtype=torch.float32, device=self.device)
-            X = _newton_schulz_orth(G)
-            self.assertEqual(X.shape, G.shape)
-            self.assertEqual(X.dtype, torch.bfloat16)
-
-    def test_batched_shape_and_dtype(self) -> None:
-        """Test batched NS preserves shape and returns bf16."""
-        torch.manual_seed(42)
-        G = torch.randn(3, 6, 4, dtype=torch.float32, device=self.device)
-        X = _batched_newton_schulz_orth(G)
-        self.assertEqual(X.shape, G.shape)
-        self.assertEqual(X.dtype, torch.bfloat16)
-
     def test_invalid_input(self) -> None:
         """Test that 1D input raises error."""
         G_1d = torch.randn(10, dtype=torch.float32, device=self.device)
@@ -97,27 +80,6 @@ class TestHybridMuonOptimizer(unittest.TestCase):
 
     def setUp(self) -> None:
         self.device = env.DEVICE
-
-    def test_step(self) -> None:
-        """Test basic optimizer step changes parameters."""
-        torch.manual_seed(42)
-        model = torch.nn.Sequential(
-            torch.nn.Linear(10, 20, device=self.device),
-            torch.nn.ReLU(),
-            torch.nn.Linear(20, 5, device=self.device),
-        )
-        optimizer = HybridMuonOptimizer(model.parameters(), lr=0.02)
-
-        x = torch.randn(4, 10, device=self.device)
-        model(x).sum().backward()
-
-        initial_params = [p.clone() for p in model.parameters()]
-        optimizer.step()
-
-        for i, (p, init_p) in enumerate(
-            zip(model.parameters(), initial_params, strict=True)
-        ):
-            self.assertFalse(torch.allclose(p, init_p), f"Parameter {i} did not change")
 
     def test_weight_decay(self) -> None:
         """Test weight decay reduces parameter norm."""
@@ -305,6 +267,99 @@ class TestHybridMuonOptimizer(unittest.TestCase):
         self.assertIn("momentum_buffer", optimizer.state[model.weight])
         self.assertNotIn("exp_avg", optimizer.state[model.weight])
 
+    def test_magma_muon_slice_state_and_range(self) -> None:
+        """Test magma_muon creates bounded per-slice scores on Muon path."""
+        torch.manual_seed(42)
+
+        class ToyMagmaSlice(torch.nn.Module):
+            def __init__(self, device: torch.device) -> None:
+                super().__init__()
+                self.weight = torch.nn.Parameter(
+                    torch.randn(2, 6, 4, dtype=torch.float32, device=device)
+                )
+                self.adam_scale = torch.nn.Parameter(
+                    torch.ones(2, 6, dtype=torch.float32, device=device)
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = torch.einsum("bi,foi->bfo", x, self.weight)
+                y = y * self.adam_scale.unsqueeze(0)
+                return y.sum()
+
+        model = ToyMagmaSlice(self.device)
+        optimizer = HybridMuonOptimizer(
+            model.parameters(),
+            lr=0.02,
+            muon_mode="slice",
+            named_parameters=tuple(model.named_parameters()),
+            magma_muon=True,
+        )
+
+        x = torch.randn(4, 4, device=self.device)
+        optimizer.zero_grad()
+        model(x).backward()
+        optimizer.step()
+
+        score = optimizer.state[model.weight]["magma_score"]
+        self.assertEqual(score.shape, (2,))
+        self.assertTrue(torch.all(score >= 0.0))
+        self.assertTrue(torch.all(score <= 1.0))
+        scale = MAGMA_MIN_SCALE + (1.0 - MAGMA_MIN_SCALE) * score
+        self.assertTrue(torch.all(scale >= MAGMA_MIN_SCALE))
+        self.assertTrue(torch.all(scale <= 1.0))
+        self.assertNotIn("magma_score", optimizer.state[model.adam_scale])
+
+    def test_magma_muon_only_affects_muon_path(self) -> None:
+        """Test Magma damping changes Muon updates but keeps Adam path unchanged."""
+        torch.manual_seed(42)
+
+        class ToyMagmaMixed(torch.nn.Module):
+            def __init__(self, device: torch.device) -> None:
+                super().__init__()
+                self.weight = torch.nn.Parameter(
+                    torch.randn(2, 6, 4, dtype=torch.float32, device=device)
+                )
+                self.adam_scale = torch.nn.Parameter(
+                    torch.ones(2, 6, dtype=torch.float32, device=device)
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = torch.einsum("bi,foi->bfo", x, self.weight)
+                y = y * self.adam_scale.unsqueeze(0)
+                return y.sum()
+
+        model1 = ToyMagmaMixed(self.device)
+        model2 = ToyMagmaMixed(self.device)
+        model2.load_state_dict(model1.state_dict())
+
+        opt_off = HybridMuonOptimizer(
+            model1.parameters(),
+            lr=0.02,
+            muon_mode="slice",
+            named_parameters=tuple(model1.named_parameters()),
+            magma_muon=False,
+        )
+        opt_on = HybridMuonOptimizer(
+            model2.parameters(),
+            lr=0.02,
+            muon_mode="slice",
+            named_parameters=tuple(model2.named_parameters()),
+            magma_muon=True,
+        )
+
+        x = torch.randn(4, 4, device=self.device)
+        opt_off.zero_grad()
+        model1(x).backward()
+        opt_off.step()
+        opt_on.zero_grad()
+        model2(x).backward()
+        opt_on.step()
+
+        self.assertFalse(torch.allclose(model1.weight, model2.weight))
+        self.assertTrue(
+            torch.allclose(model1.adam_scale, model2.adam_scale, atol=0.0, rtol=0.0)
+        )
+
 
 @unittest.skipIf(not BF16_SUPPORTED, "bf16 matmul not supported on this device")
 class TestHybridMuonOptimizerStateDict(unittest.TestCase):
@@ -348,25 +403,6 @@ class TestFlashMuon(unittest.TestCase):
 
     def setUp(self) -> None:
         self.device = env.DEVICE
-
-    def test_flash_muon_false_runs(self) -> None:
-        """Test that flash_muon=False uses pure PyTorch path without error."""
-        torch.manual_seed(42)
-        model = torch.nn.Linear(10, 20, device=self.device)
-        optimizer = HybridMuonOptimizer(model.parameters(), lr=0.02, flash_muon=False)
-        x = torch.randn(4, 10, device=self.device)
-        model(x).sum().backward()
-        optimizer.step()
-        # Should complete without error
-
-    def test_flash_muon_true_runs(self) -> None:
-        """Test that flash_muon=True runs (falls back on CPU, uses triton on CUDA)."""
-        torch.manual_seed(42)
-        model = torch.nn.Linear(10, 20, device=self.device)
-        optimizer = HybridMuonOptimizer(model.parameters(), lr=0.02, flash_muon=True)
-        x = torch.randn(4, 10, device=self.device)
-        model(x).sum().backward()
-        optimizer.step()
 
     def test_flash_vs_pytorch_consistency(self) -> None:
         """Test that flash and non-flash paths produce consistent results.

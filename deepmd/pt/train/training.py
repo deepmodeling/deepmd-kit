@@ -818,6 +818,7 @@ class Trainer:
                     "muon_mode": str(self.opt_param.get("muon_mode", "slice")),
                     "named_parameters": tuple(self.wrapper.named_parameters()),
                     "flash_muon": bool(self.opt_param.get("flash_muon", True)),
+                    "magma_muon": bool(self.opt_param.get("magma_muon", False)),
                 }
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
