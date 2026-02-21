@@ -197,6 +197,65 @@ pt_expt tests use `pytest.mark.parametrize` (not `itertools.product`), do not in
 | 8g. Universal PT      | `source/tests/universal/pt/descriptor/test_descriptor.py`      | Add parametrized entry                            |
 | 8h. Consistency       | `source/tests/consistent/descriptor/test_<name>.py`            | Cross-backend + API consistency                   |
 
+## Step 9: Write documentation
+
+**Create** `doc/model/<name>.md`
+
+Each descriptor needs a documentation page in `doc/model/`. Use MyST Markdown format with Sphinx extensions. List supported backends using icon substitutions.
+
+Template:
+
+````markdown
+# Descriptor `"your_name"` {{ pytorch_icon }} {{ dpmodel_icon }}
+
+:::{note}
+**Supported backends**: PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
+:::
+
+Brief description of what the descriptor is and its theoretical motivation.
+
+## Theory
+
+Mathematical formulation using LaTeX:
+
+```math
+    \mathcal{D}^i = ...
+```
+
+## Instructions
+
+Example JSON configuration:
+
+```json
+"descriptor": {
+    "type": "your_name",
+    "sel": [46, 92],
+    "rcut_smth": 0.50,
+    "rcut": 6.00,
+    "neuron": [10, 20, 40],
+    "resnet_dt": false,
+    "seed": 1
+}
+```
+
+Explain key parameters and link to the argument schema using `{ref}` directives,
+e.g. `{ref}rcut <model[standard]/descriptor[your_name]/rcut>`.
+````
+
+Available backend icons: `{{ tensorflow_icon }}`, `{{ pytorch_icon }}`, `{{ jax_icon }}`, `{{ paddle_icon }}`, `{{ dpmodel_icon }}`. Only list backends that actually support this descriptor.
+
+**Edit** `doc/model/index.rst` — add the new page to the `toctree`:
+
+```rst
+.. toctree::
+   :maxdepth: 1
+
+   ...
+   <name>
+```
+
+**Reference docs**: `doc/model/train-se-e2-r.md` (simple), `doc/model/dpa2.md` (modern)
+
 ## Verification
 
 ```bash
@@ -248,3 +307,5 @@ print('Round-trip OK:', d.get_dim_out() == d2.get_dim_out())
 | 8f   | Edit   | `source/tests/universal/dpmodel/descriptor/test_descriptor.py` |
 | 8g   | Edit   | `source/tests/universal/pt/descriptor/test_descriptor.py`      |
 | 8h   | Create | `source/tests/consistent/descriptor/test_<name>.py`            |
+| 9    | Create | `doc/model/<name>.md`                                          |
+| 9    | Edit   | `doc/model/index.rst`                                          |
