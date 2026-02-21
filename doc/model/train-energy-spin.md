@@ -145,14 +145,14 @@ where $\bm{R}_{i^p}$, $\bm{R}_i$, and $\bm{S}_i$ denote the virtual atomic coord
 
 We list the details about spin system data format in TensorFlow backend:
 
-| ID     | Property                   | Raw file   | Unit | Shape                             | Description                                                                                                                                               |
-| ------ | -------------------------- | ---------- | ---- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| type   | Atom type indexes          | type.raw   | \    | Natoms + Nspins                   | Integers that start with 0. The first `Natoms` entries represent real atom types, followed by `Nspins` entries representing virtual atom types.           |
-| coord  | Coordinates                | coord.raw  | Å    | Nframes \* (Natoms + Nspins) \* 3 | The first `3 \* Natoms` columns represent the coordinates of real atoms, followed by `3 \* Nspins` columns representing the coordinates of virtual atoms. |
-| box    | Boxes                      | box.raw    | Å    | Nframes \* 3 \* 3                 | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`                                                                                                                 |
-| energy | Frame energies             | energy.raw | eV   | Nframes                           |
-| force  | Atomic and magnetic forces | force.raw  | eV/Å | Nframes \* (Natoms + Nspins) \* 3 | The first `3 \* Natoms` columns represent atomic forces, followed by `3 \* Nspins` columns representing magnetic forces.                                  |
-| virial | Frame virial               | virial.raw | eV   | Nframes \* 9                      | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`                                                                                                                 |
+| ID     | Property                   | Raw file   | Unit | Shape                           | Description                                                                                                                                               |
+| ------ | -------------------------- | ---------- | ---- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| type   | Atom type indexes          | type.raw   | \\   | Natoms + Nspins                 | Integers that start with 0. The first `Natoms` entries represent real atom types, followed by `Nspins` entries representing virtual atom types.           |
+| coord  | Coordinates                | coord.raw  | Å    | Nframes * (Natoms + Nspins) * 3 | The first `3 \* Natoms` columns represent the coordinates of real atoms, followed by `3 \* Nspins` columns representing the coordinates of virtual atoms. |
+| box    | Boxes                      | box.raw    | Å    | Nframes * 3 * 3                 | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`                                                                                                                 |
+| energy | Frame energies             | energy.raw | eV   | Nframes                         |                                                                                                                                                           |
+| force  | Atomic and magnetic forces | force.raw  | eV/Å | Nframes * (Natoms + Nspins) * 3 | The first `3 \* Natoms` columns represent atomic forces, followed by `3 \* Nspins` columns representing magnetic forces.                                  |
+| virial | Frame virial               | virial.raw | eV   | Nframes * 9                     | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`                                                                                                                 |
 
 ### Spin data format in PyTorch/DP
 

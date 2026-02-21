@@ -196,7 +196,7 @@ def fit_output_to_model_output(
                     if extended_coord_corr is not None:
                         dc_corr = (
                             dr.squeeze(-2).unsqueeze(-1)
-                            @ extended_coord_corr.unsqueeze(-2)
+                            @ extended_coord_corr.unsqueeze(-2).to(dr.dtype)
                         ).view(list(dc.shape[:-2]) + [1, 9])  # noqa: RUF005
                         dc = dc + dc_corr
                     model_ret[kk_derv_c] = dc

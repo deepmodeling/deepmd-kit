@@ -251,7 +251,7 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("extended_force");
   c10::IValue force_mag_ = outputs.at("extended_force_mag");
-  bool has_virial = outputs.contains("virial");
+  bool has_virial = outputs.contains(c10::IValue("virial"));
   torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
   ener.assign(cpu_energy_.data_ptr<ENERGYTYPE>(),
@@ -297,7 +297,7 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
     atom_energy.resize(static_cast<size_t>(nframes) * fwd_map.size());
     select_map<VALUETYPE>(atom_energy, datom_energy, bkw_map, 1, nframes,
                           fwd_map.size(), nall_real);
-    if (outputs.contains("extended_virial")) {
+    if (outputs.contains(c10::IValue("extended_virial"))) {
       c10::IValue atom_virial_ = outputs.at("extended_virial");
       torch::Tensor flat_atom_virial_ =
           atom_virial_.toTensor().view({-1}).to(floatType);
@@ -421,7 +421,7 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("force");
   c10::IValue force_mag_ = outputs.at("force_mag");
-  bool has_virial = outputs.contains("virial");
+  bool has_virial = outputs.contains(c10::IValue("virial"));
   torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
   ener.assign(cpu_energy_.data_ptr<ENERGYTYPE>(),
@@ -453,7 +453,7 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
     atom_energy.assign(
         cpu_atom_energy_.data_ptr<VALUETYPE>(),
         cpu_atom_energy_.data_ptr<VALUETYPE>() + cpu_atom_energy_.numel());
-    if (outputs.contains("atom_virial")) {
+    if (outputs.contains(c10::IValue("atom_virial"))) {
       c10::IValue atom_virial_ = outputs.at("atom_virial");
       torch::Tensor flat_atom_virial_ =
           atom_virial_.toTensor().view({-1}).to(floatType);
