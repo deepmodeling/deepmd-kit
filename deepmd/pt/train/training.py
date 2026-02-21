@@ -784,21 +784,48 @@ class Trainer:
         # TODO add optimizers for multitask
         # author: iProzd
         initial_lr = self.lr_schedule.value(self.start_step)
-        if self.opt_type in ["Adam", "AdamW"]:
+        if self.opt_type == "LKF":
+            self.optimizer = LKFOptimizer(
+                self.wrapper.parameters(), 0.98, 0.99870, self.opt_param["kf_blocksize"]
+            )
+        else:
+            # === Common path for gradient-based optimizers ===
             adam_betas = (
                 float(self.opt_param["adam_beta1"]),
                 float(self.opt_param["adam_beta2"]),
             )
             weight_decay = float(self.opt_param["weight_decay"])
-            optimizer_class = (
-                torch.optim.Adam if self.opt_type == "Adam" else torch.optim.AdamW
-            )
+
+            if self.opt_type in ("Adam", "AdamW"):
+                cls = torch.optim.Adam if self.opt_type == "Adam" else torch.optim.AdamW
+                extra = {"betas": adam_betas, "fused": DEVICE.type != "cpu"}
+            elif self.opt_type == "AdaMuon":
+                cls = AdaMuonOptimizer
+                extra = {
+                    "adam_betas": adam_betas,
+                    "momentum": float(self.opt_param["momentum"]),
+                    "lr_adjust": float(self.opt_param["lr_adjust"]),
+                    "lr_adjust_coeff": float(self.opt_param["lr_adjust_coeff"]),
+                }
+            elif self.opt_type == "HybridMuon":
+                cls = HybridMuonOptimizer
+                extra = {
+                    "adam_betas": adam_betas,
+                    "momentum": float(self.opt_param["momentum"]),
+                    "lr_adjust": float(self.opt_param["lr_adjust"]),
+                    "lr_adjust_coeff": float(self.opt_param["lr_adjust_coeff"]),
+                    "muon_2d_only": bool(self.opt_param["muon_2d_only"]),
+                    "min_2d_dim": int(self.opt_param["min_2d_dim"]),
+                    "flash_muon": bool(self.opt_param["flash_muon"]),
+                }
+            else:
+                raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
+
             self.optimizer = self._create_optimizer(
-                optimizer_class,
+                cls,
                 lr=initial_lr,
-                betas=adam_betas,
                 weight_decay=weight_decay,
-                fused=DEVICE.type != "cpu",
+                **extra,
             )
             self._load_optimizer_state(optimizer_state_dict)
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
@@ -808,58 +835,6 @@ class Trainer:
                 ),
                 last_epoch=self.start_step - 1,
             )
-        elif self.opt_type == "LKF":
-            self.optimizer = LKFOptimizer(
-                self.wrapper.parameters(), 0.98, 0.99870, self.opt_param["kf_blocksize"]
-            )
-        elif self.opt_type == "AdaMuon":
-            self.optimizer = self._create_optimizer(
-                AdaMuonOptimizer,
-                lr=initial_lr,
-                momentum=float(self.opt_param["momentum"]),
-                weight_decay=float(self.opt_param["weight_decay"]),
-                adam_betas=(
-                    float(self.opt_param["adam_beta1"]),
-                    float(self.opt_param["adam_beta2"]),
-                ),
-                lr_adjust=float(self.opt_param["lr_adjust"]),
-                lr_adjust_coeff=float(self.opt_param["lr_adjust_coeff"]),
-            )
-            if optimizer_state_dict is not None and self.restart_training:
-                self.optimizer.load_state_dict(optimizer_state_dict)
-            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-                self.optimizer,
-                lambda step: (
-                    self.lr_schedule.value(step + self.start_step) / initial_lr
-                ),
-                last_epoch=self.start_step - 1,
-            )
-        elif self.opt_type == "HybridMuon":
-            self.optimizer = self._create_optimizer(
-                HybridMuonOptimizer,
-                lr=initial_lr,
-                momentum=float(self.opt_param["momentum"]),
-                weight_decay=float(self.opt_param["weight_decay"]),
-                adam_betas=(
-                    float(self.opt_param["adam_beta1"]),
-                    float(self.opt_param["adam_beta2"]),
-                ),
-                lr_adjust=float(self.opt_param["lr_adjust"]),
-                lr_adjust_coeff=float(self.opt_param["lr_adjust_coeff"]),
-                muon_2d_only=bool(self.opt_param["muon_2d_only"]),
-                min_2d_dim=int(self.opt_param["min_2d_dim"]),
-                flash_muon=bool(self.opt_param["flash_muon"]),
-            )
-            self._load_optimizer_state(optimizer_state_dict)
-            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-                self.optimizer,
-                lambda step: (
-                    self.lr_schedule.value(step + self.start_step) / initial_lr
-                ),
-                last_epoch=self.start_step - 1,
-            )
-        else:
-            raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
         if self.zero_stage > 0 and self.rank == 0:
             if self.zero_stage == 1:
