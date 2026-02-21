@@ -69,10 +69,10 @@ class TestDataModifier(tf.test.TestCase):
         rcut = model.model.get_rcut()
 
         # init data system
-        systems = jdata["training"]["systems"]
+        systems = jdata["training"]["training_data"]["systems"]
         set_pfx = "set"
-        batch_size = jdata["training"]["batch_size"]
-        test_size = jdata["training"]["numb_test"]
+        batch_size = jdata["training"]["training_data"]["batch_size"]
+        test_size = 1
         data = DeepmdDataSystem(
             systems, batch_size, test_size, rcut, set_prefix=set_pfx
         )
@@ -177,11 +177,13 @@ class TestDataModifier(tf.test.TestCase):
                 "decay_steps": 5000,
                 "decay_rate": 0.95,
             },
+            "optimizer": {"type": "Adam"},
             "training": {
-                "systems": ["data_modifier/sys_test_0"],
-                "stop_batch": 1000000,
-                "batch_size": 1,
-                "numb_test": 2,
+                "training_data": {
+                    "systems": ["data_modifier/sys_test_0"],
+                    "batch_size": 1,
+                },
+                "numb_steps": 1000000,
             },
         }
         return jdata
