@@ -549,11 +549,13 @@ class Trainer:
         # Learning rate
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
         if self.multi_task and config.get("learning_rate_dict", None) is not None:
-            self.lr_exp = {}
+            self.lr_schedule = {}
             for model_key in self.model_keys:
-                self.lr_exp[model_key] = get_lr(config["learning_rate_dict"][model_key])
+                self.lr_schedule[model_key] = get_lr(
+                    config["learning_rate_dict"][model_key]
+                )
         else:
-            self.lr_exp = get_lr(config["learning_rate"])
+            self.lr_schedule = get_lr(config["learning_rate"])
 
         # JIT
         if JIT:
@@ -789,7 +791,7 @@ class Trainer:
         # author: iProzd
         # TODO add optimizers for multitask
         # author: iProzd
-        initial_lr = self.lr_exp.value(self.start_step)
+        initial_lr = self.lr_schedule.value(self.start_step)
         if self.opt_type in ["Adam", "AdamW"]:
             # Initialize optimizer with the actual learning rate at start_step
             # to ensure warmup is applied from the first step
@@ -809,7 +811,9 @@ class Trainer:
             self._load_optimizer_state(optimizer_state_dict)
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self.optimizer,
-                lambda step: self.lr_exp.value(step + self.start_step) / initial_lr,
+                lambda step: (
+                    self.lr_schedule.value(step + self.start_step) / initial_lr
+                ),
                 last_epoch=self.start_step - 1,
             )
         elif self.opt_type == "LKF":
@@ -833,7 +837,9 @@ class Trainer:
                 self.optimizer.load_state_dict(optimizer_state_dict)
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self.optimizer,
-                lambda step: self.lr_exp.value(step + self.start_step) / initial_lr,
+                lambda step: (
+                    self.lr_schedule.value(step + self.start_step) / initial_lr
+                ),
                 last_epoch=self.start_step - 1,
             )
         elif self.opt_type == "HybridMuon":
@@ -855,7 +861,9 @@ class Trainer:
             self._load_optimizer_state(optimizer_state_dict)
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self.optimizer,
-                lambda step: self.lr_exp.value(step + self.start_step) / initial_lr,
+                lambda step: (
+                    self.lr_schedule.value(step + self.start_step) / initial_lr
+                ),
                 last_epoch=self.start_step - 1,
             )
         else:
@@ -1018,10 +1026,10 @@ class Trainer:
             # PyTorch Profiler
             if self.enable_profiler or self.profiling:
                 prof.step()
-            if isinstance(self.lr_exp, dict):
-                _lr = self.lr_exp[task_key]
+            if isinstance(self.lr_schedule, dict):
+                _lr = self.lr_schedule[task_key]
             else:
-                _lr = self.lr_exp
+                _lr = self.lr_schedule
             cur_lr = _lr.value(_step_id)
             pref_lr = cur_lr
             self.optimizer.zero_grad(set_to_none=True)
@@ -1427,7 +1435,7 @@ class Trainer:
                         _bias_adjust_mode="change-by-statistic",
                     )
             self.latest_model = Path(self.save_ckpt + f"-{self.num_steps}.pt")
-            cur_lr = self.lr_exp.value(self.num_steps - 1)
+            cur_lr = self.lr_schedule.value(self.num_steps - 1)
             self.save_model(self.latest_model, lr=cur_lr, step=self.num_steps - 1)
             log.info(f"Saved model to {self.latest_model}")
             symlink_prefix_files(self.latest_model.stem, self.save_ckpt)

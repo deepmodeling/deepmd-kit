@@ -477,11 +477,13 @@ class Trainer:
         # Learning rate
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
         if self.multi_task and config.get("learning_rate_dict", None) is not None:
-            self.lr_exp = {}
+            self.lr_schedule = {}
             for model_key in self.model_keys:
-                self.lr_exp[model_key] = get_lr(config["learning_rate_dict"][model_key])
+                self.lr_schedule[model_key] = get_lr(
+                    config["learning_rate_dict"][model_key]
+                )
         else:
-            self.lr_exp = get_lr(config["learning_rate"])
+            self.lr_schedule = get_lr(config["learning_rate"])
 
         # JIT
         if JIT:
@@ -668,9 +670,10 @@ class Trainer:
         # author: iProzd
         if self.opt_type == "Adam":
             self.scheduler = paddle.optimizer.lr.LambdaDecay(
-                learning_rate=self.lr_exp.start_lr,
+                learning_rate=self.lr_schedule.start_lr,
                 lr_lambda=lambda step: (
-                    self.lr_exp.value(step + self.start_step) / self.lr_exp.start_lr
+                    self.lr_schedule.value(step + self.start_step)
+                    / self.lr_schedule.start_lr
                 ),
             )
             self.optimizer = paddle.optimizer.Adam(
@@ -803,10 +806,10 @@ class Trainer:
             # Paddle Profiler
             if enable_profiling:
                 core.nvprof_nvtx_push(f"Training step {_step_id}")
-            if isinstance(self.lr_exp, dict):
-                _lr = self.lr_exp[task_key]
+            if isinstance(self.lr_schedule, dict):
+                _lr = self.lr_schedule[task_key]
             else:
-                _lr = self.lr_exp
+                _lr = self.lr_schedule
             cur_lr = _lr.value(_step_id)
             pref_lr = cur_lr
 
@@ -1061,7 +1064,7 @@ class Trainer:
                         _bias_adjust_mode="change-by-statistic",
                     )
             self.latest_model = Path(self.save_ckpt + f"-{self.num_steps}.pd")
-            cur_lr = self.lr_exp.value(self.num_steps - 1)
+            cur_lr = self.lr_schedule.value(self.num_steps - 1)
             self.save_model(self.latest_model, lr=cur_lr, step=self.num_steps - 1)
             log.info(f"Saved model to {self.latest_model}")
             symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
