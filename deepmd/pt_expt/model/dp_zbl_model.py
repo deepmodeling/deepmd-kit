@@ -97,6 +97,24 @@ class DPZBLModel(DPModelCommon, DPZBLModel_):
             model_predict["mask"] = model_ret["mask"]
         return model_predict
 
+    def translated_output_def(self) -> dict[str, Any]:
+        out_def_data = self.model_output_def().get_data()
+        output_def = {
+            "atom_energy": out_def_data["energy"],
+            "energy": out_def_data["energy_redu"],
+        }
+        if self.do_grad_r("energy"):
+            output_def["force"] = out_def_data["energy_derv_r"]
+            output_def["force"].squeeze(-2)
+        if self.do_grad_c("energy"):
+            output_def["virial"] = out_def_data["energy_derv_c_redu"]
+            output_def["virial"].squeeze(-2)
+            output_def["atom_virial"] = out_def_data["energy_derv_c"]
+            output_def["atom_virial"].squeeze(-2)
+        if "mask" in out_def_data:
+            output_def["mask"] = out_def_data["mask"]
+        return output_def
+
     def forward_lower_exportable(
         self,
         extended_coord: torch.Tensor,

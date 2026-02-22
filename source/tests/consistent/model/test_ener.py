@@ -546,7 +546,7 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         raise ValueError(f"Unknown backend: {backend}")
 
 
-@unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+@unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PyTorch is not installed")
 class TestEnerModelAPIs(unittest.TestCase):
     """Test consistency of model-level APIs between pt and dpmodel backends.
 
@@ -584,10 +584,11 @@ class TestEnerModelAPIs(unittest.TestCase):
             },
             trim_pattern="_*",
         )
-        # Build dpmodel first, then deserialize into pt to share weights
+        # Build dpmodel first, then deserialize into pt/pt_expt to share weights
         self.dp_model = get_model_dp(data)
         serialized = self.dp_model.serialize()
         self.pt_model = EnergyModelPT.deserialize(serialized)
+        self.pt_expt_model = EnergyModelPTExpt.deserialize(serialized)
 
         # Coords / atype / box
         self.coords = np.array(
@@ -643,12 +644,15 @@ class TestEnerModelAPIs(unittest.TestCase):
         self.nlist = nlist
 
     def test_translated_output_def(self) -> None:
-        """translated_output_def should return the same keys on dp and pt."""
+        """translated_output_def should return the same keys on dp, pt, and pt_expt."""
         dp_def = self.dp_model.translated_output_def()
         pt_def = self.pt_model.translated_output_def()
+        pt_expt_def = self.pt_expt_model.translated_output_def()
         self.assertEqual(set(dp_def.keys()), set(pt_def.keys()))
+        self.assertEqual(set(dp_def.keys()), set(pt_expt_def.keys()))
         for key in dp_def:
             self.assertEqual(dp_def[key].shape, pt_def[key].shape)
+            self.assertEqual(dp_def[key].shape, pt_expt_def[key].shape)
 
     def test_get_descriptor(self) -> None:
         """get_descriptor should return a non-None object on both backends."""

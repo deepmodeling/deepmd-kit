@@ -89,6 +89,17 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
             model_predict["mask"] = model_ret["mask"]
         return model_predict
 
+    def translated_output_def(self) -> dict[str, Any]:
+        out_def_data = self.model_output_def().get_data()
+        var_name = self.get_var_name()
+        output_def = {
+            f"atom_{var_name}": out_def_data[var_name],
+            var_name: out_def_data[f"{var_name}_redu"],
+        }
+        if "mask" in out_def_data:
+            output_def["mask"] = out_def_data["mask"]
+        return output_def
+
     def forward_lower_exportable(
         self,
         extended_coord: torch.Tensor,

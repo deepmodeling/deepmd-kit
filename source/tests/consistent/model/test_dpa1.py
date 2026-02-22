@@ -271,3 +271,50 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
                 ret["atom_virial"].ravel(),
             )
         raise ValueError(f"Unknown backend: {backend}")
+
+
+@unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PyTorch is not installed")
+class TestDPA1EnerModelAPIs(unittest.TestCase):
+    """Test translated_output_def consistency across dp, pt, and pt_expt backends."""
+
+    def setUp(self) -> None:
+        data = model_args().normalize_value(
+            {
+                "type_map": ["O", "H"],
+                "descriptor": {
+                    "type": "se_atten",
+                    "sel": 40,
+                    "rcut_smth": 0.50,
+                    "rcut": 6.00,
+                    "neuron": [3, 6],
+                    "resnet_dt": False,
+                    "axis_neuron": 2,
+                    "seed": 1,
+                    "attn": 128,
+                    "attn_layer": 0,
+                    "precision": "float64",
+                },
+                "fitting_net": {
+                    "neuron": [5, 5],
+                    "resnet_dt": True,
+                    "precision": "float64",
+                    "seed": 1,
+                },
+            },
+            trim_pattern="_*",
+        )
+        self.dp_model = get_model_dp(data)
+        serialized = self.dp_model.serialize()
+        self.pt_model = EnergyModelPT.deserialize(serialized)
+        self.pt_expt_model = EnergyModelPTExpt.deserialize(serialized)
+
+    def test_translated_output_def(self) -> None:
+        """translated_output_def should return the same keys on dp, pt, and pt_expt."""
+        dp_def = self.dp_model.translated_output_def()
+        pt_def = self.pt_model.translated_output_def()
+        pt_expt_def = self.pt_expt_model.translated_output_def()
+        self.assertEqual(set(dp_def.keys()), set(pt_def.keys()))
+        self.assertEqual(set(dp_def.keys()), set(pt_expt_def.keys()))
+        for key in dp_def:
+            self.assertEqual(dp_def[key].shape, pt_def[key].shape)
+            self.assertEqual(dp_def[key].shape, pt_expt_def[key].shape)

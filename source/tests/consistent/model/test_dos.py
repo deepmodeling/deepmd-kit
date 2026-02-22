@@ -218,3 +218,52 @@ class TestDOS(CommonTest, ModelTest, unittest.TestCase):
                 ret["atom_dos"].ravel(),
             )
         raise ValueError(f"Unknown backend: {backend}")
+
+
+@unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PyTorch is not installed")
+class TestDOSModelAPIs(unittest.TestCase):
+    """Test translated_output_def consistency across dp, pt, and pt_expt backends."""
+
+    def setUp(self) -> None:
+        data = model_args().normalize_value(
+            {
+                "type_map": ["O", "H"],
+                "descriptor": {
+                    "type": "se_e2_a",
+                    "sel": [20, 20],
+                    "rcut_smth": 1.8,
+                    "rcut": 6.0,
+                    "neuron": [2, 4, 8],
+                    "resnet_dt": False,
+                    "axis_neuron": 8,
+                    "precision": "float64",
+                    "type_one_side": True,
+                    "seed": 1,
+                },
+                "fitting_net": {
+                    "type": "dos",
+                    "numb_dos": 2,
+                    "neuron": [4, 4, 4],
+                    "resnet_dt": True,
+                    "numb_fparam": 0,
+                    "precision": "float64",
+                    "seed": 1,
+                },
+            },
+            trim_pattern="_*",
+        )
+        self.dp_model = get_model_dp(data)
+        serialized = self.dp_model.serialize()
+        self.pt_model = DOSModelPT.deserialize(serialized)
+        self.pt_expt_model = DOSModelPTExpt.deserialize(serialized)
+
+    def test_translated_output_def(self) -> None:
+        """translated_output_def should return the same keys on dp, pt, and pt_expt."""
+        dp_def = self.dp_model.translated_output_def()
+        pt_def = self.pt_model.translated_output_def()
+        pt_expt_def = self.pt_expt_model.translated_output_def()
+        self.assertEqual(set(dp_def.keys()), set(pt_def.keys()))
+        self.assertEqual(set(dp_def.keys()), set(pt_expt_def.keys()))
+        for key in dp_def:
+            self.assertEqual(dp_def[key].shape, pt_def[key].shape)
+            self.assertEqual(dp_def[key].shape, pt_expt_def[key].shape)
