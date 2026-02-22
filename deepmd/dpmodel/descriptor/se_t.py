@@ -63,6 +63,23 @@ class DescrptSeT(NativeOP, BaseDescriptor):
 
     The embedding takes angles between two neighboring atoms as input.
 
+    The descriptor :math:`\mathcal{D}^i \in \mathbb{R}^{M}` is given by [1]_
+
+    .. math::
+        \mathcal{D}^i = \frac{1}{N_c^2} \sum_{j,k} \mathcal{N}_{t_i,t_j,t_k}(\cos\theta_{jik}),
+
+    where :math:`\theta_{jik}` is the angle between neighbors :math:`j` and :math:`k`
+    around the central atom :math:`i`, and :math:`\mathcal{N}_{t_i,t_j,t_k}` is the
+    embedding network that depends on the types of atoms :math:`i`, :math:`j`, and :math:`k`.
+
+    The cosine of the angle is computed from the normalized relative coordinates:
+
+    .. math::
+        \cos\theta_{jik} = \frac{\boldsymbol{r}_{ij} \cdot \boldsymbol{r}_{ik}}{|\boldsymbol{r}_{ij}| |\boldsymbol{r}_{ik}|},
+
+    where :math:`\boldsymbol{r}_{ij} = \boldsymbol{R}_j - \boldsymbol{R}_i` is the
+    relative coordinate vector.
+
     Parameters
     ----------
     rcut : float

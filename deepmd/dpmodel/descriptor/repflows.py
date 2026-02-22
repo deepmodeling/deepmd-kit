@@ -63,6 +63,31 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
     r"""
     The repflow descriptor block.
 
+    The repflow descriptor maintains three types of representations and updates them
+    iteratively through message passing:
+
+    - **Node representation** :math:`\mathbf{n}^i \in \mathbb{R}^{n_{dim}}`: single-atom features
+    - **Edge representation** :math:`\mathbf{e}^{ij} \in \mathbb{R}^{e_{dim}}`: pair-atom features
+    - **Angle representation** :math:`\mathbf{a}^{ijk} \in \mathbb{R}^{a_{dim}}`: three-body features
+
+    The update equations for layer :math:`l` are:
+
+    .. math::
+        \mathbf{n}^{i,l+1} = \mathbf{n}^{i,l} + \text{MLP}_n\left(\sum_{j \in \mathcal{N}(i)} \mathbf{e}^{ij,l}\right),
+
+    .. math::
+        \mathbf{e}^{ij,l+1} = \mathbf{e}^{ij,l} + \text{MLP}_e\left([\mathbf{n}^{i,l}, \mathbf{n}^{j,l}, \mathbf{e}^{ij,l}, \sum_k \mathbf{a}^{ijk,l}]\right),
+
+    .. math::
+        \mathbf{a}^{ijk,l+1} = \mathbf{a}^{ijk,l} + \text{MLP}_a\left([\mathbf{e}^{ij,l}, \mathbf{e}^{ik,l}, \cos\theta_{jik}]\right).
+
+    The final descriptor is computed via symmetrization:
+
+    .. math::
+        \mathcal{D}^i = \frac{1}{N_c^2} (\mathcal{N}^i)^T \mathcal{E}^i (\mathcal{E}^i)^T \mathcal{N}^i_<,
+
+    where :math:`\mathcal{N}^i_<` denotes the first `axis_neuron` columns of :math:`\mathcal{N}^i`.
+
     Parameters
     ----------
     n_dim : int, optional
