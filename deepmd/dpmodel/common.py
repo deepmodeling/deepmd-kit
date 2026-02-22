@@ -121,7 +121,8 @@ def to_numpy_array(x: Optional["Array"]) -> np.ndarray | None:
     try:
         # asarray is not within Array API standard, so may fail
         return np.asarray(x)
-    except (ValueError, AttributeError, TypeError):
+    except (ValueError, AttributeError, TypeError, RuntimeError):
+        # RuntimeError: handles torch tensors with requires_grad=True
         xp = array_api_compat.array_namespace(x)
         # to fix BufferError: Cannot export readonly array since signalling readonly is unsupported by DLPack.
         # Move to CPU device to ensure numpy compatibility

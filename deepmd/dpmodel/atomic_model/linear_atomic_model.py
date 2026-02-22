@@ -337,9 +337,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlists_)
         nmodels = len(self.models)
         nframes, nloc, _ = nlists_[0].shape
+        dev = array_api_compat.device(extended_coord)
         # the dtype of weights is the interface data type.
         return [
-            xp.ones((nframes, nloc, 1), dtype=GLOBAL_NP_FLOAT_PRECISION) / nmodels
+            xp.ones((nframes, nloc, 1), dtype=GLOBAL_NP_FLOAT_PRECISION, device=dev)
+            / nmodels
             for _ in range(nmodels)
         ]
 

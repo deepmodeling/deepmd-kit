@@ -113,8 +113,16 @@ jobs:
           - variant: ""
             cuda_version: "12"
     steps:
-      - name: Delete huge unnecessary tools folder
-        run: rm -rf /opt/hostedtoolcache
+      - name: Free Disk Space (Ubuntu)
+        uses: insightsengineering/disk-space-reclaimer@v1
+        with:
+          tools-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+          docker-images: true
       - uses: actions/checkout@v6
       - uses: actions/download-artifact@v7
         with:

@@ -164,7 +164,7 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
             ft,
             type_map=cls.expected_type_map,
         )
-        cls.output_def = cls.module.model_output_def().get_data()
+        cls.output_def = cls.module.translated_output_def()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
@@ -271,7 +271,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, DPTestCase):
             pair_exclude_types=pair_exclude_types,
         )
         cls.module = SpinModel(backbone_model=backbone_model, spin=spin)
-        cls.output_def = cls.module.model_output_def().get_data()
+        cls.output_def = cls.module.translated_output_def()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()

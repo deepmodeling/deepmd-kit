@@ -21,13 +21,14 @@ from ..common import (
     parameterized,
 )
 from .common import (
+    DescriptorAPITest,
     DescriptorTest,
 )
 
 if INSTALLED_PT:
     from deepmd.pt.model.descriptor.se_r import DescrptSeR as DescrptSeRPT
 else:
-    DescrptSeAPT = None
+    DescrptSeRPT = None
 if INSTALLED_PT_EXPT:
     from deepmd.pt_expt.descriptor.se_r import DescrptSeR as DescrptSeRPTExpt
 else:
@@ -35,7 +36,7 @@ else:
 if INSTALLED_TF:
     from deepmd.tf.descriptor.se_r import DescrptSeR as DescrptSeRTF
 else:
-    DescrptSeATF = None
+    DescrptSeRTF = None
 from deepmd.utils.argcheck import (
     descrpt_se_r_args,
 )
@@ -261,3 +262,59 @@ class TestSeR(CommonTest, DescriptorTest, unittest.TestCase):
             return 1e-4
         else:
             raise ValueError(f"Unknown precision: {precision}")
+
+
+@parameterized(
+    (True, False),  # resnet_dt
+    (True, False),  # type_one_side
+    ([], [[0, 1]]),  # excluded_types
+    ("float64",),  # precision
+)
+class TestSeRDescriptorAPI(DescriptorAPITest, unittest.TestCase):
+    """Test consistency of BaseDescriptor API methods across backends."""
+
+    dp_class = DescrptSeRDP
+    pt_class = DescrptSeRPT
+    pt_expt_class = DescrptSeRPTExpt
+    args = descrpt_se_r_args()
+
+    @property
+    def data(self) -> dict:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+        ) = self.param
+        return {
+            "sel": [9, 10],
+            "rcut_smth": 5.80,
+            "rcut": 6.00,
+            "neuron": [6, 12, 24],
+            "resnet_dt": resnet_dt,
+            "type_one_side": type_one_side,
+            "exclude_types": excluded_types,
+            "precision": precision,
+            "seed": 1145141919810,
+            "activation_function": "relu",
+        }
+
+    @property
+    def skip_pt(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+        ) = self.param
+        return not type_one_side or not INSTALLED_PT
+
+    @property
+    def skip_pt_expt(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+        ) = self.param
+        return not type_one_side or not INSTALLED_PT_EXPT

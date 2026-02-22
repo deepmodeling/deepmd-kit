@@ -388,8 +388,8 @@ class DeepEval(DeepEvalBackend):
 
         results = []
         for odef in request_defs:
-            # it seems not doing conversion
-            # dp_name = self._OUTDEF_DP2BACKEND[odef.name]
+            # HLO and TFModelWrapper return raw internal keys (not translated),
+            # so no key mapping is needed here.
             dp_name = odef.name
             if dp_name in batch_output:
                 shape = self._get_output_shape(odef, nframes, natoms)

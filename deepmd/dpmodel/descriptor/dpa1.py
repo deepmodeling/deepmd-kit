@@ -1049,6 +1049,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                 idx_j = xp.reshape(nei_type, (-1,))
                 # (nf x nl x nnei) x ng
                 idx = xp.tile(xp.reshape((idx_i + idx_j), (-1, 1)), (1, ng))
+                # Cast to int64 for PyTorch backend (take_along_dim requires Long indices)
+                idx = xp.astype(idx, xp.int64)
                 # (ntypes) * ntypes * nt
                 type_embedding_nei = xp.tile(
                     xp.reshape(type_embedding, (1, ntypes_with_padding, nt)),

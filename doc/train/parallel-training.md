@@ -98,6 +98,52 @@ optional arguments:
 Currently, parallel training in pytorch version is implemented in the form of PyTorch Distributed Data Parallelism [DDP](https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html).
 DeePMD-kit will decide whether to launch the training in parallel (distributed) mode or in serial mode depending on your execution command.
 
+### Optional ZeRO memory optimization
+
+In PyTorch backend, DeePMD-kit supports ZeRO (Zero Redundancy Optimizer) stages
+to reduce per-GPU memory usage during distributed training.
+
+| `zero_stage` | Strategy                      | Communication | Memory saving                                 |
+| ------------ | ----------------------------- | ------------- | --------------------------------------------- |
+| 0            | Standard DDP (default)        | 2Ψ            | None (full replication on every GPU)          |
+| 1            | DDP + ZeRO Stage 1            | 2Ψ            | Optimizer states / N                          |
+| 2            | FSDP2 SHARD_GRAD_OP (Stage 2) | 2Ψ            | Gradients + optimizer states / N              |
+| 3            | FSDP2 FULL_SHARD (Stage 3)    | 3Ψ            | Parameters + gradients + optimizer states / N |
+
+**How to choose:**
+
+- **Stage 0** (DDP): Lowest overhead, fastest training speed. All optimizer states,
+  gradients, and parameters are fully replicated on every GPU. Use this when GPU
+  memory is sufficient.
+- **Stage 1** (DDP + ZeRO-1): Same communication pattern as DDP (AllReduce), minimal
+  speed impact. Shards optimizer states only, reducing optimizer memory to 1/N per GPU.
+  Recommended first step when DDP runs out of memory.
+- **Stage 2** (FSDP2): Shards both optimizer states and gradients. Same total
+  communication volume as stage 1, but uses ReduceScatter + AllGather instead of
+  AllReduce. FSDP2 introduces DTensor dispatch overhead that can noticeably slow down
+  models with many small layers; consider `torch.compile` to mitigate.
+- **Stage 3** (FSDP2): Maximum memory savings by also sharding parameters, but incurs
+  50% more communication (3Ψ) due to parameter all-gather in both forward and backward
+  passes. Only use when stage 2 still runs out of memory.
+
+Enable it in input config:
+
+```json
+{
+  "training": {
+    "zero_stage": 1
+  }
+}
+```
+
+Constraints:
+
+- Works only in PyTorch backend.
+- Requires distributed launch with `torchrun`.
+- Currently single-task only.
+- Not supported with `LKF` optimizer.
+- `change_bias_after_training` must be `false`.
+
 ### Dataloader and Dataset
 
 One of the major differences between two backends during training is that the PyTorch version employs a multi-threaded data loading utility [DataLoader](https://pytorch.org/docs/stable/data.html).

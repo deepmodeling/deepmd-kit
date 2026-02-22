@@ -47,7 +47,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             output_def["virial"] = out_def_data["dipole_derv_c_redu"]
             output_def["virial"].squeeze(-2)
             output_def["atom_virial"] = out_def_data["dipole_derv_c"]
-            output_def["atom_virial"].squeeze(-3)
+            output_def["atom_virial"].squeeze(-2)
         if "mask" in out_def_data:
             output_def["mask"] = out_def_data["mask"]
         return output_def
@@ -74,13 +74,11 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             model_predict["dipole"] = model_ret["dipole"]
             model_predict["global_dipole"] = model_ret["dipole_redu"]
             if self.do_grad_r("dipole"):
-                model_predict["force"] = model_ret["dipole_derv_r"].squeeze(-2)
+                model_predict["force"] = model_ret["dipole_derv_r"]
             if self.do_grad_c("dipole"):
-                model_predict["virial"] = model_ret["dipole_derv_c_redu"].squeeze(-2)
+                model_predict["virial"] = model_ret["dipole_derv_c_redu"]
                 if do_atomic_virial:
-                    model_predict["atom_virial"] = model_ret["dipole_derv_c"].squeeze(
-                        -3
-                    )
+                    model_predict["atom_virial"] = model_ret["dipole_derv_c"]
             if "mask" in model_ret:
                 model_predict["mask"] = model_ret["mask"]
         else:
@@ -116,13 +114,13 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             model_predict["dipole"] = model_ret["dipole"]
             model_predict["global_dipole"] = model_ret["dipole_redu"]
             if self.do_grad_r("dipole"):
-                model_predict["extended_force"] = model_ret["dipole_derv_r"].squeeze(-2)
+                model_predict["extended_force"] = model_ret["dipole_derv_r"]
             if self.do_grad_c("dipole"):
-                model_predict["virial"] = model_ret["dipole_derv_c_redu"].squeeze(-2)
+                model_predict["virial"] = model_ret["dipole_derv_c_redu"]
                 if do_atomic_virial:
-                    model_predict["extended_virial"] = model_ret[
-                        "dipole_derv_c"
-                    ].squeeze(-3)
+                    model_predict["extended_virial"] = model_ret["dipole_derv_c"]
+            if "mask" in model_ret:
+                model_predict["mask"] = model_ret["mask"]
         else:
             model_predict = model_ret
         return model_predict

@@ -475,7 +475,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         g1 = self.act(atype_embd)
         # nf x nloc x nnei x 1,  nf x nloc x nnei x 3
         if not self.direct_dist:
-            g2, h2 = xp.split(dmatrix, [1], axis=-1)
+            g2, h2 = dmatrix[..., :1], dmatrix[..., 1:]
         else:
             g2, h2 = safe_for_vector_norm(diff, axis=-1, keepdims=True), diff
             g2 = g2 / self.rcut
@@ -756,10 +756,12 @@ def _cal_hg(
     else:
         g = _apply_switch(g, sw)
         if not use_sqrt_nnei:
-            invnnei = (1.0 / float(nnei)) * xp.ones((nf, nloc, 1, 1), dtype=g.dtype)
+            invnnei = (1.0 / float(nnei)) * xp.ones(
+                (nf, nloc, 1, 1), dtype=g.dtype, device=array_api_compat.device(g)
+            )
         else:
             invnnei = (1.0 / (float(nnei) ** 0.5)) * xp.ones(
-                (nf, nloc, 1, 1), dtype=g.dtype
+                (nf, nloc, 1, 1), dtype=g.dtype, device=array_api_compat.device(g)
             )
     # nf x nloc x 3 x ng
     hg = xp.matmul(xp.matrix_transpose(h), g) * invnnei
@@ -1655,7 +1657,9 @@ class RepformerLayer(NativeOP):
             invnnei = invnnei[:, :, xp.newaxis]
         else:
             gg1 = _apply_switch(gg1, sw)
-            invnnei = (1.0 / float(nnei)) * xp.ones((nf, nloc, 1), dtype=gg1.dtype)
+            invnnei = (1.0 / float(nnei)) * xp.ones(
+                (nf, nloc, 1), dtype=gg1.dtype, device=array_api_compat.device(gg1)
+            )
         if not self.g1_out_conv:
             # nf x nloc x ng2
             g1_11 = xp.sum(g2 * gg1, axis=2) * invnnei

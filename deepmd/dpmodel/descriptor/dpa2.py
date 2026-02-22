@@ -573,6 +573,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         self.smooth = smooth
         self.exclude_types = exclude_types
         self.env_protection = env_protection
+        self.rcut_smth = self.repinit.get_rcut_smth()
         self.trainable = trainable
         self.add_tebd_to_repinit_out = add_tebd_to_repinit_out
 

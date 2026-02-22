@@ -595,8 +595,12 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
             # n_angle x 1
             a_sw = (a_sw[:, :, :, None] * a_sw[:, :, None, :])[a_nlist_mask]
         else:
-            edge_index = xp.zeros([2, 1], dtype=nlist.dtype)
-            angle_index = xp.zeros([3, 1], dtype=nlist.dtype)
+            edge_index = xp.zeros(
+                [2, 1], dtype=nlist.dtype, device=array_api_compat.device(nlist)
+            )
+            angle_index = xp.zeros(
+                [3, 1], dtype=nlist.dtype, device=array_api_compat.device(nlist)
+            )
 
         # get edge and angle embedding
         # nb x nloc x nnei x e_dim [OR] n_edge x e_dim
@@ -1711,6 +1715,7 @@ class RepFlowLayer(NativeOP):
                         xp.zeros(
                             (nb, nloc, self.nnei - self.a_sel, self.e_dim),
                             dtype=edge_ebd.dtype,
+                            device=array_api_compat.device(edge_ebd),
                         ),
                     ],
                     axis=2,
@@ -1741,6 +1746,7 @@ class RepFlowLayer(NativeOP):
                         xp.zeros(
                             (nb, nloc, self.nnei - self.a_sel),
                             dtype=a_nlist_mask.dtype,
+                            device=array_api_compat.device(a_nlist_mask),
                         ),
                     ],
                     axis=-1,
