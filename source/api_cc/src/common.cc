@@ -257,12 +257,11 @@ void deepmd::select_real_atoms_sendlist(const deepmd::InputNlist& inlist,
   }
 }
 
-void deepmd::select_real_atoms_sendlist_new(
-    const deepmd::InputNlist& inlist,
-    const std::vector<int>& fwd_map,
-    std::vector<int>& sendnum_new,
-    std::vector<int>& recvnum_new,
-    std::vector<int>& sendlist_new) {
+void deepmd::select_real_atoms_sendlist_new(const deepmd::InputNlist& inlist,
+                                            const std::vector<int>& fwd_map,
+                                            std::vector<int>& sendnum_new,
+                                            std::vector<int>& recvnum_new,
+                                            std::vector<int>& sendlist_new) {
   int nswap = inlist.nswap;
   sendnum_new.resize(nswap);
   recvnum_new.resize(nswap);
