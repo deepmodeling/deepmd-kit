@@ -18,13 +18,15 @@ from deepmd.dpmodel.model.dp_model import (
 from .make_model import (
     make_model,
 )
+from .model import (
+    BaseModel,
+)
 
 DPDOSModel_ = make_model(DPDOSAtomicModel)
 
 
+@BaseModel.register("dos")
 class DOSModel(DPModelCommon, DPDOSModel_):
-    model_type = "dos"
-
     def __init__(
         self,
         *args: Any,

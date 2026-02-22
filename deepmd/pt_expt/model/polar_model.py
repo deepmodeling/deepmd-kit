@@ -18,13 +18,15 @@ from deepmd.dpmodel.model.dp_model import (
 from .make_model import (
     make_model,
 )
+from .model import (
+    BaseModel,
+)
 
 DPPolarModel_ = make_model(DPPolarAtomicModel)
 
 
+@BaseModel.register("polar")
 class PolarModel(DPModelCommon, DPPolarModel_):
-    model_type = "polar"
-
     def __init__(
         self,
         *args: Any,

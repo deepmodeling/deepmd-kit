@@ -18,13 +18,15 @@ from deepmd.dpmodel.model.dp_model import (
 from .make_model import (
     make_model,
 )
+from .model import (
+    BaseModel,
+)
 
 DPPropertyModel_ = make_model(DPPropertyAtomicModel)
 
 
+@BaseModel.register("property")
 class PropertyModel(DPModelCommon, DPPropertyModel_):
-    model_type = "property"
-
     def __init__(
         self,
         *args: Any,

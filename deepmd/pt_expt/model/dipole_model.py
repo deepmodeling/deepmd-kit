@@ -18,13 +18,15 @@ from deepmd.dpmodel.model.dp_model import (
 from .make_model import (
     make_model,
 )
+from .model import (
+    BaseModel,
+)
 
 DPDipoleModel_ = make_model(DPDipoleAtomicModel)
 
 
+@BaseModel.register("dipole")
 class DipoleModel(DPModelCommon, DPDipoleModel_):
-    model_type = "dipole"
-
     def __init__(
         self,
         *args: Any,

@@ -18,13 +18,15 @@ from deepmd.dpmodel.model.dp_model import (
 from .make_model import (
     make_model,
 )
+from .model import (
+    BaseModel,
+)
 
 DPEnergyModel_ = make_model(DPEnergyAtomicModel)
 
 
+@BaseModel.register("ener")
 class EnergyModel(DPModelCommon, DPEnergyModel_):
-    model_type = "ener"
-
     def __init__(
         self,
         *args: Any,
