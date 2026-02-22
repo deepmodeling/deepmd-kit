@@ -257,6 +257,35 @@ void deepmd::select_real_atoms_sendlist(const deepmd::InputNlist& inlist,
   }
 }
 
+void deepmd::select_real_atoms_sendlist_new(
+    const deepmd::InputNlist& inlist,
+    const std::vector<int>& fwd_map,
+    std::vector<int>& sendnum_new,
+    std::vector<int>& recvnum_new,
+    std::vector<int>& sendlist_new) {
+  int nswap = inlist.nswap;
+  sendnum_new.resize(nswap);
+  recvnum_new.resize(nswap);
+  sendlist_new.clear();
+
+  // select real atoms in sendlist
+  for (int s = 0; s < nswap; ++s) {
+    int cnt = 0;
+    for (int k = 0; k < inlist.sendnum[s]; ++k) {
+      const int old_idx = inlist.sendlist[s][k];
+      int mapped = (old_idx >= 0 && old_idx < (int)fwd_map.size())
+                       ? fwd_map[old_idx]
+                       : -1;
+      if (mapped >= 0) {
+        sendlist_new.push_back(mapped);
+        ++cnt;
+      }
+    }
+    sendnum_new[s] = cnt;
+    recvnum_new[s] = cnt;
+  }
+}
+
 void deepmd::NeighborListData::copy_from_nlist(const InputNlist& inlist,
                                                const int natoms) {
   int inum = natoms >= 0 ? natoms : inlist.inum;

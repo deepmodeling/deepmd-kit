@@ -106,6 +106,21 @@ void select_real_atoms_sendlist(const deepmd::InputNlist& inlist,
                                 const std::vector<int>& fwd_map);
 
 /**
+ * @brief Select real atoms in sendlist and restore the original values.
+ * @param[in] inlist The input neighbor list.
+ * @param[in] fwd_map The forward map.
+ * @param[out] sendnum_new The new sendnum.
+ * @param[out] recvnum_new The new recvnum.
+ * @param[out] sendlist_new The new sendlist (flattened).
+ */
+void select_real_atoms_sendlist_new(
+    const deepmd::InputNlist& inlist,
+    const std::vector<int>& fwd_map,
+    std::vector<int>& sendnum_new,
+    std::vector<int>& recvnum_new,
+    std::vector<int>& sendlist_new);
+
+/**
  * @brief Apply the given map to a vector.
  * @param[out] out The output vector.
  * @param[in] in The input vector.

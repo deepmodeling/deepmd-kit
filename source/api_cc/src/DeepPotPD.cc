@@ -399,7 +399,9 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
       auto sendlist_tensor = predictor_fl->GetInputHandle("send_list");
 
       int nswap = lmp_list.nswap;
-      select_real_atoms_sendlist(lmp_list, fwd_map);
+      std::vector<int> sendnum_new, recvnum_new, sendlist_new;
+      select_real_atoms_sendlist_new(lmp_list, fwd_map, sendnum_new,
+                                     recvnum_new, sendlist_new);
       sendproc_tensor->Reshape({nswap});
       sendproc_tensor->CopyFromCpu(lmp_list.sendproc);
 
@@ -407,41 +409,20 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
       recvproc_tensor->CopyFromCpu(lmp_list.recvproc);
 
       recvnum_tensor->Reshape({nswap});
-      recvnum_tensor->CopyFromCpu(lmp_list.recvnum);
+      recvnum_tensor->CopyFromCpu(recvnum_new.data());
 
       sendnum_tensor->Reshape({nswap});
-      if (sizeof(lmp_list.sendnum[0]) != sizeof(int32_t)) {
-        std::vector<int32_t> temp_data(nswap);
-        for (int i = 0; i < nswap; i++) {
-          temp_data[i] = static_cast<int32_t>(lmp_list.sendnum[i]);
-        }
-        sendnum_tensor->CopyFromCpu(temp_data.data());
-      } else {
-        sendnum_tensor->CopyFromCpu(lmp_list.sendnum);
-      }
+      sendnum_tensor->CopyFromCpu(sendnum_new.data());
+
       communicator_tensor->Reshape({1});
       if (lmp_list.world) {
         communicator_tensor->CopyFromCpu(static_cast<int*>(lmp_list.world));
       }
 
       assert(sizeof(std::intptr_t) == 8);
-      int total_send =
-          std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
+      int total_send = sendlist_new.size();
       sendlist_tensor->Reshape({total_send});
-
-      /**
-      ** NOTE: paddle do not support construct a Tensor with from_blob(T**, ...)
-      ** from a double pointer, so we convert int* pointer to indptr_t for each
-      ** entry and wrap it into int64 Tensor as a workaround.
-      */
-      std::vector<std::intptr_t> pointer_addresses;
-      pointer_addresses.reserve(nswap);
-      for (int iswap = 0; iswap < nswap; ++iswap) {
-        std::intptr_t addr =
-            reinterpret_cast<std::intptr_t>(lmp_list.sendlist[iswap]);
-        pointer_addresses.push_back(addr);
-      }
-      sendlist_tensor->CopyFromCpu(pointer_addresses.data());
+      sendlist_tensor->CopyFromCpu(sendlist_new.data());
     }
     if (lmp_list.mapping) {
       std::vector<std::int64_t> mapping(nall_real);

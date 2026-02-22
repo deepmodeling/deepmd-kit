@@ -182,7 +182,9 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
     nlist_data.padding();
     if (do_message_passing) {
       int nswap = lmp_list.nswap;
-      select_real_atoms_sendlist(lmp_list, fwd_map);
+      std::vector<int> sendnum_new, recvnum_new, sendlist_new;
+      select_real_atoms_sendlist_new(lmp_list, fwd_map, sendnum_new,
+                                     recvnum_new, sendlist_new);
       torch::Tensor sendproc_tensor =
           torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
       torch::Tensor recvproc_tensor =
@@ -190,9 +192,9 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
       torch::Tensor firstrecv_tensor =
           torch::from_blob(lmp_list.firstrecv, {nswap}, int32_option);
       torch::Tensor recvnum_tensor =
-          torch::from_blob(lmp_list.recvnum, {nswap}, int32_option);
+          torch::from_blob(recvnum_new.data(), {nswap}, int32_option).clone();
       torch::Tensor sendnum_tensor =
-          torch::from_blob(lmp_list.sendnum, {nswap}, int32_option);
+          torch::from_blob(sendnum_new.data(), {nswap}, int32_option).clone();
       torch::Tensor communicator_tensor;
       if (lmp_list.world == 0) {
         communicator_tensor = torch::empty({1}, torch::kInt64);
@@ -201,10 +203,11 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
             const_cast<void*>(lmp_list.world), {1}, torch::kInt64);
       }
       torch::Tensor nswap_tensor = torch::tensor(nswap, int32_option);
-      int total_send =
-          std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
       torch::Tensor sendlist_tensor =
-          torch::from_blob(lmp_list.sendlist, {total_send}, int32_option);
+          torch::from_blob(sendlist_new.data(),
+                           {static_cast<long>(sendlist_new.size())},
+                           int32_option)
+              .clone();
       torch::Tensor has_spin = torch::tensor({1}, int32_option);
       comm_dict.insert_or_assign("send_list", sendlist_tensor);
       comm_dict.insert_or_assign("send_proc", sendproc_tensor);
