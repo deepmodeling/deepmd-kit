@@ -2,7 +2,6 @@
 
 from deepmd.dpmodel.fitting.polarizability_fitting import PolarFitting as PolarFittingDP
 from deepmd.pt_expt.common import (
-    register_dpmodel_mapping,
     torch_module,
 )
 
@@ -15,9 +14,3 @@ from .base_fitting import (
 @torch_module
 class PolarFitting(PolarFittingDP):
     pass
-
-
-register_dpmodel_mapping(
-    PolarFittingDP,
-    lambda v: PolarFitting.deserialize(v.serialize()),
-)
