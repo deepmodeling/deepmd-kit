@@ -8,11 +8,11 @@ from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
 
+from deepmd.dpmodel.atomic_model import (
+    DPEnergyAtomicModel,
+)
 from deepmd.dpmodel.model.dp_model import (
     DPModelCommon,
-)
-from deepmd.pt_expt.atomic_model import (
-    DPEnergyAtomicModel,
 )
 
 from .make_model import (
