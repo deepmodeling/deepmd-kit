@@ -192,9 +192,11 @@ class PairTabAtomicModel(BaseAtomicModel):
         tab_model = super().deserialize(data)
 
         tab_model.tab = tab
-        tab_model.tab_info = tab_model.tab.tab_info
-        nspline, ntypes = tab_model.tab_info[-2:].astype(int)
-        tab_model.tab_data = tab_model.tab.tab_data.reshape(ntypes, ntypes, nspline, 4)
+        # Extract nspline/ntypes from the numpy source before setting on the
+        # model, because dpmodel_setattr may convert to torch tensor.
+        nspline, ntypes = tab.tab_info[-2:].astype(int)
+        tab_model.tab_info = tab.tab_info
+        tab_model.tab_data = tab.tab_data.reshape(ntypes, ntypes, nspline, 4)
         return tab_model
 
     def forward_atomic(
@@ -281,7 +283,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         hi = 1.0 / hh
 
         # jax jit does not support convert to a Python int, so we need to convert to xp.int64.
-        nspline = (self.tab_info[2] + 0.1).astype(xp.int64)
+        nspline = xp.astype(self.tab_info[2] + 0.1, xp.int64)
 
         uu = (rr - rmin) * hi  # this is broadcasted to (nframes,nloc,nnei)
 
@@ -338,7 +340,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         neighbor_atoms = coords[batch_indices, nlist]
         loc_atoms = coords[:, : nlist.shape[1], :]
         pairwise_dr = loc_atoms[:, :, None, :] - neighbor_atoms
-        pairwise_rr = safe_for_sqrt(xp.sum(xp.power(pairwise_dr, 2), axis=-1))
+        pairwise_rr = safe_for_sqrt(xp.sum(pairwise_dr**2, axis=-1))
 
         return pairwise_rr
 
@@ -384,16 +386,18 @@ class PairTabAtomicModel(BaseAtomicModel):
         expanded_idx = xp.broadcast_to(
             idx[..., xp.newaxis, xp.newaxis], (*idx.shape, 1, 4)
         )
-        clipped_indices = xp.clip(expanded_idx, 0, nspline - 1).astype(int)
+        clipped_indices = xp.astype(xp.clip(expanded_idx, 0, nspline - 1), xp.int64)
 
         # (nframes, nloc, nnei, 4)
         final_coef = xp.squeeze(
-            xp_take_along_axis(expanded_tab_data, clipped_indices, 3)
+            xp_take_along_axis(expanded_tab_data, clipped_indices, 3), axis=3
         )
 
         # when the spline idx is beyond the table, all spline coefficients are set to `0`, and the resulting ener corresponding to the idx is also `0`.
         final_coef = xp.where(
-            expanded_idx.squeeze() > nspline, xp.zeros_like(final_coef), final_coef
+            xp.squeeze(expanded_idx, axis=3) > nspline,
+            xp.zeros_like(final_coef),
+            final_coef,
         )
         return final_coef
 

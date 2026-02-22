@@ -15,6 +15,7 @@ from deepmd.env import (
 from ..common import (
     INSTALLED_JAX,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     CommonTest,
 )
 from .common import (
@@ -31,6 +32,10 @@ if INSTALLED_JAX:
     from deepmd.jax.model.property_model import PropertyModel as PropertyModelJAX
 else:
     PropertyModelJAX = None
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.model import PropertyModel as PropertyModelPTExpt
+else:
+    PropertyModelPTExpt = None
 from deepmd.utils.argcheck import (
     model_args,
 )
@@ -67,6 +72,7 @@ class TestProperty(CommonTest, ModelTest, unittest.TestCase):
     tf_class = None
     dp_class = PropertyModelDP
     pt_class = PropertyModelPT
+    pt_expt_class = PropertyModelPTExpt
     jax_class = PropertyModelJAX
     args = model_args()
 
@@ -79,6 +85,8 @@ class TestProperty(CommonTest, ModelTest, unittest.TestCase):
             return self.RefBackend.PT
         if not self.skip_tf:
             return self.RefBackend.TF
+        if not self.skip_pt_expt and self.pt_expt_class is not None:
+            return self.RefBackend.PT_EXPT
         if not self.skip_dp:
             return self.RefBackend.DP
         raise ValueError("No available reference")
@@ -100,6 +108,9 @@ class TestProperty(CommonTest, ModelTest, unittest.TestCase):
             model = get_model_pt(data)
             model.atomic_model.out_bias.uniform_()
             return model
+        elif cls is PropertyModelPTExpt:
+            dp_model = get_model_dp(data)
+            return PropertyModelPTExpt.deserialize(dp_model.serialize())
         elif cls is PropertyModelJAX:
             return get_model_jax(data)
         return cls(**data, **self.additional_data)
@@ -172,6 +183,15 @@ class TestProperty(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return self.eval_pt_expt_model(
+            pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_model(
             jax_obj,
@@ -184,7 +204,12 @@ class TestProperty(CommonTest, ModelTest, unittest.TestCase):
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         # shape not matched. ravel...
         property_name = self.data["fitting_net"]["property_name"]
-        if backend in {self.RefBackend.DP, self.RefBackend.PT, self.RefBackend.JAX}:
+        if backend in {
+            self.RefBackend.DP,
+            self.RefBackend.PT,
+            self.RefBackend.PT_EXPT,
+            self.RefBackend.JAX,
+        }:
             return (
                 ret[property_name].ravel(),
                 ret[f"atom_{property_name}"].ravel(),

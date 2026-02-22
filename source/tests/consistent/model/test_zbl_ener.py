@@ -15,6 +15,7 @@ from deepmd.env import (
 from ..common import (
     INSTALLED_JAX,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     SKIP_FLAG,
     CommonTest,
     parameterized,
@@ -33,6 +34,10 @@ if INSTALLED_JAX:
     from deepmd.jax.model.model import get_model as get_model_jax
 else:
     DPZBLModelJAX = None
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.model import DPZBLModel as DPZBLModelPTExpt
+else:
+    DPZBLModelPTExpt = None
 import os
 
 from deepmd.utils.argcheck import (
@@ -92,6 +97,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
 
     dp_class = DPZBLModelDP
     pt_class = DPZBLModelPT
+    pt_expt_class = DPZBLModelPTExpt
     jax_class = DPZBLModelJAX
     args = model_args()
 
@@ -104,6 +110,8 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             return self.RefBackend.PT
         if not self.skip_tf:
             return self.RefBackend.TF
+        if not self.skip_pt_expt and self.pt_expt_class is not None:
+            return self.RefBackend.PT_EXPT
         if not self.skip_jax:
             return self.RefBackend.JAX
         if not self.skip_dp:
@@ -125,6 +133,9 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             return get_model_dp(data)
         elif cls is DPZBLModelPT:
             return get_model_pt(data)
+        elif cls is DPZBLModelPTExpt:
+            dp_model = get_model_dp(data)
+            return DPZBLModelPTExpt.deserialize(dp_model.serialize())
         elif cls is DPZBLModelJAX:
             return get_model_jax(data)
         return cls(**data, **self.additional_data)
@@ -196,6 +207,15 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return self.eval_pt_expt_model(
+            pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_model(
             jax_obj,
@@ -218,6 +238,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             )
         elif backend in {
             self.RefBackend.PT,
+            self.RefBackend.PT_EXPT,
             self.RefBackend.JAX,
         }:
             return (

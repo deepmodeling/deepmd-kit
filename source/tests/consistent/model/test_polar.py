@@ -15,6 +15,7 @@ from deepmd.env import (
 from ..common import (
     INSTALLED_JAX,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
 )
@@ -36,6 +37,10 @@ if INSTALLED_JAX:
     from deepmd.jax.model.polar_model import PolarModel as PolarModelJAX
 else:
     PolarModelJAX = None
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.model import PolarModel as PolarModelPTExpt
+else:
+    PolarModelPTExpt = None
 from deepmd.utils.argcheck import (
     model_args,
 )
@@ -71,6 +76,7 @@ class TestPolar(CommonTest, ModelTest, unittest.TestCase):
     tf_class = PolarModelTF
     dp_class = PolarModelDP
     pt_class = PolarModelPT
+    pt_expt_class = PolarModelPTExpt
     jax_class = PolarModelJAX
     args = model_args()
     atol = 1e-8
@@ -84,6 +90,8 @@ class TestPolar(CommonTest, ModelTest, unittest.TestCase):
             return self.RefBackend.PT
         if not self.skip_tf:
             return self.RefBackend.TF
+        if not self.skip_pt_expt and self.pt_expt_class is not None:
+            return self.RefBackend.PT_EXPT
         if not self.skip_dp:
             return self.RefBackend.DP
         raise ValueError("No available reference")
@@ -105,6 +113,9 @@ class TestPolar(CommonTest, ModelTest, unittest.TestCase):
             model = get_model_pt(data)
             model.atomic_model.out_bias.uniform_()
             return model
+        elif cls is PolarModelPTExpt:
+            dp_model = get_model_dp(data)
+            return PolarModelPTExpt.deserialize(dp_model.serialize())
         elif cls is PolarModelJAX:
             return get_model_jax(data)
         return cls(**data, **self.additional_data)
@@ -171,6 +182,15 @@ class TestPolar(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return self.eval_pt_expt_model(
+            pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_model(
             jax_obj,
@@ -190,6 +210,7 @@ class TestPolar(CommonTest, ModelTest, unittest.TestCase):
         elif backend in {
             self.RefBackend.DP,
             self.RefBackend.PT,
+            self.RefBackend.PT_EXPT,
             self.RefBackend.JAX,
         }:
             return (

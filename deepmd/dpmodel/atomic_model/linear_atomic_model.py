@@ -512,4 +512,4 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         # to handle masked atoms
         coef = xp.where(sigma != 0, coef, xp.zeros_like(coef))
         self.zbl_weight = coef
-        return [1 - xp.expand_dims(coef, -1), xp.expand_dims(coef, -1)]
+        return [1 - xp.expand_dims(coef, axis=-1), xp.expand_dims(coef, axis=-1)]

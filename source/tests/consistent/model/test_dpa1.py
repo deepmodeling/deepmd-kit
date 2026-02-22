@@ -16,6 +16,7 @@ from ..common import (
     INSTALLED_JAX,
     INSTALLED_PD,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     INSTALLED_TF,
     SKIP_FLAG,
     CommonTest,
@@ -43,6 +44,10 @@ if INSTALLED_PD:
     from deepmd.pd.model.model.ener_model import EnergyModel as EnergyModelPD
 else:
     EnergyModelPD = None
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.model import EnergyModel as EnergyModelPTExpt
+else:
+    EnergyModelPTExpt = None
 if INSTALLED_JAX:
     from deepmd.jax.model.ener_model import EnergyModel as EnergyModelJAX
     from deepmd.jax.model.model import get_model as get_model_jax
@@ -97,6 +102,7 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
     pd_class = EnergyModelPD
+    pt_expt_class = EnergyModelPTExpt
     jax_class = EnergyModelJAX
     args = model_args()
 
@@ -109,6 +115,8 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
             return self.RefBackend.PT
         if not self.skip_tf:
             return self.RefBackend.TF
+        if not self.skip_pt_expt and self.pt_expt_class is not None:
+            return self.RefBackend.PT_EXPT
         if not self.skip_pd:
             return self.RefBackend.PD
         if not self.skip_jax:
@@ -128,6 +136,9 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
             return get_model_dp(data)
         elif cls is EnergyModelPT:
             return get_model_pt(data)
+        elif cls is EnergyModelPTExpt:
+            dp_model = get_model_dp(data)
+            return EnergyModelPTExpt.deserialize(dp_model.serialize())
         elif cls is EnergyModelPD:
             return get_model_pd(data)
         elif cls is EnergyModelJAX:
@@ -201,6 +212,15 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return self.eval_pt_expt_model(
+            pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def eval_pd(self, pd_obj: Any) -> Any:
         return self.eval_pd_model(
             pd_obj,
@@ -239,6 +259,7 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
             )
         elif backend in {
             self.RefBackend.PT,
+            self.RefBackend.PT_EXPT,
             self.RefBackend.PD,
             self.RefBackend.JAX,
         }:
