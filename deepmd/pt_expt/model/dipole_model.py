@@ -63,7 +63,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             model_predict["mask"] = model_ret["mask"]
         return model_predict
 
-    def _forward_lower(
+    def forward_lower(
         self,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
@@ -95,26 +95,6 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             model_predict["mask"] = model_ret["mask"]
         return model_predict
 
-    def forward_lower(
-        self,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
-        nlist: torch.Tensor,
-        mapping: torch.Tensor | None = None,
-        fparam: torch.Tensor | None = None,
-        aparam: torch.Tensor | None = None,
-        do_atomic_virial: bool = False,
-    ) -> dict[str, torch.Tensor]:
-        return self._forward_lower(
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping,
-            fparam=fparam,
-            aparam=aparam,
-            do_atomic_virial=do_atomic_virial,
-        )
-
     def forward_lower_exportable(
         self,
         extended_coord: torch.Tensor,
@@ -136,7 +116,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             aparam: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
             extended_coord = extended_coord.detach().requires_grad_(True)
-            return model._forward_lower(
+            return model.forward_lower(
                 extended_coord,
                 extended_atype,
                 nlist,

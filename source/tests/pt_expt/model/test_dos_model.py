@@ -135,7 +135,7 @@ class TestDOSModel(unittest.TestCase):
         fparam = None
         aparam = None
 
-        ret_eager = md_pt._forward_lower(
+        ret_eager = md_pt.forward_lower(
             ext_coord.requires_grad_(True),
             ext_atype,
             nlist_t,
