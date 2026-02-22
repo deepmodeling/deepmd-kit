@@ -18,6 +18,7 @@ from ..common import (
     INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
     parameterized,
@@ -33,6 +34,13 @@ if INSTALLED_PT:
     from deepmd.pt.utils.env import DEVICE as PT_DEVICE
 else:
     DipoleFittingPT = object
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.fitting.dipole_fitting import (
+        DipoleFitting as DipoleFittingPTExpt,
+    )
+    from deepmd.pt_expt.utils.env import DEVICE as PT_EXPT_DEVICE
+else:
+    DipoleFittingPTExpt = None
 if INSTALLED_TF:
     from deepmd.tf.fit.dipole import DipoleFittingSeA as DipoleFittingTF
 else:
@@ -116,11 +124,16 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
     tf_class = DipoleFittingTF
     dp_class = DipoleFittingDP
     pt_class = DipoleFittingPT
+    pt_expt_class = DipoleFittingPTExpt
     jax_class = DipoleFittingJAX
     array_api_strict_class = DipoleFittingArrayAPIStrict
     args = fitting_dipole()
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+
+    @property
+    def skip_pt_expt(self) -> bool:
+        return CommonTest.skip_pt_expt
 
     def setUp(self) -> None:
         CommonTest.setUp(self)
@@ -178,6 +191,18 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
                 torch.from_numpy(self.atype.reshape(1, -1)).to(device=PT_DEVICE),
                 torch.from_numpy(self.gr).to(device=PT_DEVICE),
                 None,
+            )["dipole"]
+            .detach()
+            .cpu()
+            .numpy()
+        )
+
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return (
+            pt_expt_obj(
+                torch.from_numpy(self.inputs).to(device=PT_EXPT_DEVICE),
+                torch.from_numpy(self.atype.reshape(1, -1)).to(device=PT_EXPT_DEVICE),
+                gr=torch.from_numpy(self.gr).to(device=PT_EXPT_DEVICE),
             )["dipole"]
             .detach()
             .cpu()

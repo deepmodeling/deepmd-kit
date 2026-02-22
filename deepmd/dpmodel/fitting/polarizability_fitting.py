@@ -328,7 +328,9 @@ class PolarFitting(GeneralFitting):
             )
             # (nframes, nloc, 1)
             bias = bias[..., None] * scale_atype
-            eye = xp.eye(3, dtype=descriptor.dtype)
+            eye = xp.eye(
+                3, dtype=descriptor.dtype, device=array_api_compat.device(descriptor)
+            )
             eye = xp.tile(eye, (nframes, nloc, 1, 1))
             # (nframes, nloc, 3, 3)
             bias = bias[..., None] * eye

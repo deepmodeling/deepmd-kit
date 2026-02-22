@@ -23,6 +23,7 @@ from ..common import (
     INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     CommonTest,
     parameterized,
 )
@@ -37,6 +38,13 @@ if INSTALLED_PT:
     from deepmd.pt.utils.env import DEVICE as PT_DEVICE
 else:
     PropertyFittingPT = object
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.fitting.property_fitting import (
+        PropertyFittingNet as PropertyFittingPTExpt,
+    )
+    from deepmd.pt_expt.utils.env import DEVICE as PT_EXPT_DEVICE
+else:
+    PropertyFittingPTExpt = None
 if INSTALLED_JAX:
     from deepmd.jax.env import (
         jnp,
@@ -110,9 +118,14 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
+    @property
+    def skip_pt_expt(self) -> bool:
+        return CommonTest.skip_pt_expt
+
     tf_class = PropertyFittingTF
     dp_class = PropertyFittingDP
     pt_class = PropertyFittingPT
+    pt_expt_class = PropertyFittingPTExpt
     jax_class = PropertyFittingJAX
     array_api_strict_class = PropertyFittingStrict
     args = fitting_property()
@@ -189,6 +202,32 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
                 if numb_aparam
                 else None,
             )[pt_obj.var_name]
+            .detach()
+            .cpu()
+            .numpy()
+        )
+
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+            numb_aparam,
+            task_dim,
+            intensive,
+        ) = self.param
+        return (
+            pt_expt_obj(
+                torch.from_numpy(self.inputs).to(device=PT_EXPT_DEVICE),
+                torch.from_numpy(self.atype.reshape(1, -1)).to(device=PT_EXPT_DEVICE),
+                fparam=torch.from_numpy(self.fparam).to(device=PT_EXPT_DEVICE)
+                if numb_fparam
+                else None,
+                aparam=torch.from_numpy(self.aparam).to(device=PT_EXPT_DEVICE)
+                if numb_aparam
+                else None,
+            )[pt_expt_obj.var_name]
             .detach()
             .cpu()
             .numpy()

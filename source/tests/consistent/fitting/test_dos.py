@@ -18,6 +18,7 @@ from ..common import (
     INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
     parameterized,
@@ -33,6 +34,11 @@ if INSTALLED_PT:
     from deepmd.pt.utils.env import DEVICE as PT_DEVICE
 else:
     DOSFittingPT = object
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.fitting.dos_fitting import DOSFittingNet as DOSFittingPTExpt
+    from deepmd.pt_expt.utils.env import DEVICE as PT_EXPT_DEVICE
+else:
+    DOSFittingPTExpt = None
 if INSTALLED_TF:
     from deepmd.tf.fit.dos import DOSFitting as DOSFittingTF
 else:
@@ -106,9 +112,14 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
     def skip_array_api_strict(self) -> bool:
         return not INSTALLED_ARRAY_API_STRICT
 
+    @property
+    def skip_pt_expt(self) -> bool:
+        return CommonTest.skip_pt_expt
+
     tf_class = DOSFittingTF
     dp_class = DOSFittingDP
     pt_class = DOSFittingPT
+    pt_expt_class = DOSFittingPTExpt
     jax_class = DOSFittingJAX
     array_api_strict_class = DOSFittingStrict
     args = fitting_dos()
@@ -179,6 +190,31 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
                 if numb_fparam
                 else None,
                 aparam=torch.from_numpy(self.aparam).to(device=PT_DEVICE)
+                if numb_aparam
+                else None,
+            )["dos"]
+            .detach()
+            .cpu()
+            .numpy()
+        )
+
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+            numb_aparam,
+            numb_dos,
+        ) = self.param
+        return (
+            pt_expt_obj(
+                torch.from_numpy(self.inputs).to(device=PT_EXPT_DEVICE),
+                torch.from_numpy(self.atype.reshape(1, -1)).to(device=PT_EXPT_DEVICE),
+                fparam=torch.from_numpy(self.fparam).to(device=PT_EXPT_DEVICE)
+                if numb_fparam
+                else None,
+                aparam=torch.from_numpy(self.aparam).to(device=PT_EXPT_DEVICE)
                 if numb_aparam
                 else None,
             )["dos"]

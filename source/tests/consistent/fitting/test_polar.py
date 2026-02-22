@@ -18,6 +18,7 @@ from ..common import (
     INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
     parameterized,
@@ -33,6 +34,13 @@ if INSTALLED_PT:
     from deepmd.pt.utils.env import DEVICE as PT_DEVICE
 else:
     PolarFittingPT = object
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.fitting.polarizability_fitting import (
+        PolarFitting as PolarFittingPTExpt,
+    )
+    from deepmd.pt_expt.utils.env import DEVICE as PT_EXPT_DEVICE
+else:
+    PolarFittingPTExpt = None
 if INSTALLED_TF:
     from deepmd.tf.fit.polar import PolarFittingSeA as PolarFittingTF
 else:
@@ -90,11 +98,16 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
     tf_class = PolarFittingTF
     dp_class = PolarFittingDP
     pt_class = PolarFittingPT
+    pt_expt_class = PolarFittingPTExpt
     jax_class = PolarFittingJAX
     array_api_strict_class = PolarFittingArrayAPIStrict
     args = fitting_polar()
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+
+    @property
+    def skip_pt_expt(self) -> bool:
+        return CommonTest.skip_pt_expt
 
     def setUp(self) -> None:
         CommonTest.setUp(self)
@@ -149,6 +162,18 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
                 torch.from_numpy(self.atype.reshape(1, -1)).to(device=PT_DEVICE),
                 torch.from_numpy(self.gr).to(device=PT_DEVICE),
                 None,
+            )["polarizability"]
+            .detach()
+            .cpu()
+            .numpy()
+        )
+
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return (
+            pt_expt_obj(
+                torch.from_numpy(self.inputs).to(device=PT_EXPT_DEVICE),
+                torch.from_numpy(self.atype.reshape(1, -1)).to(device=PT_EXPT_DEVICE),
+                gr=torch.from_numpy(self.gr).to(device=PT_EXPT_DEVICE),
             )["polarizability"]
             .detach()
             .cpu()
