@@ -183,11 +183,13 @@ for `*.property.out.*`, it contains matrix with shape of `(2, task_dim)`,
 ## Data Normalization
 
 When `fitting_net/type` is `ener`, the energy bias layer “$e_{bias}$” adds a constant bias to the atomic energy contribution according to the atomic number.i.e.,
+
 ```math
 e_{bias} (Z_i) (MLP(D_i))= MLP(D_i) + e_{bias} (Z_i)
 ```
 
 But when `fitting_net/type` is `property`. The property bias layer is used to normalize the property output of the model.i.e.,
+
 ```math
 p_{bias} (MLP(D_i))= MLP(D_i) * std+ mean
 ```
