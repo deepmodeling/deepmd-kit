@@ -18,8 +18,8 @@ When using CMake to [build DeePMD-kit from source](./install-from-source.md), se
 
 ```sh
 cmake -D BUILD_NODEJS_IF=ON \
-    -D NODEJS_INCLUDE_DIRS=/path/to/nodejs/include \
-    .. # and other arguments
+      -D NODEJS_INCLUDE_DIRS=/path/to/nodejs/include \
+      .. # and other arguments
 make
 make install
 ```

@@ -23,8 +23,8 @@ When using CMake to build DeePMD-kit, set argument `BUILD_NODEJS_IF=ON` and `NOD
 
 ```sh
 cmake -D BUILD_NODEJS_IF=ON \
-    -D NODEJS_INCLUDE_DIRS=/path/to/nodejs/include \
-    .. # and other arguments
+      -D NODEJS_INCLUDE_DIRS=/path/to/nodejs/include \
+      .. # and other arguments
 make
 make install
 ```
