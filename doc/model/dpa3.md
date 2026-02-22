@@ -56,7 +56,6 @@ The customized OP library for the Python interface can be installed by setting e
 If one runs LAMMPS with MPI, the customized OP library for the C++ interface should be compiled against the same MPI library as the runtime MPI.
 If one runs LAMMPS with MPI and CUDA devices, it is recommended to compile the customized OP library for the C++ interface with a [CUDA-Aware MPI](https://developer.nvidia.com/mpi-solutions-gpus) library and CUDA,
 otherwise the communication between GPU cards falls back to the slower CPU implementation.
-
 :::
 
 :::{tab-item} Paddle {{ paddle_icon }}
@@ -71,7 +70,6 @@ python setup.py install
 If one runs LAMMPS with MPI, the customized OP library for the C++ interface should be compiled against the same MPI library as the runtime MPI.
 If one runs LAMMPS with MPI and CUDA devices, it is recommended to compile the customized OP library for the C++ interface with a [CUDA-Aware MPI](https://developer.nvidia.com/mpi-solutions-gpus) library and CUDA,
 otherwise the communication between GPU cards falls back to the slower CPU implementation.
-
 :::
 
 ::::

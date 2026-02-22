@@ -35,5 +35,4 @@ One can also follow the manual [Install LAMMPS](./install-lammps.md) and/or [Ins
 **Type**: `Path`
 
 Prefix to the pre-compiled C library.
-
 :::
