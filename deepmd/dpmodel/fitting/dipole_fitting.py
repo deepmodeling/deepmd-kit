@@ -34,7 +34,23 @@ from .general_fitting import (
 @BaseFitting.register("dipole")
 @fitting_check_output
 class DipoleFitting(GeneralFitting):
-    r"""Fitting rotationally equivariant diploe of the system.
+    r"""Fitting rotationally equivariant dipole of the system.
+
+    The dipole :math:`\boldsymbol{\mu}` is computed from the fitting network output
+    and the rotation matrix:
+
+    .. math::
+        \boldsymbol{\mu}^i = \mathbf{M}^i \cdot \mathbf{R}^i,
+
+    where :math:`\mathbf{M}^i \in \mathbb{R}^{1 \times m_1}` is the output of the fitting
+    network for atom :math:`i`, and :math:`\mathbf{R}^i \in \mathbb{R}^{m_1 \times 3}` is
+    the rotation matrix from the descriptor. The fitting network is:
+
+    .. math::
+        \mathbf{M}^i = \mathcal{L}^{(n)} \circ \mathcal{L}^{(n-1)} \circ \cdots \circ \mathcal{L}^{(0)}(\mathcal{D}^i),
+
+    where :math:`\mathcal{D}^i` is the descriptor and each layer :math:`\mathcal{L}^{(k)}`
+    is a fully connected layer with activation function.
 
     Parameters
     ----------
