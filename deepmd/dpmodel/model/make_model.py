@@ -20,11 +20,7 @@ from deepmd.dpmodel.common import (
     GLOBAL_NP_FLOAT_PRECISION,
     PRECISION_DICT,
     RESERVED_PRECISION_DICT,
-    NativeOP,
     get_xp_precision,
-)
-from deepmd.dpmodel.model.base_model import (
-    BaseModel,
 )
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
@@ -138,7 +134,10 @@ def model_call_from_call_lower(
     return model_predict
 
 
-def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
+def make_model(
+    T_AtomicModel: type[BaseAtomicModel],
+    T_Bases: tuple[type, ...] = (),
+) -> type:
     """Make a model as a derived class of an atomic model.
 
     The model provide two interfaces.
@@ -153,6 +152,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
     ----------
     T_AtomicModel
         The atomic model.
+    T_Bases
+        Additional base classes for the returned model class.
+        Defaults to ``()``.  For example, dpmodel passes ``(NativeOP,)``.
 
     Returns
     -------
@@ -161,7 +163,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
 
     """
 
-    class CM(NativeOP, BaseModel):
+    class CM(*T_Bases):
         def __init__(
             self,
             *args: Any,
@@ -169,7 +171,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             atomic_model_: T_AtomicModel | None = None,
             **kwargs: Any,
         ) -> None:
-            BaseModel.__init__(self)
+            self.model_def_script = ""
+            self.min_nbor_dist = None
             if atomic_model_ is not None:
                 self.atomic_model: T_AtomicModel = atomic_model_
             else:

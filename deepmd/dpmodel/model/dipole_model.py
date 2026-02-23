@@ -9,6 +9,9 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.atomic_model import (
     DPDipoleAtomicModel,
 )
+from deepmd.dpmodel.common import (
+    NativeOP,
+)
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
@@ -20,7 +23,7 @@ from .make_model import (
     make_model,
 )
 
-DPDipoleModel_ = make_model(DPDipoleAtomicModel)
+DPDipoleModel_ = make_model(DPDipoleAtomicModel, T_Bases=(NativeOP, BaseModel))
 
 
 @BaseModel.register("dipole")

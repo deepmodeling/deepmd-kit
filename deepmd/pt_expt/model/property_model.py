@@ -22,7 +22,7 @@ from .model import (
     BaseModel,
 )
 
-DPPropertyModel_ = make_model(DPPropertyAtomicModel)
+DPPropertyModel_ = make_model(DPPropertyAtomicModel, T_Bases=(BaseModel,))
 
 
 @BaseModel.register("property")

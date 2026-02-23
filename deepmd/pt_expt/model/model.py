@@ -18,6 +18,7 @@ class BaseModel(make_base_model()):
 
     def __init__(self) -> None:
         self.model_def_script = ""
+        self.min_nbor_dist = None
 
     def get_model_def_script(self) -> str:
         """Get the model definition script."""

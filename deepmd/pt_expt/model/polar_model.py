@@ -22,7 +22,7 @@ from .model import (
     BaseModel,
 )
 
-DPPolarModel_ = make_model(DPPolarAtomicModel)
+DPPolarModel_ = make_model(DPPolarAtomicModel, T_Bases=(BaseModel,))
 
 
 @BaseModel.register("polar")

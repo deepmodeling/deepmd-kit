@@ -11,6 +11,9 @@ from .dp_zbl_model import (
 from .ener_model import (
     EnergyModel,
 )
+from .model import (
+    BaseModel,
+)
 from .polar_model import (
     PolarModel,
 )
@@ -19,6 +22,7 @@ from .property_model import (
 )
 
 __all__ = [
+    "BaseModel",
     "DOSModel",
     "DPZBLModel",
     "DipoleModel",

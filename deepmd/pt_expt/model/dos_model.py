@@ -22,7 +22,7 @@ from .model import (
     BaseModel,
 )
 
-DPDOSModel_ = make_model(DPDOSAtomicModel)
+DPDOSModel_ = make_model(DPDOSAtomicModel, T_Bases=(BaseModel,))
 
 
 @BaseModel.register("dos")

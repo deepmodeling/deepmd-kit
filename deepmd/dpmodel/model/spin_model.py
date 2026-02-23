@@ -326,7 +326,7 @@ class SpinModel(NativeOP):
 
     @classmethod
     def deserialize(cls, data: dict) -> "SpinModel":
-        backbone_model_obj = make_model(DPAtomicModel).deserialize(
+        backbone_model_obj = make_model(DPAtomicModel, T_Bases=(NativeOP,)).deserialize(
             data["backbone_model"]
         )
         spin = Spin.deserialize(data["spin"])

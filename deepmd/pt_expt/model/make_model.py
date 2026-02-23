@@ -18,7 +18,10 @@ from .transform_output import (
 )
 
 
-def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
+def make_model(
+    T_AtomicModel: type[BaseAtomicModel],
+    T_Bases: tuple[type, ...] = (),
+) -> type:
     """Make a model as a derived class of an atomic model.
 
     Wraps dpmodel's make_model with torch.nn.Module and overrides
@@ -28,6 +31,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
     ----------
     T_AtomicModel
         The atomic model.
+    T_Bases
+        Additional base classes for the returned model class.
+        For example, pass ``(BaseModel,)`` so that the concrete model
+        inherits the pt_expt ``BaseModel`` plugin registry.
 
     Returns
     -------
@@ -38,7 +45,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
     DPModel = make_model_dp(T_AtomicModel)
 
     @torch_module
-    class CM(DPModel):
+    class CM(DPModel, *T_Bases):
         def forward(self, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor]:
             """Default forward delegates to call().
 

@@ -22,7 +22,7 @@ from .model import (
     BaseModel,
 )
 
-DPEnergyModel_ = make_model(DPEnergyAtomicModel)
+DPEnergyModel_ = make_model(DPEnergyAtomicModel, T_Bases=(BaseModel,))
 
 
 @BaseModel.register("ener")

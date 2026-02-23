@@ -22,7 +22,7 @@ from .model import (
     BaseModel,
 )
 
-DPZBLModel_ = make_model(DPZBLLinearEnergyAtomicModel)
+DPZBLModel_ = make_model(DPZBLLinearEnergyAtomicModel, T_Bases=(BaseModel,))
 
 
 @BaseModel.register("zbl")
