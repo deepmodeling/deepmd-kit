@@ -19,16 +19,26 @@ class DPModelCommon:
     This class provides common functionality for DeepPot models, including
     neighbor selection updates and fitting network access.
 
-    The model prediction pipeline is:
+    The model takes atomic predictions from the atomic model and computes
+    global properties by reduction and differentiation:
+
+    **Reduction** (for reducible quantities like energy):
 
     .. math::
-        \mathcal{D} = \mathrm{Descriptor}(\mathbf{R}, \mathrm{types}),
+        E = \sum_{i=1}^{N} E^i,
+
+    where :math:`E^i` is the atomic energy from the atomic model.
+
+    **Differentiation** (for forces and virials):
 
     .. math::
-        \mathbf{y} = \mathrm{Fitting}(\mathcal{D}),
+        \mathbf{F}_i = -\frac{\partial E}{\partial \mathbf{r}_i},
 
-    where :math:`\mathcal{D}` is the descriptor and :math:`\mathbf{y}` is the
-    predicted property (energy, dipole, polarizability, etc.).
+    .. math::
+        \boldsymbol{\Xi} = -\sum_{i=1}^{N} \frac{\partial E^i}{\partial \mathbf{r}_i} \otimes \mathbf{r}_i,
+
+    where :math:`\mathbf{F}_i` is the force on atom :math:`i` and
+    :math:`\boldsymbol{\Xi}` is the virial tensor.
     """
 
     @classmethod
