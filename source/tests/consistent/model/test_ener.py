@@ -146,7 +146,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
 
     @property
     def skip_tf(self):
-        return (
+        return not INSTALLED_TF or (
             self.data["pair_exclude_types"] != []
             or self.data["atom_exclude_types"] != []
         )
