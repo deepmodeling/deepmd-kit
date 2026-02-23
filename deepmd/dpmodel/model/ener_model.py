@@ -54,6 +54,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
     where :math:`\mathbf{F}_i` is the force on atom :math:`i` and
     :math:`\boldsymbol{\Xi}` is the virial tensor.
     """
+
     def __init__(
         self,
         *args: Any,
