@@ -1181,3 +1181,359 @@ class TestEnerModelAPIs(unittest.TestCase):
             np.testing.assert_allclose(
                 dp_bias_loaded, dp_bias_after, rtol=1e-10, atol=1e-10
             )
+
+
+def _compare_variables_recursive(
+    d1: dict, d2: dict, path: str = "", rtol: float = 1e-10, atol: float = 1e-10
+) -> None:
+    """Recursively compare ``@variables`` sections in two serialized dicts."""
+    for key in d1:
+        if key not in d2:
+            continue
+        child_path = f"{path}/{key}" if path else key
+        v1, v2 = d1[key], d2[key]
+        if key == "@variables" and isinstance(v1, dict) and isinstance(v2, dict):
+            for vk in v1:
+                if vk not in v2:
+                    continue
+                a1 = np.asarray(v1[vk]) if v1[vk] is not None else None
+                a2 = np.asarray(v2[vk]) if v2[vk] is not None else None
+                if a1 is None and a2 is None:
+                    continue
+                np.testing.assert_allclose(
+                    a1,
+                    a2,
+                    rtol=rtol,
+                    atol=atol,
+                    err_msg=f"@variables mismatch at {child_path}/{vk}",
+                )
+        elif isinstance(v1, dict) and isinstance(v2, dict):
+            _compare_variables_recursive(v1, v2, child_path, rtol, atol)
+
+
+@parameterized(
+    (([], []), ([[0, 1]], [1])),  # (pair_exclude_types, atom_exclude_types)
+    (False, True),  # fparam_in_data
+)
+@unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PT and PT_EXPT are required")
+class TestEnerComputeOrLoadStat(unittest.TestCase):
+    """Test that compute_or_load_stat produces identical statistics on dp, pt, and pt_expt.
+
+    Covers descriptor stats (dstd), fitting stats (fparam, aparam), and output bias.
+    Parameterized over exclusion types and whether fparam is explicitly provided or
+    injected via default_fparam.
+    """
+
+    def setUp(self) -> None:
+        (pair_exclude_types, atom_exclude_types), self.fparam_in_data = self.param
+        data = model_args().normalize_value(
+            {
+                "type_map": ["O", "H"],
+                "pair_exclude_types": pair_exclude_types,
+                "atom_exclude_types": atom_exclude_types,
+                "descriptor": {
+                    "type": "dpa3",
+                    "repflow": {
+                        "n_dim": 20,
+                        "e_dim": 10,
+                        "a_dim": 8,
+                        "nlayers": 3,
+                        "e_rcut": 6.0,
+                        "e_rcut_smth": 5.0,
+                        "e_sel": 10,
+                        "a_rcut": 4.0,
+                        "a_rcut_smth": 3.5,
+                        "a_sel": 8,
+                        "axis_neuron": 4,
+                        "update_angle": True,
+                        "update_style": "res_residual",
+                        "update_residual": 0.1,
+                        "update_residual_init": "const",
+                    },
+                    "precision": "float64",
+                    "seed": 1,
+                },
+                "fitting_net": {
+                    "neuron": [10, 10],
+                    "precision": "float64",
+                    "seed": 1,
+                    "numb_fparam": 2,
+                    "default_fparam": [0.5, -0.3],
+                    "numb_aparam": 3,
+                },
+            },
+            trim_pattern="_*",
+        )
+
+        # Save data for reuse in load-from-file test
+        self._model_data = data
+
+        # Build dp model, then deserialize into pt and pt_expt to share weights
+        self.dp_model = get_model_dp(data)
+        serialized = self.dp_model.serialize()
+        self.pt_model = EnergyModelPT.deserialize(serialized)
+        self.pt_expt_model = EnergyModelPTExpt.deserialize(serialized)
+
+        # Test coords / atype / box for forward evaluation
+        self.coords = np.array(
+            [
+                12.83,
+                2.56,
+                2.18,
+                12.09,
+                2.87,
+                2.74,
+                0.25,
+                3.32,
+                1.68,
+                3.36,
+                3.00,
+                1.81,
+                3.51,
+                2.51,
+                2.60,
+                4.27,
+                3.22,
+                1.56,
+            ],
+            dtype=GLOBAL_NP_FLOAT_PRECISION,
+        ).reshape(1, -1, 3)
+        self.atype = np.array([0, 1, 1, 0, 1, 1], dtype=np.int32).reshape(1, -1)
+        self.box = np.array(
+            [13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0],
+            dtype=GLOBAL_NP_FLOAT_PRECISION,
+        ).reshape(1, 9)
+
+        # Mock training data for compute_or_load_stat
+        natoms = 6
+        nframes = 3
+        rng = np.random.default_rng(42)
+        coords_stat = rng.normal(size=(nframes, natoms, 3)).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
+        atype_stat = np.array([[0, 0, 1, 1, 1, 1]] * nframes, dtype=np.int32)
+        box_stat = np.tile(
+            np.eye(3, dtype=GLOBAL_NP_FLOAT_PRECISION).reshape(1, 3, 3) * 13.0,
+            (nframes, 1, 1),
+        )
+        natoms_stat = np.array([[natoms, natoms, 2, 4]] * nframes, dtype=np.int32)
+        energy_stat = rng.normal(size=(nframes, 1)).astype(GLOBAL_NP_FLOAT_PRECISION)
+        aparam_stat = rng.normal(size=(nframes, natoms, 3)).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
+
+        # dp / pt_expt sample (numpy)
+        np_sample = {
+            "coord": coords_stat,
+            "atype": atype_stat,
+            "atype_ext": atype_stat,
+            "box": box_stat,
+            "natoms": natoms_stat,
+            "energy": energy_stat,
+            "find_energy": np.float32(1.0),
+            "aparam": aparam_stat,
+        }
+        # pt sample (torch tensors)
+        pt_sample = {
+            "coord": numpy_to_torch(coords_stat),
+            "atype": numpy_to_torch(atype_stat),
+            "atype_ext": numpy_to_torch(atype_stat),
+            "box": numpy_to_torch(box_stat),
+            "natoms": numpy_to_torch(natoms_stat),
+            "energy": numpy_to_torch(energy_stat),
+            "find_energy": np.float32(1.0),
+            "aparam": numpy_to_torch(aparam_stat),
+        }
+
+        if self.fparam_in_data:
+            fparam_stat = rng.normal(size=(nframes, 2)).astype(
+                GLOBAL_NP_FLOAT_PRECISION
+            )
+            np_sample["fparam"] = fparam_stat
+            pt_sample["fparam"] = numpy_to_torch(fparam_stat)
+            self.expected_fparam_avg = np.mean(fparam_stat, axis=0)
+        else:
+            # No fparam → _make_wrapped_sampler injects default_fparam
+            self.expected_fparam_avg = np.array([0.5, -0.3])
+
+        self.np_sampled = [np_sample]
+        self.pt_sampled = [pt_sample]
+
+        # aparam for forward evaluation (1 frame, 6 atoms, 3 aparam)
+        self.eval_aparam = rng.normal(size=(1, natoms, 3)).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
+
+    def _eval_dp(self) -> dict:
+        return self.dp_model(
+            self.coords, self.atype, box=self.box, aparam=self.eval_aparam
+        )
+
+    def _eval_pt(self) -> dict:
+        return {
+            kk: torch_to_numpy(vv)
+            for kk, vv in self.pt_model(
+                numpy_to_torch(self.coords),
+                numpy_to_torch(self.atype),
+                box=numpy_to_torch(self.box),
+                aparam=numpy_to_torch(self.eval_aparam),
+                do_atomic_virial=True,
+            ).items()
+        }
+
+    def _eval_pt_expt(self) -> dict:
+        coord_t = pt_expt_numpy_to_torch(self.coords)
+        coord_t.requires_grad_(True)
+        return {
+            k: v.detach().cpu().numpy()
+            for k, v in self.pt_expt_model(
+                coord_t,
+                pt_expt_numpy_to_torch(self.atype),
+                box=pt_expt_numpy_to_torch(self.box),
+                aparam=pt_expt_numpy_to_torch(self.eval_aparam),
+                do_atomic_virial=True,
+            ).items()
+        }
+
+    def test_compute_stat(self) -> None:
+        # 1. Pre-stat forward consistency
+        dp_ret0 = self._eval_dp()
+        pt_ret0 = self._eval_pt()
+        pe_ret0 = self._eval_pt_expt()
+        for key in ("energy", "atom_energy"):
+            np.testing.assert_allclose(
+                dp_ret0[key],
+                pt_ret0[key],
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"Pre-stat dp vs pt mismatch in {key}",
+            )
+            np.testing.assert_allclose(
+                dp_ret0[key],
+                pe_ret0[key],
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"Pre-stat dp vs pt_expt mismatch in {key}",
+            )
+
+        # 2. Run compute_or_load_stat on all three backends
+        self.dp_model.compute_or_load_stat(lambda: self.np_sampled)
+        self.pt_model.compute_or_load_stat(lambda: self.pt_sampled)
+        self.pt_expt_model.compute_or_load_stat(lambda: self.np_sampled)
+
+        # 3. Serialize all three and compare @variables
+        dp_ser = self.dp_model.serialize()
+        pt_ser = self.pt_model.serialize()
+        pe_ser = self.pt_expt_model.serialize()
+        _compare_variables_recursive(dp_ser, pt_ser)
+        _compare_variables_recursive(dp_ser, pe_ser)
+
+        # 4. Post-stat forward consistency
+        dp_ret1 = self._eval_dp()
+        pt_ret1 = self._eval_pt()
+        pe_ret1 = self._eval_pt_expt()
+        for key in ("energy", "atom_energy"):
+            np.testing.assert_allclose(
+                dp_ret1[key],
+                pt_ret1[key],
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"Post-stat dp vs pt mismatch in {key}",
+            )
+            np.testing.assert_allclose(
+                dp_ret1[key],
+                pe_ret1[key],
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"Post-stat dp vs pt_expt mismatch in {key}",
+            )
+
+        # 5. Non-triviality checks
+        fit_vars = dp_ser["fitting"]["@variables"]
+        # fparam stats were computed
+        fparam_avg = np.asarray(fit_vars["fparam_avg"])
+        self.assertFalse(
+            np.allclose(fparam_avg, 0.0),
+            "fparam_avg is still zero — fparam stats were not computed",
+        )
+        np.testing.assert_allclose(
+            fparam_avg,
+            self.expected_fparam_avg,
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg="fparam_avg does not match expected values",
+        )
+        # aparam stats were computed
+        aparam_avg = np.asarray(fit_vars["aparam_avg"])
+        self.assertFalse(
+            np.allclose(aparam_avg, 0.0),
+            "aparam_avg is still zero — aparam stats were not computed",
+        )
+
+    def test_load_stat_from_file(self) -> None:
+        import tempfile
+        from pathlib import (
+            Path,
+        )
+
+        import h5py
+
+        from deepmd.utils.path import (
+            DPPath,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create separate stat files for each backend
+            dp_h5 = str((Path(tmpdir) / "dp_stat.h5").resolve())
+            pt_h5 = str((Path(tmpdir) / "pt_stat.h5").resolve())
+            pe_h5 = str((Path(tmpdir) / "pe_stat.h5").resolve())
+            for p in (dp_h5, pt_h5, pe_h5):
+                with h5py.File(p, "w"):
+                    pass
+
+            # 1. Compute stats and save to file
+            self.dp_model.compute_or_load_stat(
+                lambda: self.np_sampled, stat_file_path=DPPath(dp_h5, "a")
+            )
+            self.pt_model.compute_or_load_stat(
+                lambda: self.pt_sampled, stat_file_path=DPPath(pt_h5, "a")
+            )
+            self.pt_expt_model.compute_or_load_stat(
+                lambda: self.np_sampled, stat_file_path=DPPath(pe_h5, "a")
+            )
+
+            # Save the computed serializations as reference
+            dp_ser_computed = self.dp_model.serialize()
+            pt_ser_computed = self.pt_model.serialize()
+            pe_ser_computed = self.pt_expt_model.serialize()
+
+            # 2. Build fresh models from the same initial weights
+            dp_model2 = get_model_dp(self._model_data)
+            pt_model2 = EnergyModelPT.deserialize(dp_model2.serialize())
+            pe_model2 = EnergyModelPTExpt.deserialize(dp_model2.serialize())
+
+            # 3. Load stats from file (should NOT call the sampled func)
+            def raise_error():
+                raise RuntimeError("Should load from file, not recompute")
+
+            dp_model2.compute_or_load_stat(
+                raise_error, stat_file_path=DPPath(dp_h5, "a")
+            )
+            pt_model2.compute_or_load_stat(
+                raise_error, stat_file_path=DPPath(pt_h5, "a")
+            )
+            pe_model2.compute_or_load_stat(
+                raise_error, stat_file_path=DPPath(pe_h5, "a")
+            )
+
+            # 4. Loaded models should match the computed ones
+            dp_ser_loaded = dp_model2.serialize()
+            pt_ser_loaded = pt_model2.serialize()
+            pe_ser_loaded = pe_model2.serialize()
+            _compare_variables_recursive(dp_ser_computed, dp_ser_loaded)
+            _compare_variables_recursive(pt_ser_computed, pt_ser_loaded)
+            _compare_variables_recursive(pe_ser_computed, pe_ser_loaded)
+
+            # 5. Cross-backend consistency after loading
+            _compare_variables_recursive(dp_ser_loaded, pt_ser_loaded)
+            _compare_variables_recursive(dp_ser_loaded, pe_ser_loaded)

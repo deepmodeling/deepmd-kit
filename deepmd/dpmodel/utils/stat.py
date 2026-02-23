@@ -14,6 +14,9 @@ import numpy as np
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
+from deepmd.dpmodel.utils.exclude_mask import (
+    AtomExcludeMask,
+)
 from deepmd.utils.out_stat import (
     compute_stats_do_not_distinguish_types,
     compute_stats_from_atomic,
@@ -360,6 +363,12 @@ def compute_output_stats_global(
     }
 
     natoms_key = "natoms"
+    for system in sampled:
+        if "atom_exclude_types" in system:
+            type_mask = AtomExcludeMask(
+                ntypes, system["atom_exclude_types"]
+            ).get_type_mask()
+            system[natoms_key][:, 2:] *= type_mask.reshape(1, -1)
     input_natoms = {
         kk: [
             to_numpy_array(sampled[idx][natoms_key])

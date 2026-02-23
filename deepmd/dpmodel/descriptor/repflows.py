@@ -438,6 +438,8 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
             The path to the stat file.
 
         """
+        if self.set_stddev_constant and self.set_davg_zero:
+            return
         env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
@@ -458,9 +460,10 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
             self.mean = xp.asarray(
                 mean, dtype=self.mean.dtype, copy=True, device=device
             )
-        self.stddev = xp.asarray(
-            stddev, dtype=self.stddev.dtype, copy=True, device=device
-        )
+        if not self.set_stddev_constant:
+            self.stddev = xp.asarray(
+                stddev, dtype=self.stddev.dtype, copy=True, device=device
+            )
 
     def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""

@@ -208,7 +208,7 @@ class DPAtomicModel(BaseAtomicModel):
 
         wrapped_sampler = self._make_wrapped_sampler(sampled_func)
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
-        self.fitting.compute_input_stats(wrapped_sampler)
+        self.fitting.compute_input_stats(wrapped_sampler, stat_file_path=stat_file_path)
         if compute_or_load_out_stat:
             self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
