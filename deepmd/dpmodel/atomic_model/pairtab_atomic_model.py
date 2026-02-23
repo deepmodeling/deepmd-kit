@@ -48,11 +48,12 @@ class PairTabAtomicModel(BaseAtomicModel):
     The pairwise energy is computed by table lookup and interpolation:
 
     .. math::
-        E^i = \sum_{j \in \mathcal{N}(i)} E_{t_i, t_j}(r_{ij}),
+        E^i = \frac{1}{2} \sum_{j \in \mathcal{N}(i)} E_{t_i, t_j}(r_{ij}),
 
     where :math:`E_{t_i, t_j}(r)` is the tabulated pairwise energy between atom types
     :math:`t_i` and :math:`t_j` at distance :math:`r`, obtained via cubic spline
-    interpolation from the table data.
+    interpolation from the table data. The factor of :math:`\frac{1}{2}` avoids
+    double-counting of pairwise interactions.
 
     Parameters
     ----------
