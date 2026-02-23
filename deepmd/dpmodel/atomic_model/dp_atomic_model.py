@@ -32,12 +32,14 @@ class DPAtomicModel(BaseAtomicModel):
     from the atomic environment, then passing it through a fitting network:
 
     .. math::
-        \mathcal{D}^i = \mathrm{Descriptor}(\mathbf{R}^i, \mathbf{R}_j, \mathrm{types}),
+        \mathcal{D}^i = \mathcal{D}(\mathbf{R}^i, \mathbf{R}_j, \alpha_j),
 
     .. math::
-        \mathbf{y}^i = \mathrm{Fitting}(\mathcal{D}^i),
+        \mathbf{y}^i = \mathcal{F}(\mathcal{D}^i),
 
-    where :math:`\mathcal{D}^i` is the descriptor for atom :math:`i`, and
+    where :math:`\mathcal{D}^i` is the descriptor for atom :math:`i`,
+    :math:`\alpha_j` is the atom type of neighbor :math:`j`,
+    :math:`\mathcal{F}` is the fitting network, and
     :math:`\mathbf{y}^i` is the predicted atomic property (energy, dipole, etc.).
 
     Parameters
