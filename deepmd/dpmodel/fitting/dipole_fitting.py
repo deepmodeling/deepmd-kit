@@ -50,7 +50,7 @@ class DipoleFitting(GeneralFitting):
         \mathbf{M}^i = \mathcal{L}^{(n)} \circ \mathcal{L}^{(n-1)} \circ \cdots \circ \mathcal{L}^{(0)}(\mathcal{D}^i),
 
     where :math:`\mathcal{D}^i` is the descriptor and each layer :math:`\mathcal{L}^{(k)}`
-    is a fully connected layer with activation function.
+    is a fully connected layer with an activation function.
 
     Parameters
     ----------
