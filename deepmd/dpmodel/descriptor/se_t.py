@@ -63,7 +63,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
 
     The embedding takes angles between two neighboring atoms as input.
 
-    The descriptor :math:`\mathcal{D}^i \in \mathbb{R}^{M}` is given by [1]_
+    The descriptor :math:`\mathcal{D}^i \in \mathbb{R}^{M}` is given by
 
     .. math::
         \mathcal{D}^i = \frac{1}{N_c^2} \sum_{j,k} \mathcal{N}_{t_i,t_j,t_k}(\cos\theta_{jik}),

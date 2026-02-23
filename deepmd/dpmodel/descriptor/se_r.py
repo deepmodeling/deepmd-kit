@@ -58,7 +58,7 @@ from .base_descriptor import (
 class DescrptSeR(NativeOP, BaseDescriptor):
     r"""DeepPot-SE_R constructed from only the radial information of atomic configurations.
 
-    The descriptor :math:`\mathcal{D}^i \in \mathbb{R}^{M}` is given by [1]_
+    The descriptor :math:`\mathcal{D}^i \in \mathbb{R}^{M}` is given by
 
     .. math::
         \mathcal{D}^i = \frac{1}{N_c} \sum_{j=1}^{N_c} \mathcal{N}(s(r_{ji})),
