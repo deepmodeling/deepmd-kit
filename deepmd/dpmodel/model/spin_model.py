@@ -29,7 +29,7 @@ from deepmd.utils.spin import (
 
 
 class SpinModel(NativeOP):
-    """A spin model wrapper, with spin input preprocess and output split.
+    r"""A spin model wrapper, with spin input preprocess and output split.
 
     This model extends a backbone DP model to handle magnetic spin degrees of freedom.
     Virtual atoms are created at positions offset from real atoms by their spin vectors:
