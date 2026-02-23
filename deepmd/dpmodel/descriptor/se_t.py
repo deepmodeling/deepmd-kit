@@ -66,19 +66,20 @@ class DescrptSeT(NativeOP, BaseDescriptor):
     The descriptor :math:`\mathcal{D}^i \in \mathbb{R}^{M}` is given by
 
     .. math::
-        \mathcal{D}^i = \frac{1}{N_c^2} \sum_{j,k} \mathcal{N}_{t_i,t_j,t_k}(\cos\theta_{jik}),
+        \mathcal{D}^i = \sum_{t_j, t_k} \frac{1}{N_{t_j} N_{t_k}} \sum_{j \in t_j, k \in t_k} \tilde{g}_{jk} \, \mathcal{N}_{t_j, t_k}(\tilde{g}_{jk}),
 
-    where :math:`\theta_{jik}` is the angle between neighbors :math:`j` and :math:`k`
-    around the central atom :math:`i`, and :math:`\mathcal{N}_{t_i,t_j,t_k}` is the
-    embedding network that depends on the types of atoms :math:`i`, :math:`j`, and :math:`k`.
+    where :math:`\tilde{g}_{jk} = \boldsymbol{rr}_j \cdot \boldsymbol{rr}_k` is the dot product
+    of the smoothed directional vectors from the environment matrix, :math:`N_{t_j}` and
+    :math:`N_{t_k}` are the numbers of neighbors of types :math:`t_j` and :math:`t_k`,
+    and :math:`\mathcal{N}_{t_j, t_k}` is the embedding network that depends only on the
+    types of neighbor atoms :math:`j` and :math:`k`.
 
-    The cosine of the angle is computed from the normalized relative coordinates:
+    The smoothed directional vector :math:`\boldsymbol{rr}_j` is computed as:
 
     .. math::
-        \cos\theta_{jik} = \frac{\boldsymbol{r}_{ij} \cdot \boldsymbol{r}_{ik}}{|\boldsymbol{r}_{ij}| |\boldsymbol{r}_{ik}|},
+        \boldsymbol{rr}_j = s(r_{ji}) \frac{\boldsymbol{R}_j - \boldsymbol{R}_i}{r_{ji}},
 
-    where :math:`\boldsymbol{r}_{ij} = \boldsymbol{R}_j - \boldsymbol{R}_i` is the
-    relative coordinate vector.
+    where :math:`s(r)` is the switching function.
 
     Parameters
     ----------
