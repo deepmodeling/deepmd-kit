@@ -26,7 +26,7 @@ from .base_atomic_model import (
 
 @BaseAtomicModel.register("standard")
 class DPAtomicModel(BaseAtomicModel):
-    """Model give atomic prediction of some physical property.
+    r"""Model give atomic prediction of some physical property.
 
     The atomic model computes atomic properties by first extracting a descriptor
     from the atomic environment, then passing it through a fitting network:

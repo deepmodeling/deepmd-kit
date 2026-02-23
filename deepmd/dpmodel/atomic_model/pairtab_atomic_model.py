@@ -32,7 +32,7 @@ from .base_atomic_model import (
 
 @BaseAtomicModel.register("pairtab")
 class PairTabAtomicModel(BaseAtomicModel):
-    """Pairwise tabulation energy model.
+    r"""Pairwise tabulation energy model.
 
     This model can be used to tabulate the pairwise energy between atoms for either
     short-range or long-range interactions, such as D3, LJ, ZBL, etc. It should not
