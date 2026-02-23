@@ -35,9 +35,9 @@ class SpinModel(NativeOP):
     Virtual atoms are created at positions offset from real atoms by their spin vectors:
 
     .. math::
-        \\mathbf{r}_i^{\\mathrm{virtual}} = \\mathbf{r}_i^{\\mathrm{real}} + s_i \\cdot \boldsymbol{\\sigma}_i,
+        \mathbf{r}_i^{\mathrm{virtual}} = \mathbf{r}_i^{\mathrm{real}} + s_i \cdot \boldsymbol{\sigma}_i,
 
-    where :math:`s_i` is a scaling factor and :math:`\boldsymbol{\\sigma}_i` is the spin vector.
+    where :math:`s_i` is a scaling factor and :math:`\boldsymbol{\sigma}_i` is the spin vector.
 
     The model then computes interactions between real atoms, virtual atoms, and between
     real and virtual atoms, enabling the prediction of spin-dependent properties.
@@ -45,7 +45,7 @@ class SpinModel(NativeOP):
     The output forces on virtual atoms are converted to magnetic torques:
 
     .. math::
-        \boldsymbol{\tau}_i = \\mathbf{F}_i^{\\mathrm{virtual}} \times \boldsymbol{\\sigma}_i.
+        \boldsymbol{\tau}_i = \mathbf{F}_i^{\mathrm{virtual}} \times \boldsymbol{\sigma}_i.
     """
 
     def __init__(

@@ -49,7 +49,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         \mathbf{F}_i = -\frac{\partial E}{\partial \mathbf{r}_i},
 
     .. math::
-        \boldsymbol{\Xi} = -\sum_{i=1}^{N} \frac{\partial E^i}{\partial \mathbf{r}_i} \otimes \mathbf{r}_i,
+        \boldsymbol{\Xi} = -\sum_{i=1}^{N} \frac{\partial E}{\partial \mathbf{r}_i} \otimes \mathbf{r}_i
+        = \sum_{i=1}^{N} \mathbf{r}_i \otimes \mathbf{F}_i,
 
     where :math:`\mathbf{F}_i` is the force on atom :math:`i` and
     :math:`\boldsymbol{\Xi}` is the virial tensor.
