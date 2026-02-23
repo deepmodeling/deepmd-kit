@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
     NoReturn,
@@ -20,6 +23,9 @@ from deepmd.dpmodel.utils.safe_gradient import (
 )
 from deepmd.utils.pair_tab import (
     PairTab,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -198,6 +204,30 @@ class PairTabAtomicModel(BaseAtomicModel):
         tab_model.tab_info = tab.tab_info
         tab_model.tab_data = tab.tab_data.reshape(ntypes, ntypes, nspline, 4)
         return tab_model
+
+    def compute_or_load_stat(
+        self,
+        sampled_func: Callable[[], list[dict]],
+        stat_file_path: DPPath | None = None,
+        compute_or_load_out_stat: bool = True,
+    ) -> None:
+        """Compute or load the statistics parameters of the model.
+
+        PairTabAtomicModel has no descriptor or fitting net input stats,
+        so this only computes output stats (energy bias) when requested.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        stat_file_path
+            The path to the stat file.
+        compute_or_load_out_stat : bool
+            Whether to compute the output statistics.
+        """
+        if compute_or_load_out_stat:
+            wrapped_sampler = self._make_wrapped_sampler(sampled_func)
+            self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
     def forward_atomic(
         self,

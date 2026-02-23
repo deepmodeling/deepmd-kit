@@ -39,6 +39,9 @@ from deepmd.dpmodel.utils import (
     nlist_distinguish_types,
     normalize_coord,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 from .transform_output import (
     communicate_extended_output,
@@ -683,6 +686,23 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
         def atomic_output_def(self) -> FittingOutputDef:
             """Get the output def of the atomic model."""
             return self.atomic_model.atomic_output_def()
+
+        def compute_or_load_stat(
+            self,
+            sampled_func: Callable[[], Any],
+            stat_file_path: DPPath | None = None,
+        ) -> None:
+            """Compute or load the statistics parameters of the model.
+
+            Parameters
+            ----------
+            sampled_func
+                The lazy sampled function to get data frames from different
+                data systems.
+            stat_file_path
+                The path to the stat file.
+            """
+            self.atomic_model.compute_or_load_stat(sampled_func, stat_file_path)
 
         def get_ntypes(self) -> int:
             """Get the number of types."""
