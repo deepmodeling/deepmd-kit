@@ -46,7 +46,8 @@ class PolarFitting(GeneralFitting):
 
     The polarizability tensor :math:`\boldsymbol{\alpha} \in \mathbb{R}^{3 \times 3}` is
     computed from the fitting network output and the rotation matrix
-    :math:`\mathbf{R}^i \in \mathbb{R}^{m_1 \times 3}` from the descriptor:
+    :math:`\mathbf{R}^i \in \mathbb{R}^{m_1 \times 3}` from the descriptor,
+    where :math:`m_1` is the embedding width (the dimension of the rotation matrix):
 
     **Diagonal fitting** (when `fit_diag=True`):
 

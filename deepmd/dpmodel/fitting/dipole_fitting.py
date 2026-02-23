@@ -43,8 +43,9 @@ class DipoleFitting(GeneralFitting):
         \boldsymbol{\mu}^i = \mathbf{M}^i \cdot \mathbf{R}^i,
 
     where :math:`\mathbf{M}^i \in \mathbb{R}^{1 \times m_1}` is the output of the fitting
-    network for atom :math:`i`, and :math:`\mathbf{R}^i \in \mathbb{R}^{m_1 \times 3}` is
-    the rotation matrix from the descriptor. The fitting network is:
+    network for atom :math:`i`, :math:`\mathbf{R}^i \in \mathbb{R}^{m_1 \times 3}` is
+    the rotation matrix from the descriptor, and :math:`m_1` is the embedding width
+    (the dimension of the rotation matrix). The fitting network is:
 
     .. math::
         \mathbf{M}^i = \mathcal{L}^{(n)} \circ \mathcal{L}^{(n-1)} \circ \cdots \circ \mathcal{L}^{(0)}(\mathcal{D}^i),
