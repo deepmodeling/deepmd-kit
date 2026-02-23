@@ -45,6 +45,15 @@ class PairTabAtomicModel(BaseAtomicModel):
     At this moment, the model does not smooth the energy at the cutoff radius, so
     one needs to make sure the energy has been smoothed to zero.
 
+    The pairwise energy is computed by table lookup and interpolation:
+
+    .. math::
+        E^i = \sum_{j \in \mathcal{N}(i)} E_{t_i, t_j}(r_{ij}),
+
+    where :math:`E_{t_i, t_j}(r)` is the tabulated pairwise energy between atom types
+    :math:`t_i` and :math:`t_j` at distance :math:`r`, obtained via cubic spline
+    interpolation from the table data.
+
     Parameters
     ----------
     tab_file : str

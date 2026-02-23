@@ -40,6 +40,18 @@ from .pairtab_atomic_model import (
 class LinearEnergyAtomicModel(BaseAtomicModel):
     """Linear model make linear combinations of several existing models.
 
+    The linear model combines predictions from multiple atomic models:
+
+    .. math::
+        E^i = \sum_{k=1}^{K} w_k \cdot E_k^i,
+
+    where :math:`E_k^i` is the energy predicted by the :math:`k`-th sub-model
+    for atom :math:`i`, and :math:`w_k` is the corresponding weight. The weights
+    can be learned or manually specified.
+
+    This is useful for combining different interaction types, e.g., DP + ZBL
+    for short-range repulsion, or DP + D3 for dispersion corrections.
+
     Parameters
     ----------
     models : list[DPAtomicModel or PairTabAtomicModel]

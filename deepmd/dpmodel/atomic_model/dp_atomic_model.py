@@ -28,6 +28,18 @@ from .base_atomic_model import (
 class DPAtomicModel(BaseAtomicModel):
     """Model give atomic prediction of some physical property.
 
+    The atomic model computes atomic properties by first extracting a descriptor
+    from the atomic environment, then passing it through a fitting network:
+
+    .. math::
+        \mathcal{D}^i = \mathrm{Descriptor}(\mathbf{R}^i, \mathbf{R}_j, \mathrm{types}),
+
+    .. math::
+        \mathbf{y}^i = \mathrm{Fitting}(\mathcal{D}^i),
+
+    where :math:`\mathcal{D}^i` is the descriptor for atom :math:`i`, and
+    :math:`\mathbf{y}^i` is the predicted atomic property (energy, dipole, etc.).
+
     Parameters
     ----------
     descriptor
