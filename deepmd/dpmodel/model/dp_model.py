@@ -14,6 +14,23 @@ from deepmd.utils.data_system import (
 
 # use "class" to resolve "Variable not allowed in type expression"
 class DPModelCommon:
+    r"""Common methods for DP models.
+
+    This class provides common functionality for DeepPot models, including
+    neighbor selection updates and fitting network access.
+
+    The model prediction pipeline is:
+
+    .. math::
+        \mathcal{D} = \mathrm{Descriptor}(\mathbf{R}, \mathrm{types}),
+
+    .. math::
+        \mathbf{y} = \mathrm{Fitting}(\mathcal{D}),
+
+    where :math:`\mathcal{D}` is the descriptor and :math:`\mathbf{y}` is the
+    predicted property (energy, dipole, polarizability, etc.).
+    """
+
     @classmethod
     def update_sel(
         cls,
