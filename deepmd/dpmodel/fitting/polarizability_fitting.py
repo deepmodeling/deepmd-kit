@@ -60,8 +60,9 @@ class PolarFitting(GeneralFitting):
     .. math::
         \boldsymbol{\alpha}^i = \mathbf{R}^{i,T} \cdot \mathbf{P}^i \cdot \mathbf{R}^i,
 
-    where :math:`\mathbf{P}^i \in \mathbb{R}^{m_1 \times m_1}` is the full matrix predicted
-    by the fitting network.
+    where :math:`\mathbf{P}^i = \frac{1}{2}(\hat{\mathbf{P}}^i + \hat{\mathbf{P}}^{i,T}) \in \mathbb{R}^{m_1 \times m_1}`
+    is the symmetrized output of the fitting network (:math:`\hat{\mathbf{P}}^i` being the raw output),
+    ensuring :math:`\boldsymbol{\alpha}^i` is a symmetric tensor.
 
     The fitting network is:
 
