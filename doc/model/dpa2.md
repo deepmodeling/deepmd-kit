@@ -26,7 +26,7 @@ The descriptor follows two main stages:
 
 1. **repinit (representation initializer)**
    - Initializes and fuses type and geometry information from local environments.
-2. **repformer (representation transformer)**
+1. **repformer (representation transformer)**
    - Stacked message-passing layers that update $\mathbf{f}$ and $\mathbf{g}$ channels through convolution/symmetrization/MLP and attention-style interactions.
 
 The final descriptor is formed from learned single-atom representations and then passed to downstream fitting/model components.
@@ -36,7 +36,8 @@ The final descriptor is formed from learned single-atom representations and then
 DPA-2 updates local features layer-by-layer with residual connections. Conceptually, each layer performs neighborhood aggregation using geometry-conditioned interactions:
 
 ```math
-\mathbf{h}_lpha^{(l+1)} = \mathbf{h}_lpha^{(l)} + \mathrm{MP}^{(l)}\left(\mathbf{h}_lpha^{(l)}, \{\mathbf{h}_eta^{(l)}\}_{eta\in\mathcal{N}(lpha)}, \{\mathbf{g}_{lphaeta}\}_{eta\in\mathcal{N}(lpha)}ight)
+\mathbf{h}_lpha^{(l+1)} = \mathbf{h}_lpha^{(l)} + \mathrm{MP}^{(l)}\left(\mathbf{h}_lpha^{(l)}, \{\mathbf{h}_eta^{(l)}\}_{eta\in\mathcal{N}(lpha)}, \{\mathbf{g}_{lphaeta}\}_{eta\in\mathcal{N}(lpha)}
+ight)
 ```
 
 where $\mathrm{MP}^{(l)}$ denotes the layer-specific message-passing operator.
