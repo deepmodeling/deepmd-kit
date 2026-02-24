@@ -18,6 +18,9 @@ from deepmd.common import (
     expand_sys_str,
     j_loader,
 )
+from deepmd.dpmodel.utils import (
+    compute_total_numb_batch,
+)
 from deepmd.tf.entrypoints.freeze import (
     freeze,
 )
@@ -190,7 +193,30 @@ def _change_bias_checkpoint_file(
     data = _load_data_systems(datafile, system, trainer)
 
     # Get stop_batch and origin_type_map like in train.py
-    stop_batch = jdata.get("training", {}).get("numb_steps", 0)
+    training_params = jdata.get("training", {})
+    stop_batch = training_params.get("numb_steps")
+    num_epoch = training_params.get("numb_epoch")
+    if stop_batch is None and num_epoch is not None:
+        if num_epoch <= 0:
+            raise ValueError("training.num_epoch must be positive.")
+        # Apply sys_probs and auto_prob from original training config
+        # to ensure stop_batch calculation matches the original training
+        training_data_config = training_params.get("training_data", {})
+        sys_probs = training_data_config.get("sys_probs", None)
+        auto_prob = training_data_config.get("auto_prob", "prob_sys_size")
+        data.set_sys_probs(sys_probs=sys_probs, auto_prob_style=auto_prob)
+        total_numb_batch = compute_total_numb_batch(data.nbatches, data.sys_probs)
+        if total_numb_batch <= 0:
+            raise ValueError("Total number of training batches must be positive.")
+        stop_batch = int(np.ceil(num_epoch * total_numb_batch))
+        log.info(
+            "Computed numb_steps=%d from num_epoch=%s and total_numb_batch=%d.",
+            stop_batch,
+            num_epoch,
+            total_numb_batch,
+        )
+    if stop_batch is None:
+        stop_batch = 0
     origin_type_map = jdata["model"].get("origin_type_map", None)
     if origin_type_map is not None and not origin_type_map:
         # get the type_map from data if not provided

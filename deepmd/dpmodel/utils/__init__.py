@@ -36,6 +36,11 @@ from .serialization import (
     save_dp_model,
     traverse_model_dict,
 )
+from .training_utils import (
+    compute_total_numb_batch,
+    resolve_model_prob,
+    resolve_model_prob_from_epochs,
+)
 
 __all__ = [
     "AtomExcludeMask",
@@ -49,6 +54,7 @@ __all__ = [
     "aggregate",
     "build_multiple_neighbor_list",
     "build_neighbor_list",
+    "compute_total_numb_batch",
     "extend_coord_with_ghosts",
     "get_graph_index",
     "get_multiple_nlist_key",
@@ -60,6 +66,8 @@ __all__ = [
     "nlist_distinguish_types",
     "normalize_coord",
     "phys2inter",
+    "resolve_model_prob",
+    "resolve_model_prob_from_epochs",
     "save_dp_model",
     "to_face_distance",
     "traverse_model_dict",

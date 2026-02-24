@@ -93,25 +93,26 @@ Rules:
    # GOOD: xp.sum(gg[:, :, :, None] * tr[:, :, None, :], axis=1)
    ```
 
-2. **`xp.zeros`/`xp.ones` must include `device=`** — omitting device can trigger CUDA init or create tensors on wrong device:
+1. **`xp.zeros`/`xp.ones` must include `device=`** — omitting device can trigger CUDA init or create tensors on wrong device:
 
    ```python
    # BAD:  xp.zeros([2, 1], dtype=nlist.dtype)
    # GOOD: xp.zeros([2, 1], dtype=nlist.dtype, device=array_api_compat.device(nlist))
    ```
 
-3. **`xp.split` with `axis=` keyword doesn't work for torch** — use slicing:
+1. **`xp.split` with `axis=` keyword doesn't work for torch** — use slicing:
 
    ```python
    # BAD:  g2, h2 = xp.split(dmatrix, [1], axis=-1)
    # GOOD: g2, h2 = dmatrix[..., :1], dmatrix[..., 1:]
    ```
 
-4. **`xp_take_along_axis` indices must be int64 for torch**.
+1. **`xp_take_along_axis` indices must be int64 for torch**.
 
-5. **Don't maintain separate ArrayAPI subclasses** — dpmodel classes should be array_api compatible directly.
+1. **Don't maintain separate ArrayAPI subclasses** — dpmodel classes should be array_api compatible directly.
 
-6. **Boolean fancy indexing (`arr[mask]`) is not array-API compatible** — use mask multiplication:
+1. **Boolean fancy indexing (`arr[mask]`) is not array-API compatible** — use mask multiplication:
+
    ```python
    # BAD:  gr[ti_mask] += gr_tmp
    # GOOD: gr += gr_tmp * xp.astype(mask[:, None, None], gr_tmp.dtype)

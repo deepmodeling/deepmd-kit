@@ -5,7 +5,7 @@ license: LGPL-3.0-or-later
 compatibility: Requires Python 3.10+, numpy, pytest. Optional backends for full testing (torch, jax, paddle).
 metadata:
   author: deepmd-kit
-  version: "2.0"
+  version: '2.0'
 ---
 
 # Adding a New Descriptor to deepmd-kit
