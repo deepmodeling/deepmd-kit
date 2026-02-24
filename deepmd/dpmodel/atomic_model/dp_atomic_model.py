@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
 )
@@ -14,6 +17,9 @@ from deepmd.dpmodel.fitting.base_fitting import (
 )
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -176,6 +182,35 @@ class DPAtomicModel(BaseAtomicModel):
             aparam=aparam,
         )
         return ret
+
+    def compute_or_load_stat(
+        self,
+        sampled_func: Callable[[], list[dict]],
+        stat_file_path: DPPath | None = None,
+        compute_or_load_out_stat: bool = True,
+    ) -> None:
+        """Compute or load the statistics parameters of the model,
+        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        stat_file_path
+            The path to the stat file.
+        compute_or_load_out_stat : bool
+            Whether to compute the output statistics.
+            If False, it will only compute the input statistics
+            (e.g. mean and standard deviation of descriptors).
+        """
+        if stat_file_path is not None and self.type_map is not None:
+            stat_file_path /= " ".join(self.type_map)
+
+        wrapped_sampler = self._make_wrapped_sampler(sampled_func)
+        self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
+        self.fitting.compute_input_stats(wrapped_sampler, stat_file_path=stat_file_path)
+        if compute_or_load_out_stat:
+            self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
     def change_type_map(
         self, type_map: list[str], model_with_new_type_stat: Any | None = None
