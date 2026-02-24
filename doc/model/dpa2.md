@@ -14,11 +14,11 @@ DPA-2 is an attention-based descriptor architecture proposed for large atomic mo
 
 At a high level, DPA-2 builds local representations with three coupled channels (paper notation):
 
-- **Single-atom channel** $\mathbf{f}_lpha$
-- **Rotationally invariant pair channel** $\mathbf{g}_{lphaeta}$
-- **Rotationally equivariant pair channel** $\mathbf{h}_{lphaeta}$
+- **Single-atom channel** $\mathbf{f}_\alpha$
+- **Rotationally invariant pair channel** $\mathbf{g}_{\alpha\beta}$
+- **Rotationally equivariant pair channel** $\mathbf{h}_{\alpha\beta}$
 
-for neighbors $eta\in\mathcal{N}(lpha)$ within cutoffs.
+for neighbors $\beta\in\mathcal{N}(\alpha)$ within cutoffs.
 
 ### Descriptor pipeline
 
@@ -26,18 +26,17 @@ The descriptor follows two main stages:
 
 1. **repinit (representation initializer)**
    - Initializes and fuses type and geometry information from local environments.
-1. **repformer (representation transformer)**
+2. **repformer (representation transformer)**
    - Stacked message-passing layers that update $\mathbf{f}$ and $\mathbf{g}$ channels through convolution/symmetrization/MLP and attention-style interactions.
 
 The final descriptor is formed from learned single-atom representations and then passed to downstream fitting/model components.
 
-### Message passing intuition
+### Message-passing intuition
 
 DPA-2 updates local features layer-by-layer with residual connections. Conceptually, each layer performs neighborhood aggregation using geometry-conditioned interactions:
 
 ```math
-\mathbf{h}_lpha^{(l+1)} = \mathbf{h}_lpha^{(l)} + \mathrm{MP}^{(l)}\left(\mathbf{h}_lpha^{(l)}, \{\mathbf{h}_eta^{(l)}\}_{eta\in\mathcal{N}(lpha)}, \{\mathbf{g}_{lphaeta}\}_{eta\in\mathcal{N}(lpha)}
-ight)
+\mathbf{h}_\alpha^{(l+1)} = \mathbf{h}_\alpha^{(l)} + \mathrm{MP}^{(l)}\left(\mathbf{h}_\alpha^{(l)}, \{\mathbf{h}_\beta^{(l)}\}_{\beta\in\mathcal{N}(\alpha)}, \{\mathbf{g}_{\alpha\beta}\}_{\beta\in\mathcal{N}(\alpha)}\right)
 ```
 
 where $\mathrm{MP}^{(l)}$ denotes the layer-specific message-passing operator.
@@ -65,7 +64,7 @@ If one runs LAMMPS with MPI, the customized OP library for the C++ interface sho
 If one runs LAMMPS with MPI and CUDA devices, it is recommended to compile the customized OP library for the C++ interface with a [CUDA-Aware MPI](https://developer.nvidia.com/mpi-solutions-gpus) library and CUDA,
 otherwise the communication between GPU cards falls back to the slower CPU implementation.
 
-## Limiations of the JAX backend with LAMMPS {{ jax_icon }}
+## Limitations of the JAX backend with LAMMPS {{ jax_icon }}
 
 When using the JAX backend, 2 or more MPI ranks are not supported. One must set `map` to `yes` using the [`atom_modify`](https://docs.lammps.org/atom_modify.html) command.
 
