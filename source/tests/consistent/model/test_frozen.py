@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import glob
 import os
+import tempfile
 import unittest
 from typing import (
     Any,
@@ -57,6 +59,10 @@ def tearDownModule() -> None:
             os.remove(model_file)
         except FileNotFoundError:
             pass
+    # Clean up temporary .pb files created by TF FrozenModel
+    # (tempfile.NamedTemporaryFile(suffix=".pb", dir=os.curdir, delete=False))
+    for tmp_pb in glob.glob(tempfile.gettempprefix() + "*.pb"):
+        os.remove(tmp_pb)
 
 
 @parameterized((pt_model, tf_model, dp_model))
