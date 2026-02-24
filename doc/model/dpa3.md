@@ -4,12 +4,12 @@
 **Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
 :::
 
-DPA3 is an advanced interatomic potential leveraging the message passing architecture.
-Designed as a large atomic model (LAM), DPA3 is tailored to integrate and simultaneously train on datasets from various disciplines,
-encompassing diverse chemical and materials systems across different research domains.
-Its model design ensures exceptional fitting accuracy and robust generalization both within and beyond the training domain.
-Furthermore, DPA3 maintains energy conservation and respects the physical symmetries of the potential energy surface,
-making it a dependable tool for a wide range of scientific applications.
+DPA3 is an advanced interatomic potential based on message passing.
+As a large atomic model (LAM), it is designed to integrate and jointly train on datasets from different domains,
+covering diverse chemical and materials systems.
+Its architecture provides high fitting accuracy and robust generalization both within and beyond the training domain.
+DPA3 also preserves energy conservation and the physical symmetries of the potential energy surface,
+making it a reliable model for a wide range of scientific applications.
 
 Reference: [DPA3 paper](https://arxiv.org/abs/2506.01686).
 
@@ -44,20 +44,22 @@ The vertex features are updated through self-message and symmetrization:
 ```
 
 **For $G^{(k)}$ with $k > 1$:**
-The vertex feature of $G^{(k)}$ is identical to the edge feature of $G^{(k-1)}$. This identity eliminates redundant storage:
-Here $(\alpha,\beta)$ denotes the edge in $G^{(k-1)}$ corresponding to vertex $\alpha$ in $G^{(k)}$.
+The vertex feature of $G^{(k)}$ is identical to the edge feature of $G^{(k-1)}$:
 
 ```math
 \mathbf{v}_\alpha^{(k,l)} = \mathbf{e}_{\alpha\beta}^{(k-1,l)}
 ```
+
+where $(\alpha,\beta)$ denotes the edge in $G^{(k-1)}$ corresponding to vertex $\alpha$ in $G^{(k)}$. This identity eliminates redundant storage.
 
 The edge features are updated based on messages from connected vertices:
 
 ```math
 \mathbf{e}_{\alpha\beta}^{(k,l+1)} = \mathbf{e}_{\alpha\beta}^{(k,l)} + \text{Update}^{(k)}\left(\mathbf{e}_{\alpha\beta}^{(k,l)}, \mathbf{v}_\alpha^{(k,l)}, \mathbf{v}_\beta^{(k,l)}\right)
 ```
+The same update mechanism also applies to $G^{(1)}$ edge features $\mathbf{e}_{\alpha\beta}^{(1,l)}$. Therefore, these features evolve across layers and, via the $\mathbf{v}^{(2,l)}$-$\mathbf{e}^{(1,l)}$ identity, drive the updates on $G^{(2)}$.
 
-The same update mechanism applies to $G^{(1)}$ edge features $\mathbf{e}_{\alpha\beta}^{(1,l)}$, so they also evolve across layers and, via the $\mathbf{v}^{(2,l)}$-$\mathbf{e}^{(1,l)}$ identity, drive the updates on $G^{(2)}$.
+
 
 ### Descriptor Construction
 
@@ -105,13 +107,12 @@ DPA3 uses LiGS order $K=2$ as the default configuration, which was found effecti
 
 ## Hyperparameter tests
 
-We systematically conducted DPA3 training on six representative DFT datasets (available at [AIS-Square](https://www.aissquare.com/datasets/detail?pageType=datasets&name=DPA3_hyperparameter_search&id=316)):
-metallic systems (`Alloy`, `AlMgCu`, `W`), covalent material (`Boron`), molecular system (`Drug`), and liquid water (`Water`).
-Under consistent training conditions (0.5M training steps, batch_size "auto:128"),
-we rigorously evaluated the impacts of some critical hyperparameters on validation accuracy.
+We systematically trained DPA3 on six representative DFT datasets (available at [AIS-Square](https://www.aissquare.com/datasets/detail?pageType=datasets&name=DPA3_hyperparameter_search&id=316)): metallic systems (`Alloy`, `AlMgCu`, `W`), a covalent material (`Boron`), a molecular system (`Drug`), and liquid water (`Water`).
+Under consistent training conditions (0.5M training steps, `batch_size` = `auto:128`),
+we evaluated the impact of key hyperparameters on validation accuracy.
 
-The comparative analysis focused on average RMSEs (Root Mean Square Error) for both energy, force and virial predictions across all six systems,
-with results tabulated below to guide scenario-specific hyperparameter selection:
+The comparative analysis focused on average RMSEs (Root Mean Square Error) for energy, force, and virial predictions across the six systems.
+The results are summarized below to guide scenario-specific hyperparameter selection:
 
 | Model            | comment         | nlayers | n_dim   | e_dim  | a_dim | e_sel   | a_sel  | start_lr | stop_lr  | loss prefactors           | rmse_e (meV/atom) | rmse_f (meV/Å) | rmse_v (meV/atom) | Training wall time (h) |
 | ---------------- | --------------- | ------- | ------- | ------ | ----- | ------- | ------ | -------- | -------- | ------------------------- | ----------------- | -------------- | ----------------- | ---------------------- |
@@ -123,10 +124,10 @@ with results tabulated below to guide scenario-specific hyperparameter selection
 |                  | Large sel       | 6       | 256     | 128    | 32    | **154** | **48** | 1e-3     | 3e-5     | 0.2\|20, 100\|60, 0.02\|1 | 4.76              | 78.4           | 40.2              | 31.8                   |
 | DPA2-L6 (medium) | Default         | 6       | -       | -      | -     | -       | -      | 1e-3     | 3.51e-08 | 0.02\|1, 1000\|1, 0.02\|1 | 12.12             | 109.3          | 83.1              | 12.2                   |
 
-The loss prefactors (0.2|20, 100|60, 0.02|1) correspond to (`start_pref_e`|`limit_pref_e`, `start_pref_f`|`limit_pref_f`, `start_pref_v`|`limit_pref_v`) respectively.
+The loss prefactors (0.2|20, 100|60, 0.02|1) correspond to (`start_pref_e`|`limit_pref_e`, `start_pref_f`|`limit_pref_f`, `start_pref_v`|`limit_pref_v`), respectively.
 Virial RMSEs were averaged exclusively for systems containing virial labels (`Alloy`, `AlMgCu`, `W`, and `Boron`).
 
-Note that we set `float32` in all DPA3 models, while `float64` in other models by default.
+Note that all DPA3 models use `float32`, while other models use `float64` by default.
 
 ## Requirements of installation from source code {{ pytorch_icon }} {{ paddle_icon }}
 
