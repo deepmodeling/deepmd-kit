@@ -78,6 +78,14 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.out_bias = out_bias_data
         self.out_std = out_std_data
 
+    def get_out_bias(self) -> Array:
+        """Get the output bias."""
+        return self.out_bias
+
+    def set_out_bias(self, out_bias: Array) -> None:
+        """Set the output bias."""
+        self.out_bias = out_bias
+
     def __setitem__(self, key: str, value: Array) -> None:
         if key in ["out_bias"]:
             self.out_bias = value

@@ -376,7 +376,7 @@ def make_model(
 
         def get_out_bias(self) -> Array:
             """Get the output bias."""
-            return self.atomic_model.out_bias
+            return self.atomic_model.get_out_bias()
 
         def get_observed_type_list(self) -> list[str]:
             """Get observed types (elements) of the model during data statistics.
@@ -399,7 +399,7 @@ def make_model(
 
         def set_out_bias(self, out_bias: Array) -> None:
             """Set the output bias."""
-            self.atomic_model.out_bias = out_bias
+            self.atomic_model.set_out_bias(out_bias)
 
         def change_out_bias(
             self,

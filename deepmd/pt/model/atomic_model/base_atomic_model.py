@@ -104,7 +104,12 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self.register_buffer("out_bias", out_bias_data)
         self.register_buffer("out_std", out_std_data)
 
+    def get_out_bias(self) -> torch.Tensor:
+        """Get the output bias."""
+        return self.out_bias
+
     def set_out_bias(self, out_bias: torch.Tensor) -> None:
+        """Set the output bias."""
         self.out_bias = out_bias
 
     def __setitem__(self, key: str, value: torch.Tensor) -> None:
