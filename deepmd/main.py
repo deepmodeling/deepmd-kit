@@ -292,11 +292,6 @@ def main_parser() -> argparse.ArgumentParser:
         help="(Supported backend: PyTorch) Model branch chosen for fine-tuning if multi-task. If not specified, it will re-init the fitting net.",
     )
     parser_train.add_argument(
-        "--force-load",
-        action="store_true",
-        help="(Supported backend: PyTorch) Force load from ckpt, other missing tensors will init from scratch",
-    )
-    parser_train.add_argument(
         "--allow-ref",
         action="store_true",
         help="Allow loading external JSON/YAML snippets through `$ref`. Disabled by default for security.",

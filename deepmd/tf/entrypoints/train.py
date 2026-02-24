@@ -70,6 +70,7 @@ def train(
     skip_neighbor_stat: bool = False,
     finetune: str | None = None,
     use_pretrain_script: bool = False,
+    allow_ref: bool = False,
     **kwargs: Any,
 ) -> None:
     """Run DeePMD model training.
@@ -101,6 +102,9 @@ def train(
     use_pretrain_script : bool
         Whether to use model script in pretrained model when doing init-model or init-frz-model.
         Note that this option is true and unchangeable for fine-tuning.
+    allow_ref : bool, default=False
+        Whether to allow loading external JSON/YAML snippets via ``$ref``
+        in the training input. Disabled by default for security.
     **kwargs
         additional arguments
 
@@ -168,7 +172,7 @@ def train(
 
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
-    jdata = normalize(jdata)
+    jdata = normalize(jdata, allow_ref=allow_ref)
 
     if not is_compress and not skip_neighbor_stat:
         jdata = update_sel(jdata)
