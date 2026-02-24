@@ -78,9 +78,7 @@ def xp_scatter_sum(input: Array, dim: int, index: Array, src: Array) -> Array:
     xp = array_api_compat.array_namespace(input)
 
     # Create flat index array matching input shape
-    idx = xp.arange(
-        input.size, dtype=xp.int64, device=array_api_compat.device(input.device)
-    )
+    idx = xp.arange(input.size, dtype=xp.int64, device=array_api_compat.device(input))
     idx = xp.reshape(idx, input.shape)
 
     # Get flat indices where we want to add values
