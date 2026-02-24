@@ -97,14 +97,6 @@ Then, read on for a brief overview of the usage of DeePMD-kit. You may start wit
 dp
 ```
 
-### `$ref` support in training input (secure by default)
-
-DeePMD-kit supports loading external JSON/YAML snippets through `"$ref"` in training input validation (via `dargs>=0.5.0`).
-For security reasons, this is **disabled by default**.
-
-- CLI: use `dp train ... --allow-ref`
-- Internal API (`deepmd.utils.argcheck.normalize`): pass `allow_ref=True`
-
 ## Code structure
 
 The code is organized as follows:
