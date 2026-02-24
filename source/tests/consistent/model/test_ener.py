@@ -580,6 +580,9 @@ class TestEnerModelAPIs(unittest.TestCase):
                     "resnet_dt": True,
                     "precision": "float64",
                     "seed": 1,
+                    "numb_fparam": 2,
+                    "numb_aparam": 3,
+                    "default_fparam": [0.5, -0.3],
                 },
             },
             trim_pattern="_*",
@@ -642,6 +645,12 @@ class TestEnerModelAPIs(unittest.TestCase):
         self.extended_atype = extended_atype
         self.mapping = mapping
         self.nlist = nlist
+
+        # aparam for forward evaluation (1 frame, 6 atoms, 3 aparam)
+        rng = np.random.default_rng(42)
+        self.eval_aparam = rng.normal(size=(1, nloc, 3)).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
 
     def test_translated_output_def(self) -> None:
         """translated_output_def should return the same keys on dp, pt, and pt_expt."""
@@ -779,12 +788,12 @@ class TestEnerModelAPIs(unittest.TestCase):
     def test_get_dim_fparam(self) -> None:
         """get_dim_fparam should return the same value on dp and pt."""
         self.assertEqual(self.dp_model.get_dim_fparam(), self.pt_model.get_dim_fparam())
-        self.assertEqual(self.dp_model.get_dim_fparam(), 0)
+        self.assertEqual(self.dp_model.get_dim_fparam(), 2)
 
     def test_get_dim_aparam(self) -> None:
         """get_dim_aparam should return the same value on dp and pt."""
         self.assertEqual(self.dp_model.get_dim_aparam(), self.pt_model.get_dim_aparam())
-        self.assertEqual(self.dp_model.get_dim_aparam(), 0)
+        self.assertEqual(self.dp_model.get_dim_aparam(), 3)
 
     def test_get_sel_type(self) -> None:
         """get_sel_type should return the same list on dp and pt."""
@@ -831,12 +840,14 @@ class TestEnerModelAPIs(unittest.TestCase):
             self.extended_atype,
             self.nlist,
             mapping=self.mapping,
+            aparam=self.eval_aparam,
         )
         pt_ret = self.pt_model.atomic_model.forward_common_atomic(
             numpy_to_torch(self.extended_coord),
             numpy_to_torch(self.extended_atype),
             numpy_to_torch(self.nlist),
             mapping=numpy_to_torch(self.mapping),
+            aparam=numpy_to_torch(self.eval_aparam),
         )
         # Compare the common keys
         common_keys = set(dp_ret.keys()) & set(pt_ret.keys())
@@ -857,26 +868,53 @@ class TestEnerModelAPIs(unittest.TestCase):
             self.dp_model.has_default_fparam(),
             self.pt_model.has_default_fparam(),
         )
-        self.assertFalse(self.dp_model.has_default_fparam())
+        self.assertTrue(self.dp_model.has_default_fparam())
 
     def test_get_default_fparam(self) -> None:
-        """get_default_fparam should return None on both dp and pt (no fparam configured)."""
+        """get_default_fparam should return consistent values on dp and pt."""
         dp_val = self.dp_model.get_default_fparam()
         pt_val = self.pt_model.get_default_fparam()
-        self.assertIsNone(dp_val)
-        self.assertIsNone(pt_val)
-        # Note: both return None because no default_fparam is configured.
-        # A non-trivial return requires configuring default_fparam in the fitting net.
+        np.testing.assert_allclose(dp_val, pt_val, rtol=1e-10, atol=1e-10)
+        np.testing.assert_allclose(dp_val, [0.5, -0.3], rtol=1e-10, atol=1e-10)
+
+    def _get_fitting_stats(self, model, backend="dp"):
+        """Extract fparam/aparam stats from a model's fitting net."""
+        fitting = model.get_fitting_net()
+        if backend == "pt":
+            return {
+                "fparam_avg": torch_to_numpy(fitting.fparam_avg),
+                "fparam_inv_std": torch_to_numpy(fitting.fparam_inv_std),
+                "aparam_avg": torch_to_numpy(fitting.aparam_avg),
+                "aparam_inv_std": torch_to_numpy(fitting.aparam_inv_std),
+            }
+        else:
+            return {
+                "fparam_avg": to_numpy_array(fitting.fparam_avg),
+                "fparam_inv_std": to_numpy_array(fitting.fparam_inv_std),
+                "aparam_avg": to_numpy_array(fitting.aparam_avg),
+                "aparam_inv_std": to_numpy_array(fitting.aparam_inv_std),
+            }
 
     def test_change_out_bias(self) -> None:
-        """change_out_bias should produce consistent bias on dp and pt."""
+        """change_out_bias should produce consistent bias and fitting stats on dp, pt, and pt_expt."""
         nframes = 2
+        nloc = 6
+        numb_fparam = 2
+        numb_aparam = 3
+        rng = np.random.default_rng(123)
+
         # Use realistic coords (from setUp, tiled for 2 frames)
         coords_2f = np.tile(self.coords, (nframes, 1, 1))  # (2, 6, 3)
         atype_2f = np.array([[0, 0, 1, 1, 1, 1], [0, 1, 1, 0, 1, 1]], dtype=np.int32)
         box_2f = np.tile(self.box.reshape(1, 3, 3), (nframes, 1, 1))
         natoms_data = np.array([[6, 6, 2, 4], [6, 6, 2, 4]], dtype=np.int32)
         energy_data = np.array([10.0, 20.0]).reshape(nframes, 1)
+        fparam_data = rng.normal(size=(nframes, numb_fparam)).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
+        aparam_data = rng.normal(size=(nframes, nloc, numb_aparam)).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
 
         # dpmodel stat data (numpy)
         dp_merged = [
@@ -888,6 +926,8 @@ class TestEnerModelAPIs(unittest.TestCase):
                 "natoms": natoms_data,
                 "energy": energy_data,
                 "find_energy": np.float32(1.0),
+                "fparam": fparam_data,
+                "aparam": aparam_data,
             }
         ]
         # pt stat data (torch tensors)
@@ -900,36 +940,121 @@ class TestEnerModelAPIs(unittest.TestCase):
                 "natoms": numpy_to_torch(natoms_data),
                 "energy": numpy_to_torch(energy_data),
                 "find_energy": np.float32(1.0),
+                "fparam": numpy_to_torch(fparam_data),
+                "aparam": numpy_to_torch(aparam_data),
             }
         ]
+        # pt_expt stat data (numpy, same as dp)
+        pe_merged = dp_merged
+
+        # Save initial fitting stats (all zeros / ones)
+        dp_stats_init = self._get_fitting_stats(self.dp_model, "dp")
 
         # Save initial (zero) bias
         dp_bias_init = to_numpy_array(self.dp_model.get_out_bias()).copy()
 
-        # Test "set-by-statistic" mode
+        # --- Test "set-by-statistic" mode ---
         self.dp_model.change_out_bias(dp_merged, bias_adjust_mode="set-by-statistic")
         self.pt_model.change_out_bias(pt_merged, bias_adjust_mode="set-by-statistic")
+        self.pt_expt_model.change_out_bias(
+            pe_merged, bias_adjust_mode="set-by-statistic"
+        )
+
+        # Verify out bias consistency
         dp_bias = to_numpy_array(self.dp_model.get_out_bias())
         pt_bias = torch_to_numpy(self.pt_model.get_out_bias())
+        pe_bias = to_numpy_array(self.pt_expt_model.get_out_bias())
         np.testing.assert_allclose(dp_bias, pt_bias, rtol=1e-10, atol=1e-10)
-        # Verify bias actually changed from initial zeros
+        np.testing.assert_allclose(dp_bias, pe_bias, rtol=1e-10, atol=1e-10)
         self.assertFalse(
             np.allclose(dp_bias, dp_bias_init),
             "set-by-statistic did not change the bias from initial values",
         )
 
-        # Test "change-by-statistic" mode (adjusts bias based on model predictions)
+        # Verify fitting input stats were updated (set-by-statistic triggers compute_fitting_input_stat)
+        dp_stats_set = self._get_fitting_stats(self.dp_model, "dp")
+        pt_stats_set = self._get_fitting_stats(self.pt_model, "pt")
+        pe_stats_set = self._get_fitting_stats(self.pt_expt_model, "dp")
+        for stat_key in (
+            "fparam_avg",
+            "fparam_inv_std",
+            "aparam_avg",
+            "aparam_inv_std",
+        ):
+            np.testing.assert_allclose(
+                dp_stats_set[stat_key],
+                pt_stats_set[stat_key],
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"dp vs pt {stat_key} mismatch after set-by-statistic",
+            )
+            np.testing.assert_allclose(
+                dp_stats_set[stat_key],
+                pe_stats_set[stat_key],
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"dp vs pt_expt {stat_key} mismatch after set-by-statistic",
+            )
+        # Verify fparam/aparam stats actually changed from initial values
+        self.assertFalse(
+            np.allclose(dp_stats_set["fparam_avg"], dp_stats_init["fparam_avg"]),
+            "set-by-statistic did not update fparam_avg",
+        )
+        self.assertFalse(
+            np.allclose(dp_stats_set["aparam_avg"], dp_stats_init["aparam_avg"]),
+            "set-by-statistic did not update aparam_avg",
+        )
+
+        # --- Test "change-by-statistic" mode ---
         dp_bias_before = dp_bias.copy()
         self.dp_model.change_out_bias(dp_merged, bias_adjust_mode="change-by-statistic")
         self.pt_model.change_out_bias(pt_merged, bias_adjust_mode="change-by-statistic")
+        self.pt_expt_model.change_out_bias(
+            pe_merged, bias_adjust_mode="change-by-statistic"
+        )
+
+        # Verify out bias consistency
         dp_bias2 = to_numpy_array(self.dp_model.get_out_bias())
         pt_bias2 = torch_to_numpy(self.pt_model.get_out_bias())
+        pe_bias2 = to_numpy_array(self.pt_expt_model.get_out_bias())
         np.testing.assert_allclose(dp_bias2, pt_bias2, rtol=1e-10, atol=1e-10)
-        # Verify change-by-statistic further modified the bias
+        np.testing.assert_allclose(dp_bias2, pe_bias2, rtol=1e-10, atol=1e-10)
         self.assertFalse(
             np.allclose(dp_bias2, dp_bias_before),
             "change-by-statistic did not further change the bias",
         )
+
+        # Verify fitting input stats did NOT change (change-by-statistic should not recompute them)
+        dp_stats_chg = self._get_fitting_stats(self.dp_model, "dp")
+        pt_stats_chg = self._get_fitting_stats(self.pt_model, "pt")
+        pe_stats_chg = self._get_fitting_stats(self.pt_expt_model, "dp")
+        for stat_key in (
+            "fparam_avg",
+            "fparam_inv_std",
+            "aparam_avg",
+            "aparam_inv_std",
+        ):
+            np.testing.assert_allclose(
+                dp_stats_chg[stat_key],
+                dp_stats_set[stat_key],
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"dp {stat_key} changed after change-by-statistic (should not)",
+            )
+            np.testing.assert_allclose(
+                pt_stats_chg[stat_key],
+                pt_stats_set[stat_key],
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"pt {stat_key} changed after change-by-statistic (should not)",
+            )
+            np.testing.assert_allclose(
+                pe_stats_chg[stat_key],
+                pe_stats_set[stat_key],
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"pt_expt {stat_key} changed after change-by-statistic (should not)",
+            )
 
     def test_change_type_map(self) -> None:
         """change_type_map should produce consistent results on dp and pt.

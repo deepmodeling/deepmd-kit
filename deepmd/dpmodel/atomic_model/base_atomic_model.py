@@ -53,6 +53,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         pair_exclude_types: list[tuple[int, int]] = [],
         rcond: float | None = None,
         preset_out_bias: dict[str, Array] | None = None,
+        data_stat_protect: float = 1e-2,
     ) -> None:
         super().__init__()
         self.type_map = type_map
@@ -60,6 +61,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.reinit_pair_exclude(pair_exclude_types)
         self.rcond = rcond
         self.preset_out_bias = preset_out_bias
+        self.data_stat_protect = data_stat_protect
 
     def init_out_stat(self) -> None:
         """Initialize the output bias."""
