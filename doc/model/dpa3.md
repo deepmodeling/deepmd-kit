@@ -57,9 +57,8 @@ The edge features are updated based on messages from connected vertices:
 ```math
 \mathbf{e}_{\alpha\beta}^{(k,l+1)} = \mathbf{e}_{\alpha\beta}^{(k,l)} + \text{Update}^{(k)}\left(\mathbf{e}_{\alpha\beta}^{(k,l)}, \mathbf{v}_\alpha^{(k,l)}, \mathbf{v}_\beta^{(k,l)}\right)
 ```
+
 The same update mechanism also applies to $G^{(1)}$ edge features $\mathbf{e}_{\alpha\beta}^{(1,l)}$. Therefore, these features evolve across layers and, via the $\mathbf{v}^{(2,l)}$-$\mathbf{e}^{(1,l)}$ identity, drive the updates on $G^{(2)}$.
-
-
 
 ### Descriptor Construction
 
