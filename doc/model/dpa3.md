@@ -34,16 +34,23 @@ Geometrically, vertices in $G^{(1)}$, $G^{(2)}$, $G^{(3)}$, and $G^{(4)}$ corres
 
 DPA3 performs message passing across all graphs in the LiGS. At layer $l$, the vertex and edge features on graph $G^{(k)}$ are denoted as $\mathbf{v}_\alpha^{(k,l)} \in \mathbb{R}^{d_v^{(k)}}$ and $\mathbf{e}_{\alpha\beta}^{(k,l)} \in \mathbb{R}^{d_e^{(k)}}$, where $\alpha$ and $\alpha\beta$ denote vertex and edge indices, and $d_v^{(k)}$, $d_e^{(k)}$ are per-graph feature dimensions (for example, in `RepFlowArgs`: $d_v^{(1)}=n_\text{dim}$, $d_e^{(1)}=e_\text{dim}$, $d_v^{(2)}=e_\text{dim}$, and $d_e^{(2)}=a_\text{dim}$).
 
-The feature update follows a recursive formulation with residual connections:
+The feature update follows a recursive formulation with residual connections. We use $\text{Update}_V$ and $\text{Update}_E$ to distinguish vertex and edge update modules, respectively:
 
-**For $G^{(1)}$ (initial graph):**
-The vertex features are updated through self-message and symmetrization:
+**Edge updates (all graphs $G^{(k)}$):**
+Edge features are updated based on messages from connected vertices:
 
 ```math
-\mathbf{v}_\alpha^{(1,l+1)} = \mathbf{v}_\alpha^{(1,l)} + \text{Update}^{(1)}\left(\mathbf{v}_\alpha^{(1,l)}, \{\mathbf{e}_{\alpha\beta}^{(1,l)}\}_{\beta \in \mathcal{N}(\alpha)}\right)
+\mathbf{e}_{\alpha\beta}^{(k,l+1)} = \mathbf{e}_{\alpha\beta}^{(k,l)} + \text{Update}_E^{(k)}\left(\mathbf{e}_{\alpha\beta}^{(k,l)}, \mathbf{v}_\alpha^{(k,l)}, \mathbf{v}_\beta^{(k,l)}\right)
 ```
 
-**For $G^{(k)}$ with $k > 1$:**
+**For $G^{(1)}$ (initial graph, vertex update):**
+Vertex features are updated through self-message and symmetrization:
+
+```math
+\mathbf{v}_\alpha^{(1,l+1)} = \mathbf{v}_\alpha^{(1,l)} + \text{Update}_V^{(1)}\left(\mathbf{v}_\alpha^{(1,l)}, \{\mathbf{e}_{\alpha\beta}^{(1,l)}\}_{\beta \in \mathcal{N}(\alpha)}\right)
+```
+
+**For $G^{(k)}$ with $k > 1$ (vertex identity):**
 The vertex feature of $G^{(k)}$ is identical to the edge feature of $G^{(k-1)}$:
 
 ```math
@@ -52,13 +59,7 @@ The vertex feature of $G^{(k)}$ is identical to the edge feature of $G^{(k-1)}$:
 
 where $(\alpha,\beta)$ denotes the edge in $G^{(k-1)}$ corresponding to vertex $\alpha$ in $G^{(k)}$. This identity eliminates redundant storage.
 
-The edge features are updated based on messages from connected vertices:
-
-```math
-\mathbf{e}_{\alpha\beta}^{(k,l+1)} = \mathbf{e}_{\alpha\beta}^{(k,l)} + \text{Update}^{(k)}\left(\mathbf{e}_{\alpha\beta}^{(k,l)}, \mathbf{v}_\alpha^{(k,l)}, \mathbf{v}_\beta^{(k,l)}\right)
-```
-
-The same update mechanism also applies to $G^{(1)}$ edge features $\mathbf{e}_{\alpha\beta}^{(1,l)}$. Therefore, these features evolve across layers and, via the $\mathbf{v}^{(2,l)}$-$\mathbf{e}^{(1,l)}$ identity, drive the updates on $G^{(2)}$.
+The same edge update rule also applies to $G^{(1)}$ edge features $\mathbf{e}_{\alpha\beta}^{(1,l)}$ (i.e., with $k=1$ in $\text{Update}_E^{(k)}$). Therefore, these features evolve across layers and, via the $\mathbf{v}^{(2,l)}$-$\mathbf{e}^{(1,l)}$ identity, drive the updates on $G^{(2)}$.
 
 ### Descriptor Construction
 
@@ -82,20 +83,20 @@ The total system energy is the sum of atomic contributions:
 E = \sum_\alpha E_\alpha
 ```
 
-### Physical Symmetries
+### Physical Symmetries and Conservative Forces
 
-DPA3 respects all physical symmetries of the potential energy surface:
+DPA3 respects the physical symmetries of the potential energy surface:
 
-1. **Translational invariance**: The model depends only on relative coordinates $\mathbf{r}_{ij} = \mathbf{r}_j - \mathbf{r}_i$, not absolute positions.
+1. **Translational invariance**: The model depends only on relative coordinates $\mathbf{r}_{\alpha\beta} = \mathbf{r}_\beta - \mathbf{r}_\alpha$, not absolute positions.
 
 1. **Rotational invariance**: The final descriptor is rotationally invariant; intermediate equivariant representations are used internally and contracted to produce invariant atomic features.
 
 1. **Permutational invariance**: Atoms of the same chemical species are treated identically under permutation symmetry operations (re-labeling) of identical atoms.
 
-1. **Energy conservation**: Forces are derived from energy gradients:
+In addition, DPA3 is inherently conservative: forces are derived from energy gradients:
 
 ```math
-\mathbf{F}_i = -\frac{\partial E}{\partial \mathbf{r}_i}
+\mathbf{F}_\alpha = -\frac{\partial E}{\partial \mathbf{r}_\alpha}
 ```
 
 Virials are similarly derived from cell tensor gradients, ensuring the model is conservative and suitable for molecular dynamics simulations.
