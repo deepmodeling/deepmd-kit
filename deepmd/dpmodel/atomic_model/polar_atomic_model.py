@@ -48,6 +48,7 @@ class DPPolarAtomicModel(DPAtomicModel):
         if self.fitting.shift_diag:
             nframes, nloc = atype.shape
             dtype = out_bias[self.bias_keys[0]].dtype
+            device = array_api_compat.device(out_bias[self.bias_keys[0]])
             for kk in self.bias_keys:
                 ntypes = out_bias[kk].shape[0]
                 temp = xp.mean(
@@ -61,7 +62,7 @@ class DPPolarAtomicModel(DPAtomicModel):
                     modified_bias[..., xp.newaxis] * (self.fitting.scale[atype])
                 )
 
-                eye = xp.eye(3, dtype=dtype)
+                eye = xp.eye(3, dtype=dtype, device=device)
                 eye = xp.tile(eye, (nframes, nloc, 1, 1))
                 # (nframes, nloc, 3, 3)
                 modified_bias = modified_bias[..., xp.newaxis] * eye
