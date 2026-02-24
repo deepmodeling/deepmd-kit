@@ -296,6 +296,11 @@ def main_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="(Supported backend: PyTorch) Force load from ckpt, other missing tensors will init from scratch",
     )
+    parser_train.add_argument(
+        "--allow-ref",
+        action="store_true",
+        help="Allow loading external JSON/YAML snippets through `$ref`. Disabled by default for security.",
+    )
 
     # * freeze script ******************************************************************
     parser_frz = subparsers.add_parser(

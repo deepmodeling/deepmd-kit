@@ -3821,10 +3821,14 @@ def gen_json_schema(multi_task: bool = False) -> str:
     return json.dumps(generate_json_schema(arg))
 
 
-def normalize(data: dict[str, Any], multi_task: bool = False) -> dict[str, Any]:
+def normalize(
+    data: dict[str, Any],
+    multi_task: bool = False,
+    allow_ref: bool = False,
+) -> dict[str, Any]:
     base = Argument("base", dict, gen_args(multi_task=multi_task))
-    data = base.normalize_value(data, trim_pattern="_*")
-    base.check_value(data, strict=True)
+    data = base.normalize_value(data, trim_pattern="_*", allow_ref=allow_ref)
+    base.check_value(data, strict=True, allow_ref=allow_ref)
 
     return data
 
