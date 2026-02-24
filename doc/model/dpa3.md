@@ -22,8 +22,9 @@ DPA3 is a graph neural network operating on the Line Graph Series (LiGS) constru
 ### Line Graph Series (LiGS)
 
 Given an initial graph $G^{(1)}$ representing the atomic system, where atoms are vertices and pairs of neighboring atoms within a cutoff radius $r_c$ are edges, the line graph transform $\mathcal{L}$ constructs a new graph $G^{(2)} = \mathcal{L}(G^{(1)})$ by:
+
 1. Converting each edge in $G^{(1)}$ to a vertex in $G^{(2)}$
-2. Creating edges in $G^{(2)}$ between vertices whose corresponding edges in $G^{(1)}$ share a common vertex
+1. Creating edges in $G^{(2)}$ between vertices whose corresponding edges in $G^{(1)}$ share a common vertex
 
 Recursively applying this transform generates a series of graphs $\{G^{(1)}, G^{(2)}, \ldots, G^{(K)}\}$, where $G^{(k)} = \mathcal{L}(G^{(k-1)})$. This sequence is called the Line Graph Series (LiGS) of order $K$.
 
@@ -37,17 +38,20 @@ The feature update follows a recursive formulation with residual connections:
 
 **For $G^{(1)}$ (initial graph):**
 The vertex features are updated through self-message and symmetrization:
+
 ```math
 \mathbf{v}_\alpha^{(1,l+1)} = \mathbf{v}_\alpha^{(1,l)} + \text{Update}^{(1)}\left(\mathbf{v}_\alpha^{(1,l)}, \{\mathbf{e}_{\alpha\beta}^{(1,l)}\}_{\beta \in \mathcal{N}(\alpha)}\right)
 ```
 
 **For $G^{(k)}$ with $k > 1$:**
 The vertex feature of $G^{(k)}$ is identical to the edge feature of $G^{(k-1)}$. This identity eliminates redundant storage:
+
 ```math
 \mathbf{v}_\alpha^{(k,l)} = \mathbf{e}_{\alpha}^{(k-1,l)}
 ```
 
 The edge features are updated based on messages from connected vertices:
+
 ```math
 \mathbf{e}_{\alpha\beta}^{(k,l+1)} = \mathbf{e}_{\alpha\beta}^{(k,l)} + \text{Update}^{(k)}\left(\mathbf{e}_{\alpha\beta}^{(k,l)}, \mathbf{v}_\alpha^{(k,l)}, \mathbf{v}_\beta^{(k,l)}\right)
 ```
@@ -55,16 +59,21 @@ The edge features are updated based on messages from connected vertices:
 ### Descriptor Construction
 
 The final vertex features of $G^{(1)}$ serve as the descriptor representing the local environment of each atom:
+
 ```math
 \mathcal{D}^i = \mathbf{v}_i^{(1,L)}
 ```
+
 where $L$ is the total number of layers.
 
 For multi-task training, the descriptor is augmented with dataset encoding (typically a one-hot vector) and passed through a fitting network to predict atomic energies:
+
 ```math
 E_i = \mathcal{N}_{\text{fit}}(\mathcal{D}^i \oplus \mathbf{d}_{\text{dataset}})
 ```
+
 The total system energy is the sum of atomic contributions:
+
 ```math
 E = \sum_i E_i
 ```
@@ -75,14 +84,16 @@ DPA3 respects all physical symmetries of the potential energy surface:
 
 1. **Translational invariance**: The model depends only on relative coordinates $\mathbf{r}_{ij} = \mathbf{r}_j - \mathbf{r}_i$, not absolute positions.
 
-2. **Rotational invariance**: The descriptor is constructed from scalar features that are invariant under global rotations.
+1. **Rotational invariance**: The descriptor is constructed from scalar features that are invariant under global rotations.
 
-3. **Permutational invariance**: Atoms of the same chemical species are treated identically, respecting quantum statistics.
+1. **Permutational invariance**: Atoms of the same chemical species are treated identically, respecting quantum statistics.
 
-4. **Energy conservation**: Forces are derived from energy gradients:
+1. **Energy conservation**: Forces are derived from energy gradients:
+
 ```math
 \mathbf{F}_i = -\frac{\partial E}{\partial \mathbf{r}_i}
 ```
+
 Virials are similarly derived from cell tensor gradients, ensuring the model is conservative and suitable for molecular dynamics simulations.
 
 ### Default Configuration
