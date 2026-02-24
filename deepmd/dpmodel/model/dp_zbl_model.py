@@ -31,8 +31,6 @@ DPZBLModel_ = make_model(DPZBLLinearEnergyAtomicModel, T_Bases=(NativeOP, BaseMo
 
 @BaseModel.register("zbl")
 class DPZBLModel(DPZBLModel_):
-    model_type = "zbl"
-
     def __init__(
         self,
         *args: Any,

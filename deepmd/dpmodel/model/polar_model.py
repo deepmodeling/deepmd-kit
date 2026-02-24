@@ -28,8 +28,6 @@ DPPolarModel_ = make_model(DPPolarAtomicModel, T_Bases=(NativeOP, BaseModel))
 
 @BaseModel.register("polar")
 class PolarModel(DPModelCommon, DPPolarModel_):
-    model_type = "polar"
-
     def __init__(
         self,
         *args: Any,

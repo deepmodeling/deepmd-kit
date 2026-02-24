@@ -28,8 +28,6 @@ DPDOSModel_ = make_model(DPDOSAtomicModel, T_Bases=(NativeOP, BaseModel))
 
 @BaseModel.register("dos")
 class DOSModel(DPModelCommon, DPDOSModel_):
-    model_type = "dos"
-
     def __init__(
         self,
         *args: Any,

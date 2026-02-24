@@ -28,8 +28,6 @@ DPDipoleModel_ = make_model(DPDipoleAtomicModel, T_Bases=(NativeOP, BaseModel))
 
 @BaseModel.register("dipole")
 class DipoleModel(DPModelCommon, DPDipoleModel_):
-    model_type = "dipole"
-
     def __init__(
         self,
         *args: Any,
