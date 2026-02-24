@@ -71,17 +71,7 @@ The final vertex features of $G^{(1)}$ serve as the descriptor representing the 
 
 where $L$ is the total number of layers.
 
-For multi-task training, the descriptor is augmented with dataset encoding (typically a one-hot vector) and passed through a fitting network to predict atomic energies ($\oplus$ denotes concatenation):
-
-```math
-E_\alpha = \mathcal{N}_{\text{fit}}(\mathcal{D}^\alpha \oplus \mathbf{d}_{\text{dataset}})
-```
-
-The total system energy is the sum of atomic contributions:
-
-```math
-E = \sum_\alpha E_\alpha
-```
+The descriptor output is then consumed by downstream fitting/model components for property prediction (e.g., energy). See the model/fitting documentation for those equations and training objectives.
 
 ### Physical Symmetries and Conservative Forces
 
