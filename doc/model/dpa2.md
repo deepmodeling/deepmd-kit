@@ -26,7 +26,7 @@ The descriptor follows two main stages:
 
 1. **repinit (representation initializer)**
    - Initializes and fuses type and geometry information from local environments.
-2. **repformer (representation transformer)**
+1. **repformer (representation transformer)**
    - Stacked message-passing layers that update $\mathbf{f}$ and $\mathbf{g}$ channels through convolution/symmetrization/MLP and attention-style interactions.
 
 The final descriptor is formed from learned single-atom representations and then passed to downstream fitting/model components.
