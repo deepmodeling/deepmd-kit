@@ -591,6 +591,32 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             """Compute or load the statistics."""
             return self.atomic_model.compute_or_load_stat(sampled_func, stat_file_path)
 
+        @torch.jit.export
+        def get_observed_type_list(self) -> list[str]:
+            """Get observed types (elements) of the model during data statistics.
+
+            Returns
+            -------
+            observed_type_list: a list of the observed types in this model.
+            """
+            type_map = self.get_type_map()
+            out_bias = self.atomic_model.get_out_bias()[0]
+
+            assert out_bias is not None, "No out_bias found in the model."
+            assert out_bias.dim() == 2, "The supported out_bias should be a 2D tensor."
+            assert out_bias.size(0) == len(type_map), (
+                "The out_bias shape does not match the type_map length."
+            )
+            bias_mask = (
+                torch.gt(torch.abs(out_bias), 1e-6).any(dim=-1).detach().cpu()
+            )  # 1e-6 for stability
+
+            observed_type_list: list[str] = []
+            for i in range(len(type_map)):
+                if bias_mask[i]:
+                    observed_type_list.append(type_map[i])
+            return observed_type_list
+
         def get_sel(self) -> list[int]:
             """Returns the number of selected atoms for each type."""
             return self.atomic_model.get_sel()
