@@ -56,15 +56,15 @@ class DPAtomicModel(BaseAtomicModel):
         super().__init__(type_map, **kwargs)
         self.type_map = type_map
         self.descriptor = descriptor
-        self.fitting = fitting
-        if hasattr(self.fitting, "reinit_exclude"):
-            self.fitting.reinit_exclude(self.atom_exclude_types)
+        self.fitting_net = fitting
+        if hasattr(self.fitting_net, "reinit_exclude"):
+            self.fitting_net.reinit_exclude(self.atom_exclude_types)
         self.type_map = type_map
         super().init_out_stat()
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
-        return self.fitting.output_def()
+        return self.fitting_net.output_def()
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
@@ -79,7 +79,7 @@ class DPAtomicModel(BaseAtomicModel):
         Set the case embedding of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
         """
-        self.fitting.set_case_embd(case_idx)
+        self.fitting_net.set_case_embd(case_idx)
 
     def mixed_types(self) -> bool:
         """If true, the model
@@ -172,7 +172,7 @@ class DPAtomicModel(BaseAtomicModel):
             nlist,
             mapping=mapping,
         )
-        ret = self.fitting(
+        ret = self.fitting_net(
             descriptor,
             atype,
             gr=rot_mat,
@@ -208,7 +208,9 @@ class DPAtomicModel(BaseAtomicModel):
 
         wrapped_sampler = self._make_wrapped_sampler(sampled_func)
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
-        self.fitting.compute_input_stats(wrapped_sampler, stat_file_path=stat_file_path)
+        self.fitting_net.compute_input_stats(
+            wrapped_sampler, stat_file_path=stat_file_path
+        )
         if compute_or_load_out_stat:
             self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
@@ -228,7 +230,7 @@ class DPAtomicModel(BaseAtomicModel):
             if model_with_new_type_stat is not None
             else None,
         )
-        self.fitting.change_type_map(type_map=type_map)
+        self.fitting_net.change_type_map(type_map=type_map)
 
     def serialize(self) -> dict:
         dd = super().serialize()
@@ -239,7 +241,7 @@ class DPAtomicModel(BaseAtomicModel):
                 "@version": 2,
                 "type_map": self.type_map,
                 "descriptor": self.descriptor.serialize(),
-                "fitting": self.fitting.serialize(),
+                "fitting": self.fitting_net.serialize(),
             }
         )
         return dd
@@ -265,19 +267,19 @@ class DPAtomicModel(BaseAtomicModel):
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
-        return self.fitting.get_dim_fparam()
+        return self.fitting_net.get_dim_fparam()
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
-        return self.fitting.get_dim_aparam()
+        return self.fitting_net.get_dim_aparam()
 
     def has_default_fparam(self) -> bool:
         """Check if the model has default frame parameters."""
-        return self.fitting.has_default_fparam()
+        return self.fitting_net.has_default_fparam()
 
     def get_default_fparam(self) -> list[float] | None:
         """Get the default frame parameters."""
-        return self.fitting.get_default_fparam()
+        return self.fitting_net.get_default_fparam()
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
@@ -286,7 +288,7 @@ class DPAtomicModel(BaseAtomicModel):
         to the result of the model.
         If returning an empty list, all atom types are selected.
         """
-        return self.fitting.get_sel_type()
+        return self.fitting_net.get_sel_type()
 
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).
