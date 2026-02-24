@@ -15,6 +15,10 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.fitting.invar_fitting import (
     InvarFitting,
 )
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    OutputVariableDef,
+)
 
 if TYPE_CHECKING:
     from deepmd.dpmodel.fitting.general_fitting import (
@@ -73,6 +77,19 @@ class DOSFittingNet(InvarFitting):
             type_map=type_map,
             seed=seed,
             default_fparam=default_fparam,
+        )
+
+    def output_def(self) -> FittingOutputDef:
+        return FittingOutputDef(
+            [
+                OutputVariableDef(
+                    self.var_name,
+                    [self.dim_out],
+                    reducible=True,
+                    r_differentiable=False,
+                    c_differentiable=False,
+                ),
+            ]
         )
 
     @classmethod
