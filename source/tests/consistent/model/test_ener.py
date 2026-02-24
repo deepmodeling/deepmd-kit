@@ -1002,6 +1002,122 @@ class TestEnerModelAPIs(unittest.TestCase):
             atol=1e-10,
         )
 
+    def test_change_type_map_extend_stat(self) -> None:
+        """change_type_map with model_with_new_type_stat should propagate stats consistently across dp, pt, and pt_expt.
+
+        Verifies that the model-level change_type_map correctly unwraps
+        model_with_new_type_stat.atomic_model before forwarding to the
+        atomic model.
+        """
+        from deepmd.utils.argcheck import model_args as model_args_fn
+
+        small_tm = ["O", "H"]
+        large_tm = ["O", "H", "Li"]
+
+        small_data = model_args_fn().normalize_value(
+            {
+                "type_map": small_tm,
+                "descriptor": {
+                    "type": "se_atten",
+                    "sel": 20,
+                    "rcut_smth": 0.50,
+                    "rcut": 6.00,
+                    "neuron": [3, 6],
+                    "resnet_dt": False,
+                    "axis_neuron": 2,
+                    "precision": "float64",
+                    "seed": 1,
+                    "attn": 6,
+                    "attn_layer": 0,
+                },
+                "fitting_net": {
+                    "neuron": [5, 5],
+                    "resnet_dt": True,
+                    "precision": "float64",
+                    "seed": 1,
+                },
+            },
+            trim_pattern="_*",
+        )
+        large_data = model_args_fn().normalize_value(
+            {
+                "type_map": large_tm,
+                "descriptor": {
+                    "type": "se_atten",
+                    "sel": 20,
+                    "rcut_smth": 0.50,
+                    "rcut": 6.00,
+                    "neuron": [3, 6],
+                    "resnet_dt": False,
+                    "axis_neuron": 2,
+                    "precision": "float64",
+                    "seed": 2,
+                    "attn": 6,
+                    "attn_layer": 0,
+                },
+                "fitting_net": {
+                    "neuron": [5, 5],
+                    "resnet_dt": True,
+                    "precision": "float64",
+                    "seed": 2,
+                },
+            },
+            trim_pattern="_*",
+        )
+
+        dp_small = get_model_dp(small_data)
+        dp_large = get_model_dp(large_data)
+
+        # Set distinguishable random stats on the large model's descriptor
+        rng = np.random.default_rng(42)
+        desc_large = dp_large.get_descriptor()
+        mean_large, std_large = desc_large.get_stat_mean_and_stddev()
+        mean_rand = rng.random(size=to_numpy_array(mean_large).shape)
+        std_rand = rng.random(size=to_numpy_array(std_large).shape)
+        desc_large.set_stat_mean_and_stddev(mean_rand, std_rand)
+
+        # Build pt and pt_expt models from dp serialization
+        pt_small = EnergyModelPT.deserialize(dp_small.serialize())
+        pt_large = EnergyModelPT.deserialize(dp_large.serialize())
+        pt_expt_small = EnergyModelPTExpt.deserialize(dp_small.serialize())
+        pt_expt_large = EnergyModelPTExpt.deserialize(dp_large.serialize())
+
+        # Extend type map with model_with_new_type_stat at the model level
+        dp_small.change_type_map(large_tm, model_with_new_type_stat=dp_large)
+        pt_small.change_type_map(large_tm, model_with_new_type_stat=pt_large)
+        pt_expt_small.change_type_map(large_tm, model_with_new_type_stat=pt_expt_large)
+
+        # Descriptor stats should be consistent across backends
+        dp_mean, dp_std = dp_small.get_descriptor().get_stat_mean_and_stddev()
+        pt_mean, pt_std = pt_small.get_descriptor().get_stat_mean_and_stddev()
+        pt_expt_mean, pt_expt_std = (
+            pt_expt_small.get_descriptor().get_stat_mean_and_stddev()
+        )
+        np.testing.assert_allclose(
+            to_numpy_array(dp_mean),
+            torch_to_numpy(pt_mean),
+            rtol=1e-10,
+            atol=1e-10,
+        )
+        np.testing.assert_allclose(
+            to_numpy_array(dp_std),
+            torch_to_numpy(pt_std),
+            rtol=1e-10,
+            atol=1e-10,
+        )
+        np.testing.assert_allclose(
+            to_numpy_array(dp_mean),
+            to_numpy_array(pt_expt_mean),
+            rtol=1e-10,
+            atol=1e-10,
+        )
+        np.testing.assert_allclose(
+            to_numpy_array(dp_std),
+            to_numpy_array(pt_expt_std),
+            rtol=1e-10,
+            atol=1e-10,
+        )
+
     def test_update_sel(self) -> None:
         """update_sel should return the same result on dp and pt."""
         from unittest.mock import (
