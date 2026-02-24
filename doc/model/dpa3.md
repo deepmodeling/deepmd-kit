@@ -15,6 +15,80 @@ Reference: [DPA3 paper](https://arxiv.org/abs/2506.01686).
 
 Training example: `examples/water/dpa3/input_torch.json`.
 
+## Theory
+
+DPA3 is a graph neural network operating on the Line Graph Series (LiGS) constructed from atomic configurations.
+
+### Line Graph Series (LiGS)
+
+Given an initial graph $G^{(1)}$ representing the atomic system, where atoms are vertices and pairs of neighboring atoms within a cutoff radius $r_c$ are edges, the line graph transform $\mathcal{L}$ constructs a new graph $G^{(2)} = \mathcal{L}(G^{(1)})$ by:
+1. Converting each edge in $G^{(1)}$ to a vertex in $G^{(2)}$
+2. Creating edges in $G^{(2)}$ between vertices whose corresponding edges in $G^{(1)}$ share a common vertex
+
+Recursively applying this transform generates a series of graphs $\{G^{(1)}, G^{(2)}, \ldots, G^{(K)}\}$, where $G^{(k)} = \mathcal{L}(G^{(k-1)})$. This sequence is called the Line Graph Series (LiGS) of order $K$.
+
+Geometrically, vertices in $G^{(1)}$, $G^{(2)}$, $G^{(3)}$, and $G^{(4)}$ correspond to atoms, bonds (pairs of atoms), angles (three atoms with two bonds sharing a common atom), and dihedral angles (four atoms with two angles sharing a common bond), respectively.
+
+### Message Passing on LiGS
+
+DPA3 performs message passing across all graphs in the LiGS. At layer $l$, the vertex and edge features on graph $G^{(k)}$ are denoted as $\mathbf{v}_\alpha^{(k,l)} \in \mathbb{R}^{d_v}$ and $\mathbf{e}_{\alpha\beta}^{(k,l)} \in \mathbb{R}^{d_e}$, where $\alpha$ and $\alpha\beta$ denote vertex and edge indices, and $d_v$, $d_e$ are feature dimensions.
+
+The feature update follows a recursive formulation with residual connections:
+
+**For $G^{(1)}$ (initial graph):**
+The vertex features are updated through self-message and symmetrization:
+```math
+\mathbf{v}_\alpha^{(1,l+1)} = \mathbf{v}_\alpha^{(1,l)} + \text{Update}^{(1)}\left(\mathbf{v}_\alpha^{(1,l)}, \{\mathbf{e}_{\alpha\beta}^{(1,l)}\}_{\beta \in \mathcal{N}(\alpha)}\right)
+```
+
+**For $G^{(k)}$ with $k > 1$:**
+The vertex feature of $G^{(k)}$ is identical to the edge feature of $G^{(k-1)}$. This identity eliminates redundant storage:
+```math
+\mathbf{v}_\alpha^{(k,l)} = \mathbf{e}_{\alpha}^{(k-1,l)}
+```
+
+The edge features are updated based on messages from connected vertices:
+```math
+\mathbf{e}_{\alpha\beta}^{(k,l+1)} = \mathbf{e}_{\alpha\beta}^{(k,l)} + \text{Update}^{(k)}\left(\mathbf{e}_{\alpha\beta}^{(k,l)}, \mathbf{v}_\alpha^{(k,l)}, \mathbf{v}_\beta^{(k,l)}\right)
+```
+
+### Descriptor Construction
+
+The final vertex features of $G^{(1)}$ serve as the descriptor representing the local environment of each atom:
+```math
+\mathcal{D}^i = \mathbf{v}_i^{(1,L)}
+```
+where $L$ is the total number of layers.
+
+For multi-task training, the descriptor is augmented with dataset encoding (typically a one-hot vector) and passed through a fitting network to predict atomic energies:
+```math
+E_i = \mathcal{N}_{\text{fit}}(\mathcal{D}^i \oplus \mathbf{d}_{\text{dataset}})
+```
+The total system energy is the sum of atomic contributions:
+```math
+E = \sum_i E_i
+```
+
+### Physical Symmetries
+
+DPA3 respects all physical symmetries of the potential energy surface:
+
+1. **Translational invariance**: The model depends only on relative coordinates $\mathbf{r}_{ij} = \mathbf{r}_j - \mathbf{r}_i$, not absolute positions.
+
+2. **Rotational invariance**: The descriptor is constructed from scalar features that are invariant under global rotations.
+
+3. **Permutational invariance**: Atoms of the same chemical species are treated identically, respecting quantum statistics.
+
+4. **Energy conservation**: Forces are derived from energy gradients:
+```math
+\mathbf{F}_i = -\frac{\partial E}{\partial \mathbf{r}_i}
+```
+Virials are similarly derived from cell tensor gradients, ensuring the model is conservative and suitable for molecular dynamics simulations.
+
+### Default Configuration
+
+Based on extensive hyperparameter tests, DPA3 uses LiGS order $K=2$ as the default, which provides optimal balance between accuracy and computational cost. The model supports scaling through increasing the number of layers $L$ (e.g., DPA3-L3, DPA3-L6, DPA3-L12, DPA3-L24).
+
 ## Hyperparameter tests
 
 We systematically conducted DPA3 training on six representative DFT datasets (available at [AIS-Square](https://www.aissquare.com/datasets/detail?pageType=datasets&name=DPA3_hyperparameter_search&id=316)):
