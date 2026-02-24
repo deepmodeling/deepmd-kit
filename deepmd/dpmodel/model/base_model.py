@@ -191,6 +191,17 @@ def make_base_model() -> type[object]:
             cls = cls.get_class_by_type(model_type)
             return cls.update_sel(train_data, type_map, local_jdata)
 
+        @abstractmethod
+        def get_observed_type_list(self) -> list[str]:
+            """Get observed types (elements) of the model during data statistics.
+
+            Returns
+            -------
+            list[str]
+                A list of the observed type names in this model.
+            """
+            pass
+
         def enable_compression(
             self,
             table_extrapolate: float = 5,

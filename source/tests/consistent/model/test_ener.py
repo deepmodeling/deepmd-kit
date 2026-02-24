@@ -1182,6 +1182,57 @@ class TestEnerModelAPIs(unittest.TestCase):
                 dp_bias_loaded, dp_bias_after, rtol=1e-10, atol=1e-10
             )
 
+    def test_get_observed_type_list(self) -> None:
+        """get_observed_type_list should be consistent across dp, pt, pt_expt.
+
+        Uses mock data containing only type 0 ("O") so that type 1 ("H") is
+        unobserved and should be absent from the returned list.
+        """
+        nframes = 2
+        natoms = 6
+        # All atoms are type 0 — type 1 is unobserved
+        atype_2f = np.zeros((nframes, natoms), dtype=np.int32)
+        coords_2f = np.tile(self.coords, (nframes, 1, 1))
+        box_2f = np.tile(self.box.reshape(1, 3, 3), (nframes, 1, 1))
+        natoms_data = np.array([[natoms, natoms, natoms, 0]] * nframes, dtype=np.int32)
+        energy_data = np.array([10.0, 20.0]).reshape(nframes, 1)
+
+        dp_merged = [
+            {
+                "coord": coords_2f,
+                "atype": atype_2f,
+                "atype_ext": atype_2f,
+                "box": box_2f,
+                "natoms": natoms_data,
+                "energy": energy_data,
+                "find_energy": np.float32(1.0),
+            }
+        ]
+        pt_merged = [
+            {
+                "coord": numpy_to_torch(coords_2f),
+                "atype": numpy_to_torch(atype_2f),
+                "atype_ext": numpy_to_torch(atype_2f),
+                "box": numpy_to_torch(box_2f),
+                "natoms": numpy_to_torch(natoms_data),
+                "energy": numpy_to_torch(energy_data),
+                "find_energy": np.float32(1.0),
+            }
+        ]
+
+        self.dp_model.atomic_model.compute_or_load_out_stat(dp_merged)
+        self.pt_model.atomic_model.compute_or_load_out_stat(pt_merged)
+        self.pt_expt_model.atomic_model.compute_or_load_out_stat(dp_merged)
+
+        dp_observed = self.dp_model.get_observed_type_list()
+        pt_observed = self.pt_model.get_observed_type_list()
+        pe_observed = self.pt_expt_model.get_observed_type_list()
+
+        self.assertEqual(dp_observed, pt_observed)
+        self.assertEqual(dp_observed, pe_observed)
+        # Only type 0 ("O") should be observed
+        self.assertEqual(dp_observed, ["O"])
+
 
 def _compare_variables_recursive(
     d1: dict, d2: dict, path: str = "", rtol: float = 1e-10, atol: float = 1e-10
