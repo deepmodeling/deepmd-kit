@@ -47,8 +47,6 @@ where the learning rate smoothly decreases from $\gamma^0$ to $\gamma^{\text{sto
 For both schedule types, the stopping learning rate can be specified directly as $\gamma^{\text{stop}}$ or as a ratio: $\gamma^{\text{stop}} = \rho^{\text{stop}} \cdot \gamma^0$, where $\rho^{\text{stop}} \in (0, 1]$ is the stopping learning rate ratio.
 [^1]
 
-[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
-
 ## Migration Guide
 
 ### Required parameters for learning rate configuration
@@ -57,7 +55,8 @@ Starting from this version (3.1.3), the learning rate configuration has the foll
 
 1. **`start_lr`** (required): The learning rate at the start of the decay phase (after warmup). This parameter no longer has a default value and must be explicitly specified in your configuration.
 
-2. **Either `stop_lr` or `stop_lr_ratio`** (required): You must provide one of these two parameters:
+1. **Either `stop_lr` or `stop_lr_ratio`** (required): You must provide one of these two parameters:
+
    - `stop_lr`: The target learning rate at the end of training
    - `stop_lr_ratio`: The stopping learning rate as a ratio of `start_lr`
 
@@ -303,3 +302,5 @@ The following example shows exponential decay with smooth mode enabled.
 ```
 
 By setting `smooth: true`, the learning rate decays smoothly at every step instead of in a stepped manner. This provides a more gradual decay curve similar to PyTorch's `ExponentialLR`, whereas the default stepped mode (`smooth: false`) is similar to PyTorch's `StepLR`.
+
+[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
