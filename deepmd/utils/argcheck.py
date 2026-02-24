@@ -3826,6 +3826,23 @@ def normalize(
     multi_task: bool = False,
     allow_ref: bool = False,
 ) -> dict[str, Any]:
+    """Normalize and validate DeePMD input config.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        Input training configuration.
+    multi_task : bool, default=False
+        Whether to use multi-task argument schema.
+    allow_ref : bool, default=False
+        Whether to allow loading external JSON/YAML snippets via ``$ref``.
+        Disabled by default for security.
+
+    Returns
+    -------
+    dict[str, Any]
+        Normalized and validated configuration.
+    """
     base = Argument("base", dict, gen_args(multi_task=multi_task))
     data = base.normalize_value(data, trim_pattern="_*", allow_ref=allow_ref)
     base.check_value(data, strict=True, allow_ref=allow_ref)

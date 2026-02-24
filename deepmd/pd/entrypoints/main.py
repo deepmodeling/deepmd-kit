@@ -252,6 +252,14 @@ def train(
     output: str = "out.json",
     allow_ref: bool = False,
 ) -> None:
+    """Train a model with Paddle backend.
+
+    Parameters
+    ----------
+    allow_ref : bool, default=False
+        Whether to allow loading external JSON/YAML snippets via ``$ref``
+        in the training input. Disabled by default for security.
+    """
     log.info("Configuration path: %s", input_file)
     if LOCAL_RANK == 0:
         SummaryPrinter()()

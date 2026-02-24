@@ -278,6 +278,14 @@ def train(
     output: str = "out.json",
     allow_ref: bool = False,
 ) -> None:
+    """Train a model with PyTorch backend.
+
+    Parameters
+    ----------
+    allow_ref : bool, default=False
+        Whether to allow loading external JSON/YAML snippets via ``$ref``
+        in the training input. Disabled by default for security.
+    """
     log.info("Configuration path: %s", input_file)
     env.CUSTOM_OP_USE_JIT = True
     if LOCAL_RANK == 0:
