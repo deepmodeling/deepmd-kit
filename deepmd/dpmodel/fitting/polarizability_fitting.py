@@ -237,14 +237,21 @@ class PolarFitting(GeneralFitting):
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         super().change_type_map(type_map=type_map)
         if has_new_type:
+            xp = array_api_compat.array_namespace(self.scale)
             extend_shape = [len(type_map), *list(self.scale.shape[1:])]
-            extend_scale = np.ones(extend_shape, dtype=self.scale.dtype)
-            self.scale = np.concatenate([self.scale, extend_scale], axis=0)
-            extend_shape = [len(type_map), *list(self.constant_matrix.shape[1:])]
-            extend_constant_matrix = np.zeros(
-                extend_shape, dtype=self.constant_matrix.dtype
+            extend_scale = xp.ones(
+                extend_shape,
+                dtype=self.scale.dtype,
+                device=array_api_compat.device(self.scale),
             )
-            self.constant_matrix = np.concatenate(
+            self.scale = xp.concat([self.scale, extend_scale], axis=0)
+            extend_shape = [len(type_map), *list(self.constant_matrix.shape[1:])]
+            extend_constant_matrix = xp.zeros(
+                extend_shape,
+                dtype=self.constant_matrix.dtype,
+                device=array_api_compat.device(self.constant_matrix),
+            )
+            self.constant_matrix = xp.concat(
                 [self.constant_matrix, extend_constant_matrix], axis=0
             )
         self.scale = self.scale[remap_index]

@@ -232,6 +232,30 @@ class DPAtomicModel(BaseAtomicModel):
         )
         self.fitting_net.change_type_map(type_map=type_map)
 
+    def compute_fitting_input_stat(
+        self,
+        sample_merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
+    ) -> None:
+        """Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
+
+        Parameters
+        ----------
+        sample_merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, ``merged[i]``, is a data dictionary containing
+                ``keys``: ``np.ndarray`` originating from the ``i``-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples
+                in the above format only when needed.
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
+        """
+        self.fitting.compute_input_stats(
+            sample_merged,
+            protection=self.data_stat_protect,
+            stat_file_path=stat_file_path,
+        )
+
     def serialize(self) -> dict:
         dd = super().serialize()
         dd.update(

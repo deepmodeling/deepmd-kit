@@ -417,6 +417,8 @@ def make_model(
                 'change-by-statistic' or 'set-by-statistic'.
             """
             self.atomic_model.change_out_bias(merged, bias_adjust_mode=bias_adjust_mode)
+            if bias_adjust_mode == "set-by-statistic":
+                self.atomic_model.compute_fitting_input_stat(merged)
 
         def _input_type_cast(
             self,
@@ -616,12 +618,17 @@ def make_model(
             return self.atomic_model.do_grad_c(var_name)
 
         def change_type_map(
-            self, type_map: list[str], model_with_new_type_stat: Any = None
+            self, type_map: list[str], model_with_new_type_stat: Any | None = None
         ) -> None:
             """Change the type related params to new ones, according to `type_map` and the original one in the model.
             If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
             """
-            self.atomic_model.change_type_map(type_map=type_map)
+            self.atomic_model.change_type_map(
+                type_map=type_map,
+                model_with_new_type_stat=model_with_new_type_stat.atomic_model
+                if model_with_new_type_stat is not None
+                else None,
+            )
 
         def serialize(self) -> dict:
             return self.atomic_model.serialize()

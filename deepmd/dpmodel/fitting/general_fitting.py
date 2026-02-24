@@ -437,11 +437,14 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.ntypes = len(type_map)
         self.reinit_exclude(map_atom_exclude_types(self.exclude_types, remap_index))
         if has_new_type:
+            xp = array_api_compat.array_namespace(self.bias_atom_e)
             extend_shape = [len(type_map), *list(self.bias_atom_e.shape[1:])]
-            extend_bias_atom_e = np.zeros(extend_shape, dtype=self.bias_atom_e.dtype)
-            self.bias_atom_e = np.concatenate(
-                [self.bias_atom_e, extend_bias_atom_e], axis=0
+            extend_bias_atom_e = xp.zeros(
+                extend_shape,
+                dtype=self.bias_atom_e.dtype,
+                device=array_api_compat.device(self.bias_atom_e),
             )
+            self.bias_atom_e = xp.concat([self.bias_atom_e, extend_bias_atom_e], axis=0)
         self.bias_atom_e = self.bias_atom_e[remap_index]
 
     def __setitem__(self, key: str, value: Any) -> None:
