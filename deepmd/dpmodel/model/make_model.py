@@ -707,6 +707,14 @@ def make_model(
             """
             self.atomic_model.compute_or_load_stat(sampled_func, stat_file_path)
 
+        def get_model_def_script(self) -> str:
+            """Get the model definition script."""
+            return self.model_def_script
+
+        def get_min_nbor_dist(self) -> float | None:
+            """Get the minimum distance between two atoms."""
+            return self.min_nbor_dist
+
         def get_ntypes(self) -> int:
             """Get the number of types."""
             return len(self.get_type_map())

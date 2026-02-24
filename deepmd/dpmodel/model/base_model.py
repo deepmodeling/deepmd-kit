@@ -142,9 +142,10 @@ def make_base_model() -> type[object]:
             """Get the model definition script."""
             pass
 
+        @abstractmethod
         def get_min_nbor_dist(self) -> float | None:
             """Get the minimum distance between two atoms."""
-            return self.min_nbor_dist
+            pass
 
         @abstractmethod
         def get_nnei(self) -> int:
@@ -255,10 +256,4 @@ class BaseModel(make_base_model()):
         Backend-independent BaseModel class.
     """
 
-    def __init__(self) -> None:
-        self.model_def_script = ""
-        self.min_nbor_dist = None
-
-    def get_model_def_script(self) -> str:
-        """Get the model definition script."""
-        return self.model_def_script
+    pass
