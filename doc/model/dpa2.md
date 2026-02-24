@@ -10,39 +10,49 @@ Training example: `examples/water/dpa2/input_torch_medium.json`, see [README](..
 
 ## Theory
 
-DPA-2 is an attention-based descriptor designed to learn expressive local atomic representations while preserving the physical symmetries required by interatomic potentials.
+DPA-2 is an attention-based descriptor architecture proposed for large atomic models (LAMs); see the [DPA-2 paper](https://doi.org/10.1038/s41524-024-01493-2).
 
-### Local environment and representation
+At a high level, DPA-2 builds local representations with three coupled channels (paper notation):
 
-For each central atom $\alpha$, neighbors $\beta \in \mathcal{N}(\alpha)$ are selected within a cutoff radius. DPA-2 encodes each local environment through geometric features (relative coordinates and derived invariants) and element/type information.
+- **Single-atom channel** $\mathbf{f}_lpha$
+- **Rotationally invariant pair channel** $\mathbf{g}_{lphaeta}$
+- **Rotationally equivariant pair channel** $\mathbf{h}_{lphaeta}$
 
-The descriptor is built hierarchically:
+for neighbors $eta\in\mathcal{N}(lpha)$ within cutoffs.
 
-1. **Initial embedding**: geometric and type features are projected into latent channels.
-1. **Attention-based interaction**: stacked attention layers model neighbor-neighbor and center-neighbor correlations in the local environment.
-1. **Output descriptor**: atom-wise latent features after the final layer are used as descriptor outputs for downstream fitting/model components.
+### Descriptor pipeline
 
-### Attention-based message passing
+The descriptor follows two main stages:
 
-DPA-2 uses attention to aggregate neighbor information with data-dependent weights. Conceptually, each layer computes:
+1. **repinit (representation initializer)**
+   - Initializes and fuses type and geometry information from local environments.
+2. **repformer (representation transformer)**
+   - Stacked message-passing layers that update $\mathbf{f}$ and $\mathbf{g}$ channels through convolution/symmetrization/MLP and attention-style interactions.
+
+The final descriptor is formed from learned single-atom representations and then passed to downstream fitting/model components.
+
+### Message passing intuition
+
+DPA-2 updates local features layer-by-layer with residual connections. Conceptually, each layer performs neighborhood aggregation using geometry-conditioned interactions:
 
 ```math
-\mathbf{h}_\alpha^{(l+1)} = \mathbf{h}_\alpha^{(l)} + \mathrm{Attn}^{(l)}\left(\mathbf{h}_\alpha^{(l)}, \{\mathbf{h}_\beta^{(l)}\}_{\beta\in\mathcal{N}(\alpha)}, \{\mathbf{g}_{\alpha\beta}\}_{\beta\in\mathcal{N}(\alpha)}\right)
+\mathbf{h}_lpha^{(l+1)} = \mathbf{h}_lpha^{(l)} + \mathrm{MP}^{(l)}\left(\mathbf{h}_lpha^{(l)}, \{\mathbf{h}_eta^{(l)}\}_{eta\in\mathcal{N}(lpha)}, \{\mathbf{g}_{lphaeta}\}_{eta\in\mathcal{N}(lpha)}ight)
 ```
 
-where $\mathbf{h}$ denotes latent node features and $\mathbf{g}_{\alpha\beta}$ denotes geometry-conditioned pair features. Residual updates enable stable deep stacking.
+where $\mathrm{MP}^{(l)}$ denotes the layer-specific message-passing operator.
 
-### Physical symmetries
+### Physical properties
 
-DPA-2 is constructed to satisfy key symmetry requirements of atomistic modeling:
+Consistent with the DPA-2 design goals in the paper, the model family is built to satisfy:
 
-1. **Translational invariance**: only relative coordinates are used.
-1. **Rotational behavior**: internal geometric constructions are designed so that final scalar descriptor channels used downstream are rotationally invariant.
-1. **Permutational invariance**: atoms of the same species are treated identically under permutation (re-labeling) operations.
+1. **Translational invariance** (depends on relative coordinates)
+1. **Rotational and permutational symmetry requirements**
+1. **Conservative formulation** when used in energy models (forces/virials from energy gradients)
+1. **Smoothness up to second-order derivatives**
 
 ### Multi-task training context
 
-DPA-2 is commonly used in a multi-task setting. The descriptor is shared, while task-specific heads/objectives are handled downstream. See [Multi-task training](../train/multi-task-training.md) for framework details.
+DPA-2 is designed for multi-task pre-training with a shared descriptor and task-specific downstream heads. See [Multi-task training](../train/multi-task-training.md) for workflow details.
 
 ## Requirements of installation {{ pytorch_icon }}
 
