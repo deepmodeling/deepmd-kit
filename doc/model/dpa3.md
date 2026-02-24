@@ -32,7 +32,7 @@ Geometrically, vertices in $G^{(1)}$, $G^{(2)}$, $G^{(3)}$, and $G^{(4)}$ corres
 
 ### Message Passing on LiGS
 
-DPA3 performs message passing across all graphs in the LiGS. At layer $l$, the vertex and edge features on graph $G^{(k)}$ are denoted as $\mathbf{v}_\alpha^{(k,l)} \in \mathbb{R}^{d_v}$ and $\mathbf{e}_{\alpha\beta}^{(k,l)} \in \mathbb{R}^{d_e}$, where $\alpha$ and $\alpha\beta$ denote vertex and edge indices, and $d_v$, $d_e$ are feature dimensions.
+DPA3 performs message passing across all graphs in the LiGS. At layer $l$, the vertex and edge features on graph $G^{(k)}$ are denoted as $\mathbf{v}_\alpha^{(k,l)} \in \mathbb{R}^{d_v^{(k)}}$ and $\mathbf{e}_{\alpha\beta}^{(k,l)} \in \mathbb{R}^{d_e^{(k)}}$, where $\alpha$ and $\alpha\beta$ denote vertex and edge indices, and $d_v^{(k)}$, $d_e^{(k)}$ are per-graph feature dimensions (for example, in `RepFlowArgs`: $d_v^{(1)}=n_\text{dim}$, $d_e^{(1)}=e_\text{dim}$, $d_v^{(2)}=e_\text{dim}$, and $d_e^{(2)}=a_\text{dim}$).
 
 The feature update follows a recursive formulation with residual connections:
 
@@ -45,9 +45,10 @@ The vertex features are updated through self-message and symmetrization:
 
 **For $G^{(k)}$ with $k > 1$:**
 The vertex feature of $G^{(k)}$ is identical to the edge feature of $G^{(k-1)}$. This identity eliminates redundant storage:
+Here $(\alpha,\beta)$ denotes the edge in $G^{(k-1)}$ corresponding to vertex $\alpha$ in $G^{(k)}$.
 
 ```math
-\mathbf{v}_\alpha^{(k,l)} = \mathbf{e}_{\alpha}^{(k-1,l)}
+\mathbf{v}_\alpha^{(k,l)} = \mathbf{e}_{\alpha\beta}^{(k-1,l)}
 ```
 
 The edge features are updated based on messages from connected vertices:
@@ -55,27 +56,29 @@ The edge features are updated based on messages from connected vertices:
 ```math
 \mathbf{e}_{\alpha\beta}^{(k,l+1)} = \mathbf{e}_{\alpha\beta}^{(k,l)} + \text{Update}^{(k)}\left(\mathbf{e}_{\alpha\beta}^{(k,l)}, \mathbf{v}_\alpha^{(k,l)}, \mathbf{v}_\beta^{(k,l)}\right)
 ```
+The same update mechanism applies to $G^{(1)}$ edge features $\mathbf{e}_{\alpha\beta}^{(1,l)}$, so they also evolve across layers and, via the $\mathbf{v}^{(2,l)}$-$\mathbf{e}^{(1,l)}$ identity, drive the updates on $G^{(2)}$.
+
 
 ### Descriptor Construction
 
 The final vertex features of $G^{(1)}$ serve as the descriptor representing the local environment of each atom:
 
 ```math
-\mathcal{D}^i = \mathbf{v}_i^{(1,L)}
+\mathcal{D}^\alpha = \mathbf{v}_\alpha^{(1,L)}
 ```
 
 where $L$ is the total number of layers.
 
-For multi-task training, the descriptor is augmented with dataset encoding (typically a one-hot vector) and passed through a fitting network to predict atomic energies:
+For multi-task training, the descriptor is augmented with dataset encoding (typically a one-hot vector) and passed through a fitting network to predict atomic energies ($\oplus$ denotes concatenation):
 
 ```math
-E_i = \mathcal{N}_{\text{fit}}(\mathcal{D}^i \oplus \mathbf{d}_{\text{dataset}})
+E_\alpha = \mathcal{N}_{\text{fit}}(\mathcal{D}^\alpha \oplus \mathbf{d}_{\text{dataset}})
 ```
 
 The total system energy is the sum of atomic contributions:
 
 ```math
-E = \sum_i E_i
+E = \sum_\alpha E_\alpha
 ```
 
 ### Physical Symmetries
@@ -84,9 +87,9 @@ DPA3 respects all physical symmetries of the potential energy surface:
 
 1. **Translational invariance**: The model depends only on relative coordinates $\mathbf{r}_{ij} = \mathbf{r}_j - \mathbf{r}_i$, not absolute positions.
 
-1. **Rotational invariance**: The descriptor is constructed from scalar features that are invariant under global rotations.
+1. **Rotational invariance**: The final descriptor is rotationally invariant; intermediate equivariant representations are used internally and contracted to produce invariant atomic features.
 
-1. **Permutational invariance**: Atoms of the same chemical species are treated identically, respecting quantum statistics.
+1. **Permutational invariance**: Atoms of the same chemical species are treated identically under permutation symmetry operations (re-labeling) of identical atoms.
 
 1. **Energy conservation**: Forces are derived from energy gradients:
 
@@ -98,7 +101,7 @@ Virials are similarly derived from cell tensor gradients, ensuring the model is 
 
 ### Default Configuration
 
-Based on extensive hyperparameter tests, DPA3 uses LiGS order $K=2$ as the default, which provides optimal balance between accuracy and computational cost. The model supports scaling through increasing the number of layers $L$ (e.g., DPA3-L3, DPA3-L6, DPA3-L12, DPA3-L24).
+DPA3 uses LiGS order $K=2$ as the default configuration, which was found effective in prior work ([DPA3 paper](https://arxiv.org/abs/2506.01686)). The model supports scaling through increasing the number of layers $L$ (e.g., DPA3-L3, DPA3-L6, DPA3-L12, DPA3-L24).
 
 ## Hyperparameter tests
 
