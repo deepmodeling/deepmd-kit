@@ -250,7 +250,7 @@ class DPAtomicModel(BaseAtomicModel):
         stat_file_path : Optional[DPPath]
             The path to the stat file.
         """
-        self.fitting.compute_input_stats(
+        self.fitting_net.compute_input_stats(
             sample_merged,
             protection=self.data_stat_protect,
             stat_file_path=stat_file_path,
