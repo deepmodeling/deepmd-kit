@@ -1025,6 +1025,7 @@ class Trainer:
             prof.start()
 
         def step(_step_id: int, task_key: str = "Default") -> None:
+            display_step_id = _step_id + 1
             if self.multi_task:
                 model_index = dp_random.choice(
                     np.arange(self.num_model, dtype=np.int_),
@@ -1069,7 +1070,10 @@ class Trainer:
                     if (
                         self.enable_tensorboard
                         and self.zero_stage < 2
-                        and (_step_id % self.tensorboard_freq == 0 or _step_id == 1)
+                        and (
+                            display_step_id % self.tensorboard_freq == 0
+                            or display_step_id == 1
+                        )
                     ):
                         pre_clip_named_norms = [
                             (name, p.grad.detach().norm().item())
@@ -1200,7 +1204,6 @@ class Trainer:
                             self.train_loss_accu[task_key][item] += more_loss[item]
 
             # Log and persist
-            display_step_id = _step_id + 1
             if self.display_in_training and (
                 display_step_id % self.disp_freq == 0 or display_step_id == 1
             ):
