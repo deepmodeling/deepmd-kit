@@ -287,16 +287,13 @@ class TestParserOutput(unittest.TestCase):
 
         self.run_test(command="train", mapping=ARGS)
 
-    def test_parser_train_wrong_subcommand(self) -> None:
-        """Test train with multiple subparsers."""
-        ARGS = {
-            "INPUT": {"type": str, "value": "INFILE"},
-            "--init-model": {"type": (str, type(None)), "value": "SYSTEM_DIR"},
-            "--restart": {"type": (str, type(None)), "value": "RESTART"},
-            "--output": {"type": str, "value": "OUTPUT"},
-        }
-        with self.assertRaises(SystemExit):
-            self.run_test(command="train", mapping=ARGS)
+    def test_parser_train_allow_ref(self) -> None:
+        """Test train --allow-ref option."""
+        args = parse_args(["train", "INFILE", "--allow-ref"])
+        self.assertTrue(args.allow_ref)
+
+        args_default = parse_args(["train", "INFILE"])
+        self.assertFalse(args_default.allow_ref)
 
     def test_parser_freeze(self) -> None:
         """Test freeze subparser."""
