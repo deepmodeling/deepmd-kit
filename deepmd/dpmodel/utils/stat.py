@@ -360,7 +360,8 @@ def compute_output_stats_global(
         for kk in keys
     }
 
-    natoms_key = "natoms"
+    data_mixed_type = "real_natoms_vec" in sampled[0]
+    natoms_key = "natoms" if not data_mixed_type else "real_natoms_vec"
     for system in sampled:
         if "atom_exclude_types" in system:
             type_mask = AtomExcludeMask(
