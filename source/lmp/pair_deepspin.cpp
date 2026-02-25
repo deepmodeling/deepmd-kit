@@ -883,7 +883,7 @@ void PairDeepSpin::coeff(int narg, char** arg) {
         }
       }
       if (!found_element && "NULL" == type_name) {
-        type_idx_map.push_back(type_map.size());  // ghost type
+        type_idx_map.push_back(-1);  // ghost type
         found_element = true;
       }
       if (!found_element) {
