@@ -248,10 +248,8 @@ def compute_output_stats(
                     system["find_atom_" + kk] > 0.0
                 ):
                     atomic_sampled_idx[kk].append(idx)
-                elif (("find_" + kk) in system) and (system["find_" + kk] > 0.0):
+                if (("find_" + kk) in system) and (system["find_" + kk] > 0.0):
                     global_sampled_idx[kk].append(idx)
-                else:
-                    continue
 
         # use index to gather model predictions for the corresponding systems.
         model_pred_g = (
