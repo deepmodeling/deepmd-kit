@@ -340,6 +340,11 @@ class DeepPotPT : public DeepPotBackend {
   at::Tensor firstneigh_tensor;
   c10::optional<torch::Tensor> mapping_tensor;
   torch::Dict<std::string, torch::Tensor> comm_dict;
+  // Owned comm data for remapped sendlist (NULL type filtering)
+  std::vector<std::vector<int>> comm_sendlist_;
+  std::vector<int> comm_sendnum_;
+  std::vector<int> comm_recvnum_;
+  std::vector<int*> comm_sendlist_ptrs_;
   bool profiler_enabled{false};
   std::string profiler_file;
   /**

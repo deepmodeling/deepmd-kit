@@ -232,6 +232,32 @@ template void deepmd::select_real_atoms_coord<float>(
     const int& nall,
     const bool aparam_nall);
 
+void deepmd::select_real_atoms_sendlist(
+    std::vector<std::vector<int>>& new_sendlist,
+    std::vector<int>& new_sendnum,
+    std::vector<int>& new_recvnum,
+    const InputNlist& inlist,
+    const std::vector<int>& fwd_map) {
+  int nswap = inlist.nswap;
+  new_sendlist.resize(nswap);
+  new_sendnum.resize(nswap);
+  new_recvnum.resize(nswap);
+  for (int s = 0; s < nswap; ++s) {
+    new_sendlist[s].clear();
+    int orig_num = inlist.sendnum[s];
+    new_sendlist[s].reserve(orig_num);
+    for (int i = 0; i < orig_num; ++i) {
+      int idx = inlist.sendlist[s][i];
+      int mapped = fwd_map[idx];
+      if (mapped >= 0) {
+        new_sendlist[s].push_back(mapped);
+      }
+    }
+    new_sendnum[s] = new_sendlist[s].size();
+    new_recvnum[s] = new_sendnum[s];
+  }
+}
+
 void deepmd::NeighborListData::copy_from_nlist(const InputNlist& inlist,
                                                const int natoms) {
   int inum = natoms >= 0 ? natoms : inlist.inum;

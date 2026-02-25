@@ -154,6 +154,20 @@ void select_map_inv(typename std::vector<VT>::iterator out,
                     const int& stride);
 
 /**
+ * @brief Build filtered/remapped sendlist for NULL type filtering.
+ * @param[out] new_sendlist Remapped sendlist vectors (one per swap).
+ * @param[out] new_sendnum Number of real atoms to send per swap.
+ * @param[out] new_recvnum Number of real atoms to receive per swap.
+ * @param[in] inlist The input neighbor list with comm data.
+ * @param[in] fwd_map Forward map from original to remapped indices.
+ */
+void select_real_atoms_sendlist(std::vector<std::vector<int>>& new_sendlist,
+                                std::vector<int>& new_sendnum,
+                                std::vector<int>& new_recvnum,
+                                const InputNlist& inlist,
+                                const std::vector<int>& fwd_map);
+
+/**
  * @brief Get the number of threads from the environment variable.
  * @details A warning will be thrown if environment variables are not set.
  * @param[out] num_intra_nthreads The number of intra threads. Read from
