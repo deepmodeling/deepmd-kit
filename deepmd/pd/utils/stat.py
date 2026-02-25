@@ -167,11 +167,10 @@ def _compute_model_predict(
     model_predict = {kk: [] for kk in keys}
     for system in sampled:
         nframes = system["coord"].shape[0]
-        coord, atype, box, natoms = (
+        coord, atype, box = (
             system["coord"],
             system["atype"],
             system["box"],
-            system["natoms"],
         )
         fparam = system.get("fparam", None)
         aparam = system.get("aparam", None)
