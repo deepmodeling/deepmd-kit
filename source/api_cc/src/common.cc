@@ -254,7 +254,7 @@ void deepmd::select_real_atoms_sendlist(
       }
     }
     new_sendnum[s] = new_sendlist[s].size();
-    new_recvnum[s] = new_sendnum[s];
+    new_recvnum[s] = new_sendlist[s].size();
   }
 }
 
