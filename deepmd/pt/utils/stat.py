@@ -441,20 +441,19 @@ def compute_output_stats_global(
 
     data_mixed_type = "real_natoms_vec" in sampled[0]
     natoms_key = "natoms" if not data_mixed_type else "real_natoms_vec"
-    for system in sampled:
-        if "atom_exclude_types" in system:
-            type_mask = AtomExcludeMask(
-                ntypes, system["atom_exclude_types"]
-            ).get_type_mask()
-            system[natoms_key][:, 2:] *= type_mask.unsqueeze(0)
-
-    input_natoms = {
-        kk: [
-            to_numpy_array(sampled[idx][natoms_key])
-            for idx in global_sampled_idx.get(kk, [])
-        ]
-        for kk in keys
-    }
+    input_natoms = {}
+    for kk in keys:
+        kk_natoms = []
+        for idx in global_sampled_idx.get(kk, []):
+            nn = to_numpy_array(sampled[idx][natoms_key])
+            if "atom_exclude_types" in sampled[idx]:
+                nn = nn.copy()
+                type_mask = AtomExcludeMask(
+                    ntypes, sampled[idx]["atom_exclude_types"]
+                ).get_type_mask()
+                nn[:, 2:] *= to_numpy_array(type_mask).reshape(1, -1)
+            kk_natoms.append(nn)
+        input_natoms[kk] = kk_natoms
     # shape: (nframes, ndim)
     merged_output = {
         kk: np.concatenate(outputs[kk]) for kk in keys if len(outputs[kk]) > 0

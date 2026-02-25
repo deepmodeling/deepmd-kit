@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Cross-backend consistency tests for compute_output_stats."""
 
-import copy
 from collections import (
     defaultdict,
 )
@@ -81,23 +80,23 @@ def _make_data(
     keys = ["energy"]
 
     # Build a single system dict (both frames in one system)
-    system: dict = {
+    system_np: dict = {
         "atype": atype,
         "natoms": natoms.copy(),
     }
     if mixed_type:
-        system["real_natoms_vec"] = real_natoms_vec.copy()
+        system_np["real_natoms_vec"] = real_natoms_vec.copy()
 
     if has_global:
-        system["energy"] = energy
-        system["find_energy"] = np.float32(1.0)
+        system_np["energy"] = energy
+        system_np["find_energy"] = np.float32(1.0)
     if has_atomic:
-        system["atom_energy"] = atom_energy
-        system["find_atom_energy"] = np.float32(1.0)
+        system_np["atom_energy"] = atom_energy
+        system_np["find_atom_energy"] = np.float32(1.0)
     if exclude_types:
-        system["atom_exclude_types"] = exclude_types
+        system_np["atom_exclude_types"] = exclude_types
 
-    sampled_np = [system]
+    sampled_dp = [system_np]
 
     # Convert to torch tensors for pt backend
     def _to_torch(d: dict) -> dict:
@@ -111,15 +110,13 @@ def _make_data(
                 out[k] = v
         return out
 
-    # Deep-copy before passing to each backend (both may mutate natoms in-place)
-    sampled_dp = copy.deepcopy(sampled_np)
-    sampled_pt = [_to_torch(s) for s in copy.deepcopy(sampled_np)]
+    sampled_pt = [_to_torch(system_np)]
 
     # Precompute indices (same logic used by both backends' compute_output_stats)
     atomic_sampled_idx: dict = defaultdict(list)
     global_sampled_idx: dict = defaultdict(list)
     for kk in keys:
-        for idx, s in enumerate(sampled_np):
+        for idx, s in enumerate(sampled_dp):
             if ("find_atom_" + kk) in s and s["find_atom_" + kk] > 0.0:
                 atomic_sampled_idx[kk].append(idx)
             if ("find_" + kk) in s and s["find_" + kk] > 0.0:
@@ -274,3 +271,60 @@ class TestComputeOutputStatFullConsistency:
             assert dp_bias[kk].shape[0] == NTYPES
             np.testing.assert_allclose(dp_bias[kk], pt_bias_np, rtol=1e-10, atol=1e-10)
             np.testing.assert_allclose(dp_std[kk], pt_std_np, rtol=1e-10, atol=1e-10)
+
+
+@pytest.mark.skipif(not INSTALLED_PT, reason="PyTorch is not installed")
+class TestComputeOutputStatNoMutation:
+    """Verify that stat functions do not mutate input sampled data."""
+
+    @pytest.mark.parametrize("mixed_type", [False, True])  # mixed_type
+    def test_global_no_mutation(self, mixed_type) -> None:
+        """compute_output_stats_global must not mutate input with exclude_types."""
+        sampled_dp, sampled_pt, global_idx, _ = _make_data(
+            has_global=True,
+            has_atomic=False,
+            mixed_type=mixed_type,
+            exclude_types=[1],
+        )
+        keys = ["energy"]
+        natoms_key = "real_natoms_vec" if mixed_type else "natoms"
+
+        # snapshot before
+        dp_natoms_before = sampled_dp[0][natoms_key].copy()
+        pt_natoms_before = sampled_pt[0][natoms_key].clone()
+
+        compute_output_stats_global_dp(
+            sampled_dp, NTYPES, keys, global_sampled_idx=global_idx
+        )
+        compute_output_stats_global_pt(
+            sampled_pt, NTYPES, keys, global_sampled_idx=global_idx
+        )
+
+        # verify no mutation
+        np.testing.assert_array_equal(sampled_dp[0][natoms_key], dp_natoms_before)
+        np.testing.assert_array_equal(
+            sampled_pt[0][natoms_key].numpy(), pt_natoms_before.numpy()
+        )
+
+    @pytest.mark.parametrize("mixed_type", [False, True])  # mixed_type
+    def test_full_no_mutation(self, mixed_type) -> None:
+        """compute_output_stats must not mutate input with exclude_types."""
+        sampled_dp, sampled_pt, _, _ = _make_data(
+            has_global=True,
+            has_atomic=True,
+            mixed_type=mixed_type,
+            exclude_types=[1],
+        )
+        keys = ["energy"]
+        natoms_key = "real_natoms_vec" if mixed_type else "natoms"
+
+        dp_natoms_before = sampled_dp[0][natoms_key].copy()
+        pt_natoms_before = sampled_pt[0][natoms_key].clone()
+
+        compute_output_stats_dp(sampled_dp, NTYPES, keys)
+        compute_output_stats_pt(sampled_pt, NTYPES, keys)
+
+        np.testing.assert_array_equal(sampled_dp[0][natoms_key], dp_natoms_before)
+        np.testing.assert_array_equal(
+            sampled_pt[0][natoms_key].numpy(), pt_natoms_before.numpy()
+        )
