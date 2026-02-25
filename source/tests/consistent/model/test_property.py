@@ -701,10 +701,11 @@ class TestPropertyModelAPIs(unittest.TestCase):
             }
 
     def test_change_out_bias(self) -> None:
-        """change_out_bias should produce consistent bias and fitting stats on dp, pt, and pt_expt.
+        """change_out_bias should produce consistent bias on dp, pt, and pt_expt.
 
-        PropertyModel's apply_out_stat applies output * std + bias,
-        so set-by-statistic should change the bias from initial values.
+        Tests both set-by-statistic and change-by-statistic modes.
+        Note: change_out_bias only updates the output bias, not fitting input
+        stats (fparam/aparam). Fitting stats are updated by compute_or_load_stat.
         """
         nframes = 2
         nloc = 6
@@ -756,9 +757,6 @@ class TestPropertyModelAPIs(unittest.TestCase):
         # pt_expt stat data (numpy, same as dp)
         pe_merged = dp_merged
 
-        # Save initial fitting stats (all zeros / ones)
-        dp_stats_init = self._get_fitting_stats(self.dp_model, "dp")
-
         # Save initial (zero) bias
         dp_bias_init = to_numpy_array(self.dp_model.get_out_bias()).copy()
 
@@ -776,40 +774,6 @@ class TestPropertyModelAPIs(unittest.TestCase):
         np.testing.assert_allclose(dp_bias, pt_bias, rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(dp_bias, pe_bias, rtol=1e-10, atol=1e-10)
 
-        # Verify fitting input stats were updated (set-by-statistic triggers compute_fitting_input_stat)
-        dp_stats_set = self._get_fitting_stats(self.dp_model, "dp")
-        pt_stats_set = self._get_fitting_stats(self.pt_model, "pt")
-        pe_stats_set = self._get_fitting_stats(self.pt_expt_model, "dp")
-        for stat_key in (
-            "fparam_avg",
-            "fparam_inv_std",
-            "aparam_avg",
-            "aparam_inv_std",
-        ):
-            np.testing.assert_allclose(
-                dp_stats_set[stat_key],
-                pt_stats_set[stat_key],
-                rtol=1e-10,
-                atol=1e-10,
-                err_msg=f"dp vs pt {stat_key} mismatch after set-by-statistic",
-            )
-            np.testing.assert_allclose(
-                dp_stats_set[stat_key],
-                pe_stats_set[stat_key],
-                rtol=1e-10,
-                atol=1e-10,
-                err_msg=f"dp vs pt_expt {stat_key} mismatch after set-by-statistic",
-            )
-        # Verify fparam/aparam stats actually changed from initial values
-        self.assertFalse(
-            np.allclose(dp_stats_set["fparam_avg"], dp_stats_init["fparam_avg"]),
-            "set-by-statistic did not update fparam_avg",
-        )
-        self.assertFalse(
-            np.allclose(dp_stats_set["aparam_avg"], dp_stats_init["aparam_avg"]),
-            "set-by-statistic did not update aparam_avg",
-        )
-
         # --- Test "change-by-statistic" mode ---
         dp_bias_before = dp_bias.copy()
         self.dp_model.change_out_bias(dp_merged, bias_adjust_mode="change-by-statistic")
@@ -824,38 +788,6 @@ class TestPropertyModelAPIs(unittest.TestCase):
         pe_bias2 = to_numpy_array(self.pt_expt_model.get_out_bias())
         np.testing.assert_allclose(dp_bias2, pt_bias2, rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(dp_bias2, pe_bias2, rtol=1e-10, atol=1e-10)
-
-        # Verify fitting input stats did NOT change (change-by-statistic should not recompute them)
-        dp_stats_chg = self._get_fitting_stats(self.dp_model, "dp")
-        pt_stats_chg = self._get_fitting_stats(self.pt_model, "pt")
-        pe_stats_chg = self._get_fitting_stats(self.pt_expt_model, "dp")
-        for stat_key in (
-            "fparam_avg",
-            "fparam_inv_std",
-            "aparam_avg",
-            "aparam_inv_std",
-        ):
-            np.testing.assert_allclose(
-                dp_stats_chg[stat_key],
-                dp_stats_set[stat_key],
-                rtol=1e-10,
-                atol=1e-10,
-                err_msg=f"dp {stat_key} changed after change-by-statistic (should not)",
-            )
-            np.testing.assert_allclose(
-                pt_stats_chg[stat_key],
-                pt_stats_set[stat_key],
-                rtol=1e-10,
-                atol=1e-10,
-                err_msg=f"pt {stat_key} changed after change-by-statistic (should not)",
-            )
-            np.testing.assert_allclose(
-                pe_stats_chg[stat_key],
-                pe_stats_set[stat_key],
-                rtol=1e-10,
-                atol=1e-10,
-                err_msg=f"pt_expt {stat_key} changed after change-by-statistic (should not)",
-            )
 
     def test_change_type_map(self) -> None:
         """change_type_map should produce consistent results on dp and pt.

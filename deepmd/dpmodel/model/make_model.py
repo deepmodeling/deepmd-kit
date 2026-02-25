@@ -417,8 +417,6 @@ def make_model(
                 'change-by-statistic' or 'set-by-statistic'.
             """
             self.atomic_model.change_out_bias(merged, bias_adjust_mode=bias_adjust_mode)
-            if bias_adjust_mode == "set-by-statistic":
-                self.atomic_model.compute_fitting_input_stat(merged)
 
         def _input_type_cast(
             self,

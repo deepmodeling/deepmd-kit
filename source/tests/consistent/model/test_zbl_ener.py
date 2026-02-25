@@ -697,15 +697,12 @@ class TestZBLEnerModelAPIs(unittest.TestCase):
                 )
 
     def test_change_out_bias(self) -> None:
-        """change_out_bias (change-by-statistic) should produce consistent bias on dp, pt, and pt_expt.
+        """change_out_bias should produce consistent bias on dp, pt, and pt_expt.
 
-        DPZBLModel (LinearEnergyAtomicModel) does not support set-by-statistic
-        (no compute_fitting_input_stat), so only change-by-statistic is tested.
-        We first compute initial bias via compute_or_load_out_stat, then verify
-        change-by-statistic updates bias consistently.
+        Tests both set-by-statistic and change-by-statistic modes.
+        DPZBLModel has no fparam/aparam, so fitting stats checks are skipped.
         """
         nframes = 2
-        rng = np.random.default_rng(123)
 
         # Use realistic coords (from setUp, tiled for 2 frames)
         coords_2f = np.tile(self.coords, (nframes, 1, 1))  # (2, 6, 3)
@@ -713,7 +710,7 @@ class TestZBLEnerModelAPIs(unittest.TestCase):
         box_2f = np.tile(self.box.reshape(1, 3, 3), (nframes, 1, 1))
         # natoms: [nloc, nloc, n_type0, n_type1, n_type2] — 3 types
         natoms_data = np.array([[6, 6, 2, 4, 0], [6, 6, 2, 4, 0]], dtype=np.int32)
-        energy_data = rng.normal(size=(nframes, 1)).astype(GLOBAL_NP_FLOAT_PRECISION)
+        energy_data = np.array([10.0, 20.0]).reshape(nframes, 1)
 
         # dpmodel stat data (numpy)
         dp_merged = [
@@ -742,26 +739,14 @@ class TestZBLEnerModelAPIs(unittest.TestCase):
         # pt_expt stat data (numpy, same as dp)
         pe_merged = dp_merged
 
-        # First compute initial bias via compute_or_load_out_stat
-        self.dp_model.atomic_model.compute_or_load_out_stat(dp_merged)
-        self.pt_model.atomic_model.compute_or_load_out_stat(pt_merged)
-        self.pt_expt_model.atomic_model.compute_or_load_out_stat(dp_merged)
+        # Save initial (zero) bias
+        dp_bias_init = to_numpy_array(self.dp_model.get_out_bias()).copy()
 
-        dp_bias_before = to_numpy_array(self.dp_model.get_out_bias()).copy()
-        pt_bias_before = torch_to_numpy(self.pt_model.get_out_bias()).copy()
-        pe_bias_before = to_numpy_array(self.pt_expt_model.get_out_bias()).copy()
-        np.testing.assert_allclose(
-            dp_bias_before, pt_bias_before, rtol=1e-10, atol=1e-10
-        )
-        np.testing.assert_allclose(
-            dp_bias_before, pe_bias_before, rtol=1e-10, atol=1e-10
-        )
-
-        # --- Test "change-by-statistic" mode ---
-        self.dp_model.change_out_bias(dp_merged, bias_adjust_mode="change-by-statistic")
-        self.pt_model.change_out_bias(pt_merged, bias_adjust_mode="change-by-statistic")
+        # --- Test "set-by-statistic" mode ---
+        self.dp_model.change_out_bias(dp_merged, bias_adjust_mode="set-by-statistic")
+        self.pt_model.change_out_bias(pt_merged, bias_adjust_mode="set-by-statistic")
         self.pt_expt_model.change_out_bias(
-            pe_merged, bias_adjust_mode="change-by-statistic"
+            pe_merged, bias_adjust_mode="set-by-statistic"
         )
 
         # Verify out bias consistency
@@ -770,6 +755,29 @@ class TestZBLEnerModelAPIs(unittest.TestCase):
         pe_bias = to_numpy_array(self.pt_expt_model.get_out_bias())
         np.testing.assert_allclose(dp_bias, pt_bias, rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(dp_bias, pe_bias, rtol=1e-10, atol=1e-10)
+        self.assertFalse(
+            np.allclose(dp_bias, dp_bias_init),
+            "set-by-statistic did not change the bias from initial values",
+        )
+
+        # --- Test "change-by-statistic" mode ---
+        dp_bias_before = dp_bias.copy()
+        self.dp_model.change_out_bias(dp_merged, bias_adjust_mode="change-by-statistic")
+        self.pt_model.change_out_bias(pt_merged, bias_adjust_mode="change-by-statistic")
+        self.pt_expt_model.change_out_bias(
+            pe_merged, bias_adjust_mode="change-by-statistic"
+        )
+
+        # Verify out bias consistency
+        dp_bias2 = to_numpy_array(self.dp_model.get_out_bias())
+        pt_bias2 = torch_to_numpy(self.pt_model.get_out_bias())
+        pe_bias2 = to_numpy_array(self.pt_expt_model.get_out_bias())
+        np.testing.assert_allclose(dp_bias2, pt_bias2, rtol=1e-10, atol=1e-10)
+        np.testing.assert_allclose(dp_bias2, pe_bias2, rtol=1e-10, atol=1e-10)
+        self.assertFalse(
+            np.allclose(dp_bias2, dp_bias_before),
+            "change-by-statistic did not further change the bias",
+        )
 
     # test_change_type_map: NOT applicable — PairTabAtomicModel does not
     # support changing type map (would require rebuilding the tab file),
