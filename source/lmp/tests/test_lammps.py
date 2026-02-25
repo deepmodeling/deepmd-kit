@@ -523,6 +523,7 @@ def test_pair_deepmd_type_map_with_null(lammps_type_map) -> None:
     )
     lammps_type_map.pair_coeff("* * deepmd 1 H NULL")
     lammps_type_map.pair_coeff("* * deepmd 2 NULL O")
+    lammps_type_map.run(0)
 
 
 def test_pair_deepmd_real(lammps_real) -> None:
