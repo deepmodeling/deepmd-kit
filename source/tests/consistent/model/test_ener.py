@@ -1766,9 +1766,15 @@ class TestEnerComputeOrLoadStat(unittest.TestCase):
             )
 
         # 2. Run compute_or_load_stat on all three backends
-        self.dp_model.compute_or_load_stat(lambda: self.np_sampled)
-        self.pt_model.compute_or_load_stat(lambda: self.pt_sampled)
-        self.pt_expt_model.compute_or_load_stat(lambda: self.np_sampled)
+        # deepcopy because stat.py mutates natoms in-place when atom_exclude_types
+        # is non-empty (natoms[:, 2:] *= type_mask).
+        from copy import (
+            deepcopy,
+        )
+
+        self.dp_model.compute_or_load_stat(lambda: deepcopy(self.np_sampled))
+        self.pt_model.compute_or_load_stat(lambda: deepcopy(self.pt_sampled))
+        self.pt_expt_model.compute_or_load_stat(lambda: deepcopy(self.np_sampled))
 
         # 3. Serialize all three and compare @variables
         dp_ser = self.dp_model.serialize()
