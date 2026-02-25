@@ -707,6 +707,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             sel = [sel]
         self.sel = sel
         self.nnei = sum(sel)
+        self.ndescrpt = self.nnei * 4
         self.ntypes = ntypes
         self.neuron = neuron
         self.filter_neuron = self.neuron
