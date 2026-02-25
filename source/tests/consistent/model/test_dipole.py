@@ -508,6 +508,128 @@ class TestDipoleModelAPIs(unittest.TestCase):
         self.assertEqual(self.dp_model.is_aparam_nall(), self.pt_model.is_aparam_nall())
         self.assertFalse(self.dp_model.is_aparam_nall())
 
+    def test_get_model_def_script(self) -> None:
+        """get_model_def_script should return the same value on dp, pt, and pt_expt."""
+        dp_val = self.dp_model.get_model_def_script()
+        pt_val = self.pt_model.get_model_def_script()
+        pe_val = self.pt_expt_model.get_model_def_script()
+        self.assertEqual(dp_val, pt_val)
+        self.assertEqual(dp_val, pe_val)
+
+    def test_get_min_nbor_dist(self) -> None:
+        """get_min_nbor_dist should return the same value on dp, pt, and pt_expt."""
+        dp_val = self.dp_model.get_min_nbor_dist()
+        pt_val = self.pt_model.get_min_nbor_dist()
+        pe_val = self.pt_expt_model.get_min_nbor_dist()
+        self.assertEqual(dp_val, pt_val)
+        self.assertEqual(dp_val, pe_val)
+
+    def test_set_case_embd(self) -> None:
+        """set_case_embd should produce consistent results across backends.
+
+        Also verifies that different case indices produce different outputs,
+        confirming the embedding is actually used.
+        """
+        from deepmd.utils.argcheck import (
+            model_args,
+        )
+
+        # Build a model with dim_case_embd > 0
+        data = model_args().normalize_value(
+            {
+                "type_map": ["O", "H"],
+                "descriptor": {
+                    "type": "se_e2_a",
+                    "sel": [20, 20],
+                    "rcut_smth": 0.50,
+                    "rcut": 6.00,
+                    "neuron": [3, 6],
+                    "resnet_dt": False,
+                    "axis_neuron": 2,
+                    "precision": "float64",
+                    "type_one_side": True,
+                    "seed": 1,
+                },
+                "fitting_net": {
+                    "type": "dipole",
+                    "neuron": [5, 5],
+                    "resnet_dt": True,
+                    "precision": "float64",
+                    "seed": 1,
+                    "dim_case_embd": 3,
+                },
+            },
+            trim_pattern="_*",
+        )
+        dp_model = get_model_dp(data)
+        serialized = dp_model.serialize()
+        pt_model = DipoleModelPT.deserialize(serialized)
+        pe_model = DipoleModelPTExpt.deserialize(serialized)
+
+        def _eval(case_idx):
+            dp_model.set_case_embd(case_idx)
+            pt_model.set_case_embd(case_idx)
+            pe_model.set_case_embd(case_idx)
+            dp_ret = dp_model(self.coords, self.atype, box=self.box)
+            pt_ret = {
+                k: torch_to_numpy(v)
+                for k, v in pt_model(
+                    numpy_to_torch(self.coords),
+                    numpy_to_torch(self.atype),
+                    box=numpy_to_torch(self.box),
+                ).items()
+            }
+            coord_t = pt_expt_numpy_to_torch(self.coords)
+            coord_t.requires_grad_(True)
+            pe_ret = {
+                k: v.detach().cpu().numpy()
+                for k, v in pe_model(
+                    coord_t,
+                    pt_expt_numpy_to_torch(self.atype),
+                    box=pt_expt_numpy_to_torch(self.box),
+                ).items()
+            }
+            return dp_ret, pt_ret, pe_ret
+
+        dp0, pt0, pe0 = _eval(0)
+        dp1, pt1, pe1 = _eval(1)
+
+        # Cross-backend consistency for each case index
+        for key in ("dipole", "global_dipole"):
+            np.testing.assert_allclose(
+                dp0[key],
+                pt0[key],
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"case 0: dp vs pt mismatch in {key}",
+            )
+            np.testing.assert_allclose(
+                dp0[key],
+                pe0[key],
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"case 0: dp vs pt_expt mismatch in {key}",
+            )
+            np.testing.assert_allclose(
+                dp1[key],
+                pt1[key],
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"case 1: dp vs pt mismatch in {key}",
+            )
+            np.testing.assert_allclose(
+                dp1[key],
+                pe1[key],
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"case 1: dp vs pt_expt mismatch in {key}",
+            )
+        # Different case indices should produce different outputs
+        self.assertFalse(
+            np.allclose(dp0["global_dipole"], dp1["global_dipole"]),
+            "set_case_embd(0) and set_case_embd(1) produced the same global_dipole",
+        )
+
     def test_atomic_output_def(self) -> None:
         """atomic_output_def should return the same keys and shapes on dp and pt."""
         dp_def = self.dp_model.atomic_output_def()
