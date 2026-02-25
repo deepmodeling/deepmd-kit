@@ -776,6 +776,10 @@ class TestDOSModelAPIs(unittest.TestCase):
         pe_bias = to_numpy_array(self.pt_expt_model.get_out_bias())
         np.testing.assert_allclose(dp_bias, pt_bias, rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(dp_bias, pe_bias, rtol=1e-10, atol=1e-10)
+        self.assertFalse(
+            np.allclose(dp_bias, dp_bias_init),
+            "set-by-statistic did not change the bias from initial values",
+        )
 
         # --- Test "change-by-statistic" mode ---
         dp_bias_before = dp_bias.copy()
@@ -791,6 +795,10 @@ class TestDOSModelAPIs(unittest.TestCase):
         pe_bias2 = to_numpy_array(self.pt_expt_model.get_out_bias())
         np.testing.assert_allclose(dp_bias2, pt_bias2, rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(dp_bias2, pe_bias2, rtol=1e-10, atol=1e-10)
+        self.assertFalse(
+            np.allclose(dp_bias2, dp_bias_before),
+            "change-by-statistic did not further change the bias",
+        )
 
     def test_change_type_map(self) -> None:
         """change_type_map should produce consistent results on dp and pt.
