@@ -695,24 +695,6 @@ class TestPolarModelAPIs(unittest.TestCase):
         np.testing.assert_allclose(dp_val, pt_val, rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(dp_val, [0.5, -0.3], rtol=1e-10, atol=1e-10)
 
-    def _get_fitting_stats(self, model, backend="dp"):
-        """Extract fparam/aparam stats from a model's fitting net."""
-        fitting = model.get_fitting_net()
-        if backend == "pt":
-            return {
-                "fparam_avg": torch_to_numpy(fitting.fparam_avg),
-                "fparam_inv_std": torch_to_numpy(fitting.fparam_inv_std),
-                "aparam_avg": torch_to_numpy(fitting.aparam_avg),
-                "aparam_inv_std": torch_to_numpy(fitting.aparam_inv_std),
-            }
-        else:
-            return {
-                "fparam_avg": to_numpy_array(fitting.fparam_avg),
-                "fparam_inv_std": to_numpy_array(fitting.fparam_inv_std),
-                "aparam_avg": to_numpy_array(fitting.aparam_avg),
-                "aparam_inv_std": to_numpy_array(fitting.aparam_inv_std),
-            }
-
     def test_change_out_bias(self) -> None:
         """change_out_bias should produce consistent bias on dp, pt, and pt_expt.
 
@@ -786,6 +768,10 @@ class TestPolarModelAPIs(unittest.TestCase):
         pe_bias = to_numpy_array(self.pt_expt_model.get_out_bias())
         np.testing.assert_allclose(dp_bias, pt_bias, rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(dp_bias, pe_bias, rtol=1e-10, atol=1e-10)
+        self.assertFalse(
+            np.allclose(dp_bias, dp_bias_init),
+            "set-by-statistic did not change the bias from initial values",
+        )
 
         # --- Test "change-by-statistic" mode ---
         dp_bias_before = dp_bias.copy()
@@ -801,6 +787,10 @@ class TestPolarModelAPIs(unittest.TestCase):
         pe_bias2 = to_numpy_array(self.pt_expt_model.get_out_bias())
         np.testing.assert_allclose(dp_bias2, pt_bias2, rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(dp_bias2, pe_bias2, rtol=1e-10, atol=1e-10)
+        self.assertFalse(
+            np.allclose(dp_bias2, dp_bias_before),
+            "change-by-statistic did not further change the bias",
+        )
 
     def test_change_type_map(self) -> None:
         """change_type_map should produce consistent results on dp and pt.
