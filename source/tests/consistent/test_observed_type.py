@@ -25,10 +25,12 @@ class TestDpmodelGetObservedTypeList(unittest.TestCase):
         return fake
 
     def test_with_observed_type_in_info(self) -> None:
-        script = json.dumps({
-            "info": {"observed_type": ["H", "O"]},
-            "type_map": ["O", "H"],
-        })
+        script = json.dumps(
+            {
+                "info": {"observed_type": ["H", "O"]},
+                "type_map": ["O", "H"],
+            }
+        )
         model = self._make_model_with_script(script)
         result = model.get_observed_type_list()
         self.assertEqual(result, ["H", "O"])

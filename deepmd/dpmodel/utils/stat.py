@@ -26,9 +26,7 @@ from deepmd.utils.path import (
 log = logging.getLogger(__name__)
 
 
-def collect_observed_types(
-    sampled: list[dict], type_map: list[str]
-) -> list[str]:
+def collect_observed_types(sampled: list[dict], type_map: list[str]) -> list[str]:
     """Collect observed element types from sampled training data.
 
     Parameters
@@ -52,7 +50,9 @@ def collect_observed_types(
     for system in sampled:
         atype = to_numpy_array(system["atype"])  # shape: [nframes, natoms]
         observed_indices.update(np.unique(atype).tolist())
-    observed_types = [type_map[i] for i in sorted(observed_indices) if i < len(type_map)]
+    observed_types = [
+        type_map[i] for i in sorted(observed_indices) if i < len(type_map)
+    ]
     return sort_element_type(observed_types)
 
 

@@ -737,9 +737,7 @@ class DeepEval(DeepEvalBackend):
             - 'observed_type': a list of the observed types in this model.
         """
         # Try metadata first (from model_def_script, already a dict)
-        observed_type_list = (
-            self.model_def_script.get("info", {}).get("observed_type")
-        )
+        observed_type_list = self.model_def_script.get("info", {}).get("observed_type")
         if observed_type_list is not None:
             return {
                 "type_num": len(observed_type_list),

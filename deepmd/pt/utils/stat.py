@@ -36,16 +36,16 @@ from deepmd.utils.path import (
 log = logging.getLogger(__name__)
 
 # Re-export from dpmodel (backend-agnostic implementations)
-from deepmd.dpmodel.utils.stat import (  # noqa: E402
+from deepmd.dpmodel.utils.stat import (
     _restore_observed_type_from_file,
     _save_observed_type_to_file,
     collect_observed_types,
 )
 
 __all__ = [
-    "collect_observed_types",
     "_restore_observed_type_from_file",
     "_save_observed_type_to_file",
+    "collect_observed_types",
 ]
 
 

@@ -54,11 +54,7 @@ class TestCollectObservedTypes(unittest.TestCase):
 
     def test_multi_frame(self) -> None:
         sampled = [
-            {
-                "atype": torch.tensor(
-                    [[0, 1], [0, 0]], device="cpu"
-                )
-            },
+            {"atype": torch.tensor([[0, 1], [0, 0]], device="cpu")},
         ]
         type_map = ["O", "H"]
         result = collect_observed_types(sampled, type_map)
@@ -289,9 +285,7 @@ class TestObservedTypeFallback(unittest.TestCase):
 
         model = DeepPot("frozen_model.pth")
         # Simulate old model by removing observed_type from info
-        model.deep_eval.model_def_script.get("info", {}).pop(
-            "observed_type", None
-        )
+        model.deep_eval.model_def_script.get("info", {}).pop("observed_type", None)
         observed = model.deep_eval.get_observed_types()
         # Should still work via bias-based fallback
         self.assertIn("type_num", observed)
