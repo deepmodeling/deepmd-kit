@@ -66,15 +66,10 @@ def make_stat_input(
         if "type" in merged and "atype" not in merged:
             merged["atype"] = merged.pop("type")
 
-        # Reshape coord from [nf, natoms*3] → [nf, natoms, 3]
-        if "atype" in merged and "coord" in merged:
-            natoms = merged["atype"].shape[-1]
-            merged["coord"] = merged["coord"].reshape(-1, natoms, 3)
-
         # Provide "natoms" from "natoms_vec" (expected by stat system).
         # natoms_vec from get_batch() is 1D [2+ntypes], but
         # compute_output_stats expects 2D [nframes, 2+ntypes].
-        if "natoms_vec" in merged and "natoms" not in merged:
+        if "natoms_vec" in merged:
             nv = merged["natoms_vec"]
             if nv.ndim == 1:
                 nframes = merged["coord"].shape[0]

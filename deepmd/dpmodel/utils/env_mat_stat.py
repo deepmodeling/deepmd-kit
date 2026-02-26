@@ -134,6 +134,7 @@ class EnvMatStatSe(EnvMatStat):
                 system["box"],
                 system["natoms"],
             )
+            nframes, nloc = atype.shape[:2]
             (
                 extended_coord,
                 extended_atype,
@@ -170,12 +171,12 @@ class EnvMatStatSe(EnvMatStat):
             env_mat = xp.reshape(
                 env_mat,
                 (
-                    coord.shape[0] * coord.shape[1],
+                    nframes * nloc,
                     self.descriptor.get_nsel(),
                     self.last_dim,
                 ),
             )
-            atype = xp.reshape(atype, (coord.shape[0] * coord.shape[1],))
+            atype = xp.reshape(atype, (nframes * nloc,))
             # (1, nloc) eq (ntypes, 1), so broadcast is possible
             # shape: (ntypes, nloc)
             type_idx = xp.equal(
@@ -200,7 +201,7 @@ class EnvMatStatSe(EnvMatStat):
                 # shape: (1, nloc, nnei)
                 exclude_mask = xp.reshape(
                     pair_exclude_mask.build_type_exclude_mask(nlist, extended_atype),
-                    (1, coord.shape[0] * coord.shape[1], -1),
+                    (1, nframes * nloc, -1),
                 )
                 # shape: (ntypes, nloc, nnei)
                 type_idx = xp.logical_and(type_idx[..., None], exclude_mask)
