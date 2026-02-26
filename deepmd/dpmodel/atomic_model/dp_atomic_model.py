@@ -54,7 +54,6 @@ class DPAtomicModel(BaseAtomicModel):
         **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
-        self.type_map = type_map
         self.descriptor = descriptor
         self.fitting_net = fitting
         if hasattr(self.fitting_net, "reinit_exclude"):
