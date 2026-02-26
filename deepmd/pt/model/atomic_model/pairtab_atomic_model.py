@@ -231,6 +231,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         sampled_func: Callable[[], list[dict]] | list[dict],
         stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
     ) -> None:
         """
         Compute or load the statistics parameters of the model,

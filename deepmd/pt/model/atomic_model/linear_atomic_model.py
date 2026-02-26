@@ -479,6 +479,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         sampled_func: Callable[[], list[dict[str, Any]]],
         stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
     ) -> None:
         """
         Compute or load the statistics parameters of the model,
@@ -522,6 +523,23 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             return sampled
 
         self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
+
+        # Collect observed types with priority: preset > stat_file > compute
+        from deepmd.dpmodel.utils.stat import (
+            _restore_observed_type_from_file,
+            _save_observed_type_to_file,
+            collect_observed_types,
+        )
+
+        if preset_observed_type is not None:
+            self._observed_type = preset_observed_type
+        else:
+            observed = _restore_observed_type_from_file(stat_file_path)
+            if observed is None:
+                sampled = wrapped_sampler()
+                observed = collect_observed_types(sampled, self.type_map)
+                _save_observed_type_to_file(stat_file_path, observed)
+            self._observed_type = observed
 
 
 class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):

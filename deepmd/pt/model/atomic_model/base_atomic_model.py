@@ -372,6 +372,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         merged: Callable[[], list[dict]] | list[dict],
         stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
     ) -> NoReturn:
         """
         Compute or load the statistics parameters of the model,

@@ -235,8 +235,9 @@ class TestObservedTypeTraining(unittest.TestCase):
         observed_file = stat_base / "observed_type"
         if observed_file.exists():
             data = np.load(str(observed_file), allow_pickle=True)
-            self.assertIn("H", data.tolist())
-            self.assertIn("O", data.tolist())
+            decoded = [x.decode() if isinstance(x, bytes) else x for x in data.tolist()]
+            self.assertIn("H", decoded)
+            self.assertIn("O", decoded)
 
     def tearDown(self) -> None:
         for f in os.listdir("."):
