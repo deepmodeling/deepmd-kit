@@ -71,20 +71,16 @@ class PairTabAtomicModel(BaseAtomicModel):
         sel: int | list[int],
         type_map: list[str],
         rcond: float | None = None,
-        atom_ener: list[float] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
         super().init_out_stat()
         self.tab_file = tab_file
         self.rcut = rcut
-        self.type_map = type_map
 
         self.tab = PairTab(self.tab_file, rcut=rcut)
-        self.type_map = type_map
         self.ntypes = len(type_map)
         self.rcond = rcond
-        self.atom_ener = atom_ener
 
         if self.tab_file is not None:
             tab_info, tab_data = self.tab.get()
