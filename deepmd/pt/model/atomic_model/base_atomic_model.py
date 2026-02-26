@@ -90,6 +90,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self.rcond = rcond
         self.preset_out_bias = preset_out_bias
         self.data_stat_protect = data_stat_protect
+        self._observed_type: list[str] | None = None
 
     def init_out_stat(self) -> None:
         """Initialize the output bias."""

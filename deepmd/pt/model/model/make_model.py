@@ -587,9 +587,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             self,
             sampled_func: Callable[[], Any],
             stat_file_path: DPPath | None = None,
+            preset_observed_type: list[str] | None = None,
         ) -> None:
             """Compute or load the statistics."""
-            return self.atomic_model.compute_or_load_stat(sampled_func, stat_file_path)
+            return self.atomic_model.compute_or_load_stat(
+                sampled_func,
+                stat_file_path,
+                preset_observed_type=preset_observed_type,
+            )
 
         def get_sel(self) -> list[int]:
             """Returns the number of selected atoms for each type."""

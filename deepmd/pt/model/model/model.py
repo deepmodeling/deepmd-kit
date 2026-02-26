@@ -30,6 +30,7 @@ class BaseModel(torch.nn.Module, make_base_model()):
         self,
         sampled_func: Any,
         stat_file_path: DPPath | None = None,
+        preset_observed_type: list[str] | None = None,
     ) -> NoReturn:
         """
         Compute or load the statistics parameters of the model,

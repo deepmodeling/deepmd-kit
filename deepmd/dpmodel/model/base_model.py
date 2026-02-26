@@ -142,6 +142,20 @@ def make_base_model() -> type[object]:
             """Get the model definition script."""
             pass
 
+        def get_observed_type_list(self) -> list[str]:
+            """Get observed types from model metadata.
+
+            Returns empty list if not available.
+            """
+            if self.model_def_script:
+                import json
+
+                params = json.loads(self.model_def_script)
+                observed = params.get("info", {}).get("observed_type")
+                if observed is not None:
+                    return observed
+            return []
+
         def get_min_nbor_dist(self) -> float | None:
             """Get the minimum distance between two atoms."""
             return self.min_nbor_dist

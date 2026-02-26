@@ -26,6 +26,62 @@ from deepmd.utils.path import (
 log = logging.getLogger(__name__)
 
 
+def collect_observed_types(
+    sampled: list[dict], type_map: list[str]
+) -> list[str]:
+    """Collect observed element types from sampled training data.
+
+    Parameters
+    ----------
+    sampled : list[dict]
+        Sampled data from different data systems. Each dict must contain
+        ``"atype"`` with shape ``[nframes, natoms]``.
+    type_map : list[str]
+        Mapping from type index to element symbol.
+
+    Returns
+    -------
+    list[str]
+        Sorted list of observed element symbols.
+    """
+    from deepmd.utils.econf_embd import (
+        sort_element_type,
+    )
+
+    observed_indices: set[int] = set()
+    for system in sampled:
+        atype = to_numpy_array(system["atype"])  # shape: [nframes, natoms]
+        observed_indices.update(np.unique(atype).tolist())
+    observed_types = [type_map[i] for i in sorted(observed_indices) if i < len(type_map)]
+    return sort_element_type(observed_types)
+
+
+def _restore_observed_type_from_file(
+    stat_file_path: DPPath | None,
+) -> list[str] | None:
+    """Try to load observed_type from stat file."""
+    if stat_file_path is None:
+        return None
+    fp = stat_file_path / "observed_type"
+    if fp.is_file():
+        arr = fp.load_numpy()
+        # Decode bytes back to str if stored as bytes (for h5py compatibility)
+        return [x.decode() if isinstance(x, bytes) else x for x in arr.tolist()]
+    return None
+
+
+def _save_observed_type_to_file(
+    stat_file_path: DPPath | None, observed_type: list[str]
+) -> None:
+    """Save observed_type to stat file."""
+    if stat_file_path is None:
+        return
+    stat_file_path.mkdir(exist_ok=True, parents=True)
+    fp = stat_file_path / "observed_type"
+    # Use bytes dtype for h5py compatibility (h5py cannot store Unicode strings)
+    fp.save_numpy(np.array(observed_type, dtype="S"))
+
+
 def _restore_from_file(
     stat_file_path: DPPath,
     keys: list[str],

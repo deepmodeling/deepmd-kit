@@ -20,6 +20,11 @@ from deepmd.pt.model.descriptor.base_descriptor import (
 from deepmd.pt.model.task.base_fitting import (
     BaseFitting,
 )
+from deepmd.pt.utils.stat import (
+    _restore_observed_type_from_file,
+    _save_observed_type_to_file,
+    collect_observed_types,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -307,6 +312,7 @@ class DPAtomicModel(BaseAtomicModel):
         sampled_func: Callable[[], list[dict]],
         stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
     ) -> None:
         """
         Compute or load the statistics parameters of the model,
@@ -357,6 +363,17 @@ class DPAtomicModel(BaseAtomicModel):
         self.compute_fitting_input_stat(wrapped_sampler, stat_file_path)
         if compute_or_load_out_stat:
             self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
+
+        # Collect observed types with priority: preset > stat_file > compute
+        if preset_observed_type is not None:
+            self._observed_type = preset_observed_type
+        else:
+            observed = _restore_observed_type_from_file(stat_file_path)
+            if observed is None:
+                sampled = wrapped_sampler()
+                observed = collect_observed_types(sampled, self.type_map)
+                _save_observed_type_to_file(stat_file_path, observed)
+            self._observed_type = observed
 
     def compute_fitting_input_stat(
         self,

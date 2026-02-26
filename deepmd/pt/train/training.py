@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
+import json
 import logging
 import time
 from collections.abc import (
@@ -288,6 +289,7 @@ class Trainer:
             _training_data: DpLoaderSet,
             _stat_file_path: str | None,
             finetune_has_new_type: bool = False,
+            preset_observed_type: list[str] | None = None,
         ) -> Callable[[], Any]:
             @functools.lru_cache
             def get_sample() -> Any:
@@ -302,6 +304,7 @@ class Trainer:
                 _model.compute_or_load_stat(
                     sampled_func=get_sample,
                     stat_file_path=_stat_file_path,
+                    preset_observed_type=preset_observed_type,
                 )
                 if isinstance(_stat_file_path, DPH5Path):
                     _stat_file_path.root.close()
@@ -394,7 +397,16 @@ class Trainer:
                 finetune_has_new_type=self.finetune_links["Default"].get_has_new_type()
                 if self.finetune_links is not None
                 else False,
+                preset_observed_type=model_params.get("info", {}).get("observed_type"),
             )
+            # Persist observed_type from stat into model_params and model_def_script
+            if not resuming and self.rank == 0:
+                observed = getattr(
+                    self.model.atomic_model, "_observed_type", None
+                )
+                if observed is not None:
+                    model_params.setdefault("info", {})["observed_type"] = observed
+                    self.model.model_def_script = json.dumps(model_params)
             (
                 self.training_dataloader,
                 self.training_data,
@@ -432,6 +444,11 @@ class Trainer:
                 training_data[model_key].preload_and_modify_all_data_torch()
                 if validation_data[model_key] is not None:
                     validation_data[model_key].preload_and_modify_all_data_torch()
+                _mt_user_observed = (
+                    model_params["model_dict"][model_key]
+                    .get("info", {})
+                    .get("observed_type")
+                )
                 self.get_sample_func[model_key] = single_model_stat(
                     self.model[model_key],
                     model_params["model_dict"][model_key].get("data_stat_nbatch", 10),
@@ -442,7 +459,22 @@ class Trainer:
                     ].get_has_new_type()
                     if self.finetune_links is not None
                     else False,
+                    preset_observed_type=_mt_user_observed,
                 )
+                # Persist observed_type into model_params and model_def_script
+                if not resuming and self.rank == 0:
+                    observed = getattr(
+                        self.model[model_key].atomic_model,
+                        "_observed_type",
+                        None,
+                    )
+                    if observed is not None:
+                        model_params["model_dict"][model_key].setdefault(
+                            "info", {}
+                        )["observed_type"] = observed
+                        self.model[model_key].model_def_script = json.dumps(
+                            model_params["model_dict"][model_key]
+                        )
 
                 (
                     self.training_dataloader[model_key],
