@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 import numpy as np
 
@@ -21,8 +25,15 @@ from .loss import (
     Loss,
 )
 
+if TYPE_CHECKING:
+    from typing import (
+        TextIO,
+    )
 
-def custom_huber_loss(predictions, targets, delta=1.0):
+
+def custom_huber_loss(
+    predictions: tf.Tensor, targets: tf.Tensor, delta: float = 1.0
+) -> tf.Tensor:
     error = targets - predictions
     abs_error = tf.abs(error)
     quadratic_loss = 0.5 * tf.pow(error, 2)
@@ -100,9 +111,9 @@ class EnerStdLoss(Loss):
         start_pref_gf: float = 0.0,
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
-        use_huber=False,
-        huber_delta=0.01,
-        **kwargs,
+        use_huber: bool = False,
+        huber_delta: float = 0.01,
+        **kwargs: Any,
     ) -> None:
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e
@@ -139,7 +150,14 @@ class EnerStdLoss(Loss):
                 "Huber loss is not implemented for force with atom_pref, generalized force and relative force. "
             )
 
-    def build(self, learning_rate, natoms, model_dict, label_dict, suffix):
+    def build(
+        self,
+        learning_rate: tf.Tensor,
+        natoms: tf.Tensor,
+        model_dict: dict,
+        label_dict: dict,
+        suffix: str,
+    ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
         energy = model_dict["energy"]
         force = model_dict["force"]
         virial = model_dict["virial"]
@@ -402,7 +420,7 @@ class EnerStdLoss(Loss):
         self.l2_more = more_loss
         return loss, more_loss
 
-    def eval(self, sess, feed_dict, natoms):
+    def eval(self, sess: tf.Session, feed_dict: dict, natoms: np.ndarray) -> dict:
         placeholder = self.l2_l
         run_data = [
             self.l2_l,
@@ -579,7 +597,14 @@ class EnerSpinLoss(Loss):
         self.has_v = self.start_pref_v != 0.0 or self.limit_pref_v != 0.0
         self.has_ae = self.start_pref_ae != 0.0 or self.limit_pref_ae != 0.0
 
-    def build(self, learning_rate, natoms, model_dict, label_dict, suffix):
+    def build(
+        self,
+        learning_rate: tf.Tensor,
+        natoms: tf.Tensor,
+        model_dict: dict,
+        label_dict: dict,
+        suffix: str,
+    ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
         energy_pred = model_dict["energy"]
         force_pred = model_dict["force"]
         virial_pred = model_dict["virial"]
@@ -742,7 +767,7 @@ class EnerSpinLoss(Loss):
         self.l2_more = more_loss
         return l2_loss, more_loss
 
-    def eval(self, sess, feed_dict, natoms):
+    def eval(self, sess: tf.Session, feed_dict: dict, natoms: np.ndarray) -> dict:
         placeholder = self.l2_l
         run_data = [
             self.l2_l,
@@ -768,7 +793,7 @@ class EnerSpinLoss(Loss):
             results["rmse_v"] = np.sqrt(error_v) / natoms[0]
         return results
 
-    def print_header(self):  # depreciated
+    def print_header(self) -> str:  # depreciated
         prop_fmt = "   %11s %11s"
         print_str = ""
         print_str += prop_fmt % ("rmse_tst", "rmse_trn")
@@ -785,8 +810,14 @@ class EnerSpinLoss(Loss):
         return print_str
 
     def print_on_training(
-        self, tb_writer, cur_batch, sess, natoms, feed_dict_test, feed_dict_batch
-    ):  # depreciated
+        self,
+        tb_writer: "TextIO",
+        cur_batch: int,
+        sess: "tf.Session",
+        natoms: np.ndarray,
+        feed_dict_test: dict,
+        feed_dict_batch: dict,
+    ) -> str:  # depreciated
         run_data = [
             self.l2_l,
             self.l2_more["l2_ener_loss"],
@@ -911,7 +942,14 @@ class EnerDipoleLoss(Loss):
         self.start_pref_ed = start_pref_ed
         self.limit_pref_ed = limit_pref_ed
 
-    def build(self, learning_rate, natoms, model_dict, label_dict, suffix):
+    def build(
+        self,
+        learning_rate: tf.Tensor,
+        natoms: tf.Tensor,
+        model_dict: dict,
+        label_dict: dict,
+        suffix: str,
+    ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
         coord = model_dict["coord"]
         energy = model_dict["energy"]
         atom_ener = model_dict["atom_ener"]
@@ -989,7 +1027,7 @@ class EnerDipoleLoss(Loss):
         self.l2_more = more_loss
         return l2_loss, more_loss
 
-    def eval(self, sess, feed_dict, natoms):
+    def eval(self, sess: tf.Session, feed_dict: dict, natoms: np.ndarray) -> dict:
         run_data = [
             self.l2_l,
             self.l2_more["l2_ener_loss"],

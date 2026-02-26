@@ -220,8 +220,11 @@ class PairTabAtomicModel(BaseAtomicModel):
         )  # (nframes, nloc, nnei)
 
         # (nframes, nloc, nnei), index type is int64.
+        dev = array_api_compat.device(extended_atype)
         j_type = extended_atype[
-            xp.arange(extended_atype.shape[0], dtype=xp.int64)[:, None, None],
+            xp.arange(extended_atype.shape[0], dtype=xp.int64, device=dev)[
+                :, None, None
+            ],
             masked_nlist,
         ]
 
@@ -327,8 +330,11 @@ class PairTabAtomicModel(BaseAtomicModel):
             The pairwise distance between the atoms (nframes, nloc, nnei).
         """
         xp = array_api_compat.array_namespace(coords, nlist)
+        dev = array_api_compat.device(nlist)
         # index type is int64
-        batch_indices = xp.arange(nlist.shape[0], dtype=xp.int64)[:, None, None]
+        batch_indices = xp.arange(nlist.shape[0], dtype=xp.int64, device=dev)[
+            :, None, None
+        ]
         neighbor_atoms = coords[batch_indices, nlist]
         loc_atoms = coords[:, : nlist.shape[1], :]
         pairwise_dr = loc_atoms[:, :, None, :] - neighbor_atoms

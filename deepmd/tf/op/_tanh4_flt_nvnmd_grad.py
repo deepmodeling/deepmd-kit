@@ -11,7 +11,7 @@ from deepmd.tf.env import (
 
 
 @ops.RegisterGradient("Tanh4FltNvnmd")
-def _Tanh4FltNvnmdGrad(op, grad):
+def _Tanh4FltNvnmdGrad(op: tf.Operation, grad: tf.Tensor) -> list[tf.Tensor]:
     prechi = 2**23
     preclo = 2**19
     x = op.inputs[0]
@@ -31,4 +31,4 @@ def _Tanh4FltNvnmdGrad(op, grad):
     gradhi = grad + tf.stop_gradient(tf.floor(grad * prechi) / prechi - grad)
     dx = dydxlo * gradhi
     dx = dx + tf.stop_gradient(tf.floor(dx * prechi) / prechi - dx)
-    return dx
+    return [dx]

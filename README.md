@@ -1,6 +1,6 @@
 [<picture><source media="(prefers-color-scheme: dark)" srcset="./doc/_static/logo-dark.svg"><source media="(prefers-color-scheme: light)" srcset="./doc/_static/logo.svg"><img alt="DeePMD-kit logo" src="./doc/_static/logo.svg"></picture>](./doc/logo.md)
 
----
+______________________________________________________________________
 
 # DeePMD-kit
 
@@ -83,7 +83,19 @@ See [our v3 paper](https://doi.org/10.1021/acs.jctc.5c00340) for details of all 
 
 ## Install and use DeePMD-kit
 
-Please read the [online documentation](https://deepmd.readthedocs.io/) for how to install and use DeePMD-kit.
+Just copy and paste in 1s, and let it run.
+
+```sh
+curl -fsSL https://dp1s.deepmodeling.com | bash
+```
+
+Please read the [online documentation](https://deepmd.readthedocs.io/) for details and alternative installation methods.
+
+Then, read on for a brief overview of the usage of DeePMD-kit. You may start with the first step:
+
+```sh
+dp
+```
 
 ## Code structure
 

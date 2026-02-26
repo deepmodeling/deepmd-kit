@@ -68,7 +68,7 @@ class EnvMatStatSe(EnvMatStat):
         The descriptor of the model.
     """
 
-    def __init__(self, descriptor: "DescriptorBlock"):
+    def __init__(self, descriptor: "DescriptorBlock") -> None:
         super().__init__()
         self.descriptor = descriptor
         self.last_dim = (
@@ -197,7 +197,7 @@ class EnvMatStatSe(EnvMatStat):
             }
         )
 
-    def __call__(self):
+    def __call__(self) -> dict[str, paddle.Tensor]:
         avgs = self.get_avg()
         stds = self.get_std()
 

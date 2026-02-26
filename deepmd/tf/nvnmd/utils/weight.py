@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from typing import (
+    Any,
+)
 
 from deepmd.tf.env import (
     tf,
@@ -11,7 +14,7 @@ from deepmd.tf.nvnmd.utils.config import (
 log = logging.getLogger(__name__)
 
 
-def get_weight(weights, key):
+def get_weight(weights: dict, key: str) -> Any | None:
     r"""Get weight value according to key."""
     if key in weights.keys():
         return weights[key]
@@ -22,7 +25,7 @@ def get_weight(weights, key):
         return None
 
 
-def get_normalize(weights: dict):
+def get_normalize(weights: dict) -> tuple:
     r"""Get normalize parameter (avg and std) of :math:`s_{ji}`."""
     key = "descrpt_attr.t_avg"
     avg = get_weight(weights, key)
@@ -31,7 +34,7 @@ def get_normalize(weights: dict):
     return avg, std
 
 
-def get_type_embedding_weight(weights: dict, layer_l: int):
+def get_type_embedding_weight(weights: dict, layer_l: int) -> tuple:
     r"""Get weight and bias of type_embedding network.
 
     Parameters
@@ -51,7 +54,7 @@ def get_type_embedding_weight(weights: dict, layer_l: int):
     return weight, bias, idt
 
 
-def get_filter_weight(weights: int, spe_j: int, layer_l: int):
+def get_filter_weight(weights: int, spe_j: int, layer_l: int) -> tuple:
     r"""Get weight and bias of embedding network.
 
     Parameters
@@ -82,7 +85,7 @@ def get_filter_weight(weights: int, spe_j: int, layer_l: int):
         return weight, bias, idt
 
 
-def get_filter_type_weight(weights: dict, layer_l: int):
+def get_filter_type_weight(weights: dict, layer_l: int) -> tuple:
     r"""Get weight and bias of two_side_type_embedding network.
 
     Parameters
@@ -102,7 +105,9 @@ def get_filter_type_weight(weights: dict, layer_l: int):
     return weight, bias, idt
 
 
-def get_fitnet_weight(weights: dict, spe_i: int, layer_l: int, nlayer: int = 10):
+def get_fitnet_weight(
+    weights: dict, spe_i: int, layer_l: int, nlayer: int = 10
+) -> tuple:
     r"""Get weight and bias of fitting network.
 
     Parameters
@@ -149,7 +154,7 @@ def get_fitnet_weight(weights: dict, spe_i: int, layer_l: int, nlayer: int = 10)
         return weight, bias, idt
 
 
-def get_type_weight(weights: dict, layer_l: int):
+def get_type_weight(weights: dict, layer_l: int) -> Any:
     r"""Get weight and bias of fitting network.
 
     Parameters
@@ -165,7 +170,7 @@ def get_type_weight(weights: dict, layer_l: int):
     return weight
 
 
-def get_constant_initializer(weights, name):
+def get_constant_initializer(weights: dict, name: str) -> Any:
     r"""Get initial value by name and create a initializer."""
     scope = tf.get_variable_scope().name
     name = scope + "." + name

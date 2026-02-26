@@ -65,12 +65,12 @@ class DescrptBlockSeAtten(DescriptorBlock):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        activation_function="tanh",
+        activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        scaling_factor=1.0,
-        normalize=True,
-        temperature=None,
+        scaling_factor: float = 1.0,
+        normalize: bool = True,
+        temperature: float | None = None,
         smooth: bool = True,
         type_one_side: bool = False,
         exclude_types: list[tuple[int, int]] = [],
@@ -318,7 +318,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.filter_neuron[-1]
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: paddle.Tensor) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -326,7 +326,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> paddle.Tensor:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -351,17 +351,17 @@ class DescrptBlockSeAtten(DescriptorBlock):
         return self.env_protection
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.filter_neuron[-1] * self.axis_neuron
 
     @property
-    def dim_in(self):
+    def dim_in(self) -> int:
         """Returns the atomic input dimension of this descriptor."""
         return self.tebd_dim
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the output dimension of embedding."""
         return self.get_dim_emb()
 
@@ -428,10 +428,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def enable_compression(
         self,
-        table_data,
-        table_config,
-        lower,
-        upper,
+        table_data: dict[str, paddle.Tensor],
+        table_config: list[float],
+        lower: dict[str, float],
+        upper: dict[str, float],
     ) -> None:
         net = "filter_net"
         self.compress_info[0] = paddle.to_tensor(
@@ -460,7 +460,9 @@ class DescrptBlockSeAtten(DescriptorBlock):
         extended_atype_embd: paddle.Tensor | None = None,
         mapping: paddle.Tensor | None = None,
         type_embedding: paddle.Tensor | None = None,
-    ):
+    ) -> tuple[
+        paddle.Tensor, paddle.Tensor | None, paddle.Tensor, paddle.Tensor, paddle.Tensor
+    ]:
         """Compute the descriptor.
 
         Parameters
@@ -723,11 +725,11 @@ class NeighborGatedAttention(nn.Layer):
 
     def forward(
         self,
-        input_G,
-        nei_mask,
+        input_G: paddle.Tensor,
+        nei_mask: paddle.Tensor,
         input_r: paddle.Tensor | None = None,
         sw: paddle.Tensor | None = None,
-    ):
+    ) -> paddle.Tensor:
         """Compute the multi-layer gated self-attention.
 
         Parameters
@@ -746,13 +748,13 @@ class NeighborGatedAttention(nn.Layer):
             out = layer(out, nei_mask, input_r=input_r, sw=sw)
         return out
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: int) -> nn.Layer:
         if isinstance(key, int):
             return self.attention_layers[key]
         else:
             raise TypeError(key)
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: int, value: nn.Layer | dict) -> None:
         if not isinstance(key, int):
             raise TypeError(key)
         if isinstance(value, self.network_type):
@@ -864,11 +866,11 @@ class NeighborGatedAttentionLayer(nn.Layer):
 
     def forward(
         self,
-        x,
-        nei_mask,
+        x: paddle.Tensor,
+        nei_mask: paddle.Tensor,
         input_r: paddle.Tensor | None = None,
         sw: paddle.Tensor | None = None,
-    ):
+    ) -> paddle.Tensor:
         residual = x
         x, _ = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)
         x = residual + x
@@ -982,12 +984,12 @@ class GatedAttentionLayer(nn.Layer):
 
     def forward(
         self,
-        query,
-        nei_mask,
+        query: paddle.Tensor,
+        nei_mask: paddle.Tensor,
         input_r: paddle.Tensor | None = None,
         sw: paddle.Tensor | None = None,
         attnw_shift: float = 20.0,
-    ):
+    ) -> tuple[paddle.Tensor, paddle.Tensor]:
         """Compute the multi-head gated self-attention.
 
         Parameters

@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+from typing import (
+    Any,
+    NoReturn,
+)
 
 import paddle
 
@@ -24,7 +28,7 @@ class FrozenModel(BaseModel):
         The path to the frozen model
     """
 
-    def __init__(self, model_file: str, **kwargs):
+    def __init__(self, model_file: str, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.model_file = model_file
         if model_file.endswith(".json"):
@@ -96,8 +100,8 @@ class FrozenModel(BaseModel):
 
     def forward(
         self,
-        coord,
-        atype,
+        coord: paddle.Tensor,
+        atype: paddle.Tensor,
         box: paddle.Tensor | None = None,
         fparam: paddle.Tensor | None = None,
         aparam: paddle.Tensor | None = None,
@@ -136,7 +140,7 @@ class FrozenModel(BaseModel):
         return model.serialize()
 
     @classmethod
-    def deserialize(cls, data: dict):
+    def deserialize(cls, data: dict) -> NoReturn:
         raise RuntimeError("Should not touch here.")
 
     def get_nnei(self) -> int:

@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from typing import (
+    Any,
+)
 
 from deepmd.tf.utils.spin import (
     Spin,
@@ -40,7 +43,7 @@ class DescrptSeAEbdV2(DescrptSeA):
         precision: str = "default",
         uniform_seed: bool = False,
         spin: Spin | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         DescrptSeA.__init__(
             self,

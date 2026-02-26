@@ -10,7 +10,6 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     Array,
-    support_array_api,
     xp_take_along_axis,
 )
 from deepmd.dpmodel.utils.safe_gradient import (
@@ -18,7 +17,6 @@ from deepmd.dpmodel.utils.safe_gradient import (
 )
 
 
-@support_array_api(version="2023.12")
 def compute_smooth_weight(
     distance: Array,
     rmin: float,
@@ -35,7 +33,6 @@ def compute_smooth_weight(
     return vv
 
 
-@support_array_api(version="2023.12")
 def compute_exp_sw(
     distance: Array,
     rmin: float,

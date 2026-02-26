@@ -7,7 +7,7 @@ from .data_system import (
     DeepmdDataSystem,
 )
 from .learning_rate import (
-    LearningRateExp,
+    LearningRateSchedule,
 )
 from .pair_tab import (
     PairTab,
@@ -20,7 +20,7 @@ from .plugin import (
 __all__ = [
     "DeepmdData",
     "DeepmdDataSystem",
-    "LearningRateExp",
+    "LearningRateSchedule",
     "PairTab",
     "Plugin",
     "PluginVariant",

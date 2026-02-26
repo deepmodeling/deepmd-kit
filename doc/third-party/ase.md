@@ -23,7 +23,6 @@ water = Atoms(
 print(water.get_potential_energy())
 print(water.get_forces())
 ```
-
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
@@ -41,7 +40,6 @@ water = Atoms(
 print(water.get_potential_energy())
 print(water.get_forces())
 ```
-
 :::
 
 :::{tab-item} Paddle {{ paddle_icon }}
@@ -59,7 +57,6 @@ water = Atoms(
 print(water.get_potential_energy())
 print(water.get_forces())
 ```
-
 :::
 
 ::::

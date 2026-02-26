@@ -48,3 +48,7 @@ class DPModelCommon:
     def get_fitting_net(self) -> BaseFitting:
         """Get the fitting network."""
         return self.atomic_model.fitting
+
+    def get_descriptor(self) -> BaseDescriptor:
+        """Get the descriptor."""
+        return self.atomic_model.descriptor

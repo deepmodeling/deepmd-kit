@@ -18,69 +18,69 @@ jobs:
     strategy:
       matrix:
         include:
-        - variant: cpu
-          dp_variant: cpu
-        - variant: cuda120
-          dp_variant: cuda
-        - variant: rocm
-          dp_variant: rocm
-        - variant: clang
-          dp_variant: clang
+          - variant: cpu
+            dp_variant: cpu
+          - variant: cuda120
+            dp_variant: cuda
+          - variant: rocm
+            dp_variant: rocm
+          - variant: clang
+            dp_variant: clang
     steps:
-    - uses: actions/checkout@v6
-    - uses: actions/setup-python@v6
-      with:
-        python-version: '3.11'
-    - uses: lukka/get-cmake@latest
-    - run: python -m pip install uv
-    - run: source/install/uv_with_retry.sh pip install --system --group pin_tensorflow_cpu --group pin_pytorch_cpu --torch-backend cpu
-    - run: |
-         wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
-         && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
-         && sudo apt-get update \
-         && sudo apt-get -y install cuda-cudart-dev-12-2 cuda-nvcc-12-2
-      if: matrix.variant == 'cuda120'
-      env:
-        DEBIAN_FRONTEND: noninteractive
-    - run: |
-         echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/6.3/ jammy main' | sudo tee /etc/apt/sources.list.d/rocm.list \
-         && printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' | sudo tee /etc/apt/preferences.d/rocm-pin-600 \
-         && curl -s https://repo.radeon.com/rocm/rocm.gpg.key | sudo apt-key add - \
-         && sudo apt-get update \
-         && sudo apt-get install -y rocm-dev hipcub-dev
-      if: matrix.variant == 'rocm'
-    - run: |
-        source/install/build_cc.sh
-      env:
-        DP_VARIANT: ${{ matrix.dp_variant }}
-        DOWNLOAD_TENSORFLOW: "FALSE"
-        CMAKE_GENERATOR: Ninja
-      if: matrix.variant != 'clang'
-    - run: |
-        source/install/build_cc.sh
-      env:
-        DP_VARIANT: cpu
-        DOWNLOAD_TENSORFLOW: "FALSE"
-        CC: clang
-        CXX: clang++
-        CMAKE_GENERATOR: Ninja
-      if: matrix.variant == 'clang'
-    - name: Test files exist
-      run: |
-        test -f dp/bin/dp_ipi &&
-        test -f dp/lib/libdeepmd_cc.so &&
-        test -f dp/lib/libdeepmd_c.so &&
-        test -f dp/lib/libdeepmd_op.so &&
-        test -f dp/lib/libdeepmd_ipi.so &&
-        test -f dp/lib/libdeepmd_lmp.so &&
-        test -f dp/lib/libdeepmd.so
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: lukka/get-cmake@latest
+      - run: python -m pip install uv
+      - run: source/install/uv_with_retry.sh pip install --system --group pin_tensorflow_cpu --group pin_pytorch_cpu --torch-backend cpu
+      - run: |
+          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
+          && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
+          && sudo apt-get update \
+          && sudo apt-get -y install cuda-cudart-dev-12-2 cuda-nvcc-12-2
+        if: matrix.variant == 'cuda120'
+        env:
+          DEBIAN_FRONTEND: noninteractive
+      - run: |
+          echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/6.3/ jammy main' | sudo tee /etc/apt/sources.list.d/rocm.list \
+          && printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' | sudo tee /etc/apt/preferences.d/rocm-pin-600 \
+          && curl -s https://repo.radeon.com/rocm/rocm.gpg.key | sudo apt-key add - \
+          && sudo apt-get update \
+          && sudo apt-get install -y rocm-dev hipcub-dev
+        if: matrix.variant == 'rocm'
+      - run: |
+          source/install/build_cc.sh
+        env:
+          DP_VARIANT: ${{ matrix.dp_variant }}
+          DOWNLOAD_TENSORFLOW: "FALSE"
+          CMAKE_GENERATOR: Ninja
+        if: matrix.variant != 'clang'
+      - run: |
+          source/install/build_cc.sh
+        env:
+          DP_VARIANT: cpu
+          DOWNLOAD_TENSORFLOW: "FALSE"
+          CC: clang
+          CXX: clang++
+          CMAKE_GENERATOR: Ninja
+        if: matrix.variant == 'clang'
+      - name: Test files exist
+        run: |
+          test -f dp/bin/dp_ipi &&
+          test -f dp/lib/libdeepmd_cc.so &&
+          test -f dp/lib/libdeepmd_c.so &&
+          test -f dp/lib/libdeepmd_op.so &&
+          test -f dp/lib/libdeepmd_ipi.so &&
+          test -f dp/lib/libdeepmd_lmp.so &&
+          test -f dp/lib/libdeepmd.so
   pass:
     name: Pass building C++
     needs: [buildcc]
     runs-on: ubuntu-latest
     if: always()
     steps:
-    - name: Decide whether the needed jobs succeeded or failed
-      uses: re-actors/alls-green@release/v1
-      with:
-        jobs: ${{ toJSON(needs) }}
+      - name: Decide whether the needed jobs succeeded or failed
+        uses: re-actors/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}

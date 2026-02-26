@@ -131,8 +131,8 @@ class EnergyLoss(Loss):
             # E = - E(A) - E(B) + E(C) + E(D)
             # A, B, C, D could be put far away from each other
             atom_ener_coeff = label_dict["atom_ener_coeff"]
-            atom_ener_coeff = xp.reshape(atom_ener_coeff, xp.shape(atom_ener))
-            energy = xp.sum(atom_ener_coeff * atom_ener, 1)
+            atom_ener_coeff = xp.reshape(atom_ener_coeff, atom_ener.shape)
+            energy = xp.sum(atom_ener_coeff * atom_ener, axis=1)
         if self.has_f or self.has_pf or self.relative_f or self.has_gf:
             force_reshape = xp.reshape(force, (-1,))
             force_hat_reshape = xp.reshape(force_hat, (-1,))

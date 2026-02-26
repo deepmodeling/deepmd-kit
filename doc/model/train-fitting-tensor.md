@@ -14,7 +14,6 @@ Unlike `energy`, which is a scalar, one may want to fit some high dimensional ph
 $deepmd_source_dir/examples/water_tensor/dipole/dipole_input.json
 $deepmd_source_dir/examples/water_tensor/polar/polar_input.json
 ```
-
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
@@ -23,7 +22,6 @@ $deepmd_source_dir/examples/water_tensor/polar/polar_input.json
 $deepmd_source_dir/examples/water_tensor/dipole/dipole_input_torch.json
 $deepmd_source_dir/examples/water_tensor/polar/polar_input_torch.json
 ```
-
 :::
 
 ::::
@@ -69,8 +67,6 @@ The total tensor $\boldsymbol{T}$ (total dipole $\boldsymbol{T}^{(1)}$ or total 
 
 The tensorial models can be used to calculate IR spectrum and Raman spectrum.[^1]
 
-[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
-
 ## The fitting Network
 
 The {ref}`fitting_net <model[standard]/fitting_net>` section tells DP which fitting net to use.
@@ -106,7 +102,6 @@ The JSON of `polar` type should be provided like
 - `type` specifies which type of fitting net should be used. It should be either `dipole` or `polar`. Note that `global_polar` mode in version 1.x is already **deprecated** and is merged into `polar`. To specify whether a system is global or atomic, please see [here](train-se-e2-a.md).
 - `sel_type` is a list specifying which type of atoms have the quantity you want to fit. For example, in the water system, `sel_type` is `[0]` since `0` represents atom `O`. If left unset, all types of atoms will be fitted.
 - The rest arguments have the same meaning as they do in `ener` mode.
-
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
@@ -142,7 +137,7 @@ The JSON of `polar` type should be provided like
 - `type` specifies which type of fitting net should be used. It should be either `dipole` or `polar`. Note that `global_polar` mode in version 1.x is already **deprecated** and is merged into `polar`. To specify whether a system is global or atomic, please see [here](train-se-e2-a.md).
 - `atom_exclude_types` is a list specifying the which type of atoms have the quantity you want to set to zero. For example, in the water system, `atom_exclude_types` is `[1]` since `1` represents atom `H`.
 - The rest arguments have the same meaning as they do in `ener` mode.
-  :::
+:::
 
 ::::
 
@@ -190,7 +185,6 @@ The training command is the same as `ener` mode, i.e.
 ```bash
 dp train input.json
 ```
-
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
@@ -198,7 +192,6 @@ dp train input.json
 ```bash
 dp --pt train input.json
 ```
-
 :::
 
 ::::
@@ -248,3 +241,5 @@ During training, at each step when the `lcurve.out` is printed, the system used 
 To only fit against a subset of atomic types, in the TensorFlow backend, {ref}`fitting_net/sel_type <model[standard]/fitting_net[dipole]/sel_type>` should be set to selected types;
 in other backends, {ref}`atom_exclude_types <model/atom_exclude_types>` should be set to excluded types.
 The TensorFlow backend does not support {ref}`numb_fparam <model[standard]/fitting_net[dipole]/numb_fparam>` and {ref}`numb_aparam <model[standard]/fitting_net[dipole]/numb_aparam>`.
+
+[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).

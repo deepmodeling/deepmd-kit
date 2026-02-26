@@ -59,6 +59,8 @@ if TYPE_CHECKING:
         Path,
     )
 
+    import ase.neighborlist
+
     from deepmd.infer.deep_eval import DeepEval as DeepEvalWrapper
 
 
@@ -98,7 +100,7 @@ class DeepEval(DeepEvalBackend):
         default_tf_graph: bool = False,
         auto_batch_size: bool | int | AutoBatchSize = False,
         input_map: dict | None = None,
-        neighbor_list=None,
+        neighbor_list: "ase.neighborlist.NeighborList | None" = None,
         **kwargs: dict,
     ) -> None:
         self.graph = self._load_graph(
@@ -350,7 +352,7 @@ class DeepEval(DeepEvalBackend):
         prefix: str = "load",
         default_tf_graph: bool = False,
         input_map: dict | None = None,
-    ):
+    ) -> Any:
         # We load the protobuf file from the disk and parse it to retrieve the
         # unserialized graph_def
         with tf.gfile.GFile(str(frozen_graph_filename), "rb") as f:
@@ -385,7 +387,7 @@ class DeepEval(DeepEvalBackend):
         coord: np.ndarray,
         atom_type: np.ndarray,
         sel_atoms: list[int] | None = None,
-    ):
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[int]]:
         """Sort atoms in the system according their types.
 
         Parameters
@@ -526,8 +528,8 @@ class DeepEval(DeepEvalBackend):
         cell: np.ndarray | None,
         atype: np.ndarray,
         imap: np.ndarray,
-        neighbor_list,
-    ):
+        neighbor_list: "ase.neighborlist.NeighborList | None",
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Make the mesh with neighbor list for a single frame.
 
         Parameters
@@ -661,7 +663,7 @@ class DeepEval(DeepEvalBackend):
         """
         if self.auto_batch_size is not None:
 
-            def eval_func(*args, **kwargs):
+            def eval_func(*args: Any, **kwargs: Any) -> Any:
                 return self.auto_batch_size.execute_all(
                     inner_func, numb_test, natoms, *args, **kwargs
                 )
@@ -771,13 +773,13 @@ class DeepEval(DeepEvalBackend):
 
     def _prepare_feed_dict(
         self,
-        coords,
-        cells,
-        atom_types,
-        fparam=None,
-        aparam=None,
-        efield=None,
-    ):
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray | list[int],
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        efield: np.ndarray | None = None,
+    ) -> tuple[dict, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         # standardize the shape of inputs
         natoms, nframes = self._get_natoms_and_nframes(
             coords,
@@ -891,14 +893,14 @@ class DeepEval(DeepEvalBackend):
 
     def _eval_inner(
         self,
-        coords,
-        cells,
-        atom_types,
-        fparam=None,
-        aparam=None,
-        efield=None,
-        **kwargs,
-    ):
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray | list[int],
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        efield: np.ndarray | None = None,
+        **kwargs: Any,
+    ) -> tuple:
         natoms, nframes = self._get_natoms_and_nframes(
             coords,
             atom_types,
@@ -994,7 +996,7 @@ class DeepEval(DeepEvalBackend):
                 raise RuntimeError("unknown category")
         return tuple(v_out)
 
-    def _get_output_shape(self, odef, nframes, natoms):
+    def _get_output_shape(self, odef: Any, nframes: int, natoms: int) -> list[int]:
         if odef.category == OutputVariableCategory.DERV_C_REDU:
             # virial
             return [nframes, *odef.shape[:-1], 9]
@@ -1161,7 +1163,7 @@ class DeepEvalOld:
         default_tf_graph: bool = False,
         auto_batch_size: bool | int | AutoBatchSize = False,
         input_map: dict | None = None,
-        neighbor_list=None,
+        neighbor_list: "ase.neighborlist.NeighborList | None" = None,
     ) -> None:
         self.graph = self._load_graph(
             model_file,
@@ -1278,7 +1280,7 @@ class DeepEvalOld:
         prefix: str = "load",
         default_tf_graph: bool = False,
         input_map: dict | None = None,
-    ):
+    ) -> Any:
         # We load the protobuf file from the disk and parse it to retrieve the
         # unserialized graph_def
         with tf.gfile.GFile(str(frozen_graph_filename), "rb") as f:
@@ -1314,7 +1316,7 @@ class DeepEvalOld:
         atom_type: np.ndarray,
         sel_atoms: list[int] | None = None,
         mixed_type: bool = False,
-    ):
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[int]]:
         """Sort atoms in the system according their types.
 
         Parameters
@@ -1472,8 +1474,8 @@ class DeepEvalOld:
         cell: np.ndarray | None,
         atype: np.ndarray,
         imap: np.ndarray,
-        neighbor_list,
-    ):
+        neighbor_list: "ase.neighborlist.NeighborList | None",
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Make the mesh with neighbor list for a single frame.
 
         Parameters

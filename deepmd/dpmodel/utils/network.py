@@ -23,9 +23,10 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     Array,
-    support_array_api,
     xp_add_at,
     xp_bincount,
+    xp_setitem_at,
+    xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -40,15 +41,7 @@ from deepmd.utils.version import (
 
 def sigmoid_t(x):  # noqa: ANN001, ANN201
     """Sigmoid."""
-    if array_api_compat.is_jax_array(x):
-        from deepmd.jax.env import (
-            jax,
-        )
-
-        # see https://github.com/jax-ml/jax/discussions/15617
-        return jax.nn.sigmoid(x)
-    xp = array_api_compat.array_namespace(x)
-    return 1 / (1 + xp.exp(-x))
+    return xp_sigmoid(x)
 
 
 class Identity(NativeOP):
@@ -67,7 +60,7 @@ class Identity(NativeOP):
 
     @classmethod
     def deserialize(cls, data: dict) -> "Identity":
-        return Identity()
+        return cls()
 
 
 class NativeLayer(NativeOP):
@@ -259,7 +252,6 @@ class NativeLayer(NativeOP):
     def dim_out(self) -> int:
         return self.w.shape[1]
 
-    @support_array_api(version="2022.12")
     def call(self, x):  # noqa: ANN001, ANN201
         """Forward pass.
 
@@ -288,15 +280,14 @@ class NativeLayer(NativeOP):
             y = xp.astype(y, x.dtype)
         y = fn(y)
         if self.idt is not None:
-            y *= self.idt
+            y = y * self.idt
         if self.resnet and self.w.shape[1] == self.w.shape[0]:
-            y += x
+            y = y + x
         elif self.resnet and self.w.shape[1] == 2 * self.w.shape[0]:
-            y += xp.concat([x, x], axis=-1)
+            y = y + xp.concat([x, x], axis=-1)
         return y
 
 
-@support_array_api(version="2022.12")
 def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.ndarray]:
     activation_function = activation_function.lower()
     if activation_function == "tanh":
@@ -788,7 +779,115 @@ def make_embedding_network(T_Network: type, T_NetworkLayer: type) -> type:
     return EN
 
 
-EmbeddingNet = make_embedding_network(NativeNet, NativeLayer)
+class EmbeddingNet(NativeNet):
+    """The embedding network.
+
+    Parameters
+    ----------
+    in_dim
+        Input dimension.
+    neuron
+        The number of neurons in each layer. The output dimension
+        is the same as the dimension of the last layer.
+    activation_function
+        The activation function.
+    resnet_dt
+        Use time step at the resnet architecture.
+    precision
+        Floating point precision for the model parameters.
+    seed : int, optional
+        Random seed.
+    bias : bool, Optional
+        Whether to use bias in the embedding layer.
+    trainable : bool or list[bool], Optional
+        Whether the weights are trainable. If a list, each element
+        corresponds to a layer.
+    """
+
+    def __init__(
+        self,
+        in_dim: int,
+        neuron: list[int] = [24, 48, 96],
+        activation_function: str = "tanh",
+        resnet_dt: bool = False,
+        precision: str = DEFAULT_PRECISION,
+        seed: int | list[int] | None = None,
+        bias: bool = True,
+        trainable: bool | list[bool] = True,
+    ) -> None:
+        layers = []
+        i_in = in_dim
+        if isinstance(trainable, bool):
+            trainable = [trainable] * len(neuron)
+        for idx, ii in enumerate(neuron):
+            i_ot = ii
+            layers.append(
+                NativeLayer(
+                    i_in,
+                    i_ot,
+                    bias=bias,
+                    use_timestep=resnet_dt,
+                    activation_function=activation_function,
+                    resnet=True,
+                    precision=precision,
+                    seed=child_seed(seed, idx),
+                    trainable=trainable[idx],
+                ).serialize()
+            )
+            i_in = i_ot
+        super().__init__(layers)
+        self.in_dim = in_dim
+        self.neuron = neuron
+        self.activation_function = activation_function
+        self.resnet_dt = resnet_dt
+        self.precision = precision
+        self.bias = bias
+
+    def serialize(self) -> dict:
+        """Serialize the network to a dict.
+
+        Returns
+        -------
+        dict
+            The serialized network.
+        """
+        return {
+            "@class": "EmbeddingNetwork",
+            "@version": 2,
+            "in_dim": self.in_dim,
+            "neuron": self.neuron.copy(),
+            "activation_function": self.activation_function,
+            "resnet_dt": self.resnet_dt,
+            "bias": self.bias,
+            # make deterministic
+            "precision": np.dtype(PRECISION_DICT[self.precision]).name,
+            "layers": [layer.serialize() for layer in self.layers],
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "EmbeddingNet":
+        """Deserialize the network from a dict.
+
+        Parameters
+        ----------
+        data : dict
+            The dict to deserialize from.
+        """
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        data.pop("@class", None)
+        layers = data.pop("layers")
+        obj = cls(**data)
+        # Reinitialize layers from serialized data, using the same layer type
+        # that __init__ created (respects subclass overrides via MRO).
+        if obj.layers:
+            layer_type = type(obj.layers[0])
+            obj.layers = type(obj.layers)(
+                [layer_type.deserialize(layer) for layer in layers]
+            )
+        else:
+            obj.layers = type(obj.layers)([])
+        return obj
 
 
 def make_fitting_network(
@@ -904,7 +1003,121 @@ def make_fitting_network(
     return FN
 
 
-FittingNet = make_fitting_network(EmbeddingNet, NativeNet, NativeLayer)
+class FittingNet(EmbeddingNet):
+    """The fitting network. It may be implemented as an embedding
+    net connected with a linear output layer.
+
+    Parameters
+    ----------
+    in_dim
+        Input dimension.
+    out_dim
+        Output dimension
+    neuron
+        The number of neurons in each hidden layer.
+    activation_function
+        The activation function.
+    resnet_dt
+        Use time step at the resnet architecture.
+    precision
+        Floating point precision for the model parameters.
+    bias_out
+        The last linear layer has bias.
+    seed : int, optional
+        Random seed.
+    trainable : bool or list[bool], optional
+        Whether the network is trainable.
+    """
+
+    def __init__(
+        self,
+        in_dim: int,
+        out_dim: int,
+        neuron: list[int] = [24, 48, 96],
+        activation_function: str = "tanh",
+        resnet_dt: bool = False,
+        precision: str = DEFAULT_PRECISION,
+        bias_out: bool = True,
+        seed: int | list[int] | None = None,
+        trainable: bool | list[bool] = True,
+    ) -> None:
+        if trainable is None:
+            trainable = [True] * (len(neuron) + 1)
+        elif isinstance(trainable, bool):
+            trainable = [trainable] * (len(neuron) + 1)
+        else:
+            pass
+        super().__init__(
+            in_dim,
+            neuron=neuron,
+            activation_function=activation_function,
+            resnet_dt=resnet_dt,
+            precision=precision,
+            seed=seed,
+            trainable=trainable[:-1],
+        )
+        i_in = neuron[-1] if len(neuron) > 0 else in_dim
+        i_ot = out_dim
+        self.layers.append(
+            NativeLayer(
+                i_in,
+                i_ot,
+                bias=bias_out,
+                use_timestep=False,
+                activation_function=None,
+                resnet=False,
+                precision=precision,
+                seed=child_seed(seed, len(neuron)),
+                trainable=trainable[-1],
+            )
+        )
+        self.out_dim = out_dim
+        self.bias_out = bias_out
+
+    def serialize(self) -> dict:
+        """Serialize the network to a dict.
+
+        Returns
+        -------
+        dict
+            The serialized network.
+        """
+        return {
+            "@class": "FittingNetwork",
+            "@version": 1,
+            "in_dim": self.in_dim,
+            "out_dim": self.out_dim,
+            "neuron": self.neuron.copy(),
+            "activation_function": self.activation_function,
+            "resnet_dt": self.resnet_dt,
+            "precision": self.precision,
+            "bias_out": self.bias_out,
+            "layers": [layer.serialize() for layer in self.layers],
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "FittingNet":
+        """Deserialize the network from a dict.
+
+        Parameters
+        ----------
+        data : dict
+            The dict to deserialize from.
+        """
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data.pop("@class", None)
+        layers = data.pop("layers")
+        obj = cls(**data)
+        # Use type(obj.layers[0]) to respect subclass layer types
+        if obj.layers:
+            layer_type = type(obj.layers[0])
+            obj.layers = type(obj.layers)(
+                [layer_type.deserialize(layer) for layer in layers]
+            )
+        else:
+            obj.layers = type(obj.layers)([])
+        return obj
 
 
 class NetworkCollection:
@@ -1052,11 +1265,14 @@ def aggregate(  # noqa: ANN201
     bin_count = xp_bincount(owners)
     bin_count = xp.where(bin_count == 0, xp.ones_like(bin_count), bin_count)
 
+    dev = array_api_compat.device(data)
     if num_owner is not None and bin_count.shape[0] != num_owner:
         difference = num_owner - bin_count.shape[0]
-        bin_count = xp.concat([bin_count, xp.ones(difference, dtype=bin_count.dtype)])
+        bin_count = xp.concat(
+            [bin_count, xp.ones(difference, dtype=bin_count.dtype, device=dev)]
+        )
 
-    output = xp.zeros((bin_count.shape[0], data.shape[1]), dtype=data.dtype)
+    output = xp.zeros((bin_count.shape[0], data.shape[1]), dtype=data.dtype, device=dev)
     output = xp_add_at(output, owners, data)
 
     if average:
@@ -1119,7 +1335,8 @@ def get_graph_index(  # noqa: ANN201
 
     # 1. atom graph
     # node(i) to edge(ij) index_select; edge(ij) to node aggregate
-    nlist_loc_index = xp.arange(nf * nloc, dtype=nlist.dtype)
+    dev = array_api_compat.device(nlist)
+    nlist_loc_index = xp.arange(nf * nloc, dtype=nlist.dtype, device=dev)
     # nf x nloc x nnei
     n2e_index = xp.broadcast_to(
         xp.reshape(nlist_loc_index, (nf, nloc, 1)), (nf, nloc, nnei)
@@ -1128,7 +1345,7 @@ def get_graph_index(  # noqa: ANN201
     n2e_index = n2e_index[xp.astype(nlist_mask, xp.bool)]
 
     # node_ext(j) to edge(ij) index_select
-    frame_shift = xp.arange(nf, dtype=nlist.dtype) * (
+    frame_shift = xp.arange(nf, dtype=nlist.dtype, device=dev) * (
         nall if not use_loc_mapping else nloc
     )
     shifted_nlist = nlist + frame_shift[:, xp.newaxis, xp.newaxis]
@@ -1144,13 +1361,9 @@ def get_graph_index(  # noqa: ANN201
     n2a_index = n2a_index[a_nlist_mask_3d]
 
     # edge(ij) to angle(ijk) index_select; angle(ijk) to edge(ij) aggregate
-    edge_id = xp.arange(n_edge, dtype=nlist.dtype)
-    edge_index = xp.zeros((nf, nloc, nnei), dtype=nlist.dtype)
-    if array_api_compat.is_jax_array(nlist):
-        # JAX doesn't support in-place item assignment
-        edge_index = edge_index.at[xp.astype(nlist_mask, xp.bool)].set(edge_id)
-    else:
-        edge_index[xp.astype(nlist_mask, xp.bool)] = edge_id
+    edge_id = xp.arange(n_edge, dtype=nlist.dtype, device=dev)
+    edge_index = xp.zeros((nf, nloc, nnei), dtype=nlist.dtype, device=dev)
+    edge_index = xp_setitem_at(edge_index, xp.astype(nlist_mask, xp.bool), edge_id)
     # only cut a_nnei neighbors, to avoid nnei x nnei
     edge_index = edge_index[:, :, :a_nnei]
     edge_index_ij = xp.broadcast_to(

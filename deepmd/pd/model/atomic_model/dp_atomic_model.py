@@ -385,7 +385,7 @@ class DPAtomicModel(BaseAtomicModel):
             stat_file_path /= " ".join(self.type_map)
 
         @functools.lru_cache
-        def wrapped_sampler():
+        def wrapped_sampler() -> list[dict]:
             sampled = sampled_func()
             if self.pair_excl is not None:
                 pair_exclude_types = self.pair_excl.get_exclude_types()

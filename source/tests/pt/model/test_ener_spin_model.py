@@ -313,7 +313,7 @@ class SpinTest:
             return
         dp_model = DPSpinModel.deserialize(self.model.serialize())
         # test call
-        dp_ret = dp_model.call(
+        dp_ret = dp_model.call_common(
             to_numpy_array(self.coord),
             to_numpy_array(self.atype),
             to_numpy_array(self.spin),
@@ -355,7 +355,7 @@ class SpinTest:
         extended_spin = torch.gather(
             self.spin, index=mapping.unsqueeze(-1).tile((1, 1, 3)), dim=1
         )
-        dp_ret_lower = dp_model.call_lower(
+        dp_ret_lower = dp_model.call_common_lower(
             to_numpy_array(extended_coord),
             to_numpy_array(extended_atype),
             to_numpy_array(extended_spin),

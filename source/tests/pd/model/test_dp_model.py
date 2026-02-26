@@ -140,7 +140,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         args1 = [to_paddle_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
         kwargs0 = {"fparam": fparam, "aparam": aparam}
         kwargs1 = {kk: to_paddle_tensor(vv) for kk, vv in kwargs0.items()}
-        ret0 = md0.call(*args0, **kwargs0)
+        ret0 = md0.call_common(*args0, **kwargs0)
         ret1 = md1.forward_common(*args1, **kwargs1)
         np.testing.assert_allclose(
             ret0["energy"],
@@ -179,7 +179,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         args1 = [to_paddle_tensor(ii) for ii in args0]
         kwargs0 = {"fparam": fparam, "aparam": aparam}
         kwargs1 = {kk: to_paddle_tensor(vv) for kk, vv in kwargs0.items()}
-        ret0 = md0.call(*args0, **kwargs0)
+        ret0 = md0.call_common(*args0, **kwargs0)
         ret1 = md1.forward_common(*args1, **kwargs1)
         np.testing.assert_allclose(
             ret0["energy"],
@@ -313,7 +313,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         args1 = [
             to_paddle_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
         ]
-        ret0 = md0.call_lower(*args0)
+        ret0 = md0.call_common_lower(*args0)
         ret1 = md1.forward_common_lower(*args1)
         np.testing.assert_allclose(
             ret0["energy"],

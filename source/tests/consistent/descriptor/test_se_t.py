@@ -15,11 +15,13 @@ from ..common import (
     INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
     parameterized,
 )
 from .common import (
+    DescriptorAPITest,
     DescriptorTest,
 )
 
@@ -27,6 +29,10 @@ if INSTALLED_PT:
     from deepmd.pt.model.descriptor.se_t import DescrptSeT as DescrptSeTPT
 else:
     DescrptSeTPT = None
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.descriptor.se_t import DescrptSeT as DescrptSeTPTExpt
+else:
+    DescrptSeTPTExpt = None
 if INSTALLED_TF:
     from deepmd.tf.descriptor.se_t import DescrptSeT as DescrptSeTTF
 else:
@@ -69,6 +75,7 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
             "env_protection": env_protection,
             "precision": precision,
             "seed": 1145141919810,
+            "activation_function": "relu",
         }
 
     @property
@@ -92,6 +99,16 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
         return CommonTest.skip_dp
 
     @property
+    def skip_pt_expt(self) -> bool:
+        (
+            resnet_dt,
+            excluded_types,
+            precision,
+            env_protection,
+        ) = self.param
+        return CommonTest.skip_pt_expt
+
+    @property
     def skip_tf(self) -> bool:
         (
             resnet_dt,
@@ -99,7 +116,7 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             env_protection,
         ) = self.param
-        return env_protection != 0.0 or excluded_types
+        return env_protection != 0.0 or excluded_types or CommonTest.skip_tf
 
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
     skip_jax = not INSTALLED_JAX
@@ -107,6 +124,7 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
     tf_class = DescrptSeTTF
     dp_class = DescrptSeTDP
     pt_class = DescrptSeTPT
+    pt_expt_class = DescrptSeTPTExpt
     jax_class = DescrptSeTJAX
     array_api_strict_class = DescrptSeTStrict
     args = descrpt_se_t_args()
@@ -183,6 +201,15 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return self.eval_pt_expt_descriptor(
+            pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_descriptor(
             jax_obj,
@@ -235,3 +262,39 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
             return 1e-4
         else:
             raise ValueError(f"Unknown precision: {precision}")
+
+
+@parameterized(
+    (True, False),  # resnet_dt
+    ([], [[0, 1]]),  # excluded_types
+    ("float64",),  # precision
+    (0.0, 1e-8, 1e-2),  # env_protection
+)
+class TestSeTDescriptorAPI(DescriptorAPITest, unittest.TestCase):
+    """Test consistency of BaseDescriptor API methods across backends."""
+
+    dp_class = DescrptSeTDP
+    pt_class = DescrptSeTPT
+    pt_expt_class = DescrptSeTPTExpt
+    args = descrpt_se_t_args()
+
+    @property
+    def data(self) -> dict:
+        (
+            resnet_dt,
+            excluded_types,
+            precision,
+            env_protection,
+        ) = self.param
+        return {
+            "sel": [9, 10],
+            "rcut_smth": 5.80,
+            "rcut": 6.00,
+            "neuron": [6, 12, 24],
+            "resnet_dt": resnet_dt,
+            "exclude_types": excluded_types,
+            "env_protection": env_protection,
+            "precision": precision,
+            "seed": 1145141919810,
+            "activation_function": "relu",
+        }

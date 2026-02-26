@@ -694,9 +694,14 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         xp = array_api_compat.array_namespace(self.stddev)
+        device = array_api_compat.device(self.stddev)
         if not self.set_davg_zero:
-            self.mean = xp.asarray(mean, dtype=self.mean.dtype, copy=True)
-        self.stddev = xp.asarray(stddev, dtype=self.stddev.dtype, copy=True)
+            self.mean = xp.asarray(
+                mean, dtype=self.mean.dtype, copy=True, device=device
+            )
+        self.stddev = xp.asarray(
+            stddev, dtype=self.stddev.dtype, copy=True, device=device
+        )
 
     def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
@@ -764,7 +769,9 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         sw = xp.where(
             nlist_mask[:, :, None],
             xp.reshape(sw, (nf * nloc, nnei, 1)),
-            xp.zeros((nf * nloc, nnei, 1), dtype=sw.dtype),
+            xp.zeros(
+                (nf * nloc, nnei, 1), dtype=sw.dtype, device=array_api_compat.device(sw)
+            ),
         )
 
         # nfnl x nnei x 4
@@ -827,6 +834,8 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
 
             # (nf x nl x nt_i x nt_j) x ng
             idx = xp.tile(xp.reshape((idx_i + idx_j), (-1, 1)), (1, ng))
+            # Cast to int64 for PyTorch backend (take_along_dim requires Long indices)
+            idx = xp.astype(idx, xp.int64)
 
             # ntypes * (ntypes) * nt
             type_embedding_i = xp.tile(

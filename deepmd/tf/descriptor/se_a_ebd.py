@@ -1,4 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
+from typing import (
+    Any,
+)
 
 import numpy as np
 
@@ -84,7 +90,7 @@ class DescrptSeAEbd(DescrptSeA):
         activation_function: str = "tanh",
         precision: str = "default",
         exclude_types: list[list[int]] = [],
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         DescrptSeA.__init__(
@@ -175,7 +181,14 @@ class DescrptSeAEbd(DescrptSeA):
 
         return self.dout
 
-    def _type_embed(self, atype, ndim=1, reuse=None, suffix="", trainable=True):
+    def _type_embed(
+        self,
+        atype: tf.Tensor,
+        ndim: int = 1,
+        reuse: bool | None = None,
+        suffix: str = "",
+        trainable: bool = True,
+    ) -> tf.Tensor:
         ebd_type = tf.cast(atype, self.filter_precision)
         ebd_type = ebd_type / float(self.ntypes)
         ebd_type = tf.reshape(ebd_type, [-1, ndim])
@@ -207,17 +220,17 @@ class DescrptSeAEbd(DescrptSeA):
 
     def _embedding_net(
         self,
-        inputs,
-        natoms,
-        filter_neuron,
-        activation_fn=tf.nn.tanh,
-        stddev=1.0,
-        bavg=0.0,
-        name="linear",
-        reuse=None,
-        seed=None,
-        trainable=True,
-    ):
+        inputs: tf.Tensor,
+        natoms: list,
+        filter_neuron: list[int],
+        activation_fn: Callable = tf.nn.tanh,
+        stddev: float = 1.0,
+        bavg: float = 0.0,
+        name: str = "linear",
+        reuse: bool | None = None,
+        seed: int | None = None,
+        trainable: bool = True,
+    ) -> tf.Tensor:
         """inputs:  nf x na x (nei x 4)
         outputs: nf x na x nei x output_size.
         """
@@ -260,8 +273,15 @@ class DescrptSeAEbd(DescrptSeA):
         return xyz_scatter
 
     def _type_embedding_net_two_sides(
-        self, mat_g, atype, natoms, name="", reuse=None, seed=None, trainable=True
-    ):
+        self,
+        mat_g: tf.Tensor,
+        atype: tf.Tensor,
+        natoms: list,
+        name: str = "",
+        reuse: bool | None = None,
+        seed: int | None = None,
+        trainable: bool = True,
+    ) -> tf.Tensor:
         outputs_size = self.filter_neuron[-1]
         nframes = tf.shape(mat_g)[0]
         # (nf x natom x nei) x (outputs_size x chnl x chnl)
@@ -352,8 +372,15 @@ class DescrptSeAEbd(DescrptSeA):
         return mat_g
 
     def _type_embedding_net_one_side(
-        self, mat_g, atype, natoms, name="", reuse=None, seed=None, trainable=True
-    ):
+        self,
+        mat_g: tf.Tensor,
+        atype: tf.Tensor,
+        natoms: list,
+        name: str = "",
+        reuse: bool | None = None,
+        seed: int | None = None,
+        trainable: bool = True,
+    ) -> tf.Tensor:
         outputs_size = self.filter_neuron[-1]
         nframes = tf.shape(mat_g)[0]
         # (nf x natom x nei) x (outputs_size x chnl x chnl)
@@ -402,15 +429,15 @@ class DescrptSeAEbd(DescrptSeA):
 
     def _type_embedding_net_one_side_aparam(
         self,
-        mat_g,
-        atype,
-        natoms,
-        aparam,
-        name="",
-        reuse=None,
-        seed=None,
-        trainable=True,
-    ):
+        mat_g: tf.Tensor,
+        atype: tf.Tensor,
+        natoms: list,
+        aparam: tf.Tensor,
+        name: str = "",
+        reuse: bool | None = None,
+        seed: int | None = None,
+        trainable: bool = True,
+    ) -> tf.Tensor:
         outputs_size = self.filter_neuron[-1]
         nframes = tf.shape(mat_g)[0]
         # (nf x natom x nei) x (outputs_size x chnl x chnl)
@@ -482,8 +509,15 @@ class DescrptSeAEbd(DescrptSeA):
         return mat_g
 
     def _pass_filter(
-        self, inputs, atype, natoms, input_dict, reuse=None, suffix="", trainable=True
-    ):
+        self,
+        inputs: tf.Tensor,
+        atype: tf.Tensor,
+        natoms: list,
+        input_dict: dict,
+        reuse: bool | None = None,
+        suffix: str = "",
+        trainable: bool = True,
+    ) -> tuple[tf.Tensor, tf.Tensor]:
         # nf x na x ndescrpt
         # nf x na x (nnei x 4)
         inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
@@ -506,18 +540,18 @@ class DescrptSeAEbd(DescrptSeA):
 
     def _ebd_filter(
         self,
-        inputs,
-        atype,
-        natoms,
-        input_dict,
-        activation_fn=tf.nn.tanh,
-        stddev=1.0,
-        bavg=0.0,
-        name="linear",
-        reuse=None,
-        seed=None,
-        trainable=True,
-    ):
+        inputs: tf.Tensor,
+        atype: tf.Tensor,
+        natoms: list,
+        input_dict: dict,
+        activation_fn: Callable = tf.nn.tanh,
+        stddev: float = 1.0,
+        bavg: float = 0.0,
+        name: str = "linear",
+        reuse: bool | None = None,
+        seed: int | None = None,
+        trainable: bool = True,
+    ) -> tuple[tf.Tensor, tf.Tensor]:
         outputs_size = self.filter_neuron[-1]
         outputs_size_2 = self.n_axis_neuron
         # nf x natom x (nei x 4)

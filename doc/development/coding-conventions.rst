@@ -145,12 +145,12 @@ style with some modifications.
 Run scripts to check the code
 =============================
 
-It's a good idea to install `pre-commit <https://pre-commit.com>`_ on your repository:
+It's a good idea to install `prek <https://github.com/j178/prek>`_ on your repository:
 
 .. code-block:: bash
 
-    $ pip install pre-commit
-    $ pre-commit install
+    $ uv tool install prek
+    $ prek install
 
 The scripts will be run automatically before each commit and will fix the code style
 issues automatically.

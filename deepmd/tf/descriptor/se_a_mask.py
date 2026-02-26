@@ -128,7 +128,7 @@ class DescrptSeAMask(DescrptSeA):
         precision: str = "default",
         uniform_seed: bool = False,
         tebd_input_mode: str = "concat",
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         self.sel_a = sel
@@ -232,7 +232,7 @@ class DescrptSeAMask(DescrptSeA):
         natoms_vec: list,
         mesh: list,
         input_dict: dict,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 

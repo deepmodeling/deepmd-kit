@@ -163,7 +163,7 @@ class DPTabulate(BaseTabulate):
         self.upper = {}
         self.lower = {}
 
-    def _load_sub_graph(self):
+    def _load_sub_graph(self) -> tuple[tf.Graph, tf.GraphDef]:
         sub_graph_def = tf.GraphDef()
         with tf.Graph().as_default() as sub_graph:
             tf.import_graph_def(sub_graph_def, name="")
@@ -182,7 +182,7 @@ class DPTabulate(BaseTabulate):
             return "R"
         raise RuntimeError(f"Unsupported descriptor {self.descrpt}")
 
-    def _get_bias(self):
+    def _get_bias(self) -> dict[str, list[np.ndarray]]:
         bias = {}
         for layer in range(1, self.layer_size + 1):
             bias["layer_" + str(layer)] = []
@@ -248,7 +248,7 @@ class DPTabulate(BaseTabulate):
                 raise RuntimeError("Unsupported descriptor")
         return bias
 
-    def _get_matrix(self):
+    def _get_matrix(self) -> dict[str, list[np.ndarray]]:
         matrix = {}
         for layer in range(1, self.layer_size + 1):
             matrix["layer_" + str(layer)] = []
@@ -316,7 +316,9 @@ class DPTabulate(BaseTabulate):
         return matrix
 
     # one-by-one executions
-    def _make_data(self, xx, idx):
+    def _make_data(
+        self, xx: np.ndarray, idx: int
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         with self.sub_graph.as_default():
             with self.sub_sess.as_default():
                 xx = tf.reshape(xx, [xx.size, -1])
@@ -465,14 +467,16 @@ class DPTabulate(BaseTabulate):
                 d2 = dy2.eval()
         return vv, dd, d2
 
-    def _layer_0(self, x, w, b):
+    def _layer_0(self, x: tf.Tensor, w: np.ndarray, b: np.ndarray) -> tf.Tensor:
         return self.activation_fn(tf.matmul(x, w) + b)
 
-    def _layer_1(self, x, w, b):
+    def _layer_1(
+        self, x: tf.Tensor, w: np.ndarray, b: np.ndarray
+    ) -> tuple[tf.Tensor, tf.Tensor]:
         t = tf.concat([x, x], axis=1)
         return t, self.activation_fn(tf.matmul(x, w) + b) + t
 
-    def _get_layer_size(self):
+    def _get_layer_size(self) -> int:
         layer_size = 0
         if isinstance(self.descrpt, deepmd.tf.descriptor.DescrptSeAtten) or isinstance(
             self.descrpt, deepmd.tf.descriptor.DescrptSeAEbdV2
