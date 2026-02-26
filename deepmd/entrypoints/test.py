@@ -1127,6 +1127,7 @@ def test_polar(
     tuple[list[np.ndarray], list[int]]
         arrays with results and their shapes
     """
+    is_tf = type(dp.deep_eval).__module__.startswith("deepmd.tf.")
     data.add(
         "polarizability" if not atomic else "atomic_polarizability",
         9,
@@ -1134,7 +1135,7 @@ def test_polar(
         must=True,
         high_prec=False,
         type_sel=dp.get_sel_type(),
-        output_natoms_for_type_sel=True,
+        output_natoms_for_type_sel=not is_tf,
     )
 
     test_data = data.get_test()
@@ -1269,6 +1270,7 @@ def test_dipole(
     tuple[list[np.ndarray], list[int]]
         arrays with results and their shapes
     """
+    is_tf = type(dp.deep_eval).__module__.startswith("deepmd.tf.")
     data.add(
         "dipole" if not atomic else "atomic_dipole",
         3,
@@ -1276,7 +1278,7 @@ def test_dipole(
         must=True,
         high_prec=False,
         type_sel=dp.get_sel_type(),
-        output_natoms_for_type_sel=True,
+        output_natoms_for_type_sel=not is_tf,
     )
 
     test_data = data.get_test()
