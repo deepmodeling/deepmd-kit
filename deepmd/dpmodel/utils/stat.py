@@ -292,7 +292,7 @@ def compute_output_stats(
         )
 
         # compute stat
-        bias_atom_g, std_atom_g = compute_output_stats_global(
+        bias_atom_g, std_atom_g = _compute_output_stats_global(
             sampled,
             ntypes,
             keys,
@@ -303,7 +303,7 @@ def compute_output_stats(
             intensive,
             model_pred_g,
         )
-        bias_atom_a, std_atom_a = compute_output_stats_atomic(
+        bias_atom_a, std_atom_a = _compute_output_stats_atomic(
             sampled,
             ntypes,
             keys,
@@ -336,7 +336,7 @@ def compute_output_stats(
     return bias_atom_e, std_atom_e
 
 
-def compute_output_stats_global(
+def _compute_output_stats_global(
     sampled: list[dict],
     ntypes: int,
     keys: list[str],
@@ -461,7 +461,7 @@ def compute_output_stats_global(
     return bias_atom_e, std_atom_e
 
 
-def compute_output_stats_atomic(
+def _compute_output_stats_atomic(
     sampled: list[dict],
     ntypes: int,
     keys: list[str],

@@ -8,13 +8,13 @@ from collections import (
 import numpy as np
 import pytest
 
+from deepmd.dpmodel.utils.stat import (
+    _compute_output_stats_atomic as compute_output_stats_atomic_dp,
+)
+from deepmd.dpmodel.utils.stat import (
+    _compute_output_stats_global as compute_output_stats_global_dp,
+)
 from deepmd.dpmodel.utils.stat import compute_output_stats as compute_output_stats_dp
-from deepmd.dpmodel.utils.stat import (
-    compute_output_stats_atomic as compute_output_stats_atomic_dp,
-)
-from deepmd.dpmodel.utils.stat import (
-    compute_output_stats_global as compute_output_stats_global_dp,
-)
 
 from ..common import (
     INSTALLED_PD,
@@ -24,24 +24,24 @@ from ..common import (
 if INSTALLED_PT:
     import torch
 
+    from deepmd.pt.utils.stat import (
+        _compute_output_stats_atomic as compute_output_stats_atomic_pt,
+    )
+    from deepmd.pt.utils.stat import (
+        _compute_output_stats_global as compute_output_stats_global_pt,
+    )
     from deepmd.pt.utils.stat import compute_output_stats as compute_output_stats_pt
-    from deepmd.pt.utils.stat import (
-        compute_output_stats_atomic as compute_output_stats_atomic_pt,
-    )
-    from deepmd.pt.utils.stat import (
-        compute_output_stats_global as compute_output_stats_global_pt,
-    )
     from deepmd.pt.utils.utils import to_numpy_array as to_numpy_array_pt
 if INSTALLED_PD:
     import paddle
 
+    from deepmd.pd.utils.stat import (
+        _compute_output_stats_atomic as compute_output_stats_atomic_pd,
+    )
+    from deepmd.pd.utils.stat import (
+        _compute_output_stats_global as compute_output_stats_global_pd,
+    )
     from deepmd.pd.utils.stat import compute_output_stats as compute_output_stats_pd
-    from deepmd.pd.utils.stat import (
-        compute_output_stats_atomic as compute_output_stats_atomic_pd,
-    )
-    from deepmd.pd.utils.stat import (
-        compute_output_stats_global as compute_output_stats_global_pd,
-    )
     from deepmd.pd.utils.utils import to_numpy_array as to_numpy_array_pd
 
 NTYPES = 2
