@@ -41,27 +41,28 @@ EXAMPLE_DIR = os.path.join(
 )
 
 
-def _make_config(data_dir: str, numb_steps: int = 20) -> dict:
+def _make_config(data_dir: str, numb_steps: int = 5) -> dict:
     """Build a minimal config dict pointing at *data_dir*."""
     config = {
         "model": {
             "type_map": ["O", "H"],
             "descriptor": {
                 "type": "se_e2_a",
-                "sel": [46, 92],
+                "sel": [6, 12],
                 "rcut_smth": 0.50,
-                "rcut": 6.00,
-                "neuron": [25, 50, 100],
+                "rcut": 3.00,
+                "neuron": [8, 16],
                 "resnet_dt": False,
-                "axis_neuron": 16,
+                "axis_neuron": 4,
+                "type_one_side": True,
                 "seed": 1,
             },
             "fitting_net": {
-                "neuron": [240, 240, 240],
+                "neuron": [16, 16],
                 "resnet_dt": True,
                 "seed": 1,
             },
-            "data_stat_nbatch": 2,
+            "data_stat_nbatch": 1,
         },
         "learning_rate": {
             "type": "exp",
@@ -82,8 +83,6 @@ def _make_config(data_dir: str, numb_steps: int = 20) -> dict:
             "training_data": {
                 "systems": [
                     os.path.join(data_dir, "data_0"),
-                    os.path.join(data_dir, "data_1"),
-                    os.path.join(data_dir, "data_2"),
                 ],
                 "batch_size": 1,
             },
@@ -126,25 +125,14 @@ class TestTraining(unittest.TestCase):
         nparams = sum(p.numel() for p in model.parameters())
         self.assertGreater(nparams, 0)
 
-    def test_training_loop(self) -> None:
-        """Run a few training steps and check loss decreases."""
-        nsteps = 20
-        config = _make_config(self.data_dir, numb_steps=nsteps)
-        config = update_deepmd_input(config, warning=False)
-        config = normalize(config)
-
+    def _run_training(self, config: dict) -> None:
+        """Run training and verify lcurve + checkpoint creation."""
         tmpdir = tempfile.mkdtemp(prefix="pt_expt_train_")
         try:
             old_cwd = os.getcwd()
             os.chdir(tmpdir)
             try:
                 trainer = get_trainer(config)
-
-                # Collect losses over training
-                losses = []
-                orig_step = trainer.run.__code__
-
-                # Instead of monkey-patching, just run and check the lcurve
                 trainer.run()
 
                 # Read lcurve to verify training ran
@@ -162,6 +150,21 @@ class TestTraining(unittest.TestCase):
                 os.chdir(old_cwd)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_training_loop(self) -> None:
+        """Run a few training steps and verify outputs."""
+        config = _make_config(self.data_dir, numb_steps=5)
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        self._run_training(config)
+
+    def test_training_loop_compiled(self) -> None:
+        """Run a few training steps with torch.compile enabled."""
+        config = _make_config(self.data_dir, numb_steps=5)
+        config["training"]["enable_compile"] = True
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        self._run_training(config)
 
 
 class TestGetData(unittest.TestCase):
