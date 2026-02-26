@@ -195,7 +195,7 @@ class Trainer:
 
         # Learning rate -------------------------------------------------------
         lr_params = config["learning_rate"].copy()
-        lr_params["stop_steps"] = self.num_steps
+        lr_params["num_steps"] = self.num_steps
         self.lr_schedule = LearningRateExp(**lr_params)
 
         # Gradient clipping
