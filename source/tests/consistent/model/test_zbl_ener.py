@@ -34,6 +34,7 @@ from ..common import (
 )
 from .common import (
     ModelTest,
+    compare_variables_recursive,
 )
 
 if INSTALLED_PT:
@@ -1017,34 +1018,6 @@ class TestZBLEnerModelAPIs(unittest.TestCase):
         self.assertEqual(dp_observed, ["O"])
 
 
-def _compare_variables_recursive(
-    d1: dict, d2: dict, path: str = "", rtol: float = 1e-10, atol: float = 1e-10
-) -> None:
-    """Recursively compare ``@variables`` sections in two serialized dicts."""
-    for key in d1:
-        if key not in d2:
-            continue
-        child_path = f"{path}/{key}" if path else key
-        v1, v2 = d1[key], d2[key]
-        if key == "@variables" and isinstance(v1, dict) and isinstance(v2, dict):
-            for vk in v1:
-                if vk not in v2:
-                    continue
-                a1 = np.asarray(v1[vk]) if v1[vk] is not None else None
-                a2 = np.asarray(v2[vk]) if v2[vk] is not None else None
-                if a1 is None and a2 is None:
-                    continue
-                np.testing.assert_allclose(
-                    a1,
-                    a2,
-                    rtol=rtol,
-                    atol=atol,
-                    err_msg=f"@variables mismatch at {child_path}/{vk}",
-                )
-        elif isinstance(v1, dict) and isinstance(v2, dict):
-            _compare_variables_recursive(v1, v2, child_path, rtol, atol)
-
-
 @parameterized(
     (([], []), ([[0, 1]], [1])),  # (pair_exclude_types, atom_exclude_types)
 )
@@ -1237,8 +1210,8 @@ class TestZBLComputeOrLoadStat(unittest.TestCase):
         dp_ser = self.dp_model.serialize()
         pt_ser = self.pt_model.serialize()
         pe_ser = self.pt_expt_model.serialize()
-        _compare_variables_recursive(dp_ser, pt_ser)
-        _compare_variables_recursive(dp_ser, pe_ser)
+        compare_variables_recursive(dp_ser, pt_ser)
+        compare_variables_recursive(dp_ser, pe_ser)
 
         # 4. Post-stat forward consistency
         dp_ret1 = self._eval_dp()
@@ -1323,10 +1296,10 @@ class TestZBLComputeOrLoadStat(unittest.TestCase):
             dp_ser_loaded = dp_model2.serialize()
             pt_ser_loaded = pt_model2.serialize()
             pe_ser_loaded = pe_model2.serialize()
-            _compare_variables_recursive(dp_ser_computed, dp_ser_loaded)
-            _compare_variables_recursive(pt_ser_computed, pt_ser_loaded)
-            _compare_variables_recursive(pe_ser_computed, pe_ser_loaded)
+            compare_variables_recursive(dp_ser_computed, dp_ser_loaded)
+            compare_variables_recursive(pt_ser_computed, pt_ser_loaded)
+            compare_variables_recursive(pe_ser_computed, pe_ser_loaded)
 
             # 5. Cross-backend consistency after loading
-            _compare_variables_recursive(dp_ser_loaded, pt_ser_loaded)
-            _compare_variables_recursive(dp_ser_loaded, pe_ser_loaded)
+            compare_variables_recursive(dp_ser_loaded, pt_ser_loaded)
+            compare_variables_recursive(dp_ser_loaded, pe_ser_loaded)
