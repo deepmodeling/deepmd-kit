@@ -396,7 +396,8 @@ class SpinModel(torch.nn.Module):
             return spin_sampled
 
         self.backbone_model.compute_or_load_stat(
-            spin_sampled_func, stat_file_path,
+            spin_sampled_func,
+            stat_file_path,
             preset_observed_type=preset_observed_type,
         )
 
