@@ -1134,6 +1134,7 @@ def test_polar(
         must=True,
         high_prec=False,
         type_sel=dp.get_sel_type(),
+        output_natoms_for_type_sel=True,
     )
 
     test_data = data.get_test()
@@ -1275,6 +1276,7 @@ def test_dipole(
         must=True,
         high_prec=False,
         type_sel=dp.get_sel_type(),
+        output_natoms_for_type_sel=True,
     )
 
     test_data = data.get_test()
