@@ -167,6 +167,74 @@ class TestTraining(unittest.TestCase):
         self._run_training(config)
 
 
+class TestCompiledRecompile(unittest.TestCase):
+    """Test that _CompiledModel recompiles when nall exceeds max_nall."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(data_dir):
+            raise unittest.SkipTest(f"Example data not found: {data_dir}")
+        cls.data_dir = data_dir
+
+    def test_nall_growth_triggers_recompile(self) -> None:
+        """Shrink max_nall to force a recompile, then verify training works."""
+        from deepmd.pt_expt.train.training import (
+            _CompiledModel,
+        )
+
+        config = _make_config(self.data_dir, numb_steps=5)
+        config["training"]["enable_compile"] = True
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_recompile_")
+        try:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                trainer = get_trainer(config)
+
+                # The wrapper.model should be a _CompiledModel
+                compiled_model = trainer.wrapper.model
+                self.assertIsInstance(compiled_model, _CompiledModel)
+
+                original_max_nall = compiled_model._max_nall
+                self.assertGreater(original_max_nall, 0)
+
+                # Artificially shrink max_nall to 1 so the next batch
+                # will certainly exceed it and trigger recompilation.
+                compiled_model._max_nall = 1
+                old_compiled_lower = compiled_model.compiled_forward_lower
+
+                # Run one training step — should trigger recompile
+                trainer.wrapper.train()
+                trainer.optimizer.zero_grad(set_to_none=True)
+                inp, lab = trainer.get_data(is_train=True)
+                lr = trainer.scheduler.get_last_lr()[0]
+                _, loss, more_loss = trainer.wrapper(**inp, cur_lr=lr, label=lab)
+                loss.backward()
+                trainer.optimizer.step()
+
+                # max_nall should have grown beyond 1
+                new_max_nall = compiled_model._max_nall
+                self.assertGreater(new_max_nall, 1)
+
+                # compiled_forward_lower should be a new object
+                self.assertIsNot(
+                    compiled_model.compiled_forward_lower,
+                    old_compiled_lower,
+                )
+
+                # Loss should be a finite scalar
+                self.assertFalse(torch.isnan(loss))
+                self.assertFalse(torch.isinf(loss))
+            finally:
+                os.chdir(old_cwd)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class TestGetData(unittest.TestCase):
     """Test the batch data conversion in Trainer.get_data."""
 
