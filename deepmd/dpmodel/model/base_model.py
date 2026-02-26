@@ -148,8 +148,6 @@ def make_base_model() -> type[object]:
             Returns empty list if not available.
             """
             if self.model_def_script:
-                import json
-
                 params = json.loads(self.model_def_script)
                 observed = params.get("info", {}).get("observed_type")
                 if observed is not None:
