@@ -361,9 +361,8 @@ class DeepPotPT : public DeepPotBackend {
    * @param[in] fwd_map Map from original atom index to real-atom index (-1 for
    * virtual atoms).
    */
-  void update_comm_dict_with_virtual_atoms(
-      const InputNlist& lmp_list,
-      const std::vector<int>& fwd_map);
+  void update_comm_dict_with_virtual_atoms(const InputNlist& lmp_list,
+                                           const std::vector<int>& fwd_map);
   /**
    * @brief Update common comm_dict entries from prepared send/recv buffers.
    * @param[in] lmp_list The LAMMPS neighbor list containing communication info.

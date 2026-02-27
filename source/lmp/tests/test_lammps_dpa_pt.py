@@ -19,7 +19,6 @@ from write_lmp_data import (
     write_lmp_data,
 )
 
-
 pbtxt_file2 = (
     Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot-1.pbtxt"
 )

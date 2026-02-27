@@ -51,8 +51,7 @@ torch::Tensor createNlistTensor(const std::vector<std::vector<int>>& data) {
 }
 
 void DeepPotPT::update_comm_dict_with_virtual_atoms(
-    const InputNlist& lmp_list,
-  const std::vector<int>& fwd_map) {
+    const InputNlist& lmp_list, const std::vector<int>& fwd_map) {
   int nswap = lmp_list.nswap;
   auto int32_option =
       torch::TensorOptions().device(torch::kCPU).dtype(torch::kInt32);
@@ -86,7 +85,8 @@ void DeepPotPT::update_comm_dict_with_virtual_atoms(
       if (new_sendlist_capacity[s] >= 0) {
         delete[] new_sendlist[s];
       }
-      // allocate at least 128 entries to avoid frequent reallocations for small sendnum
+      // allocate at least 128 entries to avoid frequent reallocations for small
+      // sendnum
       int capacity = std::max(orig_sendnum, 128);
       new_sendlist[s] = new int[capacity];
       new_sendlist_capacity[s] = capacity;
@@ -131,8 +131,10 @@ void DeepPotPT::update_comm_dict(const InputNlist& lmp_list,
 
   torch::Tensor sendlist_tensor =
       torch::from_blob(static_cast<void*>(sendlist), {nswap}, int64_option);
-  torch::Tensor sendnum_tensor = torch::from_blob(sendnum, {nswap}, int32_option);
-  torch::Tensor recvnum_tensor = torch::from_blob(recvnum, {nswap}, int32_option);
+  torch::Tensor sendnum_tensor =
+      torch::from_blob(sendnum, {nswap}, int32_option);
+  torch::Tensor recvnum_tensor =
+      torch::from_blob(recvnum, {nswap}, int32_option);
   torch::Tensor sendproc_tensor =
       torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
   torch::Tensor recvproc_tensor =
@@ -141,7 +143,8 @@ void DeepPotPT::update_comm_dict(const InputNlist& lmp_list,
   torch::Tensor communicator_tensor;
   static std::int64_t null_communicator = 0;
   if (lmp_list.world == nullptr) {
-    communicator_tensor = torch::from_blob(&null_communicator, {1}, torch::kInt64);
+    communicator_tensor =
+        torch::from_blob(&null_communicator, {1}, torch::kInt64);
   } else {
     communicator_tensor =
         torch::from_blob(const_cast<void*>(lmp_list.world), {1}, torch::kInt64);
@@ -335,7 +338,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
         update_comm_dict_with_virtual_atoms(lmp_list, fwd_map);
       } else {
         update_comm_dict(lmp_list, lmp_list.sendlist, lmp_list.sendnum,
-                            lmp_list.recvnum);
+                         lmp_list.recvnum);
       }
     }
     if (lmp_list.mapping) {
