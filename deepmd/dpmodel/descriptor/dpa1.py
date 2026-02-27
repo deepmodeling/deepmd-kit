@@ -671,6 +671,84 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
 
 @DescriptorBlock.register("se_atten")
 class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
+    r"""The attention-based descriptor block.
+
+    This block computes an embedding matrix using attention mechanism and type embedding.
+    The descriptor is computed as:
+
+    .. math::
+        \mathcal{D}^i = \frac{1}{N_c^2}(\hat{\mathcal{G}}^i)^T \mathcal{R}^i (\mathcal{R}^i)^T \hat{\mathcal{G}}^i_<,
+
+    where :math:`\hat{\mathcal{G}}^i` is the embedding matrix after self-attention layers,
+    :math:`\mathcal{R}^i` is the coordinate matrix, and :math:`\hat{\mathcal{G}}^i_<` denotes
+    the first `axis_neuron` columns of :math:`\hat{\mathcal{G}}^i`.
+
+    The embedding matrix :math:`\mathcal{G}^i` is computed by:
+
+    .. math::
+        (\mathcal{G}^i)_j = \mathcal{N}(s(r_{ji}), \mathcal{T}_i, \mathcal{T}_j),
+
+    where :math:`\mathcal{N}` is the embedding network, :math:`s(r_{ji})` is the smoothed
+    radial distance, and :math:`\mathcal{T}` denotes type embedding.
+
+    Parameters
+    ----------
+    rcut : float
+        The cut-off radius.
+    rcut_smth : float
+        Where to start smoothing.
+    sel : Union[list[int], int]
+        Maximally possible number of selected neighbors.
+    ntypes : int
+        Number of element types.
+    neuron : list[int], optional
+        Number of neurons in each hidden layer of the embedding net.
+    axis_neuron : int, optional
+        Size of the submatrix of the embedding matrix.
+    tebd_dim : int, optional
+        Dimension of the type embedding.
+    tebd_input_mode : str, optional
+        The input mode of the type embedding. Supported modes are ["concat", "strip"].
+    resnet_dt : bool, optional
+        Time-step `dt` in the resnet construction.
+    type_one_side : bool, optional
+        If True, only type embeddings of neighbor atoms are considered.
+    attn : int, optional
+        Hidden dimension of the attention vectors.
+    attn_layer : int, optional
+        Number of attention layers.
+    attn_dotr : bool, optional
+        If True, dot the angular gate to the attention weights.
+    attn_mask : bool, optional
+        If True, mask the diagonal of attention weights.
+    exclude_types : list[tuple[int, int]], optional
+        The excluded pairs of types which have no interaction.
+    env_protection : float, optional
+        Protection parameter to prevent division by zero.
+    set_davg_zero : bool, optional
+        Set the shift of embedding net input to zero.
+    activation_function : str, optional
+        The activation function in the embedding net.
+    precision : str, optional
+        The precision of the embedding net parameters.
+    scaling_factor : float, optional
+        The scaling factor of normalization in attention weights calculation.
+    normalize : bool, optional
+        Whether to normalize the hidden vectors in attention weights calculation.
+    temperature : float, optional
+        If not None, the scaling of attention weights is `temperature` itself.
+    trainable_ln : bool, optional
+        Whether to use trainable shift and scale weights in layer normalization.
+    ln_eps : float, optional
+        The epsilon value for layer normalization.
+    smooth : bool, optional
+        Whether to use smoothness in attention weights calculation.
+    seed : int, optional
+        Random seed for parameter initialization.
+    trainable : bool, optional
+        If the parameters are trainable.
+    """
+
     def __init__(
         self,
         rcut: float,

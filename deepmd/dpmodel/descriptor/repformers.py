@@ -84,6 +84,36 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
     r"""
     The repformer descriptor block.
 
+    The repformer block iteratively updates single-atom (:math:`\mathcal{G}_1`),
+    pair-atom (:math:`\mathcal{G}_2`), and equivariant pair-atom (:math:`\mathcal{H}_2`)
+    representations through multiple layers:
+
+    **Update of :math:`\mathcal{G}_1` (single-atom representation):**
+
+    The update can include multiple terms:
+
+    - Convolution term: :math:`\mathcal{G}_1^{i,l+1} \leftarrow \mathcal{G}_1^{i,l} + \mathrm{MLP}(\sum_j \mathcal{G}_2^{ij,l} \odot \mathcal{G}_1^{j,l})`
+    - GRRG term: :math:`\mathcal{G}_1^{i,l+1} \leftarrow \mathcal{G}_1^{i,l} + \mathrm{MLP}((\mathcal{G}_2^{i,l})^T \mathcal{H}_2^{i,l} (\mathcal{H}_2^{i,l})^T \mathcal{G}_{2,<}^{i,l})`
+    - DRRD term: :math:`\mathcal{G}_1^{i,l+1} \leftarrow \mathcal{G}_1^{i,l} + \mathrm{MLP}((\mathcal{G}_1^{j,l})^T \mathcal{H}_2^{i,l} (\mathcal{H}_2^{i,l})^T \mathcal{G}_{1,<}^{j,l})`
+    - Attention term: :math:`\mathcal{G}_1^{i,l+1} \leftarrow \mathcal{G}_1^{i,l} + \mathrm{SelfAttention}(\mathcal{G}_1^{i,l}, \mathcal{G}_1^{j,l})`
+
+    **Update of :math:`\mathcal{G}_2` (pair-atom representation):**
+
+    - G1xG1 term: :math:`\mathcal{G}_2^{ij,l+1} \leftarrow \mathcal{G}_2^{ij,l} + \mathrm{MLP}(\mathcal{G}_1^{i,l} \otimes \mathcal{G}_1^{j,l})`
+    - Attention term: :math:`\mathcal{G}_2^{ij,l+1} \leftarrow \mathcal{G}_2^{ij,l} + \mathrm{GatedSelfAttention}(\mathcal{G}_2^{ij,l})`
+
+    **Update of :math:`\mathcal{H}_2` (equivariant pair-atom representation):**
+
+    .. math::
+        \mathcal{H}_2^{ij,l+1} = \mathcal{H}_2^{ij,l} + \mathrm{MLP}(\mathcal{G}_2^{ij,l}) \odot \mathcal{R}^{ij}.
+
+    The final descriptor is the iteratively updated single-atom representation:
+
+    .. math::
+        \mathcal{D}^i = \mathcal{G}_1^{i,L},
+
+    where :math:`L` is the number of repformer layers.
+
     Parameters
     ----------
     rcut : float
