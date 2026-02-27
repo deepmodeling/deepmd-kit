@@ -212,7 +212,7 @@ class EnergyLoss(Loss):
                 )
                 loss += pref_v * l_huber_loss
             more_loss["rmse_v"] = self.display_if_exist(
-                xp.sqrt(l2_virial_loss), find_virial
+                xp.sqrt(l2_virial_loss) * atom_norm, find_virial
             )
         if self.has_ae:
             atom_ener_reshape = xp.reshape(atom_ener, (-1,))
