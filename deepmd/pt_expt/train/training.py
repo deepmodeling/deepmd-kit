@@ -137,7 +137,12 @@ def _trace_and_compile(
     )
 
     was_training = model.training
-    model.eval()
+    # Trace in train mode so that create_graph=True is captured inside
+    # task_deriv_one.  Without this, the autograd.grad that computes
+    # forces is traced with create_graph=False (eval mode), producing
+    # force tensors that are detached from model parameters — force loss
+    # backprop cannot reach the weights and force RMSE never decreases.
+    model.train()
 
     def fn(
         extended_coord: torch.Tensor,
@@ -162,9 +167,15 @@ def _trace_and_compile(
     # change at runtime, the caller catches the error and retraces.
     traced_lower = make_fx(fn)(ext_coord, ext_atype, nlist, mapping, fparam, aparam)
 
-    if was_training:
-        model.train()
+    if not was_training:
+        model.eval()
 
+    # The inductor backend does not propagate gradients through the
+    # make_fx-decomposed autograd.grad ops (second-order gradients for
+    # force training).  Use "aot_eager" which correctly preserves the
+    # gradient chain while still benefiting from make_fx decomposition.
+    if "backend" not in compile_opts:
+        compile_opts["backend"] = "aot_eager"
     compiled_lower = torch.compile(traced_lower, dynamic=False, **compile_opts)
     return compiled_lower
 
@@ -299,12 +310,28 @@ class _CompiledModel(torch.nn.Module):
             ext_coord, ext_atype, nlist, mapping, fparam, aparam
         )
 
-        # Translate forward_lower keys -> forward keys
+        # Translate forward_lower keys -> forward keys.
+        # ``extended_force`` lives on all extended atoms (nf, nall, 3).
+        # Ghost-atom forces must be scatter-summed back to local atoms
+        # via ``mapping`` — the same operation ``communicate_extended_output``
+        # performs in the uncompiled path.
         out: dict[str, torch.Tensor] = {}
         out["atom_energy"] = result["atom_energy"]
         out["energy"] = result["energy"]
         if "extended_force" in result:
-            out["force"] = result["extended_force"][:, :nloc, :]
+            ext_force = result["extended_force"]  # (nf, nall_padded, 3)
+            # mapping may be padded; only use actual_nall entries
+            map_actual = mapping[:, :actual_nall]  # (nf, actual_nall)
+            ext_force_actual = ext_force[:, :actual_nall, :]  # (nf, actual_nall, 3)
+            # scatter-sum extended forces onto local atoms
+            idx = map_actual.unsqueeze(-1).expand_as(
+                ext_force_actual
+            )  # (nf, actual_nall, 3)
+            force = torch.zeros(
+                nframes, nloc, 3, dtype=ext_force.dtype, device=ext_force.device
+            )
+            force.scatter_add_(1, idx, ext_force_actual)
+            out["force"] = force
         if "virial" in result:
             out["virial"] = result["virial"]
         if "extended_virial" in result:

@@ -232,6 +232,105 @@ class TestCompiledRecompile(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+class TestCompiledConsistency(unittest.TestCase):
+    """Verify compiled model produces the same energy/force/virial as uncompiled."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(data_dir):
+            raise unittest.SkipTest(f"Example data not found: {data_dir}")
+        cls.data_dir = data_dir
+
+    def test_compiled_matches_uncompiled(self) -> None:
+        """Energy, force, virial from compiled model must match uncompiled."""
+        from deepmd.pt_expt.train.training import (
+            _CompiledModel,
+        )
+
+        config = _make_config(self.data_dir, numb_steps=1)
+        # enable virial in loss so the model returns it
+        config["loss"]["start_pref_v"] = 1.0
+        config["loss"]["limit_pref_v"] = 1.0
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_consistency_")
+        try:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                trainer = get_trainer(config)
+                # Uncompiled model reference
+                uncompiled_model = trainer.model
+                uncompiled_model.eval()
+
+                # Build compiled model from the same weights
+                config_compiled = _make_config(self.data_dir, numb_steps=1)
+                config_compiled["loss"]["start_pref_v"] = 1.0
+                config_compiled["loss"]["limit_pref_v"] = 1.0
+                config_compiled["training"]["enable_compile"] = True
+                config_compiled = update_deepmd_input(config_compiled, warning=False)
+                config_compiled = normalize(config_compiled)
+                trainer_compiled = get_trainer(config_compiled)
+                compiled_model = trainer_compiled.wrapper.model
+                self.assertIsInstance(compiled_model, _CompiledModel)
+
+                # Copy uncompiled weights to compiled model so they match
+                compiled_model.original_model.load_state_dict(
+                    uncompiled_model.state_dict()
+                )
+                compiled_model.eval()
+
+                # Get a batch and run both models
+                input_dict, _ = trainer.get_data(is_train=True)
+                coord = input_dict["coord"].detach()
+                atype = input_dict["atype"].detach()
+                box = input_dict.get("box")
+                if box is not None:
+                    box = box.detach()
+
+                # Force is computed via autograd.grad inside the model, so
+                # we cannot use torch.no_grad() here.
+                coord_uc = coord.clone().requires_grad_(True)
+                pred_uc = uncompiled_model(coord_uc, atype, box)
+
+                pred_c = compiled_model(coord.clone(), atype, box)
+
+                # Energy
+                torch.testing.assert_close(
+                    pred_c["energy"],
+                    pred_uc["energy"],
+                    atol=1e-10,
+                    rtol=1e-10,
+                    msg="energy mismatch between compiled and uncompiled",
+                )
+                # Force
+                self.assertIn("force", pred_c, "compiled model missing 'force'")
+                self.assertIn("force", pred_uc, "uncompiled model missing 'force'")
+                torch.testing.assert_close(
+                    pred_c["force"],
+                    pred_uc["force"],
+                    atol=1e-10,
+                    rtol=1e-10,
+                    msg="force mismatch between compiled and uncompiled",
+                )
+                # Virial
+                if "virial" in pred_uc:
+                    self.assertIn("virial", pred_c, "compiled model missing 'virial'")
+                    torch.testing.assert_close(
+                        pred_c["virial"],
+                        pred_uc["virial"],
+                        atol=1e-10,
+                        rtol=1e-10,
+                        msg="virial mismatch between compiled and uncompiled",
+                    )
+            finally:
+                os.chdir(old_cwd)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class TestGetData(unittest.TestCase):
     """Test the batch data conversion in Trainer.get_data."""
 
