@@ -5,7 +5,9 @@
 #include <torch/csrc/autograd/profiler.h>
 #include <torch/csrc/jit/runtime/jit_exception.h>
 
+#include <algorithm>
 #include <cstdint>
+#include <numeric>
 
 #include "common.h"
 #include "device.h"
@@ -47,6 +49,112 @@ torch::Tensor createNlistTensor(const std::vector<std::vector<int>>& data) {
   int nnei = nloc > 0 ? total_size / nloc : 0;
   return flat_tensor.view({1, nloc, nnei});
 }
+
+void DeepPotPT::update_comm_dict_with_virtual_atoms(
+    const InputNlist& lmp_list,
+  const std::vector<int>& fwd_map) {
+  int nswap = lmp_list.nswap;
+  auto int32_option =
+      torch::TensorOptions().device(torch::kCPU).dtype(torch::kInt32);
+  auto int64_option =
+      torch::TensorOptions().device(torch::kCPU).dtype(torch::kInt64);
+
+  if (comm_maxswap < nswap) {
+    for (int i = 0; i < comm_maxswap; ++i) {
+      delete[] new_sendlist[i];
+    }
+    delete[] new_sendlist;
+    delete[] new_sendnum;
+    delete[] new_recvnum;
+    delete[] new_sendlist_capacity;
+
+    comm_maxswap = nswap;
+    new_sendlist = new int*[comm_maxswap];
+    new_sendnum = new int[comm_maxswap];
+    new_recvnum = new int[comm_maxswap];
+    new_sendlist_capacity = new int[comm_maxswap];
+    // fill new_sendlist_capacity with -1 to indicate uninitialized
+    std::fill(new_sendlist_capacity, new_sendlist_capacity + comm_maxswap, -1);
+  }
+
+  // Remap sendlist from original LAMMPS atom indices to real-atom indices,
+  // skipping virtual (NULL-type) atoms where fwd_map[orig] == -1.
+  for (int s = 0; s < nswap; ++s) {
+    int orig_sendnum = lmp_list.sendnum[s];
+    // grow sendlist if needed
+    if (new_sendlist_capacity[s] < orig_sendnum) {
+      if (new_sendlist_capacity[s] >= 0) {
+        delete[] new_sendlist[s];
+      }
+      // allocate at least 128 entries to avoid frequent reallocations for small sendnum
+      int capacity = std::max(orig_sendnum, 128);
+      new_sendlist[s] = new int[capacity];
+      new_sendlist_capacity[s] = capacity;
+    }
+
+    int send_count = 0;
+    for (int k = 0; k < orig_sendnum; ++k) {
+      int orig_idx = lmp_list.sendlist[s][k];
+      int real_idx = fwd_map[orig_idx];
+      if (real_idx >= 0) {
+        new_sendlist[s][send_count] = real_idx;
+        ++send_count;
+      }
+    }
+    new_sendnum[s] = send_count;
+
+    int firstrecv = lmp_list.firstrecv[s];
+    int orig_recvnum = lmp_list.recvnum[s];
+    int recv_count = 0;
+    for (int k = 0; k < orig_recvnum; ++k) {
+      int orig_idx = firstrecv + k;
+      int real_idx = fwd_map[orig_idx];
+      if (real_idx >= 0) {
+        ++recv_count;
+      }
+    }
+    new_recvnum[s] = recv_count;
+  }
+
+  update_comm_dict(lmp_list, new_sendlist, new_sendnum, new_recvnum);
+}
+
+void DeepPotPT::update_comm_dict(const InputNlist& lmp_list,
+                                 int** sendlist,
+                                 int* sendnum,
+                                 int* recvnum) {
+  int nswap = lmp_list.nswap;
+  auto int32_option =
+      torch::TensorOptions().device(torch::kCPU).dtype(torch::kInt32);
+  auto int64_option =
+      torch::TensorOptions().device(torch::kCPU).dtype(torch::kInt64);
+
+  torch::Tensor sendlist_tensor =
+      torch::from_blob(static_cast<void*>(sendlist), {nswap}, int64_option);
+  torch::Tensor sendnum_tensor = torch::from_blob(sendnum, {nswap}, int32_option);
+  torch::Tensor recvnum_tensor = torch::from_blob(recvnum, {nswap}, int32_option);
+  torch::Tensor sendproc_tensor =
+      torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
+  torch::Tensor recvproc_tensor =
+      torch::from_blob(lmp_list.recvproc, {nswap}, int32_option);
+
+  torch::Tensor communicator_tensor;
+  static std::int64_t null_communicator = 0;
+  if (lmp_list.world == nullptr) {
+    communicator_tensor = torch::from_blob(&null_communicator, {1}, torch::kInt64);
+  } else {
+    communicator_tensor =
+        torch::from_blob(const_cast<void*>(lmp_list.world), {1}, torch::kInt64);
+  }
+
+  comm_dict.insert_or_assign("send_list", sendlist_tensor);
+  comm_dict.insert_or_assign("send_proc", sendproc_tensor);
+  comm_dict.insert_or_assign("recv_proc", recvproc_tensor);
+  comm_dict.insert_or_assign("send_num", sendnum_tensor);
+  comm_dict.insert_or_assign("recv_num", recvnum_tensor);
+  comm_dict.insert_or_assign("communicator", communicator_tensor);
+}
+
 DeepPotPT::DeepPotPT() : inited(false) {}
 DeepPotPT::DeepPotPT(const std::string& model,
                      const int& gpu_rank,
@@ -149,6 +257,16 @@ void DeepPotPT::init(const std::string& model,
 }
 
 DeepPotPT::~DeepPotPT() {
+  if (new_sendlist != nullptr) {
+    for (int s = 0; s < comm_maxswap; ++s) {
+      delete[] new_sendlist[s];
+    }
+  }
+  delete[] new_sendlist;
+  delete[] new_sendnum;
+  delete[] new_recvnum;
+  delete[] new_sendlist_capacity;
+
   if (profiler_enabled) {
     auto result = torch::autograd::profiler::disableProfiler();
     if (result) {
@@ -198,6 +316,8 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                           bkw_map, nall_real, nloc_real, coord, atype, aparam,
                           nghost, ntypes, 1, daparam, nall, aparam_nall);
   int nloc = nall_real - nghost_real;
+  // Detect whether any NULL-type atoms were filtered out.
+  bool has_null_atoms = (nall_real < nall);
   int nframes = 1;
   std::vector<VALUETYPE> coord_wrapped = dcoord;
   at::Tensor coord_wrapped_Tensor =
@@ -211,36 +331,12 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
     if (do_message_passing) {
-      int nswap = lmp_list.nswap;
-      torch::Tensor sendproc_tensor =
-          torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
-      torch::Tensor recvproc_tensor =
-          torch::from_blob(lmp_list.recvproc, {nswap}, int32_option);
-      torch::Tensor firstrecv_tensor =
-          torch::from_blob(lmp_list.firstrecv, {nswap}, int32_option);
-      torch::Tensor recvnum_tensor =
-          torch::from_blob(lmp_list.recvnum, {nswap}, int32_option);
-      torch::Tensor sendnum_tensor =
-          torch::from_blob(lmp_list.sendnum, {nswap}, int32_option);
-      torch::Tensor communicator_tensor;
-      if (lmp_list.world == 0) {
-        communicator_tensor = torch::empty({1}, torch::kInt64);
+      if (has_null_atoms) {
+        update_comm_dict_with_virtual_atoms(lmp_list, fwd_map);
       } else {
-        communicator_tensor = torch::from_blob(
-            const_cast<void*>(lmp_list.world), {1}, torch::kInt64);
+        update_comm_dict(lmp_list, lmp_list.sendlist, lmp_list.sendnum,
+                            lmp_list.recvnum);
       }
-
-      torch::Tensor nswap_tensor = torch::tensor(nswap, int32_option);
-      int total_send =
-          std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
-      torch::Tensor sendlist_tensor =
-          torch::from_blob(lmp_list.sendlist, {total_send}, int32_option);
-      comm_dict.insert_or_assign("send_list", sendlist_tensor);
-      comm_dict.insert_or_assign("send_proc", sendproc_tensor);
-      comm_dict.insert_or_assign("recv_proc", recvproc_tensor);
-      comm_dict.insert_or_assign("send_num", sendnum_tensor);
-      comm_dict.insert_or_assign("recv_num", recvnum_tensor);
-      comm_dict.insert_or_assign("communicator", communicator_tensor);
     }
     if (lmp_list.mapping) {
       std::vector<std::int64_t> mapping(nall_real);
@@ -272,7 +368,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
             options)
             .to(device);
   }
-  c10::Dict<c10::IValue, c10::IValue> outputs =
+  auto outputs =
       (do_message_passing)
           ? module
                 .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,

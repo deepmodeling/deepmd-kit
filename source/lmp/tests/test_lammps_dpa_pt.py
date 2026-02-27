@@ -19,6 +19,7 @@ from write_lmp_data import (
     write_lmp_data,
 )
 
+
 pbtxt_file2 = (
     Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot-1.pbtxt"
 )
@@ -502,6 +503,7 @@ def test_pair_deepmd_type_map_with_null(lammps_type_map) -> None:
     lammps_type_map.pair_coeff("* * deepmd 1 H NULL")
     lammps_type_map.pair_coeff("* * deepmd 2 NULL O")
     lammps_type_map.run(0)
+    lammps_type_map.run(1)
 
 
 def test_pair_deepmd_real(lammps_real) -> None:
