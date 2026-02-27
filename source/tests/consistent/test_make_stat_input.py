@@ -192,7 +192,7 @@ def _compare_stat(
             if in_uni and not in_pt:
                 find_key = f"find_{key}" if not key.startswith("find_") else key
                 find_val = universal_stat[sys_idx].get(find_key, None)
-                if find_val is not None and float(find_val) == 0.0:
+                if find_val is not None and not find_val:
                     continue
             test_case.assertEqual(
                 in_uni, in_pt, f"system {sys_idx}: key '{key}' presence mismatch"
@@ -204,9 +204,10 @@ def _compare_stat(
             v_pt = _to_numpy(pt_stat[sys_idx][key])
 
             if key.startswith("find_"):
+                # universal returns bool, pt returns float32
                 test_case.assertEqual(
-                    float(np.ravel(v_uni)[0]),
-                    float(np.ravel(v_pt)[0]),
+                    bool(v_uni),
+                    bool(float(np.ravel(v_pt)[0]) > 0.5),
                     f"system {sys_idx}, key '{key}': find flag mismatch",
                 )
                 continue

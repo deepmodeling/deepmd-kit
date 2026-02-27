@@ -9,6 +9,10 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.utils.batch import (
+    normalize_batch,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -113,21 +117,7 @@ def make_stat_input(
                 # scalar flags like find_*
                 merged[key] = vals[0]
 
-        # DeepmdDataSystem.get_batch() uses "type"; stat consumers expect "atype".
-        if "type" in merged and "atype" not in merged:
-            merged["atype"] = merged.pop("type")
-
-        # Provide "natoms" from "natoms_vec".
-        # natoms_vec from get_batch() is 1D [2+ntypes], but
-        # compute_output_stats expects 2D [nframes, 2+ntypes].
-        if "natoms_vec" in merged:
-            nv = merged["natoms_vec"]
-            if nv.ndim == 1:
-                nframes = merged["coord"].shape[0]
-                nv = np.tile(nv, (nframes, 1))
-            merged["natoms"] = nv
-
-        lst.append(merged)
+        lst.append(normalize_batch(merged))
     return lst
 
 

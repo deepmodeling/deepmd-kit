@@ -22,6 +22,10 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.utils.batch import (
+    normalize_batch,
+    split_batch,
+)
 from deepmd.dpmodel.utils.learning_rate import (
     LearningRateExp,
 )
@@ -639,56 +643,30 @@ class Trainer:
         if data_sys is None:
             return {}, {}
 
-        batch = data_sys.get_batch()  # numpy dict
+        batch = normalize_batch(data_sys.get_batch())
+        input_dict, label_dict = split_batch(batch)
 
-        input_keys = {"coord", "box", "fparam", "aparam"}
-        input_dict: dict[str, Any] = {}
-        label_dict: dict[str, Any] = {}
-
-        natoms = batch["type"].shape[-1]
-
-        for key, val in batch.items():
-            if key == "type":
-                # rename to atype; convert to int64 tensor
-                input_dict["atype"] = torch.from_numpy(val.astype(np.int64)).to(DEVICE)
-            elif key == "coord":
-                # reshape from [nf, natoms*3] → [nf, natoms, 3]
-                t = torch.from_numpy(val.copy()).to(
-                    dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
-                )
-                # requires_grad needed for force computation via autograd
-                input_dict["coord"] = t.reshape(-1, natoms, 3).requires_grad_(True)
-            elif key == "box":
-                if val is not None:
-                    t = torch.from_numpy(val).to(
-                        dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
-                    )
-                    input_dict["box"] = t.reshape(-1, 3, 3)
-                else:
-                    input_dict["box"] = None
-            elif key in input_keys:
-                if val is not None and isinstance(val, np.ndarray):
-                    input_dict[key] = torch.from_numpy(val).to(
-                        dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
-                    )
-            elif key in ("natoms_vec", "default_mesh", "sid", "fid"):
+        # Convert numpy arrays to torch tensors.
+        for key, val in input_dict.items():
+            if val is None or not isinstance(val, np.ndarray):
                 continue
-            elif "find_" in key:
-                # find_energy, find_force, … — keep as float scalar
-                label_dict[key] = float(val) if not isinstance(val, float) else val
-            elif key == "force":
-                # [nf, natoms*3] → [nf, natoms, 3]
-                t = torch.from_numpy(val).to(
+            if np.issubdtype(val.dtype, np.integer):
+                input_dict[key] = torch.from_numpy(val).to(DEVICE)
+            else:
+                input_dict[key] = torch.from_numpy(val).to(
                     dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
                 )
-                label_dict["force"] = t.reshape(-1, natoms, 3)
-            else:
-                if isinstance(val, np.ndarray):
-                    label_dict[key] = torch.from_numpy(val).to(
-                        dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
-                    )
-                else:
-                    label_dict[key] = val
+        # requires_grad on coord for force computation via autograd
+        if "coord" in input_dict and input_dict["coord"] is not None:
+            input_dict["coord"] = input_dict["coord"].requires_grad_(True)
+
+        for key, val in label_dict.items():
+            if key.startswith("find_"):
+                label_dict[key] = float(val)
+            elif isinstance(val, np.ndarray):
+                label_dict[key] = torch.from_numpy(val).to(
+                    dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
+                )
 
         return input_dict, label_dict
 

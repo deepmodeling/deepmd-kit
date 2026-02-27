@@ -339,15 +339,12 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                 if default_fparam is not None:
                     default_fparam_np = np.array(default_fparam)
                     for sample in sampled:
-                        if (
-                            "find_fparam" in sample
-                            and float(sample["find_fparam"]) == 0.0
-                        ):
+                        if "find_fparam" in sample and not sample["find_fparam"]:
                             nframe = sample["atype"].shape[0]
                             sample["fparam"] = np.tile(
                                 default_fparam_np.reshape(1, -1), (nframe, 1)
                             )
-                            sample["find_fparam"] = np.float32(1.0)
+                            sample["find_fparam"] = np.bool_(True)
             return sampled
 
         return wrapped_sampler

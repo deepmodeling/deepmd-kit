@@ -272,7 +272,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                             f"numb_fparam > 0 but fparam is not acquired "
                             f"for system {ii}."
                         )
-                    if float(frame["find_fparam"]) != 1.0:
+                    if not frame["find_fparam"]:
                         raise ValueError(
                             f"numb_fparam > 0 but no fparam data is provided "
                             f"for system {ii}."
@@ -330,7 +330,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                             f"numb_aparam > 0 but aparam is not acquired "
                             f"for system {ii}."
                         )
-                    if float(frame["find_aparam"]) != 1.0:
+                    if not frame["find_aparam"]:
                         raise ValueError(
                             f"numb_aparam > 0 but no aparam data is provided "
                             f"for system {ii}."
