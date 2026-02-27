@@ -153,12 +153,18 @@ dev = [
 pin_tensorflow_cpu = [
   # https://github.com/tensorflow/tensorflow/issues/75279
   # macos x86 has been deprecated
-  "tensorflow-cpu>=2.18,<2.21; platform_machine=='x86_64' and platform_system == 'Linux'",
+  "tensorflow-cpu==2.20.0; platform_machine=='x86_64' and platform_system == 'Linux'",
   "tensorflow~=2.18.0; (platform_machine!='x86_64' or platform_system != 'Linux') and (platform_machine!='x86_64' or platform_system != 'Darwin')",
   "tensorflow; platform_machine=='x86_64' and platform_system == 'Darwin'",
+  # TODO: unpin protobuf after TF is upgraded to 2.21
+  # See: https://github.com/tensorflow/tensorflow/pull/103382
+  "protobuf<7.34.0",
 ]
 pin_tensorflow_gpu = [
-  "tensorflow~=2.18.0",
+  "tensorflow==2.18.0",
+  # TODO: unpin protobuf after TF is upgraded to 2.21
+  # See: https://github.com/tensorflow/tensorflow/pull/103382
+  "protobuf<7.34.0",
 ]
 pin_pytorch_cpu = [
   # https://github.com/pytorch/pytorch/issues/114602

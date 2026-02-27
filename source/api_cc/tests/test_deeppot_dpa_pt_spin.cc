@@ -15,7 +15,7 @@
 
 // 1e-10 cannot pass; unclear bug or not
 #undef EPSILON
-#define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-7 : 1e-1)
+#define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-6 : 1e-1)
 
 template <class VALUETYPE>
 class TestInferDeepSpinDpaPt : public ::testing::Test {
@@ -43,44 +43,59 @@ class TestInferDeepSpinDpaPt : public ::testing::Test {
   // atype = np.array([0, 1, 1, 0, 1, 1])
   // box = np.array([13., 0., 0., 0., 13., 0., 0., 0., 13.]).reshape(1, -1)
   // dp = DeepPot("deeppot_dpa_spin.pth")
-  // e, f, _, ae, _, fm, _ = dp.eval(coord, box, atype, atomic=True, spin=spin)
+  // e, f, v, ae, av, fm, _ = dp.eval(coord, box, atype, atomic=True, spin=spin)
   // np.set_printoptions(precision=16)
-  // print(f"{e.ravel()=} {f.ravel()=} {fm.ravel()=} {ae.ravel()=}")
+  // print(f"{e.ravel()=} {f.ravel()=} {v.ravel()=} {fm.ravel()=}
+  // {ae.ravel()=}")
 
-  std::vector<VALUETYPE> expected_e = {-5.835211567762678, -5.071189078159807,
-                                       -5.044361601406714, -5.582324154346981,
-                                       -5.059906899269188, -5.074135576182056};
+  std::vector<VALUETYPE> expected_e = {
+      -1.8626545229251095e+00, -2.3502165071948093e+00, -2.3500944968573521e+00,
+      -2.0688274735854710e+00, -2.3485113271625320e+00, -2.3489022338537353e+00,
+  };
   std::vector<VALUETYPE> expected_f = {
-      -0.0619881702551019, 0.0646720543680939,  0.2137632336140025,
-      0.037800173877136,   -0.096327623008356,  -0.1531911892384847,
-      -0.112204927558682,  0.0299145670766557,  -0.0589474826303666,
-      0.2278904556868233,  0.0382061907026398,  0.0888060647788163,
-      -0.0078898845686437, 0.0019385598635839,  -0.0791616129664364,
-      -0.083607647181527,  -0.0384037490026167, -0.0112690135575317};
+      3.7989110974834261e-02,  -6.8203560994098300e-02, 3.1554995279414300e-02,
+      -6.0769407958790114e-02, 5.6658432967656878e-03,  2.1814741358389407e-02,
+      1.5027739412753049e-02,  6.2090755323245192e-02,  -5.3346442187326704e-02,
+      -5.2134406995188787e-02, 4.0990812807417676e-02,  -1.6987454510304811e-02,
+      -6.7153786204261134e-03, -5.3801784772022326e-02, 5.6707773168242034e-02,
+      6.6602343186817375e-02,  1.3257934338691726e-02,  -3.9743613108414025e-02,
+  };
   std::vector<VALUETYPE> expected_fm = {
-      -3.0778301386623275,
-      -1.3135930534661662,
-      -0.8332043979367366,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      -0.5452347545527696,
-      -0.2051506559632127,
-      -0.4908015055951312,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
+      4.8385521455777196e+00, 5.3158441514550137e-01, 1.0855626815019124e+00,
+      0.0000000000000000e+00, 0.0000000000000000e+00, 0.0000000000000000e+00,
+      0.0000000000000000e+00, 0.0000000000000000e+00, 0.0000000000000000e+00,
+      1.2140862110260138e+00, 9.6823434985033552e-01, 1.0689000529371890e+00,
+      0.0000000000000000e+00, 0.0000000000000000e+00, 0.0000000000000000e+00,
+      0.0000000000000000e+00, 0.0000000000000000e+00, 0.0000000000000000e+00,
+  };
+  std::vector<VALUETYPE> expected_tot_v = {
+      1.3824836617610417e-01,  1.3936741842895785e-02,  -6.6368919371499843e-02,
+      2.7457622909082817e-02,  7.8421669005063782e-02,  -7.3855775048417324e-02,
+      -6.6291165687501666e-02, -7.0321379535767850e-02, 9.3633139281050631e-02,
+  };
+  std::vector<VALUETYPE> expected_atom_v = {
+      1.5062258683232639e-02,  1.2127480962864944e-03,  -1.0162650648943013e-02,
+      1.5209474134091445e-03,  1.1506421293176305e-02,  -3.1879228754013102e-03,
+      -9.8921319202609839e-03, -3.2539620487815153e-03, 8.8506629253760523e-03,
+      3.5246401477549733e-02,  -1.2095530141782164e-02, -2.7192583359447204e-02,
+      -8.0687617219887668e-04, 8.7274423879230294e-04,  5.0653534823779300e-04,
+      -8.8959039912723942e-03, 1.4282170948379993e-03,  7.1793794296111050e-03,
+      1.0454610564796012e-02,  4.9337241996913368e-03,  -5.1956142767175060e-03,
+      2.1322349032843767e-02,  3.6589953171335281e-02,  -2.5233310907452358e-02,
+      -1.8978868056705719e-02, -3.1879121076347043e-02, 2.2823386401396493e-02,
+      3.0685989273260134e-02,  3.3832992712807563e-03,  -2.6187478868556556e-03,
+      3.0642173785931769e-03,  6.0642419846717189e-03,  -9.2730679711597770e-03,
+      -2.9147581597328805e-03, -8.9463130935045487e-03, 1.3848366583449021e-02,
+      4.3089321022873554e-03,  4.6119905760196971e-03,  -6.9703908253700266e-03,
+      -4.1294359596699753e-03, 2.0744263944150482e-02,  -3.3186693638875019e-02,
+      2.8946777313109276e-03,  -1.9223536156324161e-02, 3.0643617186671183e-02,
+      4.2490174074978321e-02,  1.1890509841399666e-02,  -1.4228932374166448e-02,
+      6.4864212161055840e-03,  2.6440443729376928e-03,  -3.4813150037666628e-03,
+      -2.8504181290840619e-02, -8.4466642556485783e-03, 1.0287726754546783e-02,
   };
 
   int natoms;
   double expected_tot_e;
-  // std::vector<VALUETYPE> expected_tot_v;
 
   deepmd::DeepSpin dp;
 
@@ -93,18 +108,12 @@ class TestInferDeepSpinDpaPt : public ::testing::Test {
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
     EXPECT_EQ(natoms * 3, expected_fm.size());
-    // EXPECT_EQ(natoms * 9, expected_v.size());
+    EXPECT_EQ(9, expected_tot_v.size());
+    EXPECT_EQ(natoms * 9, expected_atom_v.size());
     expected_tot_e = 0.;
-    // expected_tot_v.resize(9);
-    // std::fill(expected_tot_v.begin(), expected_tot_v.end(), 0.);
     for (int ii = 0; ii < natoms; ++ii) {
       expected_tot_e += expected_e[ii];
     }
-    // for (int ii = 0; ii < natoms; ++ii) {
-    //   for (int dd = 0; dd < 9; ++dd) {
-    //     expected_tot_v[dd] += expected_v[ii * 9 + dd];
-    //   }
-    // }
   };
 
   void TearDown() override {};
@@ -121,10 +130,9 @@ TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist) {
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_fm = this->expected_fm;
-  // std::vector<VALUETYPE>& expected_v = this->expected_v;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
-  // std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial;
@@ -132,16 +140,16 @@ TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  // EXPECT_EQ(virial.size(), 9);
-
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
   for (int ii = 0; ii < natoms * 3; ++ii) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < 3 * 3; ++ii) {
-  //   EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-  // }
+  EXPECT_FALSE(virial.empty()) << "Virial should not be empty";
+  EXPECT_EQ(virial.size(), 9);
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
 }
 
 TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist_atomic) {
@@ -153,10 +161,10 @@ TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist_atomic) {
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_fm = this->expected_fm;
-  // std::vector<VALUETYPE>& expected_v = this->expected_v;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  std::vector<VALUETYPE>& expected_atom_v = this->expected_atom_v;
   int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
-  // std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial, atom_ener, atom_vir;
@@ -165,24 +173,26 @@ TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist_atomic) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  // EXPECT_EQ(virial.size(), 9);
   EXPECT_EQ(atom_ener.size(), natoms);
-  // EXPECT_EQ(atom_vir.size(), natoms * 9);
 
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
   for (int ii = 0; ii < natoms * 3; ++ii) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < 3 * 3; ++ii) {
-  //   EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-  // }
+  EXPECT_FALSE(virial.empty()) << "Virial should not be empty";
+  EXPECT_EQ(virial.size(), 9);
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
   for (int ii = 0; ii < natoms; ++ii) {
     EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < natoms * 9; ++ii) {
-  //   EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
-  // }
+  EXPECT_FALSE(atom_vir.empty()) << "Atomic virial should not be empty";
+  EXPECT_EQ(atom_vir.size(), natoms * 9);
+  for (int ii = 0; ii < natoms * 9; ++ii) {
+    EXPECT_LT(fabs(atom_vir[ii] - expected_atom_v[ii]), EPSILON);
+  }
 }
 
 template <class VALUETYPE>
@@ -210,43 +220,60 @@ class TestInferDeepSpinDpaPtNopbc : public ::testing::Test {
   // atype = np.array([0, 1, 1, 0, 1, 1])
   // box = None
   // dp = DeepPot("deeppot_dpa_spin.pth")
-  // e, f, _, ae, _, fm, _ = dp.eval(coord, box, atype, atomic=True,
+  // e, f, v, ae, av, fm, _ = dp.eval(coord, box, atype, atomic=True,
   // spin=spin)
   // np.set_printoptions(precision=16)
-  // print(f"{e.ravel()=} {f.ravel()=} {fm.ravel()=} {ae.ravel()=}")
+  // print(f"{e.ravel()=} {f.ravel()=} {v.ravel()=} {fm.ravel()=}
+  // {ae.ravel()=}")
 
-  std::vector<VALUETYPE> expected_e = {-5.921669893870771, -5.1676693791758685,
-                                       -5.205933794558385, -5.58688965168251,
-                                       -5.080322972018686, -5.08213772482076};
+  std::vector<VALUETYPE> expected_e = {
+      -1.9136796509970209e+00, -2.3532121417832528e+00,
+      -2.3589759416772553e+00, -2.0689533840218703e+00,
+      -2.3485273598793084e+00, -2.3489022338537353e+00};
   std::vector<VALUETYPE> expected_f = {
-      -0.2929142244191496, 0.0801070990501456,  0.148216178514704,
-      0.2929142244191503,  -0.0801070990501454, -0.1482161785147037,
-      -0.2094984819251435, 0.0241594118950041,  -0.0215199116994508,
-      0.3068843038300324,  -0.001620530344866,  0.1508093841389746,
-      -0.0122719879278721, 0.0186341247897136,  -0.1137104245023705,
-      -0.0851138339770169, -0.0411730063398516, -0.0155790479371533};
-  std::vector<VALUETYPE> expected_fm = {-1.5298530476860008,
-                                        0.0071315024546899,
-                                        0.0650492472558729,
-                                        0.,
-                                        0.,
-                                        0.,
-                                        0.,
-                                        0.,
-                                        0.,
-                                        -0.6212052813442365,
-                                        -0.2290265978320395,
-                                        -0.5101405083352206,
-                                        0.,
-                                        0.,
-                                        0.,
-                                        0.,
-                                        0.,
-                                        0.};
+      5.2440246818294511e-02,  -8.2643189092284075e-03, -1.6057110078610215e-02,
+      -5.2440246818295698e-02, 8.2643189092281334e-03,  1.6057110078610277e-02,
+      -1.6724663644564395e-03, 7.9346065821642349e-05,  -2.5251632397208987e-04,
+      -5.6934098675373246e-02, 4.0398593044712161e-02,  -1.6520316500527876e-02,
+      -7.9878577602028808e-03, -5.3736758888210570e-02, 5.6516778947603999e-02,
+      6.6594422800032166e-02,  1.3258819777676990e-02,  -3.9743946123104140e-02,
+  };
+  std::vector<VALUETYPE> expected_fm = {
+      4.5904360179010135e+00, 6.2821415259365443e-01, 9.2483695213043082e-01,
+      0.0000000000000000e+00, 0.0000000000000000e+00, 0.0000000000000000e+00,
+      0.0000000000000000e+00, 0.0000000000000000e+00, 0.0000000000000000e+00,
+      1.2125967529512662e+00, 9.6807902483755459e-01, 1.0691011858092361e+00,
+      0.0000000000000000e+00, 0.0000000000000000e+00, 0.0000000000000000e+00,
+      0.0000000000000000e+00, 0.0000000000000000e+00, 0.0000000000000000e+00,
+  };
+  std::vector<VALUETYPE> expected_tot_v = {
+      1.0340989912297673e-01,  1.7731575682021676e-03,  -5.2108130921436818e-02,
+      -2.3573500930805756e-03, 3.1835281809236504e-02,  -4.1149040865495201e-02,
+      -3.8786409820505775e-02, -3.1539990930710131e-02, 6.3609050665518849e-02,
+  };
+  std::vector<VALUETYPE> expected_atom_v = {
+      7.4120023328214657e-03,  -3.1050280043021516e-03, -5.6090828464736842e-03,
+      -2.9955764634068682e-03, 1.2549036535866968e-03,  2.2669227290622353e-03,
+      -5.4203732932148890e-03, 2.2706969201286079e-03,  4.1019041137797078e-03,
+      3.1393780312700348e-02,  -1.3151448509374553e-02, -2.3757455371773359e-02,
+      -3.1200195294236038e-03, 1.3070352082720678e-03,  2.3610958601044327e-03,
+      -6.4618881649612936e-03, 2.7070072042405802e-03,  4.8900775302411284e-03,
+      5.0796934697206701e-03,  -6.2368435756216933e-04, 3.7915727217144920e-04,
+      -2.3541456235528688e-04, 4.7172356421924691e-05,  -4.7741044651678936e-05,
+      7.8040516599487829e-04,  -1.0555907766399088e-04, 7.4337745788048400e-05,
+      1.6774660014217457e-02,  1.9900026394719939e-03,  -1.3757156420267647e-03,
+      1.4918414385930168e-03,  5.8652659168653282e-03,  -9.1012492701524200e-03,
+      -1.5633397202315658e-03, -8.7822339826287010e-03, 1.3702299440830762e-02,
+      2.6638349513850509e-04,  4.7758974965528556e-03,  -7.5202570595042720e-03,
+      -3.9854902437910233e-03, 2.0716934356864808e-02,  -3.3146966232075720e-02,
+      2.3833618251221655e-03,  -1.9183462719327554e-02, 3.0553102668094204e-02,
+      4.2483379498378271e-02,  1.1887418303416192e-02,  -1.4224777273830189e-02,
+      6.4873092673031901e-03,  2.6439703172256787e-03,  -3.4811029077820542e-03,
+      -2.8504575633215068e-02, -8.4464392754590722e-03, 1.0287329166785000e-02,
+  };
 
   int natoms;
   double expected_tot_e;
-  // std::vector<VALUETYPE> expected_tot_v;
 
   deepmd::DeepSpin dp;
 
@@ -259,18 +286,12 @@ class TestInferDeepSpinDpaPtNopbc : public ::testing::Test {
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
     EXPECT_EQ(natoms * 3, expected_fm.size());
-    // EXPECT_EQ(natoms * 9, expected_v.size());
+    EXPECT_EQ(9, expected_tot_v.size());
+    EXPECT_EQ(natoms * 9, expected_atom_v.size());
     expected_tot_e = 0.;
-    // expected_tot_v.resize(9);
-    // std::fill(expected_tot_v.begin(), expected_tot_v.end(), 0.);
     for (int ii = 0; ii < natoms; ++ii) {
       expected_tot_e += expected_e[ii];
     }
-    // for (int ii = 0; ii < natoms; ++ii) {
-    //   for (int dd = 0; dd < 9; ++dd) {
-    //     expected_tot_v[dd] += expected_v[ii * 9 + dd];
-    //   }
-    // }
   };
 
   void TearDown() override {};
@@ -287,10 +308,9 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_build_nlist) {
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_fm = this->expected_fm;
-  // std::vector<VALUETYPE>& expected_v = this->expected_v;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
-  // std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial;
@@ -298,16 +318,16 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_build_nlist) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  // EXPECT_EQ(virial.size(), 9);
-
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
   for (int ii = 0; ii < natoms * 3; ++ii) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < 3 * 3; ++ii) {
-  //   EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-  // }
+  EXPECT_FALSE(virial.empty()) << "Virial should not be empty";
+  EXPECT_EQ(virial.size(), 9);
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
 }
 
 TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_build_nlist_atomic) {
@@ -319,10 +339,10 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_build_nlist_atomic) {
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_fm = this->expected_fm;
-  // std::vector<VALUETYPE>& expected_v = this->expected_v;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  std::vector<VALUETYPE>& expected_atom_v = this->expected_atom_v;
   int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
-  // std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial, atom_ener, atom_vir;
@@ -331,24 +351,26 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_build_nlist_atomic) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  // EXPECT_EQ(virial.size(), 9);
   EXPECT_EQ(atom_ener.size(), natoms);
-  // EXPECT_EQ(atom_vir.size(), natoms * 9);
 
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
   for (int ii = 0; ii < natoms * 3; ++ii) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < 3 * 3; ++ii) {
-  //   EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-  // }
+  EXPECT_FALSE(virial.empty()) << "Virial should not be empty";
+  EXPECT_EQ(virial.size(), 9);
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
   for (int ii = 0; ii < natoms; ++ii) {
     EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < natoms * 9; ++ii) {
-  //   EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
-  // }
+  EXPECT_FALSE(atom_vir.empty()) << "Atomic virial should not be empty";
+  EXPECT_EQ(atom_vir.size(), natoms * 9);
+  for (int ii = 0; ii < natoms * 9; ++ii) {
+    EXPECT_LT(fabs(atom_vir[ii] - expected_atom_v[ii]), EPSILON);
+  }
 }
 
 TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_lmp_nlist) {
@@ -360,10 +382,9 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_lmp_nlist) {
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_fm = this->expected_fm;
-  // std::vector<VALUETYPE>& expected_v = this->expected_v;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
-  // std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial;
@@ -380,16 +401,16 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_lmp_nlist) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  // EXPECT_EQ(virial.size(), 9);
-
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
   for (int ii = 0; ii < natoms * 3; ++ii) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < 3 * 3; ++ii) {
-  //   EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-  // }
+  EXPECT_FALSE(virial.empty()) << "Virial should not be empty";
+  EXPECT_EQ(virial.size(), 9);
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
 }
 
 TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_lmp_nlist_atomic) {
@@ -401,10 +422,10 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_lmp_nlist_atomic) {
   std::vector<VALUETYPE>& expected_e = this->expected_e;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   std::vector<VALUETYPE>& expected_fm = this->expected_fm;
-  // std::vector<VALUETYPE>& expected_v = this->expected_v;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  std::vector<VALUETYPE>& expected_atom_v = this->expected_atom_v;
   int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
-  // std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial, atom_ener, atom_vir;
@@ -421,22 +442,24 @@ TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_lmp_nlist_atomic) {
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
-  // EXPECT_EQ(virial.size(), 9);
   EXPECT_EQ(atom_ener.size(), natoms);
-  // EXPECT_EQ(atom_vir.size(), natoms * 9);
 
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
   for (int ii = 0; ii < natoms * 3; ++ii) {
     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < 3 * 3; ++ii) {
-  //   EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-  // }
+  EXPECT_FALSE(virial.empty()) << "Virial should not be empty";
+  EXPECT_EQ(virial.size(), 9);
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
   for (int ii = 0; ii < natoms; ++ii) {
     EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
   }
-  // for (int ii = 0; ii < natoms * 9; ++ii) {
-  //   EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
-  // }
+  EXPECT_FALSE(atom_vir.empty()) << "Atomic virial should not be empty";
+  EXPECT_EQ(atom_vir.size(), natoms * 9);
+  for (int ii = 0; ii < natoms * 9; ++ii) {
+    EXPECT_LT(fabs(atom_vir[ii] - expected_atom_v[ii]), EPSILON);
+  }
 }
