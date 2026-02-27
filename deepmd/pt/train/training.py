@@ -72,6 +72,11 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.learning_rate import (
     BaseLR,
 )
+from deepmd.pt.utils.lmdb_dataset import (
+    LmdbDataset,
+    _collate_lmdb_batch,
+    _SameNlocBatchSamplerTorch,
+)
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
@@ -224,8 +229,8 @@ class Trainer:
                 yield from it
 
         def get_data_loader(
-            _training_data: DpLoaderSet,
-            _validation_data: DpLoaderSet | None,
+            _training_data: DpLoaderSet | LmdbDataset,
+            _validation_data: DpLoaderSet | LmdbDataset | None,
             _training_params: dict[str, Any],
         ) -> tuple[
             DataLoader,
@@ -234,6 +239,42 @@ class Trainer:
             Generator[Any, None, None] | None,
             int,
         ]:
+            def get_dataloader_and_iter_lmdb(
+                _data: LmdbDataset,
+            ) -> tuple[DataLoader, Generator[Any, None, None]]:
+                if _data.mixed_batch:
+                    # TODO [mixed_batch=True]: Replace SameNlocBatchSampler with
+                    # RandomSampler(replacement=False) + padding collate_fn.
+                    # Changes needed:
+                    #   1. _collate_lmdb_batch: pad coord/force/atype to max_nloc,
+                    #      add "atom_mask" bool tensor (nframes, max_nloc)
+                    #   2. Use RandomSampler(_data, replacement=False) as sampler
+                    #   3. Use fixed batch_size in DataLoader (not batch_sampler)
+                    #   4. Model forward: apply atom_mask to descriptor/fitting
+                    #   5. Loss: mask out padded atoms in force loss
+                    raise NotImplementedError(
+                        "mixed_batch=True training is not yet supported."
+                    )
+                # mixed_batch=False: group frames by nloc, each batch same nloc.
+                # SameNlocBatchSampler yields list[int] per batch, all same nloc.
+                # Auto batch_size is computed per-nloc-group inside the sampler.
+                from deepmd.dpmodel.utils.lmdb_data import (
+                    SameNlocBatchSampler,
+                )
+
+                _batch_sampler = _SameNlocBatchSamplerTorch(
+                    SameNlocBatchSampler(_data._reader, shuffle=True)
+                )
+                _dataloader = DataLoader(
+                    _data,
+                    batch_sampler=_batch_sampler,
+                    num_workers=0,
+                    collate_fn=_collate_lmdb_batch,
+                    pin_memory=(DEVICE != "cpu"),
+                )
+                _data_iter = cycle_iterator(_dataloader)
+                return _dataloader, _data_iter
+
             def get_dataloader_and_iter(
                 _data: DpLoaderSet, _params: dict[str, Any]
             ) -> tuple[DataLoader, Generator[Any, None, None]]:
@@ -256,17 +297,28 @@ class Trainer:
                 _data_iter = cycle_iterator(_dataloader)
                 return _dataloader, _data_iter
 
-            training_dataloader, training_data_iter = get_dataloader_and_iter(
-                _training_data, _training_params["training_data"]
-            )
+            if isinstance(_training_data, LmdbDataset):
+                training_dataloader, training_data_iter = get_dataloader_and_iter_lmdb(
+                    _training_data
+                )
+            else:
+                training_dataloader, training_data_iter = get_dataloader_and_iter(
+                    _training_data, _training_params["training_data"]
+                )
 
             if _validation_data is not None:
-                (
-                    validation_dataloader,
-                    validation_data_iter,
-                ) = get_dataloader_and_iter(
-                    _validation_data, _training_params["validation_data"]
-                )
+                if isinstance(_validation_data, LmdbDataset):
+                    (
+                        validation_dataloader,
+                        validation_data_iter,
+                    ) = get_dataloader_and_iter_lmdb(_validation_data)
+                else:
+                    (
+                        validation_dataloader,
+                        validation_data_iter,
+                    ) = get_dataloader_and_iter(
+                        _validation_data, _training_params["validation_data"]
+                    )
                 valid_numb_batch = _training_params["validation_data"].get(
                     "numb_btch", 1
                 )
@@ -403,12 +455,17 @@ class Trainer:
                 self.valid_numb_batch,
             ) = get_data_loader(training_data, validation_data, training_params)
             training_data.print_summary(
-                "training", to_numpy_array(self.training_dataloader.sampler.weights)
+                "training",
+                to_numpy_array(self.training_dataloader.sampler.weights)
+                if not isinstance(training_data, LmdbDataset)
+                else [1.0],
             )
             if validation_data is not None:
                 validation_data.print_summary(
                     "validation",
-                    to_numpy_array(self.validation_dataloader.sampler.weights),
+                    to_numpy_array(self.validation_dataloader.sampler.weights)
+                    if not isinstance(validation_data, LmdbDataset)
+                    else [1.0],
                 )
         else:
             (
@@ -481,13 +538,16 @@ class Trainer:
                     )
                 if self.num_epoch <= 0:
                     raise ValueError("training.num_epoch must be positive.")
-                sampler_weights = to_numpy_array(
-                    self.training_dataloader.sampler.weights
-                )
-                total_numb_batch = compute_total_numb_batch(
-                    training_data.index,
-                    sampler_weights,
-                )
+                if isinstance(training_data, LmdbDataset):
+                    total_numb_batch = training_data.total_batch
+                else:
+                    sampler_weights = to_numpy_array(
+                        self.training_dataloader.sampler.weights
+                    )
+                    total_numb_batch = compute_total_numb_batch(
+                        training_data.index,
+                        sampler_weights,
+                    )
                 if total_numb_batch <= 0:
                     raise ValueError(
                         "Total number of training batches must be positive."
