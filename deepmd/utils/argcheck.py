@@ -2806,7 +2806,7 @@ def optimizer_adamw() -> list[Argument]:
             "weight_decay",
             float,
             optional=True,
-            default=0.0,
+            default=0.001,
             doc=doc_only_pt_supported + doc_weight_decay,
         ),
     ]
