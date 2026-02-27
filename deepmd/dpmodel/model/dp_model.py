@@ -14,6 +14,12 @@ from deepmd.utils.data_system import (
 
 # use "class" to resolve "Variable not allowed in type expression"
 class DPModelCommon:
+    r"""Common methods for DP models.
+
+    This class provides common functionality for DeepPot models, including
+    neighbor selection updates and fitting network access.
+    """
+
     @classmethod
     def update_sel(
         cls,

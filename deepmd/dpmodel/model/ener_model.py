@@ -34,6 +34,31 @@ DPEnergyModel_ = make_model(DPEnergyAtomicModel, T_Bases=(NativeOP, BaseModel))
 
 @BaseModel.register("ener")
 class EnergyModel(DPModelCommon, DPEnergyModel_):
+    r"""Energy model that predicts total energy and derived quantities.
+
+    The model takes atomic energies from the atomic model and computes
+    global properties by reduction and differentiation:
+
+    **Reduction** (total energy):
+
+    .. math::
+        E = \sum_{i=1}^{N} E^i,
+
+    where :math:`E^i` is the atomic energy from the atomic model.
+
+    **Differentiation** (forces and virials):
+
+    .. math::
+        \mathbf{F}_i = -\frac{\partial E}{\partial \mathbf{r}_i},
+
+    .. math::
+        \boldsymbol{\Xi} = -\sum_{i=1}^{N} \frac{\partial E}{\partial \mathbf{r}_i} \otimes \mathbf{r}_i
+        = \sum_{i=1}^{N} \mathbf{r}_i \otimes \mathbf{F}_i,
+
+    where :math:`\mathbf{F}_i` is the force on atom :math:`i` and
+    :math:`\boldsymbol{\Xi}` is the virial tensor.
+    """
+
     def __init__(
         self,
         *args: Any,

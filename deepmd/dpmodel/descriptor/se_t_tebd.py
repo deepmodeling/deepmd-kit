@@ -70,6 +70,27 @@ from .descriptor import (
 class DescrptSeTTebd(NativeOP, BaseDescriptor):
     r"""Construct an embedding net that takes angles between two neighboring atoms and type embeddings as input.
 
+    The descriptor :math:`\mathcal{D}^i \in \mathbb{R}^{M}` is given by
+
+    .. math::
+        \mathcal{D}^i = \frac{1}{N_c^2} \sum_{j,k} \mathcal{N}(\cos\theta_{jik}, \mathcal{T}_j, \mathcal{T}_k),
+
+    where :math:`\theta_{jik}` is the angle between neighbors :math:`j` and :math:`k`
+    around the central atom :math:`i`, :math:`\mathcal{T}_j` and :math:`\mathcal{T}_k`
+    are the type embeddings of atoms :math:`j` and :math:`k`, and :math:`\mathcal{N}`
+    is the embedding network.
+
+    The cosine of the angle is computed from the normalized relative coordinates:
+
+    .. math::
+        \cos\theta_{jik} = \frac{\boldsymbol{r}_{ij} \cdot \boldsymbol{r}_{ik}}{|\boldsymbol{r}_{ij}| |\boldsymbol{r}_{ik}|}.
+
+    The type embedding can be incorporated in two modes:
+
+    - "concat": Concatenate :math:`[\cos\theta_{jik}, \mathcal{T}_j, \mathcal{T}_k]` as input to the embedding network.
+    - "strip": Use separate embedding networks for :math:`\cos\theta_{jik}` and :math:`[\mathcal{T}_j, \mathcal{T}_k]`,
+      then combine their outputs multiplicatively.
+
     Parameters
     ----------
     rcut
@@ -488,6 +509,59 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
 
 @DescriptorBlock.register("se_ttebd")
 class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
+    r"""The three-body descriptor block with type embedding.
+
+    This block computes an embedding using angles between two neighboring atoms and type embeddings.
+    The descriptor is computed as:
+
+    .. math::
+        \mathcal{D}^i = \frac{1}{N_c^2} \sum_{j,k} \mathcal{N}(\cos\theta_{jik}, \mathcal{T}_j, \mathcal{T}_k),
+
+    where :math:`\theta_{jik}` is the angle between neighbors :math:`j` and :math:`k`
+    around the central atom :math:`i`, :math:`\mathcal{T}_j` and :math:`\mathcal{T}_k`
+    are the type embeddings of atoms :math:`j` and :math:`k`.
+
+    The cosine of the angle is computed from the normalized relative coordinates:
+
+    .. math::
+        \cos\theta_{jik} = \frac{\boldsymbol{r}_{ij} \cdot \boldsymbol{r}_{ik}}{|\boldsymbol{r}_{ij}| |\boldsymbol{r}_{ik}|}.
+
+    Parameters
+    ----------
+    rcut : float
+        The cut-off radius.
+    rcut_smth : float
+        Where to start smoothing.
+    sel : Union[list[int], int]
+        Maximally possible number of selected neighbors.
+    ntypes : int
+        Number of element types.
+    neuron : list[int], optional
+        Number of neurons in each hidden layer of the embedding net.
+    tebd_dim : int, optional
+        Dimension of the type embedding.
+    tebd_input_mode : str, optional
+        The input mode of the type embedding. Supported modes are ["concat", "strip"].
+    set_davg_zero : bool, optional
+        Set the shift of embedding net input to zero.
+    activation_function : str, optional
+        The activation function in the embedding net.
+    precision : str, optional
+        The precision of the embedding net parameters.
+    resnet_dt : bool, optional
+        Time-step `dt` in the resnet construction.
+    exclude_types : list[tuple[int, int]], optional
+        The excluded pairs of types which have no interaction.
+    env_protection : float, optional
+        Protection parameter to prevent division by zero.
+    smooth : bool, optional
+        Whether to use smoothness.
+    seed : int, optional
+        Random seed for parameter initialization.
+    trainable : bool, optional
+        If the parameters are trainable.
+    """
+
     def __init__(
         self,
         rcut: float,

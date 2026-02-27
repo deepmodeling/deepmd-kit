@@ -44,6 +44,35 @@ from .general_fitting import (
 class PolarFitting(GeneralFitting):
     r"""Fitting rotationally equivariant polarizability of the system.
 
+    The polarizability tensor :math:`\boldsymbol{\alpha} \in \mathbb{R}^{3 \times 3}` is
+    computed from the fitting network output and the rotation matrix
+    :math:`\mathbf{R}^i \in \mathbb{R}^{m_1 \times 3}` from the descriptor,
+    where :math:`m_1` is the embedding width (the dimension of the rotation matrix):
+
+    **Diagonal fitting** (when `fit_diag=True`):
+
+    .. math::
+        \boldsymbol{\alpha}^i = \mathbf{R}^{i,T} \cdot \mathrm{diag}(\mathbf{p}^i) \cdot \mathbf{R}^i,
+
+    where :math:`\mathbf{p}^i \in \mathbb{R}^{m_1}` is the diagonal elements of the
+    local-frame polarizability predicted by the fitting network.
+
+    **Full matrix fitting** (when `fit_diag=False`):
+
+    .. math::
+        \boldsymbol{\alpha}^i = \mathbf{R}^{i,T} \cdot \mathbf{P}^i \cdot \mathbf{R}^i,
+
+    where :math:`\hat{\mathbf{P}}^i \in \mathbb{R}^{m_1 \times m_1}` is the raw output of
+    the fitting network, and :math:`\mathbf{P}^i = \frac{1}{2}(\hat{\mathbf{P}}^i + \hat{\mathbf{P}}^{i,T})`
+    is the symmetrized version. Since :math:`\mathbf{P}^i` is symmetric, the resulting
+    :math:`\boldsymbol{\alpha}^i` is guaranteed to be a symmetric tensor (matrix products
+    of the form :math:`A^T S A` preserve symmetry).
+
+    The fitting network is:
+
+    .. math::
+        \mathbf{p}^i \text{ (or } \mathbf{P}^i) = \mathcal{L}^{(n)} \circ \cdots \circ \mathcal{L}^{(0)}(\mathcal{D}^i).
+
     Parameters
     ----------
     ntypes

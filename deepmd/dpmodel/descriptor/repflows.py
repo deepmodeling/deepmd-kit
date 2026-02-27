@@ -63,6 +63,31 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
     r"""
     The repflow descriptor block.
 
+    The repflow descriptor maintains three types of representations and updates them
+    iteratively through message passing:
+
+    - **Node representation** :math:`\mathbf{n}^i \in \mathbb{R}^{n_{dim}}`: single-atom features
+    - **Edge representation** :math:`\mathbf{e}^{ij} \in \mathbb{R}^{e_{dim}}`: pair-atom features
+    - **Angle representation** :math:`\mathbf{a}^{ijk} \in \mathbb{R}^{a_{dim}}`: three-body features
+
+    The update equations for layer :math:`l` are:
+
+    .. math::
+        \mathbf{n}^{i,l+1} = \mathbf{n}^{i,l} + \text{MLP}_n\left(\sum_{j \in \mathcal{N}(i)} \mathbf{e}^{ij,l}\right),
+
+    .. math::
+        \mathbf{e}^{ij,l+1} = \mathbf{e}^{ij,l} + \text{MLP}_e\left([\mathbf{n}^{i,l}, \mathbf{n}^{j,l}, \mathbf{e}^{ij,l}, \sum_k \mathbf{a}^{ijk,l}]\right),
+
+    .. math::
+        \mathbf{a}^{ijk,l+1} = \mathbf{a}^{ijk,l} + \text{MLP}_a\left([\mathbf{e}^{ij,l}, \mathbf{e}^{ik,l}, \cos\theta_{jik}]\right).
+
+    The final descriptor is computed via symmetrization:
+
+    .. math::
+        \mathcal{D}^i = \frac{1}{N_c^2} (\mathcal{N}^i)^T \mathcal{E}^i (\mathcal{E}^i)^T \mathcal{N}^i_<,
+
+    where :math:`\mathcal{N}^i_<` denotes the first `axis_neuron` columns of :math:`\mathcal{N}^i`.
+
     Parameters
     ----------
     n_dim : int, optional
@@ -487,7 +512,8 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         atype_ext: Array,
         atype_embd_ext: Array | None = None,
         mapping: Array | None = None,
-    ) -> tuple[Array, Array]:
+        type_embedding: Array | None = None,
+    ) -> tuple[Array, Array, Array, Array, Array]:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         nframes, nloc, nnei = nlist.shape
         nall = xp.reshape(coord_ext, (nframes, -1)).shape[1] // 3
@@ -861,7 +887,7 @@ class RepFlowLayer(NativeOP):
         self,
         e_rcut: float,
         e_rcut_smth: float,
-        e_sel: int,
+        e_sel: int | list[int],
         a_rcut: float,
         a_rcut_smth: float,
         a_sel: int,
@@ -1329,7 +1355,7 @@ class RepFlowLayer(NativeOP):
         a_sw: Array,  # switch func, nf x nloc x a_nnei
         edge_index: Array,  # 2 x n_edge
         angle_index: Array,  # 3 x n_angle
-    ) -> tuple[Array, Array]:
+    ) -> tuple[Array, Array, Array]:
         """
         Parameters
         ----------

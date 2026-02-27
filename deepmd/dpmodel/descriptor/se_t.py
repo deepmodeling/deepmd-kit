@@ -63,6 +63,24 @@ class DescrptSeT(NativeOP, BaseDescriptor):
 
     The embedding takes angles between two neighboring atoms as input.
 
+    The descriptor :math:`\mathcal{D}^i \in \mathbb{R}^{M}` is given by
+
+    .. math::
+        \mathcal{D}^i = \sum_{t_j, t_k} \frac{1}{N_{t_j} N_{t_k}} \sum_{j \in t_j, k \in t_k} \tilde{g}_{jk} \, \mathcal{N}_{t_j, t_k}(\tilde{g}_{jk}),
+
+    where :math:`\tilde{g}_{jk} = \boldsymbol{rr}_j \cdot \boldsymbol{rr}_k` is the dot product
+    of the smoothed directional vectors from the environment matrix, :math:`N_{t_j}` and
+    :math:`N_{t_k}` are the numbers of neighbors of types :math:`t_j` and :math:`t_k`,
+    and :math:`\mathcal{N}_{t_j, t_k}` is the embedding network that depends only on the
+    types of neighbor atoms :math:`j` and :math:`k`.
+
+    The smoothed directional vector :math:`\boldsymbol{rr}_j` is computed as:
+
+    .. math::
+        \boldsymbol{rr}_j = s(r_{ji}) \frac{\boldsymbol{R}_j - \boldsymbol{R}_i}{r_{ji}},
+
+    where :math:`s(r)` is the switching function.
+
     Parameters
     ----------
     rcut : float
