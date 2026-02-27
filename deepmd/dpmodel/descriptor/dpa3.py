@@ -531,7 +531,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         atype_ext: Array,
         nlist: Array,
         mapping: Array | None = None,
-    ) -> tuple[Array, Array]:
+    ) -> tuple[Array, Array, Array, Array, Array]:
         """Compute the descriptor.
 
         Parameters

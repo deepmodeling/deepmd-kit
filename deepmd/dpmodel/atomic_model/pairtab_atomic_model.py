@@ -38,7 +38,7 @@ from .base_atomic_model import (
 
 @BaseAtomicModel.register("pairtab")
 class PairTabAtomicModel(BaseAtomicModel):
-    """Pairwise tabulation energy model.
+    r"""Pairwise tabulation energy model.
 
     This model can be used to tabulate the pairwise energy between atoms for either
     short-range or long-range interactions, such as D3, LJ, ZBL, etc. It should not
@@ -50,6 +50,16 @@ class PairTabAtomicModel(BaseAtomicModel):
 
     At this moment, the model does not smooth the energy at the cutoff radius, so
     one needs to make sure the energy has been smoothed to zero.
+
+    The pairwise energy is computed by table lookup and interpolation:
+
+    .. math::
+        E^i = \frac{1}{2} \sum_{j \in \mathcal{N}(i)} E_{t_i, t_j}(r_{ij}),
+
+    where :math:`E_{t_i, t_j}(r)` is the tabulated pairwise energy between atom types
+    :math:`t_i` and :math:`t_j` at distance :math:`r`, obtained via cubic spline
+    interpolation from the table data. The factor of :math:`\frac{1}{2}` avoids
+    double-counting of pairwise interactions.
 
     Parameters
     ----------

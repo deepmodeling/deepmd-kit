@@ -248,10 +248,8 @@ def compute_output_stats(
                     system["find_atom_" + kk] > 0.0
                 ):
                     atomic_sampled_idx[kk].append(idx)
-                elif (("find_" + kk) in system) and (system["find_" + kk] > 0.0):
+                if (("find_" + kk) in system) and (system["find_" + kk] > 0.0):
                     global_sampled_idx[kk].append(idx)
-                else:
-                    continue
 
         # use index to gather model predictions for the corresponding systems.
         model_pred_g = (
@@ -294,7 +292,7 @@ def compute_output_stats(
         )
 
         # compute stat
-        bias_atom_g, std_atom_g = compute_output_stats_global(
+        bias_atom_g, std_atom_g = _compute_output_stats_global(
             sampled,
             ntypes,
             keys,
@@ -305,7 +303,7 @@ def compute_output_stats(
             intensive,
             model_pred_g,
         )
-        bias_atom_a, std_atom_a = compute_output_stats_atomic(
+        bias_atom_a, std_atom_a = _compute_output_stats_atomic(
             sampled,
             ntypes,
             keys,
@@ -338,7 +336,7 @@ def compute_output_stats(
     return bias_atom_e, std_atom_e
 
 
-def compute_output_stats_global(
+def _compute_output_stats_global(
     sampled: list[dict],
     ntypes: int,
     keys: list[str],
@@ -362,20 +360,21 @@ def compute_output_stats_global(
         for kk in keys
     }
 
-    natoms_key = "natoms"
-    for system in sampled:
-        if "atom_exclude_types" in system:
-            type_mask = AtomExcludeMask(
-                ntypes, system["atom_exclude_types"]
-            ).get_type_mask()
-            system[natoms_key][:, 2:] *= type_mask.reshape(1, -1)
-    input_natoms = {
-        kk: [
-            to_numpy_array(sampled[idx][natoms_key])
-            for idx in global_sampled_idx.get(kk, [])
-        ]
-        for kk in keys
-    }
+    data_mixed_type = "real_natoms_vec" in sampled[0]
+    natoms_key = "natoms" if not data_mixed_type else "real_natoms_vec"
+    input_natoms = {}
+    for kk in keys:
+        kk_natoms = []
+        for idx in global_sampled_idx.get(kk, []):
+            nn = to_numpy_array(sampled[idx][natoms_key])
+            if "atom_exclude_types" in sampled[idx]:
+                nn = nn.copy()
+                type_mask = AtomExcludeMask(
+                    ntypes, sampled[idx]["atom_exclude_types"]
+                ).get_type_mask()
+                nn[:, 2:] *= type_mask.reshape(1, -1)
+            kk_natoms.append(nn)
+        input_natoms[kk] = kk_natoms
 
     # shape: (nframes, ndim)
     merged_output = {
@@ -462,7 +461,7 @@ def compute_output_stats_global(
     return bias_atom_e, std_atom_e
 
 
-def compute_output_stats_atomic(
+def _compute_output_stats_atomic(
     sampled: list[dict],
     ntypes: int,
     keys: list[str],

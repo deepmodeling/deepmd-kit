@@ -44,7 +44,18 @@ from .pairtab_atomic_model import (
 
 @BaseAtomicModel.register("linear")
 class LinearEnergyAtomicModel(BaseAtomicModel):
-    """Linear model make linear combinations of several existing models.
+    r"""Linear model makes linear combinations of several existing models.
+
+    The linear model combines predictions from multiple atomic models:
+
+    .. math::
+        E^i = \sum_{k=1}^{K} w_k \cdot E_k^i,
+
+    where :math:`E_k^i` is the energy predicted by the :math:`k`-th sub-model
+    for atom :math:`i`, and :math:`w_k` is the corresponding weight.
+
+    This is useful for combining different interaction types, e.g., DP + ZBL
+    for short-range repulsion, or DP + D3 for dispersion corrections.
 
     Parameters
     ----------
@@ -158,7 +169,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
-    def _sort_rcuts_sels(self) -> tuple[tuple[Array, Array], list[int]]:
+    def _sort_rcuts_sels(self) -> tuple[list[float], list[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = sorted(
             zip(self.get_model_rcuts(), self.get_model_nsels(), strict=True),
