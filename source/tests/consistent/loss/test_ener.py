@@ -111,10 +111,10 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             ),
         }
         self.predict_dpmodel_style = {
-            "energy_derv_c_redu": self.predict["virial"],
-            "energy_derv_r": self.predict["force"],
-            "energy_redu": self.predict["energy"],
-            "energy": self.predict["atom_ener"],
+            "energy": self.predict["energy"],
+            "force": self.predict["force"],
+            "virial": self.predict["virial"],
+            "atom_energy": self.predict["atom_ener"],
         }
         self.label = {
             "energy": rng.random((self.nframes,)),

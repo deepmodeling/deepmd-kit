@@ -60,17 +60,17 @@ class ModelWrapper(torch.nn.Module):
             "aparam": aparam,
         }
 
+        model_pred = self.model(**input_dict)
+
         if self.inference_only or label is None:
-            model_pred = self.model(**input_dict)
             return model_pred, None, None
         else:
             natoms = atype.shape[-1]
-            model_pred, loss, more_loss = self.loss(
-                input_dict,
-                self.model,
+            loss, more_loss = self.loss(
+                cur_lr,
+                natoms,
+                model_pred,
                 label,
-                natoms=natoms,
-                learning_rate=cur_lr,
             )
             return model_pred, loss, more_loss
 

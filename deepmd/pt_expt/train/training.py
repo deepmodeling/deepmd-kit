@@ -32,10 +32,8 @@ from deepmd.dpmodel.utils.learning_rate import (
 from deepmd.loggers.training import (
     format_training_message_per_task,
 )
-from deepmd.pt.loss import (
-    EnergyHessianStdLoss,
-    EnergyStdLoss,
-    TaskLoss,
+from deepmd.pt_expt.loss import (
+    EnergyLoss,
 )
 from deepmd.pt_expt.model import (
     get_model,
@@ -73,17 +71,13 @@ def get_loss(
     start_lr: float,
     _ntypes: int,
     _model: Any,
-) -> TaskLoss:
+) -> EnergyLoss:
     loss_type = loss_params.get("type", "ener")
-    if loss_type == "ener" and loss_params.get("start_pref_h", 0.0) > 0.0:
+    if loss_type == "ener":
         loss_params["starter_learning_rate"] = start_lr
-        return EnergyHessianStdLoss(**loss_params)
-    elif loss_type == "ener":
-        loss_params["starter_learning_rate"] = start_lr
-        return EnergyStdLoss(**loss_params)
+        return EnergyLoss(**loss_params)
     else:
-        loss_params["starter_learning_rate"] = start_lr
-        return TaskLoss.get_class_by_type(loss_type).get_loss(loss_params)
+        raise ValueError(f"Unsupported loss type for pt_expt: {loss_type}")
 
 
 def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
@@ -646,27 +640,25 @@ class Trainer:
         batch = normalize_batch(data_sys.get_batch())
         input_dict, label_dict = split_batch(batch)
 
-        # Convert numpy arrays to torch tensors.
-        for key, val in input_dict.items():
-            if val is None or not isinstance(val, np.ndarray):
-                continue
-            if np.issubdtype(val.dtype, np.integer):
-                input_dict[key] = torch.from_numpy(val).to(DEVICE)
-            else:
-                input_dict[key] = torch.from_numpy(val).to(
-                    dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
-                )
+        # Convert numpy values to torch tensors.
+        for dd in (input_dict, label_dict):
+            for key, val in dd.items():
+                if val is None:
+                    continue
+                if isinstance(val, np.ndarray):
+                    if np.issubdtype(val.dtype, np.integer):
+                        dd[key] = torch.from_numpy(val).to(DEVICE)
+                    else:
+                        dd[key] = torch.from_numpy(val).to(
+                            dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
+                        )
+                elif isinstance(val, (float, np.bool_)):
+                    dd[key] = torch.tensor(
+                        float(val), dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
+                    )
         # requires_grad on coord for force computation via autograd
         if "coord" in input_dict and input_dict["coord"] is not None:
             input_dict["coord"] = input_dict["coord"].requires_grad_(True)
-
-        for key, val in label_dict.items():
-            if key.startswith("find_"):
-                label_dict[key] = float(val)
-            elif isinstance(val, np.ndarray):
-                label_dict[key] = torch.from_numpy(val).to(
-                    dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
-                )
 
         return input_dict, label_dict
 
