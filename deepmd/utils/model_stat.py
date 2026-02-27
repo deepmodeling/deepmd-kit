@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
 from collections import (
     defaultdict,
 )
@@ -7,6 +8,8 @@ from typing import (
 )
 
 import numpy as np
+
+log = logging.getLogger(__name__)
 
 
 def _make_all_stat_ref(data: Any, nbatches: int) -> dict[str, list[Any]]:
@@ -21,17 +24,20 @@ def _make_all_stat_ref(data: Any, nbatches: int) -> dict[str, list[Any]]:
     return all_stat
 
 
-def make_stat_input(
+def collect_batches(
     data: Any, nbatches: int, merge_sys: bool = True
 ) -> dict[str, list[Any]]:
-    """Pack data for statistics.
+    """Collect batches from a DeepmdDataSystem into a dict of lists.
+
+    This is a low-level helper used by the TF backend and by
+    :func:`make_stat_input`.
 
     Parameters
     ----------
     data
-        The data
+        The data (must support ``get_nsystems()`` and ``get_batch(sys_idx=)``)
     nbatches : int
-        The number of batches
+        The number of batches per system
     merge_sys : bool (True)
         Merge system data
 
@@ -60,6 +66,69 @@ def make_stat_input(
             else:
                 all_stat[dd].append(sys_stat[dd])
     return all_stat
+
+
+def make_stat_input(
+    data: Any,
+    nbatches: int,
+) -> list[dict[str, np.ndarray]]:
+    """Pack data for statistics using DeepmdDataSystem.
+
+    Collects *nbatches* batches from each system and concatenates them
+    into a single dict per system.  The returned format
+    (``list[dict[str, np.ndarray]]``) is backend-agnostic and can be
+    consumed by ``compute_or_load_stat`` in dpmodel, pt_expt, and jax.
+
+    Parameters
+    ----------
+    data
+        The multi-system data manager
+        (must support ``get_nsystems()`` and ``get_batch(sys_idx=)``).
+    nbatches : int
+        Number of batches to collect per system.
+
+    Returns
+    -------
+    list[dict[str, np.ndarray]]
+        Per-system dicts with concatenated numpy arrays.
+    """
+    all_stat = collect_batches(data, nbatches, merge_sys=False)
+
+    nsystems = data.get_nsystems()
+    log.info(f"Packing data for statistics from {nsystems} systems")
+
+    keys = list(all_stat.keys())
+    lst: list[dict[str, np.ndarray]] = []
+    for ii in range(nsystems):
+        merged: dict[str, np.ndarray] = {}
+        for key in keys:
+            vals = all_stat[key][ii]  # list of batch arrays for this system
+            if isinstance(vals[0], np.ndarray):
+                if vals[0].ndim >= 2:
+                    merged[key] = np.concatenate(vals, axis=0)
+                else:
+                    # 1D arrays (e.g. natoms_vec) — per-system constant
+                    merged[key] = vals[0]
+            else:
+                # scalar flags like find_*
+                merged[key] = vals[0]
+
+        # DeepmdDataSystem.get_batch() uses "type"; stat consumers expect "atype".
+        if "type" in merged and "atype" not in merged:
+            merged["atype"] = merged.pop("type")
+
+        # Provide "natoms" from "natoms_vec".
+        # natoms_vec from get_batch() is 1D [2+ntypes], but
+        # compute_output_stats expects 2D [nframes, 2+ntypes].
+        if "natoms_vec" in merged:
+            nv = merged["natoms_vec"]
+            if nv.ndim == 1:
+                nframes = merged["coord"].shape[0]
+                nv = np.tile(nv, (nframes, 1))
+            merged["natoms"] = nv
+
+        lst.append(merged)
+    return lst
 
 
 def merge_sys_stat(all_stat: dict[str, list[Any]]) -> dict[str, list[Any]]:
