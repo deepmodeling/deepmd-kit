@@ -15,20 +15,17 @@ import unittest
 
 import torch
 
-from deepmd.utils.argcheck import (
-    normalize,
-)
-from deepmd.utils.compat import (
-    update_deepmd_input,
-)
-
-torch = torch  # ensure torch is imported before pt_expt
-
 from deepmd.pt_expt.entrypoints.main import (
     get_trainer,
 )
 from deepmd.pt_expt.model import (
     get_model,
+)
+from deepmd.utils.argcheck import (
+    normalize,
+)
+from deepmd.utils.compat import (
+    update_deepmd_input,
 )
 
 EXAMPLE_DIR = os.path.join(
