@@ -715,6 +715,16 @@ class Trainer:
     # Training loop
     # ------------------------------------------------------------------
 
+    @torch.compiler.disable
+    def _optimizer_step(self) -> None:
+        """Run optimizer and scheduler step outside torch._dynamo.
+
+        Dynamo intercepts tensor creation inside Adam._init_group,
+        which can trigger CUDA init on CPU-only builds.
+        """
+        self.optimizer.step()
+        self.scheduler.step()
+
     def run(self) -> None:
         fout = open(
             self.disp_file,
@@ -747,8 +757,7 @@ class Trainer:
                     self.wrapper.parameters(), self.gradient_max_norm
                 )
 
-            self.optimizer.step()
-            self.scheduler.step()
+            self._optimizer_step()
 
             if self.timing_in_training:
                 t_end = time.time()
