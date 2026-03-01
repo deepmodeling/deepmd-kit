@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
     NoReturn,
@@ -20,6 +23,9 @@ from deepmd.dpmodel.utils.safe_gradient import (
 )
 from deepmd.utils.pair_tab import (
     PairTab,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -75,20 +81,16 @@ class PairTabAtomicModel(BaseAtomicModel):
         sel: int | list[int],
         type_map: list[str],
         rcond: float | None = None,
-        atom_ener: list[float] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
         super().init_out_stat()
         self.tab_file = tab_file
         self.rcut = rcut
-        self.type_map = type_map
 
         self.tab = PairTab(self.tab_file, rcut=rcut)
-        self.type_map = type_map
         self.ntypes = len(type_map)
         self.rcond = rcond
-        self.atom_ener = atom_ener
 
         if self.tab_file is not None:
             tab_info, tab_data = self.tab.get()
@@ -202,10 +204,36 @@ class PairTabAtomicModel(BaseAtomicModel):
         tab_model = super().deserialize(data)
 
         tab_model.tab = tab
-        tab_model.tab_info = tab_model.tab.tab_info
-        nspline, ntypes = tab_model.tab_info[-2:].astype(int)
-        tab_model.tab_data = tab_model.tab.tab_data.reshape(ntypes, ntypes, nspline, 4)
+        # Extract nspline/ntypes from the numpy source before setting on the
+        # model, because dpmodel_setattr may convert to torch tensor.
+        nspline, ntypes = tab.tab_info[-2:].astype(int)
+        tab_model.tab_info = tab.tab_info
+        tab_model.tab_data = tab.tab_data.reshape(ntypes, ntypes, nspline, 4)
         return tab_model
+
+    def compute_or_load_stat(
+        self,
+        sampled_func: Callable[[], list[dict]],
+        stat_file_path: DPPath | None = None,
+        compute_or_load_out_stat: bool = True,
+    ) -> None:
+        """Compute or load the statistics parameters of the model.
+
+        PairTabAtomicModel has no descriptor or fitting net input stats,
+        so this only computes output stats (energy bias) when requested.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        stat_file_path
+            The path to the stat file.
+        compute_or_load_out_stat : bool
+            Whether to compute the output statistics.
+        """
+        if compute_or_load_out_stat:
+            wrapped_sampler = self._make_wrapped_sampler(sampled_func)
+            self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
     def forward_atomic(
         self,
@@ -291,7 +319,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         hi = 1.0 / hh
 
         # jax jit does not support convert to a Python int, so we need to convert to xp.int64.
-        nspline = (self.tab_info[2] + 0.1).astype(xp.int64)
+        nspline = xp.astype(self.tab_info[2] + 0.1, xp.int64)
 
         uu = (rr - rmin) * hi  # this is broadcasted to (nframes,nloc,nnei)
 
@@ -348,7 +376,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         neighbor_atoms = coords[batch_indices, nlist]
         loc_atoms = coords[:, : nlist.shape[1], :]
         pairwise_dr = loc_atoms[:, :, None, :] - neighbor_atoms
-        pairwise_rr = safe_for_sqrt(xp.sum(xp.power(pairwise_dr, 2), axis=-1))
+        pairwise_rr = safe_for_sqrt(xp.sum(pairwise_dr**2, axis=-1))
 
         return pairwise_rr
 
@@ -394,16 +422,18 @@ class PairTabAtomicModel(BaseAtomicModel):
         expanded_idx = xp.broadcast_to(
             idx[..., xp.newaxis, xp.newaxis], (*idx.shape, 1, 4)
         )
-        clipped_indices = xp.clip(expanded_idx, 0, nspline - 1).astype(int)
+        clipped_indices = xp.astype(xp.clip(expanded_idx, 0, nspline - 1), xp.int64)
 
         # (nframes, nloc, nnei, 4)
         final_coef = xp.squeeze(
-            xp_take_along_axis(expanded_tab_data, clipped_indices, 3)
+            xp_take_along_axis(expanded_tab_data, clipped_indices, 3), axis=3
         )
 
         # when the spline idx is beyond the table, all spline coefficients are set to `0`, and the resulting ener corresponding to the idx is also `0`.
         final_coef = xp.where(
-            expanded_idx.squeeze() > nspline, xp.zeros_like(final_coef), final_coef
+            xp.squeeze(expanded_idx, axis=3) > nspline,
+            xp.zeros_like(final_coef),
+            final_coef,
         )
         return final_coef
 

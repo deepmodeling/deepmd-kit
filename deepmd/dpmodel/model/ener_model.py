@@ -12,6 +12,9 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.atomic_model import (
     DPEnergyAtomicModel,
 )
+from deepmd.dpmodel.common import (
+    NativeOP,
+)
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
@@ -26,7 +29,7 @@ from .make_model import (
     make_model,
 )
 
-DPEnergyModel_ = make_model(DPEnergyAtomicModel)
+DPEnergyModel_ = make_model(DPEnergyAtomicModel, T_Bases=(NativeOP, BaseModel))
 
 
 @BaseModel.register("ener")

@@ -178,6 +178,10 @@ class FrozenModel(BaseModel):
         """
         return local_jdata, None
 
+    def get_observed_type_list(self) -> list[str]:
+        """Get observed types (elements) of the model during data statistics."""
+        return self.model.get_observed_type_list()
+
     def model_output_type(self) -> str:
         """Get the output type for the model."""
         return self.model.model_output_type()

@@ -17,6 +17,9 @@ from deepmd.dpmodel.atomic_model.dp_atomic_model import (
 from deepmd.dpmodel.common import (
     NativeOP,
 )
+from deepmd.dpmodel.model.base_model import (
+    BaseModel,
+)
 from deepmd.dpmodel.model.make_model import (
     make_model,
 )
@@ -343,9 +346,9 @@ class SpinModel(NativeOP):
 
     @classmethod
     def deserialize(cls, data: dict) -> "SpinModel":
-        backbone_model_obj = make_model(DPAtomicModel).deserialize(
-            data["backbone_model"]
-        )
+        backbone_model_obj = make_model(
+            DPAtomicModel, T_Bases=(NativeOP, BaseModel)
+        ).deserialize(data["backbone_model"])
         spin = Spin.deserialize(data["spin"])
         return cls(
             backbone_model=backbone_model_obj,

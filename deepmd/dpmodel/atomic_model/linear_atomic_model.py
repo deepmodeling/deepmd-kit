@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
 )
@@ -16,6 +19,9 @@ from deepmd.dpmodel.utils.nlist import (
 )
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -338,6 +344,38 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         data["models"] = models
         return super().deserialize(data)
 
+    def compute_or_load_stat(
+        self,
+        sampled_func: Callable[[], list[dict]],
+        stat_file_path: DPPath | None = None,
+        compute_or_load_out_stat: bool = True,
+    ) -> None:
+        """Compute or load the statistics parameters of the model.
+
+        For LinearEnergyAtomicModel, this first computes input stats for each
+        sub-model (without output stats), then computes its own output stats.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        stat_file_path
+            The path to the stat file.
+        compute_or_load_out_stat : bool
+            Whether to compute the output statistics.
+        """
+        for md in self.models:
+            md.compute_or_load_stat(
+                sampled_func, stat_file_path, compute_or_load_out_stat=False
+            )
+
+        if stat_file_path is not None and self.type_map is not None:
+            stat_file_path /= " ".join(self.type_map)
+
+        if compute_or_load_out_stat:
+            wrapped_sampler = self._make_wrapped_sampler(sampled_func)
+            self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
+
     def _compute_weight(
         self,
         extended_coord: Array,
@@ -523,4 +561,4 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         # to handle masked atoms
         coef = xp.where(sigma != 0, coef, xp.zeros_like(coef))
         self.zbl_weight = coef
-        return [1 - xp.expand_dims(coef, -1), xp.expand_dims(coef, -1)]
+        return [1 - xp.expand_dims(coef, axis=-1), xp.expand_dims(coef, axis=-1)]

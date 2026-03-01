@@ -126,9 +126,6 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
         return True
 
-    def get_out_bias(self) -> torch.Tensor:
-        return self.out_bias
-
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return max(self.get_model_rcuts())

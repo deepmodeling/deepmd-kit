@@ -9,6 +9,9 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.atomic_model.linear_atomic_model import (
     DPZBLLinearEnergyAtomicModel,
 )
+from deepmd.dpmodel.common import (
+    NativeOP,
+)
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
@@ -23,13 +26,11 @@ from .make_model import (
     make_model,
 )
 
-DPZBLModel_ = make_model(DPZBLLinearEnergyAtomicModel)
+DPZBLModel_ = make_model(DPZBLLinearEnergyAtomicModel, T_Bases=(NativeOP, BaseModel))
 
 
 @BaseModel.register("zbl")
 class DPZBLModel(DPZBLModel_):
-    model_type = "zbl"
-
     def __init__(
         self,
         *args: Any,

@@ -8,23 +8,25 @@ from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
 
+from deepmd.dpmodel.atomic_model import (
+    DPEnergyAtomicModel,
+)
 from deepmd.dpmodel.model.dp_model import (
     DPModelCommon,
-)
-from deepmd.pt_expt.atomic_model import (
-    DPEnergyAtomicModel,
 )
 
 from .make_model import (
     make_model,
 )
+from .model import (
+    BaseModel,
+)
 
-DPEnergyModel_ = make_model(DPEnergyAtomicModel)
+DPEnergyModel_ = make_model(DPEnergyAtomicModel, T_Bases=(BaseModel,))
 
 
+@BaseModel.register("ener")
 class EnergyModel(DPModelCommon, DPEnergyModel_):
-    model_type = "ener"
-
     def __init__(
         self,
         *args: Any,
@@ -63,7 +65,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             model_predict["mask"] = model_ret["mask"]
         return model_predict
 
-    def _forward_lower(
+    def forward_lower(
         self,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
@@ -97,25 +99,23 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             model_predict["mask"] = model_ret["mask"]
         return model_predict
 
-    def forward_lower(
-        self,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
-        nlist: torch.Tensor,
-        mapping: torch.Tensor | None = None,
-        fparam: torch.Tensor | None = None,
-        aparam: torch.Tensor | None = None,
-        do_atomic_virial: bool = False,
-    ) -> dict[str, torch.Tensor]:
-        return self._forward_lower(
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping,
-            fparam=fparam,
-            aparam=aparam,
-            do_atomic_virial=do_atomic_virial,
-        )
+    def translated_output_def(self) -> dict[str, Any]:
+        out_def_data = self.model_output_def().get_data()
+        output_def = {
+            "atom_energy": out_def_data["energy"],
+            "energy": out_def_data["energy_redu"],
+        }
+        if self.do_grad_r("energy"):
+            output_def["force"] = out_def_data["energy_derv_r"]
+            output_def["force"].squeeze(-2)
+        if self.do_grad_c("energy"):
+            output_def["virial"] = out_def_data["energy_derv_c_redu"]
+            output_def["virial"].squeeze(-2)
+            output_def["atom_virial"] = out_def_data["energy_derv_c"]
+            output_def["atom_virial"].squeeze(-2)
+        if "mask" in out_def_data:
+            output_def["mask"] = out_def_data["mask"]
+        return output_def
 
     def forward_lower_exportable(
         self,
@@ -127,7 +127,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> torch.nn.Module:
-        """Trace ``_forward_lower`` into an exportable module.
+        """Trace ``forward_lower`` into an exportable module.
 
         Uses ``make_fx`` to trace through ``torch.autograd.grad``,
         decomposing the backward pass into primitive ops.  The returned
@@ -156,7 +156,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             aparam: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
             extended_coord = extended_coord.detach().requires_grad_(True)
-            return model._forward_lower(
+            return model.forward_lower(
                 extended_coord,
                 extended_atype,
                 nlist,
