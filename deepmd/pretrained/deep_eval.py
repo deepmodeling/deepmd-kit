@@ -25,16 +25,23 @@ if TYPE_CHECKING:
     import numpy as np
 
 
+class InvalidPretrainedAliasError(ValueError):
+    """Raised when a pretrained alias string is malformed."""
+
+    def __init__(self, model_file: str) -> None:
+        super().__init__(f"Invalid pretrained alias: {model_file}")
+
+
 def parse_pretrained_alias(model_file: str) -> str:
     """Extract model name from ``*.pretrained`` alias string."""
     alias = Path(model_file).name
     suffix = ".pretrained"
-    if not alias.endswith(suffix):
-        raise ValueError(f"Invalid pretrained alias: {model_file}")
+    if not alias.lower().endswith(suffix):
+        raise InvalidPretrainedAliasError(model_file)
 
     model_name = alias[: -len(suffix)]
     if not model_name:
-        raise ValueError(f"Invalid pretrained alias: {model_file}")
+        raise InvalidPretrainedAliasError(model_file)
 
     return model_name
 

@@ -32,6 +32,10 @@ class TestPretrainedBackend(unittest.TestCase):
             parse_pretrained_alias("DPA-3.2-5M.pretrained"),
             "DPA-3.2-5M",
         )
+        self.assertEqual(
+            parse_pretrained_alias("DPA-3.2-5M.PRETRAINED"),
+            "DPA-3.2-5M",
+        )
 
     def test_parse_pretrained_alias_invalid(self) -> None:
         with self.assertRaises(ValueError):
