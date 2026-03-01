@@ -692,7 +692,7 @@ class TestPolarModelAPIs(unittest.TestCase):
     def test_get_default_fparam(self) -> None:
         """get_default_fparam should return consistent values on dp and pt."""
         dp_val = self.dp_model.get_default_fparam()
-        pt_val = self.pt_model.get_default_fparam()
+        pt_val = torch_to_numpy(self.pt_model.get_default_fparam())
         np.testing.assert_allclose(dp_val, pt_val, rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(dp_val, [0.5, -0.3], rtol=1e-10, atol=1e-10)
 
