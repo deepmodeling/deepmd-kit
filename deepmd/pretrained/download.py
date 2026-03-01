@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Download and resolve pretrained model files."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import concurrent.futures
 import hashlib
@@ -164,7 +166,13 @@ def download_model(
         )
 
     for idx, url in enumerate(ranked_urls, start=1):
-        log.info("Downloading '%s' (source %d/%d): %s", model_name, idx, len(ranked_urls), url)
+        log.info(
+            "Downloading '%s' (source %d/%d): %s",
+            model_name,
+            idx,
+            len(ranked_urls),
+            url,
+        )
         try:
             _download_file(url, output_path)
         except (urllib.error.URLError, OSError, ValueError) as exc:

@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """CLI entrypoint for pretrained model operations."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 from pathlib import (
     Path,

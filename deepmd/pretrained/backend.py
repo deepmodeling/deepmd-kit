@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Backend helper for `*.pretrained` model aliases."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 from functools import (
     lru_cache,

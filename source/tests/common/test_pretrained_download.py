@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for pretrained download/resolve helpers."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import hashlib
 import tempfile
