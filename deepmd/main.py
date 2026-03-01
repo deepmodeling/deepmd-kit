@@ -942,6 +942,38 @@ def main_parser() -> argparse.ArgumentParser:
         ],
         nargs="+",
     )
+
+    # pretrained
+    parser_pretrained = subparsers.add_parser(
+        "pretrained",
+        parents=[parser_log],
+        help="Manage builtin pretrained models",
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+    )
+    pretrained_subparsers = parser_pretrained.add_subparsers(
+        dest="pretrained_command",
+        required=True,
+    )
+    parser_pretrained_download = pretrained_subparsers.add_parser(
+        "download",
+        help="Download one pretrained model",
+    )
+    from deepmd.pretrained.registry import (
+        available_model_names,
+    )
+
+    parser_pretrained_download.add_argument(
+        "MODEL",
+        choices=available_model_names(),
+        help="Pretrained model name",
+    )
+    parser_pretrained_download.add_argument(
+        "--cache-dir",
+        default=None,
+        type=str,
+        help="Optional cache directory for pretrained model files",
+    )
+
     return parser
 
 
@@ -997,6 +1029,7 @@ def main(args: list[str] | None = None) -> None:
         "gui",
         "convert-backend",
         "show",
+        "pretrained",
     ):
         # common entrypoints
         from deepmd.entrypoints.main import main as deepmd_main
