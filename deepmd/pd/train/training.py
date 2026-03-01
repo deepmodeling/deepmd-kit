@@ -260,22 +260,7 @@ class Trainer:
             return lr_schedule
 
         # Optimizer
-        if self.multi_task and training_params.get("optim_dict", None) is not None:
-            self.optim_dict = training_params.get("optim_dict")
-            missing_keys = [
-                key for key in self.model_keys if key not in self.optim_dict
-            ]
-            assert not missing_keys, (
-                f"These keys are not in optim_dict: {missing_keys}!"
-            )
-            self.opt_type = {}
-            self.opt_param = {}
-            for model_key in self.model_keys:
-                self.opt_type[model_key], self.opt_param[model_key] = get_opt_param(
-                    self.optim_dict[model_key]
-                )
-        else:
-            self.opt_type, self.opt_param = get_opt_param(optimizer_params)
+        self.opt_type, self.opt_param = get_opt_param(optimizer_params)
 
         # loss_param_tmp for Hessian activation
         loss_param_tmp = None
