@@ -206,9 +206,4 @@ def resolve_model_path(
         available = ", ".join(sorted(MODEL_REGISTRY))
         raise ValueError(f"Unknown model: {model_name}. Available: {available}")
 
-    output_path = target_dir / str(model_info["filename"])
-    expected_sha256 = str(model_info["sha256"])
-    if output_path.exists() and _sha256sum(output_path) == expected_sha256:
-        return output_path
-
     return download_model(model_name, cache_dir=target_dir, logger=logger)

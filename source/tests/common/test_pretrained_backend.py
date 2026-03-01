@@ -1,25 +1,27 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for pretrained backend registration and alias parsing."""
 
+import importlib
 import unittest
-from unittest.mock import (
-    patch,
-)
 
-import deepmd.backend  # noqa: F401
 from deepmd.backend.backend import (
     Backend,
 )
 from deepmd.backend.pretrained import (
     PretrainedBackend,
 )
-from deepmd.pretrained.backend import (
+from deepmd.pretrained.deep_eval import (
     parse_pretrained_alias,
 )
 
 
 class TestPretrainedBackend(unittest.TestCase):
     """Test pretrained backend integration points."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        # ensure backend registration side effects are loaded
+        importlib.import_module("deepmd.backend")
 
     def test_detect_backend_by_pretrained_suffix(self) -> None:
         backend = Backend.detect_backend_by_model("DPA-3.2-5M.pretrained")
@@ -35,9 +37,5 @@ class TestPretrainedBackend(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_pretrained_alias("DPA-3.2-5M.pt")
 
-    def test_deep_eval_property_is_lazy(self) -> None:
-        with patch(
-            "deepmd.pretrained.backend.get_pretrained_deep_eval_backend",
-            return_value=object,
-        ):
-            self.assertIs(PretrainedBackend().deep_eval, object)
+    def test_deep_eval_property(self) -> None:
+        self.assertIsNotNone(PretrainedBackend().deep_eval)

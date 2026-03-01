@@ -96,6 +96,46 @@ def get_pretrained_deep_eval_backend() -> type[DeepEvalBackend]:
                 **kwargs,
             )
 
+        def eval_descriptor(
+            self,
+            coords: np.ndarray,
+            cells: np.ndarray | None,
+            atom_types: np.ndarray,
+            fparam: np.ndarray | None = None,
+            aparam: np.ndarray | None = None,
+            efield: np.ndarray | None = None,
+            mixed_type: bool = False,
+            **kwargs: Any,
+        ) -> np.ndarray:
+            return self._backend.eval_descriptor(
+                coords,
+                cells,
+                atom_types,
+                fparam=fparam,
+                aparam=aparam,
+                efield=efield,
+                mixed_type=mixed_type,
+                **kwargs,
+            )
+
+        def eval_fitting_last_layer(
+            self,
+            coords: np.ndarray,
+            cells: np.ndarray | None,
+            atom_types: np.ndarray,
+            fparam: np.ndarray | None = None,
+            aparam: np.ndarray | None = None,
+            **kwargs: Any,
+        ) -> np.ndarray:
+            return self._backend.eval_fitting_last_layer(
+                coords,
+                cells,
+                atom_types,
+                fparam=fparam,
+                aparam=aparam,
+                **kwargs,
+            )
+
         def get_rcut(self) -> float:
             return self._backend.get_rcut()
 

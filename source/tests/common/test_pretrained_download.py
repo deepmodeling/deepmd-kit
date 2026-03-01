@@ -102,6 +102,8 @@ class TestPretrainedDownload(unittest.TestCase):
                     }
                 },
             ):
-                path = dl.resolve_model_path(model_name, cache_dir=cache_dir)
+                with patch.object(dl, "_download_file") as mocked_download:
+                    path = dl.resolve_model_path(model_name, cache_dir=cache_dir)
 
             self.assertEqual(path, target)
+            mocked_download.assert_not_called()
