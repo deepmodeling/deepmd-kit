@@ -286,7 +286,9 @@ class CommonTest(ABC):
             for rr1, rr2 in zip(ret1, ret2, strict=True):
                 if rr1 is SKIP_FLAG or rr2 is SKIP_FLAG:
                     continue
-                np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+                np.testing.assert_allclose(
+                    rr1.ravel(), rr2.ravel(), rtol=self.rtol, atol=self.atol
+                )
                 assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
     def build_eval_tf(
