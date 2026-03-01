@@ -38,4 +38,8 @@ class TestPretrainedBackend(unittest.TestCase):
             parse_pretrained_alias("DPA-3.2-5M.pt")
 
     def test_deep_eval_property(self) -> None:
-        self.assertIsNotNone(PretrainedBackend().deep_eval)
+        from deepmd.pretrained.deep_eval import (
+            PretrainedDeepEvalBackend,
+        )
+
+        self.assertIs(PretrainedBackend().deep_eval, PretrainedDeepEvalBackend)

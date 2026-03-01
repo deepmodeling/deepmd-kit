@@ -10,9 +10,6 @@ from typing import (
 from deepmd.backend.backend import (
     Backend,
 )
-from deepmd.pretrained.deep_eval import (
-    get_pretrained_deep_eval_backend,
-)
 
 if TYPE_CHECKING:
     from argparse import (
@@ -44,7 +41,11 @@ class PretrainedBackend(Backend):
 
     @property
     def deep_eval(self) -> type["DeepEvalBackend"]:
-        return get_pretrained_deep_eval_backend()
+        from deepmd.pretrained.deep_eval import (
+            PretrainedDeepEvalBackend,
+        )
+
+        return PretrainedDeepEvalBackend
 
     @property
     def neighbor_stat(self) -> type["NeighborStat"]:
