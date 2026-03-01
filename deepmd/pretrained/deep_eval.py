@@ -20,6 +20,7 @@ from deepmd.infer.deep_eval import (
 from deepmd.pretrained.download import (
     resolve_model_path,
 )
+
 if TYPE_CHECKING:
     import numpy as np
 
