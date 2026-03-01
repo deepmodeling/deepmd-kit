@@ -20,6 +20,9 @@ from typing import (
 from deepmd.backend.backend import (
     Backend,
 )
+from deepmd.pretrained.registry import (
+    available_model_names,
+)
 
 try:
     from deepmd._version import version as __version__
@@ -957,9 +960,6 @@ def main_parser() -> argparse.ArgumentParser:
     parser_pretrained_download = pretrained_subparsers.add_parser(
         "download",
         help="Download one pretrained model",
-    )
-    from deepmd.pretrained.registry import (
-        available_model_names,
     )
 
     parser_pretrained_download.add_argument(
