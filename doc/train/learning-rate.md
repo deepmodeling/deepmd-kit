@@ -30,39 +30,6 @@ Both schedules support an optional warmup phase where the learning rate graduall
 }
 ```
 
-## Common parameters
-
-The following parameters are shared by both `exp` and `cosine` schedules.
-
-### Required parameters
-
-- `start_lr`: The learning rate at the start of training (after warmup).
-- `stop_lr` or `stop_lr_ratio` (must provide exactly one):
-  - `stop_lr`: The learning rate at the end of training.
-  - `stop_lr_ratio`: The ratio of `stop_lr` to `start_lr`. Computed as `stop_lr = start_lr * stop_lr_ratio`.
-
-### Optional parameters
-
-- `warmup_steps` or `warmup_ratio` (mutually exclusive):
-  - `warmup_steps`: Number of steps for warmup. Learning rate increases linearly from `warmup_start_factor * start_lr` to `start_lr`.
-  - `warmup_ratio`: Ratio of warmup steps to total training steps. `warmup_steps = int(warmup_ratio * numb_steps)`.
-- `warmup_start_factor`: Factor for initial warmup learning rate (default: 0.0). Warmup starts from `warmup_start_factor * start_lr`.
-- `scale_by_worker`: How to alter learning rate in parallel training. Options: `"linear"`, `"sqrt"`, `"none"` (default: `"linear"`).
-
-### Type-specific parameters
-
-**Exponential decay (`type: "exp"`):**
-
-- `decay_steps`: Interval (in steps) at which learning rate decays (default: 5000).
-- `decay_rate`: Explicit decay rate. If not provided, computed from `start_lr` and `stop_lr`.
-- `smooth`: If `true`, use smooth exponential decay at every step. If `false`, use stepped decay (default: `false`).
-
-**Cosine annealing (`type: "cosine"`):**
-
-No type-specific parameters. The decay follows a cosine curve from `start_lr` to `stop_lr`.
-
-See [Mathematical Theory](#mathematical-theory) section for complete formulas.
-
 ## Exponential Decay Schedule
 
 The exponential decay schedule reduces the learning rate exponentially over training steps. It is the default schedule when `type` is omitted.
