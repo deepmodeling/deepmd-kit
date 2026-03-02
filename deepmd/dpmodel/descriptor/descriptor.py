@@ -9,7 +9,6 @@ from collections.abc import (
 )
 from typing import (
     Any,
-    NoReturn,
 )
 
 import array_api_compat
@@ -88,7 +87,7 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
         self,
         merged: Callable[[], list[dict]] | list[dict],
         path: DPPath | None = None,
-    ) -> NoReturn:
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -113,7 +112,7 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
 
     def share_params(
         self, base_class: Any, shared_level: Any, resume: bool = False
-    ) -> NoReturn:
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -125,9 +124,9 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
     def call(
         self,
         nlist: Array,
-        extended_coord: Array,
-        extended_atype: Array,
-        extended_atype_embd: Array | None = None,
+        coord_ext: Array,
+        atype_ext: Array,
+        atype_embd_ext: Array | None = None,
         mapping: Array | None = None,
         type_embedding: Array | None = None,
     ) -> Any:

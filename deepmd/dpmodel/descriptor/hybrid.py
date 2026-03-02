@@ -33,7 +33,20 @@ from deepmd.utils.version import (
 
 @BaseDescriptor.register("hybrid")
 class DescrptHybrid(BaseDescriptor, NativeOP):
-    """Concate a list of descriptors to form a new descriptor.
+    r"""Concatenate a list of descriptors to form a new descriptor.
+
+    The hybrid descriptor combines multiple descriptors by concatenation:
+
+    .. math::
+        \mathcal{D}^i = [\mathcal{D}^i_1, \mathcal{D}^i_2, ..., \mathcal{D}^i_n],
+
+    where :math:`\mathcal{D}^i_k` is the descriptor computed by the :math:`k`-th
+    sub-descriptor for atom :math:`i`.
+
+    The output dimension is the sum of all sub-descriptor dimensions:
+
+    .. math::
+        \dim(\mathcal{D}^i) = \sum_{k=1}^{n} \dim(\mathcal{D}^i_k).
 
     Parameters
     ----------

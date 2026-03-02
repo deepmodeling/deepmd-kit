@@ -115,9 +115,12 @@ def get_standard_model(data: dict) -> EnergyModel:
 
 
 def get_zbl_model(data: dict) -> DPZBLModel:
+    data = copy.deepcopy(data)
     data["descriptor"]["ntypes"] = len(data["type_map"])
+    data["descriptor"]["type_map"] = data["type_map"]
     descriptor = BaseDescriptor(**data["descriptor"])
     fitting_type = data["fitting_net"].pop("type")
+    data["fitting_net"]["type_map"] = data["type_map"]
     if fitting_type == "ener":
         fitting = EnergyFittingNet(
             ntypes=descriptor.get_ntypes(),

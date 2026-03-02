@@ -131,9 +131,6 @@ class PairTabAtomicModel(BaseAtomicModel):
             ]
         )
 
-    def get_out_bias(self) -> torch.Tensor:
-        return self.out_bias
-
     def get_rcut(self) -> float:
         return self.rcut
 

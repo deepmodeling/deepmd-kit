@@ -9,6 +9,9 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.atomic_model import (
     DPPropertyAtomicModel,
 )
+from deepmd.dpmodel.common import (
+    NativeOP,
+)
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
@@ -23,7 +26,7 @@ from .make_model import (
     make_model,
 )
 
-DPPropertyModel_ = make_model(DPPropertyAtomicModel)
+DPPropertyModel_ = make_model(DPPropertyAtomicModel, T_Bases=(NativeOP, BaseModel))
 
 
 @BaseModel.register("property")

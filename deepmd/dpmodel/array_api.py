@@ -78,7 +78,7 @@ def xp_scatter_sum(input: Array, dim: int, index: Array, src: Array) -> Array:
     xp = array_api_compat.array_namespace(input)
 
     # Create flat index array matching input shape
-    idx = xp.arange(input.size, dtype=xp.int64)
+    idx = xp.arange(input.size, dtype=xp.int64, device=array_api_compat.device(input))
     idx = xp.reshape(idx, input.shape)
 
     # Get flat indices where we want to add values
@@ -190,6 +190,10 @@ def xp_bincount(x: Array, weights: Array | None = None, minlength: int = 0) -> A
     else:
         if weights is None:
             weights = xp.ones_like(x)
-        result = xp.zeros((max(minlength, int(xp.max(x)) + 1),), dtype=weights.dtype)
+        result = xp.zeros(
+            (max(minlength, int(xp.max(x)) + 1),),
+            dtype=weights.dtype,
+            device=array_api_compat.device(weights),
+        )
         result = xp_add_at(result, x, weights)
     return result

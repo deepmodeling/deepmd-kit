@@ -58,6 +58,25 @@ from .base_descriptor import (
 class DescrptSeR(NativeOP, BaseDescriptor):
     r"""DeepPot-SE_R constructed from only the radial information of atomic configurations.
 
+    The descriptor :math:`\mathcal{D}^i \in \mathbb{R}^{M}` is given by
+
+    .. math::
+        \mathcal{D}^i = \frac{1}{N_c} \sum_{j=1}^{N_c} \mathcal{N}(s(r_{ji})),
+
+    where :math:`\mathcal{N}` is the embedding network, and :math:`s(r_{ji})` is the
+    smoothed radial distance between atom :math:`i` and its neighbor :math:`j`.
+
+    The switching function :math:`s(r)` is defined as:
+
+    .. math::
+        s(r)=
+        \begin{cases}
+        \frac{1}{r}, & r<r_s \\
+        \frac{1}{r} \{ {(\frac{r - r_s}{ r_c - r_s})}^3 (-6 {(\frac{r - r_s}{ r_c - r_s})}^2 +15 \frac{r - r_s}{ r_c - r_s} -10) +1 \}, & r_s \leq r<r_c \\
+        0, & r \geq r_c
+        \end{cases}
+
+    where :math:`r_c` is the cutoff radius and :math:`r_s` is the smooth cutoff parameter.
 
     Parameters
     ----------

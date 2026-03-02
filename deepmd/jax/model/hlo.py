@@ -265,6 +265,10 @@ class HLO(BaseModel):
         """
         raise NotImplementedError("Not implemented")
 
+    def get_observed_type_list(self) -> list[str]:
+        """Get observed types (elements) of the model during data statistics."""
+        raise NotImplementedError("Not implemented for HLO model")
+
     def get_model_def_script(self) -> str:
         """Get the model definition script."""
         return self.model_def_script
