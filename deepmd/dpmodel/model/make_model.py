@@ -720,6 +720,7 @@ def make_model(
             self,
             sampled_func: Callable[[], Any],
             stat_file_path: DPPath | None = None,
+            preset_observed_type: list[str] | None = None,
         ) -> None:
             """Compute or load the statistics parameters of the model.
 
@@ -730,8 +731,12 @@ def make_model(
                 data systems.
             stat_file_path
                 The path to the stat file.
+            preset_observed_type
+                User-specified observed types that take highest priority.
             """
-            self.atomic_model.compute_or_load_stat(sampled_func, stat_file_path)
+            self.atomic_model.compute_or_load_stat(
+                sampled_func, stat_file_path, preset_observed_type=preset_observed_type
+            )
 
         def get_model_def_script(self) -> str:
             """Get the model definition script."""
