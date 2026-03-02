@@ -463,7 +463,7 @@ class Trainer:
 
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(
             self.optimizer,
-            lambda step: self.lr_schedule.value(step + self.start_step) / initial_lr,
+            lambda step: self.lr_schedule.value(step) / initial_lr,
             last_epoch=self.start_step - 1,
         )
 
@@ -489,12 +489,12 @@ class Trainer:
             self.wrapper.load_state_dict(state_dict)
             if optimizer_state_dict is not None:
                 self.optimizer.load_state_dict(optimizer_state_dict)
-                # rebuild scheduler from the resumed step
+                # rebuild scheduler from the resumed step.
+                # last_epoch handles the step offset; the lambda must NOT
+                # add self.start_step again (that would double-count).
                 self.scheduler = torch.optim.lr_scheduler.LambdaLR(
                     self.optimizer,
-                    lambda step: (
-                        self.lr_schedule.value(step + self.start_step) / initial_lr
-                    ),
+                    lambda step: self.lr_schedule.value(step) / initial_lr,
                     last_epoch=self.start_step - 1,
                 )
 
