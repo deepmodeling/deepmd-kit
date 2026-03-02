@@ -10,6 +10,9 @@ from copy import (
 from pathlib import (
     Path,
 )
+from unittest.mock import (
+    patch,
+)
 
 import numpy as np
 import torch
@@ -300,6 +303,124 @@ class TestObservedTypeFallback(unittest.TestCase):
                 os.remove(f)
             if f in ["stat_files"]:
                 shutil.rmtree(f)
+
+
+class TestPairTabObservedType(unittest.TestCase):
+    """Test observed_type collection for PairTabAtomicModel."""
+
+    @patch("numpy.loadtxt")
+    def setUp(self, mock_loadtxt) -> None:
+        from deepmd.pt.model.atomic_model import (
+            PairTabAtomicModel,
+        )
+
+        # 3 types -> ntypes*(ntypes+1)/2 = 6 energy columns -> 7 total columns
+        mock_loadtxt.return_value = np.array(
+            [
+                [0.005, 1.0, 2.0, 3.0, 1.5, 2.5, 3.5],
+                [0.01, 0.8, 1.6, 2.4, 1.2, 2.0, 2.8],
+                [0.015, 0.5, 1.0, 1.5, 0.75, 1.25, 1.75],
+                [0.02, 0.25, 0.4, 0.75, 0.35, 0.6, 0.9],
+            ]
+        )
+        self.model = PairTabAtomicModel(
+            tab_file="dummy_path", rcut=0.02, sel=2, type_map=["H", "O", "Au"]
+        )
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmpdir)
+
+    def _make_sampled(self, atypes: list[list[list[int]]]) -> list[dict]:
+        """Create mock sampled data from atype arrays."""
+        return [{"atype": torch.tensor(a, device="cpu")} for a in atypes]
+
+    def test_compute_observed_type_from_data(self) -> None:
+        """PairTab should collect observed types from sampled data."""
+        sampled = self._make_sampled([[[0, 1, 0, 1]]])  # H and O only
+        self.model.compute_or_load_stat(
+            lambda: sampled,
+            stat_file_path=DPPath(self.tmpdir, mode="w"),
+            compute_or_load_out_stat=False,
+        )
+        self.assertIsNotNone(self.model.observed_type)
+        self.assertIn("H", self.model.observed_type)
+        self.assertIn("O", self.model.observed_type)
+        self.assertNotIn("Au", self.model.observed_type)
+
+    def test_preset_observed_type_takes_priority(self) -> None:
+        """Preset observed_type should override data-based computation."""
+        sampled = self._make_sampled([[[0, 1]]])  # H and O in data
+        preset = ["H", "O", "Au"]
+        self.model.compute_or_load_stat(
+            lambda: sampled,
+            stat_file_path=DPPath(self.tmpdir, mode="w"),
+            compute_or_load_out_stat=False,
+            preset_observed_type=preset,
+        )
+        self.assertEqual(self.model.observed_type, preset)
+
+
+class TestDPZBLObservedType(unittest.TestCase):
+    """Test observed_type propagation in DPZBLLinearEnergyAtomicModel.
+
+    The parent LinearEnergyAtomicModel computes observed type once, then
+    propagates it to sub-models via preset_observed_type to avoid redundant
+    computation.
+    """
+
+    def setUp(self) -> None:
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        data_file = [str(Path(__file__).parent / "water/data/single")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+
+        from .model.test_permutation import (
+            model_zbl,
+        )
+
+        self.config["model"] = deepcopy(model_zbl)
+
+    def test_parent_observed_type_from_data(self) -> None:
+        """Parent (linear) model should collect observed types from data."""
+        from deepmd.pt.entrypoints.main import (
+            get_trainer,
+        )
+
+        trainer = get_trainer(deepcopy(self.config))
+        trainer.run()
+        observed = trainer.model.atomic_model.observed_type
+        self.assertIsNotNone(observed)
+        # Training data only has O and H (model_zbl type_map is ["O", "H", "B"])
+        self.assertIn("H", observed)
+        self.assertIn("O", observed)
+        self.assertNotIn("B", observed)
+
+    def test_submodels_get_propagated_observed_type(self) -> None:
+        """Sub-models should receive parent's observed type via propagation."""
+        from deepmd.pt.entrypoints.main import (
+            get_trainer,
+        )
+
+        trainer = get_trainer(deepcopy(self.config))
+        trainer.run()
+        linear_model = trainer.model.atomic_model
+        dp_model = linear_model.models[0]
+        zbl_model = linear_model.models[1]
+        # All three should have the same observed type (propagated from parent)
+        self.assertEqual(dp_model.observed_type, linear_model.observed_type)
+        self.assertEqual(zbl_model.observed_type, linear_model.observed_type)
+
+    def tearDown(self) -> None:
+        for f in os.listdir("."):
+            if f.startswith("model") and f.endswith(".pt"):
+                os.remove(f)
+            if f in ["lcurve.out", "frozen_model.pth", "output.txt", "checkpoint"]:
+                os.remove(f)
 
 
 if __name__ == "__main__":

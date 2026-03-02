@@ -349,6 +349,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         sampled_func: Callable[[], list[dict]],
         stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
     ) -> None:
         """Compute or load the statistics parameters of the model.
 
@@ -364,9 +365,21 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         compute_or_load_out_stat : bool
             Whether to compute the output statistics.
         """
+        # Compute observed type once at parent level, then propagate to
+        # sub-models via preset_observed_type to avoid redundant computation.
+        obs_stat_path = stat_file_path
+        if obs_stat_path is not None and self.type_map is not None:
+            obs_stat_path = obs_stat_path / " ".join(self.type_map)
+        self._collect_and_set_observed_type(
+            sampled_func, obs_stat_path, preset_observed_type
+        )
+
         for md in self.models:
             md.compute_or_load_stat(
-                sampled_func, stat_file_path, compute_or_load_out_stat=False
+                sampled_func,
+                stat_file_path,
+                compute_or_load_out_stat=False,
+                preset_observed_type=self._observed_type,
             )
 
         if stat_file_path is not None and self.type_map is not None:

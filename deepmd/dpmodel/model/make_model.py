@@ -381,6 +381,8 @@ def make_model(
         def get_observed_type_list(self) -> list[str]:
             """Get observed types (elements) of the model during data statistics.
 
+            Bias-based fallback for old models without metadata.
+
             Returns
             -------
             list[str]
