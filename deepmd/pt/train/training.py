@@ -401,7 +401,7 @@ class Trainer:
             )
             # Persist observed_type from stat into model_params and model_def_script
             if not resuming and self.rank == 0:
-                observed = getattr(self.model.atomic_model, "_observed_type", None)
+                observed = self.model.atomic_model.observed_type
                 if observed is not None:
                     model_params.setdefault("info", {})["observed_type"] = observed
                     self.model.model_def_script = json.dumps(model_params)
@@ -461,11 +461,7 @@ class Trainer:
                 )
                 # Persist observed_type into model_params and model_def_script
                 if not resuming and self.rank == 0:
-                    observed = getattr(
-                        self.model[model_key].atomic_model,
-                        "_observed_type",
-                        None,
-                    )
+                    observed = self.model[model_key].atomic_model.observed_type
                     if observed is not None:
                         model_params["model_dict"][model_key].setdefault("info", {})[
                             "observed_type"

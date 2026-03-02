@@ -2350,12 +2350,12 @@ def standard_model_args() -> Argument:
     doc_model_branch_alias = (
         "List of aliases for this model branch. "
         "Multiple aliases can be defined, and any alias can reference this branch throughout the model usage. "
-        "Used only in multitask models."
+        "Used only in multi-task models."
     )
     doc_info = (
-        "Dictionary of metadata for this model branch. "
-        "Store arbitrary key-value pairs with branch-specific information. "
-        "Used only in multitask models."
+        "Dictionary of metadata for this model or model branch. "
+        "Store arbitrary key-value pairs with model- or branch-specific information. "
+        "Used in both single-task and multi-task models."
     )
 
     ca = Argument(

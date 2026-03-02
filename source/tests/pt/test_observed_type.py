@@ -126,7 +126,6 @@ class TestObservedTypeTraining(unittest.TestCase):
 
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
-        # Check the wrapper's extra state contains observed_type under info
         state = trainer.wrapper.state_dict()
         model_params = state["_extra_state"]["model_params"]
         self.assertIn("info", model_params)
@@ -241,7 +240,7 @@ class TestObservedTypeTraining(unittest.TestCase):
 
     def tearDown(self) -> None:
         for f in os.listdir("."):
-            if f.startswith("model") and f.endswith("pt"):
+            if f.startswith("model") and f.endswith(".pt"):
                 os.remove(f)
             if f in ["lcurve.out", "frozen_model.pth", "output.txt", "checkpoint"]:
                 os.remove(f)
@@ -295,7 +294,7 @@ class TestObservedTypeFallback(unittest.TestCase):
 
     def tearDown(self) -> None:
         for f in os.listdir("."):
-            if f.startswith("model") and f.endswith("pt"):
+            if f.startswith("model") and f.endswith(".pt"):
                 os.remove(f)
             if f in ["lcurve.out", "frozen_model.pth", "output.txt", "checkpoint"]:
                 os.remove(f)
