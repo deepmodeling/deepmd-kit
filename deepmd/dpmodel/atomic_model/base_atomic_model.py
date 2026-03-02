@@ -310,6 +310,29 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Get whether the fitting net computes stats which are not distinguished between different types of atoms."""
         return True
 
+    def compute_or_load_stat(
+        self,
+        sampled_func: Callable[[], list[dict]],
+        stat_file_path: DPPath | None = None,
+        compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
+    ) -> None:
+        """Compute or load the statistics parameters of the model,
+        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        stat_file_path
+            The path to the stat file.
+        compute_or_load_out_stat : bool
+            Whether to compute the output statistics.
+            If False, it will only compute the input statistics
+            (e.g. mean and standard deviation of descriptors).
+        """
+        raise NotImplementedError
+
     def compute_or_load_out_stat(
         self,
         merged: Callable[[], list[dict]] | list[dict],
