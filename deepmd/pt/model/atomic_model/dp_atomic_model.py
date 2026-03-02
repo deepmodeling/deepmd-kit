@@ -328,28 +328,7 @@ class DPAtomicModel(BaseAtomicModel):
             # should not share the same parameters
             stat_file_path /= " ".join(self.type_map)
 
-        @functools.lru_cache
-        def wrapped_sampler() -> list[dict]:
-            sampled = sampled_func()
-            if self.pair_excl is not None:
-                pair_exclude_types = self.pair_excl.get_exclude_types()
-                for sample in sampled:
-                    sample["pair_exclude_types"] = list(pair_exclude_types)
-            if self.atom_excl is not None:
-                atom_exclude_types = self.atom_excl.get_exclude_types()
-                for sample in sampled:
-                    sample["atom_exclude_types"] = list(atom_exclude_types)
-            if (
-                "find_fparam" not in sampled[0]
-                and "fparam" not in sampled[0]
-                and self.has_default_fparam()
-            ):
-                default_fparam = self.get_default_fparam()
-                for sample in sampled:
-                    nframe = sample["atype"].shape[0]
-                    sample["fparam"] = default_fparam.repeat(nframe, 1)
-            return sampled
-
+        wrapped_sampler = self._make_wrapped_sampler(sampled_func)
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
         self.compute_fitting_input_stat(wrapped_sampler, stat_file_path)
         if compute_or_load_out_stat:
