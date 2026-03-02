@@ -2355,7 +2355,7 @@ def standard_model_args() -> Argument:
     doc_info = (
         "Dictionary of metadata for this model or model branch. "
         "Store arbitrary key-value pairs with model- or branch-specific information. "
-        "Used in both single-task and multi-task models."
+        "Used in both single- and multi-task models."
     )
 
     ca = Argument(
