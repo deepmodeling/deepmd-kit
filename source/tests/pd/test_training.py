@@ -22,7 +22,7 @@ from deepmd.pd.utils.finetune import (
     get_finetune_rules,
 )
 from deepmd.utils.compat import (
-    convert_optimizer_to_new_format,
+    convert_optimizer_v31_to_v32,
 )
 
 from .model.test_permutation import (
@@ -154,7 +154,7 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
-        self.config = convert_optimizer_to_new_format(self.config, warning=False)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -172,7 +172,7 @@ class TestEnergyModelGradientAccumulation(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
-        self.config = convert_optimizer_to_new_format(self.config, warning=False)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -193,7 +193,7 @@ class TestFparam(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
-        self.config = convert_optimizer_to_new_format(self.config, warning=False)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -215,7 +215,7 @@ class TestEnergyModelDPA1(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
-        self.config = convert_optimizer_to_new_format(self.config, warning=False)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -232,7 +232,7 @@ class TestEnergyModelDPA2(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
-        self.config = convert_optimizer_to_new_format(self.config, warning=False)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file

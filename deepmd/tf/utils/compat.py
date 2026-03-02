@@ -4,7 +4,7 @@
 from deepmd.utils.compat import (
     convert_input_v0_v1,
     convert_input_v1_v2,
-    convert_optimizer_to_new_format,
+    convert_optimizer_v31_to_v32,
     deprecate_numb_test,
     update_deepmd_input,
 )
@@ -12,7 +12,7 @@ from deepmd.utils.compat import (
 __all__ = [
     "convert_input_v0_v1",
     "convert_input_v1_v2",
-    "convert_optimizer_to_new_format",
+    "convert_optimizer_v31_to_v32",
     "deprecate_numb_test",
     "update_deepmd_input",
 ]

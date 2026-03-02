@@ -457,17 +457,17 @@ def update_deepmd_input(
         jdata = deprecate_numb_test(jdata, warning, dump)
 
     jdata = migrate_training_warmup(jdata, warning=warning)
-    jdata = convert_optimizer_to_new_format(jdata, warning=warning)
+    jdata = convert_optimizer_v31_to_v32(jdata, warning=warning)
     return jdata
 
 
-def convert_optimizer_to_new_format(
+def convert_optimizer_v31_to_v32(
     jdata: dict[str, Any], warning: bool = True
 ) -> dict[str, Any]:
-    """Convert old optimizer format (in training section) to new format (separate optimizer section).
+    """Convert optimizer format from v3.1 to v3.2.
 
-    Old format: optimizer parameters (opt_type, kf_blocksize, etc.) in training section.
-    New format: separate optimizer section with type field.
+    v3.1 format: optimizer parameters (opt_type, kf_blocksize, etc.) in training section.
+    v3.2 format: separate optimizer section with type field.
 
     Parameters
     ----------
