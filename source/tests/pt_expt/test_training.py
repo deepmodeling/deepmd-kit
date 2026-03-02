@@ -414,6 +414,19 @@ class TestRestart(unittest.TestCase):
 
                 # start_step should be restored
                 self.assertEqual(trainer2.start_step, 5)
+
+                # LR should match the schedule at the resumed step,
+                # not double-count start_step.
+                expected_lr = trainer2.lr_schedule.value(trainer2.start_step)
+                actual_lr = trainer2.scheduler.get_last_lr()[0]
+                self.assertAlmostEqual(
+                    actual_lr,
+                    expected_lr,
+                    places=10,
+                    msg=f"LR after restart should be lr_schedule({trainer2.start_step})"
+                    f"={expected_lr}, got {actual_lr}",
+                )
+
                 trainer2.run()
 
                 # lcurve should have entries appended (restart opens in append mode)
