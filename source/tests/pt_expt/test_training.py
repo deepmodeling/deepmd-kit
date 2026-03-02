@@ -374,6 +374,127 @@ class TestGetData(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+class TestRestart(unittest.TestCase):
+    """Test restart and init_model resume paths."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(data_dir):
+            raise unittest.SkipTest(f"Example data not found: {data_dir}")
+        cls.data_dir = data_dir
+
+    def _train_and_get_ckpt(self, config: dict, tmpdir: str) -> str:
+        """Train and return the path to the final checkpoint."""
+        trainer = get_trainer(config)
+        trainer.run()
+        # find the latest checkpoint symlink
+        ckpt = os.path.join(tmpdir, "model.ckpt.pt")
+        self.assertTrue(os.path.exists(ckpt), "Checkpoint not created")
+        return ckpt
+
+    def test_restart(self) -> None:
+        """Train 5 steps, restart from checkpoint, train 5 more."""
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_restart_")
+        try:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                # Phase 1: train 5 steps
+                config = _make_config(self.data_dir, numb_steps=5)
+                config = update_deepmd_input(config, warning=False)
+                config = normalize(config)
+                ckpt_path = self._train_and_get_ckpt(config, tmpdir)
+
+                # Phase 2: restart from checkpoint, train to step 10
+                config2 = _make_config(self.data_dir, numb_steps=10)
+                config2 = update_deepmd_input(config2, warning=False)
+                config2 = normalize(config2)
+                trainer2 = get_trainer(config2, restart_model=ckpt_path)
+
+                # start_step should be restored
+                self.assertEqual(trainer2.start_step, 5)
+                trainer2.run()
+
+                # lcurve should have entries appended (restart opens in append mode)
+                with open(os.path.join(tmpdir, "lcurve.out")) as f:
+                    lines = [l for l in f.readlines() if not l.startswith("#")]
+                self.assertGreater(len(lines), 0, "lcurve.out is empty after restart")
+            finally:
+                os.chdir(old_cwd)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_init_model(self) -> None:
+        """Train 5 steps, init_model from checkpoint (reset step), train 5 more."""
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_init_model_")
+        try:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                # Phase 1: train 5 steps
+                config = _make_config(self.data_dir, numb_steps=5)
+                config = update_deepmd_input(config, warning=False)
+                config = normalize(config)
+                ckpt_path = self._train_and_get_ckpt(config, tmpdir)
+
+                # Phase 2: init_model — weights loaded but step reset to 0
+                config2 = _make_config(self.data_dir, numb_steps=5)
+                config2 = update_deepmd_input(config2, warning=False)
+                config2 = normalize(config2)
+                trainer2 = get_trainer(config2, init_model=ckpt_path)
+
+                # init_model resets step to 0
+                self.assertEqual(trainer2.start_step, 0)
+                trainer2.run()
+
+                with open(os.path.join(tmpdir, "lcurve.out")) as f:
+                    lines = [l for l in f.readlines() if not l.startswith("#")]
+                self.assertGreater(
+                    len(lines), 0, "lcurve.out is empty after init_model"
+                )
+            finally:
+                os.chdir(old_cwd)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_restart_with_compile(self) -> None:
+        """Train uncompiled, restart with compile enabled."""
+        from deepmd.pt_expt.train.training import (
+            _CompiledModel,
+        )
+
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_restart_compile_")
+        try:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                # Phase 1: train 5 steps without compile
+                config = _make_config(self.data_dir, numb_steps=5)
+                config = update_deepmd_input(config, warning=False)
+                config = normalize(config)
+                ckpt_path = self._train_and_get_ckpt(config, tmpdir)
+
+                # Phase 2: restart with compile enabled
+                config2 = _make_config(self.data_dir, numb_steps=10)
+                config2["training"]["enable_compile"] = True
+                config2 = update_deepmd_input(config2, warning=False)
+                config2 = normalize(config2)
+                trainer2 = get_trainer(config2, restart_model=ckpt_path)
+
+                self.assertEqual(trainer2.start_step, 5)
+                self.assertIsInstance(trainer2.wrapper.model, _CompiledModel)
+                trainer2.run()
+
+                with open(os.path.join(tmpdir, "lcurve.out")) as f:
+                    lines = [l for l in f.readlines() if not l.startswith("#")]
+                self.assertGreater(len(lines), 0)
+            finally:
+                os.chdir(old_cwd)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 def _make_dpa3_config(data_dir: str, numb_steps: int = 5) -> dict:
     """Build a minimal DPA3 config dict pointing at *data_dir*."""
     config = {

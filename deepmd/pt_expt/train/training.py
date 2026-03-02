@@ -467,20 +467,6 @@ class Trainer:
             last_epoch=self.start_step - 1,
         )
 
-        # torch.compile -------------------------------------------------------
-        # The model's forward uses torch.autograd.grad (for forces) with
-        # create_graph=True so the loss backward can differentiate through
-        # forces.  torch.compile does not support this "double backward".
-        #
-        # Solution: use make_fx to trace the model forward, which decomposes
-        # torch.autograd.grad into primitive ops.  The resulting traced
-        # module is then compiled by torch.compile — no double backward.
-        self.enable_compile = training_params.get("enable_compile", False)
-        if self.enable_compile:
-            compile_opts = training_params.get("compile_options", {})
-            log.info("Compiling model with torch.compile (%s)", compile_opts)
-            self._compile_model(compile_opts)
-
         # Resume --------------------------------------------------------------
         if resuming:
             log.info(f"Resuming from {resume_model}.")
@@ -511,6 +497,20 @@ class Trainer:
                     ),
                     last_epoch=self.start_step - 1,
                 )
+
+        # torch.compile -------------------------------------------------------
+        # The model's forward uses torch.autograd.grad (for forces) with
+        # create_graph=True so the loss backward can differentiate through
+        # forces.  torch.compile does not support this "double backward".
+        #
+        # Solution: use make_fx to trace the model forward, which decomposes
+        # torch.autograd.grad into primitive ops.  The resulting traced
+        # module is then compiled by torch.compile — no double backward.
+        self.enable_compile = training_params.get("enable_compile", False)
+        if self.enable_compile:
+            compile_opts = training_params.get("compile_options", {})
+            log.info("Compiling model with torch.compile (%s)", compile_opts)
+            self._compile_model(compile_opts)
 
     # ------------------------------------------------------------------
     # torch.compile helpers
