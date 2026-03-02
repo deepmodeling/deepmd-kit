@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
+from collections.abc import (
+    Callable,
+)
 from copy import (
     deepcopy,
 )
@@ -333,7 +336,9 @@ class SpinModel(NativeOP):
         backbone_model_atomic_output_def[var_name].magnetic = True
         return ModelOutputDef(backbone_model_atomic_output_def)
 
-    def get_spin_sampled_func(self, sampled_func):
+    def get_spin_sampled_func(
+        self, sampled_func: Callable[[], list[dict]]
+    ) -> Callable[[], list[dict]]:
         """Get a spin-aware sampled function that transforms spin data for the backbone model.
 
         Parameters
@@ -348,7 +353,7 @@ class SpinModel(NativeOP):
         """
 
         @functools.lru_cache
-        def spin_sampled_func():
+        def spin_sampled_func() -> list[dict]:
             sampled = sampled_func()
             spin_sampled = []
             for sys in sampled:
@@ -374,8 +379,8 @@ class SpinModel(NativeOP):
 
     def change_out_bias(
         self,
-        merged,
-        bias_adjust_mode="change-by-statistic",
+        merged: Callable[[], list[dict]] | list[dict],
+        bias_adjust_mode: str = "change-by-statistic",
     ) -> None:
         """Change the output bias of atomic model according to the input data and the pretrained model.
 
@@ -403,7 +408,7 @@ class SpinModel(NativeOP):
         )
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
