@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for spin model finetune: change_out_bias, change_type_map, and e2e finetune."""
+
 import json
 import os
 import shutil
@@ -38,7 +39,6 @@ from deepmd.pt.utils.stat import (
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
-    to_torch_tensor,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -332,13 +332,11 @@ class SpinFinetuneE2ETest:
 
         # Finetune with a new type_map that has extra types
         config_finetune = deepcopy(self.config)
-        config_finetune["model"]["type_map"] = self.config["model"]["type_map"] + [
-            "Fe"
-        ]
+        config_finetune["model"]["type_map"] = self.config["model"]["type_map"] + ["Fe"]
         # Extend spin config for the new type
-        config_finetune["model"]["spin"]["use_spin"] = (
-            self.config["model"]["spin"]["use_spin"] + [False]
-        )
+        config_finetune["model"]["spin"]["use_spin"] = self.config["model"]["spin"][
+            "use_spin"
+        ] + [False]
         config_finetune["model"], finetune_links = get_finetune_rules(
             finetune_model,
             config_finetune["model"],
