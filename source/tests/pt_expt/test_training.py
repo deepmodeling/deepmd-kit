@@ -374,5 +374,123 @@ class TestGetData(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def _make_dpa3_config(data_dir: str, numb_steps: int = 5) -> dict:
+    """Build a minimal DPA3 config dict pointing at *data_dir*."""
+    config = {
+        "model": {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "dpa3",
+                "repflow": {
+                    "n_dim": 8,
+                    "e_dim": 4,
+                    "a_dim": 4,
+                    "nlayers": 2,
+                    "e_rcut": 3.0,
+                    "e_rcut_smth": 0.5,
+                    "e_sel": 18,
+                    "a_rcut": 2.5,
+                    "a_rcut_smth": 0.5,
+                    "a_sel": 10,
+                    "axis_neuron": 4,
+                    "fix_stat_std": 0.3,
+                },
+                "seed": 1,
+            },
+            "fitting_net": {
+                "neuron": [8, 8],
+                "resnet_dt": True,
+                "seed": 1,
+            },
+            "data_stat_nbatch": 1,
+        },
+        "learning_rate": {
+            "type": "exp",
+            "decay_steps": 500,
+            "start_lr": 0.001,
+            "stop_lr": 3.51e-8,
+        },
+        "loss": {
+            "type": "ener",
+            "start_pref_e": 0.02,
+            "limit_pref_e": 1,
+            "start_pref_f": 1000,
+            "limit_pref_f": 1,
+            "start_pref_v": 0,
+            "limit_pref_v": 0,
+        },
+        "training": {
+            "training_data": {
+                "systems": [
+                    os.path.join(data_dir, "data_0"),
+                ],
+                "batch_size": 1,
+            },
+            "validation_data": {
+                "systems": [
+                    os.path.join(data_dir, "data_3"),
+                ],
+                "batch_size": 1,
+                "numb_btch": 1,
+            },
+            "numb_steps": numb_steps,
+            "seed": 10,
+            "disp_file": "lcurve.out",
+            "disp_freq": 5,
+            "save_freq": numb_steps,
+        },
+    }
+    return config
+
+
+class TestTrainingDPA3(unittest.TestCase):
+    """Smoke test for the pt_expt training loop with DPA3 descriptor."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(data_dir):
+            raise unittest.SkipTest(f"Example data not found: {data_dir}")
+        cls.data_dir = data_dir
+
+    def test_get_model(self) -> None:
+        """Test that get_model constructs a DPA3 model from config."""
+        config = _make_dpa3_config(self.data_dir)
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        model = get_model(config["model"])
+        self.assertIsInstance(model, torch.nn.Module)
+        nparams = sum(p.numel() for p in model.parameters())
+        self.assertGreater(nparams, 0)
+
+    def test_training_loop(self) -> None:
+        """Run a few DPA3 training steps and verify outputs."""
+        config = _make_dpa3_config(self.data_dir, numb_steps=5)
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_dpa3_train_")
+        try:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                trainer = get_trainer(config)
+                trainer.run()
+
+                lcurve_path = os.path.join(tmpdir, "lcurve.out")
+                self.assertTrue(os.path.exists(lcurve_path), "lcurve.out not created")
+
+                with open(lcurve_path) as f:
+                    lines = [l for l in f.readlines() if not l.startswith("#")]
+                self.assertGreater(len(lines), 0, "lcurve.out is empty")
+
+                ckpt_files = [f for f in os.listdir(tmpdir) if f.endswith(".pt")]
+                self.assertGreater(len(ckpt_files), 0, "No checkpoint files saved")
+            finally:
+                os.chdir(old_cwd)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()
