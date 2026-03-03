@@ -13,6 +13,7 @@ import numpy as np
 
 from deepmd.dpmodel.array_api import (
     Array,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.common import (
     NativeOP,
@@ -211,7 +212,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlist)
         _, nloc, _ = nlist.shape
-        atype = extended_atype[:, :nloc]
+        atype = xp_take_first_n(extended_atype, 1, nloc)
         if self.pair_excl is not None:
             pair_mask = self.pair_excl.build_type_exclude_mask(nlist, extended_atype)
             # exclude neighbors in the nlist
@@ -229,7 +230,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         ret_dict = self.apply_out_stat(ret_dict, atype)
 
         # nf x nloc
-        atom_mask = ext_atom_mask[:, :nloc]
+        atom_mask = xp_take_first_n(ext_atom_mask, 1, nloc)
         if self.atom_excl is not None:
             atom_mask = xp.logical_and(
                 atom_mask, self.atom_excl.build_type_exclude_mask(atype)
