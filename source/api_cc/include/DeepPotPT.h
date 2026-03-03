@@ -340,6 +340,10 @@ class DeepPotPT : public DeepPotBackend {
   at::Tensor firstneigh_tensor;
   c10::optional<torch::Tensor> mapping_tensor;
   torch::Dict<std::string, torch::Tensor> comm_dict;
+  std::vector<std::vector<int>> remapped_sendlist;
+  std::vector<int*> remapped_sendlist_ptrs;
+  std::vector<int> remapped_sendnum;
+  std::vector<int> remapped_recvnum;
   bool profiler_enabled{false};
   std::string profiler_file;
   /**
