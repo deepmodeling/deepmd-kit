@@ -184,7 +184,7 @@ class TestEnergyModel(unittest.TestCase):
         )
 
         # --- eager reference with zero params ---
-        ret_eager_zero = md._forward_lower(
+        ret_eager_zero = md.forward_lower(
             ext_coord.requires_grad_(True),
             ext_atype,
             nlist_t,
@@ -262,7 +262,7 @@ class TestEnergyModel(unittest.TestCase):
             dtype=torch.float64,
             device=self.device,
         )
-        ret_eager_nz = md._forward_lower(
+        ret_eager_nz = md.forward_lower(
             ext_coord.requires_grad_(True),
             ext_atype,
             nlist_t,
@@ -364,13 +364,13 @@ class TestEnergyModel(unittest.TestCase):
         ret_pt = md_pt(coord, self.atype, self.cell.reshape(1, 9))
 
         np.testing.assert_allclose(
-            ret_dp["energy_redu"],
+            ret_dp["energy"],
             ret_pt["energy"].detach().cpu().numpy(),
             rtol=1e-10,
             atol=1e-10,
         )
         np.testing.assert_allclose(
-            ret_dp["energy"],
+            ret_dp["atom_energy"],
             ret_pt["atom_energy"].detach().cpu().numpy(),
             rtol=1e-10,
             atol=1e-10,

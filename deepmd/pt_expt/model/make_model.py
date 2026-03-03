@@ -18,7 +18,10 @@ from .transform_output import (
 )
 
 
-def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
+def make_model(
+    T_AtomicModel: type[BaseAtomicModel],
+    T_Bases: tuple[type, ...] = (),
+) -> type:
     """Make a model as a derived class of an atomic model.
 
     Wraps dpmodel's make_model with torch.nn.Module and overrides
@@ -28,6 +31,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
     ----------
     T_AtomicModel
         The atomic model.
+    T_Bases
+        Additional base classes for the returned model class.
+        For example, pass ``(BaseModel,)`` so that the concrete model
+        inherits the pt_expt ``BaseModel`` plugin registry.
 
     Returns
     -------
@@ -38,13 +45,23 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
     DPModel = make_model_dp(T_AtomicModel)
 
     @torch_module
-    class CM(DPModel):
+    class CM(DPModel, *T_Bases):
         def forward(self, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor]:
             """Default forward delegates to call().
 
             Subclasses (e.g. EnergyModel) override this with output translation.
             """
             return self.call(*args, **kwargs)
+
+        def forward_common(self, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor]:
+            """Forward common delegates to call_common()."""
+            return self.call_common(*args, **kwargs)
+
+        def forward_common_lower(
+            self, *args: Any, **kwargs: Any
+        ) -> dict[str, torch.Tensor]:
+            """Forward common lower delegates to call_common_lower()."""
+            return self.call_common_lower(*args, **kwargs)
 
         def forward_common_atomic(
             self,

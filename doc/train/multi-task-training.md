@@ -26,8 +26,6 @@ and the Adam optimizer is executed to minimize $L^{(t)}$ for one step to update 
 In the case of multi-GPU parallel training, different GPUs will independently select their tasks.
 In the DPA-2 model, this multi-task training framework is adopted.[^1]
 
-[^1]: Duo Zhang, Xinzijian Liu, Xiangyu Zhang, Chengqian Zhang, Chun Cai, Hangrui Bi, Yiming Du, Xuejian Qin, Anyang Peng, Jiameng Huang, Bowen Li, Yifan Shan, Jinzhe Zeng, Yuzhi Zhang, Siyuan Liu, Yifan Li, Junhan Chang, Xinyan Wang, Shuo Zhou, Jianchuan Liu, Xiaoshan Luo, Zhenyu Wang, Wanrun Jiang, Jing Wu, Yudi Yang, Jiyuan Yang, Manyi Yang, Fu-Qiang Gong, Linshuang Zhang, Mengchao Shi, Fu-Zhi Dai, Darrin M. York, Shi Liu, Tong Zhu, Zhicheng Zhong, Jian Lv, Jun Cheng, Weile Jia, Mohan Chen, Guolin Ke, Weinan E, Linfeng Zhang, Han Wang, DPA-2: a large atomic model as a multi-task learner. npj Comput Mater 10, 293 (2024). [DOI: 10.1038/s41524-024-01493-2](https://doi.org/10.1038/s41524-024-01493-2) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
-
 Compared with the previous TensorFlow implementation, the new support in PyTorch is more flexible and efficient.
 In particular, it makes multi-GPU parallel training and even tasks beyond DFT possible,
 enabling larger-scale and more general multi-task training to obtain more general pre-trained models.
@@ -48,6 +46,7 @@ Specifically, there are several parts that need to be modified:
 - {ref}`model/model_dict <model/model_dict>`: The core definition of the model part and the explanation of sharing rules,
   starting with user-defined model name keys `model_key`, such as `my_model_1`.
   Each model part needs to align with the components of the single-task training {ref}`model <model>`, but with the following sharing rules:
+
   - If you want to share the current model component with other tasks, which should be part of the {ref}`model/shared_dict <model/shared_dict>`,
     you can directly fill in the corresponding `part_key`, such as
     `"descriptor": "my_descriptor", `
@@ -63,7 +62,7 @@ Specifically, there are several parts that need to be modified:
   - For fitting nets, we only support the default `shared_level`=0, where all parameters will be shared except for `bias_atom_e` and `case_embd`.
   - To conduct multitask training, there are two typical approaches:
     1. **Descriptor sharing only**: Share the descriptor with `shared_level`=0. See [here](../../examples/water_multi_task/pytorch_example/input_torch.json) for an example.
-    2. **Descriptor and fitting network sharing with data identification**:
+    1. **Descriptor and fitting network sharing with data identification**:
        - Share the descriptor and the fitting network with `shared_level`=0.
        - {ref}`dim_case_embd <model[standard]/fitting_net[ener]/dim_case_embd>` must be set to the number of model branches, which will distinguish different data tasks using a one-hot embedding.
        - See [here](../../examples/water_multi_task/pytorch_example/input_torch_sharefit.json) for an example.
@@ -79,13 +78,23 @@ Specifically, there are several parts that need to be modified:
 
 - (Optional) {ref}`training/model_prob <training/model_prob>`: The sampling weight settings corresponding to each `model_key`, i.e., the probability weight in the training step.
   You can specify any positive real number weight for each task. The higher the weight, the higher the probability of being sampled in each training.
-  This setting is optional, and if not set, tasks will be sampled with equal weights.
+  This setting is optional, and if not set, tasks will be sampled with weights proportional to the number of systems in each task. It is only used when `num_epoch_dict` is not set.
+
+- (Optional) {ref}`training/num_epoch_dict <training/num_epoch_dict>`: The number of training epochs for each model branch, specified as a dictionary mapping `model_key` to epoch values (can be fractional).
+  This allows different tasks to train for different numbers of epochs, which is particularly useful for multi-task fine-tuning scenarios
+  where a data-rich pretrained model is jointly trained with a data-scarce downstream task.
+  When set, `model_prob` is derived from the epoch targets and per-task totals:
+  `model_prob[i] = num_epoch_dict[i] * per_task_total[i] / sum_j(num_epoch_dict[j] * per_task_total[j])`.
+  The total training steps are computed as `ceil(sum_i(num_epoch_dict[i] * per_task_total[i]))`.
+  This parameter is mutually exclusive with `training/model_prob` and `training/num_steps`.
 
 An example input for multi-task training two models in water system is shown as following:
 
 ```{literalinclude} ../../examples/water_multi_task/pytorch_example/input_torch.json
-:language: json
-:linenos:
+---
+language: json
+linenos:
+---
 ```
 
 ## Finetune from the pre-trained multi-task model
@@ -104,3 +113,5 @@ Details of some parameters that are the same as [the regular parameters](./train
    :module: deepmd.utils.argcheck
    :func: gen_args_multi_task
 ```
+
+[^1]: Duo Zhang, Xinzijian Liu, Xiangyu Zhang, Chengqian Zhang, Chun Cai, Hangrui Bi, Yiming Du, Xuejian Qin, Anyang Peng, Jiameng Huang, Bowen Li, Yifan Shan, Jinzhe Zeng, Yuzhi Zhang, Siyuan Liu, Yifan Li, Junhan Chang, Xinyan Wang, Shuo Zhou, Jianchuan Liu, Xiaoshan Luo, Zhenyu Wang, Wanrun Jiang, Jing Wu, Yudi Yang, Jiyuan Yang, Manyi Yang, Fu-Qiang Gong, Linshuang Zhang, Mengchao Shi, Fu-Zhi Dai, Darrin M. York, Shi Liu, Tong Zhu, Zhicheng Zhong, Jian Lv, Jun Cheng, Weile Jia, Mohan Chen, Guolin Ke, Weinan E, Linfeng Zhang, Han Wang, DPA-2: a large atomic model as a multi-task learner. npj Comput Mater 10, 293 (2024). [DOI: 10.1038/s41524-024-01493-2](https://doi.org/10.1038/s41524-024-01493-2) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).

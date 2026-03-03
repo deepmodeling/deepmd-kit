@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import functools
 import math
 from collections.abc import (
     Callable,
@@ -52,6 +53,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         pair_exclude_types: list[tuple[int, int]] = [],
         rcond: float | None = None,
         preset_out_bias: dict[str, Array] | None = None,
+        data_stat_protect: float = 1e-2,
     ) -> None:
         super().__init__()
         self.type_map = type_map
@@ -59,6 +61,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.reinit_pair_exclude(pair_exclude_types)
         self.rcond = rcond
         self.preset_out_bias = preset_out_bias
+        self.data_stat_protect = data_stat_protect
 
     def init_out_stat(self) -> None:
         """Initialize the output bias."""
@@ -76,6 +79,14 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         )
         self.out_bias = out_bias_data
         self.out_std = out_std_data
+
+    def get_out_bias(self) -> Array:
+        """Get the output bias."""
+        return self.out_bias
+
+    def set_out_bias(self, out_bias: Array) -> None:
+        """Set the output bias."""
+        self.out_bias = out_bias
 
     def __setitem__(self, key: str, value: Array) -> None:
         if key in ["out_bias"]:
@@ -286,6 +297,57 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             stat_file_path=stat_file_path,
             bias_adjust_mode="set-by-statistic",
         )
+
+    def _make_wrapped_sampler(
+        self,
+        sampled_func: Callable[[], list[dict]],
+    ) -> Callable[[], list[dict]]:
+        """Wrap the sampled function with exclusion types and default fparam.
+
+        The returned callable is cached so that the sampling (which may be
+        expensive) is performed at most once.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data
+            systems.
+
+        Returns
+        -------
+        Callable[[], list[dict]]
+            A cached wrapper around *sampled_func* that additionally sets
+            ``pair_exclude_types``, ``atom_exclude_types`` and default
+            ``fparam`` on every sample dict when applicable.
+        """
+
+        @functools.lru_cache
+        def wrapped_sampler() -> list[dict]:
+            sampled = sampled_func()
+            if self.pair_excl is not None:
+                pair_exclude_types = self.pair_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["pair_exclude_types"] = list(pair_exclude_types)
+            if self.atom_excl is not None:
+                atom_exclude_types = self.atom_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["atom_exclude_types"] = list(atom_exclude_types)
+            if (
+                "find_fparam" not in sampled[0]
+                and "fparam" not in sampled[0]
+                and self.has_default_fparam()
+            ):
+                default_fparam = self.get_default_fparam()
+                if default_fparam is not None:
+                    default_fparam_np = np.array(default_fparam)
+                    for sample in sampled:
+                        nframe = sample["atype"].shape[0]
+                        sample["fparam"] = np.tile(
+                            default_fparam_np.reshape(1, -1), (nframe, 1)
+                        )
+            return sampled
+
+        return wrapped_sampler
 
     def change_out_bias(
         self,

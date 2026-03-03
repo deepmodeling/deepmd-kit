@@ -47,7 +47,7 @@ Please perform the following steps to create your Pull Request to this repositor
 ### Step 1: Fork the repository
 
 1. Visit the project: <https://github.com/deepmodeling/deepmd-kit>
-2. Click the **Fork** button on the top right and wait it to finish.
+1. Click the **Fork** button on the top right and wait it to finish.
 
 ### Step 2: Clone the forked repository to local storage and set configurations
 
@@ -58,7 +58,7 @@ Please perform the following steps to create your Pull Request to this repositor
    # Replace `$username` with your GitHub ID
    ```
 
-2. Add deepmodeling's repo as your remote repo, we can name it "upstream". And fetch upstream's latest codes to your workstation.
+1. Add deepmodeling's repo as your remote repo, we can name it "upstream". And fetch upstream's latest codes to your workstation.
 
    ```bash
    git remote add upstream https://github.com/deepmodeling/deepmd-kit.git
@@ -70,9 +70,9 @@ Please perform the following steps to create your Pull Request to this repositor
    git merge upstream/master
    ```
 
-3. Modify your codes and design unit tests.
+1. Modify your codes and design unit tests.
 
-4. Commit your changes to a new branch
+1. Commit your changes to a new branch
 
    ```bash
    git checkout -b branch1
@@ -81,7 +81,8 @@ Please perform the following steps to create your Pull Request to this repositor
    git commit -m "commit-message: update the xx"
    ```
 
-5. Push the changed codes to your original repo on github.
+1. Push the changed codes to your original repo on github.
+
    ```bash
    git push origin branch1
    ```
@@ -97,15 +98,15 @@ Please perform the following steps to create your Pull Request to this repositor
    git rebase upstream/master
    ```
 
-2. Create a new branch based on the master branch.
+1. Create a new branch based on the master branch.
 
    ```bash
    git checkout -b new-branch-name
    ```
 
-3. Modify your codes and design unit tests.
+1. Modify your codes and design unit tests.
 
-4. Commit your changes
+1. Commit your changes
 
    ```bash
    git status # Checks the local status
@@ -113,7 +114,7 @@ Please perform the following steps to create your Pull Request to this repositor
    git commit -m "commit-message: update the xx"
    ```
 
-5. Keep your branch in sync with upstream/master
+1. Keep your branch in sync with upstream/master
 
    ```bash
    # While on your new branch
@@ -121,7 +122,7 @@ Please perform the following steps to create your Pull Request to this repositor
    git rebase upstream/master
    ```
 
-6. Push your changes to the remote
+1. Push your changes to the remote
 
    ```bash
    git push -u origin new-branch-name # "-u" is used to track the remote branch from origin
@@ -130,7 +131,7 @@ Please perform the following steps to create your Pull Request to this repositor
 ### Step 3: Create a pull request
 
 1. Visit your fork at <https://github.com/$username/deepmd-kit> (replace `$username` with your GitHub ID)
-2. Click `pull requests`, followed by `New pull request` and `Compare & pull request` to create your PR.
+1. Click `pull requests`, followed by `New pull request` and `Compare & pull request` to create your PR.
 
 Now, your PR is successfully submitted! After this PR is merged, you will automatically become a contributor to DeePMD-kit.
 

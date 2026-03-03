@@ -44,32 +44,6 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         self.requires_hessian("energy")
         self._hessian_enabled = True
 
-    @torch.jit.export
-    def get_observed_type_list(self) -> list[str]:
-        """Get observed types (elements) of the model during data statistics.
-
-        Returns
-        -------
-        observed_type_list: a list of the observed types in this model.
-        """
-        type_map = self.get_type_map()
-        out_bias = self.atomic_model.get_out_bias()[0]
-
-        assert out_bias is not None, "No out_bias found in the model."
-        assert out_bias.dim() == 2, "The supported out_bias should be a 2D tensor."
-        assert out_bias.size(0) == len(type_map), (
-            "The out_bias shape does not match the type_map length."
-        )
-        bias_mask = (
-            torch.gt(torch.abs(out_bias), 1e-6).any(dim=-1).detach().cpu()
-        )  # 1e-6 for stability
-
-        observed_type_list: list[str] = []
-        for i in range(len(type_map)):
-            if bias_mask[i]:
-                observed_type_list.append(type_map[i])
-        return observed_type_list
-
     def translated_output_def(self) -> dict[str, Any]:
         out_def_data = self.model_output_def().get_data()
         output_def = {
@@ -124,7 +98,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             if "mask" in model_ret:
                 model_predict["mask"] = model_ret["mask"]
             if self._hessian_enabled:
-                model_predict["hessian"] = model_ret["energy_derv_r_derv_r"].squeeze(-2)
+                model_predict["hessian"] = model_ret["energy_derv_r_derv_r"].squeeze(-3)
         else:
             model_predict = model_ret
             model_predict["updated_coord"] += coord
@@ -168,6 +142,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             else:
                 assert model_ret["dforce"] is not None
                 model_predict["dforce"] = model_ret["dforce"]
+            if "mask" in model_ret:
+                model_predict["mask"] = model_ret["mask"]
         else:
             model_predict = model_ret
         return model_predict

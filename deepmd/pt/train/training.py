@@ -23,6 +23,11 @@ import torch
 from deepmd.common import (
     symlink_prefix_files,
 )
+from deepmd.dpmodel.utils import (
+    compute_total_numb_batch,
+    resolve_model_prob,
+    resolve_model_prob_from_epochs,
+)
 from deepmd.loggers.training import (
     format_training_message,
     format_training_message_per_task,
@@ -147,9 +152,12 @@ class Trainer:
         self.rank = dist.get_rank() if self.is_distributed else 0
         self.world_size = dist.get_world_size() if self.is_distributed else 1
         self.num_model = len(self.model_keys)
+        self.model_prob = None
 
         # Iteration config
-        self.num_steps = training_params["numb_steps"]
+        self.num_steps = training_params.get("numb_steps")
+        self.num_epoch = training_params.get("num_epoch")
+        self.num_epoch_dict = training_params.get("num_epoch_dict")
         self.disp_file = training_params.get("disp_file", "lcurve.out")
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.disp_avg = training_params.get("disp_avg", False)
@@ -195,6 +203,7 @@ class Trainer:
                 "lr_adjust_coeff": params.get("lr_adjust_coeff", 0.2),
                 "muon_2d_only": params.get("muon_2d_only", True),
                 "min_2d_dim": params.get("min_2d_dim", 1),
+                "flash_muon": params.get("flash_muon", True),
             }
             return opt_type, opt_param
 
@@ -299,7 +308,7 @@ class Trainer:
             return get_sample
 
         def get_lr(lr_params: dict[str, Any]) -> BaseLR:
-            lr_params["stop_steps"] = self.num_steps - self.warmup_steps
+            lr_params["num_steps"] = self.num_steps
             lr_schedule = BaseLR(**lr_params)
             return lr_schedule
 
@@ -462,34 +471,91 @@ class Trainer:
                         ),
                     )
 
-        # Learning rate
-        warmup_steps = training_params.get("warmup_steps", None)
-        warmup_ratio = training_params.get("warmup_ratio", None)
-        if warmup_steps is not None:
-            self.warmup_steps = warmup_steps
-        elif warmup_ratio is not None:
-            if not 0 <= warmup_ratio < 1:
-                raise ValueError(f"warmup_ratio must be in [0, 1), got {warmup_ratio}")
-            self.warmup_steps = int(warmup_ratio * self.num_steps)
-            if self.warmup_steps == 0 and warmup_ratio > 0:
-                log.warning(
-                    f"warmup_ratio {warmup_ratio} results in 0 warmup steps "
-                    f"due to truncation. Consider using a larger ratio or "
-                    f"specify warmup_steps directly."
+        # Resolve training steps
+        per_task_total = []
+        if not self.multi_task:
+            if self.num_steps is None:
+                if self.num_epoch is None:
+                    raise ValueError(
+                        "Either training.numb_steps or training.num_epoch must be set."
+                    )
+                if self.num_epoch <= 0:
+                    raise ValueError("training.num_epoch must be positive.")
+                sampler_weights = to_numpy_array(
+                    self.training_dataloader.sampler.weights
+                )
+                total_numb_batch = compute_total_numb_batch(
+                    training_data.index,
+                    sampler_weights,
+                )
+                if total_numb_batch <= 0:
+                    raise ValueError(
+                        "Total number of training batches must be positive."
+                    )
+                self.num_steps = int(np.ceil(self.num_epoch * total_numb_batch))
+                log.info(
+                    "Computed num_steps=%d from num_epoch=%s and total_numb_batch=%d.",
+                    self.num_steps,
+                    self.num_epoch,
+                    total_numb_batch,
                 )
         else:
-            self.warmup_steps = 0
-        self.warmup_start_factor = training_params.get("warmup_start_factor", 0.0)
+            if self.num_epoch_dict:
+                if self.num_steps is not None:
+                    raise ValueError(
+                        "training.numb_steps and training.num_epoch_dict "
+                        "are mutually exclusive."
+                    )
+                for model_key in self.model_keys:
+                    sampler_weights = to_numpy_array(
+                        self.training_dataloader[model_key].sampler.weights
+                    )
+                    per_task_total.append(
+                        compute_total_numb_batch(
+                            training_data[model_key].index,
+                            sampler_weights,
+                        )
+                    )
+                (
+                    self.model_prob,
+                    self.num_steps,
+                    per_task_steps,
+                ) = resolve_model_prob_from_epochs(
+                    self.model_keys,
+                    self.num_epoch_dict,
+                    np.asarray(per_task_total, dtype=np.float64),
+                )
+                log.info(
+                    "Computed model_prob=%s and num_steps=%d from num_epoch_dict=%s "
+                    "with per-task target steps: %s.",
+                    self.model_prob,
+                    self.num_steps,
+                    self.num_epoch_dict,
+                    {k: int(np.ceil(v)) for k, v in per_task_steps.items()},
+                )
+            else:
+                if self.num_steps is None:
+                    raise ValueError(
+                        "Either training.numb_steps (multi-task only) or "
+                        "training.num_epoch_dict must be set."
+                    )
+                self.model_prob = resolve_model_prob(
+                    self.model_keys,
+                    training_params.get("model_prob"),
+                    training_data,
+                    rank=self.rank,
+                )
+
+        # Learning rate
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
-        assert self.num_steps - self.warmup_steps > 0 or self.warmup_steps == 0, (
-            "Warm up steps must be less than total training steps!"
-        )
         if self.multi_task and config.get("learning_rate_dict", None) is not None:
-            self.lr_exp = {}
+            self.lr_schedule = {}
             for model_key in self.model_keys:
-                self.lr_exp[model_key] = get_lr(config["learning_rate_dict"][model_key])
+                self.lr_schedule[model_key] = get_lr(
+                    config["learning_rate_dict"][model_key]
+                )
         else:
-            self.lr_exp = get_lr(config["learning_rate"])
+            self.lr_schedule = get_lr(config["learning_rate"])
 
         # JIT
         if JIT:
@@ -683,21 +749,6 @@ class Trainer:
                     f"Checkpoint loaded non-strictly. Missing keys: {missing}, Unexpected keys: {unexpected}"
                 )
 
-        # Get model prob for multi-task
-        if self.multi_task:
-            self.model_prob = np.array([0.0 for key in self.model_keys])
-            if training_params.get("model_prob", None) is not None:
-                model_prob = training_params["model_prob"]
-                for ii, model_key in enumerate(self.model_keys):
-                    if model_key in model_prob:
-                        self.model_prob[ii] += float(model_prob[model_key])
-            else:
-                for ii, model_key in enumerate(self.model_keys):
-                    self.model_prob[ii] += float(len(self.training_data[model_key]))
-            sum_prob = np.sum(self.model_prob)
-            assert sum_prob > 0.0, "Sum of model prob must be larger than 0!"
-            self.model_prob = self.model_prob / sum_prob
-
         # Multi-task share params
         if shared_links is not None:
             _data_stat_protect = np.array(
@@ -738,34 +789,32 @@ class Trainer:
 
         # TODO add lr warmups for multitask
         # author: iProzd
-        def warm_up_linear(step: int, warmup_steps: int) -> float:
-            if step < warmup_steps:
-                return self.warmup_start_factor + (1.0 - self.warmup_start_factor) * (
-                    step / warmup_steps
-                )
-            else:
-                return self.lr_exp.value(step - warmup_steps) / self.lr_exp.start_lr
-
         # TODO add optimizers for multitask
         # author: iProzd
+        initial_lr = self.lr_schedule.value(self.start_step)
         if self.opt_type in ["Adam", "AdamW"]:
+            # Initialize optimizer with the actual learning rate at start_step
+            # to ensure warmup is applied from the first step
             if self.opt_type == "Adam":
                 self.optimizer = self._create_optimizer(
                     torch.optim.Adam,
-                    lr=self.lr_exp.start_lr,
+                    lr=initial_lr,
                     fused=DEVICE.type != "cpu",
                 )
             else:
                 self.optimizer = self._create_optimizer(
                     torch.optim.AdamW,
-                    lr=self.lr_exp.start_lr,
+                    lr=initial_lr,
                     weight_decay=float(self.opt_param["weight_decay"]),
                     fused=DEVICE.type != "cpu",
                 )
             self._load_optimizer_state(optimizer_state_dict)
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self.optimizer,
-                lambda step: warm_up_linear(step + self.start_step, self.warmup_steps),
+                lambda step: (
+                    self.lr_schedule.value(step + self.start_step) / initial_lr
+                ),
+                last_epoch=self.start_step - 1,
             )
         elif self.opt_type == "LKF":
             self.optimizer = LKFOptimizer(
@@ -774,7 +823,7 @@ class Trainer:
         elif self.opt_type == "AdaMuon":
             self.optimizer = self._create_optimizer(
                 AdaMuonOptimizer,
-                lr=self.lr_exp.start_lr,
+                lr=initial_lr,
                 momentum=float(self.opt_param["momentum"]),
                 weight_decay=float(self.opt_param["weight_decay"]),
                 adam_betas=(
@@ -784,10 +833,19 @@ class Trainer:
                 lr_adjust=float(self.opt_param["lr_adjust"]),
                 lr_adjust_coeff=float(self.opt_param["lr_adjust_coeff"]),
             )
+            if optimizer_state_dict is not None and self.restart_training:
+                self.optimizer.load_state_dict(optimizer_state_dict)
+            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
+                self.optimizer,
+                lambda step: (
+                    self.lr_schedule.value(step + self.start_step) / initial_lr
+                ),
+                last_epoch=self.start_step - 1,
+            )
         elif self.opt_type == "HybridMuon":
             self.optimizer = self._create_optimizer(
                 HybridMuonOptimizer,
-                lr=self.lr_exp.start_lr,
+                lr=initial_lr,
                 momentum=float(self.opt_param["momentum"]),
                 weight_decay=float(self.opt_param["weight_decay"]),
                 adam_betas=(
@@ -798,11 +856,15 @@ class Trainer:
                 lr_adjust_coeff=float(self.opt_param["lr_adjust_coeff"]),
                 muon_2d_only=bool(self.opt_param["muon_2d_only"]),
                 min_2d_dim=int(self.opt_param["min_2d_dim"]),
+                flash_muon=bool(self.opt_param["flash_muon"]),
             )
             self._load_optimizer_state(optimizer_state_dict)
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self.optimizer,
-                lambda step: warm_up_linear(step + self.start_step, self.warmup_steps),
+                lambda step: (
+                    self.lr_schedule.value(step + self.start_step) / initial_lr
+                ),
+                last_epoch=self.start_step - 1,
             )
         else:
             raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
@@ -955,6 +1017,7 @@ class Trainer:
             prof.start()
 
         def step(_step_id: int, task_key: str = "Default") -> None:
+            display_step_id = _step_id + 1
             if self.multi_task:
                 model_index = dp_random.choice(
                     np.arange(self.num_model, dtype=np.int_),
@@ -964,10 +1027,10 @@ class Trainer:
             # PyTorch Profiler
             if self.enable_profiler or self.profiling:
                 prof.step()
-            if isinstance(self.lr_exp, dict):
-                _lr = self.lr_exp[task_key]
+            if isinstance(self.lr_schedule, dict):
+                _lr = self.lr_schedule[task_key]
             else:
-                _lr = self.lr_exp
+                _lr = self.lr_schedule
             cur_lr = _lr.value(_step_id)
             pref_lr = cur_lr
             self.optimizer.zero_grad(set_to_none=True)
@@ -980,15 +1043,32 @@ class Trainer:
                 fout1.flush()
             if self.opt_type in ["Adam", "AdamW", "AdaMuon", "HybridMuon"]:
                 cur_lr = self.scheduler.get_last_lr()[0]
-                if _step_id < self.warmup_steps:
-                    pref_lr = _lr.start_lr
-                else:
-                    pref_lr = cur_lr
+                pref_lr = cur_lr
                 model_pred, loss, more_loss = self.wrapper(
                     **input_dict, cur_lr=pref_lr, label=label_dict, task_key=task_key
                 )
                 loss.backward()
+                # === Initialize gradient diagnostics variables ===
+                total_norm: torch.Tensor | None = None
+                pre_clip_named_norms: list[tuple[str, float]] = []
                 if self.gradient_max_norm > 0.0:
+                    # Collect per-parameter gradient norms before clipping.
+                    # NOTE: Under FSDP2 with ZeRO stage >= 2, p.grad is a sharded DTensor,
+                    # so p.grad.norm() computes the shard-local L2 norm, not the full-parameter
+                    # norm. Skip per-param collection in this case to avoid misleading values.
+                    if (
+                        self.enable_tensorboard
+                        and self.zero_stage < 2
+                        and (
+                            display_step_id % self.tensorboard_freq == 0
+                            or display_step_id == 1
+                        )
+                    ):
+                        pre_clip_named_norms = [
+                            (name, p.grad.detach().norm().item())
+                            for name, p in self.wrapper.named_parameters()
+                            if p.grad is not None
+                        ]
                     # FSDP2 sharded DTensor gradients don't support error_if_nonfinite; use manual isfinite check instead.
                     total_norm = torch.nn.utils.clip_grad_norm_(
                         self.wrapper.parameters(),
@@ -1113,7 +1193,6 @@ class Trainer:
                             self.train_loss_accu[task_key][item] += more_loss[item]
 
             # Log and persist
-            display_step_id = _step_id + 1
             if self.display_in_training and (
                 display_step_id % self.disp_freq == 0 or display_step_id == 1
             ):
@@ -1340,6 +1419,32 @@ class Trainer:
                     writer.add_scalar(
                         f"{task_key}/{item}", more_loss[item], display_step_id
                     )
+                # === Gradient diagnostics (pre-clip) ===
+                # Only log if total_norm was computed (i.e., not LKF optimizer).
+                if self.gradient_max_norm > 0.0 and total_norm is not None:
+                    writer.add_scalar(
+                        f"{task_key}/grad/total_norm",
+                        total_norm.item(),
+                        display_step_id,
+                    )
+                    # Only log per-parameter norms if list is non-empty.
+                    if pre_clip_named_norms:
+                        # Use float32 for histogram to ensure numerical stability
+                        # when gradients are in lower precision (FP16/BF16).
+                        norms = torch.tensor(
+                            [gn for _, gn in pre_clip_named_norms],
+                            dtype=torch.float32,
+                            device="cpu",
+                        )
+                        writer.add_histogram(
+                            f"{task_key}/grad/param_norms", norms, display_step_id
+                        )
+                        # Log top-10 largest per-parameter gradient norms.
+                        pre_clip_named_norms.sort(key=lambda x: x[1], reverse=True)
+                        for name, gn in pre_clip_named_norms[:10]:
+                            writer.add_scalar(
+                                f"{task_key}/grad_top10/{name}", gn, display_step_id
+                            )
 
         self.wrapper.train()
         self.t0 = time.time()
@@ -1376,7 +1481,7 @@ class Trainer:
                         _bias_adjust_mode="change-by-statistic",
                     )
             self.latest_model = Path(self.save_ckpt + f"-{self.num_steps}.pt")
-            cur_lr = self.lr_exp.value(self.num_steps - 1)
+            cur_lr = self.lr_schedule.value(self.num_steps - 1)
             self.save_model(self.latest_model, lr=cur_lr, step=self.num_steps - 1)
             log.info(f"Saved model to {self.latest_model}")
             symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
@@ -1754,6 +1859,13 @@ def model_change_out_bias(
         bias_adjust_mode=_bias_adjust_mode,
     )
     new_bias = deepcopy(_model.get_out_bias())
+
+    from deepmd.pt.model.model.dp_model import (
+        DPModelCommon,
+    )
+
+    if isinstance(_model, DPModelCommon) and _bias_adjust_mode == "set-by-statistic":
+        _model.get_fitting_net().compute_input_stats(_sample_func)
 
     model_type_map = _model.get_type_map()
     log.info(

@@ -670,6 +670,23 @@ class DescrptSeA(DescrptSe):
         atype_t = tf.concat([[self.ntypes], tf.reshape(self.atype, [-1])], axis=0)
         self.nei_type_vec = tf.nn.embedding_lookup(atype_t, nlist_t)
 
+        if self.spin is not None:
+            judge = tf.equal(natoms[0], natoms[1])
+            self.diff_coord = tf.cond(
+                judge,
+                lambda: self.natoms_match(coord, natoms),
+                lambda: self.natoms_not_match(coord, natoms, atype),
+            )
+            diff_coord_reshape = tf.reshape(self.diff_coord, [-1, natoms[1], 3])
+            nlist_reshaped = tf.reshape(self.nlist, [-1, natoms[0], self.nnei])
+            rj_gathered = tf.gather(
+                diff_coord_reshape, tf.maximum(nlist_reshaped, 0), axis=1, batch_dims=1
+            )
+            ri_gathered = diff_coord_reshape[:, : natoms[0], tf.newaxis, :]
+            rij_reshaped = tf.reshape(self.rij, [-1, natoms[0], self.nnei, 3])
+            rij_update = rij_reshaped - rj_gathered + ri_gathered
+            self.rij = tf.reshape(rij_update, tf.shape(self.rij))
+
         # only used when tensorboard was set as true
         tf.summary.histogram("descrpt", self.descrpt)
         tf.summary.histogram("rij", self.rij)
@@ -1373,6 +1390,72 @@ class DescrptSeA(DescrptSe):
                     get_extra_embedding_net_suffix(self.type_one_side),
                 )
             )
+
+    def natoms_match(self, coord: tf.Tensor, natoms: tf.Tensor) -> tf.Tensor:
+        natoms_index = tf.concat([[0], tf.cumsum(natoms[2:])], axis=0)
+        diff_coord_loc = []
+        for i in range(self.ntypes):
+            if i + self.ntypes_spin >= self.ntypes:
+                diff_coord_loc.append(
+                    tf.slice(
+                        coord,
+                        [0, natoms_index[i] * 3],
+                        [-1, natoms[2 + i] * 3],
+                    )
+                    - tf.slice(
+                        coord,
+                        [0, natoms_index[i - len(self.spin.use_spin)] * 3],
+                        [-1, natoms[2 + i - len(self.spin.use_spin)] * 3],
+                    )
+                )
+            else:
+                diff_coord_loc.append(
+                    tf.zeros([tf.shape(coord)[0], natoms[2 + i] * 3], dtype=coord.dtype)
+                )
+        diff_coord_loc = tf.concat(diff_coord_loc, axis=1)
+        return diff_coord_loc
+
+    def natoms_not_match(
+        self, coord: tf.Tensor, natoms: tf.Tensor, atype: tf.Tensor
+    ) -> tf.Tensor:
+        diff_coord_loc = self.natoms_match(coord, natoms)
+        diff_coord_ghost = []
+        # Check that all frames have the same atype vector (homogeneous batch)
+        # to ensure ghost atom layout is consistent across frames.
+        atype_equal = tf.reduce_all(tf.equal(atype, atype[0:1, :]))
+        atype_equal = tf.Assert(
+            atype_equal,
+            ["natoms_not_match requires all frames to have the same atype vector"],
+        )
+        with tf.control_dependencies([atype_equal]):
+            aatype = atype[0, :]
+        ghost_atype = aatype[natoms[0] :]
+        _, _, ghost_natoms = tf.unique_with_counts(ghost_atype)
+        ghost_natoms_index = tf.concat([[0], tf.cumsum(ghost_natoms)], axis=0)
+        ghost_natoms_index += natoms[0]
+        for i in range(self.ntypes):
+            if i + self.ntypes_spin >= self.ntypes:
+                diff_coord_ghost.append(
+                    tf.slice(
+                        coord,
+                        [0, ghost_natoms_index[i] * 3],
+                        [-1, ghost_natoms[i] * 3],
+                    )
+                    - tf.slice(
+                        coord,
+                        [0, ghost_natoms_index[i - len(self.spin.use_spin)] * 3],
+                        [-1, ghost_natoms[i - len(self.spin.use_spin)] * 3],
+                    )
+                )
+            else:
+                diff_coord_ghost.append(
+                    tf.zeros(
+                        [tf.shape(coord)[0], ghost_natoms[i] * 3], dtype=coord.dtype
+                    )
+                )
+        diff_coord_ghost = tf.concat(diff_coord_ghost, axis=1)
+        diff_coord = tf.concat([diff_coord_loc, diff_coord_ghost], axis=1)
+        return diff_coord
 
     @property
     def explicit_ntypes(self) -> bool:

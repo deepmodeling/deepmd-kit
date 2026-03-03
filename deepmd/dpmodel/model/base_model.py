@@ -142,9 +142,10 @@ def make_base_model() -> type[object]:
             """Get the model definition script."""
             pass
 
+        @abstractmethod
         def get_min_nbor_dist(self) -> float | None:
             """Get the minimum distance between two atoms."""
-            return self.min_nbor_dist
+            pass
 
         @abstractmethod
         def get_nnei(self) -> int:
@@ -189,6 +190,17 @@ def make_base_model() -> type[object]:
                 model_type = local_jdata.get("fitting", {}).get("type", "ener")
             cls = cls.get_class_by_type(model_type)
             return cls.update_sel(train_data, type_map, local_jdata)
+
+        @abstractmethod
+        def get_observed_type_list(self) -> list[str]:
+            """Get observed types (elements) of the model during data statistics.
+
+            Returns
+            -------
+            list[str]
+                A list of the observed type names in this model.
+            """
+            pass
 
         def enable_compression(
             self,
@@ -255,10 +267,4 @@ class BaseModel(make_base_model()):
         Backend-independent BaseModel class.
     """
 
-    def __init__(self) -> None:
-        self.model_def_script = ""
-        self.min_nbor_dist = None
-
-    def get_model_def_script(self) -> str:
-        """Get the model definition script."""
-        return self.model_def_script
+    pass

@@ -44,6 +44,35 @@ from .general_fitting import (
 class PolarFitting(GeneralFitting):
     r"""Fitting rotationally equivariant polarizability of the system.
 
+    The polarizability tensor :math:`\boldsymbol{\alpha} \in \mathbb{R}^{3 \times 3}` is
+    computed from the fitting network output and the rotation matrix
+    :math:`\mathbf{R}^i \in \mathbb{R}^{m_1 \times 3}` from the descriptor,
+    where :math:`m_1` is the embedding width (the dimension of the rotation matrix):
+
+    **Diagonal fitting** (when `fit_diag=True`):
+
+    .. math::
+        \boldsymbol{\alpha}^i = \mathbf{R}^{i,T} \cdot \mathrm{diag}(\mathbf{p}^i) \cdot \mathbf{R}^i,
+
+    where :math:`\mathbf{p}^i \in \mathbb{R}^{m_1}` is the diagonal elements of the
+    local-frame polarizability predicted by the fitting network.
+
+    **Full matrix fitting** (when `fit_diag=False`):
+
+    .. math::
+        \boldsymbol{\alpha}^i = \mathbf{R}^{i,T} \cdot \mathbf{P}^i \cdot \mathbf{R}^i,
+
+    where :math:`\hat{\mathbf{P}}^i \in \mathbb{R}^{m_1 \times m_1}` is the raw output of
+    the fitting network, and :math:`\mathbf{P}^i = \frac{1}{2}(\hat{\mathbf{P}}^i + \hat{\mathbf{P}}^{i,T})`
+    is the symmetrized version. Since :math:`\mathbf{P}^i` is symmetric, the resulting
+    :math:`\boldsymbol{\alpha}^i` is guaranteed to be a symmetric tensor (matrix products
+    of the form :math:`A^T S A` preserve symmetry).
+
+    The fitting network is:
+
+    .. math::
+        \mathbf{p}^i \text{ (or } \mathbf{P}^i) = \mathcal{L}^{(n)} \circ \cdots \circ \mathcal{L}^{(0)}(\mathcal{D}^i).
+
     Parameters
     ----------
     ntypes
@@ -237,14 +266,21 @@ class PolarFitting(GeneralFitting):
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         super().change_type_map(type_map=type_map)
         if has_new_type:
+            xp = array_api_compat.array_namespace(self.scale)
             extend_shape = [len(type_map), *list(self.scale.shape[1:])]
-            extend_scale = np.ones(extend_shape, dtype=self.scale.dtype)
-            self.scale = np.concatenate([self.scale, extend_scale], axis=0)
-            extend_shape = [len(type_map), *list(self.constant_matrix.shape[1:])]
-            extend_constant_matrix = np.zeros(
-                extend_shape, dtype=self.constant_matrix.dtype
+            extend_scale = xp.ones(
+                extend_shape,
+                dtype=self.scale.dtype,
+                device=array_api_compat.device(self.scale),
             )
-            self.constant_matrix = np.concatenate(
+            self.scale = xp.concat([self.scale, extend_scale], axis=0)
+            extend_shape = [len(type_map), *list(self.constant_matrix.shape[1:])]
+            extend_constant_matrix = xp.zeros(
+                extend_shape,
+                dtype=self.constant_matrix.dtype,
+                device=array_api_compat.device(self.constant_matrix),
+            )
+            self.constant_matrix = xp.concat(
                 [self.constant_matrix, extend_constant_matrix], axis=0
             )
         self.scale = self.scale[remap_index]
@@ -328,7 +364,9 @@ class PolarFitting(GeneralFitting):
             )
             # (nframes, nloc, 1)
             bias = bias[..., None] * scale_atype
-            eye = xp.eye(3, dtype=descriptor.dtype)
+            eye = xp.eye(
+                3, dtype=descriptor.dtype, device=array_api_compat.device(descriptor)
+            )
             eye = xp.tile(eye, (nframes, nloc, 1, 1))
             # (nframes, nloc, 3, 3)
             bias = bias[..., None] * eye

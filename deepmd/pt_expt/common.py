@@ -297,6 +297,11 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
         if name in obj._buffers:
             obj._buffers[name] = tensor
             return True, tensor
+        # If the attribute already exists as a regular attribute (e.g. set to
+        # None during __init__ and later reassigned as an ndarray in
+        # deserialize), remove it first so register_buffer doesn't conflict.
+        if hasattr(obj, name) and name not in obj._buffers:
+            delattr(obj, name)
         obj.register_buffer(name, tensor)
         return True, tensor
 

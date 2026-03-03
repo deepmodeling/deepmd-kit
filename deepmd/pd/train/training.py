@@ -30,6 +30,11 @@ from paddle.io import (
 from deepmd.common import (
     symlink_prefix_files,
 )
+from deepmd.dpmodel.utils import (
+    compute_total_numb_batch,
+    resolve_model_prob,
+    resolve_model_prob_from_epochs,
+)
 from deepmd.dpmodel.utils.learning_rate import (
     BaseLR,
 )
@@ -130,9 +135,12 @@ class Trainer:
             else 1
         )
         self.num_model = len(self.model_keys)
+        self.model_prob = None
 
         # Iteration config
-        self.num_steps = training_params["numb_steps"]
+        self.num_steps = training_params.get("numb_steps")
+        self.num_epoch = training_params.get("num_epoch")
+        self.num_epoch_dict = training_params.get("num_epoch_dict")
         self.acc_freq: int = training_params.get(
             "acc_freq", 1
         )  # gradient accumulation steps
@@ -243,7 +251,7 @@ class Trainer:
             return get_sample
 
         def get_lr(lr_params: dict[str, Any]) -> BaseLR:
-            lr_params["stop_steps"] = self.num_steps - self.warmup_steps
+            lr_params["num_steps"] = self.num_steps
             lr_schedule = BaseLR(**lr_params)
             return lr_schedule
 
@@ -390,18 +398,92 @@ class Trainer:
                         ),
                     )
 
-        # Learning rate
-        self.warmup_steps = training_params.get("warmup_steps", 0)
-        self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
-        assert self.num_steps - self.warmup_steps > 0 or self.warmup_steps == 0, (
-            "Warm up steps must be less than total training steps!"
-        )
-        if self.multi_task and config.get("learning_rate_dict", None) is not None:
-            self.lr_exp = {}
-            for model_key in self.model_keys:
-                self.lr_exp[model_key] = get_lr(config["learning_rate_dict"][model_key])
+        per_task_total = []
+        if not self.multi_task:
+            if self.num_steps is None:
+                if self.num_epoch is None:
+                    raise ValueError(
+                        "Either training.numb_steps or training.num_epoch must be set."
+                    )
+                if self.num_epoch <= 0:
+                    raise ValueError("training.num_epoch must be positive.")
+                sampler_weights = to_numpy_array(
+                    self.training_dataloader.batch_sampler.sampler.weights
+                )
+                total_numb_batch = compute_total_numb_batch(
+                    training_data.index,
+                    sampler_weights,
+                )
+                if total_numb_batch <= 0:
+                    raise ValueError(
+                        "Total number of training batches must be positive."
+                    )
+                self.num_steps = int(np.ceil(self.num_epoch * total_numb_batch))
+                log.info(
+                    "Computed num_steps=%d from num_epoch=%s and total_numb_batch=%d.",
+                    self.num_steps,
+                    self.num_epoch,
+                    total_numb_batch,
+                )
         else:
-            self.lr_exp = get_lr(config["learning_rate"])
+            if self.num_epoch_dict:
+                if self.num_steps is not None:
+                    raise ValueError(
+                        "training.numb_steps and training.num_epoch_dict "
+                        "are mutually exclusive."
+                    )
+                for model_key in self.model_keys:
+                    sampler_weights = to_numpy_array(
+                        self.training_dataloader[
+                            model_key
+                        ].batch_sampler.sampler.weights
+                    )
+                    per_task_total.append(
+                        compute_total_numb_batch(
+                            training_data[model_key].index,
+                            sampler_weights,
+                        )
+                    )
+                (
+                    self.model_prob,
+                    self.num_steps,
+                    per_task_steps,
+                ) = resolve_model_prob_from_epochs(
+                    self.model_keys,
+                    self.num_epoch_dict,
+                    np.asarray(per_task_total, dtype=np.float64),
+                )
+                log.info(
+                    "Computed model_prob=%s and num_steps=%d from num_epoch_dict=%s "
+                    "with per-task target steps: %s.",
+                    self.model_prob,
+                    self.num_steps,
+                    self.num_epoch_dict,
+                    {k: int(np.ceil(v)) for k, v in per_task_steps.items()},
+                )
+            else:
+                if self.num_steps is None:
+                    raise ValueError(
+                        "Either training.numb_steps (multi-task only) or "
+                        "training.num_epoch_dict must be set."
+                    )
+                self.model_prob = resolve_model_prob(
+                    self.model_keys,
+                    training_params.get("model_prob"),
+                    training_data,
+                    rank=self.rank,
+                )
+
+        # Learning rate
+        self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
+        if self.multi_task and config.get("learning_rate_dict", None) is not None:
+            self.lr_schedule = {}
+            for model_key in self.model_keys:
+                self.lr_schedule[model_key] = get_lr(
+                    config["learning_rate_dict"][model_key]
+                )
+        else:
+            self.lr_schedule = get_lr(config["learning_rate"])
 
         # JIT
         if JIT:
@@ -584,18 +666,15 @@ class Trainer:
 
         # TODO add lr warmups for multitask
         # author: iProzd
-        def warm_up_linear(step: int, warmup_steps: int) -> float:
-            if step < warmup_steps:
-                return step / warmup_steps
-            else:
-                return self.lr_exp.value(step - warmup_steps) / self.lr_exp.start_lr
-
         # TODO add optimizers for multitask
         # author: iProzd
         if self.opt_type == "Adam":
             self.scheduler = paddle.optimizer.lr.LambdaDecay(
-                learning_rate=self.lr_exp.start_lr,
-                lr_lambda=lambda step: warm_up_linear(step, self.warmup_steps),
+                learning_rate=self.lr_schedule.start_lr,
+                lr_lambda=lambda step: (
+                    self.lr_schedule.value(step + self.start_step)
+                    / self.lr_schedule.start_lr
+                ),
             )
             self.optimizer = paddle.optimizer.Adam(
                 learning_rate=self.scheduler, parameters=self.wrapper.parameters()
@@ -682,21 +761,6 @@ class Trainer:
             )
             self.optimizer = fleet.distributed_optimizer(self.optimizer)
 
-        # Get model prob for multi-task
-        if self.multi_task:
-            self.model_prob = np.array([0.0 for key in self.model_keys])
-            if training_params.get("model_prob", None) is not None:
-                model_prob = training_params["model_prob"]
-                for ii, model_key in enumerate(self.model_keys):
-                    if model_key in model_prob:
-                        self.model_prob[ii] += float(model_prob[model_key])
-            else:
-                for ii, model_key in enumerate(self.model_keys):
-                    self.model_prob[ii] += float(len(self.training_data[model_key]))
-            sum_prob = np.sum(self.model_prob)
-            assert sum_prob > 0.0, "Sum of model prob must be larger than 0!"
-            self.model_prob = self.model_prob / sum_prob
-
         # Tensorboard
         self.enable_tensorboard = training_params.get("tensorboard", False)
         self.tensorboard_log_dir = training_params.get("tensorboard_log_dir", "log")
@@ -742,10 +806,10 @@ class Trainer:
             # Paddle Profiler
             if enable_profiling:
                 core.nvprof_nvtx_push(f"Training step {_step_id}")
-            if isinstance(self.lr_exp, dict):
-                _lr = self.lr_exp[task_key]
+            if isinstance(self.lr_schedule, dict):
+                _lr = self.lr_schedule[task_key]
             else:
-                _lr = self.lr_exp
+                _lr = self.lr_schedule
             cur_lr = _lr.value(_step_id)
             pref_lr = cur_lr
 
@@ -759,10 +823,7 @@ class Trainer:
                 fout1.flush()
             if self.opt_type == "Adam":
                 cur_lr = self.scheduler.get_lr()
-                if _step_id < self.warmup_steps:
-                    pref_lr = _lr.start_lr
-                else:
-                    pref_lr = cur_lr
+                pref_lr = cur_lr
 
                 # disable synchronization in forward-backward manually
                 # as derivatives exist in model forward
@@ -1003,7 +1064,7 @@ class Trainer:
                         _bias_adjust_mode="change-by-statistic",
                     )
             self.latest_model = Path(self.save_ckpt + f"-{self.num_steps}.pd")
-            cur_lr = self.lr_exp.value(self.num_steps - 1)
+            cur_lr = self.lr_schedule.value(self.num_steps - 1)
             self.save_model(self.latest_model, lr=cur_lr, step=self.num_steps - 1)
             log.info(f"Saved model to {self.latest_model}")
             symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
@@ -1347,6 +1408,13 @@ def model_change_out_bias(
         bias_adjust_mode=_bias_adjust_mode,
     )
     new_bias = deepcopy(_model.get_out_bias())
+
+    from deepmd.pd.model.model.dp_model import (
+        DPModelCommon,
+    )
+
+    if isinstance(_model, DPModelCommon) and _bias_adjust_mode == "set-by-statistic":
+        _model.get_fitting_net().compute_input_stats(_sample_func)
 
     model_type_map = _model.get_type_map()
     log.info(

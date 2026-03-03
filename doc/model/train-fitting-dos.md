@@ -89,7 +89,6 @@ The training command is the same as `ener` mode, i.e.
 ```bash
 dp --tf train input.json
 ```
-
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
@@ -97,7 +96,6 @@ dp --tf train input.json
 ```bash
 dp --pt train input.json
 ```
-
 :::
 
 ::::
@@ -143,7 +141,6 @@ dp --tf freeze -o frozen_model.pb
 
 dp --tf test -m frozen_model.pb -s ../data/111/$k -d ${output_prefix} -a -n 100
 ```
-
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
@@ -154,7 +151,6 @@ dp --pt freeze -o frozen_model.pth
 
 dp --pt test -m frozen_model.pth -s ../data/111/$k -d ${output_prefix} -a -n 100
 ```
-
 :::
 
 ::::

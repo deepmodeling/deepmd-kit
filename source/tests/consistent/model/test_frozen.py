@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import glob
 import os
+import tempfile
 import unittest
 from typing import (
     Any,
@@ -57,6 +59,10 @@ def tearDownModule() -> None:
             os.remove(model_file)
         except FileNotFoundError:
             pass
+    # Clean up temporary .pb files created by TF FrozenModel
+    # (tempfile.NamedTemporaryFile(suffix=".pb", dir=os.curdir, delete=False))
+    for tmp_pb in glob.glob(tempfile.gettempprefix() + "*.pb"):
+        os.remove(tmp_pb)
 
 
 @parameterized((pt_model, tf_model, dp_model))
@@ -150,10 +156,8 @@ class TestFrozen(CommonTest, ModelTest, unittest.TestCase):
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         # shape not matched. ravel...
-        if backend is self.RefBackend.DP:
-            return (ret["energy_redu"].ravel(), ret["energy"].ravel())
-        elif backend is self.RefBackend.PT:
-            return (ret["energy"].ravel(), ret["atom_energy"].ravel())
-        elif backend is self.RefBackend.TF:
+        if backend is self.RefBackend.TF:
             return (ret[0].ravel(), ret[1].ravel())
+        elif backend in {self.RefBackend.PT}:
+            return (ret["energy"].ravel(), ret["atom_energy"].ravel())
         raise ValueError(f"Unknown backend: {backend}")

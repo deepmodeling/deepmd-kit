@@ -70,14 +70,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             self,
             *args: Any,
             # underscore to prevent conflict with normal inputs
-            atomic_model_: T_AtomicModel | None = None,
+            atomic_model_: T_AtomicModel | None = None,  # type: ignore
             **kwargs: Any,
         ) -> None:
             super().__init__(*args, **kwargs)
             if atomic_model_ is not None:
-                self.atomic_model: T_AtomicModel = atomic_model_
+                self.atomic_model: T_AtomicModel = atomic_model_  # type: ignore
             else:
-                self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)
+                self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)  # type: ignore
             self.precision_dict = PRECISION_DICT
             self.reverse_precision_dict = RESERVED_PRECISION_DICT
             self.global_pt_float_precision = GLOBAL_PT_FLOAT_PRECISION
@@ -138,6 +138,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
+            coord_corr_for_virial: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Return model prediction.
 
@@ -156,6 +157,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 atomic parameter. nf x nloc x nda
             do_atomic_virial
                 If calculate the atomic virial.
+            coord_corr_for_virial
+                The coordinates correction of the atoms for virial.
+                shape: nf x (nloc x 3)
 
             Returns
             -------
@@ -183,6 +187,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 mixed_types=True,
                 box=bb,
             )
+            if coord_corr_for_virial is not None:
+                coord_corr_for_virial = coord_corr_for_virial.to(cc.dtype)
+                extended_coord_corr = torch.gather(
+                    coord_corr_for_virial, 1, mapping.unsqueeze(-1).expand(-1, -1, 3)
+                )
+            else:
+                extended_coord_corr = None
+
             model_predict_lower = self.forward_common_lower(
                 extended_coord,
                 extended_atype,
@@ -191,6 +203,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 do_atomic_virial=do_atomic_virial,
                 fparam=fp,
                 aparam=ap,
+                extended_coord_corr=extended_coord_corr,
             )
             model_predict = communicate_extended_output(
                 model_predict_lower,
@@ -233,8 +246,6 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 merged,
                 bias_adjust_mode=bias_adjust_mode,
             )
-            if bias_adjust_mode == "set-by-statistic":
-                self.atomic_model.compute_fitting_input_stat(merged)
 
         def forward_common_lower(
             self,
@@ -247,6 +258,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             do_atomic_virial: bool = False,
             comm_dict: dict[str, torch.Tensor] | None = None,
             extra_nlist_sort: bool = False,
+            extended_coord_corr: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
@@ -273,6 +285,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 The data needed for communication for parallel inference.
             extra_nlist_sort
                 whether to forcibly sort the nlist.
+            extended_coord_corr
+                coordinates correction for virial in extended region. nf x (nall x 3)
 
             Returns
             -------
@@ -305,6 +319,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
+                extended_coord_corr=extended_coord_corr,
             )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
@@ -590,6 +605,32 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
         ) -> None:
             """Compute or load the statistics."""
             return self.atomic_model.compute_or_load_stat(sampled_func, stat_file_path)
+
+        @torch.jit.export
+        def get_observed_type_list(self) -> list[str]:
+            """Get observed types (elements) of the model during data statistics.
+
+            Returns
+            -------
+            observed_type_list: a list of the observed types in this model.
+            """
+            type_map = self.get_type_map()
+            out_bias = self.atomic_model.get_out_bias()[0]
+
+            assert out_bias is not None, "No out_bias found in the model."
+            assert out_bias.dim() == 2, "The supported out_bias should be a 2D tensor."
+            assert out_bias.size(0) == len(type_map), (
+                "The out_bias shape does not match the type_map length."
+            )
+            bias_mask = (
+                torch.gt(torch.abs(out_bias), 1e-6).any(dim=-1).detach().cpu()
+            )  # 1e-6 for stability
+
+            observed_type_list: list[str] = []
+            for i in range(len(type_map)):
+                if bias_mask[i]:
+                    observed_type_list.append(type_map[i])
+            return observed_type_list
 
         def get_sel(self) -> list[int]:
             """Returns the number of selected atoms for each type."""
