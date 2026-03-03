@@ -378,6 +378,8 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
                           bkw_map, nall_real, nloc_real, coord, atype, aparam,
                           nghost, ntypes, 1, daparam, nall, aparam_nall);
   int nloc = nall_real - nghost_real;
+  // Detect whether any NULL-type atoms were filtered out.
+  bool has_null_atoms = (nall_real < nall);
   int nframes = 1;
   std::vector<VALUETYPE> coord_wrapped = dcoord;
   auto coord_wrapped_Tensor = predictor_fl->GetInputHandle("coord");
@@ -391,6 +393,28 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
     if (do_message_passing) {
+      // Determine the actual sendlist/sendnum/recvnum to use.
+      // When NULL-type atoms exist, remap sendlist indices through fwd_map.
+      int** eff_sendlist;
+      int* eff_sendnum;
+      int* eff_recvnum;
+      if (has_null_atoms) {
+        remap_comm_sendlist(remapped_sendlist, remapped_sendnum,
+                            remapped_recvnum, lmp_list, fwd_map);
+        int nswap = lmp_list.nswap;
+        remapped_sendlist_ptrs.resize(nswap);
+        for (int s = 0; s < nswap; ++s) {
+          remapped_sendlist_ptrs[s] = remapped_sendlist[s].data();
+        }
+        eff_sendlist = remapped_sendlist_ptrs.data();
+        eff_sendnum = remapped_sendnum.data();
+        eff_recvnum = remapped_recvnum.data();
+      } else {
+        eff_sendlist = lmp_list.sendlist;
+        eff_sendnum = lmp_list.sendnum;
+        eff_recvnum = lmp_list.recvnum;
+      }
+
       auto sendproc_tensor = predictor_fl->GetInputHandle("send_proc");
       auto recvproc_tensor = predictor_fl->GetInputHandle("recv_proc");
       auto recvnum_tensor = predictor_fl->GetInputHandle("recv_num");
@@ -406,18 +430,11 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
       recvproc_tensor->CopyFromCpu(lmp_list.recvproc);
 
       recvnum_tensor->Reshape({nswap});
-      recvnum_tensor->CopyFromCpu(lmp_list.recvnum);
+      recvnum_tensor->CopyFromCpu(eff_recvnum);
 
       sendnum_tensor->Reshape({nswap});
-      if (sizeof(lmp_list.sendnum[0]) != sizeof(int32_t)) {
-        std::vector<int32_t> temp_data(nswap);
-        for (int i = 0; i < nswap; i++) {
-          temp_data[i] = static_cast<int32_t>(lmp_list.sendnum[i]);
-        }
-        sendnum_tensor->CopyFromCpu(temp_data.data());
-      } else {
-        sendnum_tensor->CopyFromCpu(lmp_list.sendnum);
-      }
+      sendnum_tensor->CopyFromCpu(eff_sendnum);
+
       communicator_tensor->Reshape({1});
       if (lmp_list.world) {
         communicator_tensor->CopyFromCpu(static_cast<int*>(lmp_list.world));
@@ -425,7 +442,7 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
 
       assert(sizeof(std::intptr_t) == 8);
       int total_send =
-          std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
+          std::accumulate(eff_sendnum, eff_sendnum + nswap, 0);
       sendlist_tensor->Reshape({total_send});
 
       /**
@@ -437,7 +454,7 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
       pointer_addresses.reserve(nswap);
       for (int iswap = 0; iswap < nswap; ++iswap) {
         std::intptr_t addr =
-            reinterpret_cast<std::intptr_t>(lmp_list.sendlist[iswap]);
+            reinterpret_cast<std::intptr_t>(eff_sendlist[iswap]);
         pointer_addresses.push_back(addr);
       }
       sendlist_tensor->CopyFromCpu(pointer_addresses.data());
