@@ -201,9 +201,9 @@ class Trainer:
                 "adam_beta2": params.get("adam_beta2", 0.95),
                 "lr_adjust": params.get("lr_adjust", 10.0),
                 "lr_adjust_coeff": params.get("lr_adjust_coeff", 0.2),
-                "muon_2d_only": params.get("muon_2d_only", True),
-                "min_2d_dim": params.get("min_2d_dim", 1),
+                "muon_mode": str(params.get("muon_mode", "slice")).lower(),
                 "flash_muon": params.get("flash_muon", True),
+                "magma_muon": params.get("magma_muon", False),
             }
             return opt_type, opt_param
 
@@ -844,9 +844,10 @@ class Trainer:
                 ),
                 lr_adjust=float(self.opt_param["lr_adjust"]),
                 lr_adjust_coeff=float(self.opt_param["lr_adjust_coeff"]),
-                muon_2d_only=bool(self.opt_param["muon_2d_only"]),
-                min_2d_dim=int(self.opt_param["min_2d_dim"]),
+                muon_mode=str(self.opt_param["muon_mode"]),
+                named_parameters=tuple(self.wrapper.named_parameters()),
                 flash_muon=bool(self.opt_param["flash_muon"]),
+                magma_muon=bool(self.opt_param["magma_muon"]),
             )
             self._load_optimizer_state(optimizer_state_dict)
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(

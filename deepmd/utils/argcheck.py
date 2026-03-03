@@ -3755,26 +3755,16 @@ def training_args(
                             + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
                         ),
                         Argument(
-                            "muon_2d_only",
-                            bool,
+                            "muon_mode",
+                            str,
                             optional=True,
-                            default=True,
+                            default="slice",
                             doc=doc_only_pt_supported
-                            + "If True, only 2D parameters use Muon (matching PyTorch's torch.optim.Muon). "
-                            + "Parameters with ndim > 2 use AdamW-style updates. "
-                            + "If False, all >=2D parameters are eligible for Muon (with min_2d_dim fallback to AdamW-style updates).",
-                        ),
-                        Argument(
-                            "min_2d_dim",
-                            int,
-                            optional=True,
-                            default=1,
-                            alias=["muon_min_2d_dim"],
-                            doc=doc_only_pt_supported
-                            + "Minimum min(m, n) threshold for HybridMuon on matrix-view parameters. "
-                            "Parameters with min(m, n) >= min_2d_dim use HybridMuon; "
-                            "those with min(m, n) < min_2d_dim use Adam fallback. "
-                            "Set to 1 to disable fallback.",
+                            + "Muon routing mode. "
+                            + "'2d': only effective-rank-2 params are eligible for Muon; effective rank >2 goes to AdamW-style decoupled decay path. "
+                            + "'flat': effective-rank >=2 params are flattened to matrix-view (prod(shape[:-1]), shape[-1]) for Muon. "
+                            + "'slice' (default): effective-rank >=3 params use per-slice Muon on the last two dimensions; no cross-slice mixing. "
+                            + "Routing uses effective shape after removing singleton dimensions.",
                         ),
                         Argument(
                             "flash_muon",
@@ -3786,14 +3776,29 @@ def training_args(
                             "Requires triton and CUDA. Falls back to PyTorch implementation "
                             "when triton is unavailable or running on CPU.",
                         ),
+                        Argument(
+                            "magma_muon",
+                            bool,
+                            optional=True,
+                            default=False,
+                            doc=doc_only_pt_supported
+                            + "Enable Magma-lite damping on the Muon route only. "
+                            "When enabled, HybridMuon computes momentum-gradient alignment "
+                            "per Muon block, applies EMA smoothing, and rescales Muon updates "
+                            "to improve stability. Adam/AdamW routes are unchanged.",
+                        ),
                     ],
                     [],
                     optional=True,
                     doc=doc_only_pt_supported
                     + "HybridMuon optimizer (DeePMD-kit custom implementation). "
                     + "This is a Hybrid optimizer that automatically combines Muon and Adam. "
-                    + "For >=2D params: Muon update with Newton-Schulz (or Adam fallback when matrix-view dimensions are too small). "
+                    + "For matrix params: Muon update with Newton-Schulz based on selected muon_mode. "
                     + "For 1D params: Standard Adam. "
+                    + "Name-based Adam routing is enabled: final effective parameter name segment containing 'bias' "
+                    + "or starting with 'adam_' (case-insensitive) always uses Adam (no weight decay); "
+                    + "segment starting with 'adamw_' (case-insensitive) uses AdamW-style decoupled decay. "
+                    + "Trailing numeric ParameterList indices are ignored when deriving the effective segment. "
                     + "This is DIFFERENT from PyTorch's torch.optim.Muon which ONLY supports 2D parameters.",
                 ),
             ],
