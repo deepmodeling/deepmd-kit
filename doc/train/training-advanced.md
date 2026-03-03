@@ -110,6 +110,8 @@ An explanation will be provided
 
 **`--skip-neighbor-stat`** will skip calculating neighbor statistics if one is concerned about performance. Some features will be disabled.
 
+**`--allow-ref`** enables loading external JSON/YAML snippets via `$ref` during input validation. This option is disabled by default for security.
+
 To maximize the performance, one should follow [FAQ: How to control the parallelism of a job](../troubleshooting/howtoset_num_nodes.md) to control the number of threads.
 See [Runtime environment variables](../env.md) for all runtime environment variables.
 

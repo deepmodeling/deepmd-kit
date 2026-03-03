@@ -276,7 +276,16 @@ def train(
     use_pretrain_script: bool = False,
     force_load: bool = False,
     output: str = "out.json",
+    allow_ref: bool = False,
 ) -> None:
+    """Train a model with PyTorch backend.
+
+    Parameters
+    ----------
+    allow_ref : bool, default=False
+        Whether to allow loading external JSON/YAML snippets via ``$ref``
+        in the training input. Disabled by default for security.
+    """
     log.info("Configuration path: %s", input_file)
     env.CUSTOM_OP_USE_JIT = True
     if LOCAL_RANK == 0:
@@ -325,7 +334,7 @@ def train(
 
     # argcheck
     config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
-    config = normalize(config, multi_task=multi_task)
+    config = normalize(config, multi_task=multi_task, allow_ref=allow_ref)
 
     # do neighbor stat
     min_nbor_dist = None
@@ -578,6 +587,7 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
             use_pretrain_script=FLAGS.use_pretrain_script,
             force_load=FLAGS.force_load,
             output=FLAGS.output,
+            allow_ref=FLAGS.allow_ref,
         )
     elif FLAGS.command == "freeze":
         if Path(FLAGS.checkpoint_folder).is_dir():
