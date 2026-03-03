@@ -1,0 +1,80 @@
+name: General Question
+description: Ask a general question about DeePMD-kit usage, features, or concepts
+labels: ["question"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Please provide a clear and concise description of your question.
+      placeholder: What would you like to know about DeePMD-kit?
+      value:
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: DeePMD-kit Version
+      description: "What version of DeePMD-kit are you using? Run `dp --version` to check."
+      placeholder: "e.g., 2.2.7"
+    validations:
+      required: false
+  - type: input
+    id: backend-version
+    attributes:
+      label: Backend and Version
+      description: "Which backend are you using and what version? (e.g., TensorFlow v2.15.0, PyTorch v2.0.1)"
+      placeholder: "e.g., TensorFlow v2.15.0"
+    validations:
+      required: false
+  - type: textarea
+    id: details
+    attributes:
+      label: Detailed Description
+      description: |
+        Please provide more details about your question. If you're having trouble with specific functionality, please include:
+        - What you're trying to achieve
+        - What you've tried so far
+        - Any relevant configuration or setup details
+      placeholder: Provide additional context that would help others understand and answer your question.
+      value:
+    validations:
+      required: true
+  - type: textarea
+    id: reproducible-example
+    attributes:
+      label: Reproducible Example (if applicable)
+      description: |
+        If your question relates to specific code, input files, or commands, please provide a minimal reproducible example.
+        This helps others understand your issue and provide better assistance.
+        
+        **Please include:**
+        - Input files (minimal example)
+        - Commands you're running
+        - Configuration files
+        - Expected vs actual behavior
+      placeholder: |
+        ```bash
+        # Your commands here
+        dp train input.json
+        ```
+        
+        ```json
+        // Your configuration here
+        {
+          "model": {...}
+        }
+        ```
+      value:
+    validations:
+      required: false
+  - type: textarea
+    id: additional-info
+    attributes:
+      label: Additional Information
+      description: |
+        Any additional information, links to documentation you've consulted, or other relevant details.
+      placeholder: Links, references, or other context that might be helpful.
+      value:
+    validations:
+      required: false
