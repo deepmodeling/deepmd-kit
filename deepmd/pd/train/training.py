@@ -302,10 +302,7 @@ class Trainer:
             self.loss = {}
             for model_key in self.model_keys:
                 loss_param = config["loss_dict"][model_key]
-                if config.get("learning_rate_dict", None) is not None:
-                    lr_param = config["learning_rate_dict"][model_key]["start_lr"]
-                else:
-                    lr_param = config["learning_rate"]["start_lr"]
+                lr_param = config["learning_rate"]["start_lr"]
                 ntypes = len(model_params["model_dict"][model_key]["type_map"])
                 self.loss[model_key] = get_loss(
                     loss_param, lr_param, ntypes, self.model[model_key]
@@ -476,14 +473,7 @@ class Trainer:
 
         # Learning rate
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
-        if self.multi_task and config.get("learning_rate_dict", None) is not None:
-            self.lr_schedule = {}
-            for model_key in self.model_keys:
-                self.lr_schedule[model_key] = get_lr(
-                    config["learning_rate_dict"][model_key]
-                )
-        else:
-            self.lr_schedule = get_lr(config["learning_rate"])
+        self.lr_schedule = get_lr(config["learning_rate"])
 
         # JIT
         if JIT:
@@ -806,11 +796,7 @@ class Trainer:
             # Paddle Profiler
             if enable_profiling:
                 core.nvprof_nvtx_push(f"Training step {_step_id}")
-            if isinstance(self.lr_schedule, dict):
-                _lr = self.lr_schedule[task_key]
-            else:
-                _lr = self.lr_schedule
-            cur_lr = _lr.value(_step_id)
+            cur_lr = self.lr_schedule.value(_step_id)
             pref_lr = cur_lr
 
             with nvprof_context(enable_profiling, "Fetching data"):
