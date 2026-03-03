@@ -192,8 +192,6 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
                         lmp_list.sendnum, lmp_list.recvnum);
       }
       // DeepSpin-specific: signal spin model to the Python side
-      auto int32_option =
-          torch::TensorOptions().device(torch::kCPU).dtype(torch::kInt32);
       comm_dict.insert_or_assign("has_spin", torch::tensor({1}, int32_option));
     }
     if (lmp_list.mapping) {
