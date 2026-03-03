@@ -5,6 +5,7 @@ from __future__ import (
     annotations,
 )
 
+import logging
 from pathlib import (
     Path,
 )
@@ -25,6 +26,7 @@ def pretrained_entrypoint(args: argparse.Namespace) -> None:
     if args.pretrained_command == "download":
         cache_dir = Path(args.cache_dir) if args.cache_dir else None
         path = download_model(args.MODEL, cache_dir=cache_dir)
+        logging.getLogger(__name__).info("Pretrained model path: %s", path)
         print(path)  # noqa: T201
         return
 

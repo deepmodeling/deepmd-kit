@@ -26,7 +26,12 @@ if TYPE_CHECKING:
 
 @Backend.register("pretrained")
 class PretrainedBackend(Backend):
-    """Backend for ``*.pretrained`` model aliases."""
+    """Internal virtual backend for ``*.pretrained`` alias dispatch.
+
+    This backend is not intended to be selected explicitly by users as a real
+    compute backend (such as TensorFlow/PyTorch/Paddle/JAX). It only bridges
+    ``*.pretrained`` aliases into the regular deep-eval loading path.
+    """
 
     name = "Pretrained"
     features: ClassVar[Backend.Feature] = Backend.Feature.DEEP_EVAL
