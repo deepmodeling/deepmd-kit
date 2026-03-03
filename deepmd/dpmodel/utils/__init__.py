@@ -7,6 +7,7 @@ from .exclude_mask import (
     PairExcludeMask,
 )
 from .lmdb_data import (
+    DistributedSameNlocBatchSampler,
     LmdbDataReader,
     LmdbTestData,
     SameNlocBatchSampler,
@@ -50,6 +51,7 @@ from .training_utils import (
 
 __all__ = [
     "AtomExcludeMask",
+    "DistributedSameNlocBatchSampler",
     "EmbeddingNet",
     "EnvMat",
     "FittingNet",

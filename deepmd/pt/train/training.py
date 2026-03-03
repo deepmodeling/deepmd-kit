@@ -262,9 +262,22 @@ class Trainer:
                     SameNlocBatchSampler,
                 )
 
-                _batch_sampler = _SameNlocBatchSamplerTorch(
-                    SameNlocBatchSampler(_data._reader, shuffle=True)
-                )
+                if self.world_size > 1:
+                    from deepmd.dpmodel.utils.lmdb_data import (
+                        DistributedSameNlocBatchSampler,
+                    )
+
+                    _inner_sampler = DistributedSameNlocBatchSampler(
+                        _data._reader,
+                        rank=self.rank,
+                        world_size=self.world_size,
+                        shuffle=True,
+                        seed=_training_params.get("seed", None),
+                    )
+                else:
+                    _inner_sampler = SameNlocBatchSampler(_data._reader, shuffle=True)
+
+                _batch_sampler = _SameNlocBatchSamplerTorch(_inner_sampler)
                 _dataloader = DataLoader(
                     _data,
                     batch_sampler=_batch_sampler,

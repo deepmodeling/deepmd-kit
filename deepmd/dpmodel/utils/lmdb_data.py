@@ -6,6 +6,7 @@ Backend-specific wrappers (PyTorch Dataset, JAX, etc.) import from here.
 """
 
 import logging
+import math
 from collections.abc import (
     Iterator,
 )
@@ -33,6 +34,7 @@ _KEY_REMAP = {
     "energies": "energy",
     "forces": "force",
     "atom_types": "atype",
+    "virials": "virial",
 }
 
 
@@ -399,6 +401,11 @@ class LmdbDataReader:
         return [self.batch_size]
 
     @property
+    def mixed_type(self) -> bool:
+        """LMDB datasets are always mixed_type (frames may have different compositions)."""
+        return True
+
+    @property
     def nloc_groups(self) -> dict[int, list[int]]:
         """Nloc → list of frame indices."""
         return self._nloc_groups
@@ -409,6 +416,58 @@ class LmdbDataReader:
         return self._frame_nlocs
 
 
+def _build_all_batches(
+    reader: "LmdbDataReader",
+    shuffle: bool,
+    rng: np.random.Generator,
+) -> list[list[int]]:
+    """Build the full list of same-nloc batches from the reader.
+
+    This is the shared batch-construction logic used by both
+    SameNlocBatchSampler (single-GPU) and DistributedSameNlocBatchSampler.
+
+    Parameters
+    ----------
+    reader : LmdbDataReader
+        Provides nloc_groups and get_batch_size_for_nloc.
+    shuffle : bool
+        Whether to shuffle indices within each nloc group and
+        shuffle the final batch order.
+    rng : np.random.Generator
+        Random number generator (deterministic for reproducibility).
+
+    Returns
+    -------
+    list[list[int]]
+        Each inner list is a batch of frame indices, all with the same nloc.
+    """
+    # Build per-group batches
+    group_batches: list[list[list[int]]] = []
+    for nloc in sorted(reader.nloc_groups.keys()):
+        indices = list(reader.nloc_groups[nloc])
+        if shuffle:
+            rng.shuffle(indices)
+        bs = reader.get_batch_size_for_nloc(nloc)
+        batches = []
+        for start in range(0, len(indices), bs):
+            batches.append(indices[start : start + bs])
+        group_batches.append(batches)
+
+    # Interleave groups round-robin
+    all_batches: list[list[int]] = []
+    max_len = max(len(gb) for gb in group_batches) if group_batches else 0
+    for i in range(max_len):
+        for gb in group_batches:
+            if i < len(gb):
+                all_batches.append(gb[i])
+
+    # Optionally shuffle the interleaved order
+    if shuffle:
+        rng.shuffle(all_batches)
+
+    return all_batches
+
+
 class SameNlocBatchSampler:
     """Batch sampler that groups frames by nloc.
 
@@ -417,6 +476,9 @@ class SameNlocBatchSampler:
     Groups are interleaved round-robin so training sees diverse nloc values.
 
     When auto batch_size is used, batch_size is computed per-nloc-group.
+
+    The sampler is deterministic: given the same seed, repeated calls to
+    ``__iter__`` produce the same batch sequence.
 
     Parameters
     ----------
@@ -436,35 +498,12 @@ class SameNlocBatchSampler:
     ) -> None:
         self._reader = reader
         self._shuffle = shuffle
-        self._rng = np.random.default_rng(seed)
+        self._seed = seed
 
     def __iter__(self) -> Iterator[list[int]]:
         """Yield batches of frame indices, all with the same nloc."""
-        # Build per-group batches
-        group_batches: list[list[list[int]]] = []
-        for nloc in sorted(self._reader.nloc_groups.keys()):
-            indices = list(self._reader.nloc_groups[nloc])
-            if self._shuffle:
-                self._rng.shuffle(indices)
-            bs = self._reader.get_batch_size_for_nloc(nloc)
-            batches = []
-            for start in range(0, len(indices), bs):
-                batches.append(indices[start : start + bs])
-            group_batches.append(batches)
-
-        # Interleave groups round-robin
-        all_batches: list[list[int]] = []
-        max_len = max(len(gb) for gb in group_batches) if group_batches else 0
-        for i in range(max_len):
-            for gb in group_batches:
-                if i < len(gb):
-                    all_batches.append(gb[i])
-
-        # Optionally shuffle the interleaved order
-        if self._shuffle:
-            self._rng.shuffle(all_batches)
-
-        yield from all_batches
+        rng = np.random.default_rng(self._seed)
+        yield from _build_all_batches(self._reader, self._shuffle, rng)
 
     def __len__(self) -> int:
         """Total number of batches across all nloc groups."""
@@ -473,6 +512,94 @@ class SameNlocBatchSampler:
             bs = self._reader.get_batch_size_for_nloc(nloc)
             total += (len(indices) + bs - 1) // bs
         return total
+
+
+class DistributedSameNlocBatchSampler:
+    """Distributed wrapper for same-nloc batch sampling.
+
+    All ranks build the same deterministic global batch list (using
+    ``seed + epoch``), then each rank takes a disjoint subset via
+    :meth:`_partition_batches`.
+
+    Override :meth:`_partition_batches` for custom load-balancing strategies.
+    The default uses strided partitioning which gives good nloc diversity per
+    rank.
+
+    Parameters
+    ----------
+    reader : LmdbDataReader
+        The dataset reader (provides nloc_groups, get_batch_size_for_nloc,
+        frame_nlocs).
+    rank : int
+        Rank of the current process.
+    world_size : int
+        Total number of processes.
+    shuffle : bool
+        Whether to shuffle batches.
+    seed : int or None
+        Base seed for deterministic RNG. All ranks must use the same seed.
+    """
+
+    def __init__(
+        self,
+        reader: LmdbDataReader,
+        rank: int,
+        world_size: int,
+        shuffle: bool = True,
+        seed: int | None = None,
+    ) -> None:
+        self._reader = reader
+        self._rank = rank
+        self._world_size = world_size
+        self._shuffle = shuffle
+        self._seed = seed if seed is not None else 0
+        self._epoch = 0
+
+    def set_epoch(self, epoch: int) -> None:
+        """Set epoch for deterministic cross-rank shuffling.
+
+        Call this before each training epoch/cycle to get different but
+        reproducible batch orderings across epochs.
+        """
+        self._epoch = epoch
+
+    def __iter__(self) -> Iterator[list[int]]:
+        """Yield this rank's partition of the global batch list."""
+        # All ranks build the same global batch list deterministically
+        rng = np.random.default_rng(self._seed + self._epoch)
+        all_batches = _build_all_batches(self._reader, self._shuffle, rng)
+        # Partition to this rank
+        yield from self._partition_batches(all_batches)
+
+    def _partition_batches(self, all_batches: list[list[int]]) -> list[list[int]]:
+        """Partition global batches to this rank.
+
+        Default: strided partition ``all_batches[rank::world_size]``.
+        This gives good nloc diversity per rank since batches are
+        interleaved across nloc groups before shuffling.
+
+        Override this method for custom load-balancing. For example, a
+        greedy algorithm could assign batches to ranks based on estimated
+        compute cost (``reader.frame_nlocs[batch[0]]`` gives the nloc of
+        each batch).
+        """
+        return all_batches[self._rank :: self._world_size]
+
+    def __len__(self) -> int:
+        """Number of batches for this rank."""
+        total = 0
+        for nloc, indices in self._reader.nloc_groups.items():
+            bs = self._reader.get_batch_size_for_nloc(nloc)
+            total += (len(indices) + bs - 1) // bs
+        return math.ceil(total / self._world_size)
+
+    @property
+    def rank(self) -> int:
+        return self._rank
+
+    @property
+    def world_size(self) -> int:
+        return self._world_size
 
 
 class LmdbTestData:
@@ -536,7 +663,7 @@ class LmdbTestData:
             elif isinstance(f0["box"], np.ndarray) and np.allclose(f0["box"], 0.0):
                 self.pbc = False
 
-        self.mixed_type = False
+        self.mixed_type = True
 
     @property
     def nloc_groups(self) -> dict[int, list[int]]:

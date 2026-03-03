@@ -82,7 +82,8 @@ class _SameNlocBatchSamplerTorch(Sampler):
     """Torch Sampler adapter around the framework-agnostic SameNlocBatchSampler.
 
     PyTorch DataLoader with batch_sampler expects a Sampler that yields
-    lists of indices. This wraps SameNlocBatchSampler to satisfy that.
+    lists of indices. This wraps SameNlocBatchSampler (or
+    DistributedSameNlocBatchSampler) to satisfy that.
     """
 
     def __init__(self, inner: SameNlocBatchSampler) -> None:
@@ -93,6 +94,11 @@ class _SameNlocBatchSamplerTorch(Sampler):
 
     def __len__(self) -> int:
         return len(self._inner)
+
+    def set_epoch(self, epoch: int) -> None:
+        """Forward set_epoch to inner sampler if it supports it."""
+        if hasattr(self._inner, "set_epoch"):
+            self._inner.set_epoch(epoch)
 
 
 class LmdbDataset(Dataset):
@@ -181,6 +187,11 @@ class LmdbDataset(Dataset):
         return self._reader.mixed_batch
 
     @property
+    def mixed_type(self) -> bool:
+        """LMDB datasets are always mixed_type."""
+        return self._reader.mixed_type
+
+    @property
     def batch_size(self) -> int:
         return self._reader.batch_size
 
@@ -226,4 +237,4 @@ class LmdbDataset(Dataset):
 
     @property
     def sampler_list(self) -> list:
-        return []
+        return [self._batch_sampler]

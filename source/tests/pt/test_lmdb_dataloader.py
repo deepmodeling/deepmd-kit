@@ -8,7 +8,10 @@ import pytest
 import torch
 
 from deepmd.dpmodel.utils.lmdb_data import (
+    DistributedSameNlocBatchSampler,
+    LmdbDataReader,
     LmdbTestData,
+    SameNlocBatchSampler,
     _decode_frame,
     _read_metadata,
     _remap_keys,
@@ -241,7 +244,7 @@ class TestTrainerInterface:
 
     def test_sampler_list(self, lmdb_dir):
         ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
-        assert ds.sampler_list == []
+        assert len(ds.sampler_list) == 1
 
     def test_add_data_requirement(self, lmdb_dir):
         ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
@@ -446,7 +449,7 @@ class TestLmdbTestData:
 
     def test_mixed_type(self, lmdb_dir):
         td = LmdbTestData(lmdb_dir, type_map=["O", "H"], shuffle_test=False)
-        assert td.mixed_type is False
+        assert td.mixed_type is True
 
     def test_shuffle(self, lmdb_dir):
         td1 = LmdbTestData(lmdb_dir, type_map=["O", "H"], shuffle_test=False)
@@ -462,3 +465,177 @@ class TestLmdbTestData:
         result = td.get_test()
         # type indices should still be 0 and 1
         assert result["type"].max() <= 1
+
+
+def _create_multi_nloc_lmdb(path: str) -> None:
+    """Create an LMDB with frames of varying nloc for distributed tests."""
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    fmt = "012d"
+    # 30 frames: 10 with nloc=4, 10 with nloc=6, 10 with nloc=8
+    nframes = 30
+    frame_nlocs = []
+    with env.begin(write=True) as txn:
+        idx = 0
+        for natoms in [4, 6, 8]:
+            for i in range(10):
+                key = format(idx, fmt).encode()
+                frame = _make_frame(natoms=natoms, seed=idx * 100)
+                txn.put(key, msgpack.packb(frame, use_bin_type=True))
+                frame_nlocs.append(natoms)
+                idx += 1
+        metadata = {
+            "nframes": nframes,
+            "frame_idx_fmt": fmt,
+            "frame_nlocs": frame_nlocs,
+        }
+        txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
+    env.close()
+
+
+@pytest.fixture
+def multi_nloc_lmdb(tmp_path):
+    """Create LMDB with multiple nloc groups for distributed tests."""
+    lmdb_path = str(tmp_path / "multi_nloc.lmdb")
+    _create_multi_nloc_lmdb(lmdb_path)
+    return lmdb_path
+
+
+class TestMixedTypeProperty:
+    """Test mixed_type property on LMDB classes."""
+
+    def test_lmdb_data_reader_mixed_type(self, lmdb_dir):
+        reader = LmdbDataReader(lmdb_dir, type_map=["O", "H"], batch_size=2)
+        assert reader.mixed_type is True
+
+    def test_lmdb_dataset_mixed_type(self, lmdb_dir):
+        ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
+        assert ds.mixed_type is True
+
+
+class TestDistributedSameNlocBatchSampler:
+    """Test DistributedSameNlocBatchSampler (pure logic, no torch.distributed)."""
+
+    def test_disjoint_batches(self, multi_nloc_lmdb):
+        """Two ranks produce disjoint frame index sets."""
+        reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=2)
+        s0 = DistributedSameNlocBatchSampler(
+            reader, rank=0, world_size=2, shuffle=True, seed=42
+        )
+        s1 = DistributedSameNlocBatchSampler(
+            reader, rank=1, world_size=2, shuffle=True, seed=42
+        )
+        frames0 = set()
+        for batch in s0:
+            frames0.update(batch)
+        frames1 = set()
+        for batch in s1:
+            frames1.update(batch)
+        # No overlap
+        assert frames0 & frames1 == set()
+
+    def test_covers_all_frames(self, multi_nloc_lmdb):
+        """Union of all ranks covers all frames."""
+        reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=2)
+        s0 = DistributedSameNlocBatchSampler(
+            reader, rank=0, world_size=2, shuffle=True, seed=42
+        )
+        s1 = DistributedSameNlocBatchSampler(
+            reader, rank=1, world_size=2, shuffle=True, seed=42
+        )
+        all_frames = set()
+        for batch in s0:
+            all_frames.update(batch)
+        for batch in s1:
+            all_frames.update(batch)
+        assert all_frames == set(range(30))
+
+    def test_len(self, multi_nloc_lmdb):
+        """__len__ returns approximately total // world_size."""
+        reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=2)
+        single = SameNlocBatchSampler(reader, shuffle=False)
+        total = len(single)
+        dist_s = DistributedSameNlocBatchSampler(
+            reader, rank=0, world_size=2, shuffle=False, seed=0
+        )
+        import math
+
+        assert len(dist_s) == math.ceil(total / 2)
+
+    def test_deterministic(self, multi_nloc_lmdb):
+        """Same parameters produce same batch sequence."""
+        reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=2)
+        s1 = DistributedSameNlocBatchSampler(
+            reader, rank=0, world_size=2, shuffle=True, seed=42
+        )
+        s2 = DistributedSameNlocBatchSampler(
+            reader, rank=0, world_size=2, shuffle=True, seed=42
+        )
+        batches1 = list(s1)
+        batches2 = list(s2)
+        assert batches1 == batches2
+
+    def test_set_epoch_changes_order(self, multi_nloc_lmdb):
+        """Different epochs produce different batch orderings."""
+        reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=2)
+        s = DistributedSameNlocBatchSampler(
+            reader, rank=0, world_size=2, shuffle=True, seed=42
+        )
+        s.set_epoch(0)
+        batches_e0 = list(s)
+        s.set_epoch(1)
+        batches_e1 = list(s)
+        # Should produce different orderings
+        assert batches_e0 != batches_e1
+
+    def test_single_gpu_fallback(self, multi_nloc_lmdb):
+        """world_size=1 produces same frames as SameNlocBatchSampler."""
+        reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=2)
+        single = SameNlocBatchSampler(reader, shuffle=True, seed=42)
+        dist_single = DistributedSameNlocBatchSampler(
+            reader, rank=0, world_size=1, shuffle=True, seed=42
+        )
+        frames_single = set()
+        for batch in single:
+            frames_single.update(batch)
+        frames_dist = set()
+        for batch in dist_single:
+            frames_dist.update(batch)
+        # Both should cover all frames
+        assert frames_single == frames_dist == set(range(30))
+
+    def test_partition_batches_overridable(self, multi_nloc_lmdb):
+        """Subclass can override _partition_batches for custom load balancing."""
+        reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=2)
+
+        class ReversePartition(DistributedSameNlocBatchSampler):
+            def _partition_batches(self, all_batches):
+                # Take the complementary slice
+                return all_batches[
+                    self._world_size - 1 - self._rank :: self._world_size
+                ]
+
+        s_default = DistributedSameNlocBatchSampler(
+            reader, rank=0, world_size=2, shuffle=True, seed=42
+        )
+        s_custom = ReversePartition(reader, rank=0, world_size=2, shuffle=True, seed=42)
+        # Custom should get rank=1's batches (since it reverses)
+        s_rank1 = DistributedSameNlocBatchSampler(
+            reader, rank=1, world_size=2, shuffle=True, seed=42
+        )
+        frames_custom = set()
+        for batch in s_custom:
+            frames_custom.update(batch)
+        frames_rank1 = set()
+        for batch in s_rank1:
+            frames_rank1.update(batch)
+        assert frames_custom == frames_rank1
+
+    def test_same_nloc_per_batch(self, multi_nloc_lmdb):
+        """Each batch from distributed sampler has frames with same nloc."""
+        reader = LmdbDataReader(multi_nloc_lmdb, type_map=["O", "H"], batch_size=2)
+        s = DistributedSameNlocBatchSampler(
+            reader, rank=0, world_size=2, shuffle=True, seed=42
+        )
+        for batch in s:
+            nlocs = [reader.frame_nlocs[idx] for idx in batch]
+            assert len(set(nlocs)) == 1, f"Mixed nloc in batch: {nlocs}"
