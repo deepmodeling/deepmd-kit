@@ -441,8 +441,7 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
       }
 
       assert(sizeof(std::intptr_t) == 8);
-      int total_send =
-          std::accumulate(eff_sendnum, eff_sendnum + nswap, 0);
+      int total_send = std::accumulate(eff_sendnum, eff_sendnum + nswap, 0);
       sendlist_tensor->Reshape({total_send});
 
       /**
