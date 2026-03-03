@@ -399,8 +399,6 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
       auto sendlist_tensor = predictor_fl->GetInputHandle("send_list");
 
       int nswap = lmp_list.nswap;
-      select_real_atoms_sendlist(comm_sendlist_, comm_sendnum_, comm_recvnum_,
-                                 lmp_list, fwd_map);
       sendproc_tensor->Reshape({nswap});
       sendproc_tensor->CopyFromCpu(lmp_list.sendproc);
 
@@ -408,20 +406,26 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
       recvproc_tensor->CopyFromCpu(lmp_list.recvproc);
 
       recvnum_tensor->Reshape({nswap});
-      recvnum_tensor->CopyFromCpu(comm_recvnum_.data());
+      recvnum_tensor->CopyFromCpu(lmp_list.recvnum);
 
       sendnum_tensor->Reshape({nswap});
-      sendnum_tensor->CopyFromCpu(comm_sendnum_.data());
+      if (sizeof(lmp_list.sendnum[0]) != sizeof(int32_t)) {
+        std::vector<int32_t> temp_data(nswap);
+        for (int i = 0; i < nswap; i++) {
+          temp_data[i] = static_cast<int32_t>(lmp_list.sendnum[i]);
+        }
+        sendnum_tensor->CopyFromCpu(temp_data.data());
+      } else {
+        sendnum_tensor->CopyFromCpu(lmp_list.sendnum);
+      }
       communicator_tensor->Reshape({1});
       if (lmp_list.world) {
         communicator_tensor->CopyFromCpu(static_cast<int*>(lmp_list.world));
       }
 
       assert(sizeof(std::intptr_t) == 8);
-      int total_send = 0;
-      for (int s = 0; s < nswap; ++s) {
-        total_send += comm_sendnum_[s];
-      }
+      int total_send =
+          std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
       sendlist_tensor->Reshape({total_send});
 
       /**
@@ -433,7 +437,7 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
       pointer_addresses.reserve(nswap);
       for (int iswap = 0; iswap < nswap; ++iswap) {
         std::intptr_t addr =
-            reinterpret_cast<std::intptr_t>(comm_sendlist_[iswap].data());
+            reinterpret_cast<std::intptr_t>(lmp_list.sendlist[iswap]);
         pointer_addresses.push_back(addr);
       }
       sendlist_tensor->CopyFromCpu(pointer_addresses.data());

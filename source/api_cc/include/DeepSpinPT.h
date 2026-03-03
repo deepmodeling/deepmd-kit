@@ -262,11 +262,6 @@ class DeepSpinPT : public DeepSpinBackend {
   at::Tensor firstneigh_tensor;
   c10::optional<torch::Tensor> mapping_tensor;
   torch::Dict<std::string, torch::Tensor> comm_dict;
-  // Owned comm data for remapped sendlist (NULL type filtering)
-  std::vector<std::vector<int>> comm_sendlist_;
-  std::vector<int> comm_sendnum_;
-  std::vector<int> comm_recvnum_;
-  std::vector<int*> comm_sendlist_ptrs_;
   /**
    * @brief Translate PyTorch exceptions to the DeePMD-kit exception.
    * @param[in] f The function to run.
