@@ -7,6 +7,7 @@
 #include <cstdint>
 
 #include "common.h"
+#include "commonPT.h"
 #include "device.h"
 #include "errors.h"
 
@@ -163,6 +164,8 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
                           bkw_map, nall_real, nloc_real, coord, atype, aparam,
                           nghost, ntypes, 1, daparam, nall, aparam_nall);
   int nloc = nall_real - nghost_real;
+  // Detect whether any NULL-type atoms were filtered out.
+  bool has_null_atoms = (nall_real < nall);
   int nframes = 1;
   std::vector<VALUETYPE> coord_wrapped = dcoord;
   at::Tensor coord_wrapped_Tensor =
@@ -175,43 +178,30 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
   std::vector<std::int64_t> atype_64(datype.begin(), datype.end());
   at::Tensor atype_Tensor =
       torch::from_blob(atype_64.data(), {1, nall_real}, int_option).to(device);
-  c10::optional<torch::Tensor> mapping_tensor;
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list, nall - nghost);
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
     if (do_message_passing) {
-      int nswap = lmp_list.nswap;
-      torch::Tensor sendproc_tensor =
-          torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
-      torch::Tensor recvproc_tensor =
-          torch::from_blob(lmp_list.recvproc, {nswap}, int32_option);
-      torch::Tensor firstrecv_tensor =
-          torch::from_blob(lmp_list.firstrecv, {nswap}, int32_option);
-      torch::Tensor recvnum_tensor =
-          torch::from_blob(lmp_list.recvnum, {nswap}, int32_option);
-      torch::Tensor sendnum_tensor =
-          torch::from_blob(lmp_list.sendnum, {nswap}, int32_option);
-      torch::Tensor communicator_tensor;
-      if (lmp_list.world == 0) {
-        communicator_tensor = torch::empty({1}, torch::kInt64);
+      if (has_null_atoms) {
+        build_comm_dict_with_virtual_atoms(
+            comm_dict, lmp_list, fwd_map, remapped_sendlist,
+            remapped_sendlist_ptrs, remapped_sendnum, remapped_recvnum);
       } else {
-        communicator_tensor = torch::from_blob(
-            const_cast<void*>(lmp_list.world), {1}, torch::kInt64);
+        build_comm_dict(comm_dict, lmp_list, lmp_list.sendlist,
+                        lmp_list.sendnum, lmp_list.recvnum);
       }
-      torch::Tensor nswap_tensor = torch::tensor(nswap, int32_option);
-      int total_send =
-          std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
-      torch::Tensor sendlist_tensor =
-          torch::from_blob(lmp_list.sendlist, {total_send}, int32_option);
-      torch::Tensor has_spin = torch::tensor({1}, int32_option);
-      comm_dict.insert_or_assign("send_list", sendlist_tensor);
-      comm_dict.insert_or_assign("send_proc", sendproc_tensor);
-      comm_dict.insert_or_assign("recv_proc", recvproc_tensor);
-      comm_dict.insert_or_assign("send_num", sendnum_tensor);
-      comm_dict.insert_or_assign("recv_num", recvnum_tensor);
-      comm_dict.insert_or_assign("communicator", communicator_tensor);
-      comm_dict.insert_or_assign("has_spin", has_spin);
+      // DeepSpin-specific: signal spin model to the Python side
+      comm_dict.insert_or_assign("has_spin", torch::tensor({1}, int32_option));
+    }
+    if (lmp_list.mapping) {
+      std::vector<std::int64_t> mapping(nall_real);
+      for (size_t ii = 0; ii < nall_real; ii++) {
+        mapping[ii] = lmp_list.mapping[fwd_map[ii]];
+      }
+      mapping_tensor =
+          torch::from_blob(mapping.data(), {1, nall_real}, int_option)
+              .to(device);
     }
   }
   at::Tensor firstneigh = createNlistTensor2(nlist_data.jlist);
@@ -234,7 +224,7 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
             options)
             .to(device);
   }
-  c10::Dict<c10::IValue, c10::IValue> outputs =
+  auto outputs =
       (do_message_passing)
           ? module
                 .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
