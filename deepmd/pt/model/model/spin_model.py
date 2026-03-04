@@ -388,7 +388,7 @@ class SpinModel(torch.nn.Module):
         else:
             return getattr(self.backbone_model, name)
 
-    def get_spin_sampled_func(
+    def _get_spin_sampled_func(
         self, sampled_func: Callable[[], list[dict]]
     ) -> Callable[[], list[dict]]:
         @functools.lru_cache
@@ -438,7 +438,7 @@ class SpinModel(torch.nn.Module):
                     and do least square on the errors to obtain the target shift as bias.
             'set-by-statistic' : directly use the statistic output bias in the target dataset.
         """
-        spin_sampled_func = self.get_spin_sampled_func(
+        spin_sampled_func = self._get_spin_sampled_func(
             merged if callable(merged) else lambda: merged
         )
         self.backbone_model.change_out_bias(

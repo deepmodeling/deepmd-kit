@@ -336,7 +336,7 @@ class SpinModel(NativeOP):
         backbone_model_atomic_output_def[var_name].magnetic = True
         return ModelOutputDef(backbone_model_atomic_output_def)
 
-    def get_spin_sampled_func(
+    def _get_spin_sampled_func(
         self, sampled_func: Callable[[], list[dict]]
     ) -> Callable[[], list[dict]]:
         """Get a spin-aware sampled function that transforms spin data for the backbone model.
@@ -399,7 +399,7 @@ class SpinModel(NativeOP):
                     and do least square on the errors to obtain the target shift as bias.
             'set-by-statistic' : directly use the statistic output bias in the target dataset.
         """
-        spin_sampled_func = self.get_spin_sampled_func(
+        spin_sampled_func = self._get_spin_sampled_func(
             merged if callable(merged) else lambda: merged
         )
         self.backbone_model.change_out_bias(

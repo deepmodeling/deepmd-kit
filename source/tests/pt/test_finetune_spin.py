@@ -158,8 +158,8 @@ class SpinFinetuneTest:
         np.testing.assert_almost_equal(finetune_shift, ground_truth_shift, decimal=10)
         os.unlink(tmp_model.name)
 
-    def test_get_spin_sampled_func(self) -> None:
-        """Test that get_spin_sampled_func correctly transforms spin data."""
+    def test__get_spin_sampled_func(self) -> None:
+        """Test that _get_spin_sampled_func correctly transforms spin data."""
         # get data
         data = DpLoaderSet(
             self.data_file,
@@ -179,7 +179,7 @@ class SpinFinetuneTest:
         def sampled_func():
             return sampled
 
-        spin_sampled_func = model.get_spin_sampled_func(sampled_func)
+        spin_sampled_func = model._get_spin_sampled_func(sampled_func)
         spin_sampled = spin_sampled_func()
 
         # Verify the transformed data
@@ -457,7 +457,7 @@ class TestSpinFinetuneWithDefaultFparam(unittest.TestCase):
         }
 
     def test_spin_sampled_func_with_default_fparam(self) -> None:
-        """Test that get_spin_sampled_func + _make_wrapped_sampler injects fparam."""
+        """Test that _get_spin_sampled_func + _make_wrapped_sampler injects fparam."""
         data = DpLoaderSet(
             self.data_file,
             batch_size=1,
@@ -481,8 +481,8 @@ class TestSpinFinetuneWithDefaultFparam(unittest.TestCase):
         def sampled_func():
             return sampled
 
-        # get_spin_sampled_func chains: spin preprocess -> _make_wrapped_sampler
-        spin_sampled_func = model.get_spin_sampled_func(sampled_func)
+        # _get_spin_sampled_func chains: spin preprocess -> _make_wrapped_sampler
+        spin_sampled_func = model._get_spin_sampled_func(sampled_func)
         spin_sampled = spin_sampled_func()
 
         for sys_data in spin_sampled:
