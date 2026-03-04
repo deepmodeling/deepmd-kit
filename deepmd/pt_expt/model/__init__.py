@@ -11,6 +11,9 @@ from .dp_zbl_model import (
 from .ener_model import (
     EnergyModel,
 )
+from .make_hessian_model import (
+    make_hessian_model,
+)
 from .model import (
     BaseModel,
 )
@@ -29,4 +32,5 @@ __all__ = [
     "EnergyModel",
     "PolarModel",
     "PropertyModel",
+    "make_hessian_model",
 ]

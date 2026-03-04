@@ -1,0 +1,232 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
+import math
+from typing import (
+    Any,
+)
+
+import torch
+
+from deepmd.dpmodel import (
+    get_hessian_name,
+)
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+)
+
+
+def make_hessian_model(T_Model: type) -> type:
+    """Make a model that can compute Hessian.
+
+    LIMITATION: only the hessian of ``forward_common`` is available.
+
+    Parameters
+    ----------
+    T_Model
+        The model. Should provide the ``forward_common`` and
+        ``atomic_output_def`` methods.
+
+    Returns
+    -------
+    The model computes hessian.
+
+    """
+
+    class CM(T_Model):
+        def __init__(
+            self,
+            *args: Any,
+            **kwargs: Any,
+        ) -> None:
+            super().__init__(
+                *args,
+                **kwargs,
+            )
+            self.hess_fitting_def = copy.deepcopy(super().atomic_output_def())
+
+        def requires_hessian(
+            self,
+            keys: str | list[str],
+        ) -> None:
+            """Set which output variable(s) requires hessian."""
+            if isinstance(keys, str):
+                keys = [keys]
+            for kk in self.hess_fitting_def.keys():
+                if kk in keys:
+                    self.hess_fitting_def[kk].r_hessian = True
+
+        def atomic_output_def(self) -> FittingOutputDef:
+            """Get the fitting output def."""
+            return self.hess_fitting_def
+
+        def forward_common(
+            self,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+            do_atomic_virial: bool = False,
+        ) -> dict[str, torch.Tensor]:
+            """Return model prediction.
+
+            Parameters
+            ----------
+            coord
+                The coordinates of the atoms.
+                shape: nf x (nloc x 3)
+            atype
+                The type of atoms. shape: nf x nloc
+            box
+                The simulation box. shape: nf x 9
+            fparam
+                frame parameter. nf x ndf
+            aparam
+                atomic parameter. nf x nloc x nda
+            do_atomic_virial
+                If calculate the atomic virial.
+
+            Returns
+            -------
+            ret_dict
+                The result dict of type dict[str,torch.Tensor].
+                The keys are defined by the ``ModelOutputDef``.
+
+            """
+            vdef = self.atomic_output_def()
+            hess_keys = [kk for kk in vdef.keys() if vdef[kk].r_hessian]
+            # Temporarily disable r_hessian so that the base forward_common
+            # (which goes through communicate_extended_output) does not expect
+            # hessian keys in the lower-level output.  Must remain disabled
+            # during _cal_hessian_all as well, since the wrapper also calls
+            # super().forward_common internally.
+            for kk in hess_keys:
+                vdef[kk].r_hessian = False
+            try:
+                ret = super().forward_common(
+                    coord,
+                    atype,
+                    box=box,
+                    fparam=fparam,
+                    aparam=aparam,
+                    do_atomic_virial=do_atomic_virial,
+                )
+                if hess_keys:
+                    hess = self._cal_hessian_all(
+                        hess_keys,
+                        coord,
+                        atype,
+                        box=box,
+                        fparam=fparam,
+                        aparam=aparam,
+                    )
+                    ret.update(hess)
+            finally:
+                for kk in hess_keys:
+                    vdef[kk].r_hessian = True
+            return ret
+
+        def _cal_hessian_all(
+            self,
+            hess_keys: list[str],
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+        ) -> dict[str, torch.Tensor]:
+            nf, nloc = atype.shape
+            coord = coord.view([nf, (nloc * 3)])
+            box = box.view([nf, 9]) if box is not None else None
+            fparam = fparam.view([nf, -1]) if fparam is not None else None
+            aparam = aparam.view([nf, nloc, -1]) if aparam is not None else None
+            fdef = self.atomic_output_def()
+            # result dict init by empty lists
+            res = {get_hessian_name(kk): [] for kk in hess_keys}
+            # loop over variable
+            for kk in hess_keys:
+                vdef = fdef[kk]
+                vshape = vdef.shape
+                vsize = math.prod(vdef.shape)
+                # loop over frames
+                for ii in range(nf):
+                    icoord = coord[ii]
+                    iatype = atype[ii]
+                    ibox = box[ii] if box is not None else None
+                    ifparam = fparam[ii] if fparam is not None else None
+                    iaparam = aparam[ii] if aparam is not None else None
+                    # loop over all components
+                    for idx in range(vsize):
+                        hess = self._cal_hessian_one_component(
+                            idx, icoord, iatype, ibox, ifparam, iaparam
+                        )
+                        res[get_hessian_name(kk)].append(hess)
+                res[get_hessian_name(kk)] = torch.stack(res[get_hessian_name(kk)]).view(
+                    (nf, *vshape, nloc * 3, nloc * 3)
+                )
+            return res
+
+        def _cal_hessian_one_component(
+            self,
+            ci: int,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+        ) -> torch.Tensor:
+            # coord, # (nloc x 3)
+            # atype, # nloc
+            # box: Optional[torch.Tensor] = None,     # 9
+            # fparam: Optional[torch.Tensor] = None,  # nfp
+            # aparam: Optional[torch.Tensor] = None,  # (nloc x nap)
+            wc = wrapper_class_forward_energy(self, ci, atype, box, fparam, aparam)
+            hess = torch.autograd.functional.hessian(
+                wc,
+                coord,
+                create_graph=self.training,
+            )
+            return hess
+
+    class wrapper_class_forward_energy:
+        def __init__(
+            self,
+            obj: CM,
+            ci: int,
+            atype: torch.Tensor,
+            box: torch.Tensor | None,
+            fparam: torch.Tensor | None,
+            aparam: torch.Tensor | None,
+        ) -> None:
+            self.atype, self.box, self.fparam, self.aparam = (
+                atype,
+                box,
+                fparam,
+                aparam,
+            )
+            self.ci = ci
+            self.obj = obj
+
+        def __call__(
+            self,
+            xx: torch.Tensor,
+        ) -> torch.Tensor:
+            ci = self.ci
+            atype, box, fparam, aparam = (
+                self.atype,
+                self.box,
+                self.fparam,
+                self.aparam,
+            )
+            res = super(CM, self.obj).forward_common(
+                xx.unsqueeze(0),
+                atype.unsqueeze(0),
+                box.unsqueeze(0) if box is not None else None,
+                fparam.unsqueeze(0) if fparam is not None else None,
+                aparam.unsqueeze(0) if aparam is not None else None,
+                do_atomic_virial=False,
+            )
+            er = res["energy_redu"][0].view([-1])[ci]
+            return er
+
+    return CM
