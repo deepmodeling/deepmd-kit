@@ -27,7 +27,10 @@ def compute_smooth_weight(
     if rmin >= rmax:
         raise ValueError("rmin should be less than rmax.")
     xp = array_api_compat.array_namespace(distance)
-    distance = xp.clip(distance, min=rmin, max=rmax)
+    # Use where instead of clip so that make_fx tracing does not
+    # decompose it into boolean-indexed ops with data-dependent sizes.
+    distance = xp.where(distance < rmin, xp.full_like(distance, rmin), distance)
+    distance = xp.where(distance > rmax, xp.full_like(distance, rmax), distance)
     uu = (distance - rmin) / (rmax - rmin)
     uu2 = uu * uu
     vv = uu2 * uu * (-6.0 * uu2 + 15.0 * uu - 10.0) + 1.0
@@ -43,7 +46,8 @@ def compute_exp_sw(
     if rmin >= rmax:
         raise ValueError("rmin should be less than rmax.")
     xp = array_api_compat.array_namespace(distance)
-    distance = xp.clip(distance, min=0.0, max=rmax)
+    distance = xp.where(distance < 0.0, xp.zeros_like(distance), distance)
+    distance = xp.where(distance > rmax, xp.full_like(distance, rmax), distance)
     C = 20
     a = C / rmin
     b = rmin
