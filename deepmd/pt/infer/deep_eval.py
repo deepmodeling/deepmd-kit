@@ -540,7 +540,9 @@ class DeepEval(DeepEvalBackend):
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C for x in request_defs
         )
-        with torch.enable_grad():
+        # Only enable_grad when we need dE/d(aparam); avoids graph overhead otherwise
+        grad_ctx = torch.enable_grad() if compute_grad_aparam else torch.no_grad()
+        with grad_ctx:
             batch_output = model(
                 coord_input,
                 type_input,
@@ -573,7 +575,7 @@ class DeepEval(DeepEvalBackend):
                 if key in batch_output:
                     energy_tensor = batch_output[key]
                     break
-            if energy_tensor is not None and aparam_input.grad_fn is not None:
+            if energy_tensor is not None:
                 grad_ap = torch.autograd.grad(
                     energy_tensor.sum(),
                     aparam_input,

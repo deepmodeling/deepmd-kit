@@ -201,16 +201,17 @@ class EnergyStdLoss(TaskLoss):
             Other losses for display.
         """
         ap_for_grad: torch.Tensor | None = None
-        if (
-            self.has_ap
-            and input_dict.get("aparam") is not None
-            and torch.is_grad_enabled()
-        ):
+        # Capture the grad-enabled state before any enable_grad context.
+        in_training = torch.is_grad_enabled()
+        if self.has_ap and input_dict.get("aparam") is not None:
             ap_for_grad = input_dict["aparam"].detach()
             ap_for_grad.requires_grad_(True)
             input_dict = {**input_dict, "aparam": ap_for_grad}
-
-        model_pred = model(**input_dict)
+            # Use enable_grad so gradient can be computed even inside no_grad (inference).
+            with torch.enable_grad():
+                model_pred = model(**input_dict)
+        else:
+            model_pred = model(**input_dict)
         coef = learning_rate / self.starter_learning_rate
         pref_e = self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * coef
         pref_f = self.limit_pref_f + (self.start_pref_f - self.limit_pref_f) * coef
@@ -430,36 +431,40 @@ class EnergyStdLoss(TaskLoss):
                 rmse_ae.detach(), find_atom_ener
             )
 
-        if (
-            self.has_ap
-            and ap_for_grad is not None
-            and "energy" in model_pred
-            and "grad_aparam" in label
-        ):
-            find_grad_ap = label.get("find_grad_aparam", 0.0)
-            pref_ap = (
-                self.limit_pref_ap + (self.start_pref_ap - self.limit_pref_ap) * coef
-            ) * find_grad_ap
-            energy_pred = model_pred["energy"]  # [nf, 1]
-            # compute d(sum_E)/d(aparam_raw), with shape [nf, nloc, numb_aparam]
-            grad_ap_pred = torch.autograd.grad(
-                [energy_pred.sum()],
-                [ap_for_grad],
-                create_graph=True,  # allow second-order gradients to flow back to model parameters
-                retain_graph=True,  # keep the computation graph for energy/force loss backpropagation
-            )[0]
+        if self.has_ap and ap_for_grad is not None and "energy" in model_pred:
+            energy_pred_ap = model_pred["energy"]  # [nf, 1]
+            # Compute d(sum_E)/d(aparam_raw), shape [nf, nloc, numb_aparam].
+            # Use enable_grad so this works both in training and no_grad inference.
+            with torch.enable_grad():
+                grad_ap_pred = torch.autograd.grad(
+                    [energy_pred_ap.sum()],
+                    [ap_for_grad],
+                    create_graph=in_training,  # second-order backprop only needed in training
+                    retain_graph=in_training,  # keep graph alive for energy/force backprop
+                )[0]
             assert grad_ap_pred is not None
-            grad_ap_label = label["grad_aparam"].to(grad_ap_pred.dtype)
-            diff_ap = (grad_ap_label - grad_ap_pred).reshape(-1)
-            l2_ap_loss = torch.mean(torch.square(diff_ap))
-            if not self.inference:
-                more_loss["l2_grad_aparam_loss"] = self.display_if_exist(
-                    l2_ap_loss.detach(), find_grad_ap
-                )
-            loss += (pref_ap * l2_ap_loss).to(GLOBAL_PT_FLOAT_PRECISION)
-            more_loss["rmse_grad_aparam"] = self.display_if_exist(
-                l2_ap_loss.sqrt().detach(), find_grad_ap
+            # Always expose aparam_grad in model_pred (useful for inference output).
+            model_pred = dict(model_pred)
+            model_pred["aparam_grad"] = (
+                grad_ap_pred.detach() if not in_training else grad_ap_pred
             )
+            if "grad_aparam" in label:
+                find_grad_ap = label.get("find_grad_aparam", 0.0)
+                pref_ap = (
+                    self.limit_pref_ap
+                    + (self.start_pref_ap - self.limit_pref_ap) * coef
+                ) * find_grad_ap
+                grad_ap_label = label["grad_aparam"].to(grad_ap_pred.dtype)
+                diff_ap = (grad_ap_label - grad_ap_pred).reshape(-1)
+                l2_ap_loss = torch.mean(torch.square(diff_ap))
+                if not self.inference:
+                    more_loss["l2_grad_aparam_loss"] = self.display_if_exist(
+                        l2_ap_loss.detach(), find_grad_ap
+                    )
+                loss += (pref_ap * l2_ap_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                more_loss["rmse_grad_aparam"] = self.display_if_exist(
+                    l2_ap_loss.sqrt().detach(), find_grad_ap
+                )
 
         if not self.inference:
             more_loss["rmse"] = torch.sqrt(loss.detach())
