@@ -309,24 +309,25 @@ class DeepEval(DeepEvalBackend):
 
     def _build_nlist_native(
         self,
-        coords: np.ndarray,
-        cells: np.ndarray | None,
-        atom_types: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        coords: torch.Tensor,
+        cells: torch.Tensor | None,
+        atom_types: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Build extended coords, atype, nlist, mapping using native nlist.
 
         Parameters
         ----------
-        coords : np.ndarray
+        coords : torch.Tensor
             Coordinates, shape (nframes, natoms, 3).
-        cells : np.ndarray or None
+        cells : torch.Tensor or None
             Cell vectors, shape (nframes, 9). None for non-PBC.
-        atom_types : np.ndarray
+        atom_types : torch.Tensor
             Atom types, shape (nframes, natoms).
 
         Returns
         -------
         extended_coord, extended_atype, nlist, mapping
+            All as torch.Tensor on the same device as inputs.
         """
         nframes = coords.shape[0]
         natoms = coords.shape[1]
@@ -548,29 +549,39 @@ class DeepEval(DeepEvalBackend):
         else:
             natoms = len(atom_types[0])
 
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
         coord_input = coords.reshape(nframes, natoms, 3)
         if self.neighbor_list is not None:
+            # ASE path: builds nlist in numpy, then convert to tensors
             extended_coord, extended_atype, nlist, mapping = self._build_nlist_ase(
                 coord_input,
                 cells,
                 atom_types,
             )
-        else:
-            extended_coord, extended_atype, nlist, mapping = self._build_nlist_native(
-                coord_input,
-                cells,
-                atom_types,
+            ext_coord_t = torch.tensor(
+                extended_coord, dtype=torch.float64, device=DEVICE
             )
-
-        # Convert to torch tensors
-        from deepmd.pt_expt.utils.env import (
-            DEVICE,
-        )
-
-        ext_coord_t = torch.tensor(extended_coord, dtype=torch.float64, device=DEVICE)
-        ext_atype_t = torch.tensor(extended_atype, dtype=torch.int64, device=DEVICE)
-        nlist_t = torch.tensor(nlist, dtype=torch.int64, device=DEVICE)
-        mapping_t = torch.tensor(mapping, dtype=torch.int64, device=DEVICE)
+            ext_atype_t = torch.tensor(extended_atype, dtype=torch.int64, device=DEVICE)
+            nlist_t = torch.tensor(nlist, dtype=torch.int64, device=DEVICE)
+            mapping_t = torch.tensor(mapping, dtype=torch.int64, device=DEVICE)
+        else:
+            # Native path: convert to tensors first so array-API functions
+            # use the torch backend (runs on DEVICE).
+            coord_t = torch.tensor(coord_input, dtype=torch.float64, device=DEVICE)
+            atype_t = torch.tensor(atom_types, dtype=torch.int64, device=DEVICE)
+            cells_t = (
+                torch.tensor(cells, dtype=torch.float64, device=DEVICE)
+                if cells is not None
+                else None
+            )
+            ext_coord_t, ext_atype_t, nlist_t, mapping_t = self._build_nlist_native(
+                coord_t,
+                cells_t,
+                atype_t,
+            )
 
         if fparam is not None:
             fparam_t = torch.tensor(
