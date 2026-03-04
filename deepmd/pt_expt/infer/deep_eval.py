@@ -615,7 +615,7 @@ class DeepEval(DeepEvalBackend):
             if odef.name in model_predict:
                 shape = self._get_output_shape(odef, nframes, natoms)
                 if model_predict[odef.name] is not None:
-                    out = model_predict[odef.name].detach().numpy().reshape(shape)
+                    out = model_predict[odef.name].detach().cpu().numpy().reshape(shape)
                 else:
                     out = np.full(shape, np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
                 results.append(out)
