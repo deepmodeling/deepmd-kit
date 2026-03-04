@@ -229,15 +229,10 @@ class DeepEval(DeepEvalBackend):
             Calculate the atomic energy and virial
         fparam
             The frame parameter.
-            The array can be of size :
-            - nframes x dim_fparam.
-            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+            The array should be of size nframes x dim_fparam.
         aparam
-            The atomic parameter
-            The array can be of size :
-            - nframes x natoms x dim_aparam.
-            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
-            - dim_aparam. Then all frames and atoms are provided with the same aparam.
+            The atomic parameter.
+            The array should be of size nframes x natoms x dim_aparam.
         **kwargs
             Other parameters
 
