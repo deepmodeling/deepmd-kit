@@ -160,7 +160,7 @@ class EnergyStdLoss(TaskLoss):
                 "Huber loss is not implemented for force with atom_pref, generalized force and relative force. "
             )
 
-        self.has_ap = (start_pref_ap != 0.0 or limit_pref_ap != 0.0)
+        self.has_ap = start_pref_ap != 0.0 or limit_pref_ap != 0.0
         if self.has_ap and numb_aparam == 0:
             raise RuntimeError(
                 "numb_aparam must be > 0 when aparam gradient loss is enabled"
@@ -201,7 +201,11 @@ class EnergyStdLoss(TaskLoss):
             Other losses for display.
         """
         ap_for_grad: torch.Tensor | None = None
-        if self.has_ap and input_dict.get("aparam") is not None and torch.is_grad_enabled():
+        if (
+            self.has_ap
+            and input_dict.get("aparam") is not None
+            and torch.is_grad_enabled()
+        ):
             ap_for_grad = input_dict["aparam"].detach()
             ap_for_grad.requires_grad_(True)
             input_dict = {**input_dict, "aparam": ap_for_grad}
@@ -434,16 +438,15 @@ class EnergyStdLoss(TaskLoss):
         ):
             find_grad_ap = label.get("find_grad_aparam", 0.0)
             pref_ap = (
-                self.limit_pref_ap
-                + (self.start_pref_ap - self.limit_pref_ap) * coef
+                self.limit_pref_ap + (self.start_pref_ap - self.limit_pref_ap) * coef
             ) * find_grad_ap
             energy_pred = model_pred["energy"]  # [nf, 1]
             # 计算 d(sum_E)/d(aparam_raw)，shape [nf, nloc, numb_aparam]
             grad_ap_pred = torch.autograd.grad(
                 [energy_pred.sum()],
                 [ap_for_grad],
-                create_graph=True,       # 使二阶梯度流回模型参数
-                retain_graph=True,       # 保持计算图供 energy/force 损失反传
+                create_graph=True,  # 使二阶梯度流回模型参数
+                retain_graph=True,  # 保持计算图供 energy/force 损失反传
             )[0]
             assert grad_ap_pred is not None
             grad_ap_label = label["grad_aparam"].to(grad_ap_pred.dtype)
