@@ -10,6 +10,9 @@ from typing import (
 from deepmd.backend.backend import (
     Backend,
 )
+from deepmd.pretrained.registry import (
+    available_model_names,
+)
 
 if TYPE_CHECKING:
     from argparse import (
@@ -31,11 +34,18 @@ class PretrainedBackend(Backend):
     This backend is not intended to be selected explicitly by users as a real
     compute backend (such as TensorFlow/PyTorch/Paddle/JAX). It only bridges
     ``*.pretrained`` aliases into the regular deep-eval loading path.
+
+    For convenience, all built-in pretrained model names are also registered as
+    suffix-like aliases, so users can pass model names directly, e.g.
+    ``DeepPot("DPA-3.2-5M")``.
     """
 
     name = "Pretrained"
     features: ClassVar[Backend.Feature] = Backend.Feature.DEEP_EVAL
-    suffixes: ClassVar[list[str]] = [".pretrained"]
+    suffixes: ClassVar[list[str]] = [
+        ".pretrained",
+        *[model_name.lower() for model_name in available_model_names()],
+    ]
 
     def is_available(self) -> bool:
         return True

@@ -27,6 +27,10 @@ class TestPretrainedBackend(unittest.TestCase):
         backend = Backend.detect_backend_by_model("DPA-3.2-5M.pretrained")
         self.assertIs(backend, PretrainedBackend)
 
+    def test_detect_backend_by_model_name(self) -> None:
+        backend = Backend.detect_backend_by_model("DPA-3.2-5M")
+        self.assertIs(backend, PretrainedBackend)
+
     def test_parse_pretrained_alias(self) -> None:
         self.assertEqual(
             parse_pretrained_alias("DPA-3.2-5M.pretrained"),
@@ -36,6 +40,10 @@ class TestPretrainedBackend(unittest.TestCase):
             parse_pretrained_alias("DPA-3.2-5M.PRETRAINED"),
             "DPA-3.2-5M",
         )
+
+    def test_parse_pretrained_alias_plain_name(self) -> None:
+        self.assertEqual(parse_pretrained_alias("DPA-3.2-5M"), "DPA-3.2-5M")
+        self.assertEqual(parse_pretrained_alias("dpa-3.2-5m"), "DPA-3.2-5M")
 
     def test_parse_pretrained_alias_invalid(self) -> None:
         with self.assertRaises(ValueError):

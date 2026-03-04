@@ -20,6 +20,9 @@ from deepmd.infer.deep_eval import (
 from deepmd.pretrained.download import (
     resolve_model_path,
 )
+from deepmd.pretrained.registry import (
+    MODEL_REGISTRY,
+)
 
 if TYPE_CHECKING:
     import numpy as np
@@ -33,17 +36,30 @@ class InvalidPretrainedAliasError(ValueError):
 
 
 def parse_pretrained_alias(model_file: str) -> str:
-    """Extract model name from ``*.pretrained`` alias string."""
+    """Extract model name from alias string.
+
+    Accepted forms:
+    - ``<MODEL>.pretrained`` (case-insensitive suffix)
+    - ``<MODEL>`` where ``<MODEL>`` is a built-in registry name
+    """
     alias = Path(model_file).name
     suffix = ".pretrained"
-    if not alias.lower().endswith(suffix):
-        raise InvalidPretrainedAliasError(model_file)
 
-    model_name = alias[: -len(suffix)]
-    if not model_name:
-        raise InvalidPretrainedAliasError(model_file)
+    if alias.lower().endswith(suffix):
+        model_name = alias[: -len(suffix)]
+        if not model_name:
+            raise InvalidPretrainedAliasError(model_file)
+        return model_name
 
-    return model_name
+    if alias in MODEL_REGISTRY:
+        return alias
+
+    lowered = alias.lower()
+    for model_name in MODEL_REGISTRY:
+        if model_name.lower() == lowered:
+            return model_name
+
+    raise InvalidPretrainedAliasError(model_file)
 
 
 class PretrainedDeepEvalBackend(DeepEvalBackend):

@@ -32,17 +32,26 @@ dp pretrained download DPA-3.2-5M --cache-dir ./models
 
 The command prints the local path of the downloaded model file on success.
 
-## Use downloaded models via alias
+## Use downloaded models in DeepPot
 
-After downloading, you can use the `.pretrained` alias directly in DeepEval/DeepPot workflows.
+Using `DeepPot`, you do **not** have to run `dp pretrained download` first.
 
-For example:
+You can pass either the model alias directly (recommended):
 
 ```python
 from deepmd.infer import DeepPot
 
-# DeePMD-kit resolves this alias to the corresponding local model file
+pot = DeepPot("DPA-3.2-5M")
+```
+
+or the explicit alias with suffix:
+
+```python
+from deepmd.infer import DeepPot
+
 pot = DeepPot("DPA-3.2-5M.pretrained")
 ```
 
-The `.pretrained` alias is designed for user-facing model selection, while backend details are handled internally.
+If the model file is not already present in the local cache, DeePMD-kit will download and cache it automatically when resolving the alias.
+
+The `.pretrained` alias and plain model names are user-facing selectors. Backend details are handled internally.
