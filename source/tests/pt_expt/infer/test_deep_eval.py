@@ -5,6 +5,7 @@ Verifies the full pipeline:
     model.serialize() → deserialize_to_file(.pte) → DeepPot(.pte) → eval()
 """
 
+import importlib
 import tempfile
 import unittest
 
@@ -110,7 +111,7 @@ class TestDeepEvalEner(unittest.TestCase):
         rng = np.random.default_rng(GLOBAL_SEED)
         natoms = 5
         coords = rng.random((1, natoms, 3)) * 8.0
-        cells = np.eye(3).reshape(1, 9) * 15.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
         atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
 
         # .pte inference
@@ -146,7 +147,7 @@ class TestDeepEvalEner(unittest.TestCase):
 
         for nframes in [2, 5]:
             coords = rng.random((nframes, natoms, 3)) * 8.0
-            cells = np.tile(np.eye(3).reshape(1, 9) * 15.0, (nframes, 1))
+            cells = np.tile(np.eye(3).reshape(1, 9) * 10.0, (nframes, 1))
 
             e, f, v, ae, av = self.dp.eval(coords, cells, atom_types, atomic=True)
 
@@ -297,6 +298,177 @@ class TestDeepEvalEner(unittest.TestCase):
         np.testing.assert_allclose(
             v, ref["virial"].detach().numpy(), rtol=1e-10, atol=1e-10
         )
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("ase") is not None, "ase not installed"
+    )
+    def test_ase_neighbor_list_consistency(self) -> None:
+        """Test that ASE neighbor list gives same results as native nlist."""
+        import ase.neighborlist
+
+        rng = np.random.default_rng(GLOBAL_SEED + 11)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        # Eval without ASE neighbor list (native)
+        e1, f1, v1, ae1, av1 = self.dp.eval(
+            coords,
+            cells,
+            atom_types,
+            atomic=True,
+        )
+
+        # Eval with ASE neighbor list
+        dp_ase = DeepPot(
+            self.tmpfile.name,
+            neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
+                cutoffs=self.rcut,
+                bothways=True,
+            ),
+        )
+        e2, f2, v2, ae2, av2 = dp_ase.eval(
+            coords,
+            cells,
+            atom_types,
+            atomic=True,
+        )
+
+        np.testing.assert_allclose(e1, e2, rtol=1e-10, atol=1e-10, err_msg="energy")
+        np.testing.assert_allclose(f1, f2, rtol=1e-10, atol=1e-10, err_msg="force")
+        np.testing.assert_allclose(v1, v2, rtol=1e-10, atol=1e-10, err_msg="virial")
+        np.testing.assert_allclose(
+            ae1,
+            ae2,
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg="atom_energy",
+        )
+        np.testing.assert_allclose(
+            av1,
+            av2,
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg="atom_virial",
+        )
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("ase") is not None, "ase not installed"
+    )
+    def test_build_nlist_ase(self) -> None:
+        """Test _build_nlist_ase produces the same neighbor sets as native."""
+        import ase.neighborlist
+
+        from deepmd.dpmodel.utils.nlist import (
+            build_neighbor_list,
+            extend_coord_with_ghosts,
+        )
+        from deepmd.dpmodel.utils.region import (
+            normalize_coord,
+        )
+
+        rng = np.random.default_rng(GLOBAL_SEED + 13)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+        atom_types_2d = atom_types.reshape(1, -1)
+
+        dp_ase = DeepPot(
+            self.tmpfile.name,
+            neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
+                cutoffs=self.rcut,
+                bothways=True,
+            ),
+        )
+        deep_eval = dp_ase.deep_eval
+
+        # ASE path
+        ext_coord_ase, ext_atype_ase, nlist_ase, mapping_ase = (
+            deep_eval._build_nlist_ase(coords, cells, atom_types_2d)
+        )
+
+        # Native path
+        box_input = cells.reshape(1, 3, 3)
+        coord_normalized = normalize_coord(coords, box_input)
+        ext_coord_nat, ext_atype_nat, mapping_nat = extend_coord_with_ghosts(
+            coord_normalized,
+            atom_types_2d,
+            cells,
+            self.rcut,
+        )
+        sel = self.sel
+        nlist_nat = build_neighbor_list(
+            ext_coord_nat,
+            ext_atype_nat,
+            natoms,
+            self.rcut,
+            sel,
+            distinguish_types=not self.model.mixed_types(),
+        )
+        ext_coord_nat = ext_coord_nat.reshape(1, -1, 3)
+
+        # Compare: for each local atom, the set of neighbor relative
+        # coordinates should match (ghost ordering may differ).
+        for ii in range(natoms):
+            # ASE neighbors
+            nn_ase = nlist_ase[0, ii]
+            mask_ase = nn_ase >= 0
+            rel_ase = ext_coord_ase[0, nn_ase[mask_ase]] - coords[0, ii]
+
+            # Native neighbors
+            nn_nat = nlist_nat[0, ii]
+            mask_nat = nn_nat >= 0
+            rel_nat = ext_coord_nat[0, nn_nat[mask_nat]] - coords[0, ii]
+
+            # Sort by distance then by coordinates for deterministic order
+            def _sort_key(rel: np.ndarray) -> np.ndarray:
+                dist = np.linalg.norm(rel, axis=-1, keepdims=True)
+                return np.concatenate([dist, rel], axis=-1)
+
+            order_ase = np.lexsort(_sort_key(rel_ase).T)
+            order_nat = np.lexsort(_sort_key(rel_nat).T)
+
+            np.testing.assert_allclose(
+                rel_ase[order_ase],
+                rel_nat[order_nat],
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"atom {ii}: neighbor relative coords differ",
+            )
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("ase") is not None, "ase not installed"
+    )
+    def test_ase_nlist_multiple_frames(self) -> None:
+        """Test ASE neighbor list with multiple frames and auto_batch_size=False."""
+        import ase.neighborlist
+
+        rng = np.random.default_rng(GLOBAL_SEED + 17)
+        natoms = 4
+        nframes = 3
+        coords = rng.random((nframes, natoms, 3)) * 8.0
+        cells = np.tile(np.eye(3).reshape(1, 9) * 10.0, (nframes, 1))
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        # Native eval (no ASE nlist)
+        e1, f1, v1 = self.dp.eval(coords, cells, atom_types)
+
+        # ASE nlist with auto_batch_size=False to exercise multi-frame path
+        dp_ase = DeepPot(
+            self.tmpfile.name,
+            neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
+                cutoffs=self.rcut,
+                bothways=True,
+            ),
+            auto_batch_size=False,
+        )
+        e2, f2, v2 = dp_ase.eval(coords, cells, atom_types)
+
+        np.testing.assert_allclose(e1, e2, rtol=1e-10, atol=1e-10, err_msg="energy")
+        np.testing.assert_allclose(f1, f2, rtol=1e-10, atol=1e-10, err_msg="force")
+        np.testing.assert_allclose(v1, v2, rtol=1e-10, atol=1e-10, err_msg="virial")
 
 
 if __name__ == "__main__":

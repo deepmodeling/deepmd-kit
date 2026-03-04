@@ -27,6 +27,7 @@ from deepmd.dpmodel.utils.batch_size import (
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
     extend_coord_with_ghosts,
+    nlist_distinguish_types,
 )
 from deepmd.dpmodel.utils.region import (
     normalize_coord,
@@ -115,6 +116,7 @@ class DeepEval(DeepEvalBackend):
     ) -> None:
         self.output_def = output_def
         self.model_path = model_file
+        self.neighbor_list = neighbor_list
 
         # Load the exported program with metadata
         extra_files = {"model_def_script.json": ""}
@@ -310,36 +312,38 @@ class DeepEval(DeepEvalBackend):
         nframes = coords.shape[0]
         return natoms, nframes
 
-    def _eval_model(
+    def _build_nlist_native(
         self,
         coords: np.ndarray,
         cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: np.ndarray | None,
-        aparam: np.ndarray | None,
-        request_defs: list[OutputVariableDef],
-    ) -> tuple[np.ndarray, ...]:
-        nframes = coords.shape[0]
-        if len(atom_types.shape) == 1:
-            natoms = len(atom_types)
-            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
-        else:
-            natoms = len(atom_types[0])
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Build extended coords, atype, nlist, mapping using native nlist.
 
+        Parameters
+        ----------
+        coords : np.ndarray
+            Coordinates, shape (nframes, natoms, 3).
+        cells : np.ndarray or None
+            Cell vectors, shape (nframes, 9). None for non-PBC.
+        atom_types : np.ndarray
+            Atom types, shape (nframes, natoms).
+
+        Returns
+        -------
+        extended_coord, extended_atype, nlist, mapping
+        """
+        nframes = coords.shape[0]
+        natoms = coords.shape[1]
         rcut = self.rcut
         sel = self.metadata["sel"]
         mixed_types = self.metadata["mixed_types"]
 
-        coord_input = coords.reshape(nframes, natoms, 3)
         if cells is not None:
             box_input = cells.reshape(nframes, 3, 3)
+            coord_normalized = normalize_coord(coords, box_input)
         else:
-            box_input = None
-
-        if box_input is not None:
-            coord_normalized = normalize_coord(coord_input, box_input)
-        else:
-            coord_normalized = coord_input
+            coord_normalized = coords
 
         extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
             coord_normalized,
@@ -356,6 +360,212 @@ class DeepEval(DeepEvalBackend):
             distinguish_types=not mixed_types,
         )
         extended_coord = extended_coord.reshape(nframes, -1, 3)
+        return extended_coord, extended_atype, nlist, mapping
+
+    def _build_nlist_ase(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Build extended coords, atype, nlist, mapping using ASE neighbor list.
+
+        Handles multiple frames by building per frame and padding to
+        a common nall.
+
+        Parameters
+        ----------
+        coords : np.ndarray
+            Coordinates, shape (nframes, natoms, 3).
+        cells : np.ndarray or None
+            Cell vectors, shape (nframes, 9). None for non-PBC.
+        atom_types : np.ndarray
+            Atom types, shape (nframes, natoms).
+
+        Returns
+        -------
+        extended_coord, extended_atype, nlist, mapping
+        """
+        nframes = coords.shape[0]
+        frame_results = []
+        for ff in range(nframes):
+            ec, ea, nl, mp = self._build_nlist_ase_single(
+                coords[ff],
+                cells[ff] if cells is not None else None,
+                atom_types[ff],
+            )
+            frame_results.append((ec, ea, nl, mp))
+        # Pad to max nall across frames
+        max_nall = max(ec.shape[0] for ec, _, _, _ in frame_results)
+        ext_coords, ext_atypes, nlists, mappings = [], [], [], []
+        for ec, ea, nl, mp in frame_results:
+            pad = max_nall - ec.shape[0]
+            if pad > 0:
+                ec = np.concatenate(
+                    [ec, np.zeros((pad, 3), dtype=ec.dtype)],
+                    axis=0,
+                )
+                ea = np.concatenate(
+                    [ea, np.full(pad, -1, dtype=ea.dtype)],
+                    axis=0,
+                )
+                mp = np.concatenate(
+                    [mp, np.zeros(pad, dtype=mp.dtype)],
+                    axis=0,
+                )
+            ext_coords.append(ec)
+            ext_atypes.append(ea)
+            nlists.append(nl)
+            mappings.append(mp)
+        return (
+            np.stack(ext_coords, axis=0),
+            np.stack(ext_atypes, axis=0),
+            np.stack(nlists, axis=0),
+            np.stack(mappings, axis=0),
+        )
+
+    def _build_nlist_ase_single(
+        self,
+        positions: np.ndarray,
+        cell: np.ndarray | None,
+        atype: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Build extended coords, atype, nlist, mapping for a single frame.
+
+        Parameters
+        ----------
+        positions : np.ndarray
+            Atom positions, shape (natoms, 3).
+        cell : np.ndarray or None
+            Cell vector, shape (9,). None for non-PBC.
+        atype : np.ndarray
+            Atom types, shape (natoms,).
+
+        Returns
+        -------
+        extended_coord : np.ndarray, shape (nall, 3)
+        extended_atype : np.ndarray, shape (nall,)
+        nlist : np.ndarray, shape (nloc, nsel)
+        mapping : np.ndarray, shape (nall,)
+        """
+        sel = self.metadata["sel"]
+        mixed_types = self.metadata["mixed_types"]
+        nsel = sum(sel)
+
+        natoms = positions.shape[0]
+        cell_3x3 = (
+            cell.reshape(3, 3)
+            if cell is not None
+            else np.zeros((3, 3), dtype=np.float64)
+        )
+        pbc = np.repeat(cell is not None, 3)
+
+        nl = self.neighbor_list
+        nl.bothways = True
+        nl.self_interaction = False
+        if nl.update(pbc, cell_3x3, positions):
+            nl.build(pbc, cell_3x3, positions)
+
+        first_neigh = nl.first_neigh.copy()
+        pair_second = nl.pair_second.copy()
+        offset_vec = nl.offset_vec.copy()
+
+        # Identify ghost atoms (out-of-box neighbors)
+        out_mask = np.any(offset_vec != 0, axis=1)
+        out_idx = pair_second[out_mask]
+        out_offset = offset_vec[out_mask]
+        out_coords = positions[out_idx] + out_offset.dot(cell_3x3)
+        out_atype = atype[out_idx]
+
+        nloc = natoms
+        nghost = out_idx.size
+
+        # Extended arrays (no leading frame dimension)
+        extended_coord = np.concatenate((positions, out_coords), axis=0)
+        extended_atype = np.concatenate((atype, out_atype))
+        mapping = np.concatenate(
+            (np.arange(nloc, dtype=np.int32), out_idx.astype(np.int32))
+        )
+
+        # Remap neighbor indices: ghost atoms get new indices [nloc, nloc+nghost)
+        ghost_remap = pair_second.copy()
+        ghost_remap[out_mask] = np.arange(nloc, nloc + nghost, dtype=np.int64)
+
+        # Build nlist: vectorized CSR-to-dense conversion
+        rcut = self.rcut
+        counts = np.diff(first_neigh)
+        max_nn = int(counts.max()) if counts.size > 0 else 0
+
+        # CSR to dense: (nloc, max_nn) neighbor index array, padded with -1
+        col_idx = np.arange(len(ghost_remap), dtype=np.int64) - np.repeat(
+            first_neigh[:-1], counts
+        )
+        row_idx = np.repeat(np.arange(nloc, dtype=np.int64), counts)
+        dense_idx = np.full((nloc, max_nn), -1, dtype=np.int64)
+        dense_idx[row_idx, col_idx] = ghost_remap
+
+        # Compute all distances at once
+        valid = dense_idx >= 0
+        lookup = np.where(valid, dense_idx, 0)
+        neigh_coords = extended_coord[lookup]  # (nloc, max_nn, 3)
+        dists = np.linalg.norm(
+            neigh_coords - positions[:, None, :], axis=-1
+        )  # (nloc, max_nn)
+
+        # Mask invalid and out-of-range, sort by distance
+        valid &= dists <= rcut
+        dists = np.where(valid, dists, np.inf)
+        order = np.argsort(dists, axis=-1)
+        sorted_idx = np.take_along_axis(dense_idx, order, axis=-1)
+        sorted_valid = np.take_along_axis(valid, order, axis=-1)
+
+        # Take first nsel neighbors, pad if fewer than nsel
+        if max_nn >= nsel:
+            nlist = sorted_idx[:, :nsel]
+            nlist = np.where(sorted_valid[:, :nsel], nlist, -1)
+        else:
+            nlist = np.full((nloc, nsel), -1, dtype=np.int64)
+            nlist[:, :max_nn] = np.where(sorted_valid, sorted_idx, -1)
+
+        if not mixed_types:
+            # nlist_distinguish_types expects (nframes, nloc, nsel)
+            nlist = nlist_distinguish_types(
+                nlist[None],
+                extended_atype[None],
+                sel,
+            )[0]
+
+        return extended_coord, extended_atype, nlist, mapping
+
+    def _eval_model(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        request_defs: list[OutputVariableDef],
+    ) -> tuple[np.ndarray, ...]:
+        nframes = coords.shape[0]
+        if len(atom_types.shape) == 1:
+            natoms = len(atom_types)
+            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+        else:
+            natoms = len(atom_types[0])
+
+        coord_input = coords.reshape(nframes, natoms, 3)
+        if self.neighbor_list is not None:
+            extended_coord, extended_atype, nlist, mapping = self._build_nlist_ase(
+                coord_input,
+                cells,
+                atom_types,
+            )
+        else:
+            extended_coord, extended_atype, nlist, mapping = self._build_nlist_native(
+                coord_input,
+                cells,
+                atom_types,
+            )
 
         # Convert to torch tensors
         from deepmd.pt_expt.utils.env import (
