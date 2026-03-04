@@ -304,6 +304,7 @@ class DPAtomicModel(BaseAtomicModel):
         sampled_func: Callable[[], list[dict]],
         stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
     ) -> None:
         """
         Compute or load the statistics parameters of the model,
@@ -354,6 +355,10 @@ class DPAtomicModel(BaseAtomicModel):
         self.compute_fitting_input_stat(wrapped_sampler, stat_file_path)
         if compute_or_load_out_stat:
             self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
+
+        self._collect_and_set_observed_type(
+            wrapped_sampler, stat_file_path, preset_observed_type
+        )
 
     def compute_fitting_input_stat(
         self,

@@ -126,6 +126,13 @@ def show(
             )
         else:
             log.info("The observed types for this model: ")
-            observed_types = model.get_observed_types()
+            observed_type_list = model_params.get("info", {}).get("observed_type")
+            if observed_type_list is not None:
+                observed_types = {
+                    "type_num": len(observed_type_list),
+                    "observed_type": observed_type_list,
+                }
+            else:
+                observed_types = model.get_observed_types()
             log.info(f"Number of observed types: {observed_types['type_num']} ")
             log.info(f"Observed types: {observed_types['observed_type']} ")

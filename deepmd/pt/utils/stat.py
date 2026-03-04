@@ -35,6 +35,19 @@ from deepmd.utils.path import (
 
 log = logging.getLogger(__name__)
 
+# Re-export from dpmodel (backend-agnostic implementations)
+from deepmd.dpmodel.utils.stat import (
+    _restore_observed_type_from_file,
+    _save_observed_type_to_file,
+    collect_observed_types,
+)
+
+__all__ = [
+    "_restore_observed_type_from_file",
+    "_save_observed_type_to_file",
+    "collect_observed_types",
+]
+
 
 def make_stat_input(
     datasets: list[Any], dataloaders: list[Any], nbatches: int

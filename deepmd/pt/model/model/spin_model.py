@@ -392,6 +392,7 @@ class SpinModel(torch.nn.Module):
         self,
         sampled_func: Callable[[], list[dict[str, Any]]],
         stat_file_path: DPPath | None = None,
+        preset_observed_type: list[str] | None = None,
     ) -> None:
         """
         Compute or load the statistics parameters of the model,
@@ -432,7 +433,11 @@ class SpinModel(torch.nn.Module):
                 spin_sampled.append(tmp_dict)
             return spin_sampled
 
-        self.backbone_model.compute_or_load_stat(spin_sampled_func, stat_file_path)
+        self.backbone_model.compute_or_load_stat(
+            spin_sampled_func,
+            stat_file_path,
+            preset_observed_type=preset_observed_type,
+        )
 
     def forward_common(
         self,
