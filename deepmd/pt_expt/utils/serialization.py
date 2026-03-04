@@ -262,6 +262,8 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         fparam=fparam,
         aparam=aparam,
         do_atomic_virial=True,
+        tracing_mode="symbolic",
+        _allow_non_fake_inputs=True,
     )
 
     # 5. Build dynamic shapes and export

@@ -126,6 +126,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        **make_fx_kwargs: Any,
     ) -> torch.nn.Module:
         """Trace ``forward_lower`` into an exportable module.
 
@@ -137,6 +138,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         ----------
         extended_coord, extended_atype, nlist, mapping, fparam, aparam, do_atomic_virial
             Sample inputs with representative shapes (used for tracing).
+        **make_fx_kwargs
+            Extra keyword arguments forwarded to ``make_fx``
+            (e.g. ``tracing_mode="symbolic"``).
 
         Returns
         -------
@@ -153,6 +157,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            **make_fx_kwargs,
         )
 
         # Translate internal keys to forward_lower convention.
@@ -186,6 +191,6 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 model_predict["mask"] = model_ret["mask"]
             return model_predict
 
-        return make_fx(fn, tracing_mode="symbolic", _allow_non_fake_inputs=True)(
+        return make_fx(fn, **make_fx_kwargs)(
             extended_coord, extended_atype, nlist, mapping, fparam, aparam
         )
