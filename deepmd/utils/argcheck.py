@@ -3072,6 +3072,8 @@ def loss_ener() -> list[Argument]:
     doc_limit_pref_pf = limit_pref("atomic prefactor force")
     doc_start_pref_gf = start_pref("generalized force", label="drdq", abbr="gf")
     doc_limit_pref_gf = limit_pref("generalized force")
+    doc_start_pref_ap = start_pref("aparam gradient", label="grad_aparam", abbr="ap")
+    doc_limit_pref_ap = limit_pref("aparam gradient")
     doc_numb_generalized_coord = "The dimension of generalized coordinates. Required when generalized force loss is used."
     doc_relative_f = "If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label."
     doc_enable_atom_ener_coeff = "If true, the energy will be computed as \\sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
@@ -3210,6 +3212,20 @@ def loss_ener() -> list[Argument]:
             optional=True,
             default=0.01,
             doc=doc_huber_delta,
+        ),
+        Argument(
+            "start_pref_ap",
+            [float, int],
+            optional=True,
+            default=0.0,
+            doc=doc_start_pref_ap,
+        ),
+        Argument(
+            "limit_pref_ap",
+            [float, int],
+            optional=True,
+            default=0.0,
+            doc=doc_limit_pref_ap,
         ),
     ]
 
