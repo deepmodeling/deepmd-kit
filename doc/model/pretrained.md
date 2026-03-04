@@ -36,7 +36,7 @@ The command prints the local path of the downloaded model file on success.
 
 Using `DeepPot`, you do **not** have to run `dp pretrained download` first.
 
-You can pass either the model alias directly (recommended):
+Pass the built-in model name directly:
 
 ```python
 from deepmd.infer import DeepPot
@@ -44,14 +44,6 @@ from deepmd.infer import DeepPot
 pot = DeepPot("DPA-3.2-5M")
 ```
 
-or the explicit alias with suffix:
+If the model file is not already present in the local cache, DeePMD-kit will download and cache it automatically when resolving the model name.
 
-```python
-from deepmd.infer import DeepPot
-
-pot = DeepPot("DPA-3.2-5M.pretrained")
-```
-
-If the model file is not already present in the local cache, DeePMD-kit will download and cache it automatically when resolving the alias.
-
-The `.pretrained` alias and plain model names are user-facing selectors. Backend details are handled internally.
+Built-in model names are user-facing selectors; backend details are handled internally.

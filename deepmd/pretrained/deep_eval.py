@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""DeepEval adapter for `*.pretrained` model aliases."""
+"""DeepEval adapter for pretrained model-name aliases."""
 
 from __future__ import (
     annotations,
@@ -32,24 +32,16 @@ class InvalidPretrainedAliasError(ValueError):
     """Raised when a pretrained alias string is malformed."""
 
     def __init__(self, model_file: str) -> None:
-        super().__init__(f"Invalid pretrained alias: {model_file}")
+        super().__init__(f"Invalid pretrained model name: {model_file}")
 
 
 def parse_pretrained_alias(model_file: str) -> str:
-    """Extract model name from alias string.
+    """Extract built-in pretrained model name from alias string.
 
-    Accepted forms:
-    - ``<MODEL>.pretrained`` (case-insensitive suffix)
+    Accepted form:
     - ``<MODEL>`` where ``<MODEL>`` is a built-in registry name
     """
     alias = Path(model_file).name
-    suffix = ".pretrained"
-
-    if alias.lower().endswith(suffix):
-        model_name = alias[: -len(suffix)]
-        if not model_name:
-            raise InvalidPretrainedAliasError(model_file)
-        return model_name
 
     if alias in MODEL_REGISTRY:
         return alias
