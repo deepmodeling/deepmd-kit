@@ -543,7 +543,9 @@ class DeepEval(DeepEvalBackend):
         # Use enable_grad only when computing dE/d(aparam) to override any
         # outer no_grad context.  Do NOT use no_grad otherwise — the model
         # internally relies on autograd to compute forces (dE/dcoord).
-        grad_ctx = torch.enable_grad() if compute_grad_aparam else contextlib.nullcontext()
+        grad_ctx = (
+            torch.enable_grad() if compute_grad_aparam else contextlib.nullcontext()
+        )
         with grad_ctx:
             batch_output = model(
                 coord_input,
