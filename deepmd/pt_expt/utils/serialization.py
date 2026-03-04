@@ -135,10 +135,10 @@ def _make_sample_inputs(
 
 
 def _build_dynamic_shapes(
-    ext_coord: torch.Tensor,
-    ext_atype: torch.Tensor,
-    nlist: torch.Tensor,
-    mapping: torch.Tensor,
+    _ext_coord: torch.Tensor,
+    _ext_atype: torch.Tensor,
+    _nlist: torch.Tensor,
+    _mapping: torch.Tensor,
     fparam: torch.Tensor | None,
     aparam: torch.Tensor | None,
 ) -> tuple:
