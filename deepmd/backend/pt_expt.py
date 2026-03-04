@@ -91,7 +91,7 @@ class PyTorchExportableBackend(Backend):
         type[NeighborStat]
             The neighbor statistics of the backend.
         """
-        from deepmd.dpmodel.utils.neighbor_stat import (
+        from deepmd.pt_expt.utils.neighbor_stat import (
             NeighborStat,
         )
 
