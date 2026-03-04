@@ -21,9 +21,6 @@ from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
     OutputVariableDef,
 )
-from deepmd.dpmodel.utils.batch_size import (
-    AutoBatchSize,
-)
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
     extend_coord_with_ghosts,
@@ -53,6 +50,9 @@ from deepmd.infer.deep_pot import (
 )
 from deepmd.infer.deep_wfc import (
     DeepWFC,
+)
+from deepmd.pt.utils.auto_batch_size import (
+    AutoBatchSize,
 )
 
 if TYPE_CHECKING:
