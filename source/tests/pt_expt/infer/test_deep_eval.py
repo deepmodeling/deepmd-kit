@@ -385,14 +385,14 @@ class TestDeepEvalEner(unittest.TestCase):
         deep_eval = dp_ase.deep_eval
 
         # ASE path
-        ext_coord_ase, ext_atype_ase, nlist_ase, mapping_ase = (
+        ext_coord_ase, _ext_atype_ase, nlist_ase, _mapping_ase = (
             deep_eval._build_nlist_ase(coords, cells, atom_types_2d)
         )
 
         # Native path
         box_input = cells.reshape(1, 3, 3)
         coord_normalized = normalize_coord(coords, box_input)
-        ext_coord_nat, ext_atype_nat, mapping_nat = extend_coord_with_ghosts(
+        ext_coord_nat, ext_atype_nat, _mapping_nat = extend_coord_with_ghosts(
             coord_normalized,
             atom_types_2d,
             cells,
