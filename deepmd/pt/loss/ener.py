@@ -441,12 +441,12 @@ class EnergyStdLoss(TaskLoss):
                 self.limit_pref_ap + (self.start_pref_ap - self.limit_pref_ap) * coef
             ) * find_grad_ap
             energy_pred = model_pred["energy"]  # [nf, 1]
-            # 计算 d(sum_E)/d(aparam_raw)，shape [nf, nloc, numb_aparam]
+            # compute d(sum_E)/d(aparam_raw), with shape [nf, nloc, numb_aparam]
             grad_ap_pred = torch.autograd.grad(
                 [energy_pred.sum()],
                 [ap_for_grad],
-                create_graph=True,  # 使二阶梯度流回模型参数
-                retain_graph=True,  # 保持计算图供 energy/force 损失反传
+                create_graph=True,  # allow second-order gradients to flow back to model parameters
+                retain_graph=True,  # keep the computation graph for energy/force loss backpropagation
             )[0]
             assert grad_ap_pred is not None
             grad_ap_label = label["grad_aparam"].to(grad_ap_pred.dtype)
