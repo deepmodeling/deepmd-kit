@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import contextlib
 import io
 import json
 import logging
@@ -532,16 +533,17 @@ class DeepEval(DeepEvalBackend):
         else:
             aparam_input = None
 
-        # If aparam is provided, enable grad tracking for dE/d(aparam)
-        compute_grad_aparam = aparam_input is not None
-        if compute_grad_aparam:
+        # If grad_aparam requested, enable grad tracking on aparam
+        if compute_grad_aparam and aparam_input is not None:
             aparam_input = aparam_input.detach().requires_grad_(True)
 
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C for x in request_defs
         )
-        # Only enable_grad when we need dE/d(aparam); avoids graph overhead otherwise
-        grad_ctx = torch.enable_grad() if compute_grad_aparam else torch.no_grad()
+        # Use enable_grad only when computing dE/d(aparam) to override any
+        # outer no_grad context.  Do NOT use no_grad otherwise — the model
+        # internally relies on autograd to compute forces (dE/dcoord).
+        grad_ctx = torch.enable_grad() if compute_grad_aparam else contextlib.nullcontext()
         with grad_ctx:
             batch_output = model(
                 coord_input,
