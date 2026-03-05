@@ -242,6 +242,8 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
        arXiv preprint arXiv:2208.08236.
     """
 
+    _update_sel_cls = UpdateSel
+
     def __init__(
         self,
         rcut: float,
@@ -663,7 +665,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        min_nbor_dist, sel = UpdateSel().update_one_sel(
+        min_nbor_dist, sel = cls._update_sel_cls().update_one_sel(
             train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], True
         )
         local_jdata_cpy["sel"] = sel[0]

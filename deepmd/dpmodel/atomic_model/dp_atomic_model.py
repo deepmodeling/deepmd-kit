@@ -8,6 +8,7 @@ from typing import (
 
 from deepmd.dpmodel.array_api import (
     Array,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
@@ -181,7 +182,7 @@ class DPAtomicModel(BaseAtomicModel):
 
         """
         nframes, nloc, nnei = nlist.shape
-        atype = extended_atype[:, :nloc]
+        atype = xp_take_first_n(extended_atype, 1, nloc)
 
         if self.fitting_net.get_dim_fparam() > 0 and fparam is None:
             # use default fparam
@@ -221,6 +222,7 @@ class DPAtomicModel(BaseAtomicModel):
         sampled_func: Callable[[], list[dict]],
         stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
     ) -> None:
         """Compute or load the statistics parameters of the model,
         such as mean and standard deviation of descriptors or the energy bias of the fitting net.
@@ -246,6 +248,10 @@ class DPAtomicModel(BaseAtomicModel):
         )
         if compute_or_load_out_stat:
             self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
+
+        self._collect_and_set_observed_type(
+            wrapped_sampler, stat_file_path, preset_observed_type
+        )
 
     def change_type_map(
         self, type_map: list[str], model_with_new_type_stat: Any | None = None

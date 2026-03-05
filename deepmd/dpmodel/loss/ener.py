@@ -95,10 +95,10 @@ class EnergyLoss(Loss):
         label_dict: dict[str, Array],
     ) -> dict[str, Array]:
         """Calculate loss from model results and labeled results."""
-        energy = model_dict["energy_redu"]
-        force = model_dict["energy_derv_r"]
-        virial = model_dict["energy_derv_c_redu"]
-        atom_ener = model_dict["energy"]
+        energy = model_dict["energy"]
+        force = model_dict["force"]
+        virial = model_dict["virial"]
+        atom_ener = model_dict["atom_energy"]
         energy_hat = label_dict["energy"]
         force_hat = label_dict["force"]
         virial_hat = label_dict["virial"]
@@ -212,7 +212,7 @@ class EnergyLoss(Loss):
                 )
                 loss += pref_v * l_huber_loss
             more_loss["rmse_v"] = self.display_if_exist(
-                xp.sqrt(l2_virial_loss), find_virial
+                xp.sqrt(l2_virial_loss) * atom_norm, find_virial
             )
         if self.has_ae:
             atom_ener_reshape = xp.reshape(atom_ener, (-1,))

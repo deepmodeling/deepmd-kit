@@ -41,6 +41,7 @@ PRECISION_DICT = dict.fromkeys(VALID_PRECISION)
 
 doc_only_tf_supported = "(Supported Backend: TensorFlow) "
 doc_only_pt_supported = "(Supported Backend: PyTorch) "
+doc_only_pt_expt_supported = "(Supported Backend: PyTorch Exportable) "
 doc_only_pd_supported = "(Supported Backend: Paddle) "
 # descriptors
 doc_loc_frame = "Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame."
@@ -2362,12 +2363,12 @@ def standard_model_args() -> Argument:
     doc_model_branch_alias = (
         "List of aliases for this model branch. "
         "Multiple aliases can be defined, and any alias can reference this branch throughout the model usage. "
-        "Used only in multitask models."
+        "Used only in multi-task models."
     )
     doc_info = (
-        "Dictionary of metadata for this model branch. "
-        "Store arbitrary key-value pairs with branch-specific information. "
-        "Used only in multitask models."
+        "Dictionary of metadata for this model or model branch. "
+        "Store arbitrary key-value pairs with model- or branch-specific information. "
+        "Used in both single- and multi-task models."
     )
 
     ca = Argument(
@@ -3922,6 +3923,17 @@ def training_args(
             optional=True,
             default=0,
             doc=doc_only_pt_supported + doc_zero_stage,
+        ),
+        Argument(
+            "enable_compile",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_expt_supported
+            + "Enable torch.compile to accelerate training. "
+            "Uses make_fx to decompose autograd into primitive ops, "
+            "then compiles with torch.compile/Inductor for kernel fusion. "
+            "The first training step will be slower due to one-time compilation.",
         ),
     ]
 

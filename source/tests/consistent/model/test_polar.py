@@ -1340,6 +1340,7 @@ class TestPolarComputeOrLoadStat(unittest.TestCase):
             "polarizability": polar_stat,
             "find_polarizability": np.float32(1.0),
             "aparam": aparam_stat,
+            "find_aparam": np.float32(1.0),
         }
         # pt sample (torch tensors)
         pt_sample = {
@@ -1351,6 +1352,7 @@ class TestPolarComputeOrLoadStat(unittest.TestCase):
             "polarizability": numpy_to_torch(polar_stat),
             "find_polarizability": np.float32(1.0),
             "aparam": numpy_to_torch(aparam_stat),
+            "find_aparam": np.float32(1.0),
         }
 
         if self.fparam_in_data:
@@ -1359,9 +1361,19 @@ class TestPolarComputeOrLoadStat(unittest.TestCase):
             )
             np_sample["fparam"] = fparam_stat
             pt_sample["fparam"] = numpy_to_torch(fparam_stat)
+            np_sample["find_fparam"] = np.float32(1.0)
+            pt_sample["find_fparam"] = np.float32(1.0)
             self.expected_fparam_avg = np.mean(fparam_stat, axis=0)
         else:
-            # No fparam → _make_wrapped_sampler injects default_fparam
+            # No fparam in data.  dpmodel keeps zero-padded fparam with
+            # find_fparam=0; _make_wrapped_sampler injects default_fparam.
+            np_sample["fparam"] = np.zeros(
+                (nframes, 2), dtype=GLOBAL_NP_FLOAT_PRECISION
+            )
+            np_sample["find_fparam"] = np.float32(0.0)
+            # pt pipeline pops fparam/find_fparam (stat.py), then
+            # wrapped_sampler injects default_fparam when keys are absent.
+            # pt_sample has no fparam/find_fparam keys.
             self.expected_fparam_avg = np.array([0.5, -0.3])
 
         self.np_sampled = [np_sample]

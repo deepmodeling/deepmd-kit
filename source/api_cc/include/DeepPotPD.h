@@ -392,6 +392,10 @@ class DeepPotPD : public DeepPotBackend {
   bool gpu_enabled;
   std::unique_ptr<paddle_infer::Tensor> firstneigh_tensor;
   std::unique_ptr<paddle_infer::Tensor> mapping_tensor;
+  std::vector<std::vector<int>> remapped_sendlist;
+  std::vector<int*> remapped_sendlist_ptrs;
+  std::vector<int> remapped_sendnum;
+  std::vector<int> remapped_recvnum;
 };
 
 }  // namespace deepmd

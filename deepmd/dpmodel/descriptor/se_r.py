@@ -128,6 +128,8 @@ class DescrptSeR(NativeOP, BaseDescriptor):
        Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441-4451.
     """
 
+    _update_sel_cls = UpdateSel
+
     def __init__(
         self,
         rcut: float,
@@ -506,7 +508,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
             The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        min_nbor_dist, local_jdata_cpy["sel"] = UpdateSel().update_one_sel(
+        min_nbor_dist, local_jdata_cpy["sel"] = cls._update_sel_cls().update_one_sel(
             train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], False
         )
         return local_jdata_cpy, min_nbor_dist

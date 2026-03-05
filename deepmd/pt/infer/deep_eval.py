@@ -736,6 +736,14 @@ class DeepEval(DeepEvalBackend):
             - 'type_num': the total number of observed types in this model.
             - 'observed_type': a list of the observed types in this model.
         """
+        # Try metadata first (from model_def_script, already a dict)
+        observed_type_list = self.model_def_script.get("info", {}).get("observed_type")
+        if observed_type_list is not None:
+            return {
+                "type_num": len(observed_type_list),
+                "observed_type": observed_type_list,
+            }
+        # Fallback: bias-based approach for old models
         observed_type_list = self.dp.model["Default"].get_observed_type_list()
         return {
             "type_num": len(observed_type_list),
