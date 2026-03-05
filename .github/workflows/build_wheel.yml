@@ -95,7 +95,7 @@ jobs:
       id-token: write
     if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags/v')
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: cibw-*
           path: dist
@@ -124,7 +124,7 @@ jobs:
           swap-storage: true
           docker-images: true
       - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           path: source/install/docker/dist
           pattern: cibw-*-manylinux_x86_64-cu${{ matrix.cuda_version }}*
@@ -157,7 +157,7 @@ jobs:
     needs: [build_wheels, build_sdist]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           path: dist/packages
           pattern: cibw-*
