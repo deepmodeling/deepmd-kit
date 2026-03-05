@@ -40,6 +40,8 @@ def _make_fake_data_pt(sys_natoms, sys_nframes, avgs, stds):
         # dpmodel's compute_input_stats expects numpy arrays
         sys_dict["fparam"] = tmp_data_f
         sys_dict["aparam"] = tmp_data_a
+        sys_dict["find_fparam"] = True
+        sys_dict["find_aparam"] = True
         merged_output_stat.append(sys_dict)
     return merged_output_stat
 

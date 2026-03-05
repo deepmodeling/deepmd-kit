@@ -441,6 +441,8 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
        Comput Mater 10, 293 (2024). https://doi.org/10.1038/s41524-024-01493-2
     """
 
+    _update_sel_cls = UpdateSel
+
     def __init__(
         self,
         ntypes: int,
@@ -1114,7 +1116,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        update_sel = UpdateSel()
+        update_sel = cls._update_sel_cls()
         min_nbor_dist, repinit_sel = update_sel.update_one_sel(
             train_data,
             type_map,
