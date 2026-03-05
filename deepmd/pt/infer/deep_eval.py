@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import contextlib
 import io
 import json
 import logging
@@ -541,21 +540,14 @@ class DeepEval(DeepEvalBackend):
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C for x in request_defs
         )
-        # Use enable_grad only when computing dE/d(aparam) to override any
-        # outer no_grad context.  Do NOT use no_grad otherwise — the model
-        # internally relies on autograd to compute forces (dE/dcoord).
-        grad_ctx = (
-            torch.enable_grad() if compute_grad_aparam else contextlib.nullcontext()
+        batch_output = model(
+            coord_input,
+            type_input,
+            box=box_input,
+            do_atomic_virial=do_atomic_virial,
+            fparam=fparam_input,
+            aparam=aparam_input,
         )
-        with grad_ctx:
-            batch_output = model(
-                coord_input,
-                type_input,
-                box=box_input,
-                do_atomic_virial=do_atomic_virial,
-                fparam=fparam_input,
-                aparam=aparam_input,
-            )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
 

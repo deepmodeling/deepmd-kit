@@ -9,9 +9,12 @@ import torch
 from deepmd.pt.loss import (
     EnergyStdLoss,
 )
+from deepmd.pt.utils.env import (
+    DEVICE,
+)
 
 
-class TinyEnergyModel(torch.nn.Module):
+class EnergyModelWithAparamGrad(torch.nn.Module):
     """A minimal differentiable model: energy = sum_i (W @ aparam_i).
 
     This ensures d(energy)/d(aparam) = W (per atom), giving us a known
@@ -22,7 +25,7 @@ class TinyEnergyModel(torch.nn.Module):
         super().__init__()
         # A fixed weight matrix so the gradient is deterministic
         self.weight = torch.nn.Parameter(
-            torch.ones(1, numb_aparam, dtype=torch.float64)
+            torch.ones(1, numb_aparam, dtype=torch.float64, device=DEVICE)
         )
 
     def forward(
@@ -42,7 +45,7 @@ class TinyEnergyModel(torch.nn.Module):
         # energy: [nf, 1]
         energy = atom_energy.sum(dim=-1, keepdim=True)
         # force: [nf, nloc, 3] — dummy zeros
-        force = torch.zeros(nf, nloc, 3, dtype=aparam.dtype)
+        force = torch.zeros(nf, nloc, 3, dtype=aparam.dtype, device=DEVICE)
         return {
             "energy": energy,
             "atom_energy": atom_energy,
@@ -89,7 +92,7 @@ class TestGradAparamLoss(unittest.TestCase):
     def test_loss_nonzero_and_backward(self) -> None:
         """Loss should be > 0 and backward should flow gradients to model params."""
         loss_fn = self._make_loss()
-        model = TinyEnergyModel(self.numb_aparam).double()
+        model = EnergyModelWithAparamGrad(self.numb_aparam).double()
 
         aparam_np, grad_ap_label_np = self._make_data()
 
@@ -124,10 +127,10 @@ class TestGradAparamLoss(unittest.TestCase):
     def test_analytical_gradient(self) -> None:
         """Verify autograd computes the correct gradient analytically.
 
-        For TinyEnergyModel, d(energy)/d(aparam_i) = weight for every atom.
+        For EnergyModelWithAparamGrad, d(energy)/d(aparam_i) = weight for every atom.
         """
         loss_fn = self._make_loss()
-        model = TinyEnergyModel(self.numb_aparam).double()
+        model = EnergyModelWithAparamGrad(self.numb_aparam).double()
 
         aparam_np, _ = self._make_data()
 
@@ -162,7 +165,7 @@ class TestGradAparamLoss(unittest.TestCase):
         aparam_grad is still computed and placed in model_pred even without labels.
         """
         loss_fn = self._make_loss()
-        model = TinyEnergyModel(self.numb_aparam).double()
+        model = EnergyModelWithAparamGrad(self.numb_aparam).double()
 
         aparam_np, _ = self._make_data()
 
@@ -242,7 +245,7 @@ class TestGradAparamLoss(unittest.TestCase):
             start_pref_ap=100.0,
             limit_pref_ap=1.0,
         )
-        model = TinyEnergyModel(self.numb_aparam).double()
+        model = EnergyModelWithAparamGrad(self.numb_aparam).double()
 
         aparam_np, grad_ap_label_np = self._make_data()
         input_dict = {
@@ -274,7 +277,7 @@ class TestGradAparamLoss(unittest.TestCase):
             start_pref_ap=1.0,
             limit_pref_ap=1.0,
         )
-        model = TinyEnergyModel(self.numb_aparam).double()
+        model = EnergyModelWithAparamGrad(self.numb_aparam).double()
 
         aparam_np, grad_ap_label_np = self._make_data()
         energy_label = self.rng.random((self.nf, 1)).astype(np.float64)
@@ -309,14 +312,14 @@ class TestGradAparamLoss(unittest.TestCase):
     def test_no_aparam_in_input(self) -> None:
         """When aparam is None in input_dict, aparam grad is skipped gracefully."""
         loss_fn = self._make_loss()
-        model = TinyEnergyModel(self.numb_aparam).double()
+        model = EnergyModelWithAparamGrad(self.numb_aparam).double()
 
         # Override model forward to work without aparam
         original_forward = model.forward
 
         def forward_no_aparam(**kwargs):
             kwargs["aparam"] = torch.zeros(
-                self.nf, self.nloc, self.numb_aparam, dtype=torch.float64
+                self.nf, self.nloc, self.numb_aparam, dtype=torch.float64, device=DEVICE
             )
             return original_forward(**kwargs)
 
@@ -331,7 +334,7 @@ class TestGradAparamLoss(unittest.TestCase):
         }
         label = {
             "grad_aparam": torch.randn(
-                self.nf, self.nloc, self.numb_aparam, dtype=torch.float64
+                self.nf, self.nloc, self.numb_aparam, dtype=torch.float64, device=DEVICE
             ),
             "find_grad_aparam": 1.0,
         }
@@ -349,7 +352,7 @@ class TestGradAparamLoss(unittest.TestCase):
         when labels are provided.
         """
         loss_fn = self._make_loss()
-        model = TinyEnergyModel(self.numb_aparam).double()
+        model = EnergyModelWithAparamGrad(self.numb_aparam).double()
 
         aparam_np, grad_ap_label_np = self._make_data()
         # Analytical gradient = weight broadcast to all atoms
@@ -390,7 +393,7 @@ class TestGradAparamLoss(unittest.TestCase):
     def test_inference_analytical_gradient_correctness(self) -> None:
         """Verify gradient correctness is preserved during torch.no_grad() inference."""
         loss_fn = self._make_loss()
-        model = TinyEnergyModel(self.numb_aparam).double()
+        model = EnergyModelWithAparamGrad(self.numb_aparam).double()
 
         aparam_np, _ = self._make_data()
         # Analytical gradient = weight broadcast to all atoms
