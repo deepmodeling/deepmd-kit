@@ -245,7 +245,7 @@ class SpinModel(NativeOP):
     @staticmethod
     def extend_nlist(extended_atype: Array, nlist: Array) -> Array:
         xp = array_api_compat.array_namespace(nlist)
-        nframes, nloc, nnei = nlist.shape
+        nframes, nloc, _nnei = nlist.shape
         nall = extended_atype.shape[1]
         nlist_mask = nlist != -1
         # Use xp.where instead of in-place boolean indexing
