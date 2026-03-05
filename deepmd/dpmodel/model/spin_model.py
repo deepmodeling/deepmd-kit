@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import functools
+from collections.abc import (
+    Callable,
+)
 from copy import (
     deepcopy,
 )
@@ -6,7 +10,7 @@ from typing import (
     Any,
 )
 
-import numpy as np
+import array_api_compat
 
 from deepmd.dpmodel.array_api import (
     Array,
@@ -67,12 +71,13 @@ class SpinModel(NativeOP):
         self, coord: Array, atype: Array, spin: Array
     ) -> tuple[Array, Array]:
         """Generate virtual coordinates and types, concat into the input."""
+        xp = array_api_compat.array_namespace(coord)
         nframes, nloc = coord.shape[:-1]
-        atype_spin = np.concatenate([atype, atype + self.ntypes_real], axis=-1)
+        atype_spin = xp.concat([atype, atype + self.ntypes_real], axis=-1)
         virtual_coord = coord + spin * self.virtual_scale_mask[atype].reshape(
             [nframes, nloc, 1]
         )
-        coord_spin = np.concatenate([coord, virtual_coord], axis=-2)
+        coord_spin = xp.concat([coord, virtual_coord], axis=-2)
         return coord_spin, atype_spin
 
     def process_spin_input_lower(
@@ -134,7 +139,7 @@ class SpinModel(NativeOP):
         else:
             virtual_scale_mask = self.spin_mask
         atomic_mask = virtual_scale_mask[atype].reshape([nframes, nloc, 1])
-        out_real, out_mag = np.split(out_tensor, [nloc], axis=1)
+        out_real, out_mag = out_tensor[:, :nloc], out_tensor[:, nloc:]
         if add_mag:
             out_real = out_real + out_mag
         out_mag = (out_mag.reshape([nframes, nloc, -1]) * atomic_mask).reshape(
@@ -151,6 +156,7 @@ class SpinModel(NativeOP):
         virtual_scale: bool = True,
     ) -> tuple[Array, Array]:
         """Split the extended output of both real and virtual atoms with switch, and scale the latter."""
+        xp = array_api_compat.array_namespace(extended_out_tensor)
         nframes, nall_double = extended_out_tensor.shape[:2]
         nall = nall_double // 2
         if virtual_scale:
@@ -158,14 +164,14 @@ class SpinModel(NativeOP):
         else:
             virtual_scale_mask = self.spin_mask
         atomic_mask = virtual_scale_mask[extended_atype].reshape([nframes, nall, 1])
-        extended_out_real = np.concatenate(
+        extended_out_real = xp.concat(
             [
                 extended_out_tensor[:, :nloc],
                 extended_out_tensor[:, nloc + nloc : nloc + nall],
             ],
             axis=1,
         )
-        extended_out_mag = np.concatenate(
+        extended_out_mag = xp.concat(
             [
                 extended_out_tensor[:, nloc : nloc + nloc],
                 extended_out_tensor[:, nloc + nall :],
@@ -181,68 +187,73 @@ class SpinModel(NativeOP):
 
     @staticmethod
     def extend_nlist(extended_atype: Array, nlist: Array) -> Array:
+        xp = array_api_compat.array_namespace(nlist)
         nframes, nloc, nnei = nlist.shape
         nall = extended_atype.shape[1]
         nlist_mask = nlist != -1
-        nlist[nlist == -1] = 0
-        nlist_shift = nlist + nall
-        nlist[~nlist_mask] = -1
-        nlist_shift[~nlist_mask] = -1
-        self_real = (
-            np.arange(0, nloc, dtype=nlist.dtype)
-            .reshape(1, -1, 1)
-            .repeat(nframes, axis=0)
+        # Use xp.where instead of in-place boolean indexing
+        nlist_safe = xp.where(nlist_mask, nlist, xp.zeros_like(nlist))
+        nlist_shift = xp.where(nlist_mask, nlist_safe + nall, -1 * xp.ones_like(nlist))
+        # Restore nlist with -1 for masked entries (non-mutating)
+        nlist = xp.where(nlist_mask, nlist, -1 * xp.ones_like(nlist))
+        self_real = xp.reshape(
+            xp.arange(
+                0, nloc, dtype=nlist.dtype, device=array_api_compat.device(nlist)
+            ),
+            (1, nloc, 1),
+        ) * xp.ones(
+            (nframes, 1, 1), dtype=nlist.dtype, device=array_api_compat.device(nlist)
         )
         self_spin = self_real + nall
         # real atom's neighbors: self spin + real neighbor + virtual neighbor
         # nf x nloc x (1 + nnei + nnei)
-        real_nlist = np.concatenate([self_spin, nlist, nlist_shift], axis=-1)
+        real_nlist = xp.concat([self_spin, nlist, nlist_shift], axis=-1)
         # spin atom's neighbors: real + real neighbor + virtual neighbor
         # nf x nloc x (1 + nnei + nnei)
-        spin_nlist = np.concatenate([self_real, nlist, nlist_shift], axis=-1)
+        spin_nlist = xp.concat([self_real, nlist, nlist_shift], axis=-1)
         # nf x (nloc + nloc) x (1 + nnei + nnei)
-        extended_nlist = np.concatenate([real_nlist, spin_nlist], axis=-2)
-        # update the index for switch
-        first_part_index = (nloc <= extended_nlist) & (extended_nlist < nall)
-        second_part_index = (nall <= extended_nlist) & (extended_nlist < (nall + nloc))
-        extended_nlist[first_part_index] += nloc
-        extended_nlist[second_part_index] -= nall - nloc
+        extended_nlist = xp.concat([real_nlist, spin_nlist], axis=-2)
+        # update the index for switch using xp.where instead of in-place ops
+        first_part_mask = (nloc <= extended_nlist) & (extended_nlist < nall)
+        second_part_mask = (nall <= extended_nlist) & (extended_nlist < (nall + nloc))
+        extended_nlist = xp.where(
+            first_part_mask, extended_nlist + nloc, extended_nlist
+        )
+        extended_nlist = xp.where(
+            second_part_mask, extended_nlist - (nall - nloc), extended_nlist
+        )
         return extended_nlist
 
     @staticmethod
     def concat_switch_virtual(
         extended_tensor: Array, extended_tensor_virtual: Array, nloc: int
     ) -> Array:
-        nframes, nall = extended_tensor.shape[:2]
-        out_shape = list(extended_tensor.shape)
-        out_shape[1] *= 2
-        extended_tensor_updated = np.zeros(
-            out_shape,
-            dtype=extended_tensor.dtype,
+        xp = array_api_compat.array_namespace(extended_tensor)
+        return xp.concat(
+            [
+                extended_tensor[:, :nloc],
+                extended_tensor_virtual[:, :nloc],
+                extended_tensor[:, nloc:],
+                extended_tensor_virtual[:, nloc:],
+            ],
+            axis=1,
         )
-        extended_tensor_updated[:, :nloc] = extended_tensor[:, :nloc]
-        extended_tensor_updated[:, nloc : nloc + nloc] = extended_tensor_virtual[
-            :, :nloc
-        ]
-        extended_tensor_updated[:, nloc + nloc : nloc + nall] = extended_tensor[
-            :, nloc:
-        ]
-        extended_tensor_updated[:, nloc + nall :] = extended_tensor_virtual[:, nloc:]
-        return extended_tensor_updated.reshape(out_shape)
 
     @staticmethod
     def expand_aparam(aparam: Array, nloc: int) -> Array:
         """Expand the atom parameters for virtual atoms if necessary."""
+        xp = array_api_compat.array_namespace(aparam)
         nframes, natom, numb_aparam = aparam.shape
         if natom == nloc:  # good
             pass
         elif natom < nloc:  # for spin with virtual atoms
-            aparam = np.concatenate(
+            aparam = xp.concat(
                 [
                     aparam,
-                    np.zeros(
+                    xp.zeros(
                         [nframes, nloc - natom, numb_aparam],
                         dtype=aparam.dtype,
+                        device=array_api_compat.device(aparam),
                     ),
                 ],
                 axis=1,
@@ -253,6 +264,54 @@ class SpinModel(NativeOP):
                 f"which is larger than {nloc} atoms.",
             )
         return aparam
+
+    def compute_or_load_stat(
+        self,
+        sampled_func: Callable[[], list[dict[str, Any]]],
+        stat_file_path: Any | None = None,
+        preset_observed_type: list[str] | None = None,
+    ) -> None:
+        """Compute or load the statistics parameters of the model.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        stat_file_path
+            The dictionary of paths to the statistics files.
+        preset_observed_type
+            The preset observed types.
+        """
+
+        @functools.lru_cache
+        def spin_sampled_func() -> list[dict[str, Any]]:
+            sampled = sampled_func()
+            spin_sampled = []
+            for sys in sampled:
+                coord_updated, atype_updated = self.process_spin_input(
+                    sys["coord"], sys["atype"], sys["spin"]
+                )
+                tmp_dict = {
+                    "coord": coord_updated,
+                    "atype": atype_updated,
+                }
+                if "natoms" in sys:
+                    natoms = sys["natoms"]
+                    xp = array_api_compat.array_namespace(natoms)
+                    tmp_dict["natoms"] = xp.concat(
+                        [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]], axis=-1
+                    )
+                for item_key in sys:
+                    if item_key not in ["coord", "atype", "spin", "natoms"]:
+                        tmp_dict[item_key] = sys[item_key]
+                spin_sampled.append(tmp_dict)
+            return spin_sampled
+
+        self.backbone_model.compute_or_load_stat(
+            spin_sampled_func,
+            stat_file_path,
+            preset_observed_type=preset_observed_type,
+        )
 
     def get_type_map(self) -> list[str]:
         """Get the type map."""
@@ -411,7 +470,7 @@ class SpinModel(NativeOP):
         if "mask" in model_output_type:
             model_output_type.pop(model_output_type.index("mask"))
         var_name = model_output_type[0]
-        model_ret[f"{var_name}"] = np.split(model_ret[f"{var_name}"], [nloc], axis=1)[0]
+        model_ret[f"{var_name}"] = model_ret[f"{var_name}"][:, :nloc]
         if (
             self.backbone_model.do_grad_r(var_name)
             and model_ret.get(f"{var_name}_derv_r") is not None
@@ -573,7 +632,7 @@ class SpinModel(NativeOP):
         if "mask" in model_output_type:
             model_output_type.pop(model_output_type.index("mask"))
         var_name = model_output_type[0]
-        model_ret[f"{var_name}"] = np.split(model_ret[f"{var_name}"], [nloc], axis=1)[0]
+        model_ret[f"{var_name}"] = model_ret[f"{var_name}"][:, :nloc]
         if (
             self.backbone_model.do_grad_r(var_name)
             and model_ret.get(f"{var_name}_derv_r") is not None

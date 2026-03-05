@@ -22,6 +22,7 @@ from deepmd.env import (
 
 from ..common import (
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     CommonTest,
 )
 from .common import (
@@ -35,6 +36,13 @@ if INSTALLED_PT:
     from deepmd.pt.utils.utils import to_torch_tensor as numpy_to_torch
 else:
     SpinEnergyModelPT = None
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.common import to_torch_array as pt_expt_numpy_to_torch
+    from deepmd.pt_expt.model.spin_ener_model import (
+        SpinEnergyModel as SpinEnergyModelPTExpt,
+    )
+else:
+    SpinEnergyModelPTExpt = None
 
 from deepmd.utils.argcheck import (
     model_args,
@@ -82,14 +90,17 @@ class TestSpinEner(CommonTest, ModelTest, unittest.TestCase):
     dp_class = SpinModelDP
     pt_class = SpinEnergyModelPT
     pd_class = None
-    pt_expt_class = None
+    pt_expt_class = SpinEnergyModelPTExpt
     jax_class = None
     args = model_args()
 
     skip_tf = True
     skip_jax = True
-    skip_pt_expt = True
     skip_pd = True
+
+    @property
+    def skip_pt_expt(self):
+        return not INSTALLED_PT_EXPT
 
     def get_reference_backend(self):
         """Get the reference backend.
@@ -98,6 +109,8 @@ class TestSpinEner(CommonTest, ModelTest, unittest.TestCase):
         """
         if not self.skip_pt:
             return self.RefBackend.PT
+        if not self.skip_pt_expt:
+            return self.RefBackend.PT_EXPT
         if not self.skip_dp:
             return self.RefBackend.DP
         raise ValueError("No available reference")
@@ -109,6 +122,9 @@ class TestSpinEner(CommonTest, ModelTest, unittest.TestCase):
             return get_model_dp(data)
         elif cls is SpinEnergyModelPT:
             return get_model_pt(data)
+        elif cls is SpinEnergyModelPTExpt:
+            dp_model = get_model_dp(data)
+            return SpinEnergyModelPTExpt.deserialize(dp_model.serialize())
         return cls(**data, **self.additional_data)
 
     def setUp(self) -> None:
@@ -190,6 +206,19 @@ class TestSpinEner(CommonTest, ModelTest, unittest.TestCase):
             ).items()
         }
 
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        coord_tensor = pt_expt_numpy_to_torch(self.coords)
+        coord_tensor.requires_grad_(True)
+        return {
+            kk: vv.detach().cpu().numpy()
+            for kk, vv in pt_expt_obj(
+                coord_tensor,
+                pt_expt_numpy_to_torch(self.atype),
+                pt_expt_numpy_to_torch(self.spin),
+                box=pt_expt_numpy_to_torch(self.box),
+            ).items()
+        }
+
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         # shape not matched. ravel...
         from ..common import (
@@ -212,6 +241,14 @@ class TestSpinEner(CommonTest, ModelTest, unittest.TestCase):
                 ret["force"].ravel(),
                 ret["force_mag"].ravel(),
             )
+        elif backend is self.RefBackend.PT_EXPT:
+            return (
+                ret["energy"].ravel(),
+                ret["atom_energy"].ravel(),
+                ret["mask_mag"].ravel(),
+                ret["force"].ravel(),
+                ret["force_mag"].ravel(),
+            )
         raise ValueError(f"Unknown backend: {backend}")
 
 
@@ -224,14 +261,17 @@ class TestSpinEnerLower(CommonTest, ModelTest, unittest.TestCase):
     dp_class = SpinModelDP
     pt_class = SpinEnergyModelPT
     pd_class = None
-    pt_expt_class = None
+    pt_expt_class = SpinEnergyModelPTExpt
     jax_class = None
     args = model_args()
 
     skip_tf = True
     skip_jax = True
-    skip_pt_expt = True
     skip_pd = True
+
+    @property
+    def skip_pt_expt(self):
+        return not INSTALLED_PT_EXPT
 
     def get_reference_backend(self):
         """Get the reference backend.
@@ -240,6 +280,8 @@ class TestSpinEnerLower(CommonTest, ModelTest, unittest.TestCase):
         """
         if not self.skip_pt:
             return self.RefBackend.PT
+        if not self.skip_pt_expt:
+            return self.RefBackend.PT_EXPT
         if not self.skip_dp:
             return self.RefBackend.DP
         raise ValueError("No available reference")
@@ -251,6 +293,9 @@ class TestSpinEnerLower(CommonTest, ModelTest, unittest.TestCase):
             return get_model_dp(data)
         elif cls is SpinEnergyModelPT:
             return get_model_pt(data)
+        elif cls is SpinEnergyModelPTExpt:
+            dp_model = get_model_dp(data)
+            return SpinEnergyModelPTExpt.deserialize(dp_model.serialize())
         return cls(**data, **self.additional_data)
 
     def setUp(self) -> None:
@@ -363,6 +408,20 @@ class TestSpinEnerLower(CommonTest, ModelTest, unittest.TestCase):
             ).items()
         }
 
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        extended_coord_tensor = pt_expt_numpy_to_torch(self.extended_coord)
+        extended_coord_tensor.requires_grad_(True)
+        return {
+            kk: vv.detach().cpu().numpy()
+            for kk, vv in pt_expt_obj.forward_lower(
+                extended_coord_tensor,
+                pt_expt_numpy_to_torch(self.extended_atype),
+                pt_expt_numpy_to_torch(self.extended_spin),
+                pt_expt_numpy_to_torch(self.nlist),
+                pt_expt_numpy_to_torch(self.mapping),
+            ).items()
+        }
+
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         # shape not matched. ravel...
         from ..common import (
@@ -378,6 +437,14 @@ class TestSpinEnerLower(CommonTest, ModelTest, unittest.TestCase):
                 SKIP_FLAG,
             )
         elif backend is self.RefBackend.PT:
+            return (
+                ret["energy"].ravel(),
+                ret["atom_energy"].ravel(),
+                ret["extended_mask_mag"].ravel(),
+                ret["extended_force"].ravel(),
+                ret["extended_force_mag"].ravel(),
+            )
+        elif backend is self.RefBackend.PT_EXPT:
             return (
                 ret["energy"].ravel(),
                 ret["atom_energy"].ravel(),
