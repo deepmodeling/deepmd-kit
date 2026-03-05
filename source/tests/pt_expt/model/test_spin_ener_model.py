@@ -400,7 +400,6 @@ class TestSpinEnerModelExportable(unittest.TestCase):
             ext_coord, ext_atype, natoms, rcut, sel, distinguish_types=True
         )
         ext_coord = ext_coord.reshape(1, -1, 3)
-        nall = ext_coord.shape[1]
         # Extend spin to ghost atoms using mapping
         spin_np = spin.unsqueeze(0).numpy()
         ext_spin = np.take_along_axis(
