@@ -439,8 +439,8 @@ class EnergyStdLoss(TaskLoss):
                 grad_ap_pred = torch.autograd.grad(
                     [energy_pred_ap.sum()],
                     [ap_for_grad],
-                    create_graph=in_training,  # second-order backprop only needed in training
-                    retain_graph=in_training,  # keep graph alive for energy/force backprop
+                    create_graph=in_training,
+                    retain_graph=not self.inference,  # keep graph alive for subsequent loss.backward in training
                 )[0]
             assert grad_ap_pred is not None
             # Always expose aparam_grad in model_pred (useful for inference output).
@@ -586,6 +586,7 @@ class EnergyStdLoss(TaskLoss):
             "limit_pref_gf": self.limit_pref_gf,
             "start_pref_ap": self.start_pref_ap,
             "limit_pref_ap": self.limit_pref_ap,
+            "numb_aparam": self.numb_aparam,
             "numb_generalized_coord": self.numb_generalized_coord,
             "use_huber": self.use_huber,
             "huber_delta": self.huber_delta,

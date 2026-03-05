@@ -1687,6 +1687,11 @@ def get_loss(
     loss_type = loss_params.get("type", "ener")
     if whether_hessian(loss_params):
         loss_params["starter_learning_rate"] = start_lr
+        if (
+            loss_params.get("start_pref_ap", 0.0) != 0.0
+            or loss_params.get("limit_pref_ap", 0.0) != 0.0
+        ):
+            loss_params["numb_aparam"] = _model.get_dim_aparam()
         return EnergyHessianStdLoss(**loss_params)
     elif loss_type == "ener":
         loss_params["starter_learning_rate"] = start_lr

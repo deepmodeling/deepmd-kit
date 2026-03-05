@@ -355,11 +355,6 @@ class TestGradAparamLoss(unittest.TestCase):
         model = EnergyModelWithAparamGrad(self.numb_aparam).double()
 
         aparam_np, grad_ap_label_np = self._make_data()
-        # Analytical gradient = weight broadcast to all atoms
-        expected_grad = model.weight.detach().numpy()
-        expected_grad_full = np.broadcast_to(
-            expected_grad, (self.nf, self.nloc, self.numb_aparam)
-        )
 
         input_dict = {
             "coord": None,

@@ -373,10 +373,10 @@ class DeepEval(DeepEvalBackend):
             coords, atom_types, len(atom_types.shape) > 1
         )
         request_defs = self._get_request_defs(atomic)
-        has_grad_aparam = aparam is not None and self.get_dim_aparam() > 0
+        compute_grad_aparam = kwargs.pop("grad_aparam", False) and aparam is not None
         if "spin" not in kwargs or kwargs["spin"] is None:
             out = self._eval_func(self._eval_model, numb_test, natoms)(
-                coords, cells, atom_types, fparam, aparam, request_defs
+                coords, cells, atom_types, fparam, aparam, request_defs, compute_grad_aparam
             )
         else:
             out = self._eval_func(self._eval_model_spin, numb_test, natoms)(
@@ -391,7 +391,7 @@ class DeepEval(DeepEvalBackend):
         n_request = len(request_defs)
         if isinstance(out, tuple):
             result = dict(zip([x.name for x in request_defs], out[:n_request]))
-            if has_grad_aparam and len(out) > n_request:
+            if compute_grad_aparam and len(out) > n_request:
                 result["grad_aparam"] = out[n_request]
         else:
             result = dict(zip([x.name for x in request_defs], out))

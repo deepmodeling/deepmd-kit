@@ -47,6 +47,9 @@ class EnergyLoss(Loss):
         enable_atom_ener_coeff: bool = False,
         start_pref_gf: float = 0.0,
         limit_pref_gf: float = 0.0,
+        start_pref_ap: float = 0.0,
+        limit_pref_ap: float = 0.0,
+        numb_aparam: int = 0,
         numb_generalized_coord: int = 0,
         use_huber: bool = False,
         huber_delta: float = 0.01,
@@ -67,6 +70,9 @@ class EnergyLoss(Loss):
         self.enable_atom_ener_coeff = enable_atom_ener_coeff
         self.start_pref_gf = start_pref_gf
         self.limit_pref_gf = limit_pref_gf
+        self.start_pref_ap = start_pref_ap
+        self.limit_pref_ap = limit_pref_ap
+        self.numb_aparam = numb_aparam
         self.numb_generalized_coord = numb_generalized_coord
         self.has_e = self.start_pref_e != 0.0 or self.limit_pref_e != 0.0
         self.has_f = self.start_pref_f != 0.0 or self.limit_pref_f != 0.0
@@ -368,6 +374,9 @@ class EnergyLoss(Loss):
             "enable_atom_ener_coeff": self.enable_atom_ener_coeff,
             "start_pref_gf": self.start_pref_gf,
             "limit_pref_gf": self.limit_pref_gf,
+            "start_pref_ap": self.start_pref_ap,
+            "limit_pref_ap": self.limit_pref_ap,
+            "numb_aparam": self.numb_aparam,
             "numb_generalized_coord": self.numb_generalized_coord,
             "use_huber": self.use_huber,
             "huber_delta": self.huber_delta,
