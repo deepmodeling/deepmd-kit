@@ -120,17 +120,21 @@ class SpinEnergyModel(SpinModel):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        **make_fx_kwargs: Any,
     ) -> torch.nn.Module:
         """Trace ``forward_lower`` into an exportable module.
 
-        Uses ``make_fx`` to trace through ``torch.autograd.grad``,
-        decomposing the backward pass into primitive ops. The returned
-        module can be passed directly to ``torch.export.export``.
+        Delegates to ``forward_common_lower_exportable`` for tracing,
+        then translates the internal keys to the ``forward_lower``
+        convention.
 
         Parameters
         ----------
         extended_coord, extended_atype, extended_spin, nlist, mapping, fparam, aparam, do_atomic_virial
             Sample inputs with representative shapes (used for tracing).
+        **make_fx_kwargs
+            Extra keyword arguments forwarded to ``make_fx``
+            (e.g. ``tracing_mode="symbolic"``).
 
         Returns
         -------
@@ -139,7 +143,22 @@ class SpinEnergyModel(SpinModel):
             ``(extended_coord, extended_atype, extended_spin, nlist, mapping, fparam, aparam)``
             and returns a dict with the same keys as ``forward_lower``.
         """
-        model = self
+        traced = self.forward_common_lower_exportable(
+            extended_coord,
+            extended_atype,
+            extended_spin,
+            nlist,
+            mapping,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
+            **make_fx_kwargs,
+        )
+
+        # Translate internal keys to forward_lower convention.
+        # Capture model config at trace time via closures.
+        do_grad_r = self.backbone_model.do_grad_r("energy")
+        do_grad_c = self.backbone_model.do_grad_c("energy")
 
         def fn(
             extended_coord: torch.Tensor,
@@ -150,19 +169,33 @@ class SpinEnergyModel(SpinModel):
             fparam: torch.Tensor | None,
             aparam: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
-            extended_coord = extended_coord.detach().requires_grad_(True)
-            return model.forward_lower(
+            model_ret = traced(
                 extended_coord,
                 extended_atype,
                 extended_spin,
                 nlist,
                 mapping,
-                fparam=fparam,
-                aparam=aparam,
-                do_atomic_virial=do_atomic_virial,
+                fparam,
+                aparam,
             )
+            model_predict: dict[str, torch.Tensor] = {}
+            model_predict["atom_energy"] = model_ret["energy"]
+            model_predict["energy"] = model_ret["energy_redu"]
+            model_predict["extended_mask_mag"] = model_ret["mask_mag"]
+            if do_grad_r:
+                model_predict["extended_force"] = model_ret["energy_derv_r"].squeeze(-2)
+                model_predict["extended_force_mag"] = model_ret[
+                    "energy_derv_r_mag"
+                ].squeeze(-2)
+            if do_grad_c:
+                model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
+                if do_atomic_virial:
+                    model_predict["extended_virial"] = model_ret[
+                        "energy_derv_c"
+                    ].squeeze(-2)
+            return model_predict
 
-        return make_fx(fn)(
+        return make_fx(fn, **make_fx_kwargs)(
             extended_coord,
             extended_atype,
             extended_spin,

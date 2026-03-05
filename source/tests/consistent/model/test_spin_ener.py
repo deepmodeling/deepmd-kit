@@ -762,3 +762,133 @@ class TestSpinEnerComputeOrLoadStat(unittest.TestCase):
             # 5. Cross-backend consistency after loading
             compare_variables_recursive(dp_ser_loaded, pt_ser_loaded)
             compare_variables_recursive(dp_ser_loaded, pe_ser_loaded)
+
+
+@unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PT and PT_EXPT are required")
+class TestSpinEnerModelAPIs(unittest.TestCase):
+    """Test consistency of model-level APIs between dp, pt, and pt_expt for spin models.
+
+    Both models are constructed from the same serialized weights
+    (dpmodel -> serialize -> pt/pt_expt deserialize) so that numerical outputs
+    can be compared directly.
+    """
+
+    def setUp(self) -> None:
+        data = model_args().normalize_value(
+            copy.deepcopy(SPIN_DATA),
+            trim_pattern="_*",
+        )
+        self.dp_model = get_model_dp(data)
+        serialized = self.dp_model.serialize()
+        self.pt_model = SpinEnergyModelPT.deserialize(serialized)
+        self.pt_expt_model = SpinEnergyModelPTExpt.deserialize(serialized)
+
+    def test_translated_output_def(self) -> None:
+        """translated_output_def should return the same keys on dp, pt, and pt_expt."""
+        dp_def = self.dp_model.translated_output_def()
+        pt_def = self.pt_model.translated_output_def()
+        pt_expt_def = self.pt_expt_model.translated_output_def()
+        self.assertEqual(set(dp_def.keys()), set(pt_def.keys()))
+        self.assertEqual(set(dp_def.keys()), set(pt_expt_def.keys()))
+        for key in dp_def:
+            self.assertEqual(dp_def[key].shape, pt_def[key].shape)
+            self.assertEqual(dp_def[key].shape, pt_expt_def[key].shape)
+
+    def test_model_output_def(self) -> None:
+        """model_output_def should return the same keys and shapes on dp and pt."""
+        dp_def = self.dp_model.model_output_def().get_data()
+        pt_def = self.pt_model.model_output_def().get_data()
+        self.assertEqual(set(dp_def.keys()), set(pt_def.keys()))
+        for key in dp_def:
+            self.assertEqual(dp_def[key].shape, pt_def[key].shape)
+
+    def test_model_output_type(self) -> None:
+        """model_output_type should return the same list on dp and pt."""
+        self.assertEqual(
+            self.dp_model.model_output_type(),
+            self.pt_model.model_output_type(),
+        )
+
+    def test_do_grad_r(self) -> None:
+        """do_grad_r should return the same value on dp and pt."""
+        self.assertEqual(
+            self.dp_model.do_grad_r("energy"),
+            self.pt_model.do_grad_r("energy"),
+        )
+        self.assertTrue(self.dp_model.do_grad_r("energy"))
+
+    def test_do_grad_c(self) -> None:
+        """do_grad_c should return the same value on dp and pt."""
+        self.assertEqual(
+            self.dp_model.do_grad_c("energy"),
+            self.pt_model.do_grad_c("energy"),
+        )
+        self.assertTrue(self.dp_model.do_grad_c("energy"))
+
+    def test_get_rcut(self) -> None:
+        """get_rcut should return the same value on dp, pt, and pt_expt."""
+        self.assertEqual(self.dp_model.get_rcut(), self.pt_model.get_rcut())
+        self.assertEqual(self.dp_model.get_rcut(), self.pt_expt_model.get_rcut())
+        self.assertAlmostEqual(self.dp_model.get_rcut(), 4.0)
+
+    def test_get_type_map(self) -> None:
+        """get_type_map should return the same list on dp, pt, and pt_expt."""
+        self.assertEqual(self.dp_model.get_type_map(), self.pt_model.get_type_map())
+        self.assertEqual(
+            self.dp_model.get_type_map(), self.pt_expt_model.get_type_map()
+        )
+        self.assertEqual(self.dp_model.get_type_map(), ["O", "H", "B"])
+
+    def test_get_ntypes(self) -> None:
+        """get_ntypes should return the same value on dp, pt, and pt_expt."""
+        self.assertEqual(self.dp_model.get_ntypes(), self.pt_model.get_ntypes())
+        self.assertEqual(self.dp_model.get_ntypes(), self.pt_expt_model.get_ntypes())
+        self.assertEqual(self.dp_model.get_ntypes(), 3)
+
+    def test_get_sel_type(self) -> None:
+        """get_sel_type should return the same list on dp and pt."""
+        self.assertEqual(self.dp_model.get_sel_type(), self.pt_model.get_sel_type())
+
+    def test_get_dim_fparam(self) -> None:
+        """get_dim_fparam should return the same value on dp and pt."""
+        self.assertEqual(self.dp_model.get_dim_fparam(), self.pt_model.get_dim_fparam())
+        self.assertEqual(self.dp_model.get_dim_fparam(), 0)
+
+    def test_get_dim_aparam(self) -> None:
+        """get_dim_aparam should return the same value on dp and pt."""
+        self.assertEqual(self.dp_model.get_dim_aparam(), self.pt_model.get_dim_aparam())
+        self.assertEqual(self.dp_model.get_dim_aparam(), 0)
+
+    def test_get_nnei(self) -> None:
+        """get_nnei should return the same value on dp and pt."""
+        self.assertEqual(self.dp_model.get_nnei(), self.pt_model.get_nnei())
+
+    def test_get_nsel(self) -> None:
+        """get_nsel should return the same value on dp and pt."""
+        self.assertEqual(self.dp_model.get_nsel(), self.pt_model.get_nsel())
+
+    def test_is_aparam_nall(self) -> None:
+        """is_aparam_nall should return the same value on dp and pt."""
+        self.assertEqual(self.dp_model.is_aparam_nall(), self.pt_model.is_aparam_nall())
+
+    def test_has_spin(self) -> None:
+        """has_spin should return True on all backends."""
+        self.assertTrue(self.dp_model.has_spin())
+        self.assertTrue(self.pt_model.has_spin())
+        self.assertTrue(self.pt_expt_model.has_spin())
+
+    def test_get_model_def_script(self) -> None:
+        """get_model_def_script should return the same value on dp, pt, and pt_expt."""
+        dp_val = self.dp_model.get_model_def_script()
+        pt_val = self.pt_model.get_model_def_script()
+        pe_val = self.pt_expt_model.get_model_def_script()
+        self.assertEqual(dp_val, pt_val)
+        self.assertEqual(dp_val, pe_val)
+
+    def test_get_min_nbor_dist(self) -> None:
+        """get_min_nbor_dist should return the same value on dp, pt, and pt_expt."""
+        dp_val = self.dp_model.get_min_nbor_dist()
+        pt_val = self.pt_model.get_min_nbor_dist()
+        pe_val = self.pt_expt_model.get_min_nbor_dist()
+        self.assertEqual(dp_val, pt_val)
+        self.assertEqual(dp_val, pe_val)

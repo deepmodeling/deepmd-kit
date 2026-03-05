@@ -843,4 +843,9 @@ class SpinModel(NativeOP):
             output_def["force"].squeeze(-2)
             output_def["force_mag"] = deepcopy(out_def_data[f"{var_name}_derv_r_mag"])
             output_def["force_mag"].squeeze(-2)
+        if self.backbone_model.do_grad_c(var_name):
+            output_def["virial"] = deepcopy(out_def_data[f"{var_name}_derv_c_redu"])
+            output_def["virial"].squeeze(-2)
+            output_def["atom_virial"] = deepcopy(out_def_data[f"{var_name}_derv_c"])
+            output_def["atom_virial"].squeeze(-2)
         return output_def
