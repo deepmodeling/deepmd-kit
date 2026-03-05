@@ -80,6 +80,8 @@ SPIN_DATA = {
         "resnet_dt": True,
         "precision": "float64",
         "seed": 1,
+        "numb_fparam": 2,
+        "numb_aparam": 3,
     },
     "spin": {
         "use_spin": [True, False, False],
@@ -190,6 +192,17 @@ class TestSpinEner(CommonTest, ModelTest, unittest.TestCase):
             ],
             dtype=GLOBAL_NP_FLOAT_PRECISION,
         ).reshape(1, -1, 3)
+        nframes = 1
+        nloc = 6
+        numb_fparam = 2
+        numb_aparam = 3
+        rng = np.random.default_rng(42)
+        self.fparam = rng.normal(size=(nframes, numb_fparam)).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
+        self.aparam = rng.normal(size=(nframes, nloc, numb_aparam)).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
 
     def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         raise NotImplementedError("no TF in this test")
@@ -200,6 +213,8 @@ class TestSpinEner(CommonTest, ModelTest, unittest.TestCase):
             self.atype,
             self.spin,
             box=self.box,
+            fparam=self.fparam,
+            aparam=self.aparam,
         )
 
     def eval_pt(self, pt_obj: Any) -> Any:
@@ -210,6 +225,8 @@ class TestSpinEner(CommonTest, ModelTest, unittest.TestCase):
                 numpy_to_torch(self.atype),
                 numpy_to_torch(self.spin),
                 box=numpy_to_torch(self.box),
+                fparam=numpy_to_torch(self.fparam),
+                aparam=numpy_to_torch(self.aparam),
             ).items()
         }
 
@@ -223,6 +240,8 @@ class TestSpinEner(CommonTest, ModelTest, unittest.TestCase):
                 pt_expt_numpy_to_torch(self.atype),
                 pt_expt_numpy_to_torch(self.spin),
                 box=pt_expt_numpy_to_torch(self.box),
+                fparam=pt_expt_numpy_to_torch(self.fparam),
+                aparam=pt_expt_numpy_to_torch(self.aparam),
             ).items()
         }
 
@@ -398,6 +417,18 @@ class TestSpinEnerLower(CommonTest, ModelTest, unittest.TestCase):
             axis=1,
         )
 
+        nframes = 1
+        nloc = 6
+        numb_fparam = 2
+        numb_aparam = 3
+        rng = np.random.default_rng(42)
+        self.fparam = rng.normal(size=(nframes, numb_fparam)).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
+        self.aparam = rng.normal(size=(nframes, nloc, numb_aparam)).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
+
     def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         raise NotImplementedError("no TF in this test")
 
@@ -408,6 +439,8 @@ class TestSpinEnerLower(CommonTest, ModelTest, unittest.TestCase):
             self.extended_spin,
             self.nlist,
             self.mapping,
+            fparam=self.fparam,
+            aparam=self.aparam,
         )
 
     def eval_pt(self, pt_obj: Any) -> Any:
@@ -419,6 +452,8 @@ class TestSpinEnerLower(CommonTest, ModelTest, unittest.TestCase):
                 numpy_to_torch(self.extended_spin),
                 numpy_to_torch(self.nlist),
                 numpy_to_torch(self.mapping),
+                fparam=numpy_to_torch(self.fparam),
+                aparam=numpy_to_torch(self.aparam),
             ).items()
         }
 
@@ -433,6 +468,8 @@ class TestSpinEnerLower(CommonTest, ModelTest, unittest.TestCase):
                 pt_expt_numpy_to_torch(self.extended_spin),
                 pt_expt_numpy_to_torch(self.nlist),
                 pt_expt_numpy_to_torch(self.mapping),
+                fparam=pt_expt_numpy_to_torch(self.fparam),
+                aparam=pt_expt_numpy_to_torch(self.aparam),
             ).items()
         }
 
@@ -445,6 +482,8 @@ class TestSpinEnerLower(CommonTest, ModelTest, unittest.TestCase):
                 array_api_strict.asarray(self.extended_spin),
                 array_api_strict.asarray(self.nlist),
                 array_api_strict.asarray(self.mapping),
+                fparam=array_api_strict.asarray(self.fparam),
+                aparam=array_api_strict.asarray(self.aparam),
             ).items()
         }
 
@@ -569,6 +608,8 @@ class TestSpinEnerComputeOrLoadStat(unittest.TestCase):
         # Mock training data for compute_or_load_stat
         natoms = 6
         nframes = 3
+        numb_fparam = 2
+        numb_aparam = 3
         rng = np.random.default_rng(42)
         coords_stat = rng.normal(size=(nframes, natoms, 3)).astype(
             GLOBAL_NP_FLOAT_PRECISION
@@ -584,6 +625,12 @@ class TestSpinEnerComputeOrLoadStat(unittest.TestCase):
         spin_stat = rng.normal(size=(nframes, natoms, 3)).astype(
             GLOBAL_NP_FLOAT_PRECISION
         )
+        fparam_stat = rng.normal(size=(nframes, numb_fparam)).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
+        aparam_stat = rng.normal(size=(nframes, natoms, numb_aparam)).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
 
         # dp sample (numpy)
         np_sample = {
@@ -595,6 +642,10 @@ class TestSpinEnerComputeOrLoadStat(unittest.TestCase):
             "energy": energy_stat,
             "find_energy": np.float32(1.0),
             "spin": spin_stat,
+            "fparam": fparam_stat,
+            "find_fparam": np.float32(1.0),
+            "aparam": aparam_stat,
+            "find_aparam": np.float32(1.0),
         }
         # pt / pt_expt sample (torch tensors)
         pt_sample = {
@@ -606,13 +657,34 @@ class TestSpinEnerComputeOrLoadStat(unittest.TestCase):
             "energy": numpy_to_torch(energy_stat),
             "find_energy": np.float32(1.0),
             "spin": numpy_to_torch(spin_stat),
+            "fparam": numpy_to_torch(fparam_stat),
+            "find_fparam": np.float32(1.0),
+            "aparam": numpy_to_torch(aparam_stat),
+            "find_aparam": np.float32(1.0),
         }
 
         self.np_sampled = [np_sample]
         self.pt_sampled = [pt_sample]
 
+        # fparam/aparam for eval
+        nframes_eval = 1
+        nloc_eval = 6
+        self.fparam = rng.normal(size=(nframes_eval, numb_fparam)).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
+        self.aparam = rng.normal(size=(nframes_eval, nloc_eval, numb_aparam)).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
+
     def _eval_dp(self) -> dict:
-        return self.dp_model(self.coords, self.atype, self.spin, box=self.box)
+        return self.dp_model(
+            self.coords,
+            self.atype,
+            self.spin,
+            box=self.box,
+            fparam=self.fparam,
+            aparam=self.aparam,
+        )
 
     def _eval_pt(self) -> dict:
         return {
@@ -622,6 +694,8 @@ class TestSpinEnerComputeOrLoadStat(unittest.TestCase):
                 numpy_to_torch(self.atype),
                 numpy_to_torch(self.spin),
                 box=numpy_to_torch(self.box),
+                fparam=numpy_to_torch(self.fparam),
+                aparam=numpy_to_torch(self.aparam),
             ).items()
         }
 
@@ -635,6 +709,8 @@ class TestSpinEnerComputeOrLoadStat(unittest.TestCase):
                 pt_expt_numpy_to_torch(self.atype),
                 pt_expt_numpy_to_torch(self.spin),
                 box=pt_expt_numpy_to_torch(self.box),
+                fparam=pt_expt_numpy_to_torch(self.fparam),
+                aparam=pt_expt_numpy_to_torch(self.aparam),
             ).items()
         }
 
@@ -852,12 +928,12 @@ class TestSpinEnerModelAPIs(unittest.TestCase):
     def test_get_dim_fparam(self) -> None:
         """get_dim_fparam should return the same value on dp and pt."""
         self.assertEqual(self.dp_model.get_dim_fparam(), self.pt_model.get_dim_fparam())
-        self.assertEqual(self.dp_model.get_dim_fparam(), 0)
+        self.assertEqual(self.dp_model.get_dim_fparam(), 2)
 
     def test_get_dim_aparam(self) -> None:
         """get_dim_aparam should return the same value on dp and pt."""
         self.assertEqual(self.dp_model.get_dim_aparam(), self.pt_model.get_dim_aparam())
-        self.assertEqual(self.dp_model.get_dim_aparam(), 0)
+        self.assertEqual(self.dp_model.get_dim_aparam(), 3)
 
     def test_get_nnei(self) -> None:
         """get_nnei should return the same value on dp and pt."""

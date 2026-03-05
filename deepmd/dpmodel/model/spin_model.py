@@ -352,6 +352,10 @@ class SpinModel(NativeOP):
                     "coord": coord_updated,
                     "atype": atype_updated,
                 }
+                if "aparam" in sys:
+                    tmp_dict["aparam"] = self.expand_aparam(
+                        sys["aparam"], atype_updated.shape[1]
+                    )
                 if "natoms" in sys:
                     natoms = sys["natoms"]
                     xp = array_api_compat.array_namespace(natoms)
@@ -359,7 +363,13 @@ class SpinModel(NativeOP):
                         [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]], axis=-1
                     )
                 for item_key in sys:
-                    if item_key not in ["coord", "atype", "spin", "natoms"]:
+                    if item_key not in [
+                        "coord",
+                        "atype",
+                        "spin",
+                        "natoms",
+                        "aparam",
+                    ]:
                         tmp_dict[item_key] = sys[item_key]
                 spin_sampled.append(tmp_dict)
             return spin_sampled

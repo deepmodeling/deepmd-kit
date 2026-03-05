@@ -422,13 +422,23 @@ class SpinModel(torch.nn.Module):
                     "coord": coord_updated,
                     "atype": atype_updated,
                 }
+                if "aparam" in sys:
+                    tmp_dict["aparam"] = self.expand_aparam(
+                        sys["aparam"], atype_updated.shape[1]
+                    )
                 if "natoms" in sys:
                     natoms = sys["natoms"]
                     tmp_dict["natoms"] = torch.cat(
                         [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]], dim=-1
                     )
                 for item_key in sys.keys():
-                    if item_key not in ["coord", "atype", "spin", "natoms"]:
+                    if item_key not in [
+                        "coord",
+                        "atype",
+                        "spin",
+                        "natoms",
+                        "aparam",
+                    ]:
                         tmp_dict[item_key] = sys[item_key]
                 spin_sampled.append(tmp_dict)
             return spin_sampled
