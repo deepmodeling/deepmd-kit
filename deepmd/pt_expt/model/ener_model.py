@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 from typing import (
     Any,
 )
@@ -40,8 +41,12 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         self._hessian_enabled = False
 
     def enable_hessian(self) -> None:
+        if self._hessian_enabled:
+            return
         self.__class__ = make_hessian_model(type(self))
-        self.hess_fitting_def = super(type(self), self).atomic_output_def()
+        self.hess_fitting_def = copy.deepcopy(
+            super(type(self), self).atomic_output_def()
+        )
         self.requires_hessian("energy")
         self._hessian_enabled = True
 
