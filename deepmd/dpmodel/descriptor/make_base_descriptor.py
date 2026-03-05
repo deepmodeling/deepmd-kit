@@ -186,6 +186,7 @@ def make_base_descriptor(
             extended_atype: Array,
             nlist: Array,
             mapping: Array | None = None,
+            fparam: Array | None = None,
         ) -> Array:
             """Calculate descriptor."""
             pass

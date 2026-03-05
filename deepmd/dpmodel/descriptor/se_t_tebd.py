@@ -350,6 +350,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         atype_ext: Array,
         nlist: Array,
         mapping: Array | None = None,
+        fparam: Array | None = None,
     ) -> tuple[Array, Array]:
         """Compute the descriptor.
 
