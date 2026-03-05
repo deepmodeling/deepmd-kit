@@ -24,6 +24,9 @@ from deepmd.pt_expt.fitting import (
 from deepmd.pt_expt.model import (
     EnergyModel,
 )
+from deepmd.pt_expt.utils.env import (
+    DEVICE,
+)
 from deepmd.pt_expt.utils.serialization import (
     _make_sample_inputs,
     deserialize_to_file,
@@ -118,25 +121,29 @@ class TestDeepEvalEner(unittest.TestCase):
         e, f, v, ae, av = self.dp.eval(coords, cells, atom_types, atomic=True)
 
         # Direct model forward
-        coord_t = torch.tensor(coords, dtype=torch.float64).requires_grad_(True)
-        atype_t = torch.tensor(atom_types.reshape(1, -1), dtype=torch.int64)
-        cell_t = torch.tensor(cells, dtype=torch.float64)
+        coord_t = torch.tensor(
+            coords, dtype=torch.float64, device=DEVICE
+        ).requires_grad_(True)
+        atype_t = torch.tensor(
+            atom_types.reshape(1, -1), dtype=torch.int64, device=DEVICE
+        )
+        cell_t = torch.tensor(cells, dtype=torch.float64, device=DEVICE)
         ref = self.model.forward(coord_t, atype_t, cell_t, do_atomic_virial=True)
 
         np.testing.assert_allclose(
-            e, ref["energy"].detach().numpy(), rtol=1e-10, atol=1e-10
+            e, ref["energy"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
         )
         np.testing.assert_allclose(
-            f, ref["force"].detach().numpy(), rtol=1e-10, atol=1e-10
+            f, ref["force"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
         )
         np.testing.assert_allclose(
-            v, ref["virial"].detach().numpy(), rtol=1e-10, atol=1e-10
+            v, ref["virial"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
         )
         np.testing.assert_allclose(
-            ae, ref["atom_energy"].detach().numpy(), rtol=1e-10, atol=1e-10
+            ae, ref["atom_energy"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
         )
         np.testing.assert_allclose(
-            av, ref["atom_virial"].detach().numpy(), rtol=1e-10, atol=1e-10
+            av, ref["atom_virial"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
         )
 
     def test_multiple_frames(self) -> None:
@@ -151,42 +158,46 @@ class TestDeepEvalEner(unittest.TestCase):
 
             e, f, v, ae, av = self.dp.eval(coords, cells, atom_types, atomic=True)
 
-            coord_t = torch.tensor(coords, dtype=torch.float64).requires_grad_(True)
-            atype_t = torch.tensor(np.tile(atom_types, (nframes, 1)), dtype=torch.int64)
-            cell_t = torch.tensor(cells, dtype=torch.float64)
+            coord_t = torch.tensor(
+                coords, dtype=torch.float64, device=DEVICE
+            ).requires_grad_(True)
+            atype_t = torch.tensor(
+                np.tile(atom_types, (nframes, 1)), dtype=torch.int64, device=DEVICE
+            )
+            cell_t = torch.tensor(cells, dtype=torch.float64, device=DEVICE)
             ref = self.model.forward(coord_t, atype_t, cell_t, do_atomic_virial=True)
 
             np.testing.assert_allclose(
                 e,
-                ref["energy"].detach().numpy(),
+                ref["energy"].detach().cpu().numpy(),
                 rtol=1e-10,
                 atol=1e-10,
                 err_msg=f"nframes={nframes}, energy",
             )
             np.testing.assert_allclose(
                 f,
-                ref["force"].detach().numpy(),
+                ref["force"].detach().cpu().numpy(),
                 rtol=1e-10,
                 atol=1e-10,
                 err_msg=f"nframes={nframes}, force",
             )
             np.testing.assert_allclose(
                 v,
-                ref["virial"].detach().numpy(),
+                ref["virial"].detach().cpu().numpy(),
                 rtol=1e-10,
                 atol=1e-10,
                 err_msg=f"nframes={nframes}, virial",
             )
             np.testing.assert_allclose(
                 ae,
-                ref["atom_energy"].detach().numpy(),
+                ref["atom_energy"].detach().cpu().numpy(),
                 rtol=1e-10,
                 atol=1e-10,
                 err_msg=f"nframes={nframes}, atom_energy",
             )
             np.testing.assert_allclose(
                 av,
-                ref["atom_virial"].detach().numpy(),
+                ref["atom_virial"].detach().cpu().numpy(),
                 rtol=1e-10,
                 atol=1e-10,
                 err_msg=f"nframes={nframes}, atom_virial",
@@ -285,18 +296,22 @@ class TestDeepEvalEner(unittest.TestCase):
 
         e, f, v = self.dp.eval(coords, None, atom_types)
 
-        coord_t = torch.tensor(coords, dtype=torch.float64).requires_grad_(True)
-        atype_t = torch.tensor(atom_types.reshape(1, -1), dtype=torch.int64)
+        coord_t = torch.tensor(
+            coords, dtype=torch.float64, device=DEVICE
+        ).requires_grad_(True)
+        atype_t = torch.tensor(
+            atom_types.reshape(1, -1), dtype=torch.int64, device=DEVICE
+        )
         ref = self.model.forward(coord_t, atype_t, box=None)
 
         np.testing.assert_allclose(
-            e, ref["energy"].detach().numpy(), rtol=1e-10, atol=1e-10
+            e, ref["energy"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
         )
         np.testing.assert_allclose(
-            f, ref["force"].detach().numpy(), rtol=1e-10, atol=1e-10
+            f, ref["force"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
         )
         np.testing.assert_allclose(
-            v, ref["virial"].detach().numpy(), rtol=1e-10, atol=1e-10
+            v, ref["virial"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
         )
 
     @unittest.skipUnless(
