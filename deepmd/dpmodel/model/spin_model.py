@@ -67,18 +67,44 @@ class SpinModel(NativeOP):
         self.virtual_scale_mask = self.spin.get_virtual_scale_mask()
         self.spin_mask = self.spin.get_spin_mask()
 
+    def _to_xp(self, arr: Any, xp: Any, ref_arr: Any) -> Any:
+        """Convert a numpy array to the same namespace as ref_arr."""
+        return xp.asarray(arr, device=array_api_compat.device(ref_arr))
+
     def process_spin_input(
         self, coord: Array, atype: Array, spin: Array
-    ) -> tuple[Array, Array]:
-        """Generate virtual coordinates and types, concat into the input."""
+    ) -> tuple[Array, Array, Array]:
+        """Generate virtual coordinates and types, concat into the input.
+
+        Returns
+        -------
+        coord_spin : Array
+            Concatenated coordinates with shape (nframes, 2*nloc, 3).
+        atype_spin : Array
+            Concatenated atom types with shape (nframes, 2*nloc).
+        coord_corr : Array
+            Coordinate correction for virial with shape (nframes, 2*nloc, 3).
+        """
         xp = array_api_compat.array_namespace(coord)
         nframes, nloc = coord.shape[:-1]
         atype_spin = xp.concat([atype, atype + self.ntypes_real], axis=-1)
-        virtual_coord = coord + spin * self.virtual_scale_mask[atype].reshape(
-            [nframes, nloc, 1]
-        )
+        vsm = self._to_xp(self.virtual_scale_mask, xp, coord)
+        spin_dist = spin * xp.reshape(vsm[atype], (nframes, nloc, 1))
+        virtual_coord = coord + spin_dist
         coord_spin = xp.concat([coord, virtual_coord], axis=-2)
-        return coord_spin, atype_spin
+        # for spin virial correction
+        coord_corr = xp.concat(
+            [
+                xp.zeros(
+                    coord.shape,
+                    dtype=coord.dtype,
+                    device=array_api_compat.device(coord),
+                ),
+                -spin_dist,
+            ],
+            axis=-2,
+        )
+        return coord_spin, atype_spin, coord_corr
 
     def process_spin_input_lower(
         self,
@@ -87,25 +113,52 @@ class SpinModel(NativeOP):
         extended_spin: Array,
         nlist: Array,
         mapping: Array | None = None,
-    ) -> tuple[Array, Array]:
+    ) -> tuple[Array, Array, Array, Array | None, Array]:
         """
         Add `extended_spin` into `extended_coord` to generate virtual atoms, and extend `nlist` and `mapping`.
-        Note that the final `extended_coord_updated` with shape [nframes, nall + nall, 3] has the following order:
+
+        Returns
+        -------
+        extended_coord_updated : Array
+            Updated coordinates with virtual atoms, shape (nframes, 2*nall, 3).
+        extended_atype_updated : Array
+            Updated atom types with virtual atoms, shape (nframes, 2*nall).
+        nlist_updated : Array
+            Updated neighbor list including virtual atoms.
+        mapping_updated : Array or None
+            Updated mapping indices, or None if input mapping is None.
+        extended_coord_corr : Array
+            Coordinate correction for virial with shape (nframes, 2*nall, 3).
+
+        Notes
+        -----
+        The final `extended_coord_updated` with shape [nframes, nall + nall, 3] has the following order:
         - [:, :nloc]: original nloc real atoms.
         - [:, nloc: nloc + nloc]: virtual atoms corresponding to nloc real atoms.
         - [:, nloc + nloc: nloc + nall]: ghost real atoms.
         - [:, nloc + nall: nall + nall]: virtual atoms corresponding to ghost real atoms.
         """
+        xp = array_api_compat.array_namespace(extended_coord)
         nframes, nall = extended_coord.shape[:2]
         nloc = nlist.shape[1]
-        virtual_extended_coord = (
-            extended_coord
-            + extended_spin
-            * self.virtual_scale_mask[extended_atype].reshape([nframes, nall, 1])
+        vsm = self._to_xp(self.virtual_scale_mask, xp, extended_coord)
+        extended_spin_dist = extended_spin * xp.reshape(
+            vsm[extended_atype], (nframes, nall, 1)
         )
+        virtual_extended_coord = extended_coord + extended_spin_dist
         virtual_extended_atype = extended_atype + self.ntypes_real
         extended_coord_updated = self.concat_switch_virtual(
             extended_coord, virtual_extended_coord, nloc
+        )
+        # for spin virial correction
+        extended_coord_corr = self.concat_switch_virtual(
+            xp.zeros(
+                extended_coord.shape,
+                dtype=extended_coord.dtype,
+                device=array_api_compat.device(extended_coord),
+            ),
+            -extended_spin_dist,
+            nloc,
         )
         extended_atype_updated = self.concat_switch_virtual(
             extended_atype, virtual_extended_atype, nloc
@@ -122,6 +175,7 @@ class SpinModel(NativeOP):
             extended_atype_updated,
             nlist_updated,
             mapping_updated,
+            extended_coord_corr,
         )
 
     def process_spin_output(
@@ -132,18 +186,20 @@ class SpinModel(NativeOP):
         virtual_scale: bool = True,
     ) -> tuple[Array, Array]:
         """Split the output both real and virtual atoms, and scale the latter."""
+        xp = array_api_compat.array_namespace(out_tensor)
         nframes, nloc_double = out_tensor.shape[:2]
         nloc = nloc_double // 2
         if virtual_scale:
-            virtual_scale_mask = self.virtual_scale_mask
+            mask = self._to_xp(self.virtual_scale_mask, xp, out_tensor)
         else:
-            virtual_scale_mask = self.spin_mask
-        atomic_mask = virtual_scale_mask[atype].reshape([nframes, nloc, 1])
+            mask = self._to_xp(self.spin_mask, xp, out_tensor)
+        atomic_mask = xp.reshape(mask[atype], (nframes, nloc, 1))
         out_real, out_mag = out_tensor[:, :nloc], out_tensor[:, nloc:]
         if add_mag:
             out_real = out_real + out_mag
-        out_mag = (out_mag.reshape([nframes, nloc, -1]) * atomic_mask).reshape(
-            out_mag.shape
+        out_mag = xp.reshape(
+            xp.reshape(out_mag, (nframes, nloc, -1)) * atomic_mask,
+            out_mag.shape,
         )
         return out_real, out_mag, atomic_mask > 0.0
 
@@ -160,10 +216,10 @@ class SpinModel(NativeOP):
         nframes, nall_double = extended_out_tensor.shape[:2]
         nall = nall_double // 2
         if virtual_scale:
-            virtual_scale_mask = self.virtual_scale_mask
+            mask = self._to_xp(self.virtual_scale_mask, xp, extended_out_tensor)
         else:
-            virtual_scale_mask = self.spin_mask
-        atomic_mask = virtual_scale_mask[extended_atype].reshape([nframes, nall, 1])
+            mask = self._to_xp(self.spin_mask, xp, extended_out_tensor)
+        atomic_mask = xp.reshape(mask[extended_atype], (nframes, nall, 1))
         extended_out_real = xp.concat(
             [
                 extended_out_tensor[:, :nloc],
@@ -180,9 +236,10 @@ class SpinModel(NativeOP):
         )
         if add_mag:
             extended_out_real = extended_out_real + extended_out_mag
-        extended_out_mag = (
-            extended_out_mag.reshape([nframes, nall, -1]) * atomic_mask
-        ).reshape(extended_out_mag.shape)
+        extended_out_mag = xp.reshape(
+            xp.reshape(extended_out_mag, (nframes, nall, -1)) * atomic_mask,
+            extended_out_mag.shape,
+        )
         return extended_out_real, extended_out_mag, atomic_mask > 0.0
 
     @staticmethod
@@ -288,7 +345,7 @@ class SpinModel(NativeOP):
             sampled = sampled_func()
             spin_sampled = []
             for sys in sampled:
-                coord_updated, atype_updated = self.process_spin_input(
+                coord_updated, atype_updated, _ = self.process_spin_input(
                     sys["coord"], sys["atype"], sys["spin"]
                 )
                 tmp_dict = {
@@ -452,10 +509,13 @@ class SpinModel(NativeOP):
             The keys are defined by the `ModelOutputDef`.
 
         """
+        xp = array_api_compat.array_namespace(coord)
         nframes, nloc = atype.shape[:2]
-        coord = coord.reshape(nframes, nloc, 3)
-        spin = spin.reshape(nframes, nloc, 3)
-        coord_updated, atype_updated = self.process_spin_input(coord, atype, spin)
+        coord = xp.reshape(coord, (nframes, nloc, 3))
+        spin = xp.reshape(spin, (nframes, nloc, 3))
+        coord_updated, atype_updated, coord_corr_for_virial = self.process_spin_input(
+            coord, atype, spin
+        )
         if aparam is not None:
             aparam = self.expand_aparam(aparam, nloc * 2)
         model_ret = self.backbone_model.call_common(
@@ -465,6 +525,7 @@ class SpinModel(NativeOP):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            coord_corr_for_virial=coord_corr_for_virial,
         )
         model_output_type = self.backbone_model.model_output_type()
         if "mask" in model_output_type:
@@ -497,8 +558,10 @@ class SpinModel(NativeOP):
             )
         # Always compute mask_mag from atom types (even when forces are unavailable)
         if "mask_mag" not in model_ret:
+            xp = array_api_compat.array_namespace(atype)
             nframes_m, nloc_m = atype.shape[:2]
-            atomic_mask = self.virtual_scale_mask[atype].reshape([nframes_m, nloc_m, 1])
+            vsm = self._to_xp(self.virtual_scale_mask, xp, atype)
+            atomic_mask = xp.reshape(vsm[atype], (nframes_m, nloc_m, 1))
             model_ret["mask_mag"] = atomic_mask > 0.0
         return model_ret
 
@@ -564,7 +627,15 @@ class SpinModel(NativeOP):
         ):
             model_predict["force"] = model_ret[f"{var_name}_derv_r"].squeeze(-2)
             model_predict["force_mag"] = model_ret[f"{var_name}_derv_r_mag"].squeeze(-2)
-        # not support virial by far
+        if (
+            self.backbone_model.do_grad_c(var_name)
+            and model_ret.get(f"{var_name}_derv_c_redu") is not None
+        ):
+            model_predict["virial"] = model_ret[f"{var_name}_derv_c_redu"].squeeze(-2)
+            if do_atomic_virial and model_ret.get(f"{var_name}_derv_c") is not None:
+                model_predict["atom_virial"] = model_ret[f"{var_name}_derv_c"].squeeze(
+                    -3
+                )
         return model_predict
 
     def call_common_lower(
@@ -614,6 +685,7 @@ class SpinModel(NativeOP):
             extended_atype_updated,
             nlist_updated,
             mapping_updated,
+            extended_coord_corr,
         ) = self.process_spin_input_lower(
             extended_coord, extended_atype, extended_spin, nlist, mapping=mapping
         )
@@ -627,6 +699,7 @@ class SpinModel(NativeOP):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            extended_coord_corr=extended_coord_corr,
         )
         model_output_type = self.backbone_model.model_output_type()
         if "mask" in model_output_type:
@@ -662,10 +735,10 @@ class SpinModel(NativeOP):
             )
         # Always compute mask_mag from atom types (even when forces are unavailable)
         if "mask_mag" not in model_ret:
+            xp = array_api_compat.array_namespace(extended_atype)
             nall = extended_atype.shape[1]
-            atomic_mask = self.virtual_scale_mask[extended_atype].reshape(
-                [nframes, nall, 1]
-            )
+            vsm = self._to_xp(self.virtual_scale_mask, xp, extended_atype)
+            atomic_mask = xp.reshape(vsm[extended_atype], (nframes, nall, 1))
             model_ret["mask_mag"] = atomic_mask > 0.0
         return model_ret
 
@@ -737,7 +810,15 @@ class SpinModel(NativeOP):
             model_predict["extended_force_mag"] = model_ret[
                 f"{var_name}_derv_r_mag"
             ].squeeze(-2)
-        # not support virial by far
+        if (
+            self.backbone_model.do_grad_c(var_name)
+            and model_ret.get(f"{var_name}_derv_c_redu") is not None
+        ):
+            model_predict["virial"] = model_ret[f"{var_name}_derv_c_redu"].squeeze(-2)
+            if do_atomic_virial and model_ret.get(f"{var_name}_derv_c") is not None:
+                model_predict["extended_virial"] = model_ret[
+                    f"{var_name}_derv_c"
+                ].squeeze(-3)
         return model_predict
 
     def translated_output_def(self) -> dict[str, Any]:

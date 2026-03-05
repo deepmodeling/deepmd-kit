@@ -353,13 +353,129 @@ class TestSpinEnerModelForce(unittest.TestCase, ForceTest):
         self.model = _make_model()
 
 
-@unittest.skip(
-    "dpmodel SpinModel does not support spin virial correction "
-    "(coord_corr_for_virial) yet"
-)
 class TestSpinEnerModelVirial(unittest.TestCase, VirialTest):
     def setUp(self) -> None:
         self.model = _make_model()
+
+
+class TestSpinEnerModelExportable(unittest.TestCase):
+    def test_forward_lower_exportable(self) -> None:
+        """Test that SpinEnergyModel.forward_lower_exportable works with make_fx and torch.export."""
+        from deepmd.dpmodel.utils import (
+            build_neighbor_list,
+            extend_coord_with_ghosts,
+            normalize_coord,
+        )
+
+        model = _make_model()
+        natoms = 6
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        cell = torch.rand([3, 3], dtype=dtype, device="cpu", generator=generator)
+        cell = (cell + cell.T) + 5.0 * torch.eye(3, device="cpu")
+        coord = torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)
+        coord = torch.matmul(coord, cell)
+        atype = torch.tensor([0, 0, 1, 0, 1, 1], dtype=torch.int64)
+        spin = (
+            torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)
+            * 0.5
+        )
+
+        # Build extended inputs (use original sel, not backbone's doubled sel)
+        rcut = model.get_rcut()
+        sel = SPIN_DATA["descriptor"]["sel"]
+        coord_np = coord.unsqueeze(0).numpy()
+        atype_np = atype.unsqueeze(0).numpy()
+        box_np = cell.reshape(1, 9).numpy()
+        coord_normalized = normalize_coord(
+            coord_np.reshape(1, natoms, 3),
+            box_np.reshape(1, 3, 3),
+        )
+        ext_coord, ext_atype, mapping = extend_coord_with_ghosts(
+            coord_normalized,
+            atype_np,
+            box_np,
+            rcut,
+        )
+        nlist = build_neighbor_list(
+            ext_coord, ext_atype, natoms, rcut, sel, distinguish_types=True
+        )
+        ext_coord = ext_coord.reshape(1, -1, 3)
+        nall = ext_coord.shape[1]
+        # Extend spin to ghost atoms using mapping
+        spin_np = spin.unsqueeze(0).numpy()
+        ext_spin = np.take_along_axis(
+            spin_np,
+            np.repeat(mapping[:, :, np.newaxis], 3, axis=2),
+            axis=1,
+        )
+
+        ext_coord_t = torch.tensor(ext_coord, dtype=dtype, device=env.DEVICE)
+        ext_atype_t = torch.tensor(ext_atype, dtype=torch.int64, device=env.DEVICE)
+        nlist_t = torch.tensor(nlist, dtype=torch.int64, device=env.DEVICE)
+        mapping_t = torch.tensor(mapping, dtype=torch.int64, device=env.DEVICE)
+        ext_spin_t = torch.tensor(ext_spin, dtype=dtype, device=env.DEVICE)
+
+        output_keys = (
+            "energy",
+            "extended_force",
+            "extended_force_mag",
+            "virial",
+        )
+
+        # --- eager reference ---
+        ret_eager = model.forward_lower(
+            ext_coord_t.requires_grad_(True),
+            ext_atype_t,
+            ext_spin_t,
+            nlist_t,
+            mapping_t,
+        )
+        for key in output_keys:
+            self.assertIn(key, ret_eager, f"Missing key {key} in eager result")
+
+        # --- trace with make_fx ---
+        traced = model.forward_lower_exportable(
+            ext_coord_t,
+            ext_atype_t,
+            ext_spin_t,
+            nlist_t,
+            mapping_t,
+        )
+        self.assertIsInstance(traced, torch.nn.Module)
+
+        # --- export with torch.export ---
+        exported = torch.export.export(
+            traced,
+            (ext_coord_t, ext_atype_t, ext_spin_t, nlist_t, mapping_t, None, None),
+            strict=False,
+        )
+        self.assertIsNotNone(exported)
+
+        # --- verify traced matches eager ---
+        ret_traced = traced(
+            ext_coord_t, ext_atype_t, ext_spin_t, nlist_t, mapping_t, None, None
+        )
+        for key in output_keys:
+            np.testing.assert_allclose(
+                ret_eager[key].detach().cpu().numpy(),
+                ret_traced[key].detach().cpu().numpy(),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"traced vs eager: {key}",
+            )
+
+        # --- verify exported matches eager ---
+        ret_exported = exported.module()(
+            ext_coord_t, ext_atype_t, ext_spin_t, nlist_t, mapping_t, None, None
+        )
+        for key in output_keys:
+            np.testing.assert_allclose(
+                ret_eager[key].detach().cpu().numpy(),
+                ret_exported[key].detach().cpu().numpy(),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"exported vs eager: {key}",
+            )
 
 
 if __name__ == "__main__":
