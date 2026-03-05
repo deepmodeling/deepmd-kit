@@ -8,6 +8,7 @@ from typing import (
 
 from deepmd.dpmodel.array_api import (
     Array,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
@@ -178,7 +179,7 @@ class DPAtomicModel(BaseAtomicModel):
 
         """
         nframes, nloc, nnei = nlist.shape
-        atype = extended_atype[:, :nloc]
+        atype = xp_take_first_n(extended_atype, 1, nloc)
         descriptor, rot_mat, g2, h2, sw = self.descriptor(
             extended_coord,
             extended_atype,

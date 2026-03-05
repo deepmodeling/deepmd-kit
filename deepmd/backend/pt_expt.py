@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 class PyTorchExportableBackend(Backend):
     """PyTorch exportable backend."""
 
-    name = "PyTorch Exportable"
+    name = "PyTorch-Exportable"
     """The formal name of the backend."""
     features: ClassVar[Backend.Feature] = (
         Backend.Feature.ENTRY_POINT
@@ -63,7 +63,7 @@ class PyTorchExportableBackend(Backend):
         Callable[[Namespace], None]
             The entry point hook of the backend.
         """
-        from deepmd.pt.entrypoints.main import main as deepmd_main
+        from deepmd.pt_expt.entrypoints.main import main as deepmd_main
 
         return deepmd_main
 
@@ -76,7 +76,11 @@ class PyTorchExportableBackend(Backend):
         type[DeepEvalBackend]
             The Deep Eval backend of the backend.
         """
-        raise NotImplementedError
+        from deepmd.pt_expt.infer.deep_eval import (
+            DeepEval,
+        )
+
+        return DeepEval
 
     @property
     def neighbor_stat(self) -> type["NeighborStat"]:
@@ -87,7 +91,11 @@ class PyTorchExportableBackend(Backend):
         type[NeighborStat]
             The neighbor statistics of the backend.
         """
-        raise NotImplementedError
+        from deepmd.pt_expt.utils.neighbor_stat import (
+            NeighborStat,
+        )
+
+        return NeighborStat
 
     @property
     def serialize_hook(self) -> Callable[[str], dict]:
@@ -98,7 +106,11 @@ class PyTorchExportableBackend(Backend):
         Callable[[str], dict]
             The serialize hook of the backend.
         """
-        raise NotImplementedError
+        from deepmd.pt_expt.utils.serialization import (
+            serialize_from_file,
+        )
+
+        return serialize_from_file
 
     @property
     def deserialize_hook(self) -> Callable[[str, dict], None]:
@@ -109,4 +121,8 @@ class PyTorchExportableBackend(Backend):
         Callable[[str, dict], None]
             The deserialize hook of the backend.
         """
-        raise NotImplementedError
+        from deepmd.pt_expt.utils.serialization import (
+            deserialize_to_file,
+        )
+
+        return deserialize_to_file

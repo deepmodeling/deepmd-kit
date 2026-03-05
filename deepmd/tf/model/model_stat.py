@@ -3,7 +3,9 @@
 
 from deepmd.utils.model_stat import (
     _make_all_stat_ref,
-    make_stat_input,
+)
+from deepmd.utils.model_stat import collect_batches as make_stat_input
+from deepmd.utils.model_stat import (
     merge_sys_stat,
 )
 
