@@ -130,7 +130,7 @@ class TestHessianModel:
         """Analytical hessian from forward() must match finite-difference hessian."""
         self._build_models(nv)
         places = 6
-        delta = 1e-3
+        delta = 5e-4
         natoms = self.nloc
         nf = self.nf
         generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
