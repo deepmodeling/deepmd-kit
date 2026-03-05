@@ -3084,6 +3084,17 @@ def loss_ener() -> list[Argument]:
         "Formula: loss = 0.5 * (error**2) if \\|error\\| <= D else D * (\\|error\\| - 0.5 * D). "
     )
     doc_huber_delta = "The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss. "
+    doc_use_mae_loss = (
+        "If true, use MAE (Mean Absolute Error, L1 loss) for all terms (energy, force, virial). "
+        "If false (default), use MSE (Mean Squared Error, L2 loss). "
+        "MAE loss is less sensitive to outliers compared to MSE loss."
+    )
+    doc_f_use_norm = (
+        "If true, use L2 norm of force vectors for loss calculation when use_mae_loss or use_huber is True. "
+        "Instead of computing loss on individual force components, computes loss on ||F_pred - F_label||_2 for each atom. "
+        "This treats the force vector as a whole rather than three independent components. "
+        "Only effective when use_mae_loss=True or use_huber=True."
+    )
     return [
         Argument(
             "start_pref_e",
@@ -3204,6 +3215,23 @@ def loss_ener() -> list[Argument]:
             optional=True,
             default=False,
             doc=doc_use_huber,
+        ),
+        Argument(
+            "use_mae_loss",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_mae_loss,
+            alias=[
+                "use_l1_all",
+            ],
+        ),
+        Argument(
+            "f_use_norm",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_f_use_norm,
         ),
         Argument(
             "huber_delta",
