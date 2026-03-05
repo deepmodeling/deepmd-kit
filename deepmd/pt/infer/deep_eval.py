@@ -376,7 +376,13 @@ class DeepEval(DeepEvalBackend):
         compute_grad_aparam = kwargs.pop("grad_aparam", False) and aparam is not None
         if "spin" not in kwargs or kwargs["spin"] is None:
             out = self._eval_func(self._eval_model, numb_test, natoms)(
-                coords, cells, atom_types, fparam, aparam, request_defs, compute_grad_aparam
+                coords,
+                cells,
+                atom_types,
+                fparam,
+                aparam,
+                request_defs,
+                compute_grad_aparam,
             )
         else:
             out = self._eval_func(self._eval_model_spin, numb_test, natoms)(
