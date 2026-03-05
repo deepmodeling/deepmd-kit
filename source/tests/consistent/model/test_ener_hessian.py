@@ -13,6 +13,7 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     CommonTest,
@@ -30,6 +31,11 @@ if INSTALLED_PT_EXPT:
     from deepmd.pt_expt.model import EnergyModel as EnergyModelPTExpt
 else:
     EnergyModelPTExpt = None
+if INSTALLED_JAX:
+    from deepmd.jax.model.ener_model import EnergyModel as EnergyModelJAX
+    from deepmd.jax.model.model import get_model as get_model_jax
+else:
+    EnergyModelJAX = None
 from deepmd.utils.argcheck import (
     model_args,
 )
@@ -70,7 +76,7 @@ class TestEnerHessian(CommonTest, ModelTest, unittest.TestCase):
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
     pt_expt_class = EnergyModelPTExpt
-    jax_class = None
+    jax_class = EnergyModelJAX
     pd_class = None
     args = model_args()
 
@@ -83,12 +89,12 @@ class TestEnerHessian(CommonTest, ModelTest, unittest.TestCase):
         return True
 
     @property
-    def skip_jax(self) -> bool:
+    def skip_pd(self) -> bool:
         return True
 
     @property
-    def skip_pd(self) -> bool:
-        return True
+    def skip_jax(self) -> bool:
+        return not INSTALLED_JAX
 
     @property
     def skip_array_api_strict(self) -> bool:
@@ -103,6 +109,8 @@ class TestEnerHessian(CommonTest, ModelTest, unittest.TestCase):
             return self.RefBackend.PT
         if not self.skip_pt_expt and self.pt_expt_class is not None:
             return self.RefBackend.PT_EXPT
+        if not self.skip_jax:
+            return self.RefBackend.JAX
         raise ValueError("No available reference")
 
     def pass_data_to_cls(self, cls, data) -> Any:
@@ -116,6 +124,8 @@ class TestEnerHessian(CommonTest, ModelTest, unittest.TestCase):
         elif cls is EnergyModelPTExpt:
             dp_model = get_model_dp(data)
             model = EnergyModelPTExpt.deserialize(dp_model.serialize())
+        elif cls is EnergyModelJAX:
+            model = get_model_jax(data)
         else:
             model = cls(**data)
         model.enable_hessian()
@@ -190,10 +200,20 @@ class TestEnerHessian(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_jax(self, jax_obj: Any) -> Any:
+        return self.eval_jax_model(
+            jax_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         if backend in {
             self.RefBackend.PT,
             self.RefBackend.PT_EXPT,
+            self.RefBackend.JAX,
         }:
             return (
                 ret["energy"].ravel(),
@@ -239,11 +259,34 @@ class TestEnerHessian(CommonTest, ModelTest, unittest.TestCase):
         for rr1, rr2 in zip(ret1, ret2, strict=True):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
 
+    def test_jax_consistent_with_ref(self) -> None:
+        """Test JAX consistent with reference, re-enabling hessian after deserialize."""
+        if self.skip_jax or self.jax_class is None:
+            self.skipTest("Unsupported backend")
+        ref_backend = self.get_reference_backend()
+        if ref_backend == self.RefBackend.JAX:
+            self.skipTest("Reference is self")
+        ret1, data1 = self.get_reference_ret_serialization(ref_backend)
+        ret1 = self.extract_ret(ret1, ref_backend)
+        obj = self._enable_hessian_on(self.jax_class.deserialize(data1))
+        ret2 = self.eval_jax(obj)
+        ret2 = self.extract_ret(ret2, self.RefBackend.JAX)
+        for rr1, rr2 in zip(ret1, ret2, strict=True):
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+
     def test_pt_self_consistent(self) -> None:
         """Skip: hessian is a runtime flag, not preserved by serialize/deserialize."""
         self.skipTest("Hessian state is not serialized")
 
     def test_pt_expt_self_consistent(self) -> None:
+        """Skip: hessian is a runtime flag, not preserved by serialize/deserialize."""
+        self.skipTest("Hessian state is not serialized")
+
+    def test_jax_self_consistent(self) -> None:
+        """Skip: hessian is a runtime flag, not preserved by serialize/deserialize."""
+        self.skipTest("Hessian state is not serialized")
+
+    def test_dp_self_consistent(self) -> None:
         """Skip: hessian is a runtime flag, not preserved by serialize/deserialize."""
         self.skipTest("Hessian state is not serialized")
 

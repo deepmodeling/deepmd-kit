@@ -54,9 +54,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
-        # Use forward_common (not call_common) so that hessian toggle
-        # logic in make_hessian_model.CM.forward_common is applied.
-        model_ret = self.forward_common(
+        model_ret = self.call_common(
             coord,
             atype,
             box,
@@ -75,7 +73,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-2)
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
-        if self._hessian_enabled:
+        if self.atomic_output_def()["energy"].r_hessian:
             model_predict["hessian"] = model_ret["energy_derv_r_derv_r"].squeeze(-3)
         return model_predict
 
@@ -129,7 +127,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             output_def["atom_virial"].squeeze(-2)
         if "mask" in out_def_data:
             output_def["mask"] = out_def_data["mask"]
-        if self._hessian_enabled:
+        if self.atomic_output_def()["energy"].r_hessian:
             output_def["hessian"] = out_def_data["energy_derv_r_derv_r"]
         return output_def
 
