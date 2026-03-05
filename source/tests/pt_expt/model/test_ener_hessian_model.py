@@ -182,6 +182,7 @@ class TestHessianModel:
 
             def np_infer(
                 xx,
+                ii=ii,
             ):
                 xx_t = to_torch_array(xx).unsqueeze(0).requires_grad_(True)
                 ret = self.model_valu.forward(
