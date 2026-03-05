@@ -266,6 +266,17 @@ class GeneralFitting(NativeOP, BaseFitting):
                 )
             else:
                 sampled = merged() if callable(merged) else merged
+                for ii, frame in enumerate(sampled):
+                    if "find_fparam" not in frame:
+                        raise ValueError(
+                            f"numb_fparam > 0 but fparam is not acquired "
+                            f"for system {ii}."
+                        )
+                    if not frame["find_fparam"]:
+                        raise ValueError(
+                            f"numb_fparam > 0 but no fparam data is provided "
+                            f"for system {ii}."
+                        )
                 cat_data = np.concatenate(
                     [frame["fparam"] for frame in sampled], axis=0
                 )
@@ -313,6 +324,17 @@ class GeneralFitting(NativeOP, BaseFitting):
                 )
             else:
                 sampled = merged() if callable(merged) else merged
+                for ii, frame in enumerate(sampled):
+                    if "find_aparam" not in frame:
+                        raise ValueError(
+                            f"numb_aparam > 0 but aparam is not acquired "
+                            f"for system {ii}."
+                        )
+                    if not frame["find_aparam"]:
+                        raise ValueError(
+                            f"numb_aparam > 0 but no aparam data is provided "
+                            f"for system {ii}."
+                        )
                 sys_sumv = []
                 sys_sumv2 = []
                 sys_sumn = []

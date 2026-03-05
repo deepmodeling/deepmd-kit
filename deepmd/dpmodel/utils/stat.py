@@ -300,11 +300,9 @@ def compute_output_stats(
 
         for kk in keys:
             for idx, system in enumerate(sampled):
-                if (("find_atom_" + kk) in system) and (
-                    system["find_atom_" + kk] > 0.0
-                ):
+                if (("find_atom_" + kk) in system) and system["find_atom_" + kk]:
                     atomic_sampled_idx[kk].append(idx)
-                if (("find_" + kk) in system) and (system["find_" + kk] > 0.0):
+                if (("find_" + kk) in system) and system["find_" + kk]:
                     global_sampled_idx[kk].append(idx)
 
         # use index to gather model predictions for the corresponding systems.

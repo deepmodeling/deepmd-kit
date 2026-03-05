@@ -51,7 +51,7 @@ def make_base_descriptor(
         def __new__(cls, *args: Any, **kwargs: Any) -> Any:
             if cls is BD:
                 cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
-            return super().__new__(cls)
+            return object.__new__(cls)
 
         @abstractmethod
         def get_rcut(self) -> float:
