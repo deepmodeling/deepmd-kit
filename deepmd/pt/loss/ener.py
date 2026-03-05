@@ -566,7 +566,7 @@ class EnergyStdLoss(TaskLoss):
         dict
             The serialized loss module
         """
-        return {
+        data = {
             "@class": "EnergyLoss",
             "@version": 2,
             "starter_learning_rate": self.starter_learning_rate,
@@ -584,13 +584,15 @@ class EnergyStdLoss(TaskLoss):
             "enable_atom_ener_coeff": self.enable_atom_ener_coeff,
             "start_pref_gf": self.start_pref_gf,
             "limit_pref_gf": self.limit_pref_gf,
-            "start_pref_ap": self.start_pref_ap,
-            "limit_pref_ap": self.limit_pref_ap,
-            "numb_aparam": self.numb_aparam,
             "numb_generalized_coord": self.numb_generalized_coord,
             "use_huber": self.use_huber,
             "huber_delta": self.huber_delta,
         }
+        if self.has_ap:
+            data["start_pref_ap"] = self.start_pref_ap
+            data["limit_pref_ap"] = self.limit_pref_ap
+            data["numb_aparam"] = self.numb_aparam
+        return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "TaskLoss":
