@@ -634,7 +634,7 @@ class SpinModel(NativeOP):
             model_predict["virial"] = model_ret[f"{var_name}_derv_c_redu"].squeeze(-2)
             if do_atomic_virial and model_ret.get(f"{var_name}_derv_c") is not None:
                 model_predict["atom_virial"] = model_ret[f"{var_name}_derv_c"].squeeze(
-                    -3
+                    -2
                 )
         return model_predict
 
@@ -818,7 +818,7 @@ class SpinModel(NativeOP):
             if do_atomic_virial and model_ret.get(f"{var_name}_derv_c") is not None:
                 model_predict["extended_virial"] = model_ret[
                     f"{var_name}_derv_c"
-                ].squeeze(-3)
+                ].squeeze(-2)
         return model_predict
 
     def translated_output_def(self) -> dict[str, Any]:

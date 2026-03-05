@@ -25,6 +25,7 @@ def forward_common_atomic(
     fparam: jnp.ndarray | None = None,
     aparam: jnp.ndarray | None = None,
     do_atomic_virial: bool = False,
+    extended_coord_corr: jnp.ndarray | None = None,
 ) -> dict[str, jnp.ndarray]:
     atomic_ret = self.atomic_model.forward_common_atomic(
         extended_coord,
@@ -110,6 +111,10 @@ def forward_common_atomic(
                 assert vdef.r_differentiable
                 # avr: [nf, *def, nall, 3, 3]
                 avr = jnp.einsum("f...ai,faj->f...aij", ff, extended_coord)
+                if extended_coord_corr is not None:
+                    avr = avr + jnp.einsum(
+                        "f...ai,faj->f...aij", ff, extended_coord_corr
+                    )
                 # the correction sums to zero, which does not contribute to global virial
                 if do_atomic_virial:
 
