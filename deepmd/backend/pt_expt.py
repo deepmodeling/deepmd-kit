@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 class PyTorchExportableBackend(Backend):
     """PyTorch exportable backend."""
 
-    name = "PyTorch Exportable"
+    name = "PyTorch-Exportable"
     """The formal name of the backend."""
     features: ClassVar[Backend.Feature] = (
         Backend.Feature.ENTRY_POINT
@@ -63,7 +63,7 @@ class PyTorchExportableBackend(Backend):
         Callable[[Namespace], None]
             The entry point hook of the backend.
         """
-        from deepmd.pt.entrypoints.main import main as deepmd_main
+        from deepmd.pt_expt.entrypoints.main import main as deepmd_main
 
         return deepmd_main
 

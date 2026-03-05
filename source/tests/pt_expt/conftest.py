@@ -31,8 +31,6 @@ from torch.overrides import (
     _get_current_function_mode_stack,
 )
 
-pytest.importorskip("torch")
-
 
 @pytest.fixture(autouse=True)
 def _clear_leaked_device_context():

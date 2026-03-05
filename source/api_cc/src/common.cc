@@ -232,6 +232,45 @@ template void deepmd::select_real_atoms_coord<float>(
     const int& nall,
     const bool aparam_nall);
 
+void deepmd::remap_comm_sendlist(std::vector<std::vector<int>>& new_sendlist,
+                                 std::vector<int>& new_sendnum,
+                                 std::vector<int>& new_recvnum,
+                                 const InputNlist& lmp_list,
+                                 const std::vector<int>& fwd_map) {
+  int nswap = lmp_list.nswap;
+  new_sendlist.resize(nswap);
+  new_sendnum.resize(nswap);
+  new_recvnum.resize(nswap);
+
+  for (int s = 0; s < nswap; ++s) {
+    int orig_sendnum = lmp_list.sendnum[s];
+    new_sendlist[s].clear();
+    new_sendlist[s].reserve(orig_sendnum);
+
+    for (int k = 0; k < orig_sendnum; ++k) {
+      int orig_idx = lmp_list.sendlist[s][k];
+      int real_idx = fwd_map[orig_idx];
+      if (real_idx >= 0) {
+        new_sendlist[s].push_back(real_idx);
+      }
+    }
+    new_sendnum[s] = static_cast<int>(new_sendlist[s].size());
+
+    // Independently compute recvnum using firstrecv range.
+    // In MPI, sendnum and recvnum are independent per process.
+    int firstrecv = lmp_list.firstrecv[s];
+    int orig_recvnum = lmp_list.recvnum[s];
+    int recv_count = 0;
+    for (int k = 0; k < orig_recvnum; ++k) {
+      int orig_idx = firstrecv + k;
+      if (fwd_map[orig_idx] >= 0) {
+        ++recv_count;
+      }
+    }
+    new_recvnum[s] = recv_count;
+  }
+}
+
 void deepmd::NeighborListData::copy_from_nlist(const InputNlist& inlist,
                                                const int natoms) {
   int inum = natoms >= 0 ? natoms : inlist.inum;
