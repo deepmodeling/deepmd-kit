@@ -111,10 +111,10 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             ),
         }
         self.predict_dpmodel_style = {
-            "energy_derv_c_redu": self.predict["virial"],
-            "energy_derv_r": self.predict["force"],
-            "energy_redu": self.predict["energy"],
-            "energy": self.predict["atom_ener"],
+            "energy": self.predict["energy"],
+            "force": self.predict["force"],
+            "virial": self.predict["virial"],
+            "atom_energy": self.predict["atom_ener"],
         }
         self.label = {
             "energy": rng.random((self.nframes,)),
@@ -251,8 +251,17 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
         more_loss = {kk: to_numpy_array(vv) for kk, vv in more_loss.items()}
         return loss, more_loss
 
-    def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
-        return (ret[0],)
+    def extract_ret(self, ret: Any, backend) -> dict[str, np.ndarray]:
+        loss = ret[0]
+        result = {"loss": np.atleast_1d(np.asarray(loss, dtype=np.float64))}
+        if len(ret) > 1:
+            more_loss = ret[1]
+            for k in sorted(more_loss):
+                if k.startswith("rmse_"):
+                    result[k] = np.atleast_1d(
+                        np.asarray(more_loss[k], dtype=np.float64)
+                    )
+        return result
 
     @property
     def rtol(self) -> float:
