@@ -12,6 +12,7 @@ from deepmd.pt_expt.common import (
 )
 from deepmd.pt_expt.utils.env import (
     DEVICE,
+    GLOBAL_PT_FLOAT_PRECISION,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -79,9 +80,15 @@ class NeighborStat(BaseNeighborStat):
     ) -> tuple[np.ndarray, np.ndarray]:
         """Execute the operation on DEVICE."""
         minrr2, max_nnei = self.op(
-            torch.from_numpy(coord).to(DEVICE),
-            torch.from_numpy(atype).to(DEVICE),
-            torch.from_numpy(cell).to(DEVICE) if cell is not None else None,
+            torch.from_numpy(coord).to(device=DEVICE, dtype=GLOBAL_PT_FLOAT_PRECISION),
+            torch.from_numpy(atype).to(device=DEVICE, dtype=torch.long),
+            (
+                torch.from_numpy(cell).to(
+                    device=DEVICE, dtype=GLOBAL_PT_FLOAT_PRECISION
+                )
+                if cell is not None
+                else None
+            ),
         )
         minrr2 = minrr2.detach().cpu().numpy()
         max_nnei = max_nnei.detach().cpu().numpy()

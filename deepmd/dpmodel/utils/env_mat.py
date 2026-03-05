@@ -11,6 +11,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     Array,
     xp_take_along_axis,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.utils.safe_gradient import (
     safe_for_vector_norm,
@@ -76,7 +77,7 @@ def _make_env_mat(
     # nf x nloc x nnei x 3
     coord_r = xp.reshape(coord_r, (nf, nloc, nnei, 3))
     # nf x nloc x 1 x 3
-    coord_l = xp.reshape(coord[:, :nloc, ...], (nf, -1, 1, 3))
+    coord_l = xp.reshape(xp_take_first_n(coord, 1, nloc), (nf, -1, 1, 3))
     # nf x nloc x nnei x 3
     diff = coord_r - coord_l
     # nf x nloc x nnei
@@ -153,7 +154,7 @@ class EnvMat(NativeOP):
         xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
         em, diff, sw = self._call(nlist, coord_ext, radial_only)
         nf, nloc, nnei = nlist.shape
-        atype = atype_ext[:, :nloc]
+        atype = xp_take_first_n(atype_ext, 1, nloc)
         if davg is not None:
             em -= xp.reshape(xp.take(davg, xp.reshape(atype, (-1,)), axis=0), em.shape)
         if dstd is not None:
