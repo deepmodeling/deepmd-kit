@@ -134,15 +134,19 @@ def model_call_from_call_lower(
         )
     else:
         extended_coord_corr = None
+    call_lower_kwargs: dict[str, Any] = {
+        "fparam": fp,
+        "aparam": ap,
+        "do_atomic_virial": do_atomic_virial,
+    }
+    if extended_coord_corr is not None:
+        call_lower_kwargs["extended_coord_corr"] = extended_coord_corr
     model_predict_lower = call_lower(
         extended_coord,
         extended_atype,
         nlist,
         mapping,
-        fparam=fp,
-        aparam=ap,
-        do_atomic_virial=do_atomic_virial,
-        extended_coord_corr=extended_coord_corr,
+        **call_lower_kwargs,
     )
     model_predict = communicate_extended_output(
         model_predict_lower,

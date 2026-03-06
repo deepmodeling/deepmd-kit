@@ -279,7 +279,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                         )
                 xp_fp = array_api_compat.array_namespace(sampled[0]["fparam"])
                 cat_data = xp_fp.concat([frame["fparam"] for frame in sampled], axis=0)
-                cat_data = xp_fp.reshape(cat_data, [-1, self.numb_fparam])
+                cat_data = xp_fp.reshape(cat_data, (-1, self.numb_fparam))
                 fparam_stats = [
                     StatItem(
                         number=cat_data.shape[0],
@@ -339,7 +339,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                 sys_sumv2 = []
                 sys_sumn = []
                 for ss_ in [frame["aparam"] for frame in sampled]:
-                    ss = xp_ap.reshape(ss_, [-1, self.numb_aparam])
+                    ss = xp_ap.reshape(ss_, (-1, self.numb_aparam))
                     sys_sumv.append(xp_ap.sum(ss, axis=0))
                     sys_sumv2.append(xp_ap.sum(ss * ss, axis=0))
                     sys_sumn.append(ss.shape[0])
