@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from deepmd.dpmodel.model.make_hessian_model import (
+    make_hessian_model,
+)
+
 from .dipole_model import (
     DipoleModel,
 )
@@ -33,4 +37,5 @@ __all__ = [
     "PolarModel",
     "PropertyModel",
     "get_model",
+    "make_hessian_model",
 ]
