@@ -103,6 +103,7 @@ def _make_sample_data(
             "energy": energy,
             "natoms": natoms_count,
             "find_energy": np.float32(1.0),
+            "find_fparam": np.float32(0.0),
         }
     ]
 
