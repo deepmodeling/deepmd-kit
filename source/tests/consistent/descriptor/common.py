@@ -246,13 +246,13 @@ class DescriptorTest:
             pd_obj.get_sel(),
             distinguish_types=(not mixed_types),
         )
-        fparam_pd = (
-            paddle.to_tensor(fparam).to(PD_DEVICE) if fparam is not None else None
-        )
         return [
             x.detach().cpu().numpy() if paddle.is_tensor(x) else x
             for x in pd_obj(
-                ext_coords, ext_atype, nlist=nlist, mapping=mapping, fparam=fparam_pd
+                ext_coords,
+                ext_atype,
+                nlist=nlist,
+                mapping=mapping,
             )
         ]
 

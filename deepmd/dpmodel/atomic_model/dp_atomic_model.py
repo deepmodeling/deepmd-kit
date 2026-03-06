@@ -184,7 +184,12 @@ class DPAtomicModel(BaseAtomicModel):
         nframes, nloc, nnei = nlist.shape
         atype = xp_take_first_n(extended_atype, 1, nloc)
 
-        if self.fitting_net.get_dim_fparam() > 0 and fparam is None:
+        # Handle default fparam if fitting net supports it
+        if (
+            hasattr(self.fitting_net, "get_dim_fparam")
+            and self.fitting_net.get_dim_fparam() > 0
+            and fparam is None
+        ):
             # use default fparam
             from deepmd.dpmodel.array_api import (
                 array_api_compat,
@@ -193,8 +198,11 @@ class DPAtomicModel(BaseAtomicModel):
             default_fparam = self.fitting_net.get_default_fparam()
             assert default_fparam is not None
             xp = array_api_compat.array_namespace(extended_coord)
+            default_fparam_array = xp.asarray(
+                default_fparam, dtype=extended_coord.dtype
+            )
             fparam_input_for_des = xp.tile(
-                xp.reshape(default_fparam, (1, -1)), (nframes, 1)
+                xp.reshape(default_fparam_array, (1, -1)), (nframes, 1)
             )
         else:
             fparam_input_for_des = fparam

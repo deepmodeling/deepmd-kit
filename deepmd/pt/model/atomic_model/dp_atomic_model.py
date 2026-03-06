@@ -274,7 +274,12 @@ class DPAtomicModel(BaseAtomicModel):
         if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
 
-        if self.fitting_net.get_dim_fparam() > 0 and fparam is None:
+        # Handle default fparam if fitting net supports it
+        if (
+            hasattr(self.fitting_net, "get_dim_fparam")
+            and self.fitting_net.get_dim_fparam() > 0
+            and fparam is None
+        ):
             # use default fparam
             default_fparam_tensor = self.fitting_net.get_default_fparam()
             assert default_fparam_tensor is not None
