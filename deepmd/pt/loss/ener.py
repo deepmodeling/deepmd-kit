@@ -556,6 +556,8 @@ class EnergyStdLoss(TaskLoss):
             "numb_generalized_coord": self.numb_generalized_coord,
             "use_huber": self.use_huber,
             "huber_delta": self.huber_delta,
+            "use_mae_loss": self.use_mae_loss,
+            "f_use_norm": self.f_use_norm,
         }
 
     @classmethod
