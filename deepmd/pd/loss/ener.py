@@ -57,6 +57,8 @@ class EnergyStdLoss(TaskLoss):
         inference: bool = False,
         use_huber: bool = False,
         huber_delta: float = 0.01,
+        f_use_norm: bool = False,
+        use_mae_loss: bool | None = None,
         **kwargs: Any,
     ) -> None:
         r"""Construct a layer to compute loss on energy, force and virial.
@@ -109,10 +111,19 @@ class EnergyStdLoss(TaskLoss):
             Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D).
         huber_delta : float
             The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
+        f_use_norm : bool
+            If True, use L2 norm of force vectors for loss calculation when use_mae_loss or use_huber is True.
+            Not implemented in PD backend, only for serialization compatibility.
+        use_mae_loss : bool, optional
+            Alias for use_l1_all. If provided, overrides use_l1_all value.
+            Used for serialization compatibility with other backends.
         **kwargs
             Other keyword arguments.
         """
         super().__init__()
+        # Handle use_mae_loss alias for backward compatibility
+        if use_mae_loss is not None:
+            use_l1_all = use_mae_loss
         self.starter_learning_rate = starter_learning_rate
         self.has_e = (start_pref_e != 0.0 and limit_pref_e != 0.0) or inference
         self.has_f = (start_pref_f != 0.0 and limit_pref_f != 0.0) or inference
@@ -144,6 +155,7 @@ class EnergyStdLoss(TaskLoss):
         self.inference = inference
         self.use_huber = use_huber
         self.huber_delta = huber_delta
+        self.f_use_norm = f_use_norm
         if self.use_huber and (
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
@@ -523,6 +535,8 @@ class EnergyStdLoss(TaskLoss):
             "numb_generalized_coord": self.numb_generalized_coord,
             "use_huber": self.use_huber,
             "huber_delta": self.huber_delta,
+            "use_mae_loss": self.use_l1_all,
+            "f_use_norm": self.f_use_norm,
         }
 
     @classmethod
