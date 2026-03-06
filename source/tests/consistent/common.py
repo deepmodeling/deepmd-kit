@@ -238,7 +238,9 @@ class CommonTest(ABC):
         ARRAY_API_STRICT = 7
 
     @abstractmethod
-    def extract_ret(self, ret: Any, backend: RefBackend) -> tuple[np.ndarray, ...]:
+    def extract_ret(
+        self, ret: Any, backend: RefBackend
+    ) -> tuple[np.ndarray, ...] | dict[str, np.ndarray]:
         """Extract the return value when comparing with other backends.
 
         Parameters
@@ -250,9 +252,44 @@ class CommonTest(ABC):
 
         Returns
         -------
-        tuple[np.ndarray, ...]
-            The extracted return value
+        tuple[np.ndarray, ...] | dict[str, np.ndarray]
+            The extracted return value. If a dict is returned, keys are used
+            in error messages to identify which value mismatches.
         """
+
+    def _compare_ret(self, ret1, ret2) -> None:
+        """Compare two extracted return values (tuple or dict).
+
+        For dicts, keys must match exactly unless one dict contains only
+        ``"loss"`` (e.g. TF backend), in which case only ``"loss"`` is compared.
+        """
+        if isinstance(ret1, dict) and isinstance(ret2, dict):
+            keys1, keys2 = sorted(ret1.keys()), sorted(ret2.keys())
+            if keys1 == ["loss"] or keys2 == ["loss"]:
+                compare_keys = ["loss"]
+            else:
+                self.assertEqual(
+                    keys1,
+                    keys2,
+                    f"Keys mismatch: {keys1} vs {keys2}",
+                )
+                compare_keys = keys1
+            for key in compare_keys:
+                rr1, rr2 = ret1[key], ret2[key]
+                if rr1 is SKIP_FLAG or rr2 is SKIP_FLAG:
+                    continue
+                np.testing.assert_allclose(
+                    rr1, rr2, rtol=self.rtol, atol=self.atol, err_msg=f"key: {key}"
+                )
+                assert rr1.dtype == rr2.dtype, f"key {key}: {rr1.dtype} != {rr2.dtype}"
+        else:
+            for rr1, rr2 in zip(ret1, ret2, strict=True):
+                if rr1 is SKIP_FLAG or rr2 is SKIP_FLAG:
+                    continue
+                np.testing.assert_allclose(
+                    rr1.ravel(), rr2.ravel(), rtol=self.rtol, atol=self.atol
+                )
+                assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
     def build_eval_tf(
         self, sess: "tf.Session", obj: Any, suffix: str
@@ -388,11 +425,7 @@ class CommonTest(ABC):
         data2.pop("@version")
 
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2, strict=True):
-            np.testing.assert_allclose(
-                rr1.ravel(), rr2.ravel(), rtol=self.rtol, atol=self.atol
-            )
-            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+        self._compare_ret(ret1, ret2)
 
     def test_tf_self_consistent(self) -> None:
         """Test whether TF is self consistent."""
@@ -424,11 +457,7 @@ class CommonTest(ABC):
         ret2 = self.extract_ret(ret2, self.RefBackend.DP)
         data2 = dp_obj.serialize()
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2, strict=True):
-            if rr1 is SKIP_FLAG or rr2 is SKIP_FLAG:
-                continue
-            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
-            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+        self._compare_ret(ret1, ret2)
 
     @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_dp_self_consistent(self) -> None:
@@ -469,9 +498,7 @@ class CommonTest(ABC):
         data1.pop("@variables", None)
         data2.pop("@variables", None)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2, strict=True):
-            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
-            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+        self._compare_ret(ret1, ret2)
 
     def test_pt_self_consistent(self) -> None:
         """Test whether PT is self consistent."""
@@ -510,9 +537,7 @@ class CommonTest(ABC):
         data1.pop("@variables", None)
         data2.pop("@variables", None)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2, strict=True):
-            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
-            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+        self._compare_ret(ret1, ret2)
 
     def test_pt_expt_self_consistent(self) -> None:
         """Test whether PT exportable is self consistent."""
@@ -547,9 +572,7 @@ class CommonTest(ABC):
         data1.pop("@variables", None)
         data2.pop("@variables", None)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2, strict=True):
-            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
-            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+        self._compare_ret(ret1, ret2)
 
     def test_jax_self_consistent(self) -> None:
         """Test whether JAX is self consistent."""
@@ -589,9 +612,7 @@ class CommonTest(ABC):
         data1.pop("@variables", None)
         data2.pop("@variables", None)
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2, strict=True):
-            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
-            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+        self._compare_ret(ret1, ret2)
 
     def test_pd_self_consistent(self):
         """Test whether PD is self consistent."""
@@ -624,9 +645,7 @@ class CommonTest(ABC):
         ret2 = self.extract_ret(ret2, self.RefBackend.ARRAY_API_STRICT)
         data2 = array_api_strict_obj.serialize()
         np.testing.assert_equal(data1, data2)
-        for rr1, rr2 in zip(ret1, ret2, strict=True):
-            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
-            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+        self._compare_ret(ret1, ret2)
 
     @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_array_api_strict_self_consistent(self) -> None:

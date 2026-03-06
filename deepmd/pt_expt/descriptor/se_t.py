@@ -7,6 +7,9 @@ from deepmd.pt_expt.common import (
 from deepmd.pt_expt.descriptor.base_descriptor import (
     BaseDescriptor,
 )
+from deepmd.pt_expt.utils.update_sel import (
+    UpdateSel,
+)
 
 
 @BaseDescriptor.register("se_e3")
@@ -14,4 +17,4 @@ from deepmd.pt_expt.descriptor.base_descriptor import (
 @BaseDescriptor.register("se_a_3be")
 @torch_module
 class DescrptSeT(DescrptSeTDP):
-    pass
+    _update_sel_cls = UpdateSel

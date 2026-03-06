@@ -11,6 +11,9 @@ from .dp_zbl_model import (
 from .ener_model import (
     EnergyModel,
 )
+from .get_model import (
+    get_model,
+)
 from .model import (
     BaseModel,
 )
@@ -29,4 +32,5 @@ __all__ = [
     "EnergyModel",
     "PolarModel",
     "PropertyModel",
+    "get_model",
 ]

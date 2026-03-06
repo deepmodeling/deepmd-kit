@@ -13,6 +13,7 @@ import numpy as np
 
 from deepmd.dpmodel.array_api import (
     Array,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.common import (
     NativeOP,
@@ -62,6 +63,45 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.rcond = rcond
         self.preset_out_bias = preset_out_bias
         self.data_stat_protect = data_stat_protect
+        self._observed_type: list[str] | None = None
+
+    @property
+    def observed_type(self) -> list[str] | None:
+        """Get the observed element type list from data statistics."""
+        return self._observed_type
+
+    def _collect_and_set_observed_type(
+        self,
+        sampled_func: Callable[[], list[dict]],
+        stat_file_path: DPPath | None,
+        preset_observed_type: list[str] | None,
+    ) -> None:
+        """Collect observed types with priority: preset > stat_file > compute.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames.
+        stat_file_path
+            The path to the statistics files (should already include type_map suffix).
+        preset_observed_type
+            User-specified observed types that take highest priority.
+        """
+        from deepmd.dpmodel.utils.stat import (
+            _restore_observed_type_from_file,
+            _save_observed_type_to_file,
+            collect_observed_types,
+        )
+
+        if preset_observed_type is not None:
+            self._observed_type = preset_observed_type
+        else:
+            observed = _restore_observed_type_from_file(stat_file_path)
+            if observed is None:
+                sampled = sampled_func()
+                observed = collect_observed_types(sampled, self.type_map)
+                _save_observed_type_to_file(stat_file_path, observed)
+            self._observed_type = observed
 
     def init_out_stat(self) -> None:
         """Initialize the output bias."""
@@ -211,7 +251,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlist)
         _, nloc, _ = nlist.shape
-        atype = extended_atype[:, :nloc]
+        atype = xp_take_first_n(extended_atype, 1, nloc)
         if self.pair_excl is not None:
             pair_mask = self.pair_excl.build_type_exclude_mask(nlist, extended_atype)
             # exclude neighbors in the nlist
@@ -229,7 +269,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         ret_dict = self.apply_out_stat(ret_dict, atype)
 
         # nf x nloc
-        atom_mask = ext_atom_mask[:, :nloc]
+        atom_mask = xp_take_first_n(ext_atom_mask, 1, nloc)
         if self.atom_excl is not None:
             atom_mask = xp.logical_and(
                 atom_mask, self.atom_excl.build_type_exclude_mask(atype)
@@ -270,6 +310,29 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     def get_compute_stats_distinguish_types(self) -> bool:
         """Get whether the fitting net computes stats which are not distinguished between different types of atoms."""
         return True
+
+    def compute_or_load_stat(
+        self,
+        sampled_func: Callable[[], list[dict]],
+        stat_file_path: DPPath | None = None,
+        compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
+    ) -> None:
+        """Compute or load the statistics parameters of the model,
+        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        stat_file_path
+            The path to the stat file.
+        compute_or_load_out_stat : bool
+            Whether to compute the output statistics.
+            If False, it will only compute the input statistics
+            (e.g. mean and standard deviation of descriptors).
+        """
+        raise NotImplementedError
 
     def compute_or_load_out_stat(
         self,
@@ -332,19 +395,19 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                 atom_exclude_types = self.atom_excl.get_exclude_types()
                 for sample in sampled:
                     sample["atom_exclude_types"] = list(atom_exclude_types)
-            if (
-                "find_fparam" not in sampled[0]
-                and "fparam" not in sampled[0]
-                and self.has_default_fparam()
-            ):
+            # For systems where fparam is missing (find_fparam == 0),
+            # fill with default fparam if available and mark as found.
+            if self.has_default_fparam():
                 default_fparam = self.get_default_fparam()
                 if default_fparam is not None:
                     default_fparam_np = np.array(default_fparam)
                     for sample in sampled:
-                        nframe = sample["atype"].shape[0]
-                        sample["fparam"] = np.tile(
-                            default_fparam_np.reshape(1, -1), (nframe, 1)
-                        )
+                        if "find_fparam" in sample and not sample["find_fparam"]:
+                            nframe = sample["atype"].shape[0]
+                            sample["fparam"] = np.tile(
+                                default_fparam_np.reshape(1, -1), (nframe, 1)
+                            )
+                            sample["find_fparam"] = np.bool_(True)
             return sampled
 
         return wrapped_sampler

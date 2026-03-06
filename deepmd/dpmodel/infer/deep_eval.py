@@ -50,6 +50,9 @@ from deepmd.infer.deep_pot import (
 from deepmd.infer.deep_wfc import (
     DeepWFC,
 )
+from deepmd.utils.econf_embd import (
+    sort_element_type,
+)
 
 if TYPE_CHECKING:
     import ase.neighborlist
@@ -402,6 +405,31 @@ class DeepEval(DeepEvalBackend):
     def get_model_def_script(self) -> dict:
         """Get model definition script."""
         return json.loads(self.dp.get_model_def_script())
+
+    def get_observed_types(self) -> dict:
+        """Get observed types (elements) of the model during data statistics.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the information of observed type in the model:
+            - 'type_num': the total number of observed types in this model.
+            - 'observed_type': a list of the observed types in this model.
+        """
+        # Try metadata first (from model_def_script)
+        model_def_script = self.get_model_def_script()
+        observed_type_list = model_def_script.get("info", {}).get("observed_type")
+        if observed_type_list is not None:
+            return {
+                "type_num": len(observed_type_list),
+                "observed_type": observed_type_list,
+            }
+        # Fallback: bias-based approach for old models
+        observed_type_list = self.dp.get_observed_type_list()
+        return {
+            "type_num": len(observed_type_list),
+            "observed_type": sort_element_type(observed_type_list),
+        }
 
     def get_model(self) -> "BaseModel":
         """Get the dpmodel BaseModel.

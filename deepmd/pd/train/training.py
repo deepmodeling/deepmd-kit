@@ -120,6 +120,7 @@ class Trainer:
         self.restart_training = restart_model is not None
         model_params = config["model"]
         training_params = config["training"]
+        optimizer_params = config.get("optimizer", {})
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
         self.finetune_update_stat = False
@@ -157,14 +158,17 @@ class Trainer:
         self.lcurve_should_print_header = True
 
         def get_opt_param(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-            opt_type = params.get("opt_type", "Adam")
-            opt_param = {
-                "kf_blocksize": params.get("kf_blocksize", 5120),
-                "kf_start_pref_e": params.get("kf_start_pref_e", 1),
-                "kf_limit_pref_e": params.get("kf_limit_pref_e", 1),
-                "kf_start_pref_f": params.get("kf_start_pref_f", 1),
-                "kf_limit_pref_f": params.get("kf_limit_pref_f", 1),
-            }
+            """
+            Extract optimizer parameters.
+
+            Note: Default values are already filled by argcheck.normalize()
+            before this function is called.
+            """
+            opt_type = params.get("type", "Adam")
+            if opt_type != "Adam":
+                raise ValueError(f"Not supported optimizer type '{opt_type}'")
+            opt_param = dict(params)
+            opt_param.pop("type", None)
             return opt_type, opt_param
 
         def get_data_loader(
@@ -256,22 +260,7 @@ class Trainer:
             return lr_schedule
 
         # Optimizer
-        if self.multi_task and training_params.get("optim_dict", None) is not None:
-            self.optim_dict = training_params.get("optim_dict")
-            missing_keys = [
-                key for key in self.model_keys if key not in self.optim_dict
-            ]
-            assert not missing_keys, (
-                f"These keys are not in optim_dict: {missing_keys}!"
-            )
-            self.opt_type = {}
-            self.opt_param = {}
-            for model_key in self.model_keys:
-                self.opt_type[model_key], self.opt_param[model_key] = get_opt_param(
-                    self.optim_dict[model_key]
-                )
-        else:
-            self.opt_type, self.opt_param = get_opt_param(training_params)
+        self.opt_type, self.opt_param = get_opt_param(optimizer_params)
 
         # loss_param_tmp for Hessian activation
         loss_param_tmp = None
@@ -302,10 +291,7 @@ class Trainer:
             self.loss = {}
             for model_key in self.model_keys:
                 loss_param = config["loss_dict"][model_key]
-                if config.get("learning_rate_dict", None) is not None:
-                    lr_param = config["learning_rate_dict"][model_key]["start_lr"]
-                else:
-                    lr_param = config["learning_rate"]["start_lr"]
+                lr_param = config["learning_rate"]["start_lr"]
                 ntypes = len(model_params["model_dict"][model_key]["type_map"])
                 self.loss[model_key] = get_loss(
                     loss_param, lr_param, ntypes, self.model[model_key]
@@ -476,14 +462,7 @@ class Trainer:
 
         # Learning rate
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
-        if self.multi_task and config.get("learning_rate_dict", None) is not None:
-            self.lr_schedule = {}
-            for model_key in self.model_keys:
-                self.lr_schedule[model_key] = get_lr(
-                    config["learning_rate_dict"][model_key]
-                )
-        else:
-            self.lr_schedule = get_lr(config["learning_rate"])
+        self.lr_schedule = get_lr(config["learning_rate"])
 
         # JIT
         if JIT:
@@ -677,7 +656,11 @@ class Trainer:
                 ),
             )
             self.optimizer = paddle.optimizer.Adam(
-                learning_rate=self.scheduler, parameters=self.wrapper.parameters()
+                learning_rate=self.scheduler,
+                parameters=self.wrapper.parameters(),
+                beta1=float(self.opt_param["adam_beta1"]),
+                beta2=float(self.opt_param["adam_beta2"]),
+                weight_decay=float(self.opt_param["weight_decay"]),
             )
             if optimizer_state_dict is not None and self.restart_training:
                 self.optimizer.set_state_dict(optimizer_state_dict)
@@ -806,11 +789,7 @@ class Trainer:
             # Paddle Profiler
             if enable_profiling:
                 core.nvprof_nvtx_push(f"Training step {_step_id}")
-            if isinstance(self.lr_schedule, dict):
-                _lr = self.lr_schedule[task_key]
-            else:
-                _lr = self.lr_schedule
-            cur_lr = _lr.value(_step_id)
+            cur_lr = self.lr_schedule.value(_step_id)
             pref_lr = cur_lr
 
             with nvprof_context(enable_profiling, "Fetching data"):

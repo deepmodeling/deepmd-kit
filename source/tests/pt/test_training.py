@@ -20,6 +20,9 @@ from deepmd.pt.entrypoints.main import train as train_entry
 from deepmd.pt.utils.finetune import (
     get_finetune_rules,
 )
+from deepmd.utils.compat import (
+    convert_optimizer_v31_to_v32,
+)
 
 from .model.test_permutation import (
     model_dos,
@@ -179,6 +182,8 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        # Backward compatibility: convert old optimizer format
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -216,6 +221,7 @@ class TestDOSModelSeA(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "dos/input.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "dos/data/atomic_system")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -234,6 +240,7 @@ class TestEnergyZBLModelSeA(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/zbl.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -252,6 +259,7 @@ class TestFparam(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -273,6 +281,7 @@ class TestEnergyModelDPA1(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -285,6 +294,7 @@ class TestEnergyModelDPA1(unittest.TestCase, DPTrainTest):
         input_json_zbl = str(Path(__file__).parent / "water/zbl.json")
         with open(input_json_zbl) as f:
             self.config_zbl = json.load(f)
+        self.config_zbl = convert_optimizer_v31_to_v32(self.config_zbl, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config_zbl["training"]["training_data"]["systems"] = data_file
         self.config_zbl["training"]["validation_data"]["systems"] = data_file
@@ -301,6 +311,7 @@ class TestEnergyModelDPA2(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -318,6 +329,7 @@ class TestEnergyModelHybrid(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -334,6 +346,7 @@ class TestDipoleModelSeA(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file_atomic = str(
             Path(__file__).parent / "water_tensor/dipole/atomic_system"
         )
@@ -363,6 +376,7 @@ class TestDipoleModelDPA1(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file_atomic = str(
             Path(__file__).parent / "water_tensor/dipole/atomic_system"
         )
@@ -392,6 +406,7 @@ class TestDipoleModelDPA2(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file_atomic = str(
             Path(__file__).parent / "water_tensor/dipole/atomic_system"
         )
@@ -421,6 +436,7 @@ class TestPolarModelSeA(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file_atomic = str(
             Path(__file__).parent / "water_tensor/polar/atomic_system"
         )
@@ -455,6 +471,7 @@ class TestPolarModelDPA1(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file_atomic = str(
             Path(__file__).parent / "water_tensor/polar/atomic_system"
         )
@@ -489,6 +506,7 @@ class TestPolarModelDPA2(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file_atomic = str(
             Path(__file__).parent / "water_tensor/polar/atomic_system"
         )
@@ -523,6 +541,7 @@ class TestPropFintuFromEnerModel(unittest.TestCase):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -534,6 +553,9 @@ class TestPropFintuFromEnerModel(unittest.TestCase):
         property_input = str(Path(__file__).parent / "property/input.json")
         with open(property_input) as f:
             self.config_property = json.load(f)
+        self.config_property = convert_optimizer_v31_to_v32(
+            self.config_property, warning=False
+        )
         prop_data_file = [str(Path(__file__).parent / "property/double")]
         self.config_property["training"]["training_data"]["systems"] = prop_data_file
         self.config_property["training"]["validation_data"]["systems"] = prop_data_file
@@ -591,6 +613,7 @@ class TestCustomizedRGLOB(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         self.config["training"]["training_data"]["rglob_patterns"] = [
             "water/data/data_*"
         ]

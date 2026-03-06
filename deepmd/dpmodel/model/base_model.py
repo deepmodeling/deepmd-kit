@@ -42,7 +42,7 @@ def make_base_model() -> type[object]:
                 if model_type == "standard":
                     model_type = kwargs.get("fitting", {}).get("type", "ener")
                 cls = cls.get_class_by_type(model_type)
-            return super().__new__(cls)
+            return object.__new__(cls)
 
         @abstractmethod
         def __call__(self, *args: Any, **kwds: Any) -> Any:

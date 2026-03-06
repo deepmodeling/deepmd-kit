@@ -42,7 +42,7 @@ def make_base_fitting(
         def __new__(cls: type, *args: Any, **kwargs: Any) -> Any:
             if cls is BF:
                 cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
-            return super().__new__(cls)
+            return object.__new__(cls)
 
         @abstractmethod
         def output_def(self) -> FittingOutputDef:

@@ -91,6 +91,45 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self.rcond = rcond
         self.preset_out_bias = preset_out_bias
         self.data_stat_protect = data_stat_protect
+        self._observed_type: list[str] | None = None
+
+    @property
+    def observed_type(self) -> list[str] | None:
+        """Get the observed element type list from data statistics."""
+        return self._observed_type
+
+    def _collect_and_set_observed_type(
+        self,
+        sampled_func: Callable[[], list[dict]],
+        stat_file_path: "DPPath | None",
+        preset_observed_type: list[str] | None,
+    ) -> None:
+        """Collect observed types with priority: preset > stat_file > compute.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames.
+        stat_file_path
+            The path to the statistics files (should already include type_map suffix).
+        preset_observed_type
+            User-specified observed types that take highest priority.
+        """
+        from deepmd.dpmodel.utils.stat import (
+            _restore_observed_type_from_file,
+            _save_observed_type_to_file,
+            collect_observed_types,
+        )
+
+        if preset_observed_type is not None:
+            self._observed_type = preset_observed_type
+        else:
+            observed = _restore_observed_type_from_file(stat_file_path)
+            if observed is None:
+                sampled = sampled_func()
+                observed = collect_observed_types(sampled, self.type_map)
+                _save_observed_type_to_file(stat_file_path, observed)
+            self._observed_type = observed
 
     def init_out_stat(self) -> None:
         """Initialize the output bias."""
@@ -429,6 +468,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         merged: Callable[[], list[dict]] | list[dict],
         stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
     ) -> NoReturn:
         """
         Compute or load the statistics parameters of the model,
