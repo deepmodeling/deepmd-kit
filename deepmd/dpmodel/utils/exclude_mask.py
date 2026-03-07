@@ -5,7 +5,6 @@ import numpy as np
 
 from deepmd.dpmodel.array_api import (
     Array,
-    xp_take_along_axis,
 )
 
 
@@ -132,17 +131,26 @@ class PairExcludeMask:
             axis=-1,
         )
         type_i = xp.reshape(atype_ext[:, :nloc], (nf, nloc)) * (self.ntypes + 1)
-        # nf x nloc x nnei
-        index = xp.reshape(
-            xp.where(nlist == -1, xp.full_like(nlist, nall), nlist), (nf, nloc * nnei)
+        # Use flat global indexing to avoid (nf, nloc*nnei) vs (nf, nall+1)
+        # dimension mismatch that breaks torch.export dynamic shapes.
+        nlist_for_type = xp.where(nlist == -1, xp.full_like(nlist, nall), nlist)
+        # ae is (nf, nall+1); flatten to (nf*(nall+1),) and add frame offsets
+        ae_flat = xp.reshape(ae, (-1,))  # (nf * (nall+1),)
+        nf_arange = xp.arange(
+            nf, dtype=nlist.dtype, device=array_api_compat.device(nlist)
         )
-        type_j = xp_take_along_axis(ae, index, axis=1)
-        type_j = xp.reshape(type_j, (nf, nloc, nnei))
+        nall_plus1 = nall + 1
+        frame_offset = xp.reshape(nf_arange * nall_plus1, (nf, 1, 1))  # (nf, 1, 1)
+        global_idx = nlist_for_type + frame_offset  # (nf, nloc, nnei)
+        type_j = xp.reshape(
+            xp.take(ae_flat, xp.reshape(global_idx, (-1,)), axis=0),
+            (nf, nloc, nnei),
+        )
         type_ij = type_i[:, :, None] + type_j
-        # nf x (nloc x nnei)
-        type_ij = xp.reshape(type_ij, (nf, nloc * nnei))
+        # (nf * nloc * nnei,)
+        type_ij_flat = xp.reshape(type_ij, (-1,))
         mask = xp.reshape(
-            xp.take(self.type_mask[...], xp.reshape(type_ij, (-1,))),
+            xp.take(self.type_mask[...], type_ij_flat),
             (nf, nloc, nnei),
         )
         return mask
