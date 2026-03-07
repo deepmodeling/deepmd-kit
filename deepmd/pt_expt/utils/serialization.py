@@ -48,7 +48,7 @@ def _json_to_numpy(model_obj: dict) -> dict:
 def _make_sample_inputs(
     model: torch.nn.Module,
     nframes: int = 1,
-    nloc: int = 2,
+    nloc: int = 7,
 ) -> tuple[torch.Tensor, ...]:
     """Create sample inputs for tracing forward_lower.
 
@@ -199,20 +199,28 @@ def _collect_metadata(model: torch.nn.Module) -> dict:
 
 
 def serialize_from_file(model_file: str) -> dict:
-    """Serialize a .pte model file to a dictionary.
+    """Serialize a .pte or .pt2 model file to a dictionary.
 
-    Reads the model dict stored in the extra_files of the .pte archive.
+    Reads the model dict stored in the model archive.
 
     Parameters
     ----------
     model_file : str
-        The .pte model file to be serialized.
+        The model file to be serialized (.pte or .pt2).
 
     Returns
     -------
     dict
         The serialized model data.
     """
+    if model_file.endswith(".pt2"):
+        return _serialize_from_file_pt2(model_file)
+    else:
+        return _serialize_from_file_pte(model_file)
+
+
+def _serialize_from_file_pte(model_file: str) -> dict:
+    """Serialize a .pte model file to a dictionary."""
     extra_files = {"model.json": ""}
     torch.export.load(model_file, extra_files=extra_files)
     model_dict = json.loads(extra_files["model.json"])
@@ -220,20 +228,51 @@ def serialize_from_file(model_file: str) -> dict:
     return model_dict
 
 
+def _serialize_from_file_pt2(model_file: str) -> dict:
+    """Serialize a .pt2 model file to a dictionary.
+
+    Reads the model dict stored in the extra/ directory of the .pt2 ZIP archive.
+    """
+    import zipfile
+
+    with zipfile.ZipFile(model_file, "r") as zf:
+        model_json = zf.read("extra/model.json").decode("utf-8")
+    model_dict = json.loads(model_json)
+    model_dict = _json_to_numpy(model_dict)
+    return model_dict
+
+
 def deserialize_to_file(model_file: str, data: dict) -> None:
-    """Deserialize a dictionary to a .pte model file.
+    """Deserialize a dictionary to a .pte or .pt2 model file.
 
     Builds a pt_expt model from the dict, traces it via make_fx,
-    exports with dynamic shapes, and saves using torch.export.save.
+    exports with dynamic shapes, and saves.
 
     Parameters
     ----------
     model_file : str
-        The .pte model file to be saved.
+        The model file to be saved (.pte or .pt2).
     data : dict
         The dictionary to be deserialized (same format as dpmodel's
         serialize output, with "model" and optionally "model_def_script" keys).
     """
+    if model_file.endswith(".pt2"):
+        _deserialize_to_file_pt2(model_file, data)
+    else:
+        _deserialize_to_file_pte(model_file, data)
+
+
+def _trace_and_export(
+    data: dict,
+) -> tuple:
+    """Common logic: build model, trace, export.
+
+    Returns (exported, metadata, data_for_json, output_keys).
+    """
+    from copy import (
+        deepcopy,
+    )
+
     from deepmd.pt_expt.model.model import (
         BaseModel,
     )
@@ -275,21 +314,58 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         (ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam),
         dynamic_shapes=dynamic_shapes,
         strict=False,
+        prefer_deferred_runtime_asserts_over_guards=True,
     )
 
-    # 6. Prepare extra files
-    # Serialize the full model dict for cross-backend conversion
-    from copy import (
-        deepcopy,
-    )
-
+    # 6. Prepare JSON-serializable model dict
     data_for_json = deepcopy(data)
     data_for_json = _numpy_to_json_serializable(data_for_json)
+
+    # 7. Extract output keys from the traced module.
+    # The key order must match dict iteration order (NOT sorted), because
+    # AOTInductor's C++ run() returns flat tensors in tree_flatten order,
+    # which preserves dict key insertion order.
+    sample_out = traced(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
+    output_keys = list(sample_out.keys())
+
+    return exported, metadata, data_for_json, output_keys
+
+
+def _deserialize_to_file_pte(model_file: str, data: dict) -> None:
+    """Deserialize a dictionary to a .pte model file."""
+    exported, metadata, data_for_json, _output_keys = _trace_and_export(data)
 
     extra_files = {
         "model_def_script.json": json.dumps(metadata),
         "model.json": json.dumps(data_for_json, separators=(",", ":")),
     }
 
-    # 7. Save
     torch.export.save(exported, model_file, extra_files=extra_files)
+
+
+def _deserialize_to_file_pt2(model_file: str, data: dict) -> None:
+    """Deserialize a dictionary to a .pt2 model file (AOTInductor).
+
+    Uses torch._inductor.aoti_compile_and_package to compile the exported
+    program into a .pt2 package (ZIP archive with compiled shared libraries),
+    then embeds metadata into the archive.
+    """
+    import zipfile
+
+    from torch._inductor import (
+        aoti_compile_and_package,
+    )
+
+    exported, metadata, data_for_json, output_keys = _trace_and_export(data)
+
+    # Compile via AOTInductor into a .pt2 package
+    aoti_compile_and_package(exported, package_path=model_file)
+
+    # Embed metadata into the .pt2 ZIP archive
+    with zipfile.ZipFile(model_file, "a") as zf:
+        zf.writestr("extra/model_def_script.json", json.dumps(metadata))
+        zf.writestr("extra/output_keys.json", json.dumps(output_keys))
+        zf.writestr(
+            "extra/model.json",
+            json.dumps(data_for_json, separators=(",", ":")),
+        )

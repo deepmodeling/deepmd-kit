@@ -1057,6 +1057,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             self.stddev[...],
         )
         nf, nloc, nnei, _ = dmatrix.shape
+        nall = atype_ext.shape[1]
         atype = atype_ext[:, :nloc]
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         # nfnl x nnei
@@ -1076,6 +1077,21 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         nlist_masked = xp.where(nlist_mask, nlist, xp.zeros_like(nlist))
         ng = self.neuron[-1]
         nt = self.tebd_dim
+
+        # Precompute flat global indices for neighbor type lookups.
+        # nlist_masked is (nf*nloc, nnei) with values in [0, nall).
+        # To gather from flattened (nf*nall,) arrays, add per-frame offsets.
+        # This avoids creating a (nf, nloc*nnei) dimension that conflicts with
+        # (nf, nall) during torch.export dynamic shape verification.
+        nlist_3d = xp.reshape(nlist_masked, (nf, nloc, nnei))
+        nf_arange = xp.arange(
+            nf, dtype=nlist_3d.dtype, device=array_api_compat.device(nlist_3d)
+        )
+        frame_offset = xp.reshape(nf_arange * nall, (nf, 1, 1))  # (nf, 1, 1)
+        # (nf, nloc, nnei) — global indices into flattened (nf*nall,) arrays
+        global_nlist_idx = nlist_3d + frame_offset
+        global_nlist_idx_flat = xp.reshape(global_nlist_idx, (-1,))
+
         # nfnl x nnei x 4
         rr = xp.reshape(dmatrix, (nf * nloc, nnei, 4))
         rr = rr * xp.astype(exclude_mask[:, :, None], rr.dtype)
@@ -1088,11 +1104,10 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             )
             # nfnl x nnei x tebd_dim
             atype_embd_nnei = xp.tile(atype_embd[:, xp.newaxis, :], (1, nnei, 1))
-            index = xp.tile(
-                xp.reshape(nlist_masked, (nf, -1, 1)), (1, 1, self.tebd_dim)
-            )
+            # Gather neighbor type embeddings using flat global indices
+            atype_embd_flat = xp.reshape(atype_embd_ext, (nf * nall, self.tebd_dim))
+            atype_embd_nlist = xp.take(atype_embd_flat, global_nlist_idx_flat, axis=0)
             # nfnl x nnei x tebd_dim
-            atype_embd_nlist = xp_take_along_axis(atype_embd_ext, index, axis=1)
             atype_embd_nlist = xp.reshape(
                 atype_embd_nlist, (nf * nloc, nnei, self.tebd_dim)
             )
@@ -1111,10 +1126,9 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             assert self.embeddings_strip is not None
             assert type_embedding is not None
             ntypes_with_padding = type_embedding.shape[0]
-            # nf x (nl x nnei)
-            nlist_index = xp.reshape(nlist_masked, (nf, nloc * nnei))
-            # nf x (nl x nnei)
-            nei_type = xp_take_along_axis(atype_ext, nlist_index, axis=1)
+            # Gather neighbor types using flat global indices
+            atype_flat = xp.reshape(atype_ext, (-1,))  # (nf * nall,)
+            nei_type = xp.take(atype_flat, global_nlist_idx_flat, axis=0)
             # (nf x nl x nnei) x ng
             nei_type_index = xp.tile(xp.reshape(nei_type, (-1, 1)), (1, ng))
             if self.type_one_side:
