@@ -21,8 +21,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - tensorflow_build_version: "2.18"
-            tensorflow_version: ""
+          - tensorflow_build_version: "2.21"
+            tensorflow_version: "==2.21.*"
             filename: libdeepmd_c.tar.gz
     steps:
       - name: Free Disk Space (Ubuntu)
