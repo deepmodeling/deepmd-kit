@@ -199,7 +199,9 @@ class DPAtomicModel(BaseAtomicModel):
             assert default_fparam is not None
             xp = array_api_compat.array_namespace(extended_coord)
             default_fparam_array = xp.asarray(
-                default_fparam, dtype=extended_coord.dtype
+                default_fparam,
+                dtype=extended_coord.dtype,
+                device=array_api_compat.device(extended_coord),
             )
             fparam_input_for_des = xp.tile(
                 xp.reshape(default_fparam_array, (1, -1)), (nframes, 1)
