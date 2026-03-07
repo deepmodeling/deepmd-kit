@@ -50,6 +50,8 @@ class EnergyLoss(Loss):
         numb_generalized_coord: int = 0,
         use_huber: bool = False,
         huber_delta: float = 0.01,
+        use_mae_loss: bool = False,
+        f_use_norm: bool = False,
         **kwargs: Any,
     ) -> None:
         self.starter_learning_rate = starter_learning_rate
@@ -80,6 +82,12 @@ class EnergyLoss(Loss):
             )
         self.use_huber = use_huber
         self.huber_delta = huber_delta
+        self.use_mae_loss = use_mae_loss
+        self.f_use_norm = f_use_norm
+        if self.f_use_norm and not (self.use_huber or self.use_mae_loss):
+            raise RuntimeError(
+                "f_use_norm can only be True when use_huber or use_mae_loss is True."
+            )
         if self.use_huber and (
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
@@ -169,51 +177,85 @@ class EnergyLoss(Loss):
         loss = 0
         more_loss = {}
         if self.has_e:
-            l2_ener_loss = xp.mean(xp.square(energy - energy_hat))
-            if not self.use_huber:
-                loss += atom_norm_ener * (pref_e * l2_ener_loss)
-            else:
-                l_huber_loss = custom_huber_loss(
-                    atom_norm_ener * energy,
-                    atom_norm_ener * energy_hat,
-                    delta=self.huber_delta,
+            if not self.use_mae_loss:
+                l2_ener_loss = xp.mean(xp.square(energy - energy_hat))
+                if not self.use_huber:
+                    loss += atom_norm_ener * (pref_e * l2_ener_loss)
+                else:
+                    l_huber_loss = custom_huber_loss(
+                        atom_norm_ener * energy,
+                        atom_norm_ener * energy_hat,
+                        delta=self.huber_delta,
+                    )
+                    loss += pref_e * l_huber_loss
+                more_loss["rmse_e"] = self.display_if_exist(
+                    xp.sqrt(l2_ener_loss) * atom_norm_ener, find_energy
                 )
-                loss += pref_e * l_huber_loss
-            more_loss["rmse_e"] = self.display_if_exist(
-                xp.sqrt(l2_ener_loss) * atom_norm_ener, find_energy
-            )
+            else:
+                l1_ener_loss = xp.mean(xp.abs(energy - energy_hat))
+                loss += atom_norm_ener * (pref_e * l1_ener_loss)
+                more_loss["mae_e"] = self.display_if_exist(
+                    l1_ener_loss * atom_norm_ener, find_energy
+                )
         if self.has_f:
-            l2_force_loss = xp.mean(xp.square(diff_f))
-            if not self.use_huber:
-                loss += pref_f * l2_force_loss
-            else:
-                l_huber_loss = custom_huber_loss(
-                    xp.reshape(force, (-1,)),
-                    xp.reshape(force_hat, (-1,)),
-                    delta=self.huber_delta,
+            if not self.use_mae_loss:
+                l2_force_loss = xp.mean(xp.square(diff_f))
+                if not self.use_huber:
+                    loss += pref_f * l2_force_loss
+                else:
+                    if not self.f_use_norm:
+                        l_huber_loss = custom_huber_loss(
+                            xp.reshape(force, (-1,)),
+                            xp.reshape(force_hat, (-1,)),
+                            delta=self.huber_delta,
+                        )
+                    else:
+                        force_diff_3 = xp.reshape(force_hat - force, (-1, 3))
+                        force_diff_norm = xp.reshape(
+                            xp.linalg.vector_norm(force_diff_3, axis=1), (-1, 1)
+                        )
+                        l_huber_loss = custom_huber_loss(
+                            force_diff_norm,
+                            xp.zeros_like(force_diff_norm),
+                            delta=self.huber_delta,
+                        )
+                    loss += pref_f * l_huber_loss
+                more_loss["rmse_f"] = self.display_if_exist(
+                    xp.sqrt(l2_force_loss), find_force
                 )
-                loss += pref_f * l_huber_loss
-            more_loss["rmse_f"] = self.display_if_exist(
-                xp.sqrt(l2_force_loss), find_force
-            )
+            else:
+                if not self.f_use_norm:
+                    l1_force_loss = xp.mean(xp.abs(diff_f))
+                else:
+                    force_diff_3 = xp.reshape(force_hat - force, (-1, 3))
+                    l1_force_loss = xp.mean(xp.linalg.vector_norm(force_diff_3, axis=1))
+                loss += pref_f * l1_force_loss
+                more_loss["mae_f"] = self.display_if_exist(l1_force_loss, find_force)
         if self.has_v:
             virial_reshape = xp.reshape(virial, (-1,))
             virial_hat_reshape = xp.reshape(virial_hat, (-1,))
-            l2_virial_loss = xp.mean(
-                xp.square(virial_hat_reshape - virial_reshape),
-            )
-            if not self.use_huber:
-                loss += atom_norm * (pref_v * l2_virial_loss)
-            else:
-                l_huber_loss = custom_huber_loss(
-                    atom_norm * virial_reshape,
-                    atom_norm * virial_hat_reshape,
-                    delta=self.huber_delta,
+            if not self.use_mae_loss:
+                l2_virial_loss = xp.mean(
+                    xp.square(virial_hat_reshape - virial_reshape),
                 )
-                loss += pref_v * l_huber_loss
-            more_loss["rmse_v"] = self.display_if_exist(
-                xp.sqrt(l2_virial_loss) * atom_norm, find_virial
-            )
+                if not self.use_huber:
+                    loss += atom_norm * (pref_v * l2_virial_loss)
+                else:
+                    l_huber_loss = custom_huber_loss(
+                        atom_norm * virial_reshape,
+                        atom_norm * virial_hat_reshape,
+                        delta=self.huber_delta,
+                    )
+                    loss += pref_v * l_huber_loss
+                more_loss["rmse_v"] = self.display_if_exist(
+                    xp.sqrt(l2_virial_loss) * atom_norm, find_virial
+                )
+            else:
+                l1_virial_loss = xp.mean(xp.abs(virial_hat_reshape - virial_reshape))
+                loss += atom_norm * (pref_v * l1_virial_loss)
+                more_loss["mae_v"] = self.display_if_exist(
+                    l1_virial_loss * atom_norm, find_virial
+                )
         if self.has_ae:
             atom_ener_reshape = xp.reshape(atom_ener, (-1,))
             atom_ener_hat_reshape = xp.reshape(atom_ener_hat, (-1,))
@@ -371,6 +413,8 @@ class EnergyLoss(Loss):
             "numb_generalized_coord": self.numb_generalized_coord,
             "use_huber": self.use_huber,
             "huber_delta": self.huber_delta,
+            "use_mae_loss": self.use_mae_loss,
+            "f_use_norm": self.f_use_norm,
         }
 
     @classmethod
