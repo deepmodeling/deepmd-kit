@@ -20,6 +20,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     Array,
     xp_take_along_axis,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -534,7 +535,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             (nf, nall, self.tebd_dim),
         )
         # nfnl x tebd_dim
-        atype_embd = atype_embd_ext[:, :nloc, :]
+        atype_embd = xp_take_first_n(atype_embd_ext, 1, nloc)
         grrg, g2, h2, rot_mat, sw = self.se_atten(
             nlist,
             coord_ext,
@@ -1057,7 +1058,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         )
         nf, nloc, nnei, _ = dmatrix.shape
         nall = atype_ext.shape[1]
-        atype = atype_ext[:, :nloc]
+        atype = xp_take_first_n(atype_ext, 1, nloc)
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         # nfnl x nnei
         exclude_mask = xp.reshape(exclude_mask, (nf * nloc, nnei))
@@ -1077,19 +1078,10 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         ng = self.neuron[-1]
         nt = self.tebd_dim
 
-        # Precompute flat global indices for neighbor type lookups.
-        # nlist_masked is (nf*nloc, nnei) with values in [0, nall).
-        # To gather from flattened (nf*nall,) arrays, add per-frame offsets.
-        # This avoids creating a (nf, nloc*nnei) dimension that conflicts with
-        # (nf, nall) during torch.export dynamic shape verification.
-        nlist_3d = xp.reshape(nlist_masked, (nf, nloc, nnei))
-        nf_arange = xp.arange(
-            nf, dtype=nlist_3d.dtype, device=array_api_compat.device(nlist_3d)
-        )
-        frame_offset = xp.reshape(nf_arange * nall, (nf, 1, 1))  # (nf, 1, 1)
-        # (nf, nloc, nnei) — global indices into flattened (nf*nall,) arrays
-        global_nlist_idx = nlist_3d + frame_offset
-        global_nlist_idx_flat = xp.reshape(global_nlist_idx, (-1,))
+        # Gather neighbor info using xp_take_along_axis along axis=1.
+        # This avoids flat (nf*nall,) indexing that creates Ne(nall, nloc)
+        # constraints in torch.export, breaking NoPbc (nall == nloc).
+        nlist_2d = xp.reshape(nlist_masked, (nf, nloc * nnei))  # (nf, nloc*nnei)
 
         # nfnl x nnei x 4
         rr = xp.reshape(dmatrix, (nf * nloc, nnei, 4))
@@ -1099,13 +1091,15 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         if self.tebd_input_mode in ["concat"]:
             # nfnl x tebd_dim
             atype_embd = xp.reshape(
-                atype_embd_ext[:, :nloc, :], (nf * nloc, self.tebd_dim)
+                xp_take_first_n(atype_embd_ext, 1, nloc), (nf * nloc, self.tebd_dim)
             )
             # nfnl x nnei x tebd_dim
             atype_embd_nnei = xp.tile(atype_embd[:, xp.newaxis, :], (1, nnei, 1))
-            # Gather neighbor type embeddings using flat global indices
-            atype_embd_flat = xp.reshape(atype_embd_ext, (nf * nall, self.tebd_dim))
-            atype_embd_nlist = xp.take(atype_embd_flat, global_nlist_idx_flat, axis=0)
+            # Gather neighbor type embeddings: (nf, nall, tebd_dim) -> (nf, nloc*nnei, tebd_dim)
+            nlist_idx_tebd = xp.tile(nlist_2d[:, :, xp.newaxis], (1, 1, self.tebd_dim))
+            atype_embd_nlist = xp_take_along_axis(
+                atype_embd_ext, nlist_idx_tebd, axis=1
+            )
             # nfnl x nnei x tebd_dim
             atype_embd_nlist = xp.reshape(
                 atype_embd_nlist, (nf * nloc, nnei, self.tebd_dim)
@@ -1125,9 +1119,9 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             assert self.embeddings_strip is not None
             assert type_embedding is not None
             ntypes_with_padding = type_embedding.shape[0]
-            # Gather neighbor types using flat global indices
-            atype_flat = xp.reshape(atype_ext, (-1,))  # (nf * nall,)
-            nei_type = xp.take(atype_flat, global_nlist_idx_flat, axis=0)
+            # Gather neighbor types: (nf, nall) -> (nf, nloc*nnei)
+            nei_type = xp_take_along_axis(atype_ext, nlist_2d, axis=1)
+            nei_type = xp.reshape(nei_type, (-1,))  # (nf * nloc * nnei,)
             # (nf x nl x nnei) x ng
             nei_type_index = xp.tile(xp.reshape(nei_type, (-1, 1)), (1, ng))
             if self.type_one_side:
