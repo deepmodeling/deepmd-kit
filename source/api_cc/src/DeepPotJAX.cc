@@ -595,7 +595,7 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   if (lmp_list.mapping) {
     // assume nframes is 1
     for (size_t ii = 0; ii < nall_real; ii++) {
-      mapping[ii] = lmp_list.mapping[fwd_map[ii]];
+      mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
     }
   } else if (nloc_real == nall_real) {
     // no ghost atoms

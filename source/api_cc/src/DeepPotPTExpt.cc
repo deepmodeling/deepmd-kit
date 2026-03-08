@@ -708,23 +708,29 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                                    mixed_types)
           .to(device);
 
-  // Build mapping tensor
+  // Build mapping tensor.
+  // NOTE: must .clone() because the local vector goes out of scope before
+  // run_model is called, and torch::from_blob does not copy the data.
   at::Tensor mapping_tensor;
   if (lmp_list.mapping) {
     std::vector<std::int64_t> mapping(nall_real);
     for (int ii = 0; ii < nall_real; ii++) {
-      mapping[ii] = lmp_list.mapping[fwd_map[ii]];
+      mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
     }
     mapping_tensor =
-        torch::from_blob(mapping.data(), {1, nall_real}, int_option).to(device);
+        torch::from_blob(mapping.data(), {1, nall_real}, int_option)
+            .clone()
+            .to(device);
   } else {
     // Default identity mapping for local atoms
     std::vector<std::int64_t> mapping(nall_real);
     for (int ii = 0; ii < nall_real; ii++) {
-      mapping[ii] = ii < nloc ? ii : ii;
+      mapping[ii] = ii;
     }
     mapping_tensor =
-        torch::from_blob(mapping.data(), {1, nall_real}, int_option).to(device);
+        torch::from_blob(mapping.data(), {1, nall_real}, int_option)
+            .clone()
+            .to(device);
   }
 
   // Build fparam/aparam tensors (cast to float64 for the model)
