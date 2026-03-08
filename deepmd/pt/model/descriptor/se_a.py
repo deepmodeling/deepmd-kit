@@ -6,18 +6,24 @@ from collections.abc import (
 from typing import (
     Any,
     ClassVar,
+    Final,
 )
 
 import numpy as np
 import torch
 import torch.nn as nn
 
+from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
 from deepmd.pt.model.descriptor import (
     DescriptorBlock,
     prod_env_mat,
+)
+from deepmd.pt.model.network.mlp import (
+    EmbeddingNet,
+    NetworkCollection,
 )
 from deepmd.pt.utils import (
     env,
@@ -29,8 +35,17 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.env_mat_stat import (
     EnvMatStatSe,
 )
+from deepmd.pt.utils.exclude_mask import (
+    PairExcludeMask,
+)
+from deepmd.pt.utils.tabulate import (
+    DPTabulate,
+)
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
+)
+from deepmd.pt.utils.utils import (
+    ActivationFn,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -43,28 +58,6 @@ from deepmd.utils.path import (
 )
 from deepmd.utils.version import (
     check_version_compatibility,
-)
-
-try:
-    from typing import (
-        Final,
-    )
-except ImportError:
-    from torch.jit import Final
-
-from deepmd.dpmodel.utils import EnvMat as DPEnvMat
-from deepmd.pt.model.network.mlp import (
-    EmbeddingNet,
-    NetworkCollection,
-)
-from deepmd.pt.utils.exclude_mask import (
-    PairExcludeMask,
-)
-from deepmd.pt.utils.tabulate import (
-    DPTabulate,
-)
-from deepmd.pt.utils.utils import (
-    ActivationFn,
 )
 
 from .base_descriptor import (
@@ -776,7 +769,6 @@ class DescrptBlockSeA(DescriptorBlock):
 
         dmatrix = dmatrix.view(-1, self.nnei, 4)
         nfnl = dmatrix.shape[0]
-        # pre-allocate a shape to pass jit
         xyz_scatter = torch.zeros(
             [nfnl, 4, self.filter_neuron[-1]],
             dtype=self.prec,
@@ -790,9 +782,6 @@ class DescrptBlockSeA(DescriptorBlock):
             if self.type_one_side:
                 ii = embedding_idx
                 ti = -1
-                # torch.jit is not happy with slice(None)
-                # ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
-                # applying a mask seems to cause performance degradation
                 ti_mask = None
             else:
                 # ti: center atom type, ii: neighbor type...
