@@ -2311,7 +2311,7 @@ def model_args(exclude_hybrid: bool = False) -> list[Argument]:
                 [],
                 [modifier_variant_type_args()],
                 optional=True,
-                doc=doc_only_tf_supported + doc_modifier,
+                doc=doc_modifier,
             ),
             Argument(
                 "compress",
