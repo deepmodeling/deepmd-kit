@@ -22,6 +22,10 @@ from deepmd.utils.errors import (
 log = logging.getLogger(__name__)
 
 
+class RetrySignal(Exception):
+    """Signal to retry execution after OOM error."""
+
+
 class AutoBatchSize(ABC):
     """This class allows DeePMD-kit to automatically decide the maximum
     batch size that will not cause an OOM error.
@@ -75,6 +79,7 @@ class AutoBatchSize(ABC):
                 )
 
         self.factor = factor
+        self.oom_retry_mode = False
 
     def execute(
         self, callable: Callable, start_index: int, natoms: int
@@ -125,6 +130,8 @@ class AutoBatchSize(ABC):
                 ) from e
             # adjust the next batch size
             self._adjust_batch_size(1.0 / self.factor)
+            if self.oom_retry_mode:
+                raise RetrySignal from e
             return 0, None
         else:
             n_tot = n_batch * natoms
@@ -281,3 +288,15 @@ class AutoBatchSize(ABC):
         bool
             True if the exception is an OOM error
         """
+
+    def set_oom_retry_mode(self, enable: bool) -> None:
+        """Set OOM retry mode.
+
+        In OOM retry mode, all data will be re-executed.
+
+        Parameters
+        ----------
+        enable : bool
+            True to enable OOM retry mode
+        """
+        self.oom_retry_mode = enable
