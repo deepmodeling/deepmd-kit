@@ -72,18 +72,18 @@ def main():
                 "rcut": 3.0,
                 "rcut_smth": 1.5,
                 "nsel": 15,
-                "nlayers": 3,
-                "g1_dim": 20,
-                "g2_dim": 10,
+                "nlayers": 2,
+                "g1_dim": 8,
+                "g2_dim": 5,
                 "axis_neuron": 4,
                 "update_g1_has_conv": True,
                 "update_g1_has_drrd": True,
                 "update_g1_has_grrg": True,
                 "update_g2_has_attn": True,
-                "attn1_hidden": 20,
+                "attn1_hidden": 8,
                 "attn1_nhead": 2,
-                "attn2_hidden": 10,
-                "attn2_nhead": 2,
+                "attn2_hidden": 5,
+                "attn2_nhead": 1,
                 "update_style": "res_avg",
                 "set_davg_zero": True,
             },
@@ -126,7 +126,12 @@ def main():
 
     pth_path = os.path.join(base_dir, "deeppot_dpa2.pth")
     print(f"Exporting to {pth_path} ...")  # noqa: T201
-    pt_deserialize_to_file(pth_path, copy.deepcopy(data))
+    try:
+        pt_deserialize_to_file(pth_path, copy.deepcopy(data))
+    except RuntimeError as e:
+        # Custom ops (e.g. tabulate_fusion_se_t_tebd) may not be available
+        # in all build environments; .pth generation is not critical.
+        print(f"WARNING: .pth export failed ({e}), skipping.")  # noqa: T201
 
     print("Export done.")  # noqa: T201
 
@@ -173,17 +178,24 @@ def main():
     print_cpp_values("NoPbc reference values", ae_np, f_np, av_np)
 
     # ---- 6. Verify .pth gives same results ----
-    dp_pth = DeepPot(pth_path)
-    e_pth, f_pth, v_pth, ae_pth, av_pth = dp_pth.eval(coord, box, atype, atomic=True)
-    print(f"\n// .pth PBC total energy: {e_pth[0, 0]:.18e}")  # noqa: T201
-    print(f"// .pth vs .pt2 energy diff: {abs(e1[0, 0] - e_pth[0, 0]):.2e}")  # noqa: T201
-    print(f"// .pth vs .pt2 force max diff: {np.max(np.abs(f1 - f_pth)):.2e}")  # noqa: T201
+    if os.path.exists(pth_path):
+        dp_pth = DeepPot(pth_path)
+        e_pth, f_pth, v_pth, ae_pth, av_pth = dp_pth.eval(
+            coord, box, atype, atomic=True
+        )
+        print(f"\n// .pth PBC total energy: {e_pth[0, 0]:.18e}")  # noqa: T201
+        print(f"// .pth vs .pt2 energy diff: {abs(e1[0, 0] - e_pth[0, 0]):.2e}")  # noqa: T201
+        print(f"// .pth vs .pt2 force max diff: {np.max(np.abs(f1 - f_pth)):.2e}")  # noqa: T201
 
-    e_pth_np, f_pth_np, _, ae_pth_np, av_pth_np = dp_pth.eval(
-        coord, None, atype, atomic=True
-    )
-    print(f"// .pth NoPbc total energy: {e_pth_np[0, 0]:.18e}")  # noqa: T201
-    print(f"// .pth vs .pt2 NoPbc energy diff: {abs(e_np[0, 0] - e_pth_np[0, 0]):.2e}")  # noqa: T201
+        e_pth_np, f_pth_np, _, ae_pth_np, av_pth_np = dp_pth.eval(
+            coord, None, atype, atomic=True
+        )
+        print(f"// .pth NoPbc total energy: {e_pth_np[0, 0]:.18e}")  # noqa: T201
+        print(  # noqa: T201
+            f"// .pth vs .pt2 NoPbc energy diff: {abs(e_np[0, 0] - e_pth_np[0, 0]):.2e}"
+        )
+    else:
+        print("\n// Skipping .pth verification (file not generated).")  # noqa: T201
 
     print("\nDone!")  # noqa: T201
 
