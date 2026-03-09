@@ -9,6 +9,9 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.atomic_model import (
     DPDOSAtomicModel,
 )
+from deepmd.dpmodel.common import (
+    NativeOP,
+)
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
@@ -20,13 +23,11 @@ from .make_model import (
     make_model,
 )
 
-DPDOSModel_ = make_model(DPDOSAtomicModel)
+DPDOSModel_ = make_model(DPDOSAtomicModel, T_Bases=(NativeOP, BaseModel))
 
 
 @BaseModel.register("dos")
 class DOSModel(DPModelCommon, DPDOSModel_):
-    model_type = "dos"
-
     def __init__(
         self,
         *args: Any,

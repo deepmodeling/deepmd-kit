@@ -59,6 +59,27 @@ from .repflows import (
 class RepFlowArgs:
     r"""The constructor for the RepFlowArgs class which defines the parameters of the repflow block in DPA3 descriptor.
 
+    The DPA-3 descriptor uses a repflow architecture that maintains and updates three types
+    of representations: node (:math:`\mathbf{n}`), edge (:math:`\mathbf{e}`), and angle (:math:`\mathbf{a}`).
+
+    The update equations for each layer are:
+
+    .. math::
+        \mathbf{n}^{l+1} = \text{UpdateNode}(\mathbf{n}^l, \mathbf{e}^l, \mathbf{a}^l),
+
+    .. math::
+        \mathbf{e}^{l+1} = \text{UpdateEdge}(\mathbf{n}^l, \mathbf{e}^l, \mathbf{a}^l),
+
+    .. math::
+        \mathbf{a}^{l+1} = \text{UpdateAngle}(\mathbf{n}^l, \mathbf{e}^l, \mathbf{a}^l).
+
+    The final descriptor is obtained by symmetrization:
+
+    .. math::
+        \mathcal{D}^i = \text{Symmetrize}(\mathbf{n}^L, \mathbf{e}^L),
+
+    where :math:`L` is the number of repflow layers.
+
     Parameters
     ----------
     n_dim : int, optional
@@ -254,6 +275,31 @@ class RepFlowArgs:
 class DescrptDPA3(NativeOP, BaseDescriptor):
     r"""The DPA3 descriptor[1]_.
 
+    The DPA-3 descriptor uses a repflow block to iteratively update node, edge, and angle
+    representations. The descriptor is computed as:
+
+    .. math::
+        \mathcal{D}^i = \mathrm{RepFlow}(\mathcal{N}^i, \mathcal{E}^i, \mathcal{A}^i),
+
+    where :math:`\mathcal{N}^i`, :math:`\mathcal{E}^i`, and :math:`\mathcal{A}^i` are the
+    initial node, edge, and angle representations respectively.
+
+    The repflow block performs iterative updates through multiple layers:
+
+    .. math::
+        \mathcal{N}^{i,l+1} = \mathrm{UpdateNode}(\mathcal{N}^{i,l}, \mathcal{E}^{i,l}, \mathcal{A}^{i,l}),
+
+    .. math::
+        \mathcal{E}^{i,l+1} = \mathrm{UpdateEdge}(\mathcal{N}^{i,l}, \mathcal{E}^{i,l}, \mathcal{A}^{i,l}),
+
+    .. math::
+        \mathcal{A}^{i,l+1} = \mathrm{UpdateAngle}(\mathcal{N}^{i,l}, \mathcal{E}^{i,l}, \mathcal{A}^{i,l}).
+
+    The final descriptor output dimension is:
+
+    .. math::
+        \dim(\mathcal{D}^i) = \text{n\_dim} \times \text{axis\_neuron} \quad (\text{after symmetrization}).
+
     Parameters
     ----------
     repflow : Union[RepFlowArgs, dict]
@@ -290,6 +336,8 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
        network model for the era of large atomistic models.
        arXiv preprint arXiv:2506.01686 (2025).
     """
+
+    _update_sel_cls = UpdateSel
 
     def __init__(
         self,
@@ -531,7 +579,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         atype_ext: Array,
         nlist: Array,
         mapping: Array | None = None,
-    ) -> tuple[Array, Array]:
+    ) -> tuple[Array, Array, Array, Array, Array]:
         """Compute the descriptor.
 
         Parameters
@@ -683,7 +731,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        update_sel = UpdateSel()
+        update_sel = cls._update_sel_cls()
         min_nbor_dist, repflow_e_sel = update_sel.update_one_sel(
             train_data,
             type_map,

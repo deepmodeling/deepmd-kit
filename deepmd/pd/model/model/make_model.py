@@ -202,6 +202,24 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
         def get_out_bias(self) -> paddle.Tensor:
             return self.atomic_model.get_out_bias()
 
+        def get_observed_type_list(self) -> list[str]:
+            """Get observed types (elements) of the model during data statistics.
+
+            Returns
+            -------
+            list[str]
+                A list of the observed type names in this model.
+            """
+            type_map = self.get_type_map()
+            out_bias = self.get_out_bias()[0]
+            assert out_bias is not None, "No out_bias found in the model."
+            assert out_bias.ndim == 2, "The supported out_bias should be a 2D array."
+            assert out_bias.shape[0] == len(type_map), (
+                "The out_bias shape does not match the type_map length."
+            )
+            bias_mask = paddle.any(paddle.abs(out_bias) > 1e-6, axis=-1)
+            return [type_map[i] for i in range(len(type_map)) if bias_mask[i]]
+
         def set_out_bias(self, out_bias: paddle.Tensor) -> None:
             self.atomic_model.set_out_bias(out_bias)
 
@@ -231,8 +249,6 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 merged,
                 bias_adjust_mode=bias_adjust_mode,
             )
-            if bias_adjust_mode == "set-by-statistic":
-                self.atomic_model.compute_fitting_input_stat(merged)
 
         def forward_common_lower(
             self,

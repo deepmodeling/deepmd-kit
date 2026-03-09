@@ -7,9 +7,12 @@ from deepmd.pt_expt.common import (
 from deepmd.pt_expt.descriptor.base_descriptor import (
     BaseDescriptor,
 )
+from deepmd.pt_expt.utils.update_sel import (
+    UpdateSel,
+)
 
 
 @BaseDescriptor.register("se_atten_v2")
 @torch_module
 class DescrptSeAttenV2(DescrptSeAttenV2DP):
-    pass
+    _update_sel_cls = UpdateSel

@@ -59,7 +59,7 @@ from deepmd.tf.utils.graph import (
     load_graph_def,
 )
 from deepmd.tf.utils.learning_rate import (
-    LearningRateExp,
+    LearningRateSchedule,
 )
 from deepmd.tf.utils.sess import (
     run_sess,
@@ -119,7 +119,9 @@ class DPTrainer:
         self.model = Model(**model_param)
         self.fitting = self.model.get_fitting()
 
-        def get_lr_and_coef(lr_param: dict) -> Any:
+        def get_lr_and_coef(
+            lr_param: dict[str, Any],
+        ) -> tuple[LearningRateSchedule, float]:
             scale_by_worker = lr_param.get("scale_by_worker", "linear")
             if scale_by_worker == "linear":
                 scale_lr_coef = float(self.run_opt.world_size)
@@ -127,18 +129,29 @@ class DPTrainer:
                 scale_lr_coef = np.sqrt(self.run_opt.world_size).real
             else:
                 scale_lr_coef = 1.0
-            lr_type = lr_param.get("type", "exp")
-            if lr_type == "exp":
-                lr = LearningRateExp(
-                    lr_param["start_lr"], lr_param["stop_lr"], lr_param["decay_steps"]
-                )
-            else:
-                raise RuntimeError("unknown learning_rate type " + lr_type)
+            lr_params = {k: v for k, v in lr_param.items() if k != "scale_by_worker"}
+            lr = LearningRateSchedule(lr_params)
             return lr, scale_lr_coef
 
         # learning rate
         lr_param = jdata["learning_rate"]
         self.lr, self.scale_lr_coef = get_lr_and_coef(lr_param)
+        # optimizer
+        # Note: Default values are already filled by argcheck.normalize()
+        optimizer_param = jdata.get("optimizer", {})
+        self.optimizer_type = optimizer_param.get("type", "Adam")
+        self.optimizer_beta1 = float(optimizer_param.get("adam_beta1"))
+        self.optimizer_beta2 = float(optimizer_param.get("adam_beta2"))
+        self.optimizer_weight_decay = float(optimizer_param.get("weight_decay"))
+        if self.optimizer_type != "Adam":
+            raise RuntimeError(
+                f"Unsupported optimizer type {self.optimizer_type} for TensorFlow backend."
+            )
+        if self.optimizer_weight_decay != 0.0:
+            raise RuntimeError(
+                "TensorFlow Adam optimizer does not support weight_decay. "
+                "Set optimizer/weight_decay to 0."
+            )
         # loss
         # infer loss type by fitting_type
         loss_param = jdata.get("loss", {})
@@ -331,17 +344,31 @@ class DPTrainer:
         log.info("built network")
 
     def _build_optimizer(self) -> Any:
+        if self.optimizer_type != "Adam":
+            raise RuntimeError(
+                f"Unsupported optimizer type {self.optimizer_type} for TensorFlow backend."
+            )
         if self.run_opt.is_distrib:
             if self.scale_lr_coef > 1.0:
                 log.info("Scale learning rate by coef: %f", self.scale_lr_coef)
                 optimizer = tf.train.AdamOptimizer(
-                    self.learning_rate * self.scale_lr_coef
+                    self.learning_rate * self.scale_lr_coef,
+                    beta1=self.optimizer_beta1,
+                    beta2=self.optimizer_beta2,
                 )
             else:
-                optimizer = tf.train.AdamOptimizer(self.learning_rate)
+                optimizer = tf.train.AdamOptimizer(
+                    self.learning_rate,
+                    beta1=self.optimizer_beta1,
+                    beta2=self.optimizer_beta2,
+                )
             optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
         else:
-            optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+            optimizer = tf.train.AdamOptimizer(
+                learning_rate=self.learning_rate,
+                beta1=self.optimizer_beta1,
+                beta2=self.optimizer_beta2,
+            )
 
         if self.mixed_prec is not None:
             _TF_VERSION = Version(TF_VERSION)
@@ -454,11 +481,9 @@ class DPTrainer:
         is_first_step = True
         self.cur_batch = cur_batch
         log.info(
-            "start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e",
+            "start training at lr %.2e (== %.2e), final lr will be %.2e",
             run_sess(self.sess, self.learning_rate),
             self.lr.value(cur_batch),
-            self.lr.decay_steps_,
-            self.lr.decay_rate_,
             self.lr.value(stop_batch),
         )
 

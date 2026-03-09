@@ -109,7 +109,7 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
             md0.reinit_pair_exclude(pair_excl)
             # hacking!
             md1.descriptor.reinit_exclude(pair_excl)
-            md1.fitting.reinit_exclude(atom_excl)
+            md1.fitting_net.reinit_exclude(atom_excl)
 
             # check energy consistency
             args = [self.coord_ext, self.atype_ext, self.nlist]

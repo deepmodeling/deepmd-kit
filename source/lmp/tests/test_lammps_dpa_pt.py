@@ -495,6 +495,16 @@ def test_pair_deepmd_type_map(lammps_type_map) -> None:
     lammps_type_map.run(1)
 
 
+def test_pair_deepmd_type_map_with_null(lammps_type_map) -> None:
+    lammps_type_map.pair_style(
+        f"hybrid/scaled 0.5 deepmd {pb_file.resolve()} 0.5 deepmd {pb_file.resolve()}"
+    )
+    lammps_type_map.pair_coeff("* * deepmd 1 H NULL")
+    lammps_type_map.pair_coeff("* * deepmd 2 NULL O")
+    lammps_type_map.run(0)
+    lammps_type_map.run(1)
+
+
 def test_pair_deepmd_real(lammps_real) -> None:
     lammps_real.pair_style(f"deepmd {pb_file.resolve()}")
     lammps_real.pair_coeff("* *")

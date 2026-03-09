@@ -50,7 +50,7 @@ from deepmd.utils.version import (
 )
 
 if TYPE_CHECKING:
-    from deepmd.tf.train.learning_rate import (
+    from deepmd.tf.utils.learning_rate import (
         LearningRateExp,
     )
 
@@ -880,7 +880,7 @@ class GlobalPolarFittingSeA:
         ----------
         loss : dict
             the loss dict
-        lr : LearningRateExp
+        lr : LearningRateSchedule
             the learning rate
 
         Returns

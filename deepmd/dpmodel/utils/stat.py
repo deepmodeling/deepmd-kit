@@ -14,6 +14,9 @@ import numpy as np
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
+from deepmd.dpmodel.utils.exclude_mask import (
+    AtomExcludeMask,
+)
 from deepmd.utils.out_stat import (
     compute_stats_do_not_distinguish_types,
     compute_stats_from_atomic,
@@ -24,6 +27,62 @@ from deepmd.utils.path import (
 )
 
 log = logging.getLogger(__name__)
+
+
+def collect_observed_types(sampled: list[dict], type_map: list[str]) -> list[str]:
+    """Collect observed element types from sampled training data.
+
+    Parameters
+    ----------
+    sampled : list[dict]
+        Sampled data from different data systems. Each dict must contain
+        ``"atype"`` with shape ``[nframes, natoms]``.
+    type_map : list[str]
+        Mapping from type index to element symbol.
+
+    Returns
+    -------
+    list[str]
+        Sorted list of observed element symbols.
+    """
+    from deepmd.utils.econf_embd import (
+        sort_element_type,
+    )
+
+    observed_indices: set[int] = set()
+    for system in sampled:
+        atype = to_numpy_array(system["atype"])  # shape: [nframes, natoms]
+        observed_indices.update(np.unique(atype).tolist())
+    observed_types = [
+        type_map[i] for i in sorted(observed_indices) if i < len(type_map)
+    ]
+    return sort_element_type(observed_types)
+
+
+def _restore_observed_type_from_file(
+    stat_file_path: DPPath | None,
+) -> list[str] | None:
+    """Try to load observed_type from stat file."""
+    if stat_file_path is None:
+        return None
+    fp = stat_file_path / "observed_type"
+    if fp.is_file():
+        arr = fp.load_numpy()
+        # Decode bytes back to str if stored as bytes (for h5py compatibility)
+        return [x.decode() if isinstance(x, bytes) else x for x in arr.tolist()]
+    return None
+
+
+def _save_observed_type_to_file(
+    stat_file_path: DPPath | None, observed_type: list[str]
+) -> None:
+    """Save observed_type to stat file."""
+    if stat_file_path is None:
+        return
+    stat_file_path.mkdir(exist_ok=True, parents=True)
+    fp = stat_file_path / "observed_type"
+    # Use bytes dtype for h5py compatibility (h5py cannot store Unicode strings)
+    fp.save_numpy(np.array(observed_type, dtype="S"))
 
 
 def _restore_from_file(
@@ -241,14 +300,10 @@ def compute_output_stats(
 
         for kk in keys:
             for idx, system in enumerate(sampled):
-                if (("find_atom_" + kk) in system) and (
-                    system["find_atom_" + kk] > 0.0
-                ):
+                if (("find_atom_" + kk) in system) and system["find_atom_" + kk]:
                     atomic_sampled_idx[kk].append(idx)
-                elif (("find_" + kk) in system) and (system["find_" + kk] > 0.0):
+                if (("find_" + kk) in system) and system["find_" + kk]:
                     global_sampled_idx[kk].append(idx)
-                else:
-                    continue
 
         # use index to gather model predictions for the corresponding systems.
         model_pred_g = (
@@ -291,7 +346,7 @@ def compute_output_stats(
         )
 
         # compute stat
-        bias_atom_g, std_atom_g = compute_output_stats_global(
+        bias_atom_g, std_atom_g = _compute_output_stats_global(
             sampled,
             ntypes,
             keys,
@@ -302,7 +357,7 @@ def compute_output_stats(
             intensive,
             model_pred_g,
         )
-        bias_atom_a, std_atom_a = compute_output_stats_atomic(
+        bias_atom_a, std_atom_a = _compute_output_stats_atomic(
             sampled,
             ntypes,
             keys,
@@ -335,7 +390,7 @@ def compute_output_stats(
     return bias_atom_e, std_atom_e
 
 
-def compute_output_stats_global(
+def _compute_output_stats_global(
     sampled: list[dict],
     ntypes: int,
     keys: list[str],
@@ -359,14 +414,21 @@ def compute_output_stats_global(
         for kk in keys
     }
 
-    natoms_key = "natoms"
-    input_natoms = {
-        kk: [
-            to_numpy_array(sampled[idx][natoms_key])
-            for idx in global_sampled_idx.get(kk, [])
-        ]
-        for kk in keys
-    }
+    data_mixed_type = "real_natoms_vec" in sampled[0]
+    natoms_key = "natoms" if not data_mixed_type else "real_natoms_vec"
+    input_natoms = {}
+    for kk in keys:
+        kk_natoms = []
+        for idx in global_sampled_idx.get(kk, []):
+            nn = to_numpy_array(sampled[idx][natoms_key])
+            if "atom_exclude_types" in sampled[idx]:
+                nn = nn.copy()
+                type_mask = AtomExcludeMask(
+                    ntypes, sampled[idx]["atom_exclude_types"]
+                ).get_type_mask()
+                nn[:, 2:] *= type_mask.reshape(1, -1)
+            kk_natoms.append(nn)
+        input_natoms[kk] = kk_natoms
 
     # shape: (nframes, ndim)
     merged_output = {
@@ -453,7 +515,7 @@ def compute_output_stats_global(
     return bias_atom_e, std_atom_e
 
 
-def compute_output_stats_atomic(
+def _compute_output_stats_atomic(
     sampled: list[dict],
     ntypes: int,
     keys: list[str],

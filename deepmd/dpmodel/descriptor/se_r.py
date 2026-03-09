@@ -58,6 +58,25 @@ from .base_descriptor import (
 class DescrptSeR(NativeOP, BaseDescriptor):
     r"""DeepPot-SE_R constructed from only the radial information of atomic configurations.
 
+    The descriptor :math:`\mathcal{D}^i \in \mathbb{R}^{M}` is given by
+
+    .. math::
+        \mathcal{D}^i = \frac{1}{N_c} \sum_{j=1}^{N_c} \mathcal{N}(s(r_{ji})),
+
+    where :math:`\mathcal{N}` is the embedding network, and :math:`s(r_{ji})` is the
+    smoothed radial distance between atom :math:`i` and its neighbor :math:`j`.
+
+    The switching function :math:`s(r)` is defined as:
+
+    .. math::
+        s(r)=
+        \begin{cases}
+        \frac{1}{r}, & r<r_s \\
+        \frac{1}{r} \{ {(\frac{r - r_s}{ r_c - r_s})}^3 (-6 {(\frac{r - r_s}{ r_c - r_s})}^2 +15 \frac{r - r_s}{ r_c - r_s} -10) +1 \}, & r_s \leq r<r_c \\
+        0, & r \geq r_c
+        \end{cases}
+
+    where :math:`r_c` is the cutoff radius and :math:`r_s` is the smooth cutoff parameter.
 
     Parameters
     ----------
@@ -108,6 +127,8 @@ class DescrptSeR(NativeOP, BaseDescriptor):
        systems. In Proceedings of the 32nd International Conference on Neural Information Processing
        Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441-4451.
     """
+
+    _update_sel_cls = UpdateSel
 
     def __init__(
         self,
@@ -486,7 +507,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
             The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        min_nbor_dist, local_jdata_cpy["sel"] = UpdateSel().update_one_sel(
+        min_nbor_dist, local_jdata_cpy["sel"] = cls._update_sel_cls().update_one_sel(
             train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], False
         )
         return local_jdata_cpy, min_nbor_dist

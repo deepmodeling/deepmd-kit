@@ -41,6 +41,7 @@ PRECISION_DICT = dict.fromkeys(VALID_PRECISION)
 
 doc_only_tf_supported = "(Supported Backend: TensorFlow) "
 doc_only_pt_supported = "(Supported Backend: PyTorch) "
+doc_only_pt_expt_supported = "(Supported Backend: PyTorch Exportable) "
 doc_only_pd_supported = "(Supported Backend: Paddle) "
 # descriptors
 doc_loc_frame = "Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame."
@@ -2350,12 +2351,12 @@ def standard_model_args() -> Argument:
     doc_model_branch_alias = (
         "List of aliases for this model branch. "
         "Multiple aliases can be defined, and any alias can reference this branch throughout the model usage. "
-        "Used only in multitask models."
+        "Used only in multi-task models."
     )
     doc_info = (
-        "Dictionary of metadata for this model branch. "
-        "Store arbitrary key-value pairs with branch-specific information. "
-        "Used only in multitask models."
+        "Dictionary of metadata for this model or model branch. "
+        "Store arbitrary key-value pairs with model- or branch-specific information. "
+        "Used in both single- and multi-task models."
     )
 
     ca = Argument(
@@ -2480,55 +2481,156 @@ def linear_ener_model_args() -> Argument:
 lr_args_plugin = ArgsPlugin()
 
 
+def _check_lr_stop_args(data: dict[str, Any]) -> bool:
+    """
+    Check that stop_lr and stop_lr_ratio are mutually exclusive.
+    If neither is provided, set a default stop_lr for backward compatibility.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        The learning rate configuration dictionary.
+
+    Returns
+    -------
+    bool
+        True if validation passes.
+
+    Raises
+    ------
+    ValueError
+        If both stop_lr and stop_lr_ratio are provided.
+    """
+    has_stop_lr = "stop_lr" in data and data["stop_lr"] is not None
+    has_stop_lr_ratio = "stop_lr_ratio" in data and data["stop_lr_ratio"] is not None
+
+    if has_stop_lr and has_stop_lr_ratio:
+        raise ValueError(
+            "stop_lr and stop_lr_ratio are mutually exclusive. "
+            f"Got stop_lr={data['stop_lr']}, stop_lr_ratio={data['stop_lr_ratio']}"
+        )
+    # Set default stop_lr for backward compatibility (old default was 5e-8)
+    if not has_stop_lr and not has_stop_lr_ratio:
+        data["stop_lr"] = 5e-8
+    return True
+
+
+def _check_warmup_args(data: dict[str, Any]) -> bool:
+    """
+    Check that warmup_steps and warmup_ratio are mutually exclusive.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        The learning rate configuration dictionary.
+
+    Returns
+    -------
+    bool
+        True if validation passes.
+
+    Raises
+    ------
+    ValueError
+        If both warmup_steps (non-zero) and warmup_ratio are provided.
+    """
+    # warmup_steps default is 0, so check for non-zero value
+    has_warmup_steps = "warmup_steps" in data and data["warmup_steps"] != 0
+    has_warmup_ratio = "warmup_ratio" in data and data["warmup_ratio"] is not None
+
+    if has_warmup_steps and has_warmup_ratio:
+        raise ValueError(
+            "warmup_steps and warmup_ratio are mutually exclusive. "
+            f"Got warmup_steps={data['warmup_steps']}, warmup_ratio={data['warmup_ratio']}"
+        )
+    return True
+
+
+def _check_decay_steps_args(data: dict[str, Any]) -> bool:
+    """
+    Check that decay_steps is positive and decay_rate is valid for exponential learning rate.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        The learning rate configuration dictionary.
+
+    Returns
+    -------
+    bool
+        True if validation passes.
+
+    Raises
+    ------
+    ValueError
+        If decay_steps is not positive.
+        If decay_rate is not positive.
+    """
+    lr_type = data.get("type", "exp")
+    if lr_type != "exp":
+        return True
+
+    decay_steps = data.get("decay_steps")
+    if decay_steps is not None and decay_steps <= 0:
+        raise ValueError(f"decay_steps ({decay_steps}) must be positive.")
+
+    decay_rate = data.get("decay_rate")
+    if decay_rate is not None and (decay_rate <= 0 or decay_rate > 1):
+        raise ValueError(
+            f"decay_rate ({decay_rate}) must be in (0, 1] for exponential decay."
+        )
+    return True
+
+
 @lr_args_plugin.register("exp")
 def learning_rate_exp() -> list[Argument]:
-    doc_start_lr = "The learning rate at the start of the training."
-    doc_stop_lr = (
-        "The desired learning rate at the end of the training. "
-        f"When decay_rate {doc_only_pt_supported}is explicitly set, "
-        "this value will serve as the minimum learning rate during training. "
-        "In other words, if the learning rate decays below stop_lr, stop_lr will be applied instead."
-    )
+    """
+    Defines an exponential-decayed learning rate schedule with optional warmup.
+
+    The learning rate starts at `start_lr` (after warmup) and decays exponentially
+    to `stop_lr` over the training steps.
+    """
     doc_decay_steps = (
-        "The learning rate is decaying every this number of training steps."
+        "The learning rate is decaying every this number of training steps. "
+        "If decay_steps exceeds the decay phase steps (num_steps - warmup_steps) "
+        "and decay_rate is not provided, it will be automatically adjusted to a "
+        "sensible default value."
     )
     doc_decay_rate = (
         "The decay rate for the learning rate. "
         "If this is provided, it will be used directly as the decay rate for learning rate "
         "instead of calculating it through interpolation between start_lr and stop_lr."
     )
+    doc_smooth = (
+        "If True, use smooth exponential decay (lr decays continuously). "
+        "If False (default), use stepped decay (lr decays every decay_steps)."
+    )
 
-    args = [
-        Argument("start_lr", float, optional=True, default=1e-3, doc=doc_start_lr),
-        Argument("stop_lr", float, optional=True, default=1e-8, doc=doc_stop_lr),
+    # Only exp-specific arguments (common args are outside Variant)
+    return [
         Argument("decay_steps", int, optional=True, default=5000, doc=doc_decay_steps),
         Argument(
             "decay_rate",
             float,
             optional=True,
             default=None,
-            doc=doc_only_pt_supported + doc_decay_rate,
+            doc=doc_decay_rate,
         ),
+        Argument("smooth", bool, optional=True, default=False, doc=doc_smooth),
     ]
-    return args
 
 
-@lr_args_plugin.register("cosine", doc=doc_only_pt_supported)
+@lr_args_plugin.register("cosine")
 def learning_rate_cosine() -> list[Argument]:
     """
-    Defines a cosine annealing learning rate schedule.
+    Defines a cosine annealing learning rate schedule with optional warmup.
 
-    The learning rate starts at `start_lr` and gradually decreases to `stop_lr`
-    following a cosine curve over the training steps.
+    The learning rate starts at `start_lr` (after warmup) and gradually
+    decreases to `stop_lr` following a cosine curve over the training steps.
     """
-    doc_start_lr = "The learning rate at the start of the training."
-    doc_stop_lr = "The desired learning rate at the end of the training. "
-
-    args = [
-        Argument("start_lr", float, optional=True, default=1e-3, doc=doc_start_lr),
-        Argument("stop_lr", float, optional=True, default=1e-5, doc=doc_stop_lr),
-    ]
-    return args
+    # Cosine annealing has no type-specific arguments
+    # (common args like start_lr, stop_lr, warmup settings are outside Variant)
+    return []
 
 
 def learning_rate_variant_type_args() -> Variant:
@@ -2546,21 +2648,393 @@ def learning_rate_variant_type_args() -> Variant:
 def learning_rate_args(fold_subdoc: bool = False) -> Argument:
     doc_scale_by_worker = "When parallel training or batch size scaled, how to alter learning rate. Valid values are `linear`(default), `sqrt` or `none`."
     doc_lr = "The definition of learning rate"
+    doc_start_lr = "The learning rate at the start of the training (after warmup)."
+    doc_stop_lr = (
+        "The desired learning rate at the end of training. "
+        "Mutually exclusive with stop_lr_ratio."
+    )
+    doc_stop_lr_ratio = (
+        "The ratio of stop_lr to start_lr. stop_lr = start_lr * stop_lr_ratio. "
+        "Mutually exclusive with stop_lr."
+    )
+    doc_warmup_steps = (
+        "The number of steps for learning rate warmup. "
+        "During warmup, the learning rate increases linearly from "
+        "warmup_start_factor * start_lr to start_lr. "
+        "Mutually exclusive with warmup_ratio. Default is 0 (no warmup)."
+    )
+    doc_warmup_ratio = (
+        "The ratio of warmup steps to total training steps. "
+        "The actual number of warmup steps is int(warmup_ratio * num_steps)."
+        "Mutually exclusive with warmup_steps."
+    )
+    doc_warmup_start_factor = (
+        "The factor of start_lr for the initial warmup learning rate. "
+        "The warmup learning rate starts from warmup_start_factor * start_lr. "
+        "Default is 0.0, meaning the learning rate starts from zero."
+    )
+
+    def _check_lr_args(data: dict[str, Any]) -> bool:
+        """Check learning rate argument constraints."""
+        # Check stop_lr and stop_lr_ratio
+        _check_lr_stop_args(data)
+        # Check warmup_steps and warmup_ratio
+        _check_warmup_args(data)
+        # Check decay_steps and decay_rate
+        _check_decay_steps_args(data)
+        return True
+
+    # Common arguments for all learning rate types (outside Variant)
+    common_args = [
+        Argument("start_lr", float, optional=False, doc=doc_start_lr),
+        Argument(
+            "stop_lr",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_stop_lr,
+        ),
+        Argument(
+            "stop_lr_ratio",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_stop_lr_ratio,
+        ),
+        Argument(
+            "warmup_steps",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_warmup_steps,
+        ),
+        Argument(
+            "warmup_ratio",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_warmup_ratio,
+        ),
+        Argument(
+            "warmup_start_factor",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_warmup_start_factor,
+        ),
+        Argument(
+            "scale_by_worker",
+            str,
+            optional=True,
+            default="linear",
+            doc=doc_scale_by_worker,
+        ),
+    ]
+
     return Argument(
         "learning_rate",
         dict,
-        [
-            Argument(
-                "scale_by_worker",
-                str,
-                optional=True,
-                default="linear",
-                doc=doc_scale_by_worker,
-            )
-        ],
+        common_args,
         [learning_rate_variant_type_args()],
         optional=True,
         doc=doc_lr,
+        fold_subdoc=fold_subdoc,
+        extra_check=_check_lr_args,
+    )
+
+
+#  --- Optimizer configurations: --- #
+opt_args_plugin = ArgsPlugin()
+
+
+@opt_args_plugin.register("Adam")
+def optimizer_adam() -> list[Argument]:
+    doc_adam_beta1 = "Adam beta1 coefficient for first moment decay."
+    doc_adam_beta2 = "Adam beta2 coefficient for second moment decay."
+    doc_weight_decay = (
+        "Weight decay coefficient for Adam. In PyTorch and Paddle, this is an L2 "
+        "penalty applied to gradients. TensorFlow does not support weight_decay and "
+        "requires this value to be 0."
+    )
+    return [
+        Argument(
+            "adam_beta1",
+            float,
+            optional=True,
+            default=0.9,
+            doc=doc_adam_beta1,
+        ),
+        Argument(
+            "adam_beta2",
+            float,
+            optional=True,
+            default=0.999,
+            doc=doc_adam_beta2,
+        ),
+        Argument(
+            "weight_decay",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_weight_decay,
+        ),
+    ]
+
+
+@opt_args_plugin.register("AdamW", doc=doc_only_pt_supported)
+def optimizer_adamw() -> list[Argument]:
+    doc_adam_beta1 = "AdamW beta1 coefficient for first moment decay."
+    doc_adam_beta2 = "AdamW beta2 coefficient for second moment decay."
+    doc_weight_decay = (
+        "Decoupled weight decay coefficient for AdamW optimizer (PyTorch only)."
+    )
+    return [
+        Argument(
+            "adam_beta1",
+            float,
+            optional=True,
+            default=0.9,
+            doc=doc_only_pt_supported + doc_adam_beta1,
+        ),
+        Argument(
+            "adam_beta2",
+            float,
+            optional=True,
+            default=0.999,
+            doc=doc_only_pt_supported + doc_adam_beta2,
+        ),
+        Argument(
+            "weight_decay",
+            float,
+            optional=True,
+            default=0.001,
+            doc=doc_only_pt_supported + doc_weight_decay,
+        ),
+    ]
+
+
+@opt_args_plugin.register("LKF", doc=doc_only_pt_supported)
+def optimizer_lkf() -> list[Argument]:
+    doc_kf_blocksize = "The blocksize for the Kalman filter."
+    doc_kf_start_pref_e = (
+        "The prefactor of energy loss at the start of Kalman filter updates."
+    )
+    doc_kf_limit_pref_e = (
+        "The prefactor of energy loss at the end of training for Kalman filter updates."
+    )
+    doc_kf_start_pref_f = (
+        "The prefactor of force loss at the start of Kalman filter updates."
+    )
+    doc_kf_limit_pref_f = (
+        "The prefactor of force loss at the end of training for Kalman filter updates."
+    )
+    return [
+        Argument(
+            "kf_blocksize",
+            int,
+            optional=True,
+            default=5120,
+            doc=doc_only_pt_supported + doc_kf_blocksize,
+        ),
+        Argument(
+            "kf_start_pref_e",
+            float,
+            optional=True,
+            default=1.0,
+            doc=doc_only_pt_supported + doc_kf_start_pref_e,
+        ),
+        Argument(
+            "kf_limit_pref_e",
+            float,
+            optional=True,
+            default=1.0,
+            doc=doc_only_pt_supported + doc_kf_limit_pref_e,
+        ),
+        Argument(
+            "kf_start_pref_f",
+            float,
+            optional=True,
+            default=1.0,
+            doc=doc_only_pt_supported + doc_kf_start_pref_f,
+        ),
+        Argument(
+            "kf_limit_pref_f",
+            float,
+            optional=True,
+            default=1.0,
+            doc=doc_only_pt_supported + doc_kf_limit_pref_f,
+        ),
+    ]
+
+
+@opt_args_plugin.register("AdaMuon", doc=doc_only_pt_supported)
+def optimizer_adamuon() -> list[Argument]:
+    return [
+        Argument(
+            "momentum",
+            float,
+            optional=True,
+            default=0.95,
+            alias=["muon_momentum"],
+            doc=doc_only_pt_supported + "Momentum coefficient for AdaMuon optimizer.",
+        ),
+        Argument(
+            "adam_beta1",
+            float,
+            optional=True,
+            default=0.9,
+            doc=doc_only_pt_supported + "Adam beta1 coefficient for AdaMuon optimizer.",
+        ),
+        Argument(
+            "adam_beta2",
+            float,
+            optional=True,
+            default=0.95,
+            doc=doc_only_pt_supported + "Adam beta2 coefficient for AdaMuon optimizer.",
+        ),
+        Argument(
+            "weight_decay",
+            float,
+            optional=True,
+            default=0.001,
+            doc=doc_only_pt_supported
+            + "Weight decay coefficient. Applied only to >=2D parameters (AdaMuon path).",
+        ),
+        Argument(
+            "lr_adjust",
+            float,
+            optional=True,
+            default=10.0,
+            doc=doc_only_pt_supported
+            + "Learning rate adjustment factor for Adam (1D params). "
+            "If lr_adjust <= 0: use match-RMS scaling (scale = lr_adjust_coeff * sqrt(max(m, n))), Adam uses lr directly. "
+            "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1.0, m/n))), Adam uses lr/lr_adjust.",
+        ),
+        Argument(
+            "lr_adjust_coeff",
+            float,
+            optional=True,
+            default=0.2,
+            doc=doc_only_pt_supported
+            + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
+        ),
+    ]
+
+
+@opt_args_plugin.register("HybridMuon", doc=doc_only_pt_supported)
+def optimizer_hybrid_muon() -> list[Argument]:
+    return [
+        Argument(
+            "momentum",
+            float,
+            optional=True,
+            default=0.95,
+            alias=["muon_momentum"],
+            doc=doc_only_pt_supported
+            + "Momentum coefficient for HybridMuon optimizer (>=2D params). "
+            "Used in Nesterov momentum update: m_t = beta*m_{t-1} + (1-beta)*g_t.",
+        ),
+        Argument(
+            "adam_beta1",
+            float,
+            optional=True,
+            default=0.9,
+            doc=doc_only_pt_supported
+            + "Adam beta1 coefficient for 1D parameters (biases, norms).",
+        ),
+        Argument(
+            "adam_beta2",
+            float,
+            optional=True,
+            default=0.95,
+            doc=doc_only_pt_supported
+            + "Adam beta2 coefficient for 1D parameters (biases, norms).",
+        ),
+        Argument(
+            "weight_decay",
+            float,
+            optional=True,
+            default=0.001,
+            doc=doc_only_pt_supported
+            + "Weight decay coefficient. Applied only to Muon-routed parameters",
+        ),
+        Argument(
+            "lr_adjust",
+            float,
+            optional=True,
+            default=10.0,
+            doc=doc_only_pt_supported
+            + "Learning rate adjustment mode for HybridMuon scaling and Adam learning rate. "
+            "If lr_adjust <= 0: use match-RMS scaling (scale = coeff*sqrt(max(m,n))), Adam uses lr directly. "
+            "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1, m/n))), Adam uses lr/lr_adjust. "
+            "Default is 10.0 (Adam lr = lr/10).",
+        ),
+        Argument(
+            "lr_adjust_coeff",
+            float,
+            optional=True,
+            default=0.2,
+            doc=doc_only_pt_supported
+            + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
+        ),
+        Argument(
+            "muon_2d_only",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported
+            + "If True, only 2D parameters use Muon (matching PyTorch's torch.optim.Muon). "
+            + "Parameters with ndim > 2 use Adam without weight decay. "
+            + "If False, all >=2D parameters use Muon.",
+        ),
+        Argument(
+            "min_2d_dim",
+            int,
+            optional=True,
+            default=1,
+            alias=["muon_min_2d_dim"],
+            doc=doc_only_pt_supported
+            + "Minimum min(m, n) threshold for HybridMuon on 2D matrices. "
+            "Matrices with min(m, n) >= min_2d_dim use HybridMuon; "
+            "those with min(m, n) < min_2d_dim use Adam fallback. "
+            "Set to 1 to disable fallback.",
+        ),
+        Argument(
+            "flash_muon",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported
+            + "Enable triton-accelerated Newton-Schulz orthogonalization. "
+            "Requires triton and CUDA. Falls back to PyTorch implementation "
+            "when triton is unavailable or running on CPU.",
+        ),
+    ]
+
+
+def optimizer_variant_type_args() -> Variant:
+    doc_opt_type = "The type of optimizer to use."
+    return Variant(
+        "type",
+        opt_args_plugin.get_all_argument(),
+        optional=True,
+        default_tag="Adam",
+        doc=doc_opt_type,
+    )
+
+
+def optimizer_args(fold_subdoc: bool = False) -> Argument:
+    doc_optimizer = (
+        "The definition of optimizer. Supported optimizer types depend on backend: "
+        "TensorFlow/Paddle: Adam; PyTorch: Adam, AdamW, LKF, AdaMuon, HybridMuon."
+    )
+    return Argument(
+        "optimizer",
+        dict,
+        [],
+        [optimizer_variant_type_args()],
+        optional=True,
+        doc=doc_optimizer,
         fold_subdoc=fold_subdoc,
     )
 
@@ -3268,22 +3742,6 @@ def training_args(
     doc_tensorboard = "Enable tensorboard"
     doc_tensorboard_log_dir = "The log directory of tensorboard outputs"
     doc_tensorboard_freq = "The frequency of writing tensorboard events."
-    doc_warmup_steps = (
-        "The number of steps for learning rate warmup. During warmup, "
-        "the learning rate begins at zero and progressively increases linearly to `start_lr`, "
-        "rather than starting directly from `start_lr`"
-    )
-    doc_warmup_ratio = (
-        "The ratio of warmup steps to total training steps. "
-        "The actual number of warmup steps is calculated as `warmup_ratio * numb_steps`. "
-        "Valid values are in the range [0.0, 1.0). "
-        "If `warmup_steps` is set, this option will be ignored."
-    )
-    doc_warmup_start_factor = (
-        "The factor of start learning rate to the target learning rate during warmup. "
-        "The warmup learning rate will linearly increase from `warmup_start_factor * start_lr` to `start_lr`. "
-        "Default is 0.0, meaning the learning rate starts from zero."
-    )
     doc_gradient_max_norm = (
         "Clips the gradient norm to a maximum value. "
         "If the gradient norm exceeds this value, it will be clipped to this limit. "
@@ -3296,8 +3754,6 @@ def training_args(
         "If the file extension is .h5 or .hdf5, an HDF5 file is used to store the statistics; "
         "otherwise, a directory containing NumPy binary files are used."
     )
-    doc_opt_type = "The type of optimizer to use."
-    doc_kf_blocksize = "The blocksize for the Kalman filter."
     doc_model_prob = (
         "The visiting probability of each model for each training step in the "
         "multi-task mode. Only used when num_epoch_dict is not set. If not set "
@@ -3437,25 +3893,6 @@ def training_args(
             "tensorboard_freq", int, optional=True, default=1, doc=doc_tensorboard_freq
         ),
         Argument(
-            "warmup_steps",
-            int,
-            optional=True,
-            doc=doc_only_pt_supported + doc_warmup_steps,
-        ),
-        Argument(
-            "warmup_ratio",
-            float,
-            optional=True,
-            doc=doc_only_pt_supported + doc_warmup_ratio,
-        ),
-        Argument(
-            "warmup_start_factor",
-            float,
-            optional=True,
-            default=0.0,
-            doc=doc_only_pt_supported + doc_warmup_start_factor,
-        ),
-        Argument(
             "gradient_max_norm",
             float,
             optional=True,
@@ -3475,190 +3912,17 @@ def training_args(
             default=0,
             doc=doc_only_pt_supported + doc_zero_stage,
         ),
-    ]
-    variants = [
-        Variant(
-            "opt_type",
-            choices=[
-                Argument("Adam", dict, [], [], optional=True),
-                Argument("AdamW", dict, [], [], optional=True),
-                Argument(
-                    "LKF",
-                    dict,
-                    [
-                        Argument(
-                            "kf_blocksize",
-                            int,
-                            optional=True,
-                            doc=doc_only_pt_supported + doc_kf_blocksize,
-                        ),
-                    ],
-                    [],
-                    optional=True,
-                ),
-                Argument(
-                    "AdaMuon",
-                    dict,
-                    [
-                        Argument(
-                            "momentum",
-                            float,
-                            optional=True,
-                            default=0.95,
-                            alias=["muon_momentum"],
-                            doc=doc_only_pt_supported
-                            + "Momentum coefficient for AdaMuon optimizer.",
-                        ),
-                        Argument(
-                            "adam_beta1",
-                            float,
-                            optional=True,
-                            default=0.9,
-                            doc=doc_only_pt_supported
-                            + "Adam beta1 coefficient for AdaMuon optimizer.",
-                        ),
-                        Argument(
-                            "adam_beta2",
-                            float,
-                            optional=True,
-                            default=0.95,
-                            doc=doc_only_pt_supported
-                            + "Adam beta2 coefficient for AdaMuon optimizer.",
-                        ),
-                        Argument(
-                            "weight_decay",
-                            float,
-                            optional=True,
-                            default=0.001,
-                            doc=doc_only_pt_supported
-                            + "Weight decay coefficient. Applied only to >=2D parameters (AdaMuon path).",
-                        ),
-                        Argument(
-                            "lr_adjust",
-                            float,
-                            optional=True,
-                            default=10.0,
-                            doc=doc_only_pt_supported
-                            + "Learning rate adjustment factor for Adam (1D params). "
-                            "If lr_adjust <= 0: use match-RMS scaling (scale = lr_adjust_coeff * sqrt(max(m, n))), Adam uses lr directly. "
-                            "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1.0, m/n))), Adam uses lr/lr_adjust.",
-                        ),
-                        Argument(
-                            "lr_adjust_coeff",
-                            float,
-                            optional=True,
-                            default=0.2,
-                            doc=doc_only_pt_supported
-                            + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
-                        ),
-                    ],
-                    [],
-                    optional=True,
-                ),
-                Argument(
-                    "HybridMuon",
-                    dict,
-                    [
-                        Argument(
-                            "momentum",
-                            float,
-                            optional=True,
-                            default=0.95,
-                            alias=["muon_momentum"],
-                            doc=doc_only_pt_supported
-                            + "Momentum coefficient for HybridMuon optimizer (>=2D params). "
-                            "Used in Nesterov momentum update: m_t = beta*m_{t-1} + (1-beta)*g_t.",
-                        ),
-                        Argument(
-                            "adam_beta1",
-                            float,
-                            optional=True,
-                            default=0.9,
-                            doc=doc_only_pt_supported
-                            + "Adam beta1 coefficient for 1D parameters (biases, norms).",
-                        ),
-                        Argument(
-                            "adam_beta2",
-                            float,
-                            optional=True,
-                            default=0.95,
-                            doc=doc_only_pt_supported
-                            + "Adam beta2 coefficient for 1D parameters (biases, norms).",
-                        ),
-                        Argument(
-                            "weight_decay",
-                            float,
-                            optional=True,
-                            default=0.001,
-                            doc=doc_only_pt_supported
-                            + "Weight decay coefficient. Applied to Muon-routed parameters and >=2D Adam-routed parameters (AdamW-style decoupled decay). Not applied to 1D Adam parameters.",
-                        ),
-                        Argument(
-                            "lr_adjust",
-                            float,
-                            optional=True,
-                            default=10.0,
-                            doc=doc_only_pt_supported
-                            + "Learning rate adjustment mode for HybridMuon scaling and Adam learning rate. "
-                            "If lr_adjust <= 0: use match-RMS scaling (scale = coeff*sqrt(max(m,n))), Adam uses lr directly. "
-                            "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1, m/n))), Adam uses lr/lr_adjust. "
-                            "Default is 10.0 (Adam lr = lr/10).",
-                        ),
-                        Argument(
-                            "lr_adjust_coeff",
-                            float,
-                            optional=True,
-                            default=0.2,
-                            doc=doc_only_pt_supported
-                            + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
-                        ),
-                        Argument(
-                            "muon_2d_only",
-                            bool,
-                            optional=True,
-                            default=True,
-                            doc=doc_only_pt_supported
-                            + "If True, only 2D parameters use Muon (matching PyTorch's torch.optim.Muon). "
-                            + "Parameters with ndim > 2 use AdamW-style updates. "
-                            + "If False, all >=2D parameters are eligible for Muon (with min_2d_dim fallback to AdamW-style updates).",
-                        ),
-                        Argument(
-                            "min_2d_dim",
-                            int,
-                            optional=True,
-                            default=1,
-                            alias=["muon_min_2d_dim"],
-                            doc=doc_only_pt_supported
-                            + "Minimum min(m, n) threshold for HybridMuon on matrix-view parameters. "
-                            "Parameters with min(m, n) >= min_2d_dim use HybridMuon; "
-                            "those with min(m, n) < min_2d_dim use Adam fallback. "
-                            "Set to 1 to disable fallback.",
-                        ),
-                        Argument(
-                            "flash_muon",
-                            bool,
-                            optional=True,
-                            default=True,
-                            doc=doc_only_pt_supported
-                            + "Enable triton-accelerated Newton-Schulz orthogonalization. "
-                            "Requires triton and CUDA. Falls back to PyTorch implementation "
-                            "when triton is unavailable or running on CPU.",
-                        ),
-                    ],
-                    [],
-                    optional=True,
-                    doc=doc_only_pt_supported
-                    + "HybridMuon optimizer (DeePMD-kit custom implementation). "
-                    + "This is a Hybrid optimizer that automatically combines Muon and Adam. "
-                    + "For >=2D params: Muon update with Newton-Schulz (or Adam fallback when matrix-view dimensions are too small). "
-                    + "For 1D params: Standard Adam. "
-                    + "This is DIFFERENT from PyTorch's torch.optim.Muon which ONLY supports 2D parameters.",
-                ),
-            ],
+        Argument(
+            "enable_compile",
+            bool,
             optional=True,
-            default_tag="Adam",
-            doc=doc_only_pt_supported + doc_opt_type,
-        )
+            default=False,
+            doc=doc_only_pt_expt_supported
+            + "Enable torch.compile to accelerate training. "
+            "Uses make_fx to decompose autograd into primitive ops, "
+            "then compiles with torch.compile/Inductor for kernel fusion. "
+            "The first training step will be slower due to one-time compilation.",
+        ),
     ]
 
     def training_extra_check(data: dict | None) -> bool:
@@ -3703,7 +3967,7 @@ def training_args(
         "training",
         dict,
         args,
-        variants,
+        [],
         doc=doc_training,
         extra_check=training_extra_check,
     )
@@ -3780,6 +4044,7 @@ def gen_args(multi_task: bool = False) -> list[Argument]:
         return [
             model_args(),
             learning_rate_args(),
+            optimizer_args(),
             loss_args(),
             training_args(multi_task=multi_task),
             nvnmd_args(),
@@ -3788,6 +4053,7 @@ def gen_args(multi_task: bool = False) -> list[Argument]:
         return [
             multi_model_args(),
             learning_rate_args(fold_subdoc=True),
+            optimizer_args(fold_subdoc=True),
             multi_loss_args(),
             training_args(multi_task=multi_task),
             nvnmd_args(fold_subdoc=True),

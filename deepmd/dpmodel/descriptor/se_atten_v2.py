@@ -33,6 +33,97 @@ from .dpa1 import (
 
 @BaseDescriptor.register("se_atten_v2")
 class DescrptSeAttenV2(DescrptDPA1):
+    r"""Attention-based descriptor (version 2) which uses stripped type embedding.
+
+    This descriptor inherits from :class:`DescrptDPA1` and uses the same attention-based
+    mechanism, but with `tebd_input_mode="strip"` by default. The descriptor
+    :math:`\mathcal{D}^i \in \mathbb{R}^{M \times M_{<}}` is computed as:
+
+    .. math::
+        \mathcal{D}^i = \frac{1}{N_c^2}(\hat{\mathcal{G}}^i)^T \mathcal{R}^i (\mathcal{R}^i)^T \hat{\mathcal{G}}^i_<,
+
+    where :math:`\hat{\mathcal{G}}^i` is the embedding matrix after self-attention layers,
+    and :math:`\mathcal{R}^i` is the coordinate matrix (see :class:`DescrptDPA1` for details).
+
+    The key difference from DPA-1 is that the type embedding is processed by a separate
+    embedding network and combined multiplicatively with the radial embedding:
+
+    .. math::
+        \mathcal{G}^i = \mathcal{N}_r(s(r)) \odot \mathcal{N}_t(\mathcal{T}) + \mathcal{N}_r(s(r)),
+
+    where :math:`\mathcal{N}_r` is the radial embedding network, :math:`\mathcal{N}_t` is
+    the type embedding network, and :math:`\odot` denotes element-wise multiplication.
+
+    Parameters
+    ----------
+    rcut: float
+            The cut-off radius :math:`r_c`
+    rcut_smth: float
+            From where the environment matrix should be smoothed :math:`r_s`
+    sel : list[int], int
+            list[int]: sel[i] specifies the maxmum number of type i atoms in the cut-off radius
+            int: the total maxmum number of atoms in the cut-off radius
+    ntypes : int
+            Number of element types
+    neuron : list[int]
+            Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
+    axis_neuron: int
+            Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
+    tebd_dim: int
+            Dimension of the type embedding
+    resnet_dt: bool
+            Time-step `dt` in the resnet construction:
+            y = x + dt * \phi (Wx + b)
+    trainable: bool
+            If the weights of this descriptors are trainable.
+    trainable_ln: bool
+            Whether to use trainable shift and scale weights in layer normalization.
+    ln_eps: float, Optional
+            The epsilon value for layer normalization.
+    type_one_side: bool
+            If 'False', type embeddings of both neighbor and central atoms are considered.
+            If 'True', only type embeddings of neighbor atoms are considered.
+            Default is 'False'.
+    attn: int
+            Hidden dimension of the attention vectors
+    attn_layer: int
+            Number of attention layers
+    attn_dotr: bool
+            If dot the angular gate to the attention weights
+    attn_mask: bool
+            (Only support False to keep consistent with other backend references.)
+            (Not used in this version. True option is not implemented.)
+            If mask the diagonal of attention weights
+    exclude_types : list[list[int]]
+            The excluded pairs of types which have no interaction with each other.
+            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    env_protection: float
+            Protection parameter to prevent division by zero errors during environment matrix calculations.
+    set_davg_zero: bool
+            Set the shift of embedding net input to zero.
+    activation_function: str
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
+    precision: str
+            The precision of the embedding net parameters. Supported options are |PRECISION|
+    scaling_factor: float
+            The scaling factor of normalization in calculations of attention weights.
+            If `temperature` is None, the scaling of attention weights is (N_dim * scaling_factor)**0.5
+    normalize: bool
+            Whether to normalize the hidden vectors in attention weights calculation.
+    temperature: float
+            If not None, the scaling of attention weights is `temperature` itself.
+    concat_output_tebd: bool
+            Whether to concat type embedding at the output of the descriptor.
+    use_econf_tebd: bool, Optional
+            Whether to use electronic configuration type embedding.
+    use_tebd_bias : bool, Optional
+            Whether to use bias in the type embedding layer.
+    type_map: list[str], Optional
+            A list of strings. Give the name to each type of atoms.
+    seed : int, Optional
+            Random seed for initializing the network parameters.
+    """
+
     def __init__(
         self,
         rcut: float,
