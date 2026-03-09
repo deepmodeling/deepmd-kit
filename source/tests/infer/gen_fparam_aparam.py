@@ -8,6 +8,7 @@ Also prints reference values for C++ tests.
 """
 
 import copy
+import glob
 import os
 import sys
 
@@ -15,6 +16,40 @@ import numpy as np
 
 # Ensure the source tree is on the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+
+# Try to load the custom op library (needed for .pth export).
+# In CI this is part of the build; in dev environments we search for it.
+try:
+    import torch
+
+    if not hasattr(torch.ops.deepmd, "border_op"):
+        for pattern in [
+            os.path.join(
+                os.path.dirname(__file__),
+                "..",
+                "..",
+                "..",
+                "build*",
+                "op",
+                "pt",
+                "libdeepmd_op_pt.so",
+            ),
+            os.path.join(
+                os.path.dirname(__file__),
+                "..",
+                "..",
+                "build*",
+                "op",
+                "pt",
+                "libdeepmd_op_pt.so",
+            ),
+        ]:
+            libs = glob.glob(pattern)
+            if libs:
+                torch.ops.load_library(libs[0])
+                break
+except Exception:
+    pass
 
 
 def main():
