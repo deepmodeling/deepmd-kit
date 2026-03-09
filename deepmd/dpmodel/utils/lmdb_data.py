@@ -21,6 +21,10 @@ import lmdb
 import msgpack
 import numpy as np
 
+from deepmd.env import (
+    GLOBAL_ENER_FLOAT_PRECISION,
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -36,6 +40,10 @@ _KEY_REMAP = {
     "atom_types": "atype",
     "virials": "virial",
 }
+
+# Keys whose high_prec is always True in the standard pipeline
+# (energy is set by Loss DataRequirementItem; reduce() also sets high_prec=True)
+_HIGH_PREC_KEYS = frozenset({"energy"})
 
 
 def _open_lmdb(path: str) -> lmdb.Environment:
@@ -267,6 +275,34 @@ class LmdbDataReader:
         vec[2:] = counts
         return vec
 
+    def _resolve_dtype(self, key: str) -> np.dtype:
+        """Resolve the target numpy dtype for a given key.
+
+        Priority: DataRequirementItem.dtype > DataRequirementItem.high_prec >
+        built-in defaults (energy=high, others=normal).
+        """
+        if key in self._data_requirements:
+            req = self._data_requirements[key]
+            # Support both DataRequirementItem objects and plain dicts
+            if isinstance(req, dict):
+                dtype = req.get("dtype")
+                if dtype is not None:
+                    return dtype
+                if req.get("high_prec", False):
+                    return GLOBAL_ENER_FLOAT_PRECISION
+                return GLOBAL_NP_FLOAT_PRECISION
+            else:
+                # DataRequirementItem object
+                if hasattr(req, "dtype") and req.dtype is not None:
+                    return req.dtype
+                if hasattr(req, "high_prec") and req.high_prec:
+                    return GLOBAL_ENER_FLOAT_PRECISION
+                return GLOBAL_NP_FLOAT_PRECISION
+        # Fall back to built-in defaults
+        if key in _HIGH_PREC_KEYS:
+            return GLOBAL_ENER_FLOAT_PRECISION
+        return GLOBAL_NP_FLOAT_PRECISION
+
     def get_batch_size_for_nloc(self, nloc: int) -> int:
         """Get batch_size for a given nloc. Uses auto rule if configured."""
         if self._auto_rule is not None:
@@ -291,21 +327,29 @@ class LmdbDataReader:
 
         # Flatten arrays to match DeePMD convention
         if "coord" in frame and isinstance(frame["coord"], np.ndarray):
-            frame["coord"] = frame["coord"].reshape(-1, 3).astype(np.float64)
+            frame["coord"] = (
+                frame["coord"].reshape(-1, 3).astype(self._resolve_dtype("coord"))
+            )
         if "box" in frame and isinstance(frame["box"], np.ndarray):
-            frame["box"] = frame["box"].reshape(9).astype(np.float64)
+            frame["box"] = frame["box"].reshape(9).astype(self._resolve_dtype("box"))
         if "energy" in frame:
             val = frame["energy"]
             if isinstance(val, np.ndarray):
-                frame["energy"] = val.reshape(1).astype(np.float64)
+                frame["energy"] = val.reshape(1).astype(self._resolve_dtype("energy"))
             else:
-                frame["energy"] = np.array([float(val)], dtype=np.float64)
+                frame["energy"] = np.array(
+                    [float(val)], dtype=self._resolve_dtype("energy")
+                )
         if "force" in frame and isinstance(frame["force"], np.ndarray):
-            frame["force"] = frame["force"].reshape(-1, 3).astype(np.float64)
+            frame["force"] = (
+                frame["force"].reshape(-1, 3).astype(self._resolve_dtype("force"))
+            )
         if "atype" in frame and isinstance(frame["atype"], np.ndarray):
             frame["atype"] = frame["atype"].reshape(-1).astype(np.int64)
         if "virial" in frame and isinstance(frame["virial"], np.ndarray):
-            frame["virial"] = frame["virial"].reshape(9).astype(np.float64)
+            frame["virial"] = (
+                frame["virial"].reshape(9).astype(self._resolve_dtype("virial"))
+            )
 
         # Per-frame natoms_vec from atype
         atype = frame.get("atype")
@@ -340,14 +384,34 @@ class LmdbDataReader:
         for req_key, req_item in self._data_requirements.items():
             if req_key not in frame:
                 frame[f"find_{req_key}"] = np.float32(0.0)
-                ndof = req_item["ndof"]
-                default = req_item["default"]
-                atomic = req_item["atomic"]
+                # Support both dict and DataRequirementItem object
+                if isinstance(req_item, dict):
+                    ndof = req_item["ndof"]
+                    default = req_item["default"]
+                    atomic = req_item["atomic"]
+                    req_dtype = req_item.get("dtype")
+                    if req_dtype is None:
+                        req_dtype = (
+                            GLOBAL_ENER_FLOAT_PRECISION
+                            if req_item.get("high_prec", False)
+                            else GLOBAL_NP_FLOAT_PRECISION
+                        )
+                else:
+                    ndof = req_item.ndof
+                    default = req_item.default
+                    atomic = req_item.atomic
+                    req_dtype = req_item.dtype
+                    if req_dtype is None:
+                        req_dtype = (
+                            GLOBAL_ENER_FLOAT_PRECISION
+                            if req_item.high_prec
+                            else GLOBAL_NP_FLOAT_PRECISION
+                        )
                 if atomic:
                     shape = (frame_natoms, ndof)
                 else:
                     shape = (ndof,)
-                frame[req_key] = np.full(shape, default, dtype=np.float64)
+                frame[req_key] = np.full(shape, default, dtype=req_dtype)
             elif f"find_{req_key}" not in frame:
                 frame[f"find_{req_key}"] = np.float32(1.0)
 
@@ -679,6 +743,7 @@ class LmdbTestData:
         high_prec: bool = False,
         repeat: int = 1,
         default: float = 0.0,
+        dtype: np.dtype | None = None,
         **kwargs: Any,
     ) -> None:
         """Register a data requirement (mirrors DeepmdData.add)."""
@@ -689,7 +754,22 @@ class LmdbTestData:
             "high_prec": high_prec,
             "repeat": repeat,
             "default": default,
+            "dtype": dtype,
         }
+
+    def _resolve_dtype(self, key: str) -> np.dtype:
+        """Resolve target dtype for a key using registered requirements."""
+        if key in self._requirements:
+            req = self._requirements[key]
+            dtype = req.get("dtype")
+            if dtype is not None:
+                return dtype
+            if req.get("high_prec", False):
+                return GLOBAL_ENER_FLOAT_PRECISION
+            return GLOBAL_NP_FLOAT_PRECISION
+        if key in _HIGH_PREC_KEYS:
+            return GLOBAL_ENER_FLOAT_PRECISION
+        return GLOBAL_NP_FLOAT_PRECISION
 
     def get_test(self, nloc: int | None = None) -> dict[str, Any]:
         """Return frames stacked as numpy arrays.
@@ -741,18 +821,28 @@ class LmdbTestData:
 
         for frame in frames:
             if "coord" in frame and isinstance(frame["coord"], np.ndarray):
-                coords.append(frame["coord"].reshape(natoms * 3).astype(np.float64))
+                coords.append(
+                    frame["coord"]
+                    .reshape(natoms * 3)
+                    .astype(self._resolve_dtype("coord"))
+                )
             if "box" in frame and isinstance(frame["box"], np.ndarray):
-                boxes.append(frame["box"].reshape(9).astype(np.float64))
+                boxes.append(frame["box"].reshape(9).astype(self._resolve_dtype("box")))
             else:
-                boxes.append(np.zeros(9, dtype=np.float64))
+                boxes.append(np.zeros(9, dtype=self._resolve_dtype("box")))
             if "atype" in frame and isinstance(frame["atype"], np.ndarray):
                 atypes.append(frame["atype"].reshape(natoms).astype(np.int64))
 
         result["coord"] = (
-            np.stack(coords) if coords else np.zeros((0, natoms * 3), dtype=np.float64)
+            np.stack(coords)
+            if coords
+            else np.zeros((0, natoms * 3), dtype=self._resolve_dtype("coord"))
         )
-        result["box"] = np.stack(boxes) if boxes else np.zeros((0, 9), dtype=np.float64)
+        result["box"] = (
+            np.stack(boxes)
+            if boxes
+            else np.zeros((0, 9), dtype=self._resolve_dtype("box"))
+        )
         result["type"] = (
             np.stack(atypes) if atypes else np.zeros((0, natoms), dtype=np.int64)
         )
@@ -787,9 +877,11 @@ class LmdbTestData:
                 for frame in frames:
                     val = frame.get(key)
                     if isinstance(val, np.ndarray):
-                        arrays.append(val.astype(np.float64).ravel())
+                        arrays.append(val.astype(self._resolve_dtype(key)).ravel())
                     elif val is not None:
-                        arrays.append(np.array([float(val)], dtype=np.float64))
+                        arrays.append(
+                            np.array([float(val)], dtype=self._resolve_dtype(key))
+                        )
                     else:
                         ref = next(
                             (
@@ -800,9 +892,11 @@ class LmdbTestData:
                             None,
                         )
                         if ref is not None:
-                            arrays.append(np.zeros(ref.size, dtype=np.float64))
+                            arrays.append(
+                                np.zeros(ref.size, dtype=self._resolve_dtype(key))
+                            )
                         else:
-                            arrays.append(np.zeros(1, dtype=np.float64))
+                            arrays.append(np.zeros(1, dtype=self._resolve_dtype(key)))
                 result[key] = np.stack(arrays)
             elif key in self._requirements:
                 ndof = self._requirements[key]["ndof"]
@@ -812,7 +906,7 @@ class LmdbTestData:
                     shape = (nframes, natoms * ndof)
                 else:
                     shape = (nframes, ndof)
-                result[key] = np.full(shape, default, dtype=np.float64)
+                result[key] = np.full(shape, default, dtype=self._resolve_dtype(key))
 
         return result
 
