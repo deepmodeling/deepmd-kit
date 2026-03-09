@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 from typing import (
     Any,
 )
@@ -13,6 +14,9 @@ from deepmd.dpmodel.atomic_model import (
 )
 from deepmd.dpmodel.model.dp_model import (
     DPModelCommon,
+)
+from deepmd.dpmodel.model.make_hessian_model import (
+    make_hessian_model,
 )
 
 from .make_model import (
@@ -34,6 +38,17 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
     ) -> None:
         DPModelCommon.__init__(self)
         DPEnergyModel_.__init__(self, *args, **kwargs)
+        self._hessian_enabled = False
+
+    def enable_hessian(self) -> None:
+        if self._hessian_enabled:
+            return
+        self.__class__ = make_hessian_model(type(self))
+        self.hess_fitting_def = copy.deepcopy(
+            super(type(self), self).atomic_output_def()
+        )
+        self.requires_hessian("energy")
+        self._hessian_enabled = True
 
     def forward(
         self,
@@ -63,6 +78,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-2)
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
+        if self.atomic_output_def()["energy"].r_hessian:
+            model_predict["hessian"] = model_ret["energy_derv_r_derv_r"].squeeze(-3)
         return model_predict
 
     def forward_lower(
@@ -115,6 +132,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             output_def["atom_virial"].squeeze(-2)
         if "mask" in out_def_data:
             output_def["mask"] = out_def_data["mask"]
+        if self.atomic_output_def()["energy"].r_hessian:
+            output_def["hessian"] = out_def_data["energy_derv_r_derv_r"]
         return output_def
 
     def forward_lower_exportable(

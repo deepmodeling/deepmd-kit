@@ -71,7 +71,7 @@ jobs:
         if: matrix.group == 1
       - run: mv .test_durations .test_durations_${{ matrix.group }}
       - name: Upload partial durations
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: split-${{ matrix.python }}-${{ matrix.group }}
           path: .test_durations_${{ matrix.group }}
@@ -100,7 +100,7 @@ jobs:
           key: test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
           restore-keys: test2-durations-combined-${{ matrix.python }}
       - name: Download artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: split-${{ matrix.python }}-*
           merge-multiple: true
