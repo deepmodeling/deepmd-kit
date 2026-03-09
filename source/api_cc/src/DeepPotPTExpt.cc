@@ -250,11 +250,19 @@ std::string read_zip_entry(const std::string& zip_path,
   // Simple ZIP central directory parser
   // Find End of Central Directory Record (EOCD)
   // EOCD signature: 0x06054b50
+  // Minimum EOCD size is 22 bytes
+  if (content.size() < 22) {
+    throw deepmd::deepmd_exception(
+        "File too small to be a valid ZIP archive: " + zip_path);
+  }
   size_t eocd_pos = std::string::npos;
-  for (size_t i = content.size() - 22; i > 0 && i != std::string::npos; --i) {
+  for (size_t i = content.size() - 22; i != std::string::npos; --i) {
     if (content[i] == 0x50 && content[i + 1] == 0x4b &&
         content[i + 2] == 0x05 && content[i + 3] == 0x06) {
       eocd_pos = i;
+      break;
+    }
+    if (i == 0) {
       break;
     }
   }
@@ -288,7 +296,11 @@ std::string read_zip_entry(const std::string& zip_path,
   // If this is a ZIP64 file, look for the ZIP64 EOCD locator
   if (cd_offset == 0xFFFFFFFF || num_entries == 0xFFFF) {
     // ZIP64 EOCD locator signature: 0x07064b50
-    // It should be right before the EOCD
+    // It should be right before the EOCD (20 bytes)
+    if (eocd_pos < 20) {
+      throw deepmd::deepmd_exception(
+          "Invalid ZIP64 file (truncated EOCD locator): " + zip_path);
+    }
     size_t zip64_locator_pos = eocd_pos - 20;
     if (content[zip64_locator_pos] == 0x50 &&
         content[zip64_locator_pos + 1] == 0x4b &&
