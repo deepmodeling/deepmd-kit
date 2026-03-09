@@ -13,6 +13,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     Array,
     xp_take_along_axis,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -562,7 +563,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
         # get node embedding
         # nb x nloc x tebd_dim
-        atype_embd = atype_embd_ext[:, :nloc, :]
+        atype_embd = xp_take_first_n(atype_embd_ext, 1, nloc)
         assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
 
         node_ebd = self.act(atype_embd)
@@ -641,7 +642,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         angle_ebd = self.angle_embd(angle_input)
 
         # nb x nall x n_dim
-        mapping = xp.tile(xp.reshape(mapping, (nframes, -1, 1)), (1, 1, self.n_dim))
+        mapping = xp.tile(xp.expand_dims(mapping, axis=-1), (1, 1, self.n_dim))
         for idx, ll in enumerate(self.layers):
             # node_ebd:     nb x nloc x n_dim
             # node_ebd_ext: nb x nall x n_dim
@@ -1421,7 +1422,7 @@ class RepFlowLayer(NativeOP):
         n_edge = (
             int(xp.sum(xp.astype(nlist_mask, xp.int32))) if self.use_dynamic_sel else 0
         )
-        node_ebd = node_ebd_ext[:, :nloc, :]
+        node_ebd = xp_take_first_n(node_ebd_ext, 1, nloc)
         assert (nb, nloc) == node_ebd.shape[:2]
         if not self.use_dynamic_sel:
             assert (nb, nloc, nnei) == h2.shape[:3]
