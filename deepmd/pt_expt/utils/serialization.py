@@ -273,24 +273,35 @@ def _trace_and_export(
         deepcopy,
     )
 
+    import deepmd.pt_expt.utils.env as _env
     from deepmd.pt_expt.model.model import (
         BaseModel,
     )
 
-    # 1. Deserialize into a pt_expt model
+    target_device = _env.DEVICE
+
+    # 1. Deserialize into a pt_expt model on CPU.
+    # make_fx tracing through torch.autograd.grad fails on CUDA due to
+    # a PyTorch stream assertion bug, so tracing must happen on CPU.
     model = BaseModel.deserialize(data["model"])
+    model.to("cpu")
     model.eval()
 
     # 2. Collect metadata
     metadata = _collect_metadata(model)
 
-    # 3. Create sample inputs for tracing
+    # 3. Create sample inputs on CPU for make_fx tracing
     # Use nframes=2 so make_fx doesn't specialize on nframes=1
-    ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = _make_sample_inputs(
-        model, nframes=2
-    )
+    _orig_device = _env.DEVICE
+    _env.DEVICE = torch.device("cpu")
+    try:
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = _make_sample_inputs(
+            model, nframes=2
+        )
+    finally:
+        _env.DEVICE = _orig_device
 
-    # 4. Trace via forward_common_lower_exportable (make_fx)
+    # 4. Trace via forward_common_lower_exportable (make_fx) on CPU
     # Uses internal keys (energy, energy_redu, energy_derv_r, etc.)
     # so that communicate_extended_output can be applied at inference time.
     traced = model.forward_common_lower_exportable(
@@ -305,7 +316,20 @@ def _trace_and_export(
         _allow_non_fake_inputs=True,
     )
 
-    # 5. Build dynamic shapes and export
+    # 5. Move sample inputs to target device for export and AOTInductor
+    # compilation.  The traced GraphModule is device-agnostic; the device
+    # of the example inputs determines the compilation target.
+    def _to_device(t: torch.Tensor | None) -> torch.Tensor | None:
+        return t.to(target_device) if t is not None else None
+
+    ext_coord = _to_device(ext_coord)
+    ext_atype = _to_device(ext_atype)
+    nlist_t = _to_device(nlist_t)
+    mapping_t = _to_device(mapping_t)
+    fparam = _to_device(fparam)
+    aparam = _to_device(aparam)
+
+    # 6. Build dynamic shapes and export
     dynamic_shapes = _build_dynamic_shapes(
         ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
     )
@@ -317,11 +341,11 @@ def _trace_and_export(
         prefer_deferred_runtime_asserts_over_guards=True,
     )
 
-    # 6. Prepare JSON-serializable model dict
+    # 7. Prepare JSON-serializable model dict
     data_for_json = deepcopy(data)
     data_for_json = _numpy_to_json_serializable(data_for_json)
 
-    # 7. Extract output keys from the traced module.
+    # 8. Extract output keys from the traced module.
     # The key order must match dict iteration order (NOT sorted), because
     # AOTInductor's C++ run() returns flat tensors in tree_flatten order,
     # which preserves dict key insertion order.
