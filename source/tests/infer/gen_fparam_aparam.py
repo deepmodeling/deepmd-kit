@@ -85,7 +85,12 @@ def main():
 
     pth_path = os.path.join(base_dir, "fparam_aparam.pth")
     print(f"Exporting to {pth_path} ...")  # noqa: T201
-    pt_deserialize_to_file(pth_path, copy.deepcopy(data))
+    try:
+        pt_deserialize_to_file(pth_path, copy.deepcopy(data))
+    except RuntimeError as e:
+        # Custom ops (e.g. tabulate_fusion_se_t_tebd) may not be available
+        # in all build environments; .pth generation is not critical.
+        print(f"WARNING: .pth export failed ({e}), skipping.")  # noqa: T201
 
     print("Export done.")  # noqa: T201
 
