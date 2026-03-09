@@ -280,9 +280,11 @@ def _trace_and_export(
 
     target_device = _env.DEVICE
 
-    # 1. Deserialize into a pt_expt model on CPU.
-    # make_fx tracing through torch.autograd.grad fails on CUDA due to
-    # a PyTorch stream assertion bug, so tracing must happen on CPU.
+    # 1. Deserialize model on CPU for make_fx tracing.
+    # make_fx with _allow_non_fake_inputs=True keeps real model parameters;
+    # on CUDA the autograd engine requires CUDA streams for those real
+    # tensors during torch.autograd.grad, but proxy-tensor dispatch doesn't
+    # set streams up → assertion failure.  Tracing on CPU avoids this.
     model = BaseModel.deserialize(data["model"])
     model.to("cpu")
     model.eval()
@@ -290,7 +292,7 @@ def _trace_and_export(
     # 2. Collect metadata
     metadata = _collect_metadata(model)
 
-    # 3. Create sample inputs on CPU for make_fx tracing
+    # 3. Create sample inputs on CPU for tracing
     # Use nframes=2 so make_fx doesn't specialize on nframes=1
     _orig_device = _env.DEVICE
     _env.DEVICE = torch.device("cpu")
@@ -301,9 +303,9 @@ def _trace_and_export(
     finally:
         _env.DEVICE = _orig_device
 
-    # 4. Trace via forward_common_lower_exportable (make_fx) on CPU
-    # Uses internal keys (energy, energy_redu, energy_derv_r, etc.)
-    # so that communicate_extended_output can be applied at inference time.
+    # 4. Trace via make_fx on CPU.
+    # This decomposes torch.autograd.grad into aten ops so the resulting
+    # GraphModule no longer contains autograd calls.
     traced = model.forward_common_lower_exportable(
         ext_coord,
         ext_atype,
@@ -316,20 +318,29 @@ def _trace_and_export(
         _allow_non_fake_inputs=True,
     )
 
-    # 5. Move sample inputs to target device for export and AOTInductor
-    # compilation.  The traced GraphModule is device-agnostic; the device
-    # of the example inputs determines the compilation target.
-    def _to_device(t: torch.Tensor | None) -> torch.Tensor | None:
-        return t.to(target_device) if t is not None else None
+    # 5. Extract output keys from the CPU-traced module.
+    sample_out = traced(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
+    output_keys = list(sample_out.keys())
 
-    ext_coord = _to_device(ext_coord)
-    ext_atype = _to_device(ext_atype)
-    nlist_t = _to_device(nlist_t)
-    mapping_t = _to_device(mapping_t)
-    fparam = _to_device(fparam)
-    aparam = _to_device(aparam)
+    # 6. Move traced module and inputs to target device.
+    # The traced GraphModule is pure aten ops (no autograd.grad), so
+    # torch.export.export can re-trace it on CUDA without stream issues.
+    # Moving the module ensures its buffers/constants match the device of
+    # the inputs, and the compiled .pt2 targets the correct device.
+    if target_device.type != "cpu":
+        traced = traced.to(target_device)
 
-    # 6. Build dynamic shapes and export
+        def _to_device(t: torch.Tensor | None) -> torch.Tensor | None:
+            return t.to(target_device) if t is not None else None
+
+        ext_coord = _to_device(ext_coord)
+        ext_atype = _to_device(ext_atype)
+        nlist_t = _to_device(nlist_t)
+        mapping_t = _to_device(mapping_t)
+        fparam = _to_device(fparam)
+        aparam = _to_device(aparam)
+
+    # 7. Build dynamic shapes and export
     dynamic_shapes = _build_dynamic_shapes(
         ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
     )
@@ -341,16 +352,9 @@ def _trace_and_export(
         prefer_deferred_runtime_asserts_over_guards=True,
     )
 
-    # 7. Prepare JSON-serializable model dict
+    # 8. Prepare JSON-serializable model dict
     data_for_json = deepcopy(data)
     data_for_json = _numpy_to_json_serializable(data_for_json)
-
-    # 8. Extract output keys from the traced module.
-    # The key order must match dict iteration order (NOT sorted), because
-    # AOTInductor's C++ run() returns flat tensors in tree_flatten order,
-    # which preserves dict key insertion order.
-    sample_out = traced(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
-    output_keys = list(sample_out.keys())
 
     return exported, metadata, data_for_json, output_keys
 
