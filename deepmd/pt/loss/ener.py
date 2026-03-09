@@ -53,7 +53,7 @@ class EnergyStdLoss(TaskLoss):
         start_pref_gf: float = 0.0,
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
-        use_mae_loss: bool = False,
+        loss_func: str = "mse",
         inference: bool = False,
         use_huber: bool = False,
         f_use_norm: bool = False,
@@ -98,8 +98,9 @@ class EnergyStdLoss(TaskLoss):
             The prefactor of generalized force loss at the end of the training.
         numb_generalized_coord : int
             The dimension of generalized coordinates.
-        use_mae_loss : bool
-            Whether to use MAE (L1) loss for all terms (energy, force, virial), if False (default), it will use L2 loss.
+        loss_func : str
+            Loss function type. Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss).
+            MAE loss is less sensitive to outliers compared to MSE loss.
         inference : bool
             If true, it will output all losses found in output, ignoring the pre-factors.
         use_huber : bool
@@ -109,14 +110,23 @@ class EnergyStdLoss(TaskLoss):
             - For absolute errors exceeding D: linear loss (D * |error| - 0.5 * D)
             Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D).
         f_use_norm : bool
-            If true, use L2 norm of force vectors for MAE calculation when use_mae_loss or use_huber is True.
-            Instead of computing MAE on force components, computes MAE on ||F_pred - F_label||_2.
+            If true, use L2 norm of force vectors for loss calculation when loss_func='mae' or use_huber is True.
+            Instead of computing loss on force components, computes loss on ||F_pred - F_label||_2.
         huber_delta : float
             The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
         **kwargs
             Other keyword arguments.
         """
         super().__init__()
+
+        # Validate loss_func
+        valid_loss_funcs = ["mse", "mae"]
+        if loss_func not in valid_loss_funcs:
+            raise ValueError(
+                f"Invalid loss_func '{loss_func}'. Must be one of {valid_loss_funcs}."
+            )
+
+        self.loss_func = loss_func
         self.starter_learning_rate = starter_learning_rate
         self.has_e = (start_pref_e != 0.0 and limit_pref_e != 0.0) or inference
         self.has_f = (start_pref_f != 0.0 and limit_pref_f != 0.0) or inference
@@ -144,13 +154,12 @@ class EnergyStdLoss(TaskLoss):
             raise RuntimeError(
                 "When generalized force loss is used, the dimension of generalized coordinates should be larger than 0"
             )
-        self.use_mae_loss = use_mae_loss
         self.inference = inference
         self.use_huber = use_huber
         self.f_use_norm = f_use_norm
-        if self.f_use_norm and not (self.use_huber or self.use_mae_loss):
+        if self.f_use_norm and not (self.use_huber or self.loss_func == "mae"):
             raise RuntimeError(
-                "f_use_norm can only be True when use_huber or use_mae_loss is True."
+                "f_use_norm can only be True when use_huber or loss_func='mae'."
             )
         self.huber_delta = huber_delta
         if self.use_huber and (
@@ -223,7 +232,7 @@ class EnergyStdLoss(TaskLoss):
                 energy_pred = torch.sum(atom_ener_coeff * atom_ener_pred, dim=1)
             find_energy = label.get("find_energy", 0.0)
             pref_e = pref_e * find_energy
-            if not self.use_mae_loss:
+            if self.loss_func == "mse":
                 l2_ener_loss = torch.mean(torch.square(energy_pred - energy_label))
                 if not self.inference:
                     more_loss["l2_ener_loss"] = self.display_if_exist(
@@ -243,7 +252,7 @@ class EnergyStdLoss(TaskLoss):
                     rmse_e.detach(), find_energy
                 )
                 # more_loss['log_keys'].append('rmse_e')
-            else:
+            elif self.loss_func == "mae":
                 l1_ener_loss = F.l1_loss(
                     energy_pred.reshape(-1),
                     energy_label.reshape(-1),
@@ -255,6 +264,10 @@ class EnergyStdLoss(TaskLoss):
                     find_energy,
                 )
                 # more_loss['log_keys'].append('rmse_e')
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for energy loss."
+                )
             if mae:
                 mae_e = torch.mean(torch.abs(energy_pred - energy_label)) * atom_norm
                 more_loss["mae_e"] = self.display_if_exist(mae_e.detach(), find_energy)
@@ -282,7 +295,7 @@ class EnergyStdLoss(TaskLoss):
                 diff_f = diff_f_3.reshape(-1)
 
             if self.has_f:
-                if not self.use_mae_loss:
+                if self.loss_func == "mse":
                     l2_force_loss = torch.mean(torch.square(diff_f))
                     if not self.inference:
                         more_loss["l2_force_loss"] = self.display_if_exist(
@@ -314,7 +327,7 @@ class EnergyStdLoss(TaskLoss):
                     more_loss["rmse_f"] = self.display_if_exist(
                         rmse_f.detach(), find_force
                     )
-                else:
+                elif self.loss_func == "mae":
                     if not self.f_use_norm:
                         l1_force_loss = F.l1_loss(
                             force_label.reshape(-1),
@@ -332,6 +345,10 @@ class EnergyStdLoss(TaskLoss):
                         l1_force_loss.detach(), find_force
                     )
                     loss += (pref_f * l1_force_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                else:
+                    raise NotImplementedError(
+                        f"Loss type {self.loss_func} is not implemented for force loss."
+                    )
                 if mae:
                     mae_f = torch.mean(torch.abs(diff_f))
                     more_loss["mae_f"] = self.display_if_exist(
@@ -343,16 +360,30 @@ class EnergyStdLoss(TaskLoss):
                 find_atom_pref = label.get("find_atom_pref", 0.0)
                 pref_pf = pref_pf * find_atom_pref
                 atom_pref_reshape = atom_pref.reshape(-1)
-                l2_pref_force_loss = (torch.square(diff_f) * atom_pref_reshape).mean()
-                if not self.inference:
-                    more_loss["l2_pref_force_loss"] = self.display_if_exist(
-                        l2_pref_force_loss.detach(), find_atom_pref
+
+                if self.loss_func == "mse":
+                    l2_pref_force_loss = (
+                        torch.square(diff_f) * atom_pref_reshape
+                    ).mean()
+                    if not self.inference:
+                        more_loss["l2_pref_force_loss"] = self.display_if_exist(
+                            l2_pref_force_loss.detach(), find_atom_pref
+                        )
+                    loss += (pref_pf * l2_pref_force_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                    rmse_pf = l2_pref_force_loss.sqrt()
+                    more_loss["rmse_pf"] = self.display_if_exist(
+                        rmse_pf.detach(), find_atom_pref
                     )
-                loss += (pref_pf * l2_pref_force_loss).to(GLOBAL_PT_FLOAT_PRECISION)
-                rmse_pf = l2_pref_force_loss.sqrt()
-                more_loss["rmse_pf"] = self.display_if_exist(
-                    rmse_pf.detach(), find_atom_pref
-                )
+                elif self.loss_func == "mae":
+                    l1_pref_force_loss = (torch.abs(diff_f) * atom_pref_reshape).mean()
+                    loss += (pref_pf * l1_pref_force_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                    more_loss["mae_pf"] = self.display_if_exist(
+                        l1_pref_force_loss.detach(), find_atom_pref
+                    )
+                else:
+                    raise NotImplementedError(
+                        f"Loss type {self.loss_func} is not implemented for atom prefactor force loss."
+                    )
 
             if self.has_gf and "drdq" in label:
                 drdq = label["drdq"]
@@ -383,7 +414,7 @@ class EnergyStdLoss(TaskLoss):
             find_virial = label.get("find_virial", 0.0)
             pref_v = pref_v * find_virial
             diff_v = label["virial"] - model_pred["virial"].reshape(-1, 9)
-            if not self.use_mae_loss:
+            if self.loss_func == "mse":
                 l2_virial_loss = torch.mean(torch.square(diff_v))
                 if not self.inference:
                     more_loss["l2_virial_loss"] = self.display_if_exist(
@@ -402,7 +433,7 @@ class EnergyStdLoss(TaskLoss):
                 more_loss["rmse_v"] = self.display_if_exist(
                     rmse_v.detach(), find_virial
                 )
-            else:
+            elif self.loss_func == "mae":
                 l1_virial_loss = F.l1_loss(
                     label["virial"].reshape(-1),
                     model_pred["virial"].reshape(-1),
@@ -412,6 +443,10 @@ class EnergyStdLoss(TaskLoss):
                 more_loss["mae_v"] = self.display_if_exist(
                     l1_virial_loss.detach() * atom_norm,
                     find_virial,
+                )
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for virial loss."
                 )
             if mae:
                 mae_v = torch.mean(torch.abs(diff_v)) * atom_norm
@@ -424,26 +459,42 @@ class EnergyStdLoss(TaskLoss):
             pref_ae = pref_ae * find_atom_ener
             atom_ener_reshape = atom_ener.reshape(-1)
             atom_ener_label_reshape = atom_ener_label.reshape(-1)
-            l2_atom_ener_loss = torch.square(
-                atom_ener_label_reshape - atom_ener_reshape
-            ).mean()
-            if not self.inference:
-                more_loss["l2_atom_ener_loss"] = self.display_if_exist(
-                    l2_atom_ener_loss.detach(), find_atom_ener
+
+            if self.loss_func == "mse":
+                l2_atom_ener_loss = torch.square(
+                    atom_ener_label_reshape - atom_ener_reshape
+                ).mean()
+                if not self.inference:
+                    more_loss["l2_atom_ener_loss"] = self.display_if_exist(
+                        l2_atom_ener_loss.detach(), find_atom_ener
+                    )
+                if not self.use_huber:
+                    loss += (pref_ae * l2_atom_ener_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                else:
+                    l_huber_loss = custom_huber_loss(
+                        atom_ener_reshape,
+                        atom_ener_label_reshape,
+                        delta=self.huber_delta,
+                    )
+                    loss += pref_ae * l_huber_loss
+                rmse_ae = l2_atom_ener_loss.sqrt()
+                more_loss["rmse_ae"] = self.display_if_exist(
+                    rmse_ae.detach(), find_atom_ener
                 )
-            if not self.use_huber:
-                loss += (pref_ae * l2_atom_ener_loss).to(GLOBAL_PT_FLOAT_PRECISION)
-            else:
-                l_huber_loss = custom_huber_loss(
+            elif self.loss_func == "mae":
+                l1_atom_ener_loss = F.l1_loss(
                     atom_ener_reshape,
                     atom_ener_label_reshape,
-                    delta=self.huber_delta,
+                    reduction="mean",
                 )
-                loss += pref_ae * l_huber_loss
-            rmse_ae = l2_atom_ener_loss.sqrt()
-            more_loss["rmse_ae"] = self.display_if_exist(
-                rmse_ae.detach(), find_atom_ener
-            )
+                loss += (pref_ae * l1_atom_ener_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                more_loss["mae_ae"] = self.display_if_exist(
+                    l1_atom_ener_loss.detach(), find_atom_ener
+                )
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for atomic energy loss."
+                )
 
         if not self.inference:
             more_loss["rmse"] = torch.sqrt(loss.detach())
@@ -556,7 +607,7 @@ class EnergyStdLoss(TaskLoss):
             "numb_generalized_coord": self.numb_generalized_coord,
             "use_huber": self.use_huber,
             "huber_delta": self.huber_delta,
-            "use_mae_loss": self.use_mae_loss,
+            "loss_func": self.loss_func,
             "f_use_norm": self.f_use_norm,
         }
 

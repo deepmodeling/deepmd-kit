@@ -59,13 +59,13 @@ if INSTALLED_ARRAY_API_STRICT:
 @parameterized(
     (False, True),  # huber
     (False, True),  # enable_atom_ener_coeff
-    (False, True),  # use_mae_loss
+    ("mse", "mae"),  # loss_func
     (False, True),  # f_use_norm
 )
 class TestEner(CommonTest, LossTest, unittest.TestCase):
     @property
     def data(self) -> dict:
-        (use_huber, enable_atom_ener_coeff, use_mae_loss, f_use_norm) = self.param
+        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm) = self.param
         return {
             "start_pref_e": 0.02,
             "limit_pref_e": 1.0,
@@ -79,21 +79,21 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             "limit_pref_pf": 1.0 if not use_huber else 0.0,
             "use_huber": use_huber,
             "enable_atom_ener_coeff": enable_atom_ener_coeff,
-            "use_mae_loss": use_mae_loss,
+            "loss_func": loss_func,
             "f_use_norm": f_use_norm,
         }
 
     @property
     def skip_tf(self) -> bool:
-        (use_huber, enable_atom_ener_coeff, use_mae_loss, f_use_norm) = self.param
+        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm) = self.param
         # Skip TF for MAE loss tests (not implemented in TF backend)
-        return CommonTest.skip_tf or use_mae_loss or f_use_norm
+        return CommonTest.skip_tf or loss_func == "mae" or f_use_norm
 
     @property
     def skip_pd(self) -> bool:
-        (use_huber, enable_atom_ener_coeff, use_mae_loss, f_use_norm) = self.param
+        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm) = self.param
         # Skip Paddle for MAE loss tests (not implemented in Paddle backend)
-        return not INSTALLED_PD or use_mae_loss or f_use_norm
+        return not INSTALLED_PD or loss_func == "mae" or f_use_norm
 
     skip_pt = CommonTest.skip_pt
     skip_jax = not INSTALLED_JAX
@@ -108,12 +108,12 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
     args = loss_ener()
 
     def setUp(self) -> None:
-        (use_huber, enable_atom_ener_coeff, use_mae_loss, f_use_norm) = self.param
+        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm) = self.param
         # Skip invalid combinations
-        if f_use_norm and not (use_huber or use_mae_loss):
-            self.skipTest("f_use_norm requires either use_huber or use_mae_loss")
-        if use_huber and use_mae_loss:
-            self.skipTest("Cannot use both huber and mae_loss at the same time")
+        if f_use_norm and not (use_huber or loss_func == "mae"):
+            self.skipTest("f_use_norm requires either use_huber or loss_func='mae'")
+        if use_huber and loss_func == "mae":
+            self.skipTest("Cannot use both huber and mae loss_func at the same time")
         CommonTest.setUp(self)
         self.learning_rate = 1e-3
         rng = np.random.default_rng(20250105)
