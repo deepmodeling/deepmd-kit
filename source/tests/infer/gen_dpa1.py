@@ -23,9 +23,10 @@ try:
     import torch
 
     if not hasattr(torch.ops.deepmd, "border_op"):
+        _search_base = os.path.realpath(os.path.dirname(__file__))
         for pattern in [
             os.path.join(
-                os.path.dirname(__file__),
+                _search_base,
                 "..",
                 "..",
                 "..",
@@ -35,21 +36,15 @@ try:
                 "libdeepmd_op_pt.so",
             ),
             os.path.join(
-                os.path.dirname(__file__),
-                "..",
-                "..",
-                "build*",
-                "op",
-                "pt",
-                "libdeepmd_op_pt.so",
+                _search_base, "..", "..", "build*", "op", "pt", "libdeepmd_op_pt.so"
             ),
         ]:
             libs = glob.glob(pattern)
             if libs:
                 torch.ops.load_library(libs[0])
                 break
-except Exception:
-    pass
+except Exception as e:
+    print(f"NOTE: custom op library not loaded ({e})", file=sys.stderr)  # noqa: T201
 
 
 def print_cpp_values(label, ae, f, av):
