@@ -34,6 +34,15 @@ try:
                 "pt",
                 "libdeepmd_op_pt.so",
             ),
+            os.path.join(
+                os.path.dirname(__file__),
+                "..",
+                "..",
+                "build*",
+                "op",
+                "pt",
+                "libdeepmd_op_pt.so",
+            ),
         ]:
             libs = glob.glob(pattern)
             if libs:
