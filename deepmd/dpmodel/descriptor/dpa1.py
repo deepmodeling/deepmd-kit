@@ -1058,7 +1058,6 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             self.stddev[...],
         )
         nf, nloc, nnei, _ = dmatrix.shape
-        nall = atype_ext.shape[1]
         atype = xp_take_first_n(atype_ext, 1, nloc)
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         # nfnl x nnei
