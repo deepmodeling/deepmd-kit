@@ -10,6 +10,7 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     Array,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -617,7 +618,11 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         type_embedding = self.type_embedding.call()
         if self.use_loc_mapping:
             node_ebd_ext = xp.reshape(
-                xp.take(type_embedding, xp.reshape(atype_ext[:, :nloc], (-1,)), axis=0),
+                xp.take(
+                    type_embedding,
+                    xp.reshape(xp_take_first_n(atype_ext, 1, nloc), (-1,)),
+                    axis=0,
+                ),
                 (nframes, nloc, self.tebd_dim),
             )
         else:
@@ -625,7 +630,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
                 xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
                 (nframes, nall, self.tebd_dim),
             )
-        node_ebd_inp = node_ebd_ext[:, :nloc, :]
+        node_ebd_inp = xp_take_first_n(node_ebd_ext, 1, nloc)
         # repflows
         node_ebd, edge_ebd, h2, rot_mat, sw = self.repflows(
             nlist,
