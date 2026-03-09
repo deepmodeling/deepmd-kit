@@ -343,14 +343,20 @@ std::string read_zip_entry(const std::string& zip_path,
     uint16_t name_len = read_u16(pos + 28);
     uint16_t extra_len = read_u16(pos + 30);
     uint16_t comment_len = read_u16(pos + 32);
-    uint32_t compressed_size = read_u32(pos + 20);
-    uint32_t uncompressed_size = read_u32(pos + 24);
-    uint32_t local_header_offset = read_u32(pos + 42);
+    uint32_t compressed_size_u32 = read_u32(pos + 20);
+    uint32_t uncompressed_size_u32 = read_u32(pos + 24);
+    uint32_t local_header_offset_u32 = read_u32(pos + 42);
+
+    // Use 64-bit types so ZIP64 values are not truncated
+    uint64_t compressed_size = compressed_size_u32;
+    uint64_t uncompressed_size = uncompressed_size_u32;
+    uint64_t local_header_offset = local_header_offset_u32;
 
     std::string name = content.substr(pos + 46, name_len);
 
     // Handle ZIP64 extra field for large files
-    if (uncompressed_size == 0xFFFFFFFF || local_header_offset == 0xFFFFFFFF) {
+    if (uncompressed_size_u32 == 0xFFFFFFFF ||
+        local_header_offset_u32 == 0xFFFFFFFF) {
       // Parse ZIP64 extended information extra field
       size_t extra_pos = pos + 46 + name_len;
       size_t extra_end = extra_pos + extra_len;
@@ -360,31 +366,31 @@ std::string read_zip_entry(const std::string& zip_path,
         if (field_id == 0x0001) {  // ZIP64 extra field
           size_t field_data = extra_pos + 4;
           int offset_in_field = 0;
-          if (uncompressed_size == 0xFFFFFFFF) {
+          if (uncompressed_size_u32 == 0xFFFFFFFF) {
             uncompressed_size = 0;
-            for (int b = 0; b < 4; ++b) {
+            for (int b = 0; b < 8; ++b) {
               uncompressed_size |=
-                  static_cast<uint32_t>(static_cast<unsigned char>(
+                  static_cast<uint64_t>(static_cast<unsigned char>(
                       content[field_data + offset_in_field + b]))
                   << (8 * b);
             }
             offset_in_field += 8;
           }
-          if (compressed_size == 0xFFFFFFFF) {
+          if (compressed_size_u32 == 0xFFFFFFFF) {
             compressed_size = 0;
-            for (int b = 0; b < 4; ++b) {
+            for (int b = 0; b < 8; ++b) {
               compressed_size |=
-                  static_cast<uint32_t>(static_cast<unsigned char>(
+                  static_cast<uint64_t>(static_cast<unsigned char>(
                       content[field_data + offset_in_field + b]))
                   << (8 * b);
             }
             offset_in_field += 8;
           }
-          if (local_header_offset == 0xFFFFFFFF) {
+          if (local_header_offset_u32 == 0xFFFFFFFF) {
             local_header_offset = 0;
-            for (int b = 0; b < 4; ++b) {
+            for (int b = 0; b < 8; ++b) {
               local_header_offset |=
-                  static_cast<uint32_t>(static_cast<unsigned char>(
+                  static_cast<uint64_t>(static_cast<unsigned char>(
                       content[field_data + offset_in_field + b]))
                   << (8 * b);
             }
