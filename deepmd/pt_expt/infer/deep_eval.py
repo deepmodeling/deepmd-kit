@@ -158,6 +158,12 @@ class DeepEval(DeepEvalBackend):
 
         # Read metadata from the .pt2 ZIP archive
         with zipfile.ZipFile(model_file, "r") as zf:
+            names = zf.namelist()
+            for required in ("extra/model_def_script.json", "extra/output_keys.json"):
+                if required not in names:
+                    raise ValueError(
+                        f"Invalid .pt2 file '{model_file}': missing '{required}'"
+                    )
             self.metadata = json.loads(zf.read("extra/model_def_script.json"))
             self._output_keys = json.loads(zf.read("extra/output_keys.json"))
 
