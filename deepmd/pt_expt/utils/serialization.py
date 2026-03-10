@@ -322,25 +322,11 @@ def _trace_and_export(
     sample_out = traced(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
     output_keys = list(sample_out.keys())
 
-    # 6. Move traced module and inputs to target device.
-    # The traced GraphModule is pure aten ops (no autograd.grad), so
-    # torch.export.export can re-trace it on CUDA without stream issues.
-    # Moving the module ensures its buffers/constants match the device of
-    # the inputs, and the compiled .pt2 targets the correct device.
-    if target_device.type != "cpu":
-        traced = traced.to(target_device)
-
-        def _to_device(t: torch.Tensor | None) -> torch.Tensor | None:
-            return t.to(target_device) if t is not None else None
-
-        ext_coord = _to_device(ext_coord)
-        ext_atype = _to_device(ext_atype)
-        nlist_t = _to_device(nlist_t)
-        mapping_t = _to_device(mapping_t)
-        fparam = _to_device(fparam)
-        aparam = _to_device(aparam)
-
-    # 7. Build dynamic shapes and export
+    # 6. Export on CPU.
+    # make_fx on CPU bakes device='cpu' into tensor-creation ops in the
+    # graph.  Exporting on CPU keeps devices consistent; we move the
+    # ExportedProgram to the target device afterwards via the official
+    # move_to_device_pass (avoids FakeTensor device-propagation errors).
     dynamic_shapes = _build_dynamic_shapes(
         ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
     )
@@ -351,6 +337,14 @@ def _trace_and_export(
         strict=False,
         prefer_deferred_runtime_asserts_over_guards=True,
     )
+
+    # 7. Move the exported program to the target device if needed.
+    if target_device.type != "cpu":
+        from torch.export.passes import (
+            move_to_device_pass,
+        )
+
+        exported = move_to_device_pass(exported, target_device)
 
     # 8. Prepare JSON-serializable model dict
     data_for_json = deepcopy(data)
