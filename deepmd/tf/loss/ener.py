@@ -123,6 +123,10 @@ class EnerStdLoss(Loss):
         f_use_norm: bool = False,
         **kwargs: Any,
     ) -> None:
+        if loss_func != "mse":
+            raise NotImplementedError(
+                f"TensorFlow backend only supports loss_func='mse', got '{loss_func}'."
+            )
         self.loss_func = loss_func
         self.f_use_norm = f_use_norm
 
@@ -588,7 +592,13 @@ class EnerSpinLoss(Loss):
         relative_f: float | None = None,
         enable_atom_ener_coeff: bool = False,
         use_spin: list | None = None,
+        loss_func: str = "mse",
     ) -> None:
+        if loss_func != "mse":
+            raise NotImplementedError(
+                f"TensorFlow backend only supports loss_func='mse', got '{loss_func}'."
+            )
+        self.loss_func = loss_func
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e
