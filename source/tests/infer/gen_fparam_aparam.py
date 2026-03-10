@@ -37,6 +37,9 @@ def _ensure_inductor_compiler():
         if fallback not in search and shutil.which(fallback):
             search.append(fallback)
     inductor_config.cpp.cxx = tuple(search)
+    # Clear LD_PRELOAD so compiler subprocesses don't inherit the LSAN runtime,
+    # which causes false leak reports and non-zero exit codes in g++.
+    os.environ.pop("LD_PRELOAD", None)
 
 
 def _load_custom_ops():
