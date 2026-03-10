@@ -236,6 +236,10 @@ def _serialize_from_file_pt2(model_file: str) -> dict:
     import zipfile
 
     with zipfile.ZipFile(model_file, "r") as zf:
+        if "extra/model.json" not in zf.namelist():
+            raise ValueError(
+                f"Invalid .pt2 file '{model_file}': missing 'extra/model.json'"
+            )
         model_json = zf.read("extra/model.json").decode("utf-8")
     model_dict = json.loads(model_json)
     model_dict = _json_to_numpy(model_dict)

@@ -63,7 +63,12 @@ class JsonParser {
   size_t pos_;
 
   char peek() const { return pos_ < s_.size() ? s_[pos_] : '\0'; }
-  char get() { return s_[pos_++]; }
+  char get() {
+    if (pos_ >= s_.size()) {
+      throw std::runtime_error("JSON parse error: unexpected end of input");
+    }
+    return s_[pos_++];
+  }
   void skip_ws() {
     while (pos_ < s_.size() && (s_[pos_] == ' ' || s_[pos_] == '\t' ||
                                 s_[pos_] == '\n' || s_[pos_] == '\r')) {
@@ -92,7 +97,7 @@ class JsonParser {
   std::string parse_string_raw() {
     get();  // consume '"'
     std::string result;
-    while (peek() != '"') {
+    while (pos_ < s_.size() && peek() != '"') {
       if (peek() == '\\') {
         get();
         char esc = get();
@@ -151,7 +156,12 @@ class JsonParser {
     }
     JsonValue v;
     v.type = JsonValue::Number;
-    v.num_val = std::stod(s_.substr(start, pos_ - start));
+    try {
+      v.num_val = std::stod(s_.substr(start, pos_ - start));
+    } catch (const std::exception& e) {
+      throw std::runtime_error("JSON parse error: invalid number at position " +
+                               std::to_string(start));
+    }
     return v;
   }
 
@@ -161,14 +171,23 @@ class JsonParser {
     if (s_.substr(pos_, 4) == "true") {
       v.bool_val = true;
       pos_ += 4;
-    } else {
+    } else if (s_.substr(pos_, 5) == "false") {
       v.bool_val = false;
       pos_ += 5;
+    } else {
+      throw std::runtime_error(
+          "JSON parse error: expected 'true' or 'false' at position " +
+          std::to_string(pos_));
     }
     return v;
   }
 
   JsonValue parse_null() {
+    if (s_.substr(pos_, 4) != "null") {
+      throw std::runtime_error(
+          "JSON parse error: expected 'null' at position " +
+          std::to_string(pos_));
+    }
     pos_ += 4;
     return JsonValue();
   }
@@ -256,13 +275,10 @@ std::string read_zip_entry(const std::string& zip_path,
         "File too small to be a valid ZIP archive: " + zip_path);
   }
   size_t eocd_pos = std::string::npos;
-  for (size_t i = content.size() - 22; i != std::string::npos; --i) {
+  for (int64_t i = static_cast<int64_t>(content.size()) - 22; i >= 0; --i) {
     if (content[i] == 0x50 && content[i + 1] == 0x4b &&
         content[i + 2] == 0x05 && content[i + 3] == 0x06) {
-      eocd_pos = i;
-      break;
-    }
-    if (i == 0) {
+      eocd_pos = static_cast<size_t>(i);
       break;
     }
   }
@@ -316,6 +332,10 @@ std::string read_zip_entry(const std::string& zip_path,
       // Parse ZIP64 EOCD
       // ZIP64 EOCD signature: 0x06064b50
       size_t z64_pos = static_cast<size_t>(zip64_eocd_offset);
+      if (z64_pos + 56 > content.size()) {
+        throw deepmd::deepmd_exception(
+            "Invalid ZIP64 file (truncated EOCD record): " + zip_path);
+      }
       // num entries at offset 32 (8 bytes)
       num_entries = 0;
       for (int b = 0; b < 2; ++b) {
@@ -532,7 +552,9 @@ void DeepPotPTExpt::translate_error(std::function<void()> f) {
     throw deepmd::deepmd_exception(
         "DeePMD-kit PyTorch Exportable backend error: " +
         std::string(e.what()));
-  } catch (const std::runtime_error& e) {
+  } catch (const deepmd::deepmd_exception&) {
+    throw;  // already a deepmd_exception, rethrow as-is
+  } catch (const std::exception& e) {
     throw deepmd::deepmd_exception(
         "DeePMD-kit PyTorch Exportable backend error: " +
         std::string(e.what()));
@@ -708,12 +730,18 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   int nframes = 1;
 
   // Convert coord to float64 for model input
+  // NOTE: must .clone() because from_blob does not copy data, and the local
+  // vectors would go out of scope before run_model completes.
   std::vector<double> coord_d(dcoord.begin(), dcoord.end());
   at::Tensor coord_Tensor =
-      torch::from_blob(coord_d.data(), {1, nall_real, 3}, options).to(device);
+      torch::from_blob(coord_d.data(), {1, nall_real, 3}, options)
+          .clone()
+          .to(device);
   std::vector<std::int64_t> atype_64(datype.begin(), datype.end());
   at::Tensor atype_Tensor =
-      torch::from_blob(atype_64.data(), {1, nall_real}, int_option).to(device);
+      torch::from_blob(atype_64.data(), {1, nall_real}, int_option)
+          .clone()
+          .to(device);
 
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list, nall - nghost);
@@ -964,18 +992,26 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   // 3. Build type-sorted, sel-limited nlist (uses double coords for distances)
 
   // 4. Convert to tensors (always float64 for .pt2 model)
+  // NOTE: must .clone() because from_blob does not copy data, and the local
+  // vectors would go out of scope before run_model completes.
   at::Tensor coord_Tensor =
-      torch::from_blob(coord_cpy_d.data(), {1, nall, 3}, options).to(device);
+      torch::from_blob(coord_cpy_d.data(), {1, nall, 3}, options)
+          .clone()
+          .to(device);
   std::vector<std::int64_t> atype_64(atype_cpy.begin(), atype_cpy.end());
   at::Tensor atype_Tensor =
-      torch::from_blob(atype_64.data(), {1, nall}, int_options).to(device);
+      torch::from_blob(atype_64.data(), {1, nall}, int_options)
+          .clone()
+          .to(device);
   at::Tensor nlist_tensor =
       buildTypeSortedNlist<double>(nlist_raw, coord_cpy_d, atype_cpy, sel, nloc,
                                    mixed_types)
           .to(device);
   std::vector<std::int64_t> mapping_64(mapping_vec.begin(), mapping_vec.end());
   at::Tensor mapping_tensor =
-      torch::from_blob(mapping_64.data(), {1, nall}, int_options).to(device);
+      torch::from_blob(mapping_64.data(), {1, nall}, int_options)
+          .clone()
+          .to(device);
 
   // Build fparam/aparam tensors (cast to float64 for the model)
   auto valuetype_options = std::is_same<VALUETYPE, float>::value
