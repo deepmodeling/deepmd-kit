@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+import functools
 import logging
 from collections.abc import (
     Callable,
@@ -183,6 +184,58 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
     def has_default_fparam(self) -> bool:
         """Check if the model has default frame parameters."""
         return False
+
+    def get_default_fparam(self) -> torch.Tensor | None:
+        """Get the default frame parameters."""
+        return None
+
+    def _make_wrapped_sampler(
+        self,
+        sampled_func: Callable[[], list[dict]],
+    ) -> Callable[[], list[dict]]:
+        """Wrap the sampled function with exclusion types and default fparam.
+
+        The returned callable is cached so that the sampling (which may be
+        expensive) is performed at most once.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data
+            systems.
+
+        Returns
+        -------
+        Callable[[], list[dict]]
+            A cached wrapper around *sampled_func* that additionally sets
+            ``pair_exclude_types``, ``atom_exclude_types`` and default
+            ``fparam`` on every sample dict when applicable.
+        """
+
+        @functools.lru_cache
+        def wrapped_sampler() -> list[dict]:
+            sampled = sampled_func()
+            if self.pair_excl is not None:
+                pair_exclude_types = self.pair_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["pair_exclude_types"] = list(pair_exclude_types)
+            if self.atom_excl is not None:
+                atom_exclude_types = self.atom_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["atom_exclude_types"] = list(atom_exclude_types)
+            if (
+                "find_fparam" not in sampled[0]
+                and "fparam" not in sampled[0]
+                and self.has_default_fparam()
+            ):
+                default_fparam = self.get_default_fparam()
+                if default_fparam is not None:
+                    for sample in sampled:
+                        nframe = sample["atype"].shape[0]
+                        sample["fparam"] = default_fparam.repeat(nframe, 1)
+            return sampled
+
+        return wrapped_sampler
 
     def reinit_atom_exclude(
         self,
