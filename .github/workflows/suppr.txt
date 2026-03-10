@@ -7,4 +7,4 @@ leak:llvm::
 # (ThreadRegistry::GetThreadLocked in sanitizer_thread_registry.h). Treat as CI flake.
 # This suppression matches the crashing stack rather than a real leak.
 # Note: lsan suppressions are matched as substrings on the stack trace.
-ThreadRegistry::GetThreadLocked
+leak:ThreadRegistry::GetThreadLocked
