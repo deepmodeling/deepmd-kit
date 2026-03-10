@@ -29,3 +29,4 @@ Model
    change-bias
    precision
    show-model-info
+   pretrained
