@@ -30,6 +30,64 @@ def custom_huber_loss(predictions: Array, targets: Array, delta: float = 1.0) ->
 
 
 class EnergyLoss(Loss):
+    r"""Construct a layer to compute loss on energy, force and virial.
+
+    Parameters
+    ----------
+    starter_learning_rate : float
+        The learning rate at the start of the training.
+    start_pref_e : float
+        The prefactor of energy loss at the start of the training.
+    limit_pref_e : float
+        The prefactor of energy loss at the end of the training.
+    start_pref_f : float
+        The prefactor of force loss at the start of the training.
+    limit_pref_f : float
+        The prefactor of force loss at the end of the training.
+    start_pref_v : float
+        The prefactor of virial loss at the start of the training.
+    limit_pref_v : float
+        The prefactor of virial loss at the end of the training.
+    start_pref_ae : float
+        The prefactor of atomic energy loss at the start of the training.
+    limit_pref_ae : float
+        The prefactor of atomic energy loss at the end of the training.
+    start_pref_pf : float
+        The prefactor of atomic prefactor force loss at the start of the training.
+    limit_pref_pf : float
+        The prefactor of atomic prefactor force loss at the end of the training.
+    relative_f : float
+        If provided, relative force error will be used in the loss. The difference
+        of force will be normalized by the magnitude of the force in the label with
+        a shift given by relative_f
+    enable_atom_ener_coeff : bool
+        if true, the energy will be computed as \sum_i c_i E_i
+    start_pref_gf : float
+        The prefactor of generalized force loss at the start of the training.
+    limit_pref_gf : float
+        The prefactor of generalized force loss at the end of the training.
+    numb_generalized_coord : int
+        The dimension of generalized coordinates.
+    use_huber : bool
+        Enables Huber loss calculation for energy/force/virial terms with user-defined threshold delta (D).
+        The loss function smoothly transitions between L2 and L1 loss:
+        - For absolute prediction errors within D: quadratic loss (0.5 * (error**2))
+        - For absolute errors exceeding D: linear loss (D * |error| - 0.5 * D)
+        Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D).
+    huber_delta : float
+        The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
+    loss_func : str
+        Loss function type for energy, force, and virial terms.
+        Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss).
+        MAE loss is less sensitive to outliers compared to MSE loss.
+        Future extensions may support additional loss types.
+    f_use_norm : bool
+        If true, use L2 norm of force vectors for loss calculation when loss_func='mae' or use_huber is True.
+        Instead of computing loss on force components, computes loss on ||F_pred - F_label||_2.
+    **kwargs
+        Other keyword arguments.
+    """
+
     def __init__(
         self,
         starter_learning_rate: float,
@@ -54,63 +112,6 @@ class EnergyLoss(Loss):
         f_use_norm: bool = False,
         **kwargs: Any,
     ) -> None:
-        r"""Construct a layer to compute loss on energy, force and virial.
-
-        Parameters
-        ----------
-        starter_learning_rate : float
-            The learning rate at the start of the training.
-        start_pref_e : float
-            The prefactor of energy loss at the start of the training.
-        limit_pref_e : float
-            The prefactor of energy loss at the end of the training.
-        start_pref_f : float
-            The prefactor of force loss at the start of the training.
-        limit_pref_f : float
-            The prefactor of force loss at the end of the training.
-        start_pref_v : float
-            The prefactor of virial loss at the start of the training.
-        limit_pref_v : float
-            The prefactor of virial loss at the end of the training.
-        start_pref_ae : float
-            The prefactor of atomic energy loss at the start of the training.
-        limit_pref_ae : float
-            The prefactor of atomic energy loss at the end of the training.
-        start_pref_pf : float
-            The prefactor of atomic prefactor force loss at the start of the training.
-        limit_pref_pf : float
-            The prefactor of atomic prefactor force loss at the end of the training.
-        relative_f : float
-            If provided, relative force error will be used in the loss. The difference
-            of force will be normalized by the magnitude of the force in the label with
-            a shift given by relative_f
-        enable_atom_ener_coeff : bool
-            if true, the energy will be computed as \sum_i c_i E_i
-        start_pref_gf : float
-            The prefactor of generalized force loss at the start of the training.
-        limit_pref_gf : float
-            The prefactor of generalized force loss at the end of the training.
-        numb_generalized_coord : int
-            The dimension of generalized coordinates.
-        use_huber : bool
-            Enables Huber loss calculation for energy/force/virial terms with user-defined threshold delta (D).
-            The loss function smoothly transitions between L2 and L1 loss:
-            - For absolute prediction errors within D: quadratic loss (0.5 * (error**2))
-            - For absolute errors exceeding D: linear loss (D * |error| - 0.5 * D)
-            Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D).
-        huber_delta : float
-            The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
-        loss_func : str
-            Loss function type for energy, force, and virial terms.
-            Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss).
-            MAE loss is less sensitive to outliers compared to MSE loss.
-            Future extensions may support additional loss types.
-        f_use_norm : bool
-            If true, use L2 norm of force vectors for loss calculation when loss_func='mae' or use_huber is True.
-            Instead of computing loss on force components, computes loss on ||F_pred - F_label||_2.
-        **kwargs
-            Other keyword arguments.
-        """
         # Validate loss_func
         valid_loss_funcs = ["mse", "mae"]
         if loss_func not in valid_loss_funcs:
