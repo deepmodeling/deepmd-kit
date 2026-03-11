@@ -156,9 +156,6 @@ pin_tensorflow_cpu = [
   "tensorflow-cpu==2.21.0; platform_machine=='x86_64' and platform_system == 'Linux'",
   "tensorflow~=2.18.0; (platform_machine!='x86_64' or platform_system != 'Linux') and (platform_machine!='x86_64' or platform_system != 'Darwin')",
   "tensorflow; platform_machine=='x86_64' and platform_system == 'Darwin'",
-  # TODO: unpin protobuf after TF is upgraded to 2.21
-  # See: https://github.com/tensorflow/tensorflow/pull/103382
-  "protobuf<7.34.0",
 ]
 pin_tensorflow_gpu = [
   "tensorflow==2.18.0",
