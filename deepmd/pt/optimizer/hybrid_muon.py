@@ -72,7 +72,7 @@ References
 .. [4] Flash-Muon: Triton-accelerated symmetric matmul for Newton-Schulz.
        https://github.com/lintianyang/flash-muon (MIT License, Tianyang Lin)
 .. [5] Magma: Momentum-Aligned Gradient Masking for Stable Optimizer Updates.
-       arXiv:2602.15322, 2025.
+       arXiv:2602.15322, 2026.
        https://arxiv.org/abs/2602.15322
        Implements block-wise momentum-gradient alignment scoring with EMA smoothing
        and soft scaling for improved stability under heavy-tailed gradient noise.
@@ -340,9 +340,7 @@ def _batched_newton_schulz_orth(
     """
     # === Step 1. Validate and prepare matrix orientation ===
     if G.ndim != 3:
-        raise ValueError(
-            "Batched Newton-Schulz expects a 3D tensor with shape (B, m, n)."
-        )
+        raise ValueError("Batched Newton-Schulz expects a 3D tensor (B, m, n).")
 
     X = G.to(dtype=torch.bfloat16)
     transposed = X.size(-2) > X.size(-1)
@@ -474,9 +472,7 @@ def get_matrix_view_shape(
         rows = int(effective_shape[-2])
         cols = int(effective_shape[-1])
         return (batch_size, rows, cols)
-    raise ValueError(
-        f"Unsupported muon_mode '{muon_mode}'. Expected one of ['2d', 'flat', 'slice']."
-    )
+    raise ValueError(f"Invalid muon_mode '{muon_mode}'. Use '2d', 'flat', or 'slice'.")
 
 
 class HybridMuonOptimizer(Optimizer):
@@ -601,7 +597,9 @@ class HybridMuonOptimizer(Optimizer):
         # === Step 1. Validate routing mode ===
         muon_mode = str(muon_mode).lower()
         if muon_mode not in {"2d", "flat", "slice"}:
-            raise ValueError("muon_mode must be one of ['2d', 'flat', 'slice'].")
+            raise ValueError(
+                f"Invalid muon_mode '{muon_mode}'. Use '2d', 'flat', or 'slice'."
+            )
 
         # === Step 2. Register optimizer defaults ===
         defaults = {
@@ -1024,10 +1022,12 @@ class HybridMuonOptimizer(Optimizer):
 
                 # exp_avg = beta1 * exp_avg + (1 - beta1) * grad
                 # exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad^2
-                for ea, g in zip(adam_no_decay_exp_avgs, adam_no_decay_grads_fp32):
+                for ea, g in zip(
+                    adam_no_decay_exp_avgs, adam_no_decay_grads_fp32, strict=True
+                ):
                     ea.lerp_(g, 1 - adam_betas[0])
                 grad_sq = [g * g for g in adam_no_decay_grads_fp32]
-                for eas, gsq in zip(adam_no_decay_exp_avg_sqs, grad_sq):
+                for eas, gsq in zip(adam_no_decay_exp_avg_sqs, grad_sq, strict=True):
                     eas.lerp_(gsq, 1 - adam_betas[1])
 
                 # === Step 1.3. Bias correction and parameter update ===
@@ -1083,10 +1083,12 @@ class HybridMuonOptimizer(Optimizer):
 
                 # exp_avg = beta1 * exp_avg + (1 - beta1) * grad
                 # exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad^2
-                for ea, g in zip(adam_decay_exp_avgs, adam_decay_grads_fp32):
+                for ea, g in zip(
+                    adam_decay_exp_avgs, adam_decay_grads_fp32, strict=True
+                ):
                     ea.lerp_(g, 1 - adam_betas[0])
                 grad_sq = [g * g for g in adam_decay_grads_fp32]
-                for eas, gsq in zip(adam_decay_exp_avg_sqs, grad_sq):
+                for eas, gsq in zip(adam_decay_exp_avg_sqs, grad_sq, strict=True):
                     eas.lerp_(gsq, 1 - adam_betas[1])
 
                 # === Step 2.3. Bias correction and parameter update ===

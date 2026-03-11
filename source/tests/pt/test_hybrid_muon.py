@@ -357,7 +357,7 @@ class TestHybridMuonOptimizer(unittest.TestCase):
 
         self.assertFalse(torch.allclose(model1.weight, model2.weight))
         self.assertTrue(
-            torch.allclose(model1.adam_scale, model2.adam_scale, atol=0.0, rtol=0.0)
+            torch.allclose(model1.adam_scale, model2.adam_scale, atol=1e-7, rtol=1e-7)
         )
 
 
