@@ -479,7 +479,7 @@ class SpinModel(NativeOP):
             sampled = sampled_func()
             spin_sampled = []
             for sys in sampled:
-                coord_updated, atype_updated = self.process_spin_input(
+                coord_updated, atype_updated, _ = self.process_spin_input(
                     sys["coord"], sys["atype"], sys["spin"]
                 )
                 tmp_dict = {
@@ -488,7 +488,8 @@ class SpinModel(NativeOP):
                 }
                 if "natoms" in sys:
                     natoms = sys["natoms"]
-                    tmp_dict["natoms"] = np.concatenate(
+                    xp = array_api_compat.array_namespace(natoms)
+                    tmp_dict["natoms"] = xp.concat(
                         [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]], axis=-1
                     )
                 for item_key in sys.keys():
