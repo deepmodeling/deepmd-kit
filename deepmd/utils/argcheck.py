@@ -2974,12 +2974,12 @@ def optimizer_hybrid_muon() -> list[Argument]:
             "lr_adjust",
             float,
             optional=True,
-            default=10.0,
+            default=0.0,
             doc=doc_only_pt_supported
             + "Learning rate adjustment mode for HybridMuon scaling and Adam learning rate. "
             "If lr_adjust <= 0: use match-RMS scaling (scale = coeff*sqrt(max(m,n))), Adam uses lr directly. "
             "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1, m/n))), Adam uses lr/lr_adjust. "
-            "Default is 10.0 (Adam lr = lr/10).",
+            "Default is 0.0 (match-RMS scaling).",
         ),
         Argument(
             "lr_adjust_coeff",

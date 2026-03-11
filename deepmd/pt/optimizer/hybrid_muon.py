@@ -21,7 +21,7 @@ Routing is controlled by parameter dimensionality, parameter names, and
 - ``muon_mode="flat"``:
   - >=2D matrix parameters use flattened matrix-view routing:
     ``(rows, cols) = (prod(effective_shape[:-1]), effective_shape[-1])``.
-- ``muon_mode="slice"`` (default):
+- ``muon_mode="slice"``:
   - Effective rank 2 matrix parameters: same as ``"2d"``.
   - Effective rank >=3 matrix parameters: treat leading axes as batch and apply Muon
     independently on each ``(..., m, n)`` slice (no cross-slice mixing).
@@ -533,7 +533,7 @@ class HybridMuonOptimizer(Optimizer):
     params : iterable
         Iterable of parameters to optimize.
     lr : float
-        Learning rate with default 1e-3.
+        Learning rate.
     momentum : float
         Momentum coefficient for Muon with default 0.95.
     weight_decay : float
@@ -577,7 +577,7 @@ class HybridMuonOptimizer(Optimizer):
 
     Examples
     --------
-    >>> optimizer = HybridMuonOptimizer(model.parameters(), lr=1e-3)
+    >>> optimizer = HybridMuonOptimizer(model.parameters(), lr=5e-4)
     >>> for epoch in range(epochs):
     ...     optimizer.zero_grad()
     ...     loss.backward()
@@ -587,11 +587,11 @@ class HybridMuonOptimizer(Optimizer):
     def __init__(
         self,
         params: Iterable[torch.Tensor] | Iterable[dict[str, Any]],
-        lr: float = 1e-3,
+        lr: float = 5e-4,
         momentum: float = 0.95,
         weight_decay: float = 0.001,
         adam_betas: tuple[float, float] = (0.9, 0.95),
-        lr_adjust: float = 10.0,
+        lr_adjust: float = 0.0,
         lr_adjust_coeff: float = 0.2,
         muon_mode: str = "slice",
         named_parameters: Iterable[tuple[str, torch.Tensor]] | None = None,
