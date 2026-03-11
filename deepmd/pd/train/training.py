@@ -165,7 +165,7 @@ class Trainer:
             before this function is called.
             """
             opt_type = params.get("type", "Adam")
-            if opt_type != "Adam":
+            if opt_type not in ["Adam", "AdamW"]:
                 raise ValueError(f"Not supported optimizer type '{opt_type}'")
             opt_param = dict(params)
             opt_param.pop("type", None)
@@ -647,7 +647,7 @@ class Trainer:
         # author: iProzd
         # TODO add optimizers for multitask
         # author: iProzd
-        if self.opt_type == "Adam":
+        if self.opt_type in ["Adam", "AdamW"]:
             self.scheduler = paddle.optimizer.lr.LambdaDecay(
                 learning_rate=self.lr_schedule.start_lr,
                 lr_lambda=lambda step: (
@@ -800,7 +800,7 @@ class Trainer:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
                 fout1.flush()
-            if self.opt_type == "Adam":
+            if self.opt_type in ["Adam", "AdamW"]:
                 cur_lr = self.scheduler.get_lr()
                 pref_lr = cur_lr
 
