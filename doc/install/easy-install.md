@@ -169,9 +169,9 @@ Switch to the TensorFlow {{ tensorflow_icon }} tab for more information.
 
 ```bash
 # release version
-pip install paddlepaddle-gpu==3.1.1 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+pip install paddlepaddle-gpu==3.3.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
 # nightly-build version
-# pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+# pip install --pre -U paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/cu126/
 pip install deepmd-kit
 ```
 :::
@@ -180,9 +180,9 @@ pip install deepmd-kit
 
 ```bash
 # release version
-pip install paddlepaddle==3.1.1 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+pip install paddlepaddle==3.3.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
 # nightly-build version
-# pip install --pre paddlepaddle -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/
+# pip install --pre -U paddlepaddle -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/
 pip install deepmd-kit
 ```
 :::
