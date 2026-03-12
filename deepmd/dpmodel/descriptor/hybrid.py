@@ -275,6 +275,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         atype_ext: Array,
         nlist: Array,
         mapping: Array | None = None,
+        fparam: Array | None = None,
     ) -> tuple[
         Array,
         Array | None,
