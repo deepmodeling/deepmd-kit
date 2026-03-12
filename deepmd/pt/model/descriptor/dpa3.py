@@ -215,7 +215,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
                 2 * self.tebd_dim,
                 self.tebd_dim,
                 precision=precision,
-                seed=child_seed(seed, 3),
+                seed=child_seed(seed, 5),
             )
         else:
             self.chg_embedding = None
