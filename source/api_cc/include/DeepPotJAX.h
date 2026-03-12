@@ -94,6 +94,14 @@ class DeepPotJAX : public DeepPotBackend {
     assert(inited);
     return false;
   };
+  /**
+   * @brief Check if the model has default frame parameters.
+   * @return true if the model has default frame parameters.
+   **/
+  bool has_default_fparam() const {
+    assert(inited);
+    return has_default_fparam_;
+  };
 
   // forward to template class
   void computew(std::vector<double>& ener,
@@ -191,6 +199,8 @@ class DeepPotJAX : public DeepPotBackend {
   int nnei;
   // do message passing
   bool do_message_passing;
+  // has default fparam
+  bool has_default_fparam_;
   // padding to nall
   int padding_to_nall = 0;
   // padding for nloc
