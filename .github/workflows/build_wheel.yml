@@ -143,7 +143,7 @@ jobs:
           images: ghcr.io/deepmodeling/deepmd-kit
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: source/install/docker
           push: ${{ github.repository_owner == 'deepmodeling' && github.event_name == 'push' && github.actor != 'dependabot[bot]' }}
