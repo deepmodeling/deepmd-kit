@@ -655,7 +655,12 @@ class Trainer:
                     / self.lr_schedule.start_lr
                 ),
             )
-            self.optimizer = paddle.optimizer.Adam(
+            opt_cls = (
+                paddle.optimizer.Adam
+                if self.opt_type == "Adam"
+                else paddle.optimizer.AdamW
+            )
+            self.optimizer = opt_cls(
                 learning_rate=self.scheduler,
                 parameters=self.wrapper.parameters(),
                 beta1=float(self.opt_param["adam_beta1"]),
@@ -840,7 +845,7 @@ class Trainer:
                                 error_if_nonfinite=True,
                             )
 
-                    with nvprof_context(enable_profiling, "Adam update"):
+                    with nvprof_context(enable_profiling, "Optimizer update"):
                         self.optimizer.step()
                     self.optimizer.clear_grad(set_to_zero=False)
                     self.scheduler.step()
