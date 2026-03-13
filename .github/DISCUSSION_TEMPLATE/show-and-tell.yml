@@ -1,0 +1,125 @@
+name: Show and Tell
+description: Share your projects, research, or achievements using DeePMD-kit
+labels: ["show and tell"]
+body:
+  - type: textarea
+    id: what-did-you-build
+    attributes:
+      label: What did you build or achieve?
+      description: Tell us about your project, research, or achievement using DeePMD-kit!
+      placeholder: Share what you've created or accomplished...
+      value:
+    validations:
+      required: true
+  - type: dropdown
+    id: project-type
+    attributes:
+      label: Project Type
+      description: What type of project or work is this?
+      options:
+        - Research project
+        - Educational/tutorial content
+        - Integration with other tools
+        - Performance optimization
+        - Application to new domain
+        - Methodology development
+        - Other (specify in description)
+    validations:
+      required: true
+  - type: textarea
+    id: technical-details
+    attributes:
+      label: Technical Details
+      description: |
+        Share the technical details of your work:
+        - What methods or features of DeePMD-kit did you use?
+        - Any interesting technical approaches or optimizations?
+        - System specifications or scale of your work?
+      placeholder: |
+        **DeePMD-kit features used:**
+        - Descriptor: se_e2_a
+        - Backend: TensorFlow
+        - Integration: LAMMPS
+        
+        **Technical approach:**
+        - Training dataset: [description]
+        - Model architecture: [details]
+        - Performance: [metrics]
+      value:
+    validations:
+      required: false
+  - type: textarea
+    id: results-achievements
+    attributes:
+      label: Results and Achievements
+      description: |
+        What results did you achieve? What makes this work interesting or notable?
+        Include:
+        - Key findings or outcomes
+        - Performance metrics or improvements
+        - Novel applications or insights
+      placeholder: Share your key results and achievements...
+      value:
+    validations:
+      required: false
+  - type: textarea
+    id: reproducible-info
+    attributes:
+      label: Reproducible Information
+      description: |
+        If others want to reproduce your work or learn from it, what information can you share?
+        - Links to code repositories
+        - Configuration files
+        - Dataset information (if shareable)
+        - Step-by-step instructions
+      placeholder: |
+        **Code repository:** [link]
+        **Key configurations:** 
+        ```json
+        {
+          "model": {...}
+        }
+        ```
+        **Instructions:** [brief steps to reproduce]
+      value:
+    validations:
+      required: false
+  - type: textarea
+    id: lessons-learned
+    attributes:
+      label: Lessons Learned
+      description: |
+        What did you learn during this project? Any tips, tricks, or insights that might help others?
+        - Challenges you overcame
+        - Best practices you discovered
+        - Things you'd do differently next time
+      placeholder: Share insights that might help others...
+      value:
+    validations:
+      required: false
+  - type: textarea
+    id: links-and-resources
+    attributes:
+      label: Links and Resources
+      description: |
+        Share relevant links:
+        - Publications or preprints
+        - Code repositories
+        - Demo videos or visualizations
+        - Related projects or collaborations
+      placeholder: |
+        **Publication:** [link]
+        **Code:** [link]
+        **Demo:** [link]
+      value:
+    validations:
+      required: false
+  - type: textarea
+    id: acknowledgments
+    attributes:
+      label: Acknowledgments
+      description: Any acknowledgments or thanks to the community, collaborators, or DeePMD-kit developers?
+      placeholder: Thank you to...
+      value:
+    validations:
+      required: false

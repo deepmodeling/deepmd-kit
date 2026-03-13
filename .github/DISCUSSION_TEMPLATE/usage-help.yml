@@ -1,0 +1,170 @@
+name: Usage Help
+description: Get help with using DeePMD-kit - provide reproducible examples for the best assistance
+labels: ["help wanted", "usage"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What are you trying to accomplish?
+      description: Please provide a clear description of what you're trying to do with DeePMD-kit.
+      placeholder: "e.g., Training a neural network potential for water molecules, running molecular dynamics with LAMMPS, etc."
+      value:
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: DeePMD-kit Version
+      description: "Run `dp --version` to check your version."
+      placeholder: "e.g., 2.2.7"
+    validations:
+      required: true
+  - type: input
+    id: backend-version
+    attributes:
+      label: Backend and Version
+      description: "Which backend and version? (The backend version is shown when running DeePMD-kit)"
+      placeholder: "e.g., TensorFlow v2.15.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: installation-method
+    attributes:
+      label: Installation Method
+      options:
+        - conda
+        - pip
+        - docker
+        - Built from source
+        - Offline packages
+        - Others (specify in details)
+    validations:
+      required: true
+  - type: textarea
+    id: problem-description
+    attributes:
+      label: Problem Description
+      description: |
+        Describe the specific issue you're encountering or what you need help with.
+        Be as specific as possible about what's not working or what you're unsure about.
+      placeholder: "Describe your specific problem or question..."
+      value:
+    validations:
+      required: true
+  - type: textarea
+    id: reproducible-example
+    attributes:
+      label: Reproducible Example
+      description: |
+        **This section is crucial for getting effective help!**
+        
+        Please provide a complete, minimal example that others can use to reproduce your issue or understand your question.
+        Include:
+        - Input files (you can attach small files or paste content)
+        - Command(s) you're running
+        - Configuration files (input.json, etc.)
+        - Directory structure if relevant
+        - Full error messages or unexpected output
+        
+        **Tip:** The more complete and minimal your example, the easier it is for others to help you!
+      placeholder: |
+        **Input files:**
+        ```
+        # system directory structure
+        data/
+        ├── type_map.raw
+        ├── type.raw
+        └── set.000/
+            ├── coord.npy
+            ├── energy.npy
+            └── force.npy
+        ```
+        
+        **Configuration (input.json):**
+        ```json
+        {
+          "model": {
+            "type_map": ["H", "O"],
+            "descriptor": {
+              "type": "se_e2_a",
+              "rcut": 6.0,
+              "rcut_smth": 0.5,
+              "sel": [46, 92]
+            },
+            "fitting_net": {
+              "neuron": [25, 50, 100],
+              "resnet_dt": false
+            }
+          },
+          "learning_rate": {
+            "type": "exp",
+            "start_lr": 0.001,
+            "stop_lr": 3.51e-8,
+            "decay_steps": 5000
+          },
+          "loss": {
+            "start_pref_e": 0.02,
+            "limit_pref_e": 1,
+            "start_pref_f": 1000,
+            "limit_pref_f": 1,
+            "start_pref_v": 0,
+            "limit_pref_v": 0
+          },
+          "training": {
+            "numb_steps": 1000000,
+            "seed": 1,
+            "batch_size": 1,
+            "disp_file": "lcurve.out",
+            "disp_freq": 100,
+            "numb_test": 1,
+            "save_freq": 1000,
+            "save_ckpt": "model.ckpt",
+            "disp_training": true,
+            "time_training": true,
+            "profiling": false,
+            "profiling_file": "timeline.json"
+          }
+        }
+        ```
+        
+        **Commands:**
+        ```bash
+        dp train input.json
+        ```
+        
+        **Error message:**
+        ```
+        # Paste your complete error message here
+        ```
+      value:
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: Describe what you expected to occur...
+      value:
+    validations:
+      required: true
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual Behavior
+      description: What actually happened? Include any error messages, unexpected output, or describe the difference from expected behavior.
+      placeholder: Describe what actually happened...
+      value:
+    validations:
+      required: true
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: |
+        Add any other context, screenshots, or information that might be helpful.
+        You can also mention if you've found any workarounds or partial solutions.
+      placeholder: Any other relevant information...
+      value:
+    validations:
+      required: false
