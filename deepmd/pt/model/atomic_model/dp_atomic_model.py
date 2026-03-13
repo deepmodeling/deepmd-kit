@@ -66,6 +66,9 @@ class DPAtomicModel(BaseAtomicModel):
         if hasattr(self.fitting_net, "reinit_exclude"):
             self.fitting_net.reinit_exclude(self.atom_exclude_types)
         super().init_out_stat()
+        self.add_chg_spin_ebd: bool = getattr(
+            self.descriptor, "add_chg_spin_ebd", False
+        )
         self.enable_eval_descriptor_hook = False
         self.enable_eval_fitting_last_layer_hook = False
         self.eval_descriptor_list = []
@@ -269,12 +272,29 @@ class DPAtomicModel(BaseAtomicModel):
         atype = extended_atype[:, :nloc]
         if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
+
+        # Handle default fparam if fitting net supports it
+        if (
+            hasattr(self.fitting_net, "get_dim_fparam")
+            and self.fitting_net.get_dim_fparam() > 0
+            and fparam is None
+        ):
+            # use default fparam
+            default_fparam_tensor = self.fitting_net.get_default_fparam()
+            assert default_fparam_tensor is not None
+            fparam_input_for_des = torch.tile(
+                default_fparam_tensor.unsqueeze(0), [nframes, 1]
+            )
+        else:
+            fparam_input_for_des = fparam
+
         descriptor, rot_mat, g2, h2, sw = self.descriptor(
             extended_coord,
             extended_atype,
             nlist,
             mapping=mapping,
             comm_dict=comm_dict,
+            fparam=fparam_input_for_des if self.add_chg_spin_ebd else None,
         )
         assert descriptor is not None
         if self.enable_eval_descriptor_hook:
