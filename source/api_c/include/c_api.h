@@ -12,7 +12,7 @@ extern "C" {
 /** C API version. Bumped whenever the API is changed.
  * @since API version 22
  */
-#define DP_C_API_VERSION 25
+#define DP_C_API_VERSION 26
 
 /**
  * @brief Neighbor list.
@@ -1453,7 +1453,7 @@ bool DP_DeepBaseModelIsAParamNAll(DP_DeepBaseModel* dpbase);
  * @param[in] dpbase The DP to use.
  * @return true the model has default frame parameters
  * @return false the model does not have default frame parameters
- * @since API version 25
+ * @since API version 26
  */
 bool DP_DeepBaseModelHasDefaultFParam(DP_DeepBaseModel* dpbase);
 
@@ -1506,7 +1506,7 @@ bool DP_DeepBaseModelDeviIsAParamNAll(DP_DeepBaseModelDevi* dpbase);
  * @param[in] dpbase The DP Model Deviation to use.
  * @return true the model has default frame parameters
  * @return false the model does not have default frame parameters
- * @since API version 25
+ * @since API version 26
  */
 bool DP_DeepBaseModelDeviHasDefaultFParam(DP_DeepBaseModelDevi* dpbase);
 
@@ -1594,6 +1594,7 @@ bool DP_DeepPotIsAParamNAll(DP_DeepPot* dp);
  * @param[in] dp The DP to use.
  * @return true the model has default frame parameters
  * @return false the model does not have default frame parameters
+ * @since API version 26
  */
 bool DP_DeepPotHasDefaultFParam(DP_DeepPot* dp);
 
@@ -1640,6 +1641,7 @@ bool DP_DeepPotModelDeviIsAParamNAll(DP_DeepPotModelDevi* dp);
  * @param[in] dp The DP model deviation to use.
  * @return true the model has default frame parameters
  * @return false the model does not have default frame parameters
+ * @since API version 26
  */
 bool DP_DeepPotModelDeviHasDefaultFParam(DP_DeepPotModelDevi* dp);
 
@@ -1729,7 +1731,7 @@ bool DP_DeepSpinIsAParamNAll(DP_DeepSpin* dp);
  * @param[in] dp The DP Spin Model to use.
  * @return true the model has default frame parameters
  * @return false the model does not have default frame parameters
- * @since API version 25
+ * @since API version 26
  */
 bool DP_DeepSpinHasDefaultFParam(DP_DeepSpin* dp);
 
@@ -1781,7 +1783,7 @@ bool DP_DeepSpinModelDeviIsAParamNAll(DP_DeepSpinModelDevi* dp);
  * @param[in] dp The DP Spin Model Deviation to use.
  * @return true the model has default frame parameters
  * @return false the model does not have default frame parameters
- * @since API version 25
+ * @since API version 26
  */
 bool DP_DeepSpinModelDeviHasDefaultFParam(DP_DeepSpinModelDevi* dp);
 
