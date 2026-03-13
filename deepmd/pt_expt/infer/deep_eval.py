@@ -84,13 +84,13 @@ def _reconstruct_model_output_def(metadata: dict) -> ModelOutputDef:
 class DeepEval(DeepEvalBackend):
     """PyTorch Exportable backend implementation of DeepEval.
 
-    Loads a .pte file containing a torch.export-ed model and evaluates
+    Loads a .pte or .pt2 file containing a torch.export-ed model and evaluates
     it using pre-built neighbor lists.
 
     Parameters
     ----------
     model_file : Path
-        The name of the .pte model file.
+        The name of the .pte or .pt2 model file.
     output_def : ModelOutputDef
         The output definition of the model.
     *args : list
@@ -117,16 +117,12 @@ class DeepEval(DeepEvalBackend):
         self.output_def = output_def
         self.model_path = model_file
         self.neighbor_list = neighbor_list
+        self._is_pt2 = model_file.endswith(".pt2")
 
-        # Load the exported program with metadata
-        extra_files = {"model_def_script.json": ""}
-        exported = torch.export.load(model_file, extra_files=extra_files)
-        self.exported_module = exported.module()
-
-        # Parse metadata
-        self.metadata = json.loads(extra_files["model_def_script.json"])
-        self.rcut = self.metadata["rcut"]
-        self.type_map = self.metadata["type_map"]
+        if self._is_pt2:
+            self._load_pt2(model_file)
+        else:
+            self._load_pte(model_file)
 
         # Reconstruct the model output def from stored fitting output defs
         self._model_output_def = _reconstruct_model_output_def(self.metadata)
@@ -142,6 +138,41 @@ class DeepEval(DeepEvalBackend):
             self.auto_batch_size = auto_batch_size
         else:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
+
+    def _load_pte(self, model_file: str) -> None:
+        """Load a .pte (torch.export) model file."""
+        extra_files = {"model_def_script.json": ""}
+        exported = torch.export.load(model_file, extra_files=extra_files)
+        self.exported_module = exported.module()
+        self.metadata = json.loads(extra_files["model_def_script.json"])
+        self.rcut = self.metadata["rcut"]
+        self.type_map = self.metadata["type_map"]
+
+    def _load_pt2(self, model_file: str) -> None:
+        """Load a .pt2 (AOTInductor) model file."""
+        import zipfile
+
+        from torch._inductor import (
+            aoti_load_package,
+        )
+
+        # Read metadata from the .pt2 ZIP archive
+        with zipfile.ZipFile(model_file, "r") as zf:
+            names = zf.namelist()
+            for required in ("extra/model_def_script.json", "extra/output_keys.json"):
+                if required not in names:
+                    raise ValueError(
+                        f"Invalid .pt2 file '{model_file}': missing '{required}'"
+                    )
+            self.metadata = json.loads(zf.read("extra/model_def_script.json"))
+            self._output_keys = json.loads(zf.read("extra/output_keys.json"))
+
+        self.rcut = self.metadata["rcut"]
+        self.type_map = self.metadata["type_map"]
+
+        # Load the AOTInductor model
+        self._pt2_runner = aoti_load_package(model_file)
+        self.exported_module = None
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
@@ -601,10 +632,19 @@ class DeepEval(DeepEvalBackend):
         else:
             aparam_t = None
 
-        # Call the exported module (forward_common_lower interface, internal keys)
-        model_ret = self.exported_module(
-            ext_coord_t, ext_atype_t, nlist_t, mapping_t, fparam_t, aparam_t
-        )
+        # Call the model (forward_common_lower interface, internal keys)
+        if self._is_pt2:
+            # AOTInductor's __call__ unflattens output using stored out_spec,
+            # returning a dict just like the .pte module.
+            # It also filters non-tensor args automatically, matching the
+            # export-time signature where None args were excluded.
+            model_ret = self._pt2_runner(
+                ext_coord_t, ext_atype_t, nlist_t, mapping_t, fparam_t, aparam_t
+            )
+        else:
+            model_ret = self.exported_module(
+                ext_coord_t, ext_atype_t, nlist_t, mapping_t, fparam_t, aparam_t
+            )
 
         # Apply communicate_extended_output to map extended atoms → local atoms
         do_atomic_virial = any(

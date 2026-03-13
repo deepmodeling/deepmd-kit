@@ -5,6 +5,7 @@ import array_api_compat
 from deepmd.dpmodel.array_api import (
     Array,
     xp_take_along_axis,
+    xp_take_first_n,
 )
 
 from .region import (
@@ -243,8 +244,7 @@ def build_multiple_neighbor_list(
         nlist = xp.concat([nlist, pad], axis=-1)
         nsel = nsels[-1]
     coord1 = xp.reshape(coord, (nb, -1, 3))
-    nall = coord1.shape[1]
-    coord0 = coord1[:, :nloc, :]
+    coord0 = xp_take_first_n(coord1, 1, nloc)
     nlist_mask = nlist == -1
     tnlist_0 = xp.where(nlist_mask, xp.zeros_like(nlist), nlist)
     index = xp.tile(xp.reshape(tnlist_0, (nb, nloc * nsel, 1)), (1, 1, 3))
