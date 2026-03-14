@@ -75,9 +75,10 @@ from deepmd.utils.argcheck import (
     (True, False),  # use_exp_switch
     (True, False),  # use_dynamic_sel
     (True, False),  # use_loc_mapping
-    (0.3, 0.0),  # fix_stat_std
+    (0.3,),  # fix_stat_std
     (1,),  # n_multi_edge_message
     ("float64",),  # precision
+    (False, True),  # add_chg_spin_ebd
 )
 class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
     @property
@@ -97,6 +98,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             fix_stat_std,
             n_multi_edge_message,
             precision,
+            add_chg_spin_ebd,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -137,6 +139,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             "env_protection": 0.0,
             "use_loc_mapping": use_loc_mapping,
             "trainable": False,
+            "add_chg_spin_ebd": add_chg_spin_ebd,
         }
 
     @property
@@ -156,6 +159,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             fix_stat_std,
             n_multi_edge_message,
             precision,
+            add_chg_spin_ebd,
         ) = self.param
         return CommonTest.skip_pt
 
@@ -176,8 +180,9 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             fix_stat_std,
             n_multi_edge_message,
             precision,
+            add_chg_spin_ebd,
         ) = self.param
-        return CommonTest.skip_pd
+        return True if add_chg_spin_ebd else CommonTest.skip_pd
 
     @property
     def skip_dp(self) -> bool:
@@ -196,6 +201,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             fix_stat_std,
             n_multi_edge_message,
             precision,
+            add_chg_spin_ebd,
         ) = self.param
         return CommonTest.skip_dp
 
@@ -216,6 +222,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             fix_stat_std,
             n_multi_edge_message,
             precision,
+            add_chg_spin_ebd,
         ) = self.param
         return True
 
@@ -280,7 +287,14 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             fix_stat_std,
             n_multi_edge_message,
             precision,
+            add_chg_spin_ebd,
         ) = self.param
+        # fparam for charge=5, spin=1 when add_chg_spin_ebd is True
+        self.fparam = (
+            np.array([[5, 1]], dtype=GLOBAL_NP_FLOAT_PRECISION)
+            if add_chg_spin_ebd
+            else None
+        )
 
     def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         return self.build_tf_descriptor(
@@ -300,6 +314,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             self.atype,
             self.box,
             mixed_types=True,
+            fparam=self.fparam,
         )
 
     def eval_pt(self, pt_obj: Any) -> Any:
@@ -310,6 +325,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             self.atype,
             self.box,
             mixed_types=True,
+            fparam=self.fparam,
         )
 
     def eval_pd(self, pd_obj: Any) -> Any:
@@ -320,6 +336,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             self.atype,
             self.box,
             mixed_types=True,
+            fparam=self.fparam,
         )
 
     def eval_jax(self, jax_obj: Any) -> Any:
@@ -330,6 +347,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             self.atype,
             self.box,
             mixed_types=True,
+            fparam=self.fparam,
         )
 
     def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
@@ -340,6 +358,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             self.atype,
             self.box,
             mixed_types=True,
+            fparam=self.fparam,
         )
 
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
@@ -350,6 +369,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             self.atype,
             self.box,
             mixed_types=True,
+            fparam=self.fparam,
         )
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
@@ -373,6 +393,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             fix_stat_std,
             n_multi_edge_message,
             precision,
+            add_chg_spin_ebd,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -399,6 +420,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             fix_stat_std,
             n_multi_edge_message,
             precision,
+            add_chg_spin_ebd,
         ) = self.param
         if precision == "float64":
             return 1e-6  # need to fix in the future, see issue https://github.com/deepmodeling/deepmd-kit/issues/3786

@@ -1367,6 +1367,11 @@ def descrpt_dpa3_args() -> list[Argument]:
     doc_concat_output_tebd = (
         "Whether to concat type embedding at the output of the descriptor."
     )
+    doc_add_chg_spin_ebd = (
+        "Whether to add charge and spin embedding to the descriptor. "
+        "When enabled, fparam is expected to have 2 values (charge, spin) "
+        "which are embedded and added to the type embedding."
+    )
     doc_activation_function = f"The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
@@ -1389,6 +1394,13 @@ def descrpt_dpa3_args() -> list[Argument]:
             optional=True,
             default=False,
             doc=doc_concat_output_tebd,
+        ),
+        Argument(
+            "add_chg_spin_ebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_add_chg_spin_ebd,
         ),
         Argument(
             "activation_function",

@@ -74,6 +74,9 @@ class DPAtomicModel(BaseAtomicModel):
         if hasattr(self.fitting_net, "reinit_exclude"):
             self.fitting_net.reinit_exclude(self.atom_exclude_types)
         self.type_map = type_map
+        self.add_chg_spin_ebd: bool = getattr(
+            self.descriptor, "add_chg_spin_ebd", False
+        )
         super().init_out_stat()
 
     def fitting_output_def(self) -> FittingOutputDef:
@@ -180,11 +183,38 @@ class DPAtomicModel(BaseAtomicModel):
         """
         nframes, nloc, nnei = nlist.shape
         atype = xp_take_first_n(extended_atype, 1, nloc)
+
+        # Handle default fparam if fitting net supports it
+        if (
+            hasattr(self.fitting_net, "get_dim_fparam")
+            and self.fitting_net.get_dim_fparam() > 0
+            and fparam is None
+        ):
+            # use default fparam
+            from deepmd.dpmodel.array_api import (
+                array_api_compat,
+            )
+
+            default_fparam = self.fitting_net.get_default_fparam()
+            assert default_fparam is not None
+            xp = array_api_compat.array_namespace(extended_coord)
+            default_fparam_array = xp.asarray(
+                default_fparam,
+                dtype=extended_coord.dtype,
+                device=array_api_compat.device(extended_coord),
+            )
+            fparam_input_for_des = xp.tile(
+                xp.reshape(default_fparam_array, (1, -1)), (nframes, 1)
+            )
+        else:
+            fparam_input_for_des = fparam
+
         descriptor, rot_mat, g2, h2, sw = self.descriptor(
             extended_coord,
             extended_atype,
             nlist,
             mapping=mapping,
+            fparam=fparam_input_for_des if self.add_chg_spin_ebd else None,
         )
         ret = self.fitting_net(
             descriptor,
