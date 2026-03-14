@@ -85,6 +85,7 @@ test = [
     "pytest-cov",
     "pytest-sugar",
     "pytest-split",
+    "pytest-timeout",
     "dpgui",
     # to support Array API 2024.12
     'array-api-strict>=2.2;python_version>="3.9"',
@@ -457,6 +458,7 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 
 [tool.pytest.ini_options]
 markers = "run"
+timeout = 1800
 
 [tool.coverage.run]
 plugins = ["source.3rdparty.coverage_plugins.jit_plugin"]
