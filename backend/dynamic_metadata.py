@@ -48,8 +48,11 @@ def dynamic_metadata(
         ]
         optional_dependencies["lmp"].extend(find_libpython_requires)
         optional_dependencies["ipi"].extend(find_libpython_requires)
+        torch_static_requirement = optional_dependencies.pop("torch", ())
         return {
             **optional_dependencies,
             **get_tf_requirement(tf_version),
-            **get_pt_requirement(pt_version),
+            **get_pt_requirement(
+                pt_version, static_requirement=tuple(torch_static_requirement)
+            ),
         }

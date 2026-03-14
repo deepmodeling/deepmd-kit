@@ -36,11 +36,14 @@ from deepmd.pt.entrypoints.main import (
     freeze,
     get_trainer,
 )
+from deepmd.pt.model.model import (
+    EnergyModel,
+)
 from deepmd.pt.modifier.base_modifier import (
     BaseModifier,
 )
-from deepmd.pt.utils import (
-    env,
+from deepmd.pt.modifier.dp_modifier import (
+    DPModifier,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
@@ -52,7 +55,7 @@ from deepmd.utils.data import (
     DeepmdData,
 )
 
-from ..consistent.common import (
+from ...consistent.common import (
     parameterized,
 )
 
@@ -85,7 +88,9 @@ def modifier_scaling_tester() -> list[Argument]:
     doc_sfactor = "The scaling factor for correction."
     doc_use_cache = "Whether to cache modified frames to improve performance by avoiding recomputation."
     return [
-        Argument("model_name", str, optional=False, doc=doc_model_name),
+        Argument(
+            "model_name", str, alias=["model"], optional=False, doc=doc_model_name
+        ),
         Argument("sfactor", float, optional=False, doc=doc_sfactor),
         Argument("use_cache", bool, optional=True, doc=doc_use_cache),
     ]
@@ -180,22 +185,44 @@ class ModifierZeroTester(BaseModifier):
 
 
 @BaseModifier.register("scaling_tester")
-class ModifierScalingTester(BaseModifier):
-    def __new__(cls, *args, **kwargs):
-        return super().__new__(cls)
-
+class ModifierScalingTester(DPModifier):
     def __init__(
         self,
-        model_name: str,
+        dp_model: torch.nn.Module | None = None,
+        dp_model_file_name: str | None = None,
         sfactor: float = 1.0,
         use_cache: bool = True,
     ) -> None:
         """Initialize a test modifier that applies scaled model predictions using a frozen model."""
-        super().__init__(use_cache)
+        super().__init__(dp_model, dp_model_file_name, use_cache)
         self.modifier_type = "scaling_tester"
-        self.model_name = model_name
         self.sfactor = sfactor
-        self.model = torch.jit.load(model_name, map_location=env.DEVICE)
+
+    def serialize(self) -> dict:
+        """Serialize the modifier.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        dd = super().serialize()
+        dd.update(
+            {
+                "sfactor": self.sfactor,
+            }
+        )
+        return dd
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "ModifierScalingTester":
+        data = data.copy()
+        data.pop("@class", None)
+        data.pop("type", None)
+        data.pop("@version", None)
+        model_obj = EnergyModel.deserialize(data.pop("dp_model"))
+        data["dp_model"] = model_obj
+        return cls(**data)
 
     def forward(
         self,
