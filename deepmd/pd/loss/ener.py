@@ -53,10 +53,11 @@ class EnergyStdLoss(TaskLoss):
         start_pref_gf: float = 0.0,
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
-        use_l1_all: bool = False,
+        loss_func: str = "mse",
         inference: bool = False,
         use_huber: bool = False,
         huber_delta: float = 0.01,
+        f_use_norm: bool = False,
         **kwargs: Any,
     ) -> None:
         r"""Construct a layer to compute loss on energy, force and virial.
@@ -97,8 +98,9 @@ class EnergyStdLoss(TaskLoss):
             The prefactor of generalized force loss at the end of the training.
         numb_generalized_coord : int
             The dimension of generalized coordinates.
-        use_l1_all : bool
-            Whether to use L1 loss, if False (default), it will use L2 loss.
+        loss_func : str
+            Loss function type. Options: 'mse' or 'mae'.
+            Not implemented in PD backend, only for serialization compatibility.
         inference : bool
             If true, it will output all losses found in output, ignoring the pre-factors.
         use_huber : bool
@@ -109,10 +111,17 @@ class EnergyStdLoss(TaskLoss):
             Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D).
         huber_delta : float
             The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
+        f_use_norm : bool
+            If True, use L2 norm of force vectors for loss calculation.
+            Not implemented in PD backend, only for serialization compatibility.
         **kwargs
             Other keyword arguments.
         """
         super().__init__()
+
+        self.loss_func = loss_func
+        self.f_use_norm = f_use_norm
+
         self.starter_learning_rate = starter_learning_rate
         self.has_e = (start_pref_e != 0.0 and limit_pref_e != 0.0) or inference
         self.has_f = (start_pref_f != 0.0 and limit_pref_f != 0.0) or inference
@@ -140,10 +149,10 @@ class EnergyStdLoss(TaskLoss):
             raise RuntimeError(
                 "When generalized force loss is used, the dimension of generalized coordinates should be larger than 0"
             )
-        self.use_l1_all = use_l1_all
         self.inference = inference
         self.use_huber = use_huber
         self.huber_delta = huber_delta
+        self.f_use_norm = f_use_norm
         if self.use_huber and (
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
@@ -214,7 +223,7 @@ class EnergyStdLoss(TaskLoss):
                 energy_pred = paddle.sum(atom_ener_coeff * atom_ener_pred, axis=1)
             find_energy = label.get("find_energy", 0.0)
             pref_e = pref_e * find_energy
-            if not self.use_l1_all:
+            if self.loss_func == "mse":
                 l2_ener_loss = paddle.mean(paddle.square(energy_pred - energy_label))
                 if not self.inference:
                     more_loss["l2_ener_loss"] = self.display_if_exist(
@@ -234,7 +243,7 @@ class EnergyStdLoss(TaskLoss):
                     rmse_e.detach(), find_energy
                 )
                 # more_loss['log_keys'].append('rmse_e')
-            else:  # use l1 and for all atoms
+            elif self.loss_func == "mae":
                 l1_ener_loss = F.l1_loss(
                     energy_pred.reshape([-1]),
                     energy_label.reshape([-1]),
@@ -250,6 +259,10 @@ class EnergyStdLoss(TaskLoss):
                     find_energy,
                 )
                 # more_loss['log_keys'].append('rmse_e')
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for energy loss."
+                )
             if mae:
                 mae_e = paddle.mean(paddle.abs(energy_pred - energy_label)) * atom_norm
                 more_loss["mae_e"] = self.display_if_exist(mae_e.detach(), find_energy)
@@ -277,7 +290,7 @@ class EnergyStdLoss(TaskLoss):
                 diff_f = diff_f_3.reshape([-1])
 
             if self.has_f:
-                if not self.use_l1_all:
+                if self.loss_func == "mse":
                     l2_force_loss = paddle.mean(paddle.square(diff_f))
                     if not self.inference:
                         more_loss["l2_force_loss"] = self.display_if_exist(
@@ -296,13 +309,17 @@ class EnergyStdLoss(TaskLoss):
                     more_loss["rmse_f"] = self.display_if_exist(
                         rmse_f.detach(), find_force
                     )
-                else:
+                elif self.loss_func == "mae":
                     l1_force_loss = F.l1_loss(force_label, force_pred, reduction="mean")
                     more_loss["mae_f"] = self.display_if_exist(
                         l1_force_loss.detach(), find_force
                     )
                     l1_force_loss = l1_force_loss.sum(-1).mean(-1).sum()
                     loss += (pref_f * l1_force_loss).to(GLOBAL_PD_FLOAT_PRECISION)
+                else:
+                    raise NotImplementedError(
+                        f"Loss type {self.loss_func} is not implemented for force loss."
+                    )
                 if mae:
                     mae_f = paddle.mean(paddle.abs(diff_f))
                     more_loss["mae_f"] = self.display_if_exist(
@@ -314,16 +331,30 @@ class EnergyStdLoss(TaskLoss):
                 find_atom_pref = label.get("find_atom_pref", 0.0)
                 pref_pf = pref_pf * find_atom_pref
                 atom_pref_reshape = atom_pref.reshape([-1])
-                l2_pref_force_loss = (paddle.square(diff_f) * atom_pref_reshape).mean()
-                if not self.inference:
-                    more_loss["l2_pref_force_loss"] = self.display_if_exist(
-                        l2_pref_force_loss.detach(), find_atom_pref
+
+                if self.loss_func == "mse":
+                    l2_pref_force_loss = (
+                        paddle.square(diff_f) * atom_pref_reshape
+                    ).mean()
+                    if not self.inference:
+                        more_loss["l2_pref_force_loss"] = self.display_if_exist(
+                            l2_pref_force_loss.detach(), find_atom_pref
+                        )
+                    loss += (pref_pf * l2_pref_force_loss).to(GLOBAL_PD_FLOAT_PRECISION)
+                    rmse_pf = l2_pref_force_loss.sqrt()
+                    more_loss["rmse_pf"] = self.display_if_exist(
+                        rmse_pf.detach(), find_atom_pref
                     )
-                loss += (pref_pf * l2_pref_force_loss).to(GLOBAL_PD_FLOAT_PRECISION)
-                rmse_pf = l2_pref_force_loss.sqrt()
-                more_loss["rmse_pf"] = self.display_if_exist(
-                    rmse_pf.detach(), find_atom_pref
-                )
+                elif self.loss_func == "mae":
+                    l1_pref_force_loss = (paddle.abs(diff_f) * atom_pref_reshape).mean()
+                    loss += (pref_pf * l1_pref_force_loss).to(GLOBAL_PD_FLOAT_PRECISION)
+                    more_loss["mae_pf"] = self.display_if_exist(
+                        l1_pref_force_loss.detach(), find_atom_pref
+                    )
+                else:
+                    raise NotImplementedError(
+                        f"Loss type {self.loss_func} is not implemented for atom prefactor force loss."
+                    )
 
             if self.has_gf and "drdq" in label:
                 drdq = label["drdq"]
@@ -391,26 +422,42 @@ class EnergyStdLoss(TaskLoss):
             pref_ae = pref_ae * find_atom_ener
             atom_ener_reshape = atom_ener.reshape([-1])
             atom_ener_label_reshape = atom_ener_label.reshape([-1])
-            l2_atom_ener_loss = paddle.square(
-                atom_ener_label_reshape - atom_ener_reshape
-            ).mean()
-            if not self.inference:
-                more_loss["l2_atom_ener_loss"] = self.display_if_exist(
-                    l2_atom_ener_loss.detach(), find_atom_ener
+
+            if self.loss_func == "mse":
+                l2_atom_ener_loss = paddle.square(
+                    atom_ener_label_reshape - atom_ener_reshape
+                ).mean()
+                if not self.inference:
+                    more_loss["l2_atom_ener_loss"] = self.display_if_exist(
+                        l2_atom_ener_loss.detach(), find_atom_ener
+                    )
+                if not self.use_huber:
+                    loss += (pref_ae * l2_atom_ener_loss).to(GLOBAL_PD_FLOAT_PRECISION)
+                else:
+                    l_huber_loss = custom_huber_loss(
+                        atom_ener_reshape,
+                        atom_ener_label_reshape,
+                        delta=self.huber_delta,
+                    )
+                    loss += pref_ae * l_huber_loss
+                rmse_ae = l2_atom_ener_loss.sqrt()
+                more_loss["rmse_ae"] = self.display_if_exist(
+                    rmse_ae.detach(), find_atom_ener
                 )
-            if not self.use_huber:
-                loss += (pref_ae * l2_atom_ener_loss).to(GLOBAL_PD_FLOAT_PRECISION)
-            else:
-                l_huber_loss = custom_huber_loss(
+            elif self.loss_func == "mae":
+                l1_atom_ener_loss = F.l1_loss(
                     atom_ener_reshape,
                     atom_ener_label_reshape,
-                    delta=self.huber_delta,
+                    reduction="mean",
                 )
-                loss += pref_ae * l_huber_loss
-            rmse_ae = l2_atom_ener_loss.sqrt()
-            more_loss["rmse_ae"] = self.display_if_exist(
-                rmse_ae.detach(), find_atom_ener
-            )
+                loss += (pref_ae * l1_atom_ener_loss).to(GLOBAL_PD_FLOAT_PRECISION)
+                more_loss["mae_ae"] = self.display_if_exist(
+                    l1_atom_ener_loss.detach(), find_atom_ener
+                )
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for atomic energy loss."
+                )
 
         if not self.inference:
             more_loss["rmse"] = paddle.sqrt(loss.detach())
@@ -523,6 +570,8 @@ class EnergyStdLoss(TaskLoss):
             "numb_generalized_coord": self.numb_generalized_coord,
             "use_huber": self.use_huber,
             "huber_delta": self.huber_delta,
+            "loss_func": self.loss_func,
+            "f_use_norm": self.f_use_norm,
         }
 
     @classmethod

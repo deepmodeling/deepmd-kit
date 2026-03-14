@@ -89,6 +89,12 @@ class EnerStdLoss(Loss):
         Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D).
     huber_delta : float
         The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
+    loss_func : str
+        Loss function type. Options: 'mse' or 'mae'.
+        Not implemented in TF backend, only for serialization compatibility.
+    f_use_norm : bool
+        If True, use L2 norm of force vectors for loss calculation.
+        Not implemented in TF backend, only for serialization compatibility.
     **kwargs
         Other keyword arguments.
     """
@@ -113,8 +119,17 @@ class EnerStdLoss(Loss):
         numb_generalized_coord: int = 0,
         use_huber: bool = False,
         huber_delta: float = 0.01,
+        loss_func: str = "mse",
+        f_use_norm: bool = False,
         **kwargs: Any,
     ) -> None:
+        if loss_func != "mse":
+            raise NotImplementedError(
+                f"TensorFlow backend only supports loss_func='mse', got '{loss_func}'."
+            )
+        self.loss_func = loss_func
+        self.f_use_norm = f_use_norm
+
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e
@@ -143,6 +158,7 @@ class EnerStdLoss(Loss):
             )
         self.use_huber = use_huber
         self.huber_delta = huber_delta
+        self.f_use_norm = f_use_norm
         if self.use_huber and (
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
@@ -531,6 +547,8 @@ class EnerStdLoss(Loss):
             "numb_generalized_coord": self.numb_generalized_coord,
             "use_huber": self.use_huber,
             "huber_delta": self.huber_delta,
+            "loss_func": self.loss_func,
+            "f_use_norm": self.f_use_norm,
         }
 
     @classmethod
@@ -574,7 +592,13 @@ class EnerSpinLoss(Loss):
         relative_f: float | None = None,
         enable_atom_ener_coeff: bool = False,
         use_spin: list | None = None,
+        loss_func: str = "mse",
     ) -> None:
+        if loss_func != "mse":
+            raise NotImplementedError(
+                f"TensorFlow backend only supports loss_func='mse', got '{loss_func}'."
+            )
+        self.loss_func = loss_func
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e
