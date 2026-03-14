@@ -16,6 +16,10 @@ from deepmd.common import (
     expand_sys_str,
     j_loader,
 )
+from deepmd.dpmodel.utils.lmdb_data import (
+    LmdbTestData,
+    is_lmdb,
+)
 from deepmd.infer.deep_dipole import (
     DeepDipole,
 )
@@ -60,6 +64,24 @@ if TYPE_CHECKING:
 __all__ = ["test"]
 
 log = logging.getLogger(__name__)
+
+
+class _LmdbTestDataNlocView:
+    """Thin wrapper that makes LmdbTestData.get_test() return a specific nloc group.
+
+    Delegates all attributes to the underlying LmdbTestData, but get_test()
+    returns only frames with the specified nloc.
+    """
+
+    def __init__(self, lmdb_test_data: LmdbTestData, nloc: int) -> None:
+        self._inner = lmdb_test_data
+        self._nloc = nloc
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    def get_test(self) -> dict:
+        return self._inner.get_test(nloc=self._nloc)
 
 
 def test(
@@ -126,8 +148,11 @@ def test(
             systems = str((root / Path(systems)).resolve())
         else:
             systems = [str((root / Path(ss)).resolve()) for ss in systems]
-        patterns = data_params.get("rglob_patterns", None)
-        all_sys = process_systems(systems, patterns=patterns)
+        if is_lmdb(systems):
+            all_sys = [systems]
+        else:
+            patterns = data_params.get("rglob_patterns", None)
+            all_sys = process_systems(systems, patterns=patterns)
     elif valid_json is not None:
         jdata = j_loader(valid_json)
         jdata = update_deepmd_input(jdata)
@@ -140,13 +165,19 @@ def test(
             systems = str((root / Path(systems)).resolve())
         else:
             systems = [str((root / Path(ss)).resolve()) for ss in systems]
-        patterns = data_params.get("rglob_patterns", None)
-        all_sys = process_systems(systems, patterns=patterns)
+        if is_lmdb(systems):
+            all_sys = [systems]
+        else:
+            patterns = data_params.get("rglob_patterns", None)
+            all_sys = process_systems(systems, patterns=patterns)
     elif datafile is not None:
         with open(datafile) as datalist:
             all_sys = datalist.read().splitlines()
     elif system is not None:
-        all_sys = expand_sys_str(system)
+        if is_lmdb(system):
+            all_sys = [system]
+        else:
+            all_sys = expand_sys_str(system)
     else:
         raise RuntimeError("No data source specified for testing")
 
@@ -168,61 +199,92 @@ def test(
 
         # create data class
         tmap = dp.get_type_map()
-        data = DeepmdData(
-            system,
-            set_prefix="set",
-            shuffle_test=shuffle_test,
-            type_map=tmap,
-            sort_atoms=False,
-        )
+        if is_lmdb(system):
+            lmdb_data = LmdbTestData(
+                system,
+                type_map=tmap,
+                shuffle_test=shuffle_test,
+            )
+            # For mixed-nloc LMDB, test each nloc group separately
+            nloc_keys = sorted(lmdb_data.nloc_groups.keys())
+            if len(nloc_keys) > 1:
+                group_summary = {
+                    k: len(v) for k, v in sorted(lmdb_data.nloc_groups.items())
+                }
+                log.info(
+                    f"# mixed-nloc LMDB: testing {len(nloc_keys)} groups: "
+                    f"{group_summary}"
+                )
+            data_items: list[tuple[Any, str]] = []
+            for nloc_val in nloc_keys:
+                label = f"{system} [nloc={nloc_val}]" if len(nloc_keys) > 1 else system
+                # Create a thin wrapper that returns only this nloc group
+                data_items.append((_LmdbTestDataNlocView(lmdb_data, nloc_val), label))
+        else:
+            data = DeepmdData(
+                system,
+                set_prefix="set",
+                shuffle_test=shuffle_test,
+                type_map=tmap,
+                sort_atoms=False,
+            )
+            data_items = [(data, system)]
 
-        if isinstance(dp, DeepPot):
-            err = test_ener(
-                dp,
-                data,
-                system,
-                numb_test,
-                detail_file,
-                atomic,
-                append_detail=(cc != 0),
-            )
-        elif isinstance(dp, DeepDOS):
-            err = test_dos(
-                dp,
-                data,
-                system,
-                numb_test,
-                detail_file,
-                atomic,
-                append_detail=(cc != 0),
-            )
-        elif isinstance(dp, DeepProperty):
-            err = test_property(
-                dp,
-                data,
-                system,
-                numb_test,
-                detail_file,
-                atomic,
-                append_detail=(cc != 0),
-            )
-        elif isinstance(dp, DeepDipole):
-            err = test_dipole(dp, data, numb_test, detail_file, atomic)
-        elif isinstance(dp, DeepPolar):
-            err = test_polar(dp, data, numb_test, detail_file, atomic=atomic)
-        elif isinstance(dp, DeepGlobalPolar):  # should not appear in this new version
-            log.warning(
-                "Global polar model is not currently supported. Please directly use the polar mode and change loss parameters."
-            )
-            err = test_polar(
-                dp, data, numb_test, detail_file, atomic=False
-            )  # YWolfeee: downward compatibility
-        log.info("# ----------------------------------------------- ")
-        err_coll.append(err)
+        for data, sys_label in data_items:
+            if sys_label != system:
+                log.info(f"# testing sub-group : {sys_label}")
+
+            if isinstance(dp, DeepPot):
+                err = test_ener(
+                    dp,
+                    data,
+                    sys_label,
+                    numb_test,
+                    detail_file,
+                    atomic,
+                    append_detail=(cc != 0),
+                )
+            elif isinstance(dp, DeepDOS):
+                err = test_dos(
+                    dp,
+                    data,
+                    sys_label,
+                    numb_test,
+                    detail_file,
+                    atomic,
+                    append_detail=(cc != 0),
+                )
+            elif isinstance(dp, DeepProperty):
+                err = test_property(
+                    dp,
+                    data,
+                    sys_label,
+                    numb_test,
+                    detail_file,
+                    atomic,
+                    append_detail=(cc != 0),
+                )
+            elif isinstance(dp, DeepDipole):
+                err = test_dipole(dp, data, numb_test, detail_file, atomic)
+            elif isinstance(dp, DeepPolar):
+                err = test_polar(dp, data, numb_test, detail_file, atomic=atomic)
+            elif isinstance(
+                dp, DeepGlobalPolar
+            ):  # should not appear in this new version
+                log.warning(
+                    "Global polar model is not currently supported. Please directly use the polar mode and change loss parameters."
+                )
+                err = test_polar(
+                    dp, data, numb_test, detail_file, atomic=False
+                )  # YWolfeee: downward compatibility
+            log.info("# ----------------------------------------------- ")
+            err_coll.append(err)
 
     avg_err = weighted_average(err_coll)
 
-    if len(all_sys) != len(err_coll):
+    # For mixed-nloc LMDB, err_coll may have more entries than all_sys
+    # (one per nloc group per system). Only warn if fewer.
+    if len(err_coll) < len(all_sys):
         log.warning("Not all systems are tested! Check if the systems are valid")
 
     log.info("# ----------weighted average of errors----------- ")
