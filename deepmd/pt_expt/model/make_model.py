@@ -212,6 +212,7 @@ def make_model(
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
+            extended_coord_corr: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             atomic_ret = self.atomic_model.forward_common_atomic(
                 extended_coord,
@@ -228,6 +229,7 @@ def make_model(
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
                 mask=atomic_ret.get("mask"),
+                extended_coord_corr=extended_coord_corr,
             )
             # Hessian computation (mirrors JAX's forward_common_atomic).
             # Produces hessian on extended coords [nf, *def, nall, 3, nall, 3],

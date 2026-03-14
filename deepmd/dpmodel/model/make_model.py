@@ -68,6 +68,7 @@ def model_call_from_call_lower(
     fparam: Array | None = None,
     aparam: Array | None = None,
     do_atomic_virial: bool = False,
+    coord_corr_for_virial: Array | None = None,
 ) -> dict[str, Array]:
     """Return model prediction from lower interface.
 
@@ -119,14 +120,33 @@ def model_call_from_call_lower(
         distinguish_types=False,
     )
     extended_coord = extended_coord.reshape(nframes, -1, 3)
+    if coord_corr_for_virial is not None:
+        xp = array_api_compat.array_namespace(coord_corr_for_virial)
+        # mapping: nf x nall -> nf x nall x 1, then tile to nf x nall x 3
+        mapping_idx = xp.tile(
+            xp.reshape(mapping, (nframes, -1, 1)),
+            (1, 1, 3),
+        )
+        extended_coord_corr = xp.take_along_axis(
+            coord_corr_for_virial,
+            mapping_idx,
+            axis=1,
+        )
+    else:
+        extended_coord_corr = None
+    call_lower_kwargs: dict[str, Any] = {
+        "fparam": fp,
+        "aparam": ap,
+        "do_atomic_virial": do_atomic_virial,
+    }
+    if extended_coord_corr is not None:
+        call_lower_kwargs["extended_coord_corr"] = extended_coord_corr
     model_predict_lower = call_lower(
         extended_coord,
         extended_atype,
         nlist,
         mapping,
-        fparam=fp,
-        aparam=ap,
-        do_atomic_virial=do_atomic_virial,
+        **call_lower_kwargs,
     )
     model_predict = communicate_extended_output(
         model_predict_lower,
@@ -237,6 +257,7 @@ def make_model(
             fparam: Array | None = None,
             aparam: Array | None = None,
             do_atomic_virial: bool = False,
+            coord_corr_for_virial: Array | None = None,
         ) -> dict[str, Array]:
             """Return model prediction.
 
@@ -255,6 +276,9 @@ def make_model(
                 atomic parameter. nf x nloc x nda
             do_atomic_virial
                 If calculate the atomic virial.
+            coord_corr_for_virial
+                The coordinates correction for virial.
+                shape: nf x (nloc x 3)
 
             Returns
             -------
@@ -279,6 +303,7 @@ def make_model(
                 fparam=fp,
                 aparam=ap,
                 do_atomic_virial=do_atomic_virial,
+                coord_corr_for_virial=coord_corr_for_virial,
             )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
@@ -292,6 +317,7 @@ def make_model(
             fparam: Array | None = None,
             aparam: Array | None = None,
             do_atomic_virial: bool = False,
+            extended_coord_corr: Array | None = None,
         ) -> dict[str, Array]:
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
@@ -314,6 +340,9 @@ def make_model(
                 atomic parameter. nf x nloc x nda
             do_atomic_virial
                 whether calculate atomic virial
+            extended_coord_corr
+                coordinates correction for virial in extended region.
+                nf x (nall x 3)
 
             Returns
             -------
@@ -341,6 +370,7 @@ def make_model(
                 fparam=fp,
                 aparam=ap,
                 do_atomic_virial=do_atomic_virial,
+                extended_coord_corr=extended_coord_corr,
             )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
@@ -354,6 +384,7 @@ def make_model(
             fparam: Array | None = None,
             aparam: Array | None = None,
             do_atomic_virial: bool = False,
+            extended_coord_corr: Array | None = None,
         ) -> dict[str, Array]:
             atomic_ret = self.atomic_model.forward_common_atomic(
                 extended_coord,
