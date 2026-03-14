@@ -226,7 +226,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     if (lmp_list.mapping) {
       std::vector<std::int64_t> mapping(nall_real);
       for (size_t ii = 0; ii < nall_real; ii++) {
-        mapping[ii] = lmp_list.mapping[fwd_map[ii]];
+        mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
       }
       mapping_tensor =
           torch::from_blob(mapping.data(), {1, nall_real}, int_option)
