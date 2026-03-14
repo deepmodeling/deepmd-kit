@@ -49,7 +49,8 @@ void DP_NlistSetMapping(DP_Nlist* nl, int* mapping) {
 void DP_DeleteNlist(DP_Nlist* nl) { delete nl; }
 
 // DP Base Model
-DP_DeepBaseModel::DP_DeepBaseModel() {}
+DP_DeepBaseModel::DP_DeepBaseModel()
+    : dfparam(0), daparam(0), aparam_nall(false), has_default_fparam(false) {}
 DP_DeepBaseModel::DP_DeepBaseModel(deepmd::DeepBaseModel& dpbase)
     : dpbase(dpbase) {
   dfparam = dpbase.dim_fparam();
@@ -60,7 +61,8 @@ DP_DeepBaseModel::DP_DeepBaseModel(deepmd::DeepBaseModel& dpbase)
 void DP_DeleteDeepBaseModel(DP_DeepBaseModel* dpbase) { delete dpbase; }
 
 // DP Base Model Devi
-DP_DeepBaseModelDevi::DP_DeepBaseModelDevi() {}
+DP_DeepBaseModelDevi::DP_DeepBaseModelDevi()
+    : dfparam(0), daparam(0), aparam_nall(false), has_default_fparam(false) {}
 DP_DeepBaseModelDevi::DP_DeepBaseModelDevi(deepmd::DeepBaseModelDevi& dpbase)
     : dpbase(dpbase) {
   dfparam = dpbase.dim_fparam();

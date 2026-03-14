@@ -118,9 +118,9 @@ void DeepSpinPT::init(const std::string& model,
   dfparam = module.run_method("get_dim_fparam").toInt();
   daparam = module.run_method("get_dim_aparam").toInt();
   aparam_nall = module.run_method("is_aparam_nall").toBool();
-  try {
+  if (module.find_method("has_default_fparam")) {
     has_default_fparam_ = module.run_method("has_default_fparam").toBool();
-  } catch (...) {
+  } else {
     has_default_fparam_ = false;
   }
   inited = true;
