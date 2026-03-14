@@ -373,9 +373,16 @@ class DeepEval(DeepEvalBackend):
             coords, atom_types, len(atom_types.shape) > 1
         )
         request_defs = self._get_request_defs(atomic)
+        compute_grad_aparam = kwargs.pop("grad_aparam", False) and aparam is not None
         if "spin" not in kwargs or kwargs["spin"] is None:
             out = self._eval_func(self._eval_model, numb_test, natoms)(
-                coords, cells, atom_types, fparam, aparam, request_defs
+                coords,
+                cells,
+                atom_types,
+                fparam,
+                aparam,
+                request_defs,
+                compute_grad_aparam,
             )
         else:
             out = self._eval_func(self._eval_model_spin, numb_test, natoms)(
@@ -387,12 +394,14 @@ class DeepEval(DeepEvalBackend):
                 aparam,
                 request_defs,
             )
-        return dict(
-            zip(
-                [x.name for x in request_defs],
-                out,
-            )
-        )
+        n_request = len(request_defs)
+        if isinstance(out, tuple):
+            result = dict(zip([x.name for x in request_defs], out[:n_request]))
+            if compute_grad_aparam and len(out) > n_request:
+                result["grad_aparam"] = out[n_request]
+        else:
+            result = dict(zip([x.name for x in request_defs], out))
+        return result
 
     def _get_request_defs(self, atomic: bool) -> list[OutputVariableDef]:
         """Get the requested output definitions.
@@ -487,6 +496,7 @@ class DeepEval(DeepEvalBackend):
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        compute_grad_aparam: bool = False,
     ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
         prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
@@ -528,6 +538,11 @@ class DeepEval(DeepEvalBackend):
             )
         else:
             aparam_input = None
+
+        # If grad_aparam requested, enable grad tracking on aparam
+        if compute_grad_aparam and aparam_input is not None:
+            aparam_input = aparam_input.detach().requires_grad_(True)
+
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C for x in request_defs
         )
@@ -554,6 +569,30 @@ class DeepEval(DeepEvalBackend):
                 results.append(
                     np.full(np.abs(shape), np.nan, dtype=prec)
                 )  # this is kinda hacky
+
+        # Compute dE/d(aparam) via autograd
+        if compute_grad_aparam:
+            # Find total energy in batch_output
+            energy_tensor = None
+            for key in ["energy_redu", "energy"]:
+                if key in batch_output:
+                    energy_tensor = batch_output[key]
+                    break
+            if energy_tensor is not None:
+                grad_ap = torch.autograd.grad(
+                    energy_tensor.sum(),
+                    aparam_input,
+                    create_graph=False,
+                    retain_graph=False,
+                )[0]
+                results.append(
+                    grad_ap.reshape(nframes, natoms, -1).detach().cpu().numpy()
+                )
+            else:
+                # Energy not available or no grad path; fill with NaN
+                dim_ap = self.get_dim_aparam()
+                results.append(np.full((nframes, natoms, dim_ap), np.nan, dtype=prec))
+
         return tuple(results)
 
     def _eval_model_spin(
