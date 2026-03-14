@@ -73,6 +73,9 @@ from .spin_model import (
     SpinEnergyModel,
     SpinModel,
 )
+from .sog_model import (
+    SOGEnergyModel,
+)
 
 
 def _get_standard_model_components(model_params: dict, ntypes: int) -> tuple:
@@ -268,6 +271,8 @@ def get_standard_model(model_params: dict) -> BaseModel:
         modelcls = EnergyModel
     elif fitting_net_type == "property":
         modelcls = PropertyModel
+    elif fitting_net_type == "sog_energy":
+        modelcls = SOGEnergyModel
     else:
         raise RuntimeError(f"Unknown fitting type: {fitting_net_type}")
 
@@ -311,6 +316,7 @@ __all__ = [
     "FrozenModel",
     "LinearEnergyModel",
     "PolarModel",
+    "SOGEnergyModel",
     "SpinEnergyModel",
     "SpinModel",
     "get_model",

@@ -1,0 +1,134 @@
+{
+  "_comment": "SOG example based on water/dpa3 layout",
+  "model": {
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "type": "dpa3",
+      "repflow": {
+        "n_dim": 128,
+        "e_dim": 64,
+        "a_dim": 32,
+        "nlayers": 6,
+        "e_rcut": 6.0,
+        "e_rcut_smth": 5.3,
+        "e_sel": 120,
+        "a_rcut": 4.0,
+        "a_rcut_smth": 3.5,
+        "a_sel": 30,
+        "axis_neuron": 4,
+        "fix_stat_std": 0.3,
+        "a_compress_rate": 1,
+        "a_compress_e_rate": 2,
+        "a_compress_use_split": true,
+        "update_angle": true,
+        "smooth_edge_update": true,
+        "edge_init_use_dist": true,
+        "use_exp_switch": true,
+        "update_style": "res_residual",
+        "update_residual": 0.1,
+        "update_residual_init": "const"
+      },
+      "activation_function": "silut:10.0",
+      "use_tebd_bias": false,
+      "precision": "float32",
+      "concat_output_tebd": false,
+      "seed": 1
+    },
+    "fitting_net": {
+      "type": "sog_energy",
+      "var_name": "energy",
+      "dim_out_sr": 1,
+      "dim_out_lr": 1,
+      "neuron_sr": [
+        240,
+        240,
+        240
+      ],
+      "neuron_lr": [
+        240,
+        240,
+        240
+      ],
+      "resnet_dt": true,
+      "precision": "float32",
+      "activation_function": "silut:10.0",
+      "seed": 1,
+      "_comment": "SOG-specific long-range kernel parameters",
+      "shift": [
+        0.275,
+        0.1375,
+        0.0688,
+        0.0344,
+        0.0172,
+        0.0086,
+        0.0043,
+        0.0021,
+        0.0011,
+        0.0005,
+        0.0003,
+        0.0001
+      ],
+      "amplitude": [
+        2.8,
+        5.7,
+        11.4,
+        22.7,
+        45.5,
+        91.0,
+        182.0,
+        364.0,
+        728.0,
+        1456.0,
+        2912.0,
+        5823.9
+      ]
+    }
+  },
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 5000,
+    "start_lr": 0.001,
+    "stop_lr": 3e-5
+  },
+  "loss": {
+    "type": "ener",
+    "start_pref_e": 0.2,
+    "limit_pref_e": 20,
+    "start_pref_f": 100,
+    "limit_pref_f": 60,
+    "start_pref_v": 0.02,
+    "limit_pref_v": 1
+  },
+  "optimizer": {
+    "type": "AdamW",
+    "adam_beta1": 0.9,
+    "adam_beta2": 0.999,
+    "weight_decay": 0.001
+  },
+  "training": {
+    "stat_file": "./sog.hdf5",
+    "training_data": {
+      "systems": [
+        "../data/data_0",
+        "../data/data_1",
+        "../data/data_2"
+      ],
+      "batch_size": 1
+    },
+    "validation_data": {
+      "systems": [
+        "../data/data_3"
+      ],
+      "batch_size": 1
+    },
+    "numb_steps": 10000,
+    "gradient_max_norm": 5.0,
+    "seed": 10,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 2000
+  }
+}

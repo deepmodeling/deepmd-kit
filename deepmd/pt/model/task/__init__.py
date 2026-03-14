@@ -27,6 +27,12 @@ from .property import (
 from .type_predict import (
     TypePredictNet,
 )
+from .lr_fitting import (
+    LRFittingNet,
+)
+from .sog_energy_fitting import (
+    SOGEnergyFittingNet,
+)
 
 __all__ = [
     "BaseFitting",
@@ -36,7 +42,9 @@ __all__ = [
     "EnergyFittingNet",
     "EnergyFittingNetDirect",
     "Fitting",
+    "LRFittingNet",
     "PolarFittingNet",
     "PropertyFittingNet",
+    "SOGEnergyFittingNet",
     "TypePredictNet",
 ]

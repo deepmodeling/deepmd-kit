@@ -11,7 +11,7 @@ build-backend = "backend.dp_backend"
 backend-path = ["."]
 
 [project]
-name = "deepmd-kit"
+name = "deepmd-kit-dev"
 dynamic = ["version", "optional-dependencies", "scripts", "readme"]
 description = "A deep learning package for many-body potential energy representation and molecular dynamics"
 authors = [
@@ -142,7 +142,7 @@ jax = [
 ]
 
 [tool.deepmd_build_backend.scripts]
-dp = "deepmd.main:main"
+dp_dev = "deepmd.main:main"
 
 [dependency-groups]
 dev = [
