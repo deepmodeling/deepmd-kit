@@ -686,7 +686,6 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     self.filter_neuron[-1],
                     self.is_sorted,
                 )[0]
-                # to make torchscript happy
                 gg = torch.empty(
                     nframes,
                     nloc,
