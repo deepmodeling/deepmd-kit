@@ -93,7 +93,7 @@ class EnergyLoss(Loss):
         natoms: int,
         model_dict: dict[str, Array],
         label_dict: dict[str, Array],
-    ) -> dict[str, Array]:
+    ) -> tuple[Array, dict[str, Array]]:
         """Calculate loss from model results and labeled results."""
         energy = model_dict["energy"]
         force = model_dict["force"]
