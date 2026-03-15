@@ -965,19 +965,29 @@ class DeepBaseModel {
     assert(dpbase);
     return daparam;
   }
+  /**
+   * @brief Check if the model has default frame parameters.
+   * @return true if the model has default frame parameters.
+   **/
+  bool has_default_fparam() const {
+    assert(dpbase);
+    return has_default_fparam_;
+  }
 
  protected:
   DP_DeepBaseModel* dpbase;
   int dfparam;
   int daparam;
   bool aparam_nall;
+  bool has_default_fparam_;
   template <typename VALUETYPE>
   void validate_fparam_aparam(const int& nframes,
                               const int& nloc,
                               const std::vector<VALUETYPE>& fparam,
                               const std::vector<VALUETYPE>& aparam) const {
     if (fparam.size() != dfparam &&
-        fparam.size() != static_cast<size_t>(nframes) * dfparam) {
+        fparam.size() != static_cast<size_t>(nframes) * dfparam &&
+        !(fparam.empty() && has_default_fparam_)) {
       throw deepmd::hpp::deepmd_exception(
           "the dim of frame parameter provided is not consistent with what the "
           "model uses");
@@ -1058,6 +1068,7 @@ class DeepPot : public DeepBaseModel {
     dfparam = DP_DeepPotGetDimFParam(dp);
     daparam = DP_DeepPotGetDimAParam(dp);
     aparam_nall = DP_DeepPotIsAParamNAll(dp);
+    has_default_fparam_ = DP_DeepPotHasDefaultFParam(dp);
     dpbase = (DP_DeepBaseModel*)dp;
   };
 
@@ -1502,6 +1513,7 @@ class DeepSpin : public DeepBaseModel {
     dfparam = DP_DeepSpinGetDimFParam(dp);
     daparam = DP_DeepSpinGetDimAParam(dp);
     aparam_nall = DP_DeepSpinIsAParamNAll(dp);
+    has_default_fparam_ = DP_DeepSpinHasDefaultFParam(dp);
     dpbase = (DP_DeepBaseModel*)dp;
   };
 
@@ -1860,7 +1872,14 @@ class DeepBaseModelDevi {
     return daparam;
   }
   /**
-   * @brief Compute the average of vectors.
+   * @brief Check if the model has default frame parameters.
+   * @return true if the model has default frame parameters.
+   **/
+  bool has_default_fparam() const {
+    assert(dpbase);
+    return has_default_fparam_;
+  }
+  /**
    * @param[out] avg The average of vectors.
    * @param[in] xx The vectors of all models.
    **/
@@ -1981,13 +2000,15 @@ class DeepBaseModelDevi {
   int dfparam;
   int daparam;
   bool aparam_nall;
+  bool has_default_fparam_;
   template <typename VALUETYPE>
   void validate_fparam_aparam(const int& nframes,
                               const int& nloc,
                               const std::vector<VALUETYPE>& fparam,
                               const std::vector<VALUETYPE>& aparam) const {
     if (fparam.size() != dfparam &&
-        fparam.size() != static_cast<size_t>(nframes) * dfparam) {
+        fparam.size() != static_cast<size_t>(nframes) * dfparam &&
+        !(fparam.empty() && has_default_fparam_)) {
       throw deepmd::hpp::deepmd_exception(
           "the dim of frame parameter provided is not consistent with what the "
           "model uses");
@@ -2081,6 +2102,7 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
     dfparam = DP_DeepPotModelDeviGetDimFParam(dp);
     daparam = DP_DeepPotModelDeviGetDimAParam(dp);
     aparam_nall = DP_DeepPotModelDeviIsAParamNAll(dp);
+    has_default_fparam_ = DP_DeepPotModelDeviHasDefaultFParam(dp);
     dpbase = (DP_DeepBaseModelDevi*)dp;
   };
 
@@ -2513,6 +2535,7 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
     dfparam = DP_DeepSpinModelDeviGetDimFParam(dp);
     daparam = DP_DeepSpinModelDeviGetDimAParam(dp);
     aparam_nall = DP_DeepSpinModelDeviIsAParamNAll(dp);
+    has_default_fparam_ = DP_DeepSpinModelDeviHasDefaultFParam(dp);
     dpbase = (DP_DeepBaseModelDevi*)dp;
   };
 
