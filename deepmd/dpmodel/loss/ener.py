@@ -244,10 +244,10 @@ class EnergyLoss(Loss):
         if self.has_gf:
             find_drdq = label_dict["find_drdq"]
             drdq = label_dict["drdq"]
-            force_reshape_nframes = xp.reshape(force, (-1, natoms[0] * 3))
-            force_hat_reshape_nframes = xp.reshape(force_hat, (-1, natoms[0] * 3))
+            force_reshape_nframes = xp.reshape(force, (-1, natoms * 3))
+            force_hat_reshape_nframes = xp.reshape(force_hat, (-1, natoms * 3))
             drdq_reshape = xp.reshape(
-                drdq, (-1, natoms[0] * 3, self.numb_generalized_coord)
+                drdq, (-1, natoms * 3, self.numb_generalized_coord)
             )
             gen_force_hat = xp.einsum(
                 "bij,bi->bj", drdq_reshape, force_hat_reshape_nframes
