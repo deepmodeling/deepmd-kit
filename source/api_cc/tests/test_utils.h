@@ -86,6 +86,7 @@ inline void _build_nlist(std::vector<std::vector<int>>& nlist_data,
 
 template <typename VALUETYPE>
 class EnergyModelTest {
+ protected:
   double hh = std::is_same<VALUETYPE, double>::value ? 1e-5 : 1e-2;
   double level =
       std::is_same<VALUETYPE, double>::value ? 1e-6 : 1e-2;  // expected?

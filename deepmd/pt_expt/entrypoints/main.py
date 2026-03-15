@@ -160,6 +160,54 @@ def train(
     trainer.run()
 
 
+def freeze(
+    model: str,
+    output: str = "frozen_model.pt2",
+    head: str | None = None,
+) -> None:
+    """Freeze a pt_expt training checkpoint to .pte or .pt2 format.
+
+    Parameters
+    ----------
+    model : str
+        Path to the training checkpoint (.pt file).
+    output : str
+        Path for the frozen model output (.pte or .pt2).
+    head : str or None
+        Head to freeze in a multi-task model (not yet supported).
+    """
+    import torch
+
+    from deepmd.pt_expt.model import (
+        get_model,
+    )
+    from deepmd.pt_expt.train.wrapper import (
+        ModelWrapper,
+    )
+    from deepmd.pt_expt.utils.env import (
+        DEVICE,
+    )
+    from deepmd.pt_expt.utils.serialization import (
+        deserialize_to_file,
+    )
+
+    state_dict = torch.load(model, map_location=DEVICE, weights_only=True)
+    if "model" in state_dict:
+        state_dict = state_dict["model"]
+    model_params = state_dict["_extra_state"]["model_params"]
+
+    # Reconstruct model and load weights
+    pt_expt_model = get_model(model_params).to(DEVICE)
+    wrapper = ModelWrapper(pt_expt_model)
+    wrapper.load_state_dict(state_dict)
+    pt_expt_model.eval()
+
+    # Serialize to dict and export
+    model_dict = pt_expt_model.serialize()
+    deserialize_to_file(output, {"model": model_dict})
+    log.info(f"Saved frozen model to {output}")
+
+
 def main(args: list[str] | argparse.Namespace | None = None) -> None:
     """Entry point for the pt_expt backend CLI.
 
@@ -195,6 +243,18 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
             skip_neighbor_stat=FLAGS.skip_neighbor_stat,
             output=FLAGS.output,
         )
+    elif FLAGS.command == "freeze":
+        if Path(FLAGS.checkpoint_folder).is_dir():
+            checkpoint_path = Path(FLAGS.checkpoint_folder)
+            latest_ckpt_file = (checkpoint_path / "checkpoint").read_text()
+            FLAGS.model = str(checkpoint_path.joinpath(latest_ckpt_file))
+        else:
+            FLAGS.model = FLAGS.checkpoint_folder
+        # Default to .pt2; user can specify .pte via -o flag
+        suffix = Path(FLAGS.output).suffix
+        if suffix not in (".pte", ".pt2"):
+            FLAGS.output = str(Path(FLAGS.output).with_suffix(".pt2"))
+        freeze(model=FLAGS.model, output=FLAGS.output, head=FLAGS.head)
     else:
         raise RuntimeError(
             f"Unsupported command '{FLAGS.command}' for the pt_expt backend."
