@@ -249,8 +249,15 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
     elif FLAGS.command == "freeze":
         if Path(FLAGS.checkpoint_folder).is_dir():
             checkpoint_path = Path(FLAGS.checkpoint_folder)
-            latest_ckpt_file = (checkpoint_path / "checkpoint").read_text()
-            FLAGS.model = str(checkpoint_path.joinpath(latest_ckpt_file))
+            # pt_expt training saves a symlink "model.ckpt.pt" → latest ckpt
+            default_ckpt = checkpoint_path / "model.ckpt.pt"
+            if default_ckpt.exists():
+                FLAGS.model = str(default_ckpt)
+            else:
+                raise FileNotFoundError(
+                    f"Cannot find checkpoint in '{checkpoint_path}'. "
+                    "Expected 'model.ckpt.pt' (created by pt_expt training)."
+                )
         else:
             FLAGS.model = FLAGS.checkpoint_folder
         if not FLAGS.output.endswith((".pte", ".pt2")):
