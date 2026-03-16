@@ -194,7 +194,14 @@ def freeze(
     state_dict = torch.load(model, map_location=DEVICE, weights_only=True)
     if "model" in state_dict:
         state_dict = state_dict["model"]
-    model_params = state_dict["_extra_state"]["model_params"]
+
+    extra_state = state_dict.get("_extra_state")
+    if not isinstance(extra_state, dict) or "model_params" not in extra_state:
+        raise ValueError(
+            f"Unsupported checkpoint format at '{model}': missing "
+            "'_extra_state.model_params' in model state dict."
+        )
+    model_params = extra_state["model_params"]
 
     if head is not None and "model_dict" in model_params:
         raise NotImplementedError(
