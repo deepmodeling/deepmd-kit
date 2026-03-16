@@ -34,7 +34,7 @@ from deepmd.pt.model.task.lr_fitting import (
 )
 
 
-SOG_DEFAULT_SHIFT = np.array([
+SOG_DEFAULT_SHIFT = to_numpy_array(np.array([
     0.2750,
     0.1375,
     0.0688,
@@ -47,8 +47,8 @@ SOG_DEFAULT_SHIFT = np.array([
     0.0005,
     0.0003,
     0.0001,
-], dtype=env.GLOBAL_NP_FLOAT_PRECISION)
-SOG_DEFAULT_AMPLITUDE = np.array([
+]))
+SOG_DEFAULT_AMPLITUDE = to_numpy_array(np.array([
     2.8,
     5.7,
     11.4,
@@ -61,7 +61,7 @@ SOG_DEFAULT_AMPLITUDE = np.array([
     1456.0,
     2912.0,
     5823.9,
-], dtype=env.GLOBAL_NP_FLOAT_PRECISION)
+]))
 
 
 @LRFittingNet.register("sog_energy")
@@ -181,9 +181,9 @@ class SOGEnergyFittingNet(LRFittingNet):
             **kwargs,
         )
         if isinstance(shift, (list, tuple)):
-            shift = np.array(shift, dtype=env.GLOBAL_NP_FLOAT_PRECISION)
+            shift = to_numpy_array(np.array(shift))
         if isinstance(amplitude, (list, tuple)):
-            amplitude = np.array(amplitude, dtype=env.GLOBAL_NP_FLOAT_PRECISION)
+            amplitude = to_numpy_array(np.array(amplitude))
         shift_tensor = to_torch_tensor(shift)
         amplitude_tensor = to_torch_tensor(amplitude)
         if shift_tensor is None:
@@ -191,12 +191,15 @@ class SOGEnergyFittingNet(LRFittingNet):
         if amplitude_tensor is None:
             amplitude_tensor = to_torch_tensor(SOG_DEFAULT_AMPLITUDE)
         # Register as trainable parameters so they are optimized with the fitting net.
-        self.shift = torch.nn.Parameter(
-            shift_tensor.to(dtype=dtype, device=device),
+        wl_tensor = to_torch_tensor(amplitude_tensor * (torch.sqrt(torch.tensor(torch.pi))**3)*shift_tensor**3)
+        sl_tensor = to_torch_tensor(-torch.log(2/shift_tensor))
+        
+        self.wl = torch.nn.Parameter(
+            wl_tensor.to(dtype=dtype, device=device),
             requires_grad=bool(self.trainable),
         )
-        self.amplitude = torch.nn.Parameter(
-            amplitude_tensor.to(dtype=dtype, device=device),
+        self.sl = torch.nn.Parameter(
+            sl_tensor.to(dtype=dtype, device=device),
             requires_grad=bool(self.trainable),
         )
 
@@ -231,22 +234,14 @@ class SOGEnergyFittingNet(LRFittingNet):
         # Backward compatibility: if serialized variables miss shift/amplitude,
         # keep defaults initialized in __init__.
         if shift_tensor is not None:
-            obj.shift = torch.nn.Parameter(
-                shift_tensor.to(dtype=dtype, device=device),
-                requires_grad=bool(obj.trainable),
-            )
+            obj.shift = shift_tensor
         if amplitude_tensor is not None:
-            obj.amplitude = torch.nn.Parameter(
-                amplitude_tensor.to(dtype=dtype, device=device),
-                requires_grad=bool(obj.trainable),
-            )
+            obj.amplitude = amplitude_tensor
         return obj
 
     def corr_head(
         self,
         lr_val: torch.Tensor,
-        amplitude: torch.Tensor,
-        shift: torch.Tensor,
     ) -> torch.Tensor:
         # TODO:
         # Long-range correction energy calculation
@@ -272,7 +267,7 @@ class SOGEnergyFittingNet(LRFittingNet):
             aparam=aparam,
         )
         short_energy = out["sr"]
-        corr_energy = self.corr_head(out["lr"], self.amplitude, self.shift)
+        corr_energy = self.corr_head(out["lr"])
         result = {"energy": short_energy + corr_energy}
         if "middle_output" in out:
             result["middle_output"] = out["middle_output"]
