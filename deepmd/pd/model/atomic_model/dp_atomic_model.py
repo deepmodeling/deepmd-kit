@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
-import logging
 from collections.abc import (
     Callable,
 )
@@ -31,12 +30,24 @@ from .base_atomic_model import (
     BaseAtomicModel,
 )
 
-log = logging.getLogger(__name__)
-
 
 @BaseAtomicModel.register("standard")
 class DPAtomicModel(BaseAtomicModel):
-    """Model give atomic prediction of some physical property.
+    r"""Model give atomic prediction of some physical property.
+
+    The atomic model computes atomic properties by first extracting a descriptor
+    from the atomic environment, then passing it through a fitting network:
+
+    .. math::
+        \mathcal{D}^i = \mathcal{D}(\mathbf{R}^i, \mathbf{R}_j, \alpha_j),
+
+    .. math::
+        \mathbf{y}^i = \mathcal{F}(\mathcal{D}^i),
+
+    where :math:`\mathcal{D}^i` is the descriptor for atom :math:`i`,
+    :math:`\alpha_j` is the atom type of neighbor :math:`j`,
+    :math:`\mathcal{F}` is the fitting network, and
+    :math:`\mathbf{y}^i` is the predicted atomic property (energy, dipole, etc.).
 
     Parameters
     ----------
@@ -47,6 +58,7 @@ class DPAtomicModel(BaseAtomicModel):
     type_map
             Mapping atom type to the name (str) of the type.
             For example `type_map[1]` gives the name of the type 1.
+
     """
 
     def __init__(
@@ -64,6 +76,12 @@ class DPAtomicModel(BaseAtomicModel):
         self.rcut = self.descriptor.get_rcut()
         self.sel = self.descriptor.get_sel()
         self.fitting_net = fitting
+        if hasattr(self.fitting_net, "reinit_exclude"):
+            self.fitting_net.reinit_exclude(self.atom_exclude_types)
+        self.type_map = type_map
+        self.add_chg_spin_ebd: bool = getattr(
+            self.descriptor, "add_chg_spin_ebd", False
+        )
         super().init_out_stat()
         self.enable_eval_descriptor_hook = False
         self.enable_eval_fitting_last_layer_hook = False
@@ -233,8 +251,8 @@ class DPAtomicModel(BaseAtomicModel):
         dd.update(
             {
                 "@class": "Model",
-                "@version": 2,
                 "type": "standard",
+                "@version": 2,
                 "type_map": self.type_map,
                 "descriptor": self.descriptor.serialize(),
                 "fitting": self.fitting_net.serialize(),
@@ -245,7 +263,7 @@ class DPAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data: dict) -> "DPAtomicModel":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 2)
         data.pop("@class", None)
         data.pop("type", None)
         descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))
@@ -360,6 +378,7 @@ class DPAtomicModel(BaseAtomicModel):
         sampled_func: Callable[[], list[dict]],
         stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
     ) -> None:
         """
         Compute or load the statistics parameters of the model,
@@ -398,9 +417,15 @@ class DPAtomicModel(BaseAtomicModel):
             return sampled
 
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
-        self.compute_fitting_input_stat(wrapped_sampler, stat_file_path)
+        self.fitting_net.compute_input_stats(
+            wrapped_sampler, stat_file_path=stat_file_path
+        )
         if compute_or_load_out_stat:
             self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
+
+        self._collect_and_set_observed_type(
+            wrapped_sampler, stat_file_path, preset_observed_type
+        )
 
     def compute_fitting_input_stat(
         self,
@@ -413,19 +438,24 @@ class DPAtomicModel(BaseAtomicModel):
         ----------
         sample_merged : Union[Callable[[], list[dict]], list[dict]]
             - list[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
-                originating from the `i`-th data system.
-            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
-                only when needed. Since the sampling process can be slow and memory-intensive,
-                the lazy function helps by only sampling once.
+                Each element, ``merged[i]``, is a data dictionary containing
+                ``keys``: ``np.ndarray`` originating from the ``i``-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples
+                in the above format only when needed.
         stat_file_path : Optional[DPPath]
-            The dictionary of paths to the statistics files.
+            The path to the stat file.
         """
         self.fitting_net.compute_input_stats(
             sample_merged,
             protection=self.data_stat_protect,
             stat_file_path=stat_file_path,
         )
+
+    # for subclass overridden
+    base_descriptor_cls = BaseDescriptor
+    """The base descriptor class."""
+    base_fitting_cls = BaseFitting
+    """The base fitting class."""
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
