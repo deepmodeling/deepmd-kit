@@ -2362,7 +2362,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         suffix: str = "",
         tebd_suffix: str = "",
     ) -> None:
-        """Reveive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
