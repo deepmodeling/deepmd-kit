@@ -4,6 +4,9 @@ from typing import (
     Any,
 )
 
+from deepmd.dpmodel.utils.serialization import (
+    Node,
+)
 from deepmd.infer.deep_eval import (
     DeepEval,
 )
@@ -138,10 +141,6 @@ def show(
             log.info(f"Observed types: {observed_types['observed_type']} ")
 
     if "serialization-tree" in ATTRIBUTES:
-        from deepmd.dpmodel.utils.serialization import (
-            Node,
-        )
-
         data = model.serialize()
         if "model" not in data:
             raise RuntimeError("Serialized model data does not contain key 'model'.")
