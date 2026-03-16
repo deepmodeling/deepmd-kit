@@ -266,7 +266,12 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
                     "Expected 'model.ckpt.pt' (created by pt_expt training)."
                 )
         else:
-            FLAGS.model = FLAGS.checkpoint_folder
+            model_path = Path(FLAGS.checkpoint_folder)
+            if not model_path.exists():
+                raise FileNotFoundError(
+                    f"Checkpoint path '{model_path}' does not exist."
+                )
+            FLAGS.model = str(model_path)
         if not FLAGS.output.endswith((".pte", ".pt2")):
             FLAGS.output = str(Path(FLAGS.output).with_suffix(".pte"))
         freeze(model=FLAGS.model, output=FLAGS.output, head=FLAGS.head)
