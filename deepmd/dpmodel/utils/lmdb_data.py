@@ -222,6 +222,26 @@ class LmdbDataReader:
         self._natoms = sum(self._natoms_per_type)
         self._ntypes = len(type_map)
 
+        # Build type remapping if LMDB's type_map differs from model's type_map
+        lmdb_type_map = meta.get("type_map")
+        self._lmdb_type_map = lmdb_type_map
+        self._type_remap: np.ndarray | None = None
+        if lmdb_type_map is not None and list(lmdb_type_map) != list(type_map):
+            # Build remap: lmdb_type_idx -> model_type_idx
+            remap = np.empty(len(lmdb_type_map), dtype=np.int32)
+            for i, name in enumerate(lmdb_type_map):
+                if name not in type_map:
+                    raise ValueError(
+                        f"Element '{name}' in LMDB type_map {lmdb_type_map} "
+                        f"not found in model type_map {type_map}"
+                    )
+                remap[i] = type_map.index(name)
+            self._type_remap = remap
+            log.info(
+                f"Type remapping: LMDB {lmdb_type_map} -> model {type_map}, "
+                f"remap={list(remap)}"
+            )
+
         # Persistent read-only transaction for __getitem__ (avoids per-read overhead).
         # Safe because we use num_workers=0 in DataLoader.
         self._txn = self._env.begin()
@@ -346,6 +366,9 @@ class LmdbDataReader:
             )
         if "atype" in frame and isinstance(frame["atype"], np.ndarray):
             frame["atype"] = frame["atype"].reshape(-1).astype(np.int64)
+            # Remap atom types from LMDB's type_map to model's type_map
+            if self._type_remap is not None:
+                frame["atype"] = self._type_remap[frame["atype"]].astype(np.int64)
         if "virial" in frame and isinstance(frame["virial"], np.ndarray):
             frame["virial"] = (
                 frame["virial"].reshape(9).astype(self._resolve_dtype("virial"))
