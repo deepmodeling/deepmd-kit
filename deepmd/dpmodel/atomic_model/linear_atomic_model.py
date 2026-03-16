@@ -17,9 +17,6 @@ from deepmd.dpmodel.utils.nlist import (
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
-from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
-)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -396,13 +393,12 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         nlists_: list[Array],
     ) -> list[Array]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
-        xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlists_)
+        xp = array_api_compat.array_namespace(extended_coord, extended_atype)
         nmodels = len(self.models)
         nframes, nloc, _ = nlists_[0].shape
         dev = array_api_compat.device(extended_coord)
-        # the dtype of weights is the interface data type.
         return [
-            xp.ones((nframes, nloc, 1), dtype=GLOBAL_NP_FLOAT_PRECISION, device=dev)
+            xp.ones((nframes, nloc, 1), dtype=extended_coord.dtype, device=dev)
             / nmodels
             for _ in range(nmodels)
         ]
