@@ -46,8 +46,7 @@ def show(
             f"where 'RANDOM' means using a randomly initialized fitting net."
         )
         log.info(
-            "Detailed information: \n"
-            + OrderedDictTableWrapper(model_branch_dict).as_table()
+            "Detailed information: \n" + OrderedDictTableWrapper(model_branch_dict).as_table()
         )
     if "type-map" in ATTRIBUTES:
         if model_is_multi_task:
@@ -72,9 +71,7 @@ def show(
             model_branches = list(model_params["model_dict"].keys())
             for branch in model_branches:
                 fitting_net = model_params["model_dict"][branch]["fitting_net"]
-                log.info(
-                    f"The fitting_net parameter of branch {branch} is {fitting_net}"
-                )
+                log.info(f"The fitting_net parameter of branch {branch} is {fitting_net}")
         else:
             fitting_net = model_params["fitting_net"]
             log.info(f"The fitting_net parameter is {fitting_net}")
@@ -136,3 +133,14 @@ def show(
                 observed_types = model.get_observed_types()
             log.info(f"Number of observed types: {observed_types['type_num']} ")
             log.info(f"Observed types: {observed_types['observed_type']} ")
+
+    if "serialization-tree" in ATTRIBUTES:
+        from deepmd.dpmodel.utils.serialization import (
+            Node,
+        )
+
+        data = model.serialize()
+        if "model" not in data:
+            raise RuntimeError("Serialized model data does not contain key 'model'.")
+        root = Node.deserialize(data["model"])
+        log.info("Model serialization tree:\n" + str(root))

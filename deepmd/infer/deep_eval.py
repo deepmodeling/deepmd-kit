@@ -404,6 +404,7 @@ class DeepEval(ABC):
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         **kwargs: Any,
     ) -> None:
+        self.model_file = model_file
         self.deep_eval = DeepEvalBackend(
             model_file,
             self.output_def,
@@ -419,6 +420,46 @@ class DeepEval(ABC):
     @abstractmethod
     def output_def(self) -> ModelOutputDef:
         """Returns the output variable definitions."""
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the model file to a dictionary (backend-unified).
+
+        This is a convenience wrapper around backend-specific serialization
+        hooks, intended for unified model inspection / display.
+
+        Returns
+        -------
+        dict
+            Serialized model data (must include key ``"model"``).
+
+        Raises
+        ------
+        NotImplementedError
+            If the detected backend does not support IO serialization.
+        """
+        backend_cls = Backend.detect_backend_by_model(self.model_file)
+
+        # internal alias backend: resolve to a verified local file first
+        if getattr(backend_cls, "name", "").lower() == "pretrained":
+            from deepmd.pretrained.deep_eval import (
+                parse_pretrained_alias,
+            )
+            from deepmd.pretrained.download import (
+                resolve_model_path,
+            )
+
+            model_name = parse_pretrained_alias(self.model_file)
+            resolved = str(resolve_model_path(model_name))
+            backend_cls = Backend.detect_backend_by_model(resolved)
+            return backend_cls().serialize_hook(resolved)
+
+        if not (backend_cls.features & Backend.Feature.IO):
+            raise NotImplementedError(
+                f"Backend '{backend_cls.name}' does not support serialization."
+            )
+
+        return backend_cls().serialize_hook(self.model_file)
+
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
