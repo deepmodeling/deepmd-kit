@@ -29,12 +29,12 @@ if INSTALLED_PT:
 else:
     LinearEnergyModelPT = None
 if INSTALLED_PT_EXPT:
-    try:
-        from deepmd.pt_expt.model.dp_linear_model import (
-            LinearEnergyModel as LinearEnergyModelPTExpt,
-        )
-    except ImportError:
-        LinearEnergyModelPTExpt = None
+    from deepmd.pt_expt.model.dp_linear_model import (
+        LinearEnergyModel as LinearEnergyModelPTExpt,
+    )
+    from deepmd.pt_expt.model.get_model import (
+        get_linear_model as get_linear_model_pt_expt,
+    )
 else:
     LinearEnergyModelPTExpt = None
 from deepmd.utils.argcheck import (
@@ -150,8 +150,7 @@ class TestLinearEner(CommonTest, ModelTest, unittest.TestCase):
         if cls is LinearEnergyModelPT:
             return get_model_pt(data)
         elif cls is LinearEnergyModelPTExpt:
-            pt_model = get_model_pt(data)
-            return LinearEnergyModelPTExpt.deserialize(pt_model.serialize())
+            return get_linear_model_pt_expt(data)
         return cls(**data, **self.additional_data)
 
     def setUp(self) -> None:

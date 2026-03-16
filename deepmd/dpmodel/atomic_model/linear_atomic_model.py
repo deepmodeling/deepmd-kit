@@ -67,6 +67,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self,
         models: list[BaseAtomicModel],
         type_map: list[str],
+        weights: str | list[float] | None = "mean",
         **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
