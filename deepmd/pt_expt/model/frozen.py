@@ -3,6 +3,9 @@ from typing import (
     Any,
 )
 
+from deepmd.dpmodel.common import (
+    NativeOP,
+)
 from deepmd.dpmodel.model.frozen import FrozenModel as FrozenModelDP
 from deepmd.pt_expt.common import (
     torch_module,
@@ -17,7 +20,9 @@ from .model import (
 @torch_module
 class FrozenModel(FrozenModelDP):
     def __init__(self, model_file: str, **kwargs: Any) -> None:
-        super(FrozenModelDP, self).__init__()
+        # Skip FrozenModelDP.__init__ which would load via Backend detection;
+        # pt_expt handles .pte natively and re-deserializes other formats itself.
+        NativeOP.__init__(self)
         self.model_file = model_file
         if model_file.endswith(".pte"):
             from deepmd.pt_expt.utils.serialization import (
@@ -35,12 +40,3 @@ class FrozenModel(FrozenModelDP):
             data = inp_backend.serialize_hook(model_file)
             self.model = BaseModel.deserialize(data["model"])
         self.model.eval()
-
-    def serialize(self) -> dict:
-        """Serialize the model.
-
-        Unlike the pt backend (which must reconstruct from model_def_script
-        because its inner model is an opaque ScriptModule), pt_expt's inner
-        model is a real pt_expt model that can serialize directly.
-        """
-        return self.model.serialize()
