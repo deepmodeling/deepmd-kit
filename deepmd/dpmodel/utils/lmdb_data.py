@@ -716,6 +716,29 @@ class LmdbTestData:
         self.nframes, self._frame_fmt, self._natoms_per_type = _parse_metadata(meta)
         self._natoms = sum(self._natoms_per_type)
 
+        # Build type remapping if LMDB's type_map differs from model's type_map
+        lmdb_type_map = meta.get("type_map")
+        self._lmdb_type_map = lmdb_type_map
+        self._type_remap: np.ndarray | None = None
+        if (
+            lmdb_type_map is not None
+            and self._type_map
+            and list(lmdb_type_map) != list(self._type_map)
+        ):
+            remap = np.empty(len(lmdb_type_map), dtype=np.int32)
+            for i, name in enumerate(lmdb_type_map):
+                if name not in self._type_map:
+                    raise ValueError(
+                        f"Element '{name}' in LMDB type_map {lmdb_type_map} "
+                        f"not found in model type_map {self._type_map}"
+                    )
+                remap[i] = self._type_map.index(name)
+            self._type_remap = remap
+            log.info(
+                f"LmdbTestData type remapping: LMDB {lmdb_type_map} -> "
+                f"model {self._type_map}, remap={list(remap)}"
+            )
+
         # Read all frames
         self._frames: list[dict[str, Any]] = []
         with self._env.begin() as txn:
@@ -723,7 +746,17 @@ class LmdbTestData:
                 key = format(i, self._frame_fmt).encode()
                 raw = txn.get(key)
                 if raw is not None:
-                    self._frames.append(_remap_keys(_decode_frame(raw)))
+                    frame = _remap_keys(_decode_frame(raw))
+                    # Apply type remapping to atype
+                    if (
+                        self._type_remap is not None
+                        and "atype" in frame
+                        and isinstance(frame["atype"], np.ndarray)
+                    ):
+                        frame["atype"] = self._type_remap[
+                            frame["atype"].reshape(-1)
+                        ].astype(np.int64)
+                    self._frames.append(frame)
 
         # Shuffle if requested
         if shuffle_test:
