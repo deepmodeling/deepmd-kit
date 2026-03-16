@@ -17,30 +17,7 @@ from .model import (
 @torch_module
 class FrozenModel(FrozenModelDP):
     def __init__(self, model_file: str, **kwargs: Any) -> None:
-        super(FrozenModelDP, self).__init__()
-        self.model_file = model_file
-        if model_file.endswith(".pte"):
-            from deepmd.pt_expt.utils.serialization import (
-                serialize_from_file,
-            )
-
-            data = serialize_from_file(model_file)
-            self.model = BaseModel.deserialize(data["model"])
-        else:
-            from deepmd.backend.backend import (
-                Backend,
-            )
-
-            inp_backend: Backend = Backend.detect_backend_by_model(model_file)()
-            data = inp_backend.serialize_hook(model_file)
-            self.model = BaseModel.deserialize(data["model"])
+        super().__init__(model_file, **kwargs)
+        # Re-deserialize as a pt_expt model (parent creates a dpmodel model)
+        self.model = BaseModel.deserialize(self.model.serialize())
         self.model.eval()
-
-    def serialize(self) -> dict:
-        """Serialize the model.
-
-        Unlike the pt backend (which must reconstruct from model_def_script
-        because its inner model is an opaque ScriptModule), pt_expt's inner
-        model is a real pt_expt model that can serialize directly.
-        """
-        return self.model.serialize()
