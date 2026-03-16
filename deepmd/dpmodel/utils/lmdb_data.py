@@ -239,7 +239,7 @@ class LmdbDataReader:
             self._type_remap = remap
             log.info(
                 f"Type remapping: LMDB {lmdb_type_map} -> model {type_map}, "
-                f"remap={list(remap)}"
+                f"remap={remap}"
             )
 
         # Persistent read-only transaction for __getitem__ (avoids per-read overhead).
@@ -736,7 +736,7 @@ class LmdbTestData:
             self._type_remap = remap
             log.info(
                 f"LmdbTestData type remapping: LMDB {lmdb_type_map} -> "
-                f"model {self._type_map}, remap={list(remap)}"
+                f"model {self._type_map}, remap={remap}"
             )
 
         # Read all frames
