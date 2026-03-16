@@ -46,7 +46,8 @@ def show(
             f"where 'RANDOM' means using a randomly initialized fitting net."
         )
         log.info(
-            "Detailed information: \n" + OrderedDictTableWrapper(model_branch_dict).as_table()
+            "Detailed information: \n"
+            + OrderedDictTableWrapper(model_branch_dict).as_table()
         )
     if "type-map" in ATTRIBUTES:
         if model_is_multi_task:
@@ -71,7 +72,9 @@ def show(
             model_branches = list(model_params["model_dict"].keys())
             for branch in model_branches:
                 fitting_net = model_params["model_dict"][branch]["fitting_net"]
-                log.info(f"The fitting_net parameter of branch {branch} is {fitting_net}")
+                log.info(
+                    f"The fitting_net parameter of branch {branch} is {fitting_net}"
+                )
         else:
             fitting_net = model_params["fitting_net"]
             log.info(f"The fitting_net parameter is {fitting_net}")

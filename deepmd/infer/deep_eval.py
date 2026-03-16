@@ -460,7 +460,6 @@ class DeepEval(ABC):
 
         return backend_cls().serialize_hook(self.model_file)
 
-
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
         return self.deep_eval.get_rcut()
