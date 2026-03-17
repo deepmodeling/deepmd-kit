@@ -145,29 +145,28 @@ class TestOutStat(unittest.TestCase):
     def test_compute_stats_from_redu_intensive(self) -> None:
         """Test compute_stats_from_redu function with intensive scenario."""
         bias, std = compute_stats_from_redu(
-            self.output_redu, self.natoms, intensive=True,
+            self.output_redu / self.natoms.sum(axis=1, keepdims=True), 
+            self.natoms, 
+            intensive=True,
         )
         # Test shapes
         assert bias.shape == (len(self.mean), self.output_redu.shape[1])
         assert std.shape == (self.output_redu.shape[1],)
 
         # Test values
-        np.testing.assert_allclose(
-            bias,
-            np.array(
-                [
-                    [8926338.68432182, 8750110.71559034, 2045325.12109175, 1392024.84192495, 6714978.25878314],
-                    [554163.59820041, 5965821.3924394, 2171555.69509784, 8050760.64873761, 5277414.78728998],
-                    [9180265.02004177, 6836013.36530394, 9121797.79540738, 7801570.3259364, 4095707.84597587]
-                ]
-            ),
-            rtol=1e-6,
+        np.testing.assert_allclose(bias, self.mean, rtol=1e-6)
+        reference_std = np.array(
+            [
+                0.00001700638138272794,
+                0.00001954897296228177,
+                0.000020281857747683162,
+                0.000010741237959989648,
+                0.000020258211828681347,
+            ]
         )
         np.testing.assert_allclose(
             std,
-            np.array(
-                [0.01700638, 0.01954897, 0.02028186, 0.01074124, 0.02025821]
-            ),
+            reference_std,
             rtol=1e-6,
         )
 
