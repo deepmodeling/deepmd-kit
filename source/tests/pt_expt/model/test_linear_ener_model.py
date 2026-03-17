@@ -1,10 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 import unittest
+from unittest.mock import (
+    patch,
+)
 
 import numpy as np
 import torch
 
+from deepmd.pt_expt.model.dp_linear_model import (
+    LinearEnergyModel,
+)
 from deepmd.pt_expt.model.get_model import (
     get_linear_model,
     get_standard_model,
@@ -137,6 +143,49 @@ class TestLinearEnerWeights(unittest.TestCase):
         for key in ["energy", "force", "virial"]:
             expected = 0.3 * ret1[key] + 0.7 * ret2[key]
             np.testing.assert_allclose(ret_custom[key], expected, atol=1e-10)
+
+
+class TestLinearUpdateSel(unittest.TestCase):
+    """Test that update_sel writes updated sub-model configs back."""
+
+    @patch("deepmd.pt_expt.model.dp_linear_model.DPModelCommon.update_sel")
+    def test_updated_sel_written_back(self, mock_update_sel) -> None:
+        """Verify that update_sel returns configs with updated sel values."""
+
+        def side_effect(train_data, type_map, sub_jdata):
+            updated = copy.deepcopy(sub_jdata)
+            updated["descriptor"]["sel"] = 99
+            return updated, 0.5
+
+        mock_update_sel.side_effect = side_effect
+
+        local_jdata = {
+            "type_map": ["O", "H"],
+            "models": [
+                {
+                    "descriptor": {"type": "se_atten", "sel": 10, "rcut": 4.0},
+                    "fitting_net": {"neuron": [5, 5]},
+                },
+                {
+                    "descriptor": {"type": "se_atten", "sel": 10, "rcut": 4.0},
+                    "fitting_net": {"neuron": [5, 5]},
+                },
+            ],
+            "weights": "mean",
+        }
+
+        result, min_dist = LinearEnergyModel.update_sel(
+            train_data=None,
+            type_map=["O", "H"],
+            local_jdata=local_jdata,
+        )
+
+        for idx, sub_model in enumerate(result["models"]):
+            self.assertEqual(
+                sub_model["descriptor"]["sel"],
+                99,
+                f"Sub-model {idx} sel was not updated in returned config",
+            )
 
 
 if __name__ == "__main__":

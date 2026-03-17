@@ -186,8 +186,9 @@ class LinearEnergyModel(DPModelCommon, DPLinearModel_):
         for idx, sub_model in enumerate(local_jdata_cpy["models"]):
             if "tab_file" not in sub_model:
                 sub_model, temp_min = DPModelCommon.update_sel(
-                    train_data, type_map, local_jdata["models"][idx]
+                    train_data, type_map, local_jdata_cpy["models"][idx]
                 )
+                local_jdata_cpy["models"][idx] = sub_model
                 if min_nbor_dist is None or temp_min <= min_nbor_dist:
                     min_nbor_dist = temp_min
         return local_jdata_cpy, min_nbor_dist
