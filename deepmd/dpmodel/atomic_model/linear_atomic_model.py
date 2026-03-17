@@ -330,7 +330,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         dd.update(
             {
                 "@class": "Model",
-                "@version": 2,
+                "@version": 3,
                 "type": "linear",
                 "models": [model.serialize() for model in self.models],
                 "type_map": self.type_map,
@@ -342,9 +342,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 2), 2, 2)
+        check_version_compatibility(data.pop("@version", 2), 3, 2)
         data.pop("@class", None)
         data.pop("type", None)
+        if "weights" not in data:
+            data["weights"] = "mean"
         models = [
             BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)
             for model in data["models"]
