@@ -232,14 +232,14 @@ class EnergyFittingNetDirect(Fitting):
                 torch.bmm(vec_out, gr).squeeze(-2).view(nframes, nloc, 3)
             )  # Shape is [nframes, nloc, 3]
         else:
-            vec_out = torch.zeros_like(atype).unsqueeze(-1)  # jit assertion
+            vec_out = torch.zeros_like(atype).unsqueeze(-1)
             for type_i, filter_layer in enumerate(self.filter_layers_dipole):
                 mask = atype == type_i
                 vec_out_type = filter_layer(inputs)  # Shape is [nframes, nloc, m1]
                 vec_out_type = vec_out_type * mask.unsqueeze(-1)
                 vec_out = vec_out + vec_out_type  # Shape is [nframes, natoms[0], 1]
 
-        outs = torch.zeros_like(atype).unsqueeze(-1)  # jit assertion
+        outs = torch.zeros_like(atype).unsqueeze(-1)
         if self.return_energy:
             if self.use_tebd:
                 atom_energy = self.filter_layers[0](inputs) + self.bias_atom_e[
