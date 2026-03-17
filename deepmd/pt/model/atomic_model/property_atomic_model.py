@@ -49,7 +49,7 @@ class DPPropertyAtomicModel(DPAtomicModel):
 
         """
         out_bias, out_std = self._fetch_out_stat(self.bias_keys)
-        if self.get_compute_stats_distinguish_types:
+        if self.get_compute_stats_distinguish_types():
             for kk in self.bias_keys:
                 ret[kk] = ret[kk] * out_std[kk][0] + out_bias[kk][atype]
         else:
