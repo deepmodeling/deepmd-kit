@@ -196,6 +196,7 @@ class DescrptSeAttenV2(DescrptDPA1):
             # consistent with argcheck, not used though
             seed=seed,
         )
+        self.compress = False
 
     def serialize(self) -> dict:
         """Serialize the descriptor to dict."""

@@ -154,6 +154,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         self.reinit_exclude(exclude_types)
         self.trainable = trainable
         self.sel_cumsum = [0, *np.cumsum(self.sel).tolist()]
+        self.compress = False
 
         in_dim = 1  # not considiering type embedding
         embeddings = NetworkCollection(

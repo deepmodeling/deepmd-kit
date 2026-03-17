@@ -596,6 +596,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         self.rcut_smth = self.repinit.get_rcut_smth()
         self.trainable = trainable
         self.add_tebd_to_repinit_out = add_tebd_to_repinit_out
+        self.compress = False
 
         self.repinit_out_dim = self.repinit.dim_out
         if self.repinit_args.use_three_body:

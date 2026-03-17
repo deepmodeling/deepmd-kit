@@ -203,6 +203,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable
         self.precision = precision
+        self.compress = False
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""

@@ -195,6 +195,19 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
             skip_neighbor_stat=FLAGS.skip_neighbor_stat,
             output=FLAGS.output,
         )
+    elif FLAGS.command == "compress":
+        from deepmd.pt_expt.entrypoints.compress import (
+            enable_compression,
+        )
+
+        enable_compression(
+            input_file=FLAGS.INPUT,
+            output=FLAGS.output,
+            stride=FLAGS.step,
+            extrapolate=FLAGS.extrapolate,
+            check_frequency=FLAGS.frequency,
+            training_script=FLAGS.training_script,
+        )
     else:
         raise RuntimeError(
             f"Unsupported command '{FLAGS.command}' for the pt_expt backend."

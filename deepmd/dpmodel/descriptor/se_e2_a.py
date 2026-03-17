@@ -192,6 +192,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.precision = precision
         self.spin = spin
         self.type_map = type_map
+        self.compress = False
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
 

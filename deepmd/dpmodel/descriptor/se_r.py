@@ -173,6 +173,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         self.type_map = type_map
         self.emask = PairExcludeMask(self.ntypes, self.exclude_types)
         self.env_protection = env_protection
+        self.compress = False
 
         in_dim = 1  # not considiering type embedding
         embeddings = NetworkCollection(
