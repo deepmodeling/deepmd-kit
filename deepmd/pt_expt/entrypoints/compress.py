@@ -48,6 +48,8 @@ def enable_compression(
     # 2. Get or compute min_nbor_dist
     min_nbor_dist = model.get_min_nbor_dist()
     if min_nbor_dist is None:
+        min_nbor_dist = model_dict.get("min_nbor_dist")
+    if min_nbor_dist is None:
         log.info(
             "Minimal neighbor distance is not saved in the model, "
             "compute it from the training data."
@@ -83,10 +85,7 @@ def enable_compression(
         update_sel = UpdateSel()
         min_nbor_dist = update_sel.get_min_nbor_dist(train_data)
 
-    if isinstance(min_nbor_dist, (int, float)):
-        min_nbor_dist_val = float(min_nbor_dist)
-    else:
-        min_nbor_dist_val = float(min_nbor_dist.item())
+    model.min_nbor_dist = min_nbor_dist
 
     # 3. Enable compression
     log.info("Enabling compression...")
@@ -99,9 +98,8 @@ def enable_compression(
 
     # 4. Re-serialize and export
     log.info("Re-serializing compressed model...")
-    new_model_dict = model.serialize()
     data = {
-        "model": new_model_dict,
+        "model": model.serialize(),
         "model_def_script": model_dict.get("model_def_script"),
     }
     deserialize_to_file(output, data)

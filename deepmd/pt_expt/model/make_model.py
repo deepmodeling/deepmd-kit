@@ -186,6 +186,38 @@ def make_model(
 
     @torch_module
     class CM(DPModel, *T_Bases):
+        @property  # type: ignore[override]
+        def min_nbor_dist(self) -> float | None:
+            """Minimum neighbor distance, stored as a buffer (survives serialization).
+
+            Uses ``-1.0`` as sentinel for "not set", matching the pt backend.
+            """
+            buf = self.__dict__.get("_buffers", {}).get("_min_nbor_dist")
+            if buf is None or buf.item() == -1.0:
+                return None
+            return buf.item()
+
+        @min_nbor_dist.setter
+        def min_nbor_dist(self, value: float | None) -> None:
+            from deepmd.pt_expt.utils.env import (
+                DEVICE,
+            )
+
+            t = torch.tensor(
+                -1.0 if value is None else float(value),
+                dtype=torch.float64,
+                device=DEVICE,
+            )
+            if "_buffers" in self.__dict__ and "_min_nbor_dist" in self._buffers:
+                self._buffers["_min_nbor_dist"] = t
+            elif "_buffers" in self.__dict__:
+                self.register_buffer("_min_nbor_dist", t)
+            # else: too early (before Module.__init__), will be set again later
+
+        def get_min_nbor_dist(self) -> float | None:
+            """Get the minimum distance between two atoms."""
+            return self.min_nbor_dist
+
         def forward(self, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor]:
             """Default forward delegates to call().
 
