@@ -98,6 +98,15 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self.mapping_list = mapping_list
         assert len(err_msg) == 0, "\n".join(err_msg)
         self.mixed_types_list = [model.mixed_types() for model in self.models]
+        if isinstance(weights, str):
+            assert weights in ["sum", "mean"]
+        elif isinstance(weights, list):
+            assert len(weights) == len(models)
+        else:
+            raise ValueError(
+                f"'weights' must be a string ('sum' or 'mean') or a list of float of length {len(models)}."
+            )
+        self.weights = weights
 
     def mixed_types(self) -> bool:
         """If true, the model
@@ -325,6 +334,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 "type": "linear",
                 "models": [model.serialize() for model in self.models],
                 "type_map": self.type_map,
+                "weights": self.weights,
             }
         )
         return dd
@@ -398,11 +408,29 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         nmodels = len(self.models)
         nframes, nloc, _ = nlists_[0].shape
         dev = array_api_compat.device(extended_coord)
-        return [
-            xp.ones((nframes, nloc, 1), dtype=extended_coord.dtype, device=dev)
-            / nmodels
-            for _ in range(nmodels)
-        ]
+        if isinstance(self.weights, str):
+            if self.weights == "sum":
+                return [
+                    xp.ones((nframes, nloc, 1), dtype=extended_coord.dtype, device=dev)
+                    for _ in range(nmodels)
+                ]
+            elif self.weights == "mean":
+                return [
+                    xp.ones((nframes, nloc, 1), dtype=extended_coord.dtype, device=dev)
+                    / nmodels
+                    for _ in range(nmodels)
+                ]
+            else:
+                raise ValueError(
+                    "`weights` must be 'sum' or 'mean' when provided as a string."
+                )
+        elif isinstance(self.weights, list):
+            return [
+                xp.ones((nframes, nloc, 1), dtype=extended_coord.dtype, device=dev) * w
+                for w in self.weights
+            ]
+        else:
+            raise NotImplementedError
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
