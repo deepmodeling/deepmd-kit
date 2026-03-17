@@ -177,15 +177,16 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
             tebd_dim,
             precision=precision,
             seed=child_seed(seed, 2),
+            trainable=trainable,
             use_econf_tebd=use_econf_tebd,
             type_map=type_map,
             use_tebd_bias=use_tebd_bias,
-            trainable=trainable,
         )
         self.tebd_dim = tebd_dim
         self.tebd_input_mode = tebd_input_mode
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable
+        self.compress = False
         # set trainable
         for param in self.parameters():
             param.stop_gradient = not trainable
@@ -436,7 +437,14 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
         nlist: paddle.Tensor,
         mapping: paddle.Tensor | None = None,
         comm_dict: list[paddle.Tensor] | None = None,
-    ) -> paddle.Tensor:
+        fparam: paddle.Tensor | None = None,
+    ) -> tuple[
+        paddle.Tensor,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+    ]:
         """Compute the descriptor.
 
         Parameters
@@ -788,7 +796,13 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         extended_atype_embd: paddle.Tensor | None = None,
         mapping: paddle.Tensor | None = None,
         type_embedding: paddle.Tensor | None = None,
-    ) -> paddle.Tensor:
+    ) -> tuple[
+        paddle.Tensor,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+    ]:
         """Compute the descriptor.
 
         Parameters

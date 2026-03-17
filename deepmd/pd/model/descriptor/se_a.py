@@ -4,6 +4,7 @@ from collections.abc import (
     Callable,
 )
 from typing import (
+    Any,
     ClassVar,
 )
 
@@ -88,7 +89,7 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         ntypes: int | None = None,  # to be compat with input
         type_map: list[str] | None = None,
         # not implemented
-        spin: object = None,
+        spin: Any | None = None,
     ) -> None:
         del ntypes
         if spin is not None:
@@ -190,7 +191,7 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         return self.sea.get_env_protection()
 
     def share_params(
-        self, base_class: object, shared_level: int, resume: bool = False
+        self, base_class: Any, shared_level: int, resume: bool = False
     ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
@@ -288,7 +289,14 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         nlist: paddle.Tensor,
         mapping: paddle.Tensor | None = None,
         comm_dict: list[paddle.Tensor] | None = None,
-    ) -> paddle.Tensor:
+        fparam: paddle.Tensor | None = None,
+    ) -> tuple[
+        paddle.Tensor,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+    ]:
         """Compute the descriptor.
 
         Parameters
@@ -727,7 +735,13 @@ class DescrptBlockSeA(DescriptorBlock):
         extended_atype_embd: paddle.Tensor | None = None,
         mapping: paddle.Tensor | None = None,
         type_embedding: paddle.Tensor | None = None,
-    ) -> paddle.Tensor:
+    ) -> tuple[
+        paddle.Tensor,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+    ]:
         """Calculate decoded embedding for each atom.
 
         Args:
