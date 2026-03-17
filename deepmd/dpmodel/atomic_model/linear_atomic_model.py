@@ -248,7 +248,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             the result dict, defined by the fitting net output def.
         """
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlist)
-        nframes, nloc, nnei = nlist.shape
+        nframes, _nloc, _nnei = nlist.shape
         extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
         sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
         nlists = build_multiple_neighbor_list(
