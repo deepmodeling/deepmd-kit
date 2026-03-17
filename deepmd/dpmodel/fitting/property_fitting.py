@@ -88,11 +88,13 @@ class PropertyFittingNet(InvarFitting):
         exclude_types: list[int] = [],
         type_map: list[str] | None = None,
         default_fparam: list | None = None,
+        distinguish_types: bool = True,
         # not used
         seed: int | None = None,
     ) -> None:
         self.task_dim = task_dim
         self.intensive = intensive
+        self.distinguish_types = distinguish_types
         super().__init__(
             var_name=property_name,
             ntypes=ntypes,
@@ -131,7 +133,7 @@ class PropertyFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "PropertyFittingNet":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 5, 1)
+        check_version_compatibility(data.pop("@version"), 6, 1)
         data.pop("dim_out")
         data["property_name"] = data.pop("var_name")
         data.pop("tot_ener_zero")
@@ -150,7 +152,12 @@ class PropertyFittingNet(InvarFitting):
             "type": "property",
             "task_dim": self.task_dim,
             "intensive": self.intensive,
+            "distinguish_types": self.distinguish_types,
         }
-        dd["@version"] = 5
+        dd["@version"] = 6
 
         return dd
+
+    def get_distinguish_types(self) -> bool:
+        """Get whether the fitting net computes stats which are distinguished between different types of atoms."""
+        return self.distinguish_types

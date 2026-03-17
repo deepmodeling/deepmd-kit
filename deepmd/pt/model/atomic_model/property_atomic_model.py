@@ -26,7 +26,7 @@ class DPPropertyAtomicModel(DPAtomicModel):
 
     def get_compute_stats_distinguish_types(self) -> bool:
         """Get whether the fitting net computes stats which are not distinguished between different types of atoms."""
-        return True
+        return self.fitting_net.get_distinguish_types()
 
     def get_intensive(self) -> bool:
         """Whether the fitting property is intensive."""
