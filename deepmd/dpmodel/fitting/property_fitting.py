@@ -65,6 +65,8 @@ class PropertyFittingNet(InvarFitting):
     default_fparam: list[float], optional
             The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
             this value will be used as the default value for the frame parameter in the fitting net.
+    distinguish_types : bool
+            Whether to distinguish atom types when computing output statistics.
     """
 
     def __init__(
