@@ -40,12 +40,8 @@ class TestPretrainedBackend(unittest.TestCase):
         self.assertEqual(parse_pretrained_alias("dpa-3.2-5m"), "DPA-3.2-5M")
 
     def test_parse_pretrained_alias_new_model_name(self) -> None:
-        self.assertEqual(
-            parse_pretrained_alias("DPA3-Omol-Large"), "DPA3-Omol-Large"
-        )
-        self.assertEqual(
-            parse_pretrained_alias("dpa3-omol-large"), "DPA3-Omol-Large"
-        )
+        self.assertEqual(parse_pretrained_alias("DPA3-Omol-Large"), "DPA3-Omol-Large")
+        self.assertEqual(parse_pretrained_alias("dpa3-omol-large"), "DPA3-Omol-Large")
 
     def test_parse_pretrained_alias_invalid(self) -> None:
         with self.assertRaises(ValueError):
