@@ -2594,6 +2594,61 @@ def _check_decay_steps_args(data: dict[str, Any]) -> bool:
     return True
 
 
+def _check_wsd_args(data: dict[str, Any]) -> bool:
+    """
+    Check WSD-specific learning rate arguments.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        The learning rate configuration dictionary.
+
+    Returns
+    -------
+    bool
+        True if validation passes.
+
+    Raises
+    ------
+    ValueError
+        If the WSD-specific arguments are invalid.
+    """
+    lr_type = data.get("type", "exp")
+    if lr_type != "wsd":
+        return True
+
+    start_lr = data.get("start_lr")
+    if start_lr is not None and start_lr <= 0:
+        raise ValueError(f"start_lr ({start_lr}) must be positive for WSD.")
+
+    stop_lr = data.get("stop_lr")
+    if stop_lr is not None and stop_lr <= 0:
+        raise ValueError(f"stop_lr ({stop_lr}) must be positive for WSD.")
+
+    stop_lr_ratio = data.get("stop_lr_ratio")
+    if stop_lr_ratio is not None and stop_lr_ratio <= 0:
+        raise ValueError(f"stop_lr_ratio ({stop_lr_ratio}) must be positive for WSD.")
+
+    decay_phase_ratio = data.get("decay_phase_ratio")
+    if decay_phase_ratio is not None and (
+        decay_phase_ratio <= 0 or decay_phase_ratio > 1
+    ):
+        raise ValueError(f"decay_phase_ratio ({decay_phase_ratio}) must be in (0, 1].")
+
+    decay_type = data.get("decay_type")
+    if decay_type is not None and decay_type not in (
+        "inverse_linear",
+        "cosine",
+        "linear",
+    ):
+        raise ValueError(
+            "decay_type must be one of "
+            f"{('inverse_linear', 'cosine', 'linear')}. "
+            f"Got decay_type={decay_type}."
+        )
+    return True
+
+
 @lr_args_plugin.register("exp")
 def learning_rate_exp() -> list[Argument]:
     """
@@ -2645,6 +2700,42 @@ def learning_rate_cosine() -> list[Argument]:
     return []
 
 
+@lr_args_plugin.register("wsd")
+def learning_rate_wsd() -> list[Argument]:
+    """
+    Defines a warmup-stable-decay learning rate schedule with configurable
+    decay rules.
+
+    The learning rate stays at `start_lr` during the stable phase and then
+    decays to `stop_lr` with the selected decay rule.
+    """
+    doc_decay_phase_ratio = (
+        "The ratio of the decay phase to total training steps. "
+        "The remaining post-warmup steps are used as the stable phase. "
+        "Default is 0.1."
+    )
+    doc_decay_type = (
+        "The decay rule used in the decay phase. "
+        "Supported values are `inverse_linear` (default), `cosine`, and `linear`."
+    )
+    return [
+        Argument(
+            "decay_phase_ratio",
+            float,
+            optional=True,
+            default=0.1,
+            doc=doc_decay_phase_ratio,
+        ),
+        Argument(
+            "decay_type",
+            str,
+            optional=True,
+            default="inverse_linear",
+            doc=doc_decay_type,
+        ),
+    ]
+
+
 def learning_rate_variant_type_args() -> Variant:
     doc_lr = "The type of the learning rate."
 
@@ -2694,6 +2785,8 @@ def learning_rate_args(fold_subdoc: bool = False) -> Argument:
         _check_warmup_args(data)
         # Check decay_steps and decay_rate
         _check_decay_steps_args(data)
+        # Check WSD-specific arguments
+        _check_wsd_args(data)
         return True
 
     # Common arguments for all learning rate types (outside Variant)

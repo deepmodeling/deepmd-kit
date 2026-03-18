@@ -9,6 +9,9 @@ tf.disable_eager_execution()
 from deepmd.dpmodel.utils.learning_rate import (
     LearningRateExp,
 )
+from deepmd.pd.utils.learning_rate import (
+    LearningRateWSD,
+)
 from deepmd.tf.utils.learning_rate import (
     LearningRateSchedule,
 )
@@ -111,6 +114,62 @@ class TestLearningRate(unittest.TestCase):
         self.assertTrue(
             np.allclose(my_vals_decay_trunc, np.clip(my_vals, a_min=min_lr, a_max=None))
         )
+
+
+class TestLearningRateWSD(unittest.TestCase):
+    def test_basic_curve(self):
+        start_lr = 1.0
+        stop_lr = 0.1
+        stop_steps = 10
+        lr = LearningRateWSD(
+            start_lr=start_lr,
+            stop_lr=stop_lr,
+            num_steps=stop_steps,
+            decay_phase_ratio=0.2,
+        )
+
+        expected_mid = 1.0 / (0.5 / stop_lr + 0.5 / start_lr)
+        self.assertTrue(np.allclose(lr.value(0), start_lr))
+        self.assertTrue(np.allclose(lr.value(8), start_lr))
+        self.assertTrue(np.allclose(lr.value(9), expected_mid))
+        self.assertTrue(np.allclose(lr.value(stop_steps), stop_lr))
+        self.assertTrue(np.allclose(lr.value(stop_steps + 5), stop_lr))
+
+    def test_cosine_curve(self):
+        start_lr = 1.0
+        stop_lr = 0.1
+        stop_steps = 10
+        lr = LearningRateWSD(
+            start_lr=start_lr,
+            stop_lr=stop_lr,
+            num_steps=stop_steps,
+            decay_phase_ratio=0.2,
+            decay_type="cosine",
+        )
+
+        expected_mid = stop_lr + (start_lr - stop_lr) * 0.5
+        self.assertTrue(np.allclose(lr.value(0), start_lr))
+        self.assertTrue(np.allclose(lr.value(8), start_lr))
+        self.assertTrue(np.allclose(lr.value(9), expected_mid))
+        self.assertTrue(np.allclose(lr.value(stop_steps), stop_lr))
+
+    def test_linear_curve(self):
+        start_lr = 1.0
+        stop_lr = 0.1
+        stop_steps = 10
+        lr = LearningRateWSD(
+            start_lr=start_lr,
+            stop_lr=stop_lr,
+            num_steps=stop_steps,
+            decay_phase_ratio=0.2,
+            decay_type="linear",
+        )
+
+        expected_mid = start_lr + (stop_lr - start_lr) * 0.5
+        self.assertTrue(np.allclose(lr.value(0), start_lr))
+        self.assertTrue(np.allclose(lr.value(8), start_lr))
+        self.assertTrue(np.allclose(lr.value(9), expected_mid))
+        self.assertTrue(np.allclose(lr.value(stop_steps), stop_lr))
 
 
 if __name__ == "__main__":
