@@ -6,6 +6,13 @@ from typing import (
 
 import torch
 
+from deepmd.pt.model.model.transform_output import (
+    communicate_extended_output,
+)
+from deepmd.pt.utils.nlist import (
+    extend_input_and_build_neighbor_list,
+)
+
 from deepmd.pt.model.atomic_model import (
     SOGEnergyAtomicModel,
 )
@@ -100,14 +107,42 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
-        model_ret = self.forward_common(
-            coord,
+        cc, bb, fp, ap, input_prec = self._input_type_cast(
+            coord, box=box, fparam=fparam, aparam=aparam
+        )
+        (
+            extended_coord,
+            extended_atype,
+            mapping,
+            nlist,
+        ) = extend_input_and_build_neighbor_list(
+            cc,
             atype,
-            box,
-            fparam=fparam,
-            aparam=aparam,
+            self.get_rcut(),
+            self.get_sel(),
+            mixed_types=True,
+            box=bb,
+        )
+        comm_dict: dict[str, torch.Tensor] | None = None
+        if bb is not None:
+            comm_dict = {"box": bb}
+        model_predict_lower = self.forward_common_lower(
+            extended_coord,
+            extended_atype,
+            nlist,
+            mapping,
+            fparam=fp,
+            aparam=ap,
+            do_atomic_virial=do_atomic_virial,
+            comm_dict=comm_dict,
+        )
+        model_ret = communicate_extended_output(
+            model_predict_lower,
+            self.model_output_def(),
+            mapping,
             do_atomic_virial=do_atomic_virial,
         )
+        model_ret = self._output_type_cast(model_ret, input_prec)
         if self.get_fitting_net() is not None:
             model_predict = {}
             model_predict["atom_energy"] = model_ret["energy"]

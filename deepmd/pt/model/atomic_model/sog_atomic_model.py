@@ -141,12 +141,17 @@ class SOGEnergyAtomicModel(BaseAtomicModel):
         atype = extended_atype[:, :nloc]
         if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
+
+        descriptor_comm_dict = comm_dict
+        if comm_dict is not None and "send_list" not in comm_dict:
+            descriptor_comm_dict = None
+
         descriptor, rot_mat, g2, h2, sw = self.descriptor(
             extended_coord,
             extended_atype,
             nlist,
             mapping=mapping,
-            comm_dict=comm_dict,
+            comm_dict=descriptor_comm_dict,
         )
         assert descriptor is not None
         if self.enable_eval_descriptor_hook:
@@ -160,6 +165,12 @@ class SOGEnergyAtomicModel(BaseAtomicModel):
             h2=h2,
             fparam=fparam,
             aparam=aparam,
+            coord=extended_coord[:, :nloc, :],
+            box=(
+                comm_dict["box"].view(nframes, 3, 3)
+                if comm_dict is not None and "box" in comm_dict
+                else None
+            ),
         )
 
         if self.enable_eval_fitting_last_layer_hook and "middle_output" in energy_ret:

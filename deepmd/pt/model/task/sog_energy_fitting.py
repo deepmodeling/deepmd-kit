@@ -8,6 +8,7 @@ from typing import (
 
 import numpy as np
 import torch
+import pytorch_finufft
 
 from deepmd.dpmodel import (
     FittingOutputDef,
@@ -34,7 +35,7 @@ from deepmd.pt.model.task.lr_fitting import (
 )
 
 
-SOG_DEFAULT_SHIFT = to_numpy_array(np.array([
+SOG_DEFAULT_AMPLITUDE = to_numpy_array(np.array([
     0.2750,
     0.1375,
     0.0688,
@@ -48,7 +49,7 @@ SOG_DEFAULT_SHIFT = to_numpy_array(np.array([
     0.0003,
     0.0001,
 ]))
-SOG_DEFAULT_AMPLITUDE = to_numpy_array(np.array([
+SOG_DEFAULT_SHIFT = to_numpy_array(np.array([
     2.8,
     5.7,
     11.4,
@@ -152,6 +153,7 @@ class SOGEnergyFittingNet(LRFittingNet):
         default_fparam: Optional[list[float]] = None,
         shift: Optional[Union[list[float], torch.Tensor]] = None,
         amplitude: Optional[Union[list[float], torch.Tensor]] = None,
+        n_dl: int = 1,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -190,18 +192,29 @@ class SOGEnergyFittingNet(LRFittingNet):
             shift_tensor = to_torch_tensor(SOG_DEFAULT_SHIFT)
         if amplitude_tensor is None:
             amplitude_tensor = to_torch_tensor(SOG_DEFAULT_AMPLITUDE)
-        # Register as trainable parameters so they are optimized with the fitting net.
-        wl_tensor = to_torch_tensor(amplitude_tensor * (torch.sqrt(torch.tensor(torch.pi))**3)*shift_tensor**3)
-        sl_tensor = to_torch_tensor(-torch.log(2/shift_tensor))
-        
+
+        shift_tensor = shift_tensor.to(dtype=dtype, device=device)
+        amplitude_tensor = amplitude_tensor.to(dtype=dtype, device=device)
+        pi_tensor = torch.tensor(torch.pi, dtype=dtype, device=device)
+        sqr_pi_tensor = torch.sqrt(pi_tensor)
+        shift_safe = torch.clamp(
+            shift_tensor,
+            min=torch.finfo(shift_tensor.dtype).eps,
+        )
+        wl_tensor = amplitude_tensor * (sqr_pi_tensor**3) * (shift_safe**3)
+        sl_tensor = -torch.log(2.0 / shift_safe)
+
+        self.n_dl = max(1, int(n_dl))
         self.wl = torch.nn.Parameter(
-            wl_tensor.to(dtype=dtype, device=device),
+            wl_tensor,
             requires_grad=bool(self.trainable),
         )
         self.sl = torch.nn.Parameter(
-            sl_tensor.to(dtype=dtype, device=device),
+            sl_tensor,
             requires_grad=bool(self.trainable),
         )
+        self.remove_self_interaction = False
+        self._nufft_fallback_warned = False
 
 
     def output_def(self) -> FittingOutputDef:
@@ -220,8 +233,16 @@ class SOGEnergyFittingNet(LRFittingNet):
     def serialize(self) -> dict:
         data = super().serialize()
         data["type"] = "sog_energy"
-        data["@variables"]["shift"] = to_numpy_array(self.shift)
-        data["@variables"]["amplitude"] = to_numpy_array(self.amplitude)
+        data["@variables"]["wl"] = to_numpy_array(self.wl)
+        data["@variables"]["sl"] = to_numpy_array(self.sl)
+
+        pi_tensor = torch.tensor(torch.pi, dtype=self.sl.dtype, device=self.sl.device)
+        sqr_pi_tensor = torch.sqrt(pi_tensor)
+        shift_tensor = 2.0 * torch.exp(self.sl)
+        amplitude_tensor = self.wl / ((sqr_pi_tensor**3) * (shift_tensor**3))
+        data["@variables"]["shift"] = to_numpy_array(shift_tensor)
+        data["@variables"]["amplitude"] = to_numpy_array(amplitude_tensor)
+        data["n_dl"] = self.n_dl
         return data
 
     @classmethod
@@ -229,23 +250,165 @@ class SOGEnergyFittingNet(LRFittingNet):
         data = data.copy()
         variables = data.get("@variables", {})
         obj = super().deserialize(data)
+        wl_tensor = to_torch_tensor(variables.get("wl", None))
+        sl_tensor = to_torch_tensor(variables.get("sl", None))
         shift_tensor = to_torch_tensor(variables.get("shift", None))
         amplitude_tensor = to_torch_tensor(variables.get("amplitude", None))
-        # Backward compatibility: if serialized variables miss shift/amplitude,
-        # keep defaults initialized in __init__.
-        if shift_tensor is not None:
-            obj.shift = shift_tensor
-        if amplitude_tensor is not None:
-            obj.amplitude = amplitude_tensor
+
+        with torch.no_grad():
+            if wl_tensor is not None and sl_tensor is not None:
+                obj.wl.copy_(wl_tensor.to(dtype=obj.wl.dtype, device=obj.wl.device))
+                obj.sl.copy_(sl_tensor.to(dtype=obj.sl.dtype, device=obj.sl.device))
+            elif shift_tensor is not None and amplitude_tensor is not None:
+                pi_tensor = torch.tensor(torch.pi, dtype=obj.wl.dtype, device=obj.wl.device)
+                sqr_pi_tensor = torch.sqrt(pi_tensor)
+                shift_tensor = shift_tensor.to(dtype=obj.wl.dtype, device=obj.wl.device)
+                amplitude_tensor = amplitude_tensor.to(dtype=obj.wl.dtype, device=obj.wl.device)
+                shift_safe = torch.clamp(
+                    shift_tensor,
+                    min=torch.finfo(shift_tensor.dtype).eps,
+                )
+                wl_tensor = amplitude_tensor * (sqr_pi_tensor**3) * (shift_safe**3)
+                sl_tensor = -torch.log(2.0 / shift_safe)
+                obj.wl.copy_(wl_tensor)
+                obj.sl.copy_(sl_tensor)
         return obj
 
-    def corr_head(
+    def _kernel_params(self) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.wl, self.sl
+
+    def compute_potential_SOG_triclinic_NUFFT(
+        self,
+        r_raw: torch.Tensor,
+        q: torch.Tensor,
+        box: torch.Tensor,
+    ) -> torch.Tensor:
+        runtime_device = torch.device(device)
+        if q.dim() == 1:
+            q = q.unsqueeze(-1)
+
+        if not torch.isfinite(r_raw).all():
+            raise ValueError("`r_raw` contains non-finite values, cannot run NUFFT.")
+        if not torch.isfinite(box).all():
+            raise ValueError("`box` contains non-finite values, cannot run NUFFT.")
+
+        real_dtype = torch.float64 if r_raw.dtype == torch.float64 else torch.float32
+        complex_dtype = torch.complex128 if real_dtype == torch.float64 else torch.complex64
+
+        r_raw = r_raw.to(dtype=real_dtype, device=runtime_device)
+        q = q.to(dtype=real_dtype, device=runtime_device)
+        box = box.to(dtype=real_dtype, device=runtime_device)
+
+        volume = torch.det(box)
+        if torch.abs(volume) <= torch.finfo(real_dtype).eps:
+            raise ValueError("`box` is singular (near-zero volume), cannot run NUFFT.")
+
+        cell_inv = torch.linalg.inv(box)
+        # Keep points strictly in the principal unit cell so NUFFT points are in [-pi, pi).
+        r_frac = torch.matmul(r_raw, cell_inv)
+        r_frac = torch.remainder(r_frac + 0.5, 1.0) - 0.5
+        pi_tensor = torch.tensor(torch.pi, dtype=real_dtype, device=runtime_device)
+        point_limit = pi_tensor - 32.0 * torch.finfo(real_dtype).eps
+        r_in = torch.clamp(2.0 * pi_tensor * r_frac, min=-point_limit, max=point_limit).contiguous()
+        nufft_points = r_in.transpose(0, 1).contiguous()
+
+        norms = torch.norm(box, dim=1)
+        nk = [max(1, int(n.item() / self.n_dl)) for n in norms]
+        n1 = torch.arange(-nk[0], nk[0] + 1, device=runtime_device, dtype=real_dtype)
+        n2 = torch.arange(-nk[1], nk[1] + 1, device=runtime_device, dtype=real_dtype)
+        n3 = torch.arange(-nk[2], nk[2] + 1, device=runtime_device, dtype=real_dtype)
+
+        kx_grid, ky_grid, kz_grid = torch.meshgrid(n1, n2, n3, indexing="ij")
+        k_sq = kx_grid**2 + ky_grid**2 + kz_grid**2
+        mask =  (k_sq==0)
+
+        wl, sl = self._kernel_params()
+        min_term = -1.0 / torch.exp(-2.0 * sl)
+        kfac = wl.view(1, 1, 1, -1) * torch.exp(k_sq.unsqueeze(-1) * min_term)
+        # print("multiplier:",multiplier.shape,multiplier)c
+        kfac = kfac.sum(dim=-1)
+        kfac = kfac.to(dtype=real_dtype)
+        kfac[mask] = 0.0
+
+        atom_energy = torch.zeros((r_raw.shape[0], 1), dtype=real_dtype, device=runtime_device)
+        output_shape = tuple(int(x) for x in kx_grid.shape)
+
+        def _eval_nufft(work_device: torch.device) -> torch.Tensor:
+            points_work = nufft_points.to(device=work_device)
+            q_work = q.to(device=work_device)
+            kfac_work = kfac.to(device=work_device)
+            volume_work = volume.to(device=work_device)
+            atom_energy_work = torch.zeros(
+                (r_raw.shape[0], 1),
+                dtype=real_dtype,
+                device=work_device,
+            )
+
+            q_work_t = q_work.transpose(0, 1).contiguous()
+            charge_work = torch.complex(
+                q_work_t,
+                torch.zeros_like(q_work_t),
+            ).to(dtype=complex_dtype)
+            recon = pytorch_finufft.functional.finufft_type1(
+                points_work,
+                charge_work,
+                output_shape=output_shape,
+                eps=1e-4,
+                isign=-1,
+            )
+            con_sog = torch.mul(kfac_work.unsqueeze(0), recon)
+            ifft_con = pytorch_finufft.functional.finufft_type2(
+                points_work,
+                con_sog,
+                eps=1e-4,
+                isign=1,
+            ) / (2.0 * volume_work)
+            atom_energy_work += (charge_work * ifft_con).real.sum()
+
+            if self.remove_self_interaction:
+                diag_sum = kfac_work.sum(dim=-1).sum(dim=-1).sum(dim=-1) / (2.0 * volume_work)
+                atom_energy_work -= torch.sum(q_work**2) * diag_sum
+
+            return atom_energy_work.to(device=runtime_device)
+
+        
+        atom_energy = _eval_nufft(runtime_device)
+
+        return atom_energy
+
+    def _corr_head(
         self,
         lr_val: torch.Tensor,
+        coord: Optional[torch.Tensor] = None,
+        box: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        # TODO:
-        # Long-range correction energy calculation
-        return torch.zeros_like(lr_val)
+        if lr_val.dim() != 3:
+            raise ValueError(
+                f"`lr_val` should have shape [nframe, nloc, nchan], got {tuple(lr_val.shape)}."
+            )
+
+        if coord is None or box is None:
+            return torch.zeros(
+                (lr_val.shape[0], lr_val.shape[1], 1),
+                dtype=lr_val.dtype,
+                device=lr_val.device,
+            )
+
+        nf, nloc, _ = lr_val.shape
+        coord = coord.reshape(nf, nloc, 3)
+        box = box.reshape(nf, 3, 3)
+
+        coord = coord.to(dtype=lr_val.dtype, device=lr_val.device)
+        box = box.to(dtype=lr_val.dtype, device=lr_val.device)
+        corr = torch.zeros((nf, nloc, 1), dtype=lr_val.dtype, device=lr_val.device)
+        for ff in range(nf):
+            box_now = box[ff]
+            corr[ff] = self.compute_potential_SOG_triclinic_NUFFT(
+                coord[ff],
+                lr_val[ff],
+                box_now,
+            )
+        return corr
 
     def forward(
         self,
@@ -256,6 +419,8 @@ class SOGEnergyFittingNet(LRFittingNet):
         h2: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
+        coord: Optional[torch.Tensor] = None,
+        box: Optional[torch.Tensor] = None,
     ) -> dict[str, torch.Tensor]:
         out = self._forward_common(
             descriptor=descriptor,
@@ -267,7 +432,8 @@ class SOGEnergyFittingNet(LRFittingNet):
             aparam=aparam,
         )
         short_energy = out["sr"]
-        corr_energy = self.corr_head(out["lr"])
+        corr_energy = self._corr_head(out["lr"], coord=coord, box=box)
+        # corr_energy = 0
         result = {"energy": short_energy + corr_energy}
         if "middle_output" in out:
             result["middle_output"] = out["middle_output"]
