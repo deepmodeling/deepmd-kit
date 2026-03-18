@@ -196,7 +196,7 @@ def freeze(
         state_dict = state_dict["model"]
     model_params = state_dict["_extra_state"]["model_params"]
 
-    if head is not None and "model_dict" in model_params:
+    if "model_dict" in model_params:
         raise NotImplementedError(
             "Multi-task freeze is not yet supported for the pt_expt backend."
         )
