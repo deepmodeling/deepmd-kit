@@ -28,8 +28,16 @@ class Loss(NativeOP, ABC, make_plugin_registry("loss")):
         natoms: int,
         model_dict: dict[str, Array],
         label_dict: dict[str, Array],
-    ) -> dict[str, Array]:
-        """Calculate loss from model results and labeled results."""
+    ) -> tuple[Array, dict[str, Array]]:
+        """Calculate loss from model results and labeled results.
+
+        Returns
+        -------
+        loss : Array
+            The scalar loss to minimize.
+        more_loss : dict[str, Array]
+            Additional loss terms/metrics for logging.
+        """
 
     @property
     @abstractmethod
