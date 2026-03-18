@@ -145,8 +145,8 @@ class TestOutStat(unittest.TestCase):
     def test_compute_stats_from_redu_intensive(self) -> None:
         """Test compute_stats_from_redu function with intensive scenario."""
         bias, std = compute_stats_from_redu(
-            self.output_redu / self.natoms.sum(axis=1, keepdims=True), 
-            self.natoms, 
+            self.output_redu / self.natoms.sum(axis=1, keepdims=True),
+            self.natoms,
             intensive=True,
         )
         # Test shapes
