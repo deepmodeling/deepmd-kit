@@ -347,7 +347,7 @@ class DescrptSeAtten(DescrptSeA):
         real_natoms_vec: list | None = None,
         **kwargs: Any,
     ) -> None:
-        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statistics (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------
@@ -432,7 +432,7 @@ class DescrptSeAtten(DescrptSeA):
         suffix: str = "",
         tebd_suffix: str = "",
     ) -> None:
-        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -2362,7 +2362,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         suffix: str = "",
         tebd_suffix: str = "",
     ) -> None:
-        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
