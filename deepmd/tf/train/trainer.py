@@ -604,7 +604,10 @@ class DPTrainer:
                     toc = time.time()
                     test_time = toc - tic
                     wall_time = toc - wall_time_tic
-                    displayed_batches = min(self.disp_freq, cur_batch - start_batch)
+                    displayed_batches = max(
+                        1,
+                        min(self.disp_freq, int(cur_batch - start_batch)),
+                    )
                     eta = int((stop_batch - cur_batch) / displayed_batches * wall_time)
                     log.info(
                         format_training_message(
