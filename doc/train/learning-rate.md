@@ -5,7 +5,9 @@ DeePMD-kit supports two learning rate schedules:
 - **`exp`**: Exponential decay with optional stepped or smooth mode
 - **`cosine`**: Cosine annealing for smooth decay curve
 
-Both schedules support an optional warmup phase where the learning rate gradually increases from a small initial value to the target `start_lr`.
+Both schedules support an optional warmup phase where the learning rate gradually increases from a small initial value to the target {ref}`start_lr <learning_rate/start_lr>`.
+
+This page focuses on schedule behavior, examples, and formulas. For the canonical argument definitions, see {ref}`learning_rate <learning_rate>`.
 
 ## Quick Start
 
@@ -32,54 +34,25 @@ Both schedules support an optional warmup phase where the learning rate graduall
 
 ## Common parameters
 
-The following parameters are shared by both `exp` and `cosine` schedules.
+Use {ref}`learning_rate <learning_rate>` as the canonical parameter reference. This page only highlights the argument combinations that matter when choosing a schedule:
 
-### Required parameters
+- Shared by both {ref}`exp <learning_rate[exp]>` and {ref}`cosine <learning_rate[cosine]>`: {ref}`start_lr <learning_rate/start_lr>` plus exactly one of {ref}`stop_lr <learning_rate/stop_lr>` or {ref}`stop_lr_ratio <learning_rate/stop_lr_ratio>`.
+- Optional warmup for both schedules: {ref}`warmup_steps <learning_rate/warmup_steps>` or {ref}`warmup_ratio <learning_rate/warmup_ratio>`, with optional {ref}`warmup_start_factor <learning_rate/warmup_start_factor>`.
+- Optional distributed scaling for both schedules: {ref}`scale_by_worker <learning_rate/scale_by_worker>`.
+- Additional options for {ref}`exp <learning_rate[exp]>`: {ref}`decay_steps <learning_rate[exp]/decay_steps>`, {ref}`decay_rate <learning_rate[exp]/decay_rate>`, and {ref}`smooth <learning_rate[exp]/smooth>`.
+- {ref}`cosine <learning_rate[cosine]>` has no extra schedule-specific arguments beyond the shared ones.
 
-- `start_lr`: The learning rate at the start of training (after warmup).
-- `stop_lr` or `stop_lr_ratio` (must provide exactly one):
-  - `stop_lr`: The learning rate at the end of training.
-  - `stop_lr_ratio`: The ratio of `stop_lr` to `start_lr`. Computed as `stop_lr = start_lr * stop_lr_ratio`.
-
-### Optional parameters
-
-- `warmup_steps` or `warmup_ratio` (mutually exclusive):
-  - `warmup_steps`: Number of steps for warmup. Learning rate increases linearly from `warmup_start_factor * start_lr` to `start_lr`.
-  - `warmup_ratio`: Ratio of warmup steps to total training steps. `warmup_steps = int(warmup_ratio * numb_steps)`.
-- `warmup_start_factor`: Factor for initial warmup learning rate (default: 0.0). Warmup starts from `warmup_start_factor * start_lr`.
-- `scale_by_worker`: How to alter learning rate in parallel training. Options: `"linear"`, `"sqrt"`, `"none"` (default: `"linear"`).
-
-### Type-specific parameters
-
-**Exponential decay (`type: "exp"`):**
-
-- `decay_steps`: Interval (in steps) at which learning rate decays (default: 5000).
-- `decay_rate`: Explicit decay rate. If not provided, computed from `start_lr` and `stop_lr`.
-- `smooth`: If `true`, use smooth exponential decay at every step. If `false`, use stepped decay (default: `false`).
-
-**Cosine annealing (`type: "cosine"`):**
-
-No type-specific parameters. The decay follows a cosine curve from `start_lr` to `stop_lr`.
-
-See [Mathematical Theory](#mathematical-theory) section for complete formulas.
+See [Mathematical Theory](#mathematical-theory) for complete formulas.
 
 ## Exponential Decay Schedule
 
-The exponential decay schedule reduces the learning rate exponentially over training steps. It is the default schedule when `type` is omitted.
+The exponential decay schedule reduces the learning rate exponentially over training steps. It is the default schedule when {ref}`type <learning_rate/type>` is omitted.
 
 ### Stepped vs smooth mode
 
-By setting `smooth: true`, the learning rate decays smoothly at every step instead of in a stepped manner. This provides a more gradual decay curve similar to PyTorch's `ExponentialLR`, whereas the default stepped mode (`smooth: false`) is similar to PyTorch's `StepLR`.
+By setting {ref}`smooth <learning_rate[exp]/smooth>` to `true`, the learning rate decays smoothly at every step instead of in a stepped manner. This provides a more gradual decay curve similar to PyTorch's `ExponentialLR`, whereas the default stepped mode (`smooth: false`) is similar to PyTorch's `StepLR`.
 
-### Decay rate computation
-
-If `decay_rate` is not explicitly provided, it is computed from `start_lr` and `stop_lr` to ensure the learning rate reaches `stop_lr` at the end of training:
-
-```text
-decay_rate = (stop_lr / start_lr) ^ (decay_steps / (numb_steps - warmup_steps))
-```
-
-where `numb_steps` is the internal total number of training steps (derived from `training.numb_steps` in the training configuration).
+If {ref}`decay_rate <learning_rate[exp]/decay_rate>` is not explicitly provided, DeePMD-kit computes it from {ref}`start_lr <learning_rate/start_lr>` and the requested final learning rate so that the schedule reaches the target by {ref}`numb_steps <training/numb_steps>`. The exact expression is given in [Mathematical Theory](#mathematical-theory).
 
 ### Examples
 
@@ -94,7 +67,7 @@ where `numb_steps` is the internal total number of training steps (derived from 
 }
 ```
 
-**Using `stop_lr_ratio`:**
+**Using {ref}`stop_lr_ratio <learning_rate/stop_lr_ratio>`:**
 
 ```json
 "learning_rate": {
@@ -107,7 +80,7 @@ where `numb_steps` is the internal total number of training steps (derived from 
 
 Equivalent to `stop_lr: 1e-6` (i.e., `0.001 * 1e-3`).
 
-**With warmup (using `warmup_steps`):**
+**With warmup (using {ref}`warmup_steps <learning_rate/warmup_steps>`):**
 
 ```json
 "learning_rate": {
@@ -120,9 +93,9 @@ Equivalent to `stop_lr: 1e-6` (i.e., `0.001 * 1e-3`).
 }
 ```
 
-Learning rate starts from `0.0001` (i.e., `0.1 * 0.001`), increases linearly to `0.001` over 10,000 steps, then decays exponentially.
+Learning rate starts from `0.0001` (i.e., {ref}`warmup_start_factor <learning_rate/warmup_start_factor>` `*` {ref}`start_lr <learning_rate/start_lr>`), increases linearly to {ref}`start_lr <learning_rate/start_lr>` over 10,000 steps, then decays exponentially.
 
-**With warmup (using `warmup_ratio`):**
+**With warmup (using {ref}`warmup_ratio <learning_rate/warmup_ratio>`):**
 
 ```json
 "learning_rate": {
@@ -134,9 +107,9 @@ Learning rate starts from `0.0001` (i.e., `0.1 * 0.001`), increases linearly to 
 }
 ```
 
-If `numb_steps` is 1,000,000, warmup lasts 50,000 steps. Learning rate starts from `0.0` (default `warmup_start_factor`) and increases to `0.001`.
+If {ref}`numb_steps <training/numb_steps>` is 1,000,000, warmup lasts 50,000 steps. Learning rate starts from `0.0` (default {ref}`warmup_start_factor <learning_rate/warmup_start_factor>`) and increases to {ref}`start_lr <learning_rate/start_lr>`.
 
-**Smooth exponential decay:**
+**Smooth exponential decay (with {ref}`smooth <learning_rate[exp]/smooth>`):**
 
 ```json
 "learning_rate": {
@@ -148,21 +121,13 @@ If `numb_steps` is 1,000,000, warmup lasts 50,000 steps. Learning rate starts fr
 }
 ```
 
-With `smooth: true`, the learning rate decays continuously at every step, similar to PyTorch's `ExponentialLR`. The default stepped mode (`smooth: false`) is similar to PyTorch's `StepLR`.
+With {ref}`smooth <learning_rate[exp]/smooth>` set to `true`, the learning rate decays continuously at every step, similar to PyTorch's `ExponentialLR`. The default stepped mode (`smooth: false`) is similar to PyTorch's `StepLR`.
 
 ## Cosine Annealing Schedule
 
 The cosine annealing schedule smoothly decreases the learning rate following a cosine curve. It often provides better convergence than exponential decay.
 
-### Formula
-
-During the decay phase (after warmup), the learning rate follows:
-
-```text
-lr(t) = stop_lr + (start_lr - stop_lr) / 2 * (1 + cos(pi * (t - warmup_steps) / (numb_steps - warmup_steps)))
-```
-
-At the middle of training (relative to decay phase), the learning rate is approximately `(start_lr + stop_lr) / 2`.
+After warmup, the learning rate follows a cosine curve from {ref}`start_lr <learning_rate/start_lr>` to {ref}`stop_lr <learning_rate/stop_lr>` or the value implied by {ref}`stop_lr_ratio <learning_rate/stop_lr_ratio>`. The exact expression is given in [Mathematical Theory](#mathematical-theory).
 
 ### Examples
 
@@ -176,7 +141,7 @@ At the middle of training (relative to decay phase), the learning rate is approx
 }
 ```
 
-**Using `stop_lr_ratio`:**
+**Using {ref}`stop_lr_ratio <learning_rate/stop_lr_ratio>`:**
 
 ```json
 "learning_rate": {
@@ -200,53 +165,26 @@ At the middle of training (relative to decay phase), the learning rate is approx
 
 ## Warmup Mechanism
 
-Warmup is a technique to stabilize training in early stages by gradually increasing the learning rate from a small initial value.
+Warmup is a technique to stabilize training in early stages by gradually increasing the learning rate from {ref}`warmup_start_factor <learning_rate/warmup_start_factor>` `*` {ref}`start_lr <learning_rate/start_lr>` to {ref}`start_lr <learning_rate/start_lr>`.
 
-### Warmup formula
+You can specify warmup duration using either {ref}`warmup_steps <learning_rate/warmup_steps>` (absolute) or {ref}`warmup_ratio <learning_rate/warmup_ratio>` (relative to {ref}`numb_steps <training/numb_steps>`). These are mutually exclusive.
 
-During warmup phase ($0 \leq \tau < \tau^{\text{warmup}}$):
-
-```math
-\gamma(\tau) = \gamma^{\text{warmup}} + (\gamma^0 - \gamma^{\text{warmup}}) \cdot \frac{\tau}{\tau^{\text{warmup}}}
-```
-
-where:
-
-- $\tau$ is the current step index
-- $\tau^{\text{warmup}}$ is the number of warmup steps
-- $\gamma^0$ is `start_lr`
-- $\gamma^{\text{warmup}} = f^{\text{warmup}} \cdot \gamma^0$ is the initial warmup learning rate
-- $f^{\text{warmup}}$ is `warmup_start_factor`
-
-When `warmup_start_factor` is 0.0 (default), warmup starts from 0:
-
-```math
-\gamma(\tau) = \gamma^0 \cdot \frac{\tau}{\tau^{\text{warmup}}}
-```
-
-### Specifying warmup duration
-
-You can specify warmup duration using either `warmup_steps` (absolute) or `warmup_ratio` (relative):
-
-- `warmup_steps`: Explicit number of warmup steps
-- `warmup_ratio`: Ratio of total training steps. Computed as `int(warmup_ratio * numb_steps)`, where `numb_steps` is derived from `training.numb_steps`
-
-These are mutually exclusive.
+The exact piecewise warmup formula is given in [Mathematical Theory](#mathematical-theory).
 
 ## Mathematical Theory
 
 ### Notation
 
-| Symbol                 | Description                                          |
-| ---------------------- | ---------------------------------------------------- |
-| $\tau$                 | Global step index (0-indexed)                        |
-| $\tau^{\text{warmup}}$ | Number of warmup steps                               |
-| $\tau^{\text{decay}}$  | Number of decay steps = `numb_steps - warmup_steps`  |
-| $\gamma^0$             | `start_lr`: Learning rate at start of decay phase    |
-| $\gamma^{\text{stop}}$ | `stop_lr`: Learning rate at end of training          |
-| $f^{\text{warmup}}$    | `warmup_start_factor`: Initial warmup LR factor      |
-| $s$                    | `decay_steps`: Decay period for exponential schedule |
-| $r$                    | `decay_rate`: Decay rate for exponential schedule    |
+| Symbol                 | Description                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------ |
+| $\tau$                 | Global step index (0-indexed)                                                              |
+| $\tau^{\text{warmup}}$ | Number of warmup steps                                                                     |
+| $\tau^{\text{decay}}$  | Number of decay steps = `numb_steps - warmup_steps`                                        |
+| $\gamma^0$             | {ref}`start_lr <learning_rate/start_lr>`: Learning rate at start of decay phase            |
+| $\gamma^{\text{stop}}$ | {ref}`stop_lr <learning_rate/stop_lr>`: Learning rate at end of training                   |
+| $f^{\text{warmup}}$    | {ref}`warmup_start_factor <learning_rate/warmup_start_factor>`: Initial warmup LR factor   |
+| $s$                    | {ref}`decay_steps <learning_rate[exp]/decay_steps>`: Decay period for exponential schedule |
+| $r$                    | {ref}`decay_rate <learning_rate[exp]/decay_rate>`: Decay rate for exponential schedule     |
 
 ### Complete warmup formula
 
@@ -294,7 +232,7 @@ Equivalently, using $\alpha = \gamma^{\text{stop}} / \gamma^0$:
 
 ## Migration from versions before 3.1.3
 
-In version 3.1.2 and earlier, `start_lr` and `stop_lr`/`stop_lr_ratio` had default values and could be omitted. Starting from version 3.1.3, these parameters are **required** and must be explicitly specified.
+In version 3.1.2 and earlier, {ref}`start_lr <learning_rate/start_lr>` and {ref}`stop_lr <learning_rate/stop_lr>` / {ref}`stop_lr_ratio <learning_rate/stop_lr_ratio>` had default values and could be omitted. Starting from version 3.1.3, these parameters are **required** and must be explicitly specified.
 
 **Configuration in version 3.1.2:**
 
