@@ -210,6 +210,11 @@ class DeepPotTF : public DeepPotBackend {
     assert(inited);
     return aparam_nall;
   };
+  /**
+   * @brief Check if the model has default frame parameters.
+   * @return Always false for TF backend.
+   **/
+  bool has_default_fparam() const { return false; };
 
   // forward to template class
   void computew(std::vector<double>& ener,

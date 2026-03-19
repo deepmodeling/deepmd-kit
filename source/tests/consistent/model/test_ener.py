@@ -1859,3 +1859,143 @@ class TestEnerComputeOrLoadStat(unittest.TestCase):
             # 5. Cross-backend consistency after loading
             compare_variables_recursive(dp_ser_loaded, pt_ser_loaded)
             compare_variables_recursive(dp_ser_loaded, pe_ser_loaded)
+
+
+@parameterized(
+    ("no_fparam", "explicit_fparam", "default_fparam"),  # fparam_mode
+)
+@unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PT and PT_EXPT are required")
+class TestEnerChgSpinEbdFparam(unittest.TestCase):
+    """Test dp/pt/pt_expt model forward consistency for add_chg_spin_ebd with three fparam modes.
+
+    - no_fparam: numb_fparam=0, add_chg_spin_ebd=False (baseline)
+    - explicit_fparam: numb_fparam=2, add_chg_spin_ebd=True, fparam provided
+    - default_fparam: numb_fparam=2, default_fparam set, add_chg_spin_ebd=True, fparam=None
+    """
+
+    def setUp(self) -> None:
+        (self.fparam_mode,) = self.param
+
+        add_chg_spin_ebd = self.fparam_mode != "no_fparam"
+        fitting_cfg: dict[str, Any] = {
+            "neuron": [10, 10],
+            "precision": "float64",
+            "seed": 1,
+        }
+        if self.fparam_mode != "no_fparam":
+            fitting_cfg["numb_fparam"] = 2
+        if self.fparam_mode == "default_fparam":
+            fitting_cfg["default_fparam"] = [5, 1]
+
+        data = model_args().normalize_value(
+            {
+                "type_map": ["O", "H"],
+                "descriptor": {
+                    "type": "dpa3",
+                    "repflow": {
+                        "n_dim": 20,
+                        "e_dim": 10,
+                        "a_dim": 8,
+                        "nlayers": 3,
+                        "e_rcut": 6.0,
+                        "e_rcut_smth": 5.0,
+                        "e_sel": 10,
+                        "a_rcut": 4.0,
+                        "a_rcut_smth": 3.5,
+                        "a_sel": 8,
+                        "axis_neuron": 4,
+                        "update_angle": True,
+                        "update_style": "res_residual",
+                        "update_residual": 0.1,
+                        "update_residual_init": "const",
+                    },
+                    "precision": "float64",
+                    "seed": 1,
+                    "add_chg_spin_ebd": add_chg_spin_ebd,
+                },
+                "fitting_net": fitting_cfg,
+            },
+            trim_pattern="_*",
+        )
+
+        self.dp_model = get_model_dp(data)
+        serialized = self.dp_model.serialize()
+        self.pt_model = EnergyModelPT.deserialize(serialized)
+        self.pt_expt_model = EnergyModelPTExpt.deserialize(serialized)
+
+        self.coords = np.array(
+            [
+                12.83,
+                2.56,
+                2.18,
+                12.09,
+                2.87,
+                2.74,
+                0.25,
+                3.32,
+                1.68,
+                3.36,
+                3.00,
+                1.81,
+                3.51,
+                2.51,
+                2.60,
+                4.27,
+                3.22,
+                1.56,
+            ],
+            dtype=GLOBAL_NP_FLOAT_PRECISION,
+        ).reshape(1, -1, 3)
+        self.atype = np.array([0, 1, 1, 0, 1, 1], dtype=np.int32).reshape(1, -1)
+        self.box = np.array(
+            [13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0],
+            dtype=GLOBAL_NP_FLOAT_PRECISION,
+        ).reshape(1, 9)
+
+        # fparam: charge=5, spin=1
+        if self.fparam_mode == "explicit_fparam":
+            self.fparam_np = np.array([[5, 1]], dtype=GLOBAL_NP_FLOAT_PRECISION)
+        else:
+            self.fparam_np = None
+
+    def test_forward_consistency(self) -> None:
+        dp_ret = self.dp_model(
+            self.coords, self.atype, box=self.box, fparam=self.fparam_np
+        )
+        pt_ret = {
+            kk: torch_to_numpy(vv)
+            for kk, vv in self.pt_model(
+                numpy_to_torch(self.coords),
+                numpy_to_torch(self.atype),
+                box=numpy_to_torch(self.box),
+                fparam=numpy_to_torch(self.fparam_np),
+                do_atomic_virial=True,
+            ).items()
+        }
+        coord_t = pt_expt_numpy_to_torch(self.coords)
+        coord_t.requires_grad_(True)
+        pe_ret = {
+            k: v.detach().cpu().numpy()
+            for k, v in self.pt_expt_model(
+                coord_t,
+                pt_expt_numpy_to_torch(self.atype),
+                box=pt_expt_numpy_to_torch(self.box),
+                fparam=pt_expt_numpy_to_torch(self.fparam_np),
+                do_atomic_virial=True,
+            ).items()
+        }
+        for key in ("energy", "atom_energy"):
+            np.testing.assert_allclose(
+                dp_ret[key],
+                pt_ret[key],
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"dp vs pt mismatch in {key} (mode={self.fparam_mode})",
+            )
+            np.testing.assert_allclose(
+                dp_ret[key],
+                pe_ret[key],
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"dp vs pt_expt mismatch in {key} (mode={self.fparam_mode})",
+            )

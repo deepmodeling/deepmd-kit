@@ -262,7 +262,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         table_stride_2: float = 0.1,
         check_frequency: int = -1,
     ) -> None:
-        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -308,6 +308,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         nlist: torch.Tensor,
         mapping: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        fparam: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,

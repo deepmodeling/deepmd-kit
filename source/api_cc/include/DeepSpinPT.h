@@ -183,6 +183,14 @@ class DeepSpinPT : public DeepSpinBackend {
     assert(inited);
     return aparam_nall;
   };
+  /**
+   * @brief Check if the model has default frame parameters.
+   * @return true if the model has default frame parameters.
+   **/
+  bool has_default_fparam() const {
+    assert(inited);
+    return has_default_fparam_;
+  };
 
   void computew(std::vector<double>& ener,
                 std::vector<double>& force,
@@ -251,6 +259,7 @@ class DeepSpinPT : public DeepSpinBackend {
   int dfparam;
   int daparam;
   bool aparam_nall;
+  bool has_default_fparam_;
   // copy neighbor list info from host
   torch::jit::script::Module module;
   double rcut;

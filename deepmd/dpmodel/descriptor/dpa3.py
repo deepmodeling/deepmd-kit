@@ -20,6 +20,7 @@ from deepmd.dpmodel.utils import (
 )
 from deepmd.dpmodel.utils.network import (
     NativeLayer,
+    get_activation_fn,
 )
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -356,6 +357,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         use_tebd_bias: bool = False,
         use_loc_mapping: bool = True,
         type_map: list[str] | None = None,
+        add_chg_spin_ebd: bool = False,
     ) -> None:
         super().__init__()
 
@@ -410,6 +412,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         )
 
         self.use_econf_tebd = use_econf_tebd
+        self.add_chg_spin_ebd = add_chg_spin_ebd
         self.use_tebd_bias = use_tebd_bias
         self.use_loc_mapping = use_loc_mapping
         self.type_map = type_map
@@ -428,6 +431,38 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         )
         self.concat_output_tebd = concat_output_tebd
         self.precision = precision
+
+        if self.add_chg_spin_ebd:
+            self.cs_activation_fn = get_activation_fn(activation_function)
+            # -100 ~ 100 is a conservative bound
+            self.chg_embedding = TypeEmbedNet(
+                ntypes=200,
+                neuron=[self.tebd_dim],
+                padding=True,
+                activation_function="Linear",
+                precision=precision,
+                seed=child_seed(seed, 3),
+            )
+            # 100 is a conservative upper bound
+            self.spin_embedding = TypeEmbedNet(
+                ntypes=100,
+                neuron=[self.tebd_dim],
+                padding=True,
+                activation_function="Linear",
+                precision=precision,
+                seed=child_seed(seed, 4),
+            )
+            self.mix_cs_mlp = NativeLayer(
+                2 * self.tebd_dim,
+                self.tebd_dim,
+                precision=precision,
+                seed=child_seed(seed, 5),
+            )
+        else:
+            self.chg_embedding = None
+            self.spin_embedding = None
+            self.mix_cs_mlp = None
+
         self.exclude_types = exclude_types
         self.env_protection = env_protection
         self.trainable = trainable
@@ -579,6 +614,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         atype_ext: Array,
         nlist: Array,
         mapping: Array | None = None,
+        fparam: Array | None = None,
     ) -> tuple[Array, Array, Array, Array, Array]:
         """Compute the descriptor.
 
@@ -625,6 +661,27 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
                 xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
                 (nframes, nall, self.tebd_dim),
             )
+
+        if self.add_chg_spin_ebd:
+            assert fparam is not None
+            assert self.chg_embedding is not None
+            assert self.spin_embedding is not None
+            chg_tebd = self.chg_embedding.call()
+            spin_tebd = self.spin_embedding.call()
+            charge = xp.astype(fparam[:, 0], xp.int64) + 100
+            spin = xp.astype(fparam[:, 1], xp.int64)
+            chg_ebd = xp.reshape(
+                xp.take(chg_tebd, xp.reshape(charge, (-1,)), axis=0),
+                (nframes, self.tebd_dim),
+            )
+            spin_ebd = xp.reshape(
+                xp.take(spin_tebd, xp.reshape(spin, (-1,)), axis=0),
+                (nframes, self.tebd_dim),
+            )
+            cs_cat = xp.concat([chg_ebd, spin_ebd], axis=-1)
+            sys_cs_embd = self.cs_activation_fn(self.mix_cs_mlp.call(cs_cat))
+            node_ebd_ext = node_ebd_ext + xp.expand_dims(sys_cs_embd, axis=1)
+
         node_ebd_inp = node_ebd_ext[:, :nloc, :]
         # repflows
         node_ebd, edge_ebd, h2, rot_mat, sw = self.repflows(
@@ -655,9 +712,14 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             "use_econf_tebd": self.use_econf_tebd,
             "use_tebd_bias": self.use_tebd_bias,
             "use_loc_mapping": self.use_loc_mapping,
+            "add_chg_spin_ebd": self.add_chg_spin_ebd,
             "type_map": self.type_map,
             "type_embedding": self.type_embedding.serialize(),
         }
+        if self.add_chg_spin_ebd:
+            data["chg_embedding"] = self.chg_embedding.serialize()
+            data["spin_embedding"] = self.spin_embedding.serialize()
+            data["mix_cs_mlp"] = self.mix_cs_mlp.serialize()
         repflow_variable = {
             "edge_embd": repflows.edge_embd.serialize(),
             "angle_embd": repflows.angle_embd.serialize(),
@@ -684,9 +746,17 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         data.pop("type")
         repflow_variable = data.pop("repflow_variable").copy()
         type_embedding = data.pop("type_embedding")
+        chg_embedding = data.pop("chg_embedding", None)
+        spin_embedding = data.pop("spin_embedding", None)
+        mix_cs_mlp = data.pop("mix_cs_mlp", None)
         data["repflow"] = RepFlowArgs(**data.pop("repflow_args"))
         obj = cls(**data)
         obj.type_embedding = TypeEmbedNet.deserialize(type_embedding)
+
+        if obj.add_chg_spin_ebd and chg_embedding is not None:
+            obj.chg_embedding = TypeEmbedNet.deserialize(chg_embedding)
+            obj.spin_embedding = TypeEmbedNet.deserialize(spin_embedding)
+            obj.mix_cs_mlp = NativeLayer.deserialize(mix_cs_mlp)
 
         # deserialize repflow
         statistic_repflows = repflow_variable.pop("@variables")

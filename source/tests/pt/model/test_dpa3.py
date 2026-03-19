@@ -55,6 +55,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             nme,
             prec,
             ect,
+            add_chg_spin,
         ) in itertools.product(
             [True, False],  # update_angle
             ["res_residual"],  # update_style
@@ -65,6 +66,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [1, 2],  # n_multi_edge_message
             ["float64"],  # precision
             [False],  # use_econf_tebd
+            [False, True],  # add_chg_spin_ebd
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
@@ -102,16 +104,28 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 precision=prec,
                 use_econf_tebd=ect,
                 type_map=["O", "H"] if ect else None,
+                add_chg_spin_ebd=add_chg_spin,
                 seed=GLOBAL_SEED,
             ).to(env.DEVICE)
 
             dd0.repflows.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.repflows.stddev = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
+
+            # Prepare fparam if needed
+            fparam = None
+            fparam_np = None
+            if add_chg_spin:
+                fparam = torch.tensor([[5, 1]], dtype=dtype, device=env.DEVICE).expand(
+                    nf, -1
+                )
+                fparam_np = np.array([[5, 1]], dtype=np.float64).repeat(nf, axis=0)
+
             rd0, _, _, _, _ = dd0(
                 torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
                 torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
                 torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
                 torch.tensor(self.mapping, dtype=int, device=env.DEVICE),
+                fparam=fparam,
             )
             # serialization
             dd1 = DescrptDPA3.deserialize(dd0.serialize())
@@ -120,6 +134,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
                 torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
                 torch.tensor(self.mapping, dtype=int, device=env.DEVICE),
+                fparam=fparam,
             )
             np.testing.assert_allclose(
                 rd0.detach().cpu().numpy(),
@@ -130,7 +145,11 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             # dp impl
             dd2 = DPDescrptDPA3.deserialize(dd0.serialize())
             rd2, _, _, _, _ = dd2.call(
-                self.coord_ext, self.atype_ext, self.nlist, self.mapping
+                self.coord_ext,
+                self.atype_ext,
+                self.nlist,
+                self.mapping,
+                fparam=fparam_np,
             )
             np.testing.assert_allclose(
                 rd0.detach().cpu().numpy(),
