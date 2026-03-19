@@ -12,7 +12,7 @@ extern "C" {
 /** C API version. Bumped whenever the API is changed.
  * @since API version 22
  */
-#define DP_C_API_VERSION 25
+#define DP_C_API_VERSION 26
 
 /**
  * @brief Neighbor list.
@@ -1448,6 +1448,16 @@ int DP_DeepBaseModelGetDimAParam(DP_DeepBaseModel* dpbase);
 bool DP_DeepBaseModelIsAParamNAll(DP_DeepBaseModel* dpbase);
 
 /**
+ * @brief Check if the model has default frame parameters.
+ *
+ * @param[in] dpbase The DP to use.
+ * @return true the model has default frame parameters
+ * @return false the model does not have default frame parameters
+ * @since API version 26
+ */
+bool DP_DeepBaseModelHasDefaultFParam(DP_DeepBaseModel* dpbase);
+
+/**
  * @brief Get the type map of a DP.
  * @param[in] dpbase The DP to use.
  * @return The type map of the DP.
@@ -1489,6 +1499,16 @@ int DP_DeepBaseModelDeviGetDimAParam(DP_DeepBaseModelDevi* dpbase);
  * @since API version 24
  */
 bool DP_DeepBaseModelDeviIsAParamNAll(DP_DeepBaseModelDevi* dpbase);
+
+/**
+ * @brief Check if the model deviation has default frame parameters.
+ *
+ * @param[in] dpbase The DP Model Deviation to use.
+ * @return true the model has default frame parameters
+ * @return false the model does not have default frame parameters
+ * @since API version 26
+ */
+bool DP_DeepBaseModelDeviHasDefaultFParam(DP_DeepBaseModelDevi* dpbase);
 
 /**
  * @brief Get the type map of a DP model deviation.
@@ -1570,6 +1590,15 @@ int DP_DeepPotGetDimAParam(DP_DeepPot* dp);
 bool DP_DeepPotIsAParamNAll(DP_DeepPot* dp);
 
 /**
+ * @brief Check if the DP has default frame parameters.
+ * @param[in] dp The DP to use.
+ * @return true the model has default frame parameters
+ * @return false the model does not have default frame parameters
+ * @since API version 26
+ */
+bool DP_DeepPotHasDefaultFParam(DP_DeepPot* dp);
+
+/**
  * @brief Get the type map of a DP.
  * @param[in] dp The DP to use.
  * @return The type map of the DP.
@@ -1606,6 +1635,15 @@ int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp);
  * @return false the atomic dimension of atomic parameters is nloc
  */
 bool DP_DeepPotModelDeviIsAParamNAll(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Check if the DP model deviation has default frame parameters.
+ * @param[in] dp The DP model deviation to use.
+ * @return true the model has default frame parameters
+ * @return false the model does not have default frame parameters
+ * @since API version 26
+ */
+bool DP_DeepPotModelDeviHasDefaultFParam(DP_DeepPotModelDevi* dp);
 
 /**
  * @brief Get the type map of a DP model deviation.
@@ -1689,6 +1727,15 @@ int DP_DeepSpinGetDimAParam(DP_DeepSpin* dp);
 bool DP_DeepSpinIsAParamNAll(DP_DeepSpin* dp);
 
 /**
+ * @brief Check if the DP Spin Model has default frame parameters.
+ * @param[in] dp The DP Spin Model to use.
+ * @return true the model has default frame parameters
+ * @return false the model does not have default frame parameters
+ * @since API version 26
+ */
+bool DP_DeepSpinHasDefaultFParam(DP_DeepSpin* dp);
+
+/**
  * @brief Get the type map of a DP Spin Model.
  * @param[in] dp The DP Spin Model to use.
  * @return The type map of the DP Spin Model.
@@ -1730,6 +1777,15 @@ int DP_DeepSpinModelDeviGetDimAParam(DP_DeepSpinModelDevi* dp);
  * @since API version 24
  */
 bool DP_DeepSpinModelDeviIsAParamNAll(DP_DeepSpinModelDevi* dp);
+
+/**
+ * @brief Check if the DP Spin Model Deviation has default frame parameters.
+ * @param[in] dp The DP Spin Model Deviation to use.
+ * @return true the model has default frame parameters
+ * @return false the model does not have default frame parameters
+ * @since API version 26
+ */
+bool DP_DeepSpinModelDeviHasDefaultFParam(DP_DeepSpinModelDevi* dp);
 
 /**
  * @brief Get the type map of a DP model deviation.

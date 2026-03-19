@@ -166,7 +166,7 @@ class EnergyLoss(Loss):
         natoms: int,
         model_dict: dict[str, Array],
         label_dict: dict[str, Array],
-    ) -> dict[str, Array]:
+    ) -> tuple[Array, dict[str, Array]]:
         """Calculate loss from model results and labeled results."""
         energy = model_dict["energy"]
         force = model_dict["force"]
@@ -391,15 +391,16 @@ class EnergyLoss(Loss):
         if self.has_gf:
             find_drdq = label_dict["find_drdq"]
             drdq = label_dict["drdq"]
-            force_reshape_nframes = xp.reshape(force, (-1, natoms[0] * 3))
-            force_hat_reshape_nframes = xp.reshape(force_hat, (-1, natoms[0] * 3))
+            force_reshape_nframes = xp.reshape(force, (-1, natoms * 3))
+            force_hat_reshape_nframes = xp.reshape(force_hat, (-1, natoms * 3))
             drdq_reshape = xp.reshape(
-                drdq, (-1, natoms[0] * 3, self.numb_generalized_coord)
+                drdq, (-1, natoms * 3, self.numb_generalized_coord)
             )
-            gen_force_hat = xp.einsum(
-                "bij,bi->bj", drdq_reshape, force_hat_reshape_nframes
+            # "bij,bi->bj" einsum replaced with array-API-compatible ops
+            gen_force_hat = xp.sum(
+                drdq_reshape * force_hat_reshape_nframes[:, :, None], axis=1
             )
-            gen_force = xp.einsum("bij,bi->bj", drdq_reshape, force_reshape_nframes)
+            gen_force = xp.sum(drdq_reshape * force_reshape_nframes[:, :, None], axis=1)
             diff_gen_force = gen_force_hat - gen_force
             l2_gen_force_loss = xp.mean(xp.square(diff_gen_force))
             pref_gf = find_drdq * (

@@ -102,6 +102,7 @@ class DescriptorTest:
         atype: np.ndarray,
         box: np.ndarray,
         mixed_types: bool = False,
+        fparam: np.ndarray | None = None,
     ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts(
             coords.reshape(1, -1, 3),
@@ -117,7 +118,9 @@ class DescriptorTest:
             dp_obj.get_sel(),
             distinguish_types=(not mixed_types),
         )
-        return dp_obj(ext_coords, ext_atype, nlist=nlist, mapping=mapping)
+        return dp_obj(
+            ext_coords, ext_atype, nlist=nlist, mapping=mapping, fparam=fparam
+        )
 
     def eval_pt_descriptor(
         self,
@@ -127,6 +130,7 @@ class DescriptorTest:
         atype: np.ndarray,
         box: np.ndarray,
         mixed_types: bool = False,
+        fparam: np.ndarray | None = None,
     ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts_pt(
             torch.from_numpy(coords).to(PT_DEVICE).reshape(1, -1, 3),
@@ -142,9 +146,14 @@ class DescriptorTest:
             pt_obj.get_sel(),
             distinguish_types=(not mixed_types),
         )
+        fparam_pt = (
+            torch.from_numpy(fparam).to(PT_DEVICE) if fparam is not None else None
+        )
         return [
             x.detach().cpu().numpy() if torch.is_tensor(x) else x
-            for x in pt_obj(ext_coords, ext_atype, nlist=nlist, mapping=mapping)
+            for x in pt_obj(
+                ext_coords, ext_atype, nlist=nlist, mapping=mapping, fparam=fparam_pt
+            )
         ]
 
     def eval_pt_expt_descriptor(
@@ -155,6 +164,7 @@ class DescriptorTest:
         atype: np.ndarray,
         box: np.ndarray,
         mixed_types: bool = False,
+        fparam: np.ndarray | None = None,
     ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts(
             torch.from_numpy(coords).to(PT_DEVICE).reshape(1, -1, 3),
@@ -170,9 +180,14 @@ class DescriptorTest:
             pt_expt_obj.get_sel(),
             distinguish_types=(not mixed_types),
         )
+        fparam_pt = (
+            torch.from_numpy(fparam).to(PT_DEVICE) if fparam is not None else None
+        )
         return [
             x.detach().cpu().numpy() if torch.is_tensor(x) else x
-            for x in pt_expt_obj(ext_coords, ext_atype, nlist=nlist, mapping=mapping)
+            for x in pt_expt_obj(
+                ext_coords, ext_atype, nlist=nlist, mapping=mapping, fparam=fparam_pt
+            )
         ]
 
     def eval_jax_descriptor(
@@ -183,6 +198,7 @@ class DescriptorTest:
         atype: np.ndarray,
         box: np.ndarray,
         mixed_types: bool = False,
+        fparam: np.ndarray | None = None,
     ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts(
             jnp.array(coords).reshape(1, -1, 3),
@@ -198,9 +214,12 @@ class DescriptorTest:
             jax_obj.get_sel(),
             distinguish_types=(not mixed_types),
         )
+        fparam_jax = jnp.array(fparam) if fparam is not None else None
         return [
             np.asarray(x) if isinstance(x, jnp.ndarray) else x
-            for x in jax_obj(ext_coords, ext_atype, nlist=nlist, mapping=mapping)
+            for x in jax_obj(
+                ext_coords, ext_atype, nlist=nlist, mapping=mapping, fparam=fparam_jax
+            )
         ]
 
     def eval_pd_descriptor(
@@ -211,6 +230,7 @@ class DescriptorTest:
         atype: np.ndarray,
         box: np.ndarray,
         mixed_types: bool = False,
+        fparam: np.ndarray | None = None,
     ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts_pd(
             paddle.to_tensor(coords).to(PD_DEVICE).reshape([1, -1, 3]),
@@ -228,7 +248,12 @@ class DescriptorTest:
         )
         return [
             x.detach().cpu().numpy() if paddle.is_tensor(x) else x
-            for x in pd_obj(ext_coords, ext_atype, nlist=nlist, mapping=mapping)
+            for x in pd_obj(
+                ext_coords,
+                ext_atype,
+                nlist=nlist,
+                mapping=mapping,
+            )
         ]
 
     def eval_array_api_strict_descriptor(
@@ -239,6 +264,7 @@ class DescriptorTest:
         atype: np.ndarray,
         box: np.ndarray,
         mixed_types: bool = False,
+        fparam: np.ndarray | None = None,
     ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts(
             array_api_strict.asarray(coords.reshape(1, -1, 3)),
@@ -254,10 +280,17 @@ class DescriptorTest:
             array_api_strict_obj.get_sel(),
             distinguish_types=(not mixed_types),
         )
+        fparam_array_api = (
+            array_api_strict.asarray(fparam) if fparam is not None else None
+        )
         return [
             to_numpy_array(x) if hasattr(x, "__array_namespace__") else x
             for x in array_api_strict_obj(
-                ext_coords, ext_atype, nlist=nlist, mapping=mapping
+                ext_coords,
+                ext_atype,
+                nlist=nlist,
+                mapping=mapping,
+                fparam=fparam_array_api,
             )
         ]
 
