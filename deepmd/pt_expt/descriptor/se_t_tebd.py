@@ -156,7 +156,7 @@ class DescrptSeTTebd(DescrptSeTTebdDP):
     ) -> Any:
         """Compressed forward using tabulate_fusion_se_t_tebd custom op."""
         # env_mat: nf x nloc x nnei x 4
-        rr, diff, sw = self.se_ttebd.env_mat.call(
+        rr, _diff, sw = self.se_ttebd.env_mat.call(
             coord_ext,
             atype_ext,
             nlist,

@@ -241,7 +241,7 @@ class TestDescrptDPA2(TestCaseSingleFrameWithNlist):
         if not ENABLE_CUSTOMIZED_OP:
             pytest.skip("Custom OP library not built")
         rng = np.random.default_rng(GLOBAL_SEED)
-        nf, nloc, nnei = self.nlist.shape
+        _, _, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
         dstd = rng.normal(size=(self.nt, nnei, 4))
         davg_2 = rng.normal(size=(self.nt, nnei // 2, 4))

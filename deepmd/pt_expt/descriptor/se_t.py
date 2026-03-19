@@ -130,7 +130,7 @@ class DescrptSeT(DescrptSeTDP):
     ) -> Any:
         """Compressed forward using tabulate_fusion_se_t custom op."""
         # env_mat: nf x nloc x nnei x 4
-        rr, diff, ww = self.env_mat.call(
+        rr, _diff, ww = self.env_mat.call(
             coord_ext,
             atype_ext,
             nlist,
@@ -152,7 +152,7 @@ class DescrptSeT(DescrptSeTDP):
         rr = rr.view(nfnl, nnei, 4)
 
         for embedding_idx, (compress_data_ii, compress_info_ii) in enumerate(
-            zip(self.compress_data, self.compress_info)
+            zip(self.compress_data, self.compress_info, strict=True)
         ):
             ti = embedding_idx % self.ntypes
             tj = embedding_idx // self.ntypes

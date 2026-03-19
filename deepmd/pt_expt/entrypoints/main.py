@@ -280,8 +280,12 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
             enable_compression,
         )
 
+        if not FLAGS.input.endswith((".pte", ".pt2")):
+            FLAGS.input = str(Path(FLAGS.input).with_suffix(".pte"))
+        if not FLAGS.output.endswith((".pte", ".pt2")):
+            FLAGS.output = str(Path(FLAGS.output).with_suffix(".pte"))
         enable_compression(
-            input_file=FLAGS.INPUT,
+            input_file=FLAGS.input,
             output=FLAGS.output,
             stride=FLAGS.step,
             extrapolate=FLAGS.extrapolate,

@@ -101,6 +101,7 @@ def enable_compression(
     data = {
         "model": model.serialize(),
         "model_def_script": model_dict.get("model_def_script"),
+        "min_nbor_dist": float(min_nbor_dist),
     }
     deserialize_to_file(output, data)
     log.info("Compressed model saved to %s", output)

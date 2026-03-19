@@ -130,7 +130,7 @@ class DescrptSeA(DescrptSeADP):
     ) -> Any:
         """Compressed forward using tabulate_fusion_se_a custom op."""
         # env_mat: nf x nloc x nnei x 4
-        rr, diff, ww = self.env_mat.call(
+        rr, _diff, ww = self.env_mat.call(
             coord_ext,
             atype_ext,
             nlist,
@@ -153,7 +153,7 @@ class DescrptSeA(DescrptSeADP):
 
         if self.type_one_side:
             for embedding_idx, (compress_data_ii, compress_info_ii) in enumerate(
-                zip(self.compress_data, self.compress_info)
+                zip(self.compress_data, self.compress_info, strict=True)
             ):
                 ii = embedding_idx
                 mm = exclude_mask[:, sec[ii] : sec[ii + 1]]
@@ -172,7 +172,7 @@ class DescrptSeA(DescrptSeADP):
         else:
             atype_loc = atype_ext[:, :nloc].reshape(nfnl)
             for embedding_idx, (compress_data_ii, compress_info_ii) in enumerate(
-                zip(self.compress_data, self.compress_info)
+                zip(self.compress_data, self.compress_info, strict=True)
             ):
                 ii = embedding_idx // self.ntypes
                 ti = embedding_idx % self.ntypes

@@ -34,6 +34,7 @@ def _try_register_fake(op_name: str, fn: Callable[..., Any]) -> None:
     try:
         torch.library.register_fake(op_name)(fn)
     except RuntimeError:
+        # Op already has an implementation (e.g. C++ library loaded).
         pass
 
 

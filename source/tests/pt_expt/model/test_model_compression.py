@@ -178,6 +178,47 @@ class TestModelCompression(unittest.TestCase):
         finally:
             os.unlink(frozen_path)
 
+    def test_compress_cli_entry_point(self) -> None:
+        """Test that the CLI entry point (main) dispatches compress correctly.
+
+        This exercises the FLAGS.input argument parsing path, which previously
+        had a bug (FLAGS.INPUT instead of FLAGS.input).
+        """
+        from deepmd.pt_expt.entrypoints.main import (
+            main,
+        )
+
+        md = self._make_model()
+        md.min_nbor_dist = 0.5
+        md.eval()
+
+        model_data = {"model": md.serialize(), "min_nbor_dist": 0.5}
+        with tempfile.NamedTemporaryFile(suffix=".pte", delete=False) as f:
+            frozen_path = f.name
+        with tempfile.NamedTemporaryFile(suffix=".pte", delete=False) as f:
+            compressed_path = f.name
+        try:
+            deserialize_to_file(frozen_path, model_data)
+
+            # Call via CLI entry point
+            main(
+                [
+                    "compress",
+                    "-i",
+                    frozen_path,
+                    "-o",
+                    compressed_path,
+                ]
+            )
+
+            # Verify the compressed file was created and is loadable
+            compressed_data = serialize_from_file(compressed_path)
+            self.assertIn("model", compressed_data)
+        finally:
+            os.unlink(frozen_path)
+            if os.path.exists(compressed_path):
+                os.unlink(compressed_path)
+
 
 if __name__ == "__main__":
     unittest.main()

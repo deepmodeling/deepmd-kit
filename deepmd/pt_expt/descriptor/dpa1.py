@@ -129,7 +129,6 @@ class DescrptDPA1(DescrptDPA1DP):
             # type_embedding.call() returns (ntypes+1) x tebd_dim (with padding)
             full_embd = self.type_embedding.call()
             nt, t_dim = full_embd.shape
-            ng = self.se_atten.neuron[-1]
 
             if self.se_atten.type_one_side:
                 # One-side: only neighbor types

@@ -119,7 +119,7 @@ class DescrptSeR(DescrptSeRDP):
     ) -> Any:
         """Compressed forward using tabulate_fusion_se_r custom op."""
         # env_mat: nf x nloc x nnei x 1 (radial only)
-        rr, diff, ww = self.env_mat.call(
+        rr, _diff, ww = self.env_mat.call(
             coord_ext,
             atype_ext,
             nlist,
@@ -138,7 +138,7 @@ class DescrptSeR(DescrptSeRDP):
 
         xyz_scatter_total = []
         for ii, (compress_data_ii, compress_info_ii) in enumerate(
-            zip(self.compress_data, self.compress_info)
+            zip(self.compress_data, self.compress_info, strict=True)
         ):
             mm = exclude_mask[:, sec[ii] : sec[ii + 1]]
             ss = rr[:, sec[ii] : sec[ii + 1], :]

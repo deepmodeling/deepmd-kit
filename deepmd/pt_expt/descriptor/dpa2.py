@@ -163,7 +163,6 @@ class DescrptDPA2(DescrptDPA2DP):
             # type_embedding.call() returns (ntypes+1) x tebd_dim (with padding)
             full_embd = self.type_embedding.call()
             nt, t_dim = full_embd.shape
-            ng = self.repinit.neuron[-1]
 
             if self.repinit.type_one_side:
                 # One-side: only neighbor types
@@ -212,7 +211,7 @@ class DescrptDPA2(DescrptDPA2DP):
         then the rest (g1_shape_transform, repformers, etc.) proceeds normally.
         """
         use_three_body = self.use_three_body
-        nframes, nloc, nnei = nlist.shape
+        nframes, nloc, _nnei = nlist.shape
         nall = coord_ext.view(nframes, -1).shape[1] // 3
 
         # Build multiple neighbor lists
@@ -324,7 +323,7 @@ class DescrptDPA2(DescrptDPA2DP):
             Repinit output. shape: nf x nloc x (ng x axis_neuron)
         """
         # env_mat: nf x nloc x nnei x 4
-        rr, diff, sw = self.repinit.env_mat.call(
+        rr, _diff, sw = self.repinit.env_mat.call(
             coord_ext,
             atype_ext,
             nlist,
