@@ -511,18 +511,10 @@ class LearningRateWSD(BaseLR):
         # === Derive stable and decay phase lengths ===
         self.decay_phase_ratio = decay_phase_ratio
         self.decay_type = decay_type
-        self.decay_phase_steps = int(self.decay_phase_ratio * self.num_steps)
-        if self.decay_phase_steps <= 0:
-            raise ValueError(
-                "decay_phase_ratio results in zero decay steps. "
-                "Increase num_steps or decay_phase_ratio."
-            )
-        if self.decay_phase_steps > self.decay_num_steps:
-            raise ValueError(
-                "decay phase steps must not exceed the post-warmup steps. "
-                f"Got decay_phase_steps={self.decay_phase_steps}, "
-                f"post_warmup_steps={self.decay_num_steps}."
-            )
+        # Clamp decay_phase_steps to valid range [1, decay_num_steps]
+        self.decay_phase_steps = max(
+            1, min(int(self.decay_phase_ratio * self.num_steps), self.decay_num_steps)
+        )
         self.stable_steps = self.decay_num_steps - self.decay_phase_steps
 
     def _decay_value(self, step: int | Array) -> Array:
@@ -556,7 +548,6 @@ class LearningRateWSD(BaseLR):
         stop_lr = xp.asarray(self.stop_lr, dtype=step_dtype)
         stable_steps = xp.asarray(self.stable_steps, dtype=step_dtype)
         decay_phase_steps = xp.asarray(self.decay_phase_steps, dtype=step_dtype)
-        decay_num_steps = xp.asarray(self.decay_num_steps, dtype=step_dtype)
 
         # === Step 2. Keep a constant learning rate in the stable phase ===
         decay_progress = (typed_step - stable_steps) / decay_phase_steps

@@ -164,15 +164,17 @@ class TestLearningRateWSDBasic(unittest.TestCase):
             )
 
     def test_decay_phase_exceeds_post_warmup_steps(self) -> None:
-        """Test WSD rejects decay phases longer than post-warmup steps."""
-        with self.assertRaises(ValueError):
-            LearningRateWSD(
-                start_lr=1e-3,
-                stop_lr=1e-5,
-                num_steps=10,
-                warmup_steps=9,
-                decay_phase_ratio=0.2,
-            )
+        """Test WSD clamps decay_phase_steps to post-warmup steps when ratio is too large."""
+        lr = LearningRateWSD(
+            start_lr=1e-3,
+            stop_lr=1e-5,
+            num_steps=10,
+            warmup_steps=9,
+            decay_phase_ratio=0.2,
+        )
+        # decay_num_steps = 1, so decay_phase_steps should be clamped to 1
+        self.assertEqual(lr.decay_phase_steps, 1)
+        self.assertEqual(lr.stable_steps, 0)
 
 
 class TestLearningRateWarmup(unittest.TestCase):
