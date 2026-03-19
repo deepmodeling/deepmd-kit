@@ -98,13 +98,13 @@ class DescrptDPA2(DescrptDPA2DP):
 
         if self.repinit.attn_layer == 0:
             # Build geometric embedding table
-            data = self.serialize()
+            repinit_data = self.repinit.serialize()
             self.table = DPTabulate(
-                self,
-                data["repinit_args"]["neuron"],
-                data["repinit_args"]["type_one_side"],
-                data["exclude_types"],
-                ActivationFn(data["repinit_args"]["activation_function"]),
+                self.repinit,
+                repinit_data["neuron"],
+                repinit_data.get("type_one_side", False),
+                repinit_data.get("exclude_types", []),
+                ActivationFn(repinit_data["activation_function"]),
             )
             self.table_config = [
                 table_extrapolate,

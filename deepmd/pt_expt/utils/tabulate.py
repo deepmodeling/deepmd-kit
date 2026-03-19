@@ -3,8 +3,11 @@
 
 Subclasses the pt backend's DPTabulate, overriding _get_descrpt_type() to
 detect descriptor types via serialized data rather than isinstance checks
-against pt-specific classes. Also overrides __init__ to handle the DPA2
-repinit_variable extraction without isinstance.
+against pt-specific classes.
+
+The __init__ is overridden to avoid the parent's isinstance check against
+pt-specific descriptor classes (which may not be importable in the pt_expt
+context).
 """
 
 from typing import (
@@ -23,10 +26,15 @@ from deepmd.utils.tabulate import (
 class DPTabulate(DPTabulatePT):
     """Tabulation helper for pt_expt descriptors.
 
+    The descriptor passed to this class must serialize to a dict with
+    ``@variables`` (davg/dstd) and ``embeddings`` at the top level.
+    For DPA2, pass the **repinit block** (not the full DPA2 descriptor)
+    so that ``serialize()`` returns the correct structure directly.
+
     Parameters
     ----------
     descrpt
-        The pt_expt descriptor instance.
+        The pt_expt descriptor (or sub-block) instance.
     neuron
         Number of neurons in each hidden layer of the embedding net.
     type_one_side
@@ -45,8 +53,9 @@ class DPTabulate(DPTabulatePT):
         exclude_types: list[list[int]] = [],
         activation_fn: ActivationFn = ActivationFn("tanh"),
     ) -> None:
-        # Call BaseTabulate.__init__ directly (skip DPTabulatePT.__init__)
-        # to avoid the isinstance(descrpt, DescrptDPA2) check.
+        # Skip DPTabulatePT.__init__ to avoid its isinstance check against
+        # pt-specific classes (deepmd.pt.model.descriptor.DescrptDPA2).
+        # Call BaseTabulate.__init__ + replicate the rest of the init logic.
         BaseTabulate.__init__(
             self,
             descrpt,
@@ -83,9 +92,6 @@ class DPTabulate(DPTabulatePT):
 
         self.activation_fn = activation_fn
         serialized = self.descrpt.serialize()
-        # For DPA2, use repinit_variable (detected by presence of key)
-        if "repinit_variable" in serialized:
-            serialized = serialized["repinit_variable"]
         self.davg = serialized["@variables"]["davg"]
         self.dstd = serialized["@variables"]["dstd"]
         self.embedding_net_nodes = serialized["embeddings"]["networks"]
@@ -117,7 +123,6 @@ class DPTabulate(DPTabulatePT):
             "se_e3_tebd": "T_TEBD",
             "dpa1": "Atten",
             "se_atten_v2": "Atten",
-            "dpa2": "Atten",
         }
 
         descrpt_type = type_map.get(type_str)
