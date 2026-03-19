@@ -204,7 +204,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         data = {
             "@class": "Descriptor",
             "type": "se_atten_v2",
-            "@version": 2,
+            "@version": 3 if self.compress else 2,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -246,13 +246,28 @@ class DescrptSeAttenV2(DescrptDPA1):
             "trainable": self.trainable,
             "spin": None,
         }
+        if self.compress:
+            compress_dict: dict = {
+                "@variables": {
+                    "type_embd_data": to_numpy_array(self.type_embd_data),
+                },
+                "geo_compress": self.geo_compress,
+            }
+            if self.geo_compress:
+                compress_dict["@variables"]["compress_data"] = [
+                    to_numpy_array(d) for d in self.compress_data
+                ]
+                compress_dict["@variables"]["compress_info"] = [
+                    to_numpy_array(i) for i in self.compress_info
+                ]
+            data["compress"] = compress_dict
         return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeAttenV2":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        check_version_compatibility(data.pop("@version"), 3, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -261,6 +276,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         attention_layers = data.pop("attention_layers")
         data.pop("env_mat")
         embeddings_strip = data.pop("embeddings_strip")
+        compress = data.pop("compress", None)
         # compat with version 1
         if "use_tebd_bias" not in data:
             data["use_tebd_bias"] = True
@@ -274,4 +290,16 @@ class DescrptSeAttenV2(DescrptDPA1):
         obj.se_atten.dpa1_attention = NeighborGatedAttention.deserialize(
             attention_layers
         )
+        if compress is not None:
+            obj._load_compress_data(compress)
         return obj
+
+    def _load_compress_data(self, compress: dict) -> None:
+        """Load compression state from serialized data."""
+        variables = compress["@variables"]
+        self.type_embd_data = variables["type_embd_data"]
+        self.geo_compress = compress.get("geo_compress", False)
+        if self.geo_compress:
+            self.compress_data = variables["compress_data"]
+            self.compress_info = variables["compress_info"]
+        self.compress = True

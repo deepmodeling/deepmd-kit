@@ -96,12 +96,25 @@ def enable_compression(
         check_frequency,
     )
 
-    # 4. Re-serialize and export
-    log.info("Re-serializing compressed model...")
-    data = {
-        "model": model.serialize(),
+    # 4. Serialize the compressed model dict (includes tabulated data)
+    compressed_model_dict = model.serialize()
+
+    # 5. Re-export: trace an UNCOMPRESSED model for the exported program
+    #    (make_fx cannot trace through custom tabulate ops), but store
+    #    the full compressed dict in model.json so that deserialize()
+    #    restores compression state.
+    log.info("Re-exporting compressed model...")
+    uncompressed_data = {
+        "model": model_dict["model"],  # original uncompressed model
         "model_def_script": model_dict.get("model_def_script"),
-        "min_nbor_dist": float(min_nbor_dist),
     }
-    deserialize_to_file(output, data)
+    deserialize_to_file(
+        output,
+        uncompressed_data,
+        model_json_override={
+            "model": compressed_model_dict,
+            "model_def_script": model_dict.get("model_def_script"),
+            "min_nbor_dist": float(min_nbor_dist),
+        },
+    )
     log.info("Compressed model saved to %s", output)

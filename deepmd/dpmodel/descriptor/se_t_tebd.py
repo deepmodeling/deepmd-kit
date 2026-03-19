@@ -417,7 +417,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "se_e3_tebd",
-            "@version": 1,
+            "@version": 2 if self.compress else 1,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -447,19 +447,32 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         }
         if obj.tebd_input_mode in ["strip"]:
             data.update({"embeddings_strip": obj.embeddings_strip.serialize()})
+        if self.compress:
+            compress_dict: dict = {
+                "@variables": {
+                    "compress_data": [to_numpy_array(d) for d in self.compress_data],
+                    "compress_info": [to_numpy_array(i) for i in self.compress_info],
+                },
+            }
+            if hasattr(self, "type_embd_data"):
+                compress_dict["@variables"]["type_embd_data"] = to_numpy_array(
+                    self.type_embd_data
+                )
+            data["compress"] = compress_dict
         return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeTTebd":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         type_embedding = data.pop("type_embedding")
         env_mat = data.pop("env_mat")
+        compress = data.pop("compress", None)
         tebd_input_mode = data["tebd_input_mode"]
         if tebd_input_mode in ["strip"]:
             embeddings_strip = data.pop("embeddings_strip")
@@ -475,8 +488,19 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
             obj.se_ttebd.embeddings_strip = NetworkCollection.deserialize(
                 embeddings_strip
             )
+        if compress is not None:
+            obj._load_compress_data(compress)
 
         return obj
+
+    def _load_compress_data(self, compress: dict) -> None:
+        """Load compression state from serialized data."""
+        variables = compress["@variables"]
+        self.compress_data = variables["compress_data"]
+        self.compress_info = variables["compress_info"]
+        if "type_embd_data" in variables:
+            self.type_embd_data = variables["type_embd_data"]
+        self.compress = True
 
     @classmethod
     def update_sel(

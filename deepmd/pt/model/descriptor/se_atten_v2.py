@@ -242,7 +242,7 @@ class DescrptSeAttenV2(DescrptDPA1):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeAttenV2":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        check_version_compatibility(data.pop("@version"), 3, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -251,6 +251,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         attention_layers = data.pop("attention_layers")
         data.pop("env_mat")
         embeddings_strip = data.pop("embeddings_strip")
+        data.pop("compress", None)  # pt uses state_dict for compression
         # compat with version 1
         if "use_tebd_bias" not in data:
             data["use_tebd_bias"] = True
