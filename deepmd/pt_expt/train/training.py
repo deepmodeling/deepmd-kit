@@ -734,6 +734,7 @@ class Trainer:
 
         self.wrapper.train()
         wall_start = time.time()
+        last_log_time = wall_start
 
         for step_id in range(self.start_step, self.num_steps):
             cur_lr = float(self.lr_schedule.value(step_id))
@@ -796,17 +797,23 @@ class Trainer:
                 # wall-clock time
                 current_time = time.time()
                 wall_elapsed = current_time - wall_start
+                interval_wall_time = current_time - last_log_time
+                last_log_time = current_time
                 if self.timing_in_training:
                     step_time = t_end - t_start
+                    steps_completed_since_restart = max(
+                        1,
+                        display_step_id - self.start_step,
+                    )
                     eta = int(
                         (self.num_steps - display_step_id)
-                        / display_step_id
+                        / steps_completed_since_restart
                         * wall_elapsed
                     )
                     log.info(
                         format_training_message(
                             batch=display_step_id,
-                            wall_time=wall_elapsed,
+                            wall_time=interval_wall_time,
                             eta=eta,
                             current_time=datetime.datetime.fromtimestamp(
                                 current_time,
@@ -819,7 +826,7 @@ class Trainer:
                     log.info(
                         format_training_message(
                             batch=display_step_id,
-                            wall_time=wall_elapsed,
+                            wall_time=interval_wall_time,
                         )
                     )
 

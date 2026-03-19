@@ -46,7 +46,7 @@ def format_training_message(
     batch : int
         The batch index.
     wall_time : float
-        Wall-clock time spent in the current reporting interval in seconds.
+        Wall-clock time shown in the progress message in seconds.
     eta : int | None, optional
         Remaining time in seconds.
     current_time : datetime.datetime | None, optional
