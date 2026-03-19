@@ -121,6 +121,10 @@ class EnergyStdLoss(TaskLoss):
 
         self.loss_func = loss_func
         self.f_use_norm = f_use_norm
+        if self.f_use_norm:
+            raise NotImplementedError(
+                "Paddle backend does not support f_use_norm=True."
+            )
 
         self.starter_learning_rate = starter_learning_rate
         self.has_e = (start_pref_e != 0.0 and limit_pref_e != 0.0) or inference
@@ -152,7 +156,6 @@ class EnergyStdLoss(TaskLoss):
         self.inference = inference
         self.use_huber = use_huber
         self.huber_delta = huber_delta
-        self.f_use_norm = f_use_norm
         if self.use_huber and (
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
