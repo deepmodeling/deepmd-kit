@@ -18,6 +18,9 @@ from .dp_zbl_model import (
 from .ener_model import (
     EnergyModel,
 )
+from .frozen import (
+    FrozenModel,
+)
 from .get_model import (
     get_model,
 )
@@ -38,6 +41,7 @@ __all__ = [
     "DipoleModel",
     "EnergyModel",
     "LinearEnergyModel",
+    "FrozenModel",
     "PolarModel",
     "PropertyModel",
     "get_model",
