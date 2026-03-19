@@ -6,6 +6,7 @@ pt backend's ``DpLoaderSet`` + ``DataLoader``.  NumPy batches are
 converted to torch tensors at the boundary.
 """
 
+import datetime
 import functools
 import logging
 import time
@@ -30,6 +31,7 @@ from deepmd.dpmodel.utils.learning_rate import (
     LearningRateExp,
 )
 from deepmd.loggers.training import (
+    format_training_message,
     format_training_message_per_task,
 )
 from deepmd.pt_expt.loss import (
@@ -792,17 +794,34 @@ class Trainer:
                         }
 
                 # wall-clock time
-                wall_elapsed = time.time() - wall_start
+                current_time = time.time()
+                wall_elapsed = current_time - wall_start
                 if self.timing_in_training:
                     step_time = t_end - t_start
-                    log.info(
-                        "step=%d  wall=%.2fs  step_time=%.4fs",
-                        display_step_id,
-                        wall_elapsed,
-                        step_time,
+                    eta = int(
+                        (self.num_steps - display_step_id)
+                        / display_step_id
+                        * wall_elapsed
                     )
+                    log.info(
+                        format_training_message(
+                            batch=display_step_id,
+                            wall_time=wall_elapsed,
+                            eta=eta,
+                            current_time=datetime.datetime.fromtimestamp(
+                                current_time,
+                                tz=datetime.timezone.utc,
+                            ).astimezone(),
+                        )
+                    )
+                    log.info("step=%d  step_time=%.4fs", display_step_id, step_time)
                 else:
-                    log.info("step=%d  wall=%.2fs", display_step_id, wall_elapsed)
+                    log.info(
+                        format_training_message(
+                            batch=display_step_id,
+                            wall_time=wall_elapsed,
+                        )
+                    )
 
                 # log
                 log.info(
