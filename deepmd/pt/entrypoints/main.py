@@ -149,10 +149,12 @@ def get_trainer(
 
         # LMDB path: single string → LmdbDataset
         if is_lmdb(training_systems):
+            auto_prob = training_dataset_params.get("auto_prob", None)
             train_data_single = LmdbDataset(
                 training_systems,
                 model_params_single["type_map"],
                 training_dataset_params["batch_size"],
+                auto_prob_style=auto_prob,
             )
             if validation_systems is not None and is_lmdb(validation_systems):
                 validation_data_single = LmdbDataset(

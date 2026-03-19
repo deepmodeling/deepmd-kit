@@ -17,6 +17,8 @@ from deepmd.dpmodel.utils.lmdb_data import (
     LmdbDataReader,
     LmdbTestData,
     SameNlocBatchSampler,
+    _expand_indices_by_blocks,
+    compute_block_targets,
     is_lmdb,
 )
 
@@ -503,6 +505,503 @@ class TestMixedNloc(unittest.TestCase):
         result = td.get_test()
         self.assertEqual(result["coord"].shape, (5, 18))
         tmpdir.cleanup()
+
+
+def _create_lmdb_with_type_map(
+    path: str,
+    nframes: int = 6,
+    natoms: int = 6,
+    lmdb_type_map: list[str] | None = None,
+) -> str:
+    """Create a test LMDB with type_map stored in metadata.
+
+    Atom types: first 1/3 are type-0, rest are type-1.
+    """
+    n_type0 = max(1, natoms // 3)
+    n_type1 = natoms - n_type0
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    with env.begin(write=True) as txn:
+        meta = {
+            "nframes": nframes,
+            "frame_idx_fmt": "012d",
+            "system_info": {
+                "natoms": [n_type0, n_type1],
+            },
+        }
+        if lmdb_type_map is not None:
+            meta["type_map"] = lmdb_type_map
+        txn.put(b"__metadata__", msgpack.packb(meta, use_bin_type=True))
+        for i in range(nframes):
+            key = format(i, "012d").encode()
+            frame = _make_frame(natoms=natoms, seed=i)
+            txn.put(key, msgpack.packb(frame, use_bin_type=True))
+    env.close()
+    return path
+
+
+# ============================================================
+# Type map remapping tests
+# ============================================================
+
+
+class TestTypeMapRemapping(unittest.TestCase):
+    """Test type_map remapping in LmdbDataReader and LmdbTestData."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmpdir = tempfile.TemporaryDirectory()
+        # LMDB with type_map=["O","H"]: type-0 = O, type-1 = H
+        cls._lmdb_path = _create_lmdb_with_type_map(
+            f"{cls._tmpdir.name}/remap.lmdb",
+            nframes=6,
+            natoms=6,
+            lmdb_type_map=["O", "H"],
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmpdir.cleanup()
+
+    # --- LmdbDataReader tests ---
+
+    def test_reader_no_remap_when_match(self):
+        """No remap when model type_map matches LMDB type_map."""
+        reader = LmdbDataReader(self._lmdb_path, ["O", "H"])
+        self.assertIsNone(reader._type_remap)
+        frame = reader[0]
+        # type-0 = O, type-1 = H, unchanged
+        self.assertEqual(frame["atype"][0], 0)
+
+    def test_reader_remap_when_reversed(self):
+        """Remap when model type_map=["H","O"] vs LMDB ["O","H"]."""
+        reader = LmdbDataReader(self._lmdb_path, ["H", "O"])
+        self.assertIsNotNone(reader._type_remap)
+        np.testing.assert_array_equal(reader._type_remap, [1, 0])
+        frame = reader[0]
+        # Original type-0 (O) -> 1, type-1 (H) -> 0
+        atype = frame["atype"]
+        n_type0_orig = max(1, 6 // 3)  # 2 atoms of original type-0
+        # First n_type0_orig atoms were type-0 (O), now should be 1
+        for i in range(n_type0_orig):
+            self.assertEqual(atype[i], 1)
+        # Remaining atoms were type-1 (H), now should be 0
+        for i in range(n_type0_orig, 6):
+            self.assertEqual(atype[i], 0)
+
+    def test_reader_remap_superset(self):
+        """Remap when model type_map has extra elements."""
+        reader = LmdbDataReader(self._lmdb_path, ["C", "O", "H"])
+        self.assertIsNotNone(reader._type_remap)
+        np.testing.assert_array_equal(reader._type_remap, [1, 2])
+        frame = reader[0]
+        # O -> 1, H -> 2
+        n_type0_orig = max(1, 6 // 3)
+        for i in range(n_type0_orig):
+            self.assertEqual(frame["atype"][i], 1)
+        for i in range(n_type0_orig, 6):
+            self.assertEqual(frame["atype"][i], 2)
+
+    def test_reader_natoms_vec_after_remap(self):
+        """natoms_vec reflects remapped types."""
+        reader = LmdbDataReader(self._lmdb_path, ["H", "O"])
+        frame = reader[0]
+        natoms = frame["natoms"]
+        # model type_map=["H","O"], ntypes=2
+        # Original: 2 O + 4 H. After remap: O->1, H->0
+        # So count_H(idx=0)=4, count_O(idx=1)=2
+        self.assertEqual(natoms[0], 6)  # nloc
+        self.assertEqual(natoms[2], 4)  # H count (model idx 0)
+        self.assertEqual(natoms[3], 2)  # O count (model idx 1)
+
+    def test_reader_missing_element_raises(self):
+        """ValueError when model type_map misses an LMDB element."""
+        with self.assertRaises(ValueError):
+            LmdbDataReader(self._lmdb_path, ["O"])  # missing H
+
+    def test_reader_no_type_map_in_metadata(self):
+        """Old LMDB without type_map -> no remap."""
+        tmpdir = tempfile.TemporaryDirectory()
+        path = _create_lmdb_with_type_map(
+            f"{tmpdir.name}/old.lmdb", nframes=3, natoms=6, lmdb_type_map=None
+        )
+        reader = LmdbDataReader(path, ["H", "O"])
+        self.assertIsNone(reader._type_remap)
+        tmpdir.cleanup()
+
+    # --- LmdbTestData tests ---
+
+    def test_testdata_no_remap_when_match(self):
+        """LmdbTestData: no remap when type_maps match."""
+        td = LmdbTestData(self._lmdb_path, type_map=["O", "H"], shuffle_test=False)
+        self.assertIsNone(td._type_remap)
+        data = td.get_test()
+        self.assertEqual(data["type"][0, 0], 0)
+
+    def test_testdata_remap_when_reversed(self):
+        """LmdbTestData: remap when model ["H","O"] vs LMDB ["O","H"]."""
+        td = LmdbTestData(self._lmdb_path, type_map=["H", "O"], shuffle_test=False)
+        self.assertIsNotNone(td._type_remap)
+        data = td.get_test()
+        n_type0_orig = max(1, 6 // 3)
+        # Original type-0 (O) -> 1, type-1 (H) -> 0
+        for i in range(n_type0_orig):
+            self.assertEqual(data["type"][0, i], 1)
+        for i in range(n_type0_orig, 6):
+            self.assertEqual(data["type"][0, i], 0)
+
+    def test_testdata_remap_superset(self):
+        """LmdbTestData: remap with superset model type_map."""
+        td = LmdbTestData(self._lmdb_path, type_map=["C", "O", "H"], shuffle_test=False)
+        self.assertIsNotNone(td._type_remap)
+        data = td.get_test()
+        n_type0_orig = max(1, 6 // 3)
+        # O -> 1, H -> 2
+        for i in range(n_type0_orig):
+            self.assertEqual(data["type"][0, i], 1)
+        for i in range(n_type0_orig, 6):
+            self.assertEqual(data["type"][0, i], 2)
+
+    def test_testdata_missing_element_raises(self):
+        """LmdbTestData: ValueError when model misses LMDB element."""
+        with self.assertRaises(ValueError):
+            LmdbTestData(self._lmdb_path, type_map=["O"], shuffle_test=False)
+
+    def test_testdata_no_type_map_in_metadata(self):
+        """LmdbTestData: old LMDB without type_map -> no remap."""
+        tmpdir = tempfile.TemporaryDirectory()
+        path = _create_lmdb_with_type_map(
+            f"{tmpdir.name}/old.lmdb", nframes=3, natoms=6, lmdb_type_map=None
+        )
+        td = LmdbTestData(path, type_map=["H", "O"], shuffle_test=False)
+        self.assertIsNone(td._type_remap)
+        tmpdir.cleanup()
+
+
+# ============================================================
+# auto_prob / frame_system_ids tests
+# ============================================================
+
+
+def _create_lmdb_with_system_ids(
+    path: str,
+    system_frames: list[int],
+    natoms: int = 6,
+    type_map: list[str] | None = None,
+) -> str:
+    """Create a test LMDB with frame_system_ids in metadata.
+
+    Parameters
+    ----------
+    system_frames : list[int]
+        Number of frames per system, e.g. [100, 500] means sys0 has 100
+        frames and sys1 has 500 frames.
+    """
+    total = sum(system_frames)
+    n_type0 = max(1, natoms // 3)
+    n_type1 = natoms - n_type0
+    frame_system_ids = []
+    for sid, nf in enumerate(system_frames):
+        frame_system_ids.extend([sid] * nf)
+
+    env = lmdb.open(path, map_size=50 * 1024 * 1024)
+    with env.begin(write=True) as txn:
+        meta = {
+            "nframes": total,
+            "frame_idx_fmt": "012d",
+            "system_info": {"natoms": [n_type0, n_type1]},
+            "frame_system_ids": frame_system_ids,
+            "frame_nlocs": [natoms] * total,
+        }
+        if type_map is not None:
+            meta["type_map"] = type_map
+        txn.put(b"__metadata__", msgpack.packb(meta, use_bin_type=True))
+        for i in range(total):
+            key = format(i, "012d").encode()
+            frame = _make_frame(natoms=natoms, seed=i % 100)
+            txn.put(key, msgpack.packb(frame, use_bin_type=True))
+    env.close()
+    return path
+
+
+def _create_lmdb_with_system_ids_mixed_nloc(
+    path: str,
+    system_specs: list[tuple[int, int, int]],
+    type_map: list[str] | None = None,
+) -> str:
+    """Create a test LMDB with frame_system_ids and mixed nloc.
+
+    Parameters
+    ----------
+    system_specs : list[tuple[int, int, int]]
+        Each tuple is (system_id, natoms, nframes).
+    """
+    total = sum(nf for _, _, nf in system_specs)
+    frame_system_ids = []
+    frame_nlocs = []
+    frames_data = []
+    for sid, natoms, nf in system_specs:
+        for _ in range(nf):
+            frame_system_ids.append(sid)
+            frame_nlocs.append(natoms)
+            frames_data.append(_make_frame(natoms=natoms, seed=len(frames_data) % 100))
+
+    env = lmdb.open(path, map_size=50 * 1024 * 1024)
+    with env.begin(write=True) as txn:
+        meta = {
+            "nframes": total,
+            "frame_idx_fmt": "012d",
+            "system_info": {"natoms": [2, 4]},
+            "frame_system_ids": frame_system_ids,
+            "frame_nlocs": frame_nlocs,
+        }
+        if type_map is not None:
+            meta["type_map"] = type_map
+        txn.put(b"__metadata__", msgpack.packb(meta, use_bin_type=True))
+        for i, frame in enumerate(frames_data):
+            key = format(i, "012d").encode()
+            txn.put(key, msgpack.packb(frame, use_bin_type=True))
+    env.close()
+    return path
+
+
+class TestAutoProb(unittest.TestCase):
+    """Test auto_prob support: frame_system_ids, compute_block_targets,
+    _expand_indices_by_blocks, and SameNlocBatchSampler with block_targets.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmpdir = tempfile.TemporaryDirectory()
+        # 3 systems: sys0=100 frames, sys1=200 frames, sys2=300 frames
+        cls._lmdb_path = _create_lmdb_with_system_ids(
+            f"{cls._tmpdir.name}/auto_prob.lmdb",
+            system_frames=[100, 200, 300],
+            natoms=6,
+            type_map=["O", "H"],
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmpdir.cleanup()
+
+    # --- Reader system tracking ---
+
+    def test_reader_system_groups(self):
+        """LmdbDataReader correctly parses frame_system_ids."""
+        reader = LmdbDataReader(self._lmdb_path, ["O", "H"])
+        self.assertEqual(reader.nsystems, 3)
+        self.assertEqual(reader.system_nframes, [100, 200, 300])
+        self.assertIsNotNone(reader.frame_system_ids)
+        self.assertEqual(len(reader.frame_system_ids), 600)
+        # First 100 frames belong to sys 0
+        self.assertTrue(all(s == 0 for s in reader.frame_system_ids[:100]))
+        # Next 200 to sys 1
+        self.assertTrue(all(s == 1 for s in reader.frame_system_ids[100:300]))
+        # Last 300 to sys 2
+        self.assertTrue(all(s == 2 for s in reader.frame_system_ids[300:600]))
+        # system_groups
+        self.assertEqual(len(reader.system_groups[0]), 100)
+        self.assertEqual(len(reader.system_groups[1]), 200)
+        self.assertEqual(len(reader.system_groups[2]), 300)
+
+    def test_reader_no_system_ids_backward_compat(self):
+        """Old LMDB without frame_system_ids: nsystems=1, no crash."""
+        tmpdir = tempfile.TemporaryDirectory()
+        path = _create_lmdb(f"{tmpdir.name}/old.lmdb", nframes=10, natoms=6)
+        reader = LmdbDataReader(path, ["O", "H"])
+        self.assertEqual(reader.nsystems, 1)
+        self.assertIsNone(reader.frame_system_ids)
+        self.assertEqual(reader.system_nframes, [10])
+        self.assertEqual(len(reader.system_groups[0]), 10)
+        tmpdir.cleanup()
+
+    # --- compute_block_targets ---
+
+    def test_compute_block_targets_equal_weight(self):
+        """Equal weight blocks with equal frames -> no expansion needed."""
+        # sys0=100, sys1=100; prob 0.5 each
+        # ratio = 100/0.5 = 200 for both -> target = 100 each -> no expansion
+        result = compute_block_targets(
+            "prob_sys_size;0:1:0.5;1:2:0.5",
+            nsystems=2,
+            system_nframes=[100, 100],
+        )
+        # No expansion needed (targets == actual)
+        self.assertEqual(result, [])
+
+    def test_compute_block_targets_unequal(self):
+        """Unequal frames with equal weight -> expansion needed."""
+        # sys0=100, sys1=500; prob 0.5 each
+        # ratio_A = 100/0.5 = 200, ratio_B = 500/0.5 = 1000
+        # total_target = ceil(max(200, 1000)) = 1000
+        # target_A = round(1000 * 0.5) = 500, target_B = round(1000 * 0.5) = 500
+        result = compute_block_targets(
+            "prob_sys_size;0:1:0.5;1:2:0.5",
+            nsystems=2,
+            system_nframes=[100, 500],
+        )
+        self.assertEqual(len(result), 2)
+        sys_ids_a, target_a = result[0]
+        sys_ids_b, target_b = result[1]
+        self.assertEqual(sys_ids_a, [0])
+        self.assertEqual(sys_ids_b, [1])
+        self.assertEqual(target_a, 500)
+        self.assertEqual(target_b, 500)
+
+    def test_compute_block_targets_multi_sys_block(self):
+        """Block spanning multiple systems."""
+        # sys0=100, sys1=200, sys2=300; block A=[0,1] prob=0.5, block B=[2] prob=0.5
+        # block_A frames=300, block_B frames=300
+        # ratio_A = 300/0.5 = 600, ratio_B = 300/0.5 = 600
+        # total_target = 600, target_A = 300, target_B = 300 -> no expansion
+        result = compute_block_targets(
+            "prob_sys_size;0:2:0.5;2:3:0.5",
+            nsystems=3,
+            system_nframes=[100, 200, 300],
+        )
+        self.assertEqual(result, [])
+
+    def test_compute_block_targets_asymmetric(self):
+        """Asymmetric: small block needs expansion."""
+        # sys0=50, sys1=50, sys2=400; block A=[0,1] prob=0.5, block B=[2] prob=0.5
+        # block_A frames=100, block_B frames=400
+        # ratio_A = 100/0.5 = 200, ratio_B = 400/0.5 = 800
+        # total_target = 800, target_A = 400, target_B = 400
+        result = compute_block_targets(
+            "prob_sys_size;0:2:0.5;2:3:0.5",
+            nsystems=3,
+            system_nframes=[50, 50, 400],
+        )
+        self.assertEqual(len(result), 2)
+        sys_ids_a, target_a = result[0]
+        sys_ids_b, target_b = result[1]
+        self.assertEqual(sys_ids_a, [0, 1])
+        self.assertEqual(sys_ids_b, [2])
+        self.assertEqual(target_a, 400)
+        self.assertEqual(target_b, 400)
+
+    # --- _expand_indices_by_blocks ---
+
+    def test_expand_indices_basic(self):
+        """Expand indices: block A needs 5x expansion."""
+        # 10 frames: sys0=[0..4], sys1=[5..9]
+        frame_system_ids = [0] * 5 + [1] * 5
+        block_targets = [([0], 25), ([1], 25)]
+        rng = np.random.default_rng(42)
+        indices = list(range(10))
+        expanded = _expand_indices_by_blocks(
+            indices,
+            frame_system_ids,
+            block_targets,
+            rng,
+        )
+        # Each block should have 25 indices
+        sys0_expanded = [i for i in expanded if frame_system_ids[i] == 0]
+        sys1_expanded = [i for i in expanded if frame_system_ids[i] == 1]
+        self.assertEqual(len(sys0_expanded), 25)
+        self.assertEqual(len(sys1_expanded), 25)
+        # All original indices present
+        self.assertTrue(set(range(5)).issubset(set(sys0_expanded)))
+        self.assertTrue(set(range(5, 10)).issubset(set(sys1_expanded)))
+
+    def test_expand_indices_no_expansion(self):
+        """No expansion when target == actual."""
+        frame_system_ids = [0] * 5 + [1] * 5
+        block_targets = [([0], 5), ([1], 5)]
+        rng = np.random.default_rng(42)
+        indices = list(range(10))
+        expanded = _expand_indices_by_blocks(
+            indices,
+            frame_system_ids,
+            block_targets,
+            rng,
+        )
+        self.assertEqual(sorted(expanded), list(range(10)))
+
+    def test_expand_indices_remainder_sampling(self):
+        """Remainder part uses without-replacement sampling."""
+        # sys0=10 frames, target=23 -> 1 full copy + 3 remainder
+        frame_system_ids = [0] * 10
+        block_targets = [([0], 23)]
+        rng = np.random.default_rng(42)
+        indices = list(range(10))
+        expanded = _expand_indices_by_blocks(
+            indices,
+            frame_system_ids,
+            block_targets,
+            rng,
+        )
+        self.assertEqual(len(expanded), 23)
+        # Each original index appears at least twice (1 original + 1 full copy)
+        from collections import (
+            Counter,
+        )
+
+        counts = Counter(expanded)
+        for i in range(10):
+            self.assertGreaterEqual(counts[i], 2)
+        # 3 indices appear 3 times (the remainder)
+        n_three = sum(1 for c in counts.values() if c == 3)
+        self.assertEqual(n_three, 3)
+
+    def test_expand_epoch_diversity(self):
+        """Different RNG seeds produce different remainder samples."""
+        frame_system_ids = [0] * 10
+        block_targets = [([0], 15)]  # 10 + 5 remainder
+        indices = list(range(10))
+        results = []
+        for seed in range(5):
+            rng = np.random.default_rng(seed)
+            expanded = _expand_indices_by_blocks(
+                indices,
+                frame_system_ids,
+                block_targets,
+                rng,
+            )
+            # Sort the "extra" part (beyond the first 10)
+            results.append(sorted(expanded[10:]))
+        # At least 2 different remainder sets across 5 seeds
+        unique = {tuple(r) for r in results}
+        self.assertGreater(len(unique), 1)
+
+    # --- SameNlocBatchSampler with block_targets ---
+
+    def test_sampler_with_block_targets(self):
+        """SameNlocBatchSampler expands frames when block_targets provided."""
+        reader = LmdbDataReader(self._lmdb_path, ["O", "H"])
+        # sys0=100, sys1=200, sys2=300; make block A=[0] prob=0.5, B=[1,2] prob=0.5
+        # block_A frames=100, block_B frames=500
+        # ratio_A=200, ratio_B=1000 -> total_target=1000
+        # target_A=500, target_B=500
+        block_targets = compute_block_targets(
+            "prob_sys_size;0:1:0.5;1:3:0.5",
+            nsystems=3,
+            system_nframes=[100, 200, 300],
+        )
+        self.assertTrue(len(block_targets) > 0)
+
+        sampler = SameNlocBatchSampler(
+            reader,
+            shuffle=True,
+            block_targets=block_targets,
+        )
+        all_indices = []
+        for batch in sampler:
+            all_indices.extend(batch)
+        # Total should be ~1000 (500 from block A + 500 from block B)
+        self.assertGreater(len(all_indices), 600)  # more than original 600
+        # All original indices should appear at least once
+        self.assertEqual(len(set(all_indices)), 600)
+
+    def test_sampler_without_block_targets(self):
+        """SameNlocBatchSampler without block_targets: no expansion."""
+        reader = LmdbDataReader(self._lmdb_path, ["O", "H"])
+        sampler = SameNlocBatchSampler(reader, shuffle=False)
+        all_indices = []
+        for batch in sampler:
+            all_indices.extend(batch)
+        self.assertEqual(len(all_indices), 600)
+        self.assertEqual(sorted(all_indices), list(range(600)))
 
 
 if __name__ == "__main__":

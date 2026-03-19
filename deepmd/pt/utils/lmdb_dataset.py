@@ -9,6 +9,7 @@ from typing import (
     Any,
 )
 
+import numpy as np
 import torch
 from torch.utils.data import (
     DataLoader,
@@ -23,6 +24,7 @@ from deepmd.dpmodel.utils.lmdb_data import (
     LmdbDataReader,
     LmdbTestData,
     SameNlocBatchSampler,
+    compute_block_targets,
     is_lmdb,
 )
 from deepmd.utils.data import (
@@ -123,6 +125,7 @@ class LmdbDataset(Dataset):
         type_map: list[str],
         batch_size: int | str = "auto",
         mixed_batch: bool = False,
+        auto_prob_style: str | None = None,
     ) -> None:
         self._reader = LmdbDataReader(
             lmdb_path, type_map, batch_size, mixed_batch=mixed_batch
@@ -135,8 +138,26 @@ class LmdbDataset(Dataset):
                 "Requires padding + mask in collate_fn."
             )
 
+        # Compute block_targets from auto_prob_style if provided
+        self._block_targets = None
+        if auto_prob_style is not None and self._reader.frame_system_ids is not None:
+            self._block_targets = compute_block_targets(
+                auto_prob_style,
+                self._reader.nsystems,
+                self._reader.system_nframes,
+            )
+            if self._block_targets is not None:
+                log.info(
+                    f"LMDB auto_prob: {len(self._block_targets)} blocks, "
+                    f"nsystems={self._reader.nsystems}"
+                )
+
         # Same-nloc batching: use SameNlocBatchSampler
-        sampler = SameNlocBatchSampler(self._reader, shuffle=True)
+        sampler = SameNlocBatchSampler(
+            self._reader,
+            shuffle=True,
+            block_targets=self._block_targets,
+        )
         self._batch_sampler = _SameNlocBatchSamplerTorch(sampler)
 
         with torch.device("cpu"):
@@ -203,6 +224,44 @@ class LmdbDataset(Dataset):
 
     def print_summary(self, name: str, prob: Any) -> None:
         self._reader.print_summary(name, prob)
+        if self._block_targets:
+            reader = self._reader
+            # Per-block summary: original vs target frames
+            block_lines = []
+            total_original = 0
+            total_target = 0
+            for sys_ids, target in self._block_targets:
+                actual = sum(reader.system_nframes[s] for s in sys_ids)
+                total_original += actual
+                total_target += target
+                sys_str = ",".join(str(s) for s in sys_ids)
+                block_lines.append(f"sys[{sys_str}]:{actual}->{target}")
+            # Expanded nloc groups (simulate one expansion to get counts)
+            from deepmd.dpmodel.utils.lmdb_data import (
+                _expand_indices_by_blocks,
+            )
+
+            expanded_nloc_info = {}
+            for nloc, indices in sorted(reader.nloc_groups.items()):
+                rng = np.random.default_rng(0)
+                expanded = _expand_indices_by_blocks(
+                    list(indices),
+                    reader.frame_system_ids,
+                    self._block_targets,
+                    rng,
+                )
+                expanded_nloc_info[nloc] = len(expanded)
+            nloc_str = ", ".join(
+                f"{nloc}({orig}->{expanded_nloc_info[nloc]})"
+                for nloc, orig in sorted(
+                    (n, len(idx)) for n, idx in reader.nloc_groups.items()
+                )
+            )
+            log.info(
+                f"LMDB {name} auto_prob: {total_original}->{total_target} frames, "
+                f"blocks: [{', '.join(block_lines)}], "
+                f"nloc groups: [{nloc_str}]"
+            )
 
     def set_noise(self, noise_settings: dict[str, Any]) -> None:
         self._reader.set_noise(noise_settings)

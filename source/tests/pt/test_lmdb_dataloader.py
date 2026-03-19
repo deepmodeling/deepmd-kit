@@ -16,6 +16,7 @@ from deepmd.dpmodel.utils.lmdb_data import (
     _read_metadata,
     _remap_keys,
     is_lmdb,
+    merge_lmdb,
 )
 from deepmd.pt.utils.lmdb_dataset import (
     LmdbDataset,
@@ -467,6 +468,159 @@ class TestLmdbTestData:
         assert result["type"].max() <= 1
 
 
+def _create_test_lmdb_with_type_map(
+    path: str,
+    nframes: int = 10,
+    natoms: int = 6,
+    lmdb_type_map: list[str] | None = None,
+) -> None:
+    """Create a minimal LMDB dataset with type_map in metadata."""
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    fmt = "012d"
+    metadata = {
+        "nframes": nframes,
+        "frame_idx_fmt": fmt,
+        "system_info": {
+            "formula": f"O{natoms // 2}H{natoms // 2}",
+            "natoms": [natoms // 2, natoms // 2],
+            "nframes": nframes,
+        },
+    }
+    if lmdb_type_map is not None:
+        metadata["type_map"] = lmdb_type_map
+    with env.begin(write=True) as txn:
+        txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
+        for i in range(nframes):
+            key = format(i, fmt).encode()
+            frame = _make_frame(natoms=natoms, seed=i)
+            txn.put(key, msgpack.packb(frame, use_bin_type=True))
+    env.close()
+
+
+@pytest.fixture
+def lmdb_with_type_map(tmp_path):
+    """Create LMDB with type_map=["O","H"] in metadata."""
+    lmdb_path = str(tmp_path / "typed.lmdb")
+    _create_test_lmdb_with_type_map(
+        lmdb_path, nframes=10, natoms=6, lmdb_type_map=["O", "H"]
+    )
+    return lmdb_path
+
+
+@pytest.fixture
+def lmdb_no_type_map(tmp_path):
+    """Create LMDB without type_map in metadata (old format)."""
+    lmdb_path = str(tmp_path / "old.lmdb")
+    _create_test_lmdb_with_type_map(lmdb_path, nframes=6, natoms=6, lmdb_type_map=None)
+    return lmdb_path
+
+
+class TestTypeMapRemapping:
+    """Test type_map remapping in LmdbDataReader, LmdbDataset, and LmdbTestData."""
+
+    # --- LmdbDataReader ---
+
+    def test_reader_no_remap_when_match(self, lmdb_with_type_map):
+        reader = LmdbDataReader(lmdb_with_type_map, ["O", "H"])
+        assert reader._type_remap is None
+        frame = reader[0]
+        assert frame["atype"][0] == 0  # type-0 stays 0
+
+    def test_reader_remap_reversed(self, lmdb_with_type_map):
+        reader = LmdbDataReader(lmdb_with_type_map, ["H", "O"])
+        assert reader._type_remap is not None
+        np.testing.assert_array_equal(reader._type_remap, [1, 0])
+        frame = reader[0]
+        # Original: first 3 atoms type-0 (O), last 3 type-1 (H)
+        # After remap: O->1, H->0
+        np.testing.assert_array_equal(frame["atype"][:3], [1, 1, 1])
+        np.testing.assert_array_equal(frame["atype"][3:], [0, 0, 0])
+
+    def test_reader_remap_superset(self, lmdb_with_type_map):
+        reader = LmdbDataReader(lmdb_with_type_map, ["C", "O", "H"])
+        assert reader._type_remap is not None
+        np.testing.assert_array_equal(reader._type_remap, [1, 2])
+        frame = reader[0]
+        np.testing.assert_array_equal(frame["atype"][:3], [1, 1, 1])
+        np.testing.assert_array_equal(frame["atype"][3:], [2, 2, 2])
+
+    def test_reader_natoms_vec_after_remap(self, lmdb_with_type_map):
+        reader = LmdbDataReader(lmdb_with_type_map, ["H", "O"])
+        frame = reader[0]
+        natoms = frame["natoms"]
+        assert natoms[0] == 6  # nloc
+        assert natoms[2] == 3  # H count (model idx 0)
+        assert natoms[3] == 3  # O count (model idx 1)
+
+    def test_reader_missing_element_raises(self, lmdb_with_type_map):
+        with pytest.raises(ValueError, match="not found in model type_map"):
+            LmdbDataReader(lmdb_with_type_map, ["O"])
+
+    def test_reader_no_remap_old_format(self, lmdb_no_type_map):
+        reader = LmdbDataReader(lmdb_no_type_map, ["H", "O"])
+        assert reader._type_remap is None
+
+    # --- LmdbDataset ---
+
+    def test_dataset_remap_reversed(self, lmdb_with_type_map):
+        ds = LmdbDataset(lmdb_with_type_map, type_map=["H", "O"], batch_size=2)
+        frame = ds[0]
+        # O->1, H->0
+        np.testing.assert_array_equal(frame["atype"][:3], [1, 1, 1])
+        np.testing.assert_array_equal(frame["atype"][3:], [0, 0, 0])
+
+    def test_dataset_remap_batch(self, lmdb_with_type_map):
+        ds = LmdbDataset(lmdb_with_type_map, type_map=["H", "O"], batch_size=2)
+        with torch.device("cpu"):
+            dl = ds.dataloaders[0]
+            batch = next(iter(dl))
+        # All frames in batch should have remapped types
+        atype = batch["atype"]
+        for i in range(atype.shape[0]):
+            np.testing.assert_array_equal(atype[i, :3].numpy(), [1, 1, 1])
+            np.testing.assert_array_equal(atype[i, 3:].numpy(), [0, 0, 0])
+
+    def test_dataset_no_remap_when_match(self, lmdb_with_type_map):
+        ds = LmdbDataset(lmdb_with_type_map, type_map=["O", "H"], batch_size=2)
+        frame = ds[0]
+        np.testing.assert_array_equal(frame["atype"][:3], [0, 0, 0])
+        np.testing.assert_array_equal(frame["atype"][3:], [1, 1, 1])
+
+    # --- LmdbTestData ---
+
+    def test_testdata_no_remap_when_match(self, lmdb_with_type_map):
+        td = LmdbTestData(lmdb_with_type_map, type_map=["O", "H"], shuffle_test=False)
+        assert td._type_remap is None
+        data = td.get_test()
+        assert data["type"][0, 0] == 0
+
+    def test_testdata_remap_reversed(self, lmdb_with_type_map):
+        td = LmdbTestData(lmdb_with_type_map, type_map=["H", "O"], shuffle_test=False)
+        assert td._type_remap is not None
+        data = td.get_test()
+        # O->1, H->0
+        np.testing.assert_array_equal(data["type"][0, :3], [1, 1, 1])
+        np.testing.assert_array_equal(data["type"][0, 3:], [0, 0, 0])
+
+    def test_testdata_remap_superset(self, lmdb_with_type_map):
+        td = LmdbTestData(
+            lmdb_with_type_map, type_map=["C", "O", "H"], shuffle_test=False
+        )
+        assert td._type_remap is not None
+        data = td.get_test()
+        # O->1, H->2
+        np.testing.assert_array_equal(data["type"][0, :3], [1, 1, 1])
+        np.testing.assert_array_equal(data["type"][0, 3:], [2, 2, 2])
+
+    def test_testdata_missing_element_raises(self, lmdb_with_type_map):
+        with pytest.raises(ValueError, match="not found in model type_map"):
+            LmdbTestData(lmdb_with_type_map, type_map=["O"], shuffle_test=False)
+
+    def test_testdata_no_remap_old_format(self, lmdb_no_type_map):
+        td = LmdbTestData(lmdb_no_type_map, type_map=["H", "O"], shuffle_test=False)
+        assert td._type_remap is None
+
+
 def _create_multi_nloc_lmdb(path: str) -> None:
     """Create an LMDB with frames of varying nloc for distributed tests."""
     env = lmdb.open(path, map_size=10 * 1024 * 1024)
@@ -639,3 +793,183 @@ class TestDistributedSameNlocBatchSampler:
         for batch in s:
             nlocs = [reader.frame_nlocs[idx] for idx in batch]
             assert len(set(nlocs)) == 1, f"Mixed nloc in batch: {nlocs}"
+
+
+# ============================================================
+# auto_prob / merge_lmdb tests
+# ============================================================
+
+
+def _create_lmdb_with_system_ids(
+    path: str,
+    system_frames: list[int],
+    natoms: int = 6,
+    type_map: list[str] | None = None,
+) -> str:
+    """Create a test LMDB with frame_system_ids in metadata."""
+    total = sum(system_frames)
+    frame_system_ids = []
+    for sid, nf in enumerate(system_frames):
+        frame_system_ids.extend([sid] * nf)
+
+    env = lmdb.open(path, map_size=50 * 1024 * 1024)
+    fmt = "012d"
+    with env.begin(write=True) as txn:
+        meta = {
+            "nframes": total,
+            "frame_idx_fmt": fmt,
+            "system_info": {
+                "natoms": [natoms // 2, natoms // 2],
+            },
+            "frame_system_ids": frame_system_ids,
+            "frame_nlocs": [natoms] * total,
+        }
+        if type_map is not None:
+            meta["type_map"] = type_map
+        txn.put(b"__metadata__", msgpack.packb(meta, use_bin_type=True))
+        for i in range(total):
+            key = format(i, fmt).encode()
+            frame = _make_frame(natoms=natoms, seed=i % 100)
+            txn.put(key, msgpack.packb(frame, use_bin_type=True))
+    env.close()
+    return path
+
+
+@pytest.fixture
+def auto_prob_lmdb(tmp_path):
+    """LMDB with 3 systems: 50, 100, 150 frames."""
+    path = str(tmp_path / "auto_prob.lmdb")
+    _create_lmdb_with_system_ids(
+        path,
+        system_frames=[50, 100, 150],
+        natoms=6,
+        type_map=["O", "H"],
+    )
+    return path
+
+
+class TestAutoProbDataset:
+    """Test LmdbDataset with auto_prob_style."""
+
+    def test_dataset_auto_prob_passthrough(self, auto_prob_lmdb):
+        """LmdbDataset passes auto_prob_style to sampler."""
+        ds = LmdbDataset(
+            auto_prob_lmdb,
+            type_map=["O", "H"],
+            batch_size=4,
+            auto_prob_style="prob_sys_size;0:1:0.5;1:3:0.5",
+        )
+        assert ds._block_targets is not None
+        assert len(ds._block_targets) > 0
+
+    def test_dataset_auto_prob_none(self, auto_prob_lmdb):
+        """LmdbDataset without auto_prob_style: no block_targets."""
+        ds = LmdbDataset(
+            auto_prob_lmdb,
+            type_map=["O", "H"],
+            batch_size=4,
+        )
+        assert ds._block_targets is None
+
+    def test_dataset_auto_prob_no_system_ids(self, lmdb_dir):
+        """LmdbDataset with auto_prob but old LMDB (no system_ids): no crash."""
+        ds = LmdbDataset(
+            lmdb_dir,
+            type_map=["O", "H"],
+            batch_size=4,
+            auto_prob_style="prob_sys_size;0:1:1.0",
+        )
+        # No system_ids -> block_targets stays None
+        assert ds._block_targets is None
+
+    def test_dataset_auto_prob_iteration(self, auto_prob_lmdb):
+        """LmdbDataset with auto_prob can iterate and produce batches."""
+        ds = LmdbDataset(
+            auto_prob_lmdb,
+            type_map=["O", "H"],
+            batch_size=4,
+            auto_prob_style="prob_sys_size;0:1:0.5;1:3:0.5",
+        )
+        count = 0
+        for batch in ds._batch_sampler:
+            assert len(batch) > 0
+            count += len(batch)
+        # Should have more frames than original 300 due to expansion
+        assert count > 300
+
+
+class TestMergeLmdbSystemIds:
+    """Test merge_lmdb propagates frame_system_ids."""
+
+    def test_merge_propagates_system_ids(self, tmp_path):
+        """Merged LMDB has correct frame_system_ids with offsets."""
+        src1 = str(tmp_path / "src1.lmdb")
+        src2 = str(tmp_path / "src2.lmdb")
+        _create_lmdb_with_system_ids(
+            src1,
+            system_frames=[5, 10],
+            natoms=6,
+            type_map=["O", "H"],
+        )
+        _create_lmdb_with_system_ids(
+            src2,
+            system_frames=[3, 7],
+            natoms=6,
+            type_map=["O", "H"],
+        )
+        dst = str(tmp_path / "merged.lmdb")
+        merge_lmdb([src1, src2], dst)
+
+        reader = LmdbDataReader(dst, ["O", "H"])
+        assert reader.nframes == 25  # 15 + 10
+        assert reader.nsystems == 4  # 2 from src1 + 2 from src2
+        sids = reader.frame_system_ids
+        assert sids is not None
+        # src1: sys0(5 frames) -> 0, sys1(10 frames) -> 1
+        # src2: sys0(3 frames) -> 2, sys1(7 frames) -> 3
+        assert sids[:5] == [0] * 5
+        assert sids[5:15] == [1] * 10
+        assert sids[15:18] == [2] * 3
+        assert sids[18:25] == [3] * 7
+
+    def test_merge_old_lmdb_no_system_ids(self, tmp_path):
+        """Merging old LMDBs without system_ids: each source gets one sys id."""
+        src1 = str(tmp_path / "old1.lmdb")
+        src2 = str(tmp_path / "old2.lmdb")
+        _create_test_lmdb(src1, nframes=5, natoms=6)
+        _create_test_lmdb(src2, nframes=3, natoms=6)
+        dst = str(tmp_path / "merged_old.lmdb")
+        merge_lmdb([src1, src2], dst)
+
+        reader = LmdbDataReader(dst, ["O", "H"])
+        assert reader.nframes == 8
+        assert reader.nsystems == 2
+        sids = reader.frame_system_ids
+        assert sids is not None
+        assert sids[:5] == [0] * 5
+        assert sids[5:8] == [1] * 3
+
+    def test_merge_preserves_type_map(self, tmp_path):
+        """Merged LMDB preserves type_map from first source."""
+        src1 = str(tmp_path / "tm1.lmdb")
+        src2 = str(tmp_path / "tm2.lmdb")
+        _create_lmdb_with_system_ids(
+            src1,
+            system_frames=[5],
+            natoms=6,
+            type_map=["O", "H"],
+        )
+        _create_lmdb_with_system_ids(
+            src2,
+            system_frames=[5],
+            natoms=6,
+            type_map=["O", "H"],
+        )
+        dst = str(tmp_path / "merged_tm.lmdb")
+        merge_lmdb([src1, src2], dst)
+
+        env = lmdb.open(dst, readonly=True, lock=False)
+        with env.begin() as txn:
+            meta = _read_metadata(txn)
+        env.close()
+        assert meta.get("type_map") == ["O", "H"]

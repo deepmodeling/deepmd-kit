@@ -265,6 +265,23 @@ class LmdbDataReader:
             self._frame_nlocs = []
             self._nloc_groups = {}
 
+        # Parse frame_system_ids for auto_prob support
+        meta_sys_ids = meta.get("frame_system_ids")
+        if meta_sys_ids is not None:
+            self._frame_system_ids: list[int] | None = [int(s) for s in meta_sys_ids]
+            self._nsystems = max(self._frame_system_ids) + 1
+            self._system_groups: dict[int, list[int]] = {}
+            for idx, sid in enumerate(self._frame_system_ids):
+                self._system_groups.setdefault(sid, []).append(idx)
+            self._system_nframes: list[int] = [
+                len(self._system_groups.get(i, [])) for i in range(self._nsystems)
+            ]
+        else:
+            self._frame_system_ids = None
+            self._nsystems = 1
+            self._system_groups = {0: list(range(self.nframes))}
+            self._system_nframes = [self.nframes]
+
         # Parse batch_size spec
         self._auto_rule: int | None = None
         if isinstance(batch_size, str):
@@ -502,11 +519,196 @@ class LmdbDataReader:
         """Per-frame atom count."""
         return self._frame_nlocs
 
+    @property
+    def nsystems(self) -> int:
+        """Number of original systems merged into this LMDB."""
+        return self._nsystems
+
+    @property
+    def frame_system_ids(self) -> list[int] | None:
+        """Per-frame system index, or None if not available."""
+        return self._frame_system_ids
+
+    @property
+    def system_groups(self) -> dict[int, list[int]]:
+        """System index → list of frame indices."""
+        return self._system_groups
+
+    @property
+    def system_nframes(self) -> list[int]:
+        """Number of frames per system."""
+        return self._system_nframes
+
+
+def compute_block_targets(
+    auto_prob_style: str,
+    nsystems: int,
+    system_nframes: list[int],
+) -> list[tuple[list[int], int]]:
+    """Compute target frame count per block from auto_prob config.
+
+    Uses the same ``prob_sys_size_ext`` logic as the npy pipeline to parse
+    the ``auto_prob`` string, then converts per-system probabilities into
+    per-block target frame counts using the "max(frames/prob)" strategy.
+
+    Parameters
+    ----------
+    auto_prob_style : str
+        e.g. ``"prob_sys_size;0:3:0.5;3:10:0.5"``
+    nsystems : int
+        Total number of systems in the LMDB.
+    system_nframes : list[int]
+        Number of frames per system.
+
+    Returns
+    -------
+    list[tuple[list[int], int]]
+        Each element is ``(system_indices_in_block, target_frame_count)``.
+        Returns empty list if no expansion is needed (all targets == actual).
+    """
+    from deepmd.utils.data_system import (
+        prob_sys_size_ext,
+    )
+
+    # Parse block definitions from the auto_prob string
+    # Format: "prob_sys_size;stt:end:weight;stt:end:weight;..."
+    block_str = auto_prob_style.split(";")[1:]
+    blocks: list[tuple[int, int, float]] = []
+    for part in block_str:
+        stt, end, weight = part.split(":")
+        blocks.append((int(stt), int(end), float(weight)))
+
+    # Compute per-system probabilities using the standard function
+    sys_probs = prob_sys_size_ext(auto_prob_style, nsystems, system_nframes)
+
+    # Group systems by block, compute block-level frames and prob
+    block_info: list[tuple[list[int], int, float]] = []  # (sys_ids, frames, prob)
+    for stt, end, _weight in blocks:
+        sys_ids = list(range(stt, end))
+        block_frames = sum(system_nframes[i] for i in sys_ids)
+        block_prob = sum(sys_probs[i] for i in sys_ids)
+        block_info.append((sys_ids, block_frames, block_prob))
+
+    # Step 1-2: total_target = ceil(max(block_frames / block_prob))
+    ratios = []
+    for sys_ids, block_frames, block_prob in block_info:
+        if block_prob > 0:
+            ratios.append(block_frames / block_prob)
+        else:
+            ratios.append(0.0)
+    total_target = math.ceil(max(ratios)) if ratios else 0
+
+    # Step 3: per-block target = round(total_target * block_prob)
+    result: list[tuple[list[int], int]] = []
+    needs_expansion = False
+    for sys_ids, block_frames, block_prob in block_info:
+        target = round(total_target * block_prob)
+        target = max(target, block_frames)  # never shrink
+        if target > block_frames:
+            needs_expansion = True
+        result.append((sys_ids, target))
+
+    if not needs_expansion:
+        return []
+
+    return result
+
+
+def _expand_indices_by_blocks(
+    indices: list[int],
+    frame_system_ids: list[int],
+    block_targets: list[tuple[list[int], int]],
+    rng: np.random.Generator,
+) -> list[int]:
+    """Expand frame indices according to block targets.
+
+    For each block, computes the proportional target for the subset of
+    indices belonging to that block (within the current nloc group),
+    then applies full-copy + remainder sampling.
+
+    Parameters
+    ----------
+    indices : list[int]
+        Frame indices in the current nloc group.
+    frame_system_ids : list[int]
+        Per-frame system id for the entire dataset.
+    block_targets : list[tuple[list[int], int]]
+        Per-block (system_ids, total_target_frames).
+    rng : np.random.Generator
+        RNG for remainder sampling.
+
+    Returns
+    -------
+    list[int]
+        Expanded indices.
+    """
+    # Build sys_id -> block_idx mapping
+    sys_to_block: dict[int, int] = {}
+    for blk_idx, (sys_ids, _target) in enumerate(block_targets):
+        for sid in sys_ids:
+            sys_to_block[sid] = blk_idx
+
+    # Partition indices by block
+    block_indices: dict[int, list[int]] = {i: [] for i in range(len(block_targets))}
+    unassigned: list[int] = []
+    for idx in indices:
+        sid = frame_system_ids[idx]
+        blk = sys_to_block.get(sid)
+        if blk is not None:
+            block_indices[blk].append(idx)
+        else:
+            unassigned.append(idx)
+
+    # Compute total actual frames across all blocks (for proportional scaling)
+    total_actual = sum(len(block_indices[i]) for i in range(len(block_targets)))
+    total_target_all = sum(t for _, t in block_targets)
+
+    expanded: list[int] = list(unassigned)
+
+    for blk_idx, (sys_ids, block_total_target) in enumerate(block_targets):
+        blk_idxs = block_indices[blk_idx]
+        n_actual = len(blk_idxs)
+        if n_actual == 0:
+            continue
+
+        # Proportional target for this nloc subset of the block
+        # block_total_target is for the entire block; scale by the fraction
+        # of block frames that fall in this nloc group
+        _, block_total_target_all = block_targets[blk_idx]
+        # Get total frames in this block across all nloc groups
+        block_total_actual = sum(
+            1
+            for i in range(len(frame_system_ids))
+            if frame_system_ids[i] in set(sys_ids)
+        )
+        if block_total_actual > 0:
+            target = round(block_total_target_all * n_actual / block_total_actual)
+        else:
+            target = n_actual
+        target = max(target, n_actual)  # never shrink
+
+        # Full copies + remainder
+        deficit = target - n_actual
+        if deficit <= 0:
+            expanded.extend(blk_idxs)
+        else:
+            full_copies = deficit // n_actual
+            remainder = deficit % n_actual
+            # Original + full copies
+            expanded.extend(blk_idxs * (1 + full_copies))
+            # Remainder: sample without replacement
+            if remainder > 0:
+                sampled = rng.choice(blk_idxs, size=remainder, replace=False)
+                expanded.extend(sampled.tolist())
+
+    return expanded
+
 
 def _build_all_batches(
     reader: "LmdbDataReader",
     shuffle: bool,
     rng: np.random.Generator,
+    block_targets: list[tuple[list[int], int]] | None = None,
 ) -> list[list[int]]:
     """Build the full list of same-nloc batches from the reader.
 
@@ -522,6 +724,9 @@ def _build_all_batches(
         shuffle the final batch order.
     rng : np.random.Generator
         Random number generator (deterministic for reproducibility).
+    block_targets : list[tuple[list[int], int]] or None
+        Per-block (system_ids, target_frame_count) from compute_block_targets.
+        When provided, indices are expanded via full-copy + remainder sampling.
 
     Returns
     -------
@@ -532,6 +737,11 @@ def _build_all_batches(
     group_batches: list[list[list[int]]] = []
     for nloc in sorted(reader.nloc_groups.keys()):
         indices = list(reader.nloc_groups[nloc])
+        # Expand indices by block targets if provided
+        if block_targets and reader.frame_system_ids is not None:
+            indices = _expand_indices_by_blocks(
+                indices, reader.frame_system_ids, block_targets, rng
+            )
         if shuffle:
             rng.shuffle(indices)
         bs = reader.get_batch_size_for_nloc(nloc)
@@ -575,6 +785,8 @@ class SameNlocBatchSampler:
         Whether to shuffle within each nloc group each epoch.
     seed : int or None
         Random seed for reproducibility.
+    block_targets : list[tuple[list[int], int]] or None
+        Per-block expansion targets from compute_block_targets.
     """
 
     def __init__(
@@ -582,22 +794,54 @@ class SameNlocBatchSampler:
         reader: LmdbDataReader,
         shuffle: bool = True,
         seed: int | None = None,
+        block_targets: list[tuple[list[int], int]] | None = None,
     ) -> None:
         self._reader = reader
         self._shuffle = shuffle
         self._seed = seed
+        self._block_targets = block_targets
 
     def __iter__(self) -> Iterator[list[int]]:
         """Yield batches of frame indices, all with the same nloc."""
         rng = np.random.default_rng(self._seed)
-        yield from _build_all_batches(self._reader, self._shuffle, rng)
+        yield from _build_all_batches(
+            self._reader, self._shuffle, rng, self._block_targets
+        )
 
     def __len__(self) -> int:
-        """Total number of batches across all nloc groups."""
+        """Total number of batches across all nloc groups (estimated)."""
         total = 0
         for nloc, indices in self._reader.nloc_groups.items():
+            n = len(indices)
+            if self._block_targets and self._reader.frame_system_ids is not None:
+                # Estimate expanded count for this nloc group
+                n = self._estimate_expanded_count(indices)
             bs = self._reader.get_batch_size_for_nloc(nloc)
-            total += (len(indices) + bs - 1) // bs
+            total += (n + bs - 1) // bs
+        return total
+
+    def _estimate_expanded_count(self, indices: list[int]) -> int:
+        """Estimate expanded index count for __len__ without RNG."""
+        if not self._block_targets or self._reader.frame_system_ids is None:
+            return len(indices)
+        sys_ids = self._reader.frame_system_ids
+        total = 0
+        for blk_idx, (blk_sys_ids, block_target) in enumerate(self._block_targets):
+            blk_sys_set = set(blk_sys_ids)
+            n_in_nloc = sum(1 for i in indices if sys_ids[i] in blk_sys_set)
+            if n_in_nloc == 0:
+                continue
+            block_total_actual = sum(1 for sid in sys_ids if sid in blk_sys_set)
+            if block_total_actual > 0:
+                target = round(block_target * n_in_nloc / block_total_actual)
+            else:
+                target = n_in_nloc
+            total += max(target, n_in_nloc)
+        # Add unassigned
+        all_sys = set()
+        for blk_sys_ids, _ in self._block_targets:
+            all_sys.update(blk_sys_ids)
+        total += sum(1 for i in indices if sys_ids[i] not in all_sys)
         return total
 
 
@@ -625,6 +869,8 @@ class DistributedSameNlocBatchSampler:
         Whether to shuffle batches.
     seed : int or None
         Base seed for deterministic RNG. All ranks must use the same seed.
+    block_targets : list[tuple[list[int], int]] or None
+        Per-block expansion targets from compute_block_targets.
     """
 
     def __init__(
@@ -634,6 +880,7 @@ class DistributedSameNlocBatchSampler:
         world_size: int,
         shuffle: bool = True,
         seed: int | None = None,
+        block_targets: list[tuple[list[int], int]] | None = None,
     ) -> None:
         self._reader = reader
         self._rank = rank
@@ -641,6 +888,7 @@ class DistributedSameNlocBatchSampler:
         self._shuffle = shuffle
         self._seed = seed if seed is not None else 0
         self._epoch = 0
+        self._block_targets = block_targets
 
     def set_epoch(self, epoch: int) -> None:
         """Set epoch for deterministic cross-rank shuffling.
@@ -654,7 +902,9 @@ class DistributedSameNlocBatchSampler:
         """Yield this rank's partition of the global batch list."""
         # All ranks build the same global batch list deterministically
         rng = np.random.default_rng(self._seed + self._epoch)
-        all_batches = _build_all_batches(self._reader, self._shuffle, rng)
+        all_batches = _build_all_batches(
+            self._reader, self._shuffle, rng, self._block_targets
+        )
         # Partition to this rank
         yield from self._partition_batches(all_batches)
 
@@ -1002,7 +1252,10 @@ def merge_lmdb(
     frame_idx = 0
     fmt = "012d"
     frame_nlocs: list[int] = []
+    frame_system_ids: list[int] = []
     first_system_info: dict | None = None
+    first_type_map: list[str] | None = None
+    sys_id_offset = 0
 
     for src_path in src_paths:
         src_env = _open_lmdb(src_path)
@@ -1013,9 +1266,13 @@ def merge_lmdb(
 
         if first_system_info is None:
             first_system_info = meta.get("system_info", {})
+        if first_type_map is None:
+            first_type_map = meta.get("type_map")
 
         # Check for pre-computed frame_nlocs in source
         src_nlocs = meta.get("frame_nlocs")
+        # Check for frame_system_ids in source
+        src_sys_ids = meta.get("frame_system_ids")
 
         with src_env.begin() as src_txn, dst_env.begin(write=True) as dst_txn:
             for i in range(nframes):
@@ -1041,7 +1298,20 @@ def merge_lmdb(
                     else:
                         frame_nlocs.append(fallback_natoms)
 
+                # Propagate system IDs with offset
+                if src_sys_ids is not None and i < len(src_sys_ids):
+                    frame_system_ids.append(int(src_sys_ids[i]) + sys_id_offset)
+                else:
+                    frame_system_ids.append(sys_id_offset)
+
                 frame_idx += 1
+
+        # Update sys_id_offset for next source
+        if src_sys_ids is not None and len(src_sys_ids) > 0:
+            sys_id_offset += max(int(s) for s in src_sys_ids) + 1
+        else:
+            sys_id_offset += 1
+
         src_env.close()
 
     # Write merged metadata with frame_nlocs for fast init
@@ -1050,7 +1320,10 @@ def merge_lmdb(
         "frame_idx_fmt": fmt,
         "system_info": first_system_info or {},
         "frame_nlocs": frame_nlocs,
+        "frame_system_ids": frame_system_ids,
     }
+    if first_type_map is not None:
+        merged_meta["type_map"] = first_type_map
     with dst_env.begin(write=True) as txn:
         txn.put(b"__metadata__", msgpack.packb(merged_meta, use_bin_type=True))
     dst_env.close()

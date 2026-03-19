@@ -255,6 +255,8 @@ class Trainer:
                     SameNlocBatchSampler,
                 )
 
+                _block_targets = getattr(_data, "_block_targets", None)
+
                 if self.world_size > 1:
                     from deepmd.dpmodel.utils.lmdb_data import (
                         DistributedSameNlocBatchSampler,
@@ -266,9 +268,14 @@ class Trainer:
                         world_size=self.world_size,
                         shuffle=True,
                         seed=_training_params.get("seed", None),
+                        block_targets=_block_targets,
                     )
                 else:
-                    _inner_sampler = SameNlocBatchSampler(_data._reader, shuffle=True)
+                    _inner_sampler = SameNlocBatchSampler(
+                        _data._reader,
+                        shuffle=True,
+                        block_targets=_block_targets,
+                    )
 
                 _batch_sampler = _SameNlocBatchSamplerTorch(_inner_sampler)
                 _dataloader = DataLoader(
