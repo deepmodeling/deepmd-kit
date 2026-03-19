@@ -30,6 +30,64 @@ def custom_huber_loss(predictions: Array, targets: Array, delta: float = 1.0) ->
 
 
 class EnergyLoss(Loss):
+    r"""Construct a layer to compute loss on energy, force and virial.
+
+    Parameters
+    ----------
+    starter_learning_rate : float
+        The learning rate at the start of the training.
+    start_pref_e : float
+        The prefactor of energy loss at the start of the training.
+    limit_pref_e : float
+        The prefactor of energy loss at the end of the training.
+    start_pref_f : float
+        The prefactor of force loss at the start of the training.
+    limit_pref_f : float
+        The prefactor of force loss at the end of the training.
+    start_pref_v : float
+        The prefactor of virial loss at the start of the training.
+    limit_pref_v : float
+        The prefactor of virial loss at the end of the training.
+    start_pref_ae : float
+        The prefactor of atomic energy loss at the start of the training.
+    limit_pref_ae : float
+        The prefactor of atomic energy loss at the end of the training.
+    start_pref_pf : float
+        The prefactor of atomic prefactor force loss at the start of the training.
+    limit_pref_pf : float
+        The prefactor of atomic prefactor force loss at the end of the training.
+    relative_f : float
+        If provided, relative force error will be used in the loss. The difference
+        of force will be normalized by the magnitude of the force in the label with
+        a shift given by relative_f
+    enable_atom_ener_coeff : bool
+        if true, the energy will be computed as \sum_i c_i E_i
+    start_pref_gf : float
+        The prefactor of generalized force loss at the start of the training.
+    limit_pref_gf : float
+        The prefactor of generalized force loss at the end of the training.
+    numb_generalized_coord : int
+        The dimension of generalized coordinates.
+    use_huber : bool
+        Enables Huber loss calculation for energy/force/virial terms with user-defined threshold delta (D).
+        The loss function smoothly transitions between L2 and L1 loss:
+        - For absolute prediction errors within D: quadratic loss (0.5 * (error**2))
+        - For absolute errors exceeding D: linear loss (D * |error| - 0.5 * D)
+        Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D).
+    huber_delta : float
+        The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
+    loss_func : str
+        Loss function type for energy, force, and virial terms.
+        Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss).
+        MAE loss is less sensitive to outliers compared to MSE loss.
+        Future extensions may support additional loss types.
+    f_use_norm : bool
+        If true, use L2 norm of force vectors for loss calculation when loss_func='mae' or use_huber is True.
+        Instead of computing loss on force components, computes loss on ||F_pred - F_label||_2.
+    **kwargs
+        Other keyword arguments.
+    """
+
     def __init__(
         self,
         starter_learning_rate: float,
@@ -50,8 +108,18 @@ class EnergyLoss(Loss):
         numb_generalized_coord: int = 0,
         use_huber: bool = False,
         huber_delta: float = 0.01,
+        loss_func: str = "mse",
+        f_use_norm: bool = False,
         **kwargs: Any,
     ) -> None:
+        # Validate loss_func
+        valid_loss_funcs = ["mse", "mae"]
+        if loss_func not in valid_loss_funcs:
+            raise ValueError(
+                f"Invalid loss_func '{loss_func}'. Must be one of {valid_loss_funcs}."
+            )
+
+        self.loss_func = loss_func
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e
@@ -80,6 +148,11 @@ class EnergyLoss(Loss):
             )
         self.use_huber = use_huber
         self.huber_delta = huber_delta
+        self.f_use_norm = f_use_norm
+        if self.f_use_norm and not (self.use_huber or self.loss_func == "mae"):
+            raise RuntimeError(
+                "f_use_norm can only be True when use_huber or loss_func='mae'."
+            )
         if self.use_huber and (
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
@@ -169,78 +242,152 @@ class EnergyLoss(Loss):
         loss = 0
         more_loss = {}
         if self.has_e:
-            l2_ener_loss = xp.mean(xp.square(energy - energy_hat))
-            if not self.use_huber:
-                loss += atom_norm_ener * (pref_e * l2_ener_loss)
-            else:
-                l_huber_loss = custom_huber_loss(
-                    atom_norm_ener * energy,
-                    atom_norm_ener * energy_hat,
-                    delta=self.huber_delta,
+            if self.loss_func == "mse":
+                l2_ener_loss = xp.mean(xp.square(energy - energy_hat))
+                if not self.use_huber:
+                    loss += atom_norm_ener * (pref_e * l2_ener_loss)
+                else:
+                    l_huber_loss = custom_huber_loss(
+                        atom_norm_ener * energy,
+                        atom_norm_ener * energy_hat,
+                        delta=self.huber_delta,
+                    )
+                    loss += pref_e * l_huber_loss
+                more_loss["rmse_e"] = self.display_if_exist(
+                    xp.sqrt(l2_ener_loss) * atom_norm_ener, find_energy
                 )
-                loss += pref_e * l_huber_loss
-            more_loss["rmse_e"] = self.display_if_exist(
-                xp.sqrt(l2_ener_loss) * atom_norm_ener, find_energy
-            )
+            elif self.loss_func == "mae":
+                l1_ener_loss = xp.mean(xp.abs(energy - energy_hat))
+                loss += atom_norm_ener * (pref_e * l1_ener_loss)
+                more_loss["mae_e"] = self.display_if_exist(
+                    l1_ener_loss * atom_norm_ener, find_energy
+                )
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for energy loss."
+                )
         if self.has_f:
-            l2_force_loss = xp.mean(xp.square(diff_f))
-            if not self.use_huber:
-                loss += pref_f * l2_force_loss
-            else:
-                l_huber_loss = custom_huber_loss(
-                    xp.reshape(force, (-1,)),
-                    xp.reshape(force_hat, (-1,)),
-                    delta=self.huber_delta,
+            if self.loss_func == "mse":
+                l2_force_loss = xp.mean(xp.square(diff_f))
+                if not self.use_huber:
+                    loss += pref_f * l2_force_loss
+                else:
+                    if not self.f_use_norm:
+                        l_huber_loss = custom_huber_loss(
+                            xp.reshape(force, (-1,)),
+                            xp.reshape(force_hat, (-1,)),
+                            delta=self.huber_delta,
+                        )
+                    else:
+                        force_diff_3 = xp.reshape(force_hat - force, (-1, 3))
+                        force_diff_norm = xp.reshape(
+                            xp.linalg.vector_norm(force_diff_3, axis=1), (-1, 1)
+                        )
+                        l_huber_loss = custom_huber_loss(
+                            force_diff_norm,
+                            xp.zeros_like(force_diff_norm),
+                            delta=self.huber_delta,
+                        )
+                    loss += pref_f * l_huber_loss
+                more_loss["rmse_f"] = self.display_if_exist(
+                    xp.sqrt(l2_force_loss), find_force
                 )
-                loss += pref_f * l_huber_loss
-            more_loss["rmse_f"] = self.display_if_exist(
-                xp.sqrt(l2_force_loss), find_force
-            )
+            elif self.loss_func == "mae":
+                if not self.f_use_norm:
+                    l1_force_loss = xp.mean(xp.abs(diff_f))
+                else:
+                    force_diff_3 = xp.reshape(force_hat - force, (-1, 3))
+                    l1_force_loss = xp.mean(xp.linalg.vector_norm(force_diff_3, axis=1))
+                loss += pref_f * l1_force_loss
+                more_loss["mae_f"] = self.display_if_exist(l1_force_loss, find_force)
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for force loss."
+                )
         if self.has_v:
             virial_reshape = xp.reshape(virial, (-1,))
             virial_hat_reshape = xp.reshape(virial_hat, (-1,))
-            l2_virial_loss = xp.mean(
-                xp.square(virial_hat_reshape - virial_reshape),
-            )
-            if not self.use_huber:
-                loss += atom_norm * (pref_v * l2_virial_loss)
-            else:
-                l_huber_loss = custom_huber_loss(
-                    atom_norm * virial_reshape,
-                    atom_norm * virial_hat_reshape,
-                    delta=self.huber_delta,
+            if self.loss_func == "mse":
+                l2_virial_loss = xp.mean(
+                    xp.square(virial_hat_reshape - virial_reshape),
                 )
-                loss += pref_v * l_huber_loss
-            more_loss["rmse_v"] = self.display_if_exist(
-                xp.sqrt(l2_virial_loss) * atom_norm, find_virial
-            )
+                if not self.use_huber:
+                    loss += atom_norm * (pref_v * l2_virial_loss)
+                else:
+                    l_huber_loss = custom_huber_loss(
+                        atom_norm * virial_reshape,
+                        atom_norm * virial_hat_reshape,
+                        delta=self.huber_delta,
+                    )
+                    loss += pref_v * l_huber_loss
+                more_loss["rmse_v"] = self.display_if_exist(
+                    xp.sqrt(l2_virial_loss) * atom_norm, find_virial
+                )
+            elif self.loss_func == "mae":
+                l1_virial_loss = xp.mean(xp.abs(virial_hat_reshape - virial_reshape))
+                loss += atom_norm * (pref_v * l1_virial_loss)
+                more_loss["mae_v"] = self.display_if_exist(
+                    l1_virial_loss * atom_norm, find_virial
+                )
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for virial loss."
+                )
         if self.has_ae:
             atom_ener_reshape = xp.reshape(atom_ener, (-1,))
             atom_ener_hat_reshape = xp.reshape(atom_ener_hat, (-1,))
-            l2_atom_ener_loss = xp.mean(
-                xp.square(atom_ener_hat_reshape - atom_ener_reshape),
-            )
-            if not self.use_huber:
-                loss += pref_ae * l2_atom_ener_loss
-            else:
-                l_huber_loss = custom_huber_loss(
-                    atom_ener_reshape,
-                    atom_ener_hat_reshape,
-                    delta=self.huber_delta,
+
+            if self.loss_func == "mse":
+                l2_atom_ener_loss = xp.mean(
+                    xp.square(atom_ener_hat_reshape - atom_ener_reshape),
                 )
-                loss += pref_ae * l_huber_loss
-            more_loss["rmse_ae"] = self.display_if_exist(
-                xp.sqrt(l2_atom_ener_loss), find_atom_ener
-            )
+                if not self.use_huber:
+                    loss += pref_ae * l2_atom_ener_loss
+                else:
+                    l_huber_loss = custom_huber_loss(
+                        atom_ener_reshape,
+                        atom_ener_hat_reshape,
+                        delta=self.huber_delta,
+                    )
+                    loss += pref_ae * l_huber_loss
+                more_loss["rmse_ae"] = self.display_if_exist(
+                    xp.sqrt(l2_atom_ener_loss), find_atom_ener
+                )
+            elif self.loss_func == "mae":
+                l1_atom_ener_loss = xp.mean(
+                    xp.abs(atom_ener_hat_reshape - atom_ener_reshape)
+                )
+                loss += pref_ae * l1_atom_ener_loss
+                more_loss["mae_ae"] = self.display_if_exist(
+                    l1_atom_ener_loss, find_atom_ener
+                )
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for atomic energy loss."
+                )
         if self.has_pf:
             atom_pref_reshape = xp.reshape(atom_pref, (-1,))
-            l2_pref_force_loss = xp.mean(
-                xp.multiply(xp.square(diff_f), atom_pref_reshape),
-            )
-            loss += pref_pf * l2_pref_force_loss
-            more_loss["rmse_pf"] = self.display_if_exist(
-                xp.sqrt(l2_pref_force_loss), find_atom_pref
-            )
+
+            if self.loss_func == "mse":
+                l2_pref_force_loss = xp.mean(
+                    xp.multiply(xp.square(diff_f), atom_pref_reshape),
+                )
+                loss += pref_pf * l2_pref_force_loss
+                more_loss["rmse_pf"] = self.display_if_exist(
+                    xp.sqrt(l2_pref_force_loss), find_atom_pref
+                )
+            elif self.loss_func == "mae":
+                l1_pref_force_loss = xp.mean(
+                    xp.multiply(xp.abs(diff_f), atom_pref_reshape)
+                )
+                loss += pref_pf * l1_pref_force_loss
+                more_loss["mae_pf"] = self.display_if_exist(
+                    l1_pref_force_loss, find_atom_pref
+                )
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for atom prefactor force loss."
+                )
         if self.has_gf:
             find_drdq = label_dict["find_drdq"]
             drdq = label_dict["drdq"]
@@ -372,6 +519,8 @@ class EnergyLoss(Loss):
             "numb_generalized_coord": self.numb_generalized_coord,
             "use_huber": self.use_huber,
             "huber_delta": self.huber_delta,
+            "loss_func": self.loss_func,
+            "f_use_norm": self.f_use_norm,
         }
 
     @classmethod
