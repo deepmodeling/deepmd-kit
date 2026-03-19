@@ -19,6 +19,7 @@ Examples in this release include:
 
 - `DPA-3.2-5M`
 - `DPA-3.1-3M`
+- `DPA3-Omol-Large`
 
 ## Examples
 
