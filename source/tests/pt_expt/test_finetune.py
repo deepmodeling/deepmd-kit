@@ -119,6 +119,18 @@ model_dpa1 = {
 }
 
 
+def _subsample_data(src_dir: str, dst_dir: str, nframes: int = 2) -> None:
+    """Copy a data system, keeping only the first *nframes* frames."""
+    import shutil as _shutil
+
+    _shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
+    set_dir = os.path.join(dst_dir, "set.000")
+    for name in os.listdir(set_dir):
+        if name.endswith(".npy"):
+            arr = np.load(os.path.join(set_dir, name))
+            np.save(os.path.join(set_dir, name), arr[:nframes])
+
+
 def _make_config(data_dir: str, model_params: dict, numb_steps: int = 1) -> dict:
     """Build a minimal config dict for finetune tests."""
     config = {
@@ -141,11 +153,11 @@ def _make_config(data_dir: str, model_params: dict, numb_steps: int = 1) -> dict
         "training": {
             "training_data": {
                 "systems": [os.path.join(data_dir, "data_0")],
-                "batch_size": 1,
+                "batch_size": 2,
             },
             "validation_data": {
-                "systems": [os.path.join(data_dir, "data_3")],
-                "batch_size": 1,
+                "systems": [os.path.join(data_dir, "data_0")],
+                "batch_size": 2,
                 "numb_btch": 1,
             },
             "numb_steps": numb_steps,
@@ -471,23 +483,13 @@ class FinetuneTest:
                     coord_new2, new_index[atype_raw], box=box
                 )
 
-                # Force and virial are bias-independent: exact match
-                for key in ["force", "virial"]:
+                for key in ["energy", "force", "virial"]:
                     torch.testing.assert_close(
                         result_old2[key],
                         result_new2[key],
                         rtol=prec,
                         atol=prec,
                     )
-                # Energy bias adjustment uses lstsq on matrices of different
-                # sizes (ntypes differs between type maps), which can produce
-                # small differences for the per-atom bias.  Use relaxed tol.
-                torch.testing.assert_close(
-                    result_old2["energy"],
-                    result_new2["energy"],
-                    rtol=1e-4,
-                    atol=1.0,
-                )
             finally:
                 os.chdir(old_cwd)
                 shutil.rmtree(tmpdir, ignore_errors=True)
@@ -510,9 +512,18 @@ class TestEnergyModelDPA1(FinetuneTest, unittest.TestCase):
         data_dir = os.path.join(EXAMPLE_DIR, "data")
         if not os.path.isdir(data_dir):
             raise unittest.SkipTest(f"Example data not found: {data_dir}")
-        cls.data_dir = data_dir
-        cls.config = _make_config(data_dir, model_dpa1)
+        cls._tmpdir = tempfile.mkdtemp(prefix="pt_expt_ft_dpa1_data_")
+        _subsample_data(
+            os.path.join(data_dir, "data_0"),
+            os.path.join(cls._tmpdir, "data_0"),
+        )
+        cls.data_dir = cls._tmpdir
+        cls.config = _make_config(cls._tmpdir, model_dpa1)
         cls.mixed_types = True
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls._tmpdir, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
