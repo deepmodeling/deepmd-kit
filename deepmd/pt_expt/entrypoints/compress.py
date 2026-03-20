@@ -87,7 +87,14 @@ def enable_compression(
 
     model.min_nbor_dist = min_nbor_dist
 
-    # 3. Enable compression
+    # 3. Enable compression (also ensures fake ops are registered now that
+    #    the C++ custom op library is loaded via enable_compression imports)
+    from deepmd.pt_expt.utils.tabulate_ops import (
+        ensure_fake_registered,
+    )
+
+    ensure_fake_registered()
+
     log.info("Enabling compression...")
     model.enable_compression(
         extrapolate,

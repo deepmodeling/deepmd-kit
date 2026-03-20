@@ -6,7 +6,10 @@ compressed forward path, which uses C++ custom ops (tabulate_fusion_se_*).
 Without fake implementations, torch.export cannot determine output shapes.
 
 This module is imported at package init time (via utils/__init__.py) so
-registrations happen before any descriptor code runs.
+registrations happen before any descriptor code runs.  If the C++ custom
+op library hasn't been loaded yet at that point, `ensure_fake_registered()`
+can be called again later (it is idempotent) — e.g. from the compression
+entry point after the ops become available.
 
 When the C++ custom op library is loaded, the ops already have
 implementations, and register_fake will raise RuntimeError. We silently
@@ -22,29 +25,36 @@ from typing import (
 
 import torch
 
-# Ensure the custom op library is loaded (if available)
-try:
-    torch.ops.deepmd
-except AttributeError:
-    pass
+# Track which ops already have fake implementations so we don't re-register.
+_registered: set[str] = set()
 
 
 def _try_register_fake(op_name: str, fn: Callable[..., Any]) -> None:
     """Register a fake implementation, silently skipping if already registered."""
+    if op_name in _registered:
+        return
     try:
         torch.library.register_fake(op_name)(fn)
     except RuntimeError:
         # Op already has an implementation (e.g. C++ library loaded).
         pass
+    _registered.add(op_name)
 
 
-def _register_fake_if_available() -> None:
+def ensure_fake_registered() -> None:
     """Register fake implementations for all tabulate custom ops.
 
     Only registers for ops that exist (i.e., the custom op library is loaded).
-    Uses torch.library.register_fake which is the standard way to provide
-    meta/fake tensor implementations for custom ops.
+    Idempotent — safe to call multiple times; already-registered ops are
+    skipped via the ``_registered`` set.
+
+    Called automatically at import time and should also be called from any
+    code path that needs fake ops after the C++ library has been loaded
+    (e.g. the compression entry point).
     """
+    if not hasattr(torch.ops, "deepmd"):
+        return
+
     # --- tabulate_fusion_se_a ---
     if hasattr(torch.ops.deepmd, "tabulate_fusion_se_a"):
 
@@ -119,4 +129,5 @@ def _register_fake_if_available() -> None:
         _try_register_fake("deepmd::tabulate_fusion_se_atten", _fake_se_atten)
 
 
-_register_fake_if_available()
+# Best-effort at import time — ops may not be loaded yet.
+ensure_fake_registered()
