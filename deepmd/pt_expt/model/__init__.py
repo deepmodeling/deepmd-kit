@@ -9,6 +9,9 @@ from .dipole_model import (
 from .dos_model import (
     DOSModel,
 )
+from .dp_linear_model import (
+    LinearEnergyModel,
+)
 from .dp_zbl_model import (
     DPZBLModel,
 )
@@ -38,6 +41,7 @@ __all__ = [
     "DipoleModel",
     "EnergyModel",
     "FrozenModel",
+    "LinearEnergyModel",
     "PolarModel",
     "PropertyModel",
     "get_model",
