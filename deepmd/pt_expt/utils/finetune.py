@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Finetune utilities for the pt_expt backend.
 
-Reuses ``get_finetune_rule_single`` from the pt backend since pt_expt
-uses the same checkpoint format (``.pt`` with ``_extra_state.model_params``).
+Supports finetuning from both ``.pt`` checkpoints and frozen ``.pte`` models.
 """
 
 from typing import (
@@ -22,6 +21,30 @@ from deepmd.utils.finetune import (
 )
 
 
+def _is_pte(path: str) -> bool:
+    return path.endswith((".pte", ".pt2"))
+
+
+def _load_model_params(finetune_model: str) -> dict[str, Any]:
+    """Extract model_params from a ``.pt`` checkpoint or ``.pte`` frozen model."""
+    if _is_pte(finetune_model):
+        from deepmd.pt_expt.utils.serialization import (
+            serialize_from_file,
+        )
+
+        data = serialize_from_file(finetune_model)
+        # Prefer embedded model_params (full config); fall back to
+        # a minimal dict with just type_map for older .pte files.
+        if "model_params" in data:
+            return data["model_params"]
+        return {"type_map": data["model"]["type_map"]}
+    else:
+        state_dict = torch.load(finetune_model, map_location=DEVICE, weights_only=True)
+        if "model" in state_dict:
+            state_dict = state_dict["model"]
+        return state_dict["_extra_state"]["model_params"]
+
+
 def get_finetune_rules(
     finetune_model: str,
     model_config: dict[str, Any],
@@ -30,20 +53,21 @@ def get_finetune_rules(
 ) -> tuple[dict[str, Any], dict[str, FinetuneRuleItem]]:
     """Get fine-tuning rules for a single-task pt_expt model.
 
-    Loads a pretrained checkpoint and builds ``FinetuneRuleItem`` objects
-    describing how to map types and weights from the pretrained model to
-    the new model.
+    Loads a pretrained ``.pt`` checkpoint or ``.pte`` frozen model and
+    builds ``FinetuneRuleItem`` objects describing how to map types and
+    weights from the pretrained model to the new model.
 
     Parameters
     ----------
     finetune_model : str
-        Path to the pretrained ``.pt`` checkpoint.
+        Path to the pretrained model (``.pt`` or ``.pte``).
     model_config : dict
         The model section of the fine-tuning config.
     model_branch : str
         Branch to select from a multi-task pretrained model (command-line).
     change_model_params : bool
-        Whether to overwrite descriptor/fitting params from the pretrained model.
+        Whether to overwrite descriptor/fitting params from the pretrained
+        model.  Not supported for ``.pte`` sources.
 
     Returns
     -------
@@ -52,10 +76,7 @@ def get_finetune_rules(
     finetune_links : dict[str, FinetuneRuleItem]
         Fine-tuning rules keyed by ``"Default"``.
     """
-    state_dict = torch.load(finetune_model, map_location=DEVICE, weights_only=True)
-    if "model" in state_dict:
-        state_dict = state_dict["model"]
-    last_model_params = state_dict["_extra_state"]["model_params"]
+    last_model_params = _load_model_params(finetune_model)
     finetune_from_multi_task = "model_dict" in last_model_params
 
     # pt_expt is single-task only

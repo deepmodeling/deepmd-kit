@@ -211,16 +211,22 @@ def serialize_from_file(model_file: str) -> dict:
     Returns
     -------
     dict
-        The serialized model data.
+        The serialized model data.  If the archive contains
+        ``model_params.json``, it is included under the
+        ``"model_params"`` key.
     """
-    extra_files = {"model.json": ""}
+    extra_files = {"model.json": "", "model_params.json": ""}
     torch.export.load(model_file, extra_files=extra_files)
     model_dict = json.loads(extra_files["model.json"])
     model_dict = _json_to_numpy(model_dict)
+    if extra_files["model_params.json"]:
+        model_dict["model_params"] = json.loads(extra_files["model_params.json"])
     return model_dict
 
 
-def deserialize_to_file(model_file: str, data: dict) -> None:
+def deserialize_to_file(
+    model_file: str, data: dict, model_params: dict | None = None
+) -> None:
     """Deserialize a dictionary to a .pte model file.
 
     Builds a pt_expt model from the dict, traces it via make_fx,
@@ -233,6 +239,10 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     data : dict
         The dictionary to be deserialized (same format as dpmodel's
         serialize output, with "model" and optionally "model_def_script" keys).
+    model_params : dict or None
+        Original model config (the dict passed to ``get_model``).
+        If provided, embedded in the .pte so that ``--use-pretrain-script``
+        can extract descriptor/fitting params at finetune time.
     """
     from deepmd.pt_expt.model.model import (
         BaseModel,
@@ -290,6 +300,8 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         "model_def_script.json": json.dumps(metadata),
         "model.json": json.dumps(data_for_json, separators=(",", ":")),
     }
+    if model_params is not None:
+        extra_files["model_params.json"] = json.dumps(model_params)
 
     # 7. Save
     torch.export.save(exported, model_file, extra_files=extra_files)

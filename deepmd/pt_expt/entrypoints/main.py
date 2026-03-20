@@ -259,7 +259,7 @@ def freeze(
     m.eval()
 
     model_dict = m.serialize()
-    deserialize_to_file(output, {"model": model_dict})
+    deserialize_to_file(output, {"model": model_dict}, model_params=model_params)
     log.info("Saved frozen model to %s", output)
 
 

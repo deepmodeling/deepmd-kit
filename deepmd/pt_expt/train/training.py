@@ -477,35 +477,53 @@ class Trainer:
         # Resume --------------------------------------------------------------
         if resuming:
             log.info(f"Resuming from {resume_model}.")
-            state_dict = torch.load(
-                resume_model, map_location=DEVICE, weights_only=True
-            )
-            if "model" in state_dict:
-                optimizer_state_dict = (
-                    state_dict["optimizer"]
-                    if self.restart_training and finetune_model is None
-                    else None
-                )
-                state_dict = state_dict["model"]
-            else:
-                optimizer_state_dict = None
+            is_pte = resume_model.endswith((".pte", ".pt2"))
 
-            self.start_step = (
-                state_dict["_extra_state"]["train_infos"]["step"]
-                if self.restart_training
-                else 0
-            )
+            if is_pte:
+                # .pte frozen model: no optimizer state, no step counter
+                optimizer_state_dict = None
+                self.start_step = 0
+            else:
+                state_dict = torch.load(
+                    resume_model, map_location=DEVICE, weights_only=True
+                )
+                if "model" in state_dict:
+                    optimizer_state_dict = (
+                        state_dict["optimizer"]
+                        if self.restart_training and finetune_model is None
+                        else None
+                    )
+                    state_dict = state_dict["model"]
+                else:
+                    optimizer_state_dict = None
+                self.start_step = (
+                    state_dict["_extra_state"]["train_infos"]["step"]
+                    if self.restart_training
+                    else 0
+                )
 
             if finetune_model is not None and finetune_links is not None:
                 # --- Finetune: selective weight loading -----------------------
                 finetune_rule = finetune_links["Default"]
 
-                # Build pretrained model wrapper and load weights
-                pretrained_model = get_model(
-                    deepcopy(state_dict["_extra_state"]["model_params"])
-                ).to(DEVICE)
+                # Build pretrained model and load weights
+                if is_pte:
+                    from deepmd.pt_expt.model import (
+                        BaseModel,
+                    )
+                    from deepmd.pt_expt.utils.serialization import (
+                        serialize_from_file,
+                    )
+
+                    data = serialize_from_file(finetune_model)
+                    pretrained_model = BaseModel.deserialize(data["model"]).to(DEVICE)
+                else:
+                    pretrained_model = get_model(
+                        deepcopy(state_dict["_extra_state"]["model_params"])
+                    ).to(DEVICE)
                 pretrained_wrapper = ModelWrapper(pretrained_model)
-                pretrained_wrapper.load_state_dict(state_dict)
+                if not is_pte:
+                    pretrained_wrapper.load_state_dict(state_dict)
 
                 # Change type map if needed
                 if (
