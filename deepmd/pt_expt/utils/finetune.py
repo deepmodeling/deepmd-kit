@@ -77,6 +77,14 @@ def get_finetune_rules(
         Fine-tuning rules keyed by ``"Default"``.
     """
     last_model_params = _load_model_params(finetune_model)
+
+    if change_model_params and "descriptor" not in last_model_params:
+        raise ValueError(
+            "Cannot use --use-pretrain-script: the pretrained model does not "
+            "contain full model params.  If finetuning from a .pte file, "
+            "re-freeze it with the latest code so that model_params is embedded."
+        )
+
     finetune_from_multi_task = "model_dict" in last_model_params
 
     # pt_expt is single-task only
