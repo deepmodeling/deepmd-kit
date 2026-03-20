@@ -9,7 +9,6 @@ from typing import (
     Any,
 )
 
-import numpy as np
 import torch
 from torch.utils.data import (
     DataLoader,
@@ -230,38 +229,70 @@ class LmdbDataset(Dataset):
             block_lines = []
             total_original = 0
             total_target = 0
+            # Pre-compute block_total_actual for proportional scaling
+            block_total_actual: list[int] = []
             for sys_ids, target in self._block_targets:
                 actual = sum(reader.system_nframes[s] for s in sys_ids)
+                block_total_actual.append(actual)
                 total_original += actual
                 total_target += target
-                sys_str = ",".join(str(s) for s in sys_ids)
-                block_lines.append(f"sys[{sys_str}]:{actual}->{target}")
-            # Expanded nloc groups (simulate one expansion to get counts)
-            from deepmd.dpmodel.utils.lmdb_data import (
-                _expand_indices_by_blocks,
-            )
+                # Compact range notation: sys[0-146] instead of sys[0,1,2,...,146]
+                if len(sys_ids) > 3:
+                    sys_str = f"{sys_ids[0]}-{sys_ids[-1]}"
+                else:
+                    sys_str = ",".join(str(s) for s in sys_ids)
+                ratio = target / actual if actual > 0 else 0
+                block_lines.append(
+                    f"sys[{sys_str}]({len(sys_ids)}sys): "
+                    f"{actual}->{target} (x{ratio:.2f})"
+                )
 
+            # Build sys_id -> block_idx mapping
+            sys_to_block: dict[int, int] = {}
+            for blk_idx, (sys_ids, _) in enumerate(self._block_targets):
+                for sid in sys_ids:
+                    sys_to_block[sid] = blk_idx
+
+            # Compute expanded nloc counts analytically (no actual expansion)
             expanded_nloc_info = {}
             for nloc, indices in sorted(reader.nloc_groups.items()):
-                rng = np.random.default_rng(0)
-                expanded = _expand_indices_by_blocks(
-                    list(indices),
-                    reader.frame_system_ids,
-                    self._block_targets,
-                    rng,
-                )
-                expanded_nloc_info[nloc] = len(expanded)
-            nloc_str = ", ".join(
-                f"{nloc}({orig}->{expanded_nloc_info[nloc]})"
-                for nloc, orig in sorted(
-                    (n, len(idx)) for n, idx in reader.nloc_groups.items()
-                )
-            )
+                if reader.frame_system_ids is None:
+                    expanded_nloc_info[nloc] = len(indices)
+                    continue
+                # Count indices per block in this nloc group
+                blk_counts: dict[int, int] = {}
+                unassigned = 0
+                for idx in indices:
+                    sid = reader.frame_system_ids[idx]
+                    blk = sys_to_block.get(sid)
+                    if blk is not None:
+                        blk_counts[blk] = blk_counts.get(blk, 0) + 1
+                    else:
+                        unassigned += 1
+                expanded = unassigned
+                for blk_idx, (_, blk_target) in enumerate(self._block_targets):
+                    n_actual = blk_counts.get(blk_idx, 0)
+                    if n_actual == 0:
+                        continue
+                    bta = block_total_actual[blk_idx]
+                    if bta > 0:
+                        t = max(round(blk_target * n_actual / bta), n_actual)
+                    else:
+                        t = n_actual
+                    expanded += t
+                expanded_nloc_info[nloc] = expanded
+
+            total_expanded = sum(expanded_nloc_info.values())
+            n_groups = len(reader.nloc_groups)
+            ratio_all = total_expanded / total_original if total_original > 0 else 0
+
             log.info(
-                f"LMDB {name} auto_prob: {total_original}->{total_target} frames, "
-                f"blocks: [{', '.join(block_lines)}], "
-                f"nloc groups: [{nloc_str}]"
+                f"LMDB {name} auto_prob: "
+                f"{total_original}->{total_expanded} frames (x{ratio_all:.2f}), "
+                f"{n_groups} nloc groups, {len(self._block_targets)} blocks:"
             )
+            for bl in block_lines:
+                log.info(f"  {bl}")
 
     def set_noise(self, noise_settings: dict[str, Any]) -> None:
         self._reader.set_noise(noise_settings)

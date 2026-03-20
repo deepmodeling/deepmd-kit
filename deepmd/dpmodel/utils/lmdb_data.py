@@ -475,16 +475,22 @@ class LmdbDataReader:
 
     def print_summary(self, name: str, prob: Any) -> None:
         """Print basic dataset info."""
-        unique_nlocs = sorted(self._nloc_groups.keys())
-        nloc_info = ", ".join(
-            f"{nloc}({len(idxs)})" for nloc, idxs in sorted(self._nloc_groups.items())
-        )
+        n_groups = len(self._nloc_groups)
+
         log.info(
             f"LMDB {name}: {self.lmdb_path}, "
-            f"{self.nframes} frames, nloc groups: [{nloc_info}], "
+            f"{self.nframes} frames, {n_groups} nloc groups, "
             f"batch_size={'auto' if self._auto_rule else self.batch_size}, "
             f"mixed_batch={self.mixed_batch}"
         )
+        # Print nloc groups in rows of ~10 for readability
+        items = [
+            f"{nloc}({len(idxs)})" for nloc, idxs in sorted(self._nloc_groups.items())
+        ]
+        per_row = 10
+        for i in range(0, len(items), per_row):
+            row = ", ".join(items[i : i + per_row])
+            log.info(f"  nloc groups: {row}")
 
     def set_noise(self, noise_settings: dict[str, Any]) -> None:
         """No-op for now."""
@@ -616,9 +622,11 @@ def compute_block_targets(
 
 def _expand_indices_by_blocks(
     indices: list[int],
-    frame_system_ids: list[int],
+    frame_system_ids: np.ndarray,
     block_targets: list[tuple[list[int], int]],
     rng: np.random.Generator,
+    _block_total_actual: list[int] | None = None,
+    _sid_to_blk_arr: np.ndarray | None = None,
 ) -> list[int]:
     """Expand frame indices according to block targets.
 
@@ -630,59 +638,71 @@ def _expand_indices_by_blocks(
     ----------
     indices : list[int]
         Frame indices in the current nloc group.
-    frame_system_ids : list[int]
-        Per-frame system id for the entire dataset.
+    frame_system_ids : np.ndarray
+        Per-frame system id for the entire dataset (int64 array).
     block_targets : list[tuple[list[int], int]]
         Per-block (system_ids, total_target_frames).
     rng : np.random.Generator
         RNG for remainder sampling.
+    _block_total_actual : list[int] or None
+        Pre-computed total actual frame count per block (across all nloc
+        groups).  When provided, avoids an O(N) scan of frame_system_ids.
+    _sid_to_blk_arr : np.ndarray or None
+        Pre-computed system-id to block-index lookup array.  When provided,
+        avoids rebuilding the mapping for each call.
 
     Returns
     -------
     list[int]
         Expanded indices.
     """
-    # Build sys_id -> block_idx mapping
-    sys_to_block: dict[int, int] = {}
-    for blk_idx, (sys_ids, _target) in enumerate(block_targets):
-        for sid in sys_ids:
-            sys_to_block[sid] = blk_idx
+    n_blocks = len(block_targets)
 
-    # Partition indices by block
-    block_indices: dict[int, list[int]] = {i: [] for i in range(len(block_targets))}
-    unassigned: list[int] = []
-    for idx in indices:
-        sid = frame_system_ids[idx]
-        blk = sys_to_block.get(sid)
-        if blk is not None:
-            block_indices[blk].append(idx)
-        else:
-            unassigned.append(idx)
+    # Build sys_id -> block_idx lookup array
+    if _sid_to_blk_arr is None:
+        sys_to_block: dict[int, int] = {}
+        for blk_idx, (sys_ids, _target) in enumerate(block_targets):
+            for sid in sys_ids:
+                sys_to_block[sid] = blk_idx
+        max_sid = max(sys_to_block.keys()) + 1 if sys_to_block else 0
+        _sid_to_blk_arr = np.full(max_sid, -1, dtype=np.int32)
+        for sid, blk in sys_to_block.items():
+            _sid_to_blk_arr[sid] = blk
 
-    # Compute total actual frames across all blocks (for proportional scaling)
-    total_actual = sum(len(block_indices[i]) for i in range(len(block_targets)))
-    total_target_all = sum(t for _, t in block_targets)
+    # Partition indices by block using numpy for speed
+    idx_arr = np.asarray(indices, dtype=np.int64)
+    sid_arr = np.asarray(frame_system_ids, dtype=np.int64)
+    # Vectorized lookup: get block id for each index
+    idx_sids = sid_arr[idx_arr]
+    idx_blks = _sid_to_blk_arr[idx_sids]
 
-    expanded: list[int] = list(unassigned)
+    # Pre-compute block_total_actual if not provided
+    if _block_total_actual is None:
+        _block_total_actual = []
+        for sys_ids, _ in block_targets:
+            total = sum(int(np.sum(sid_arr == sid)) for sid in sys_ids)
+            _block_total_actual.append(total)
 
-    for blk_idx, (sys_ids, block_total_target) in enumerate(block_targets):
-        blk_idxs = block_indices[blk_idx]
+    expanded_parts: list[np.ndarray] = []
+
+    # Unassigned indices
+    unassigned_mask = idx_blks == -1
+    if np.any(unassigned_mask):
+        expanded_parts.append(idx_arr[unassigned_mask])
+
+    for blk_idx in range(n_blocks):
+        blk_mask = idx_blks == blk_idx
+        blk_idxs = idx_arr[blk_mask]
         n_actual = len(blk_idxs)
         if n_actual == 0:
             continue
 
-        # Proportional target for this nloc subset of the block
-        # block_total_target is for the entire block; scale by the fraction
-        # of block frames that fall in this nloc group
-        _, block_total_target_all = block_targets[blk_idx]
-        # Get total frames in this block across all nloc groups
-        block_total_actual = sum(
-            1
-            for i in range(len(frame_system_ids))
-            if frame_system_ids[i] in set(sys_ids)
-        )
-        if block_total_actual > 0:
-            target = round(block_total_target_all * n_actual / block_total_actual)
+        _, block_total_target = block_targets[blk_idx]
+        block_total_act = _block_total_actual[blk_idx]
+
+        # Proportional target for this nloc subset
+        if block_total_act > 0:
+            target = round(block_total_target * n_actual / block_total_act)
         else:
             target = n_actual
         target = max(target, n_actual)  # never shrink
@@ -690,18 +710,23 @@ def _expand_indices_by_blocks(
         # Full copies + remainder
         deficit = target - n_actual
         if deficit <= 0:
-            expanded.extend(blk_idxs)
+            expanded_parts.append(blk_idxs)
         else:
             full_copies = deficit // n_actual
             remainder = deficit % n_actual
             # Original + full copies
-            expanded.extend(blk_idxs * (1 + full_copies))
+            if full_copies > 0:
+                expanded_parts.append(np.tile(blk_idxs, 1 + full_copies))
+            else:
+                expanded_parts.append(blk_idxs)
             # Remainder: sample without replacement
             if remainder > 0:
                 sampled = rng.choice(blk_idxs, size=remainder, replace=False)
-                expanded.extend(sampled.tolist())
+                expanded_parts.append(sampled)
 
-    return expanded
+    if expanded_parts:
+        return np.concatenate(expanded_parts).tolist()
+    return []
 
 
 def _build_all_batches(
@@ -735,12 +760,39 @@ def _build_all_batches(
     """
     # Build per-group batches
     group_batches: list[list[list[int]]] = []
+
+    # Pre-compute expensive objects once (avoids O(N) work per nloc group)
+    block_total_actual: list[int] | None = None
+    sid_arr: np.ndarray | None = None
+    sid_to_blk_arr: np.ndarray | None = None
+    if block_targets and reader.frame_system_ids is not None:
+        block_total_actual = []
+        for sys_ids, _ in block_targets:
+            total = sum(reader.system_nframes[s] for s in sys_ids)
+            block_total_actual.append(total)
+        # Convert frame_system_ids to numpy once
+        sid_arr = np.array(reader.frame_system_ids, dtype=np.int64)
+        # Build sys_id -> block_idx lookup array once
+        sys_to_block: dict[int, int] = {}
+        for blk_idx, (sys_ids, _target) in enumerate(block_targets):
+            for sid in sys_ids:
+                sys_to_block[sid] = blk_idx
+        max_sid = max(sys_to_block.keys()) + 1 if sys_to_block else 0
+        sid_to_blk_arr = np.full(max_sid, -1, dtype=np.int32)
+        for sid, blk in sys_to_block.items():
+            sid_to_blk_arr[sid] = blk
+
     for nloc in sorted(reader.nloc_groups.keys()):
         indices = list(reader.nloc_groups[nloc])
         # Expand indices by block targets if provided
-        if block_targets and reader.frame_system_ids is not None:
+        if block_targets and sid_arr is not None:
             indices = _expand_indices_by_blocks(
-                indices, reader.frame_system_ids, block_targets, rng
+                indices,
+                sid_arr,
+                block_targets,
+                rng,
+                _block_total_actual=block_total_actual,
+                _sid_to_blk_arr=sid_to_blk_arr,
             )
         if shuffle:
             rng.shuffle(indices)
