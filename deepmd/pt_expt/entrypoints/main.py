@@ -358,7 +358,12 @@ def change_bias(
         mock_loss = get_loss({"inference": True}, 1.0, len(type_map), model_to_change)
         data.add_data_requirements(mock_loss.label_requirement)
         data.add_data_requirements(get_additional_data_requirement(model_to_change))
-        nbatches = numb_batch if numb_batch != 0 else max(data.get_nbatches())
+        if numb_batch != 0:
+            nbatches = numb_batch
+        else:
+            # Cap at the minimum across systems so no system wraps and
+            # overweights short systems (matching PT behavior).
+            nbatches = min(data.get_nbatches())
         sampled_data = make_stat_input(data, nbatches)
         model_to_change = model_change_out_bias(
             model_to_change, sampled_data, _bias_adjust_mode=bias_adjust_mode
