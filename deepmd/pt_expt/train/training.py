@@ -897,6 +897,14 @@ def model_change_out_bias(
         bias_adjust_mode=_bias_adjust_mode,
     )
     new_bias = deepcopy(_model.get_out_bias())
+
+    from deepmd.dpmodel.model.dp_model import (
+        DPModelCommon,
+    )
+
+    if isinstance(_model, DPModelCommon) and _bias_adjust_mode == "set-by-statistic":
+        _model.get_fitting_net().compute_input_stats(_sample_func)
+
     model_type_map = _model.get_type_map()
     from deepmd.dpmodel.common import (
         to_numpy_array,

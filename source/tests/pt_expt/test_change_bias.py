@@ -242,5 +242,61 @@ class TestChangeBias(unittest.TestCase):
         )
 
 
+class TestChangeBiasFittingStats(unittest.TestCase):
+    """Test that model_change_out_bias recomputes fitting stats for set-by-statistic."""
+
+    def _make_mock_model(self):
+        from unittest.mock import (
+            MagicMock,
+        )
+
+        from deepmd.dpmodel.model.dp_model import (
+            DPModelCommon,
+        )
+
+        fitting_net = MagicMock()
+
+        class FakeModel(DPModelCommon):
+            def get_out_bias(self):
+                return np.array([[0.0, 0.0]])
+
+            def get_type_map(self):
+                return ["O", "H"]
+
+            def get_fitting_net(self):
+                return fitting_net
+
+            def change_out_bias(self, *args, **kwargs):
+                pass
+
+        return FakeModel(), fitting_net
+
+    def test_compute_input_stats_called(self) -> None:
+        from deepmd.pt_expt.train.training import (
+            model_change_out_bias,
+        )
+
+        model, fitting_net = self._make_mock_model()
+        sample_func = [{"energy": np.zeros((1, 1))}]
+
+        model_change_out_bias(model, sample_func, _bias_adjust_mode="set-by-statistic")
+
+        fitting_net.compute_input_stats.assert_called_once_with(sample_func)
+
+    def test_compute_input_stats_not_called_for_change(self) -> None:
+        from deepmd.pt_expt.train.training import (
+            model_change_out_bias,
+        )
+
+        model, fitting_net = self._make_mock_model()
+        sample_func = [{"energy": np.zeros((1, 1))}]
+
+        model_change_out_bias(
+            model, sample_func, _bias_adjust_mode="change-by-statistic"
+        )
+
+        fitting_net.compute_input_stats.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
