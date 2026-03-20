@@ -4,7 +4,9 @@ from typing import (
 )
 
 
-def resolve_huber_deltas(huber_delta: float | list[float]) -> tuple[float, float, float]:
+def resolve_huber_deltas(
+    huber_delta: float | list[float],
+) -> tuple[float, float, float]:
     """Resolve Huber delta config into energy, force, and virial deltas.
 
     Parameters
