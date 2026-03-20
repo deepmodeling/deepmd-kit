@@ -4,10 +4,6 @@
 Subclasses the pt backend's DPTabulate, overriding _get_descrpt_type() to
 detect descriptor types via serialized data rather than isinstance checks
 against pt-specific classes.
-
-The __init__ is overridden to avoid the parent's isinstance check against
-pt-specific descriptor classes (which may not be importable in the pt_expt
-context).
 """
 
 from typing import (
@@ -17,9 +13,6 @@ from typing import (
 from deepmd.pt.utils.tabulate import DPTabulate as DPTabulatePT
 from deepmd.pt.utils.utils import (
     ActivationFn,
-)
-from deepmd.utils.tabulate import (
-    BaseTabulate,
 )
 
 
@@ -53,59 +46,11 @@ class DPTabulate(DPTabulatePT):
         exclude_types: list[list[int]] = [],
         activation_fn: ActivationFn = ActivationFn("tanh"),
     ) -> None:
-        # Skip DPTabulatePT.__init__ to avoid its isinstance check against
-        # pt-specific classes (deepmd.pt.model.descriptor.DescrptDPA2).
-        # Call BaseTabulate.__init__ + replicate the rest of the init logic.
-        BaseTabulate.__init__(
-            self,
-            descrpt,
-            neuron,
-            type_one_side,
-            exclude_types,
-            True,
-        )
-        self.descrpt_type = self._get_descrpt_type()
-
-        supported_descrpt_type = ("Atten", "A", "T", "T_TEBD", "R")
-        if self.descrpt_type in supported_descrpt_type:
-            self.sel_a = self.descrpt.get_sel()
-            self.rcut = self.descrpt.get_rcut()
-            self.rcut_smth = self.descrpt.get_rcut_smth()
-        else:
-            raise RuntimeError("Unsupported descriptor")
-
-        activation_map = {
-            "tanh": 1,
-            "gelu": 2,
-            "gelu_tf": 2,
-            "relu": 3,
-            "relu6": 4,
-            "softplus": 5,
-            "sigmoid": 6,
-            "silu": 7,
-        }
-        activation = activation_fn.activation
-        if activation in activation_map:
-            self.functype = activation_map[activation]
-        else:
-            raise RuntimeError("Unknown activation function type!")
-
-        self.activation_fn = activation_fn
-        serialized = self.descrpt.serialize()
-        self.davg = serialized["@variables"]["davg"]
-        self.dstd = serialized["@variables"]["dstd"]
-        self.embedding_net_nodes = serialized["embeddings"]["networks"]
-
-        self.ntypes = self.descrpt.get_ntypes()
-
-        self.layer_size = self._get_layer_size()
-        self.table_size = self._get_table_size()
-
-        self.bias = self._get_bias()
-        self.matrix = self._get_matrix()
-
-        self.data_type = self._get_data_type()
-        self.last_layer_size = self._get_last_layer_size()
+        # DPTabulatePT.__init__ works here because:
+        # 1. _get_descrpt_type is overridden to use serialized data (not isinstance)
+        # 2. The isinstance(descrpt, DescrptDPA2) check in parent just returns False
+        #    for pt_expt descriptors — callers pass the repinit block directly.
+        super().__init__(descrpt, neuron, type_one_side, exclude_types, activation_fn)
 
     def _get_descrpt_type(self) -> str:
         """Determine descriptor type from serialized data.
