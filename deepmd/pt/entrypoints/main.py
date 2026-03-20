@@ -70,6 +70,10 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.finetune import (
     get_finetune_rules,
 )
+from deepmd.pt.utils.lmdb_dataset import (
+    LmdbDataset,
+    is_lmdb,
+)
 from deepmd.pt.utils.multi_task import (
     preprocess_shared_params,
 )
@@ -114,7 +118,9 @@ def get_trainer(
         data_dict_single: dict[str, Any],
         rank: int = 0,
         seed: int | None = None,
-    ) -> tuple[DpLoaderSet, DpLoaderSet | None, DPPath | None]:
+    ) -> tuple[
+        DpLoaderSet | LmdbDataset, DpLoaderSet | LmdbDataset | None, DPPath | None
+    ]:
         # get data modifier
         modifier = None
         modifier_params = model_params_single.get("modifier", None)
@@ -127,11 +133,6 @@ def get_trainer(
             validation_dataset_params["systems"] if validation_dataset_params else None
         )
         training_systems = training_dataset_params["systems"]
-        trn_patterns = training_dataset_params.get("rglob_patterns", None)
-        training_systems = process_systems(training_systems, patterns=trn_patterns)
-        if validation_systems is not None:
-            val_patterns = validation_dataset_params.get("rglob_patterns", None)
-            validation_systems = process_systems(validation_systems, val_patterns)
 
         # stat files
         stat_file_path_single = data_dict_single.get("stat_file", None)
@@ -146,27 +147,62 @@ def get_trainer(
                     Path(stat_file_path_single).mkdir()
             stat_file_path_single = DPPath(stat_file_path_single, "a")
 
-        # validation and training data
-        # avoid the same batch sequence among devices
-        rank_seed = [rank, seed % (2**32)] if seed is not None else None
-        validation_data_single = (
-            DpLoaderSet(
-                validation_systems,
-                validation_dataset_params["batch_size"],
+        # LMDB path: single string → LmdbDataset
+        if is_lmdb(training_systems):
+            auto_prob = training_dataset_params.get("auto_prob", None)
+            train_data_single = LmdbDataset(
+                training_systems,
+                model_params_single["type_map"],
+                training_dataset_params["batch_size"],
+                auto_prob_style=auto_prob,
+            )
+            if validation_systems is not None and is_lmdb(validation_systems):
+                validation_data_single = LmdbDataset(
+                    validation_systems,
+                    model_params_single["type_map"],
+                    validation_dataset_params["batch_size"],
+                )
+            elif validation_systems is not None:
+                val_patterns = validation_dataset_params.get("rglob_patterns", None)
+                validation_systems = process_systems(validation_systems, val_patterns)
+                rank_seed = [rank, seed % (2**32)] if seed is not None else None
+                validation_data_single = DpLoaderSet(
+                    validation_systems,
+                    validation_dataset_params["batch_size"],
+                    model_params_single["type_map"],
+                    seed=rank_seed,
+                    modifier=modifier,
+                )
+            else:
+                validation_data_single = None
+        else:
+            # Standard npy path
+            trn_patterns = training_dataset_params.get("rglob_patterns", None)
+            training_systems = process_systems(training_systems, patterns=trn_patterns)
+            if validation_systems is not None:
+                val_patterns = validation_dataset_params.get("rglob_patterns", None)
+                validation_systems = process_systems(validation_systems, val_patterns)
+
+            # avoid the same batch sequence among devices
+            rank_seed = [rank, seed % (2**32)] if seed is not None else None
+            validation_data_single = (
+                DpLoaderSet(
+                    validation_systems,
+                    validation_dataset_params["batch_size"],
+                    model_params_single["type_map"],
+                    seed=rank_seed,
+                    modifier=modifier,
+                )
+                if validation_systems
+                else None
+            )
+            train_data_single = DpLoaderSet(
+                training_systems,
+                training_dataset_params["batch_size"],
                 model_params_single["type_map"],
                 seed=rank_seed,
                 modifier=modifier,
             )
-            if validation_systems
-            else None
-        )
-        train_data_single = DpLoaderSet(
-            training_systems,
-            training_dataset_params["batch_size"],
-            model_params_single["type_map"],
-            seed=rank_seed,
-            modifier=modifier,
-        )
         return (
             train_data_single,
             validation_data_single,
