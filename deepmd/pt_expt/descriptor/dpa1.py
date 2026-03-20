@@ -60,9 +60,10 @@ class DescrptDPA1(DescrptDPA1DP):
             raise ValueError("Compression is already enabled.")
         if self.se_atten.tebd_input_mode != "strip":
             raise RuntimeError("Type embedding compression only works in strip mode")
-        assert not self.se_atten.resnet_dt, (
-            "Model compression error: descriptor resnet_dt must be false!"
-        )
+        if self.se_atten.resnet_dt:
+            raise RuntimeError(
+                "Model compression error: descriptor resnet_dt must be false!"
+            )
 
         data = self.serialize()
         self.table = DPTabulate(
@@ -172,7 +173,7 @@ class DescrptDPA1(DescrptDPA1DP):
     ) -> Any:
         """Compressed forward for DPA1 descriptor."""
         # env_mat: nf x nloc x nnei x 4
-        rr, diff, sw = self.se_atten.env_mat.call(
+        rr, _diff, sw = self.se_atten.env_mat.call(
             coord_ext,
             atype_ext,
             nlist,

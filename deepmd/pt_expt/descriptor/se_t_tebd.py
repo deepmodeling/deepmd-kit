@@ -243,4 +243,4 @@ class DescrptSeTTebd(DescrptSeTTebdDP):
                 [result, atype_embd.view(nf, nloc, self.tebd_dim)], dim=-1
             )
 
-        return result, None, None, None, sw
+        return result, None, None, None, sw.view(nf, nloc, nnei, 1)

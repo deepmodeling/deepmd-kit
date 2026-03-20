@@ -66,9 +66,10 @@ class DescrptDPA2(DescrptDPA2DP):
 
         if self.compress:
             raise ValueError("Compression is already enabled.")
-        assert not self.repinit.resnet_dt, (
-            "Model compression error: repinit resnet_dt must be false!"
-        )
+        if self.repinit.resnet_dt:
+            raise RuntimeError(
+                "Model compression error: repinit resnet_dt must be false!"
+            )
         for tt in self.repinit.exclude_types:
             if (tt[0] not in range(self.repinit.ntypes)) or (
                 tt[1] not in range(self.repinit.ntypes)
