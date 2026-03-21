@@ -3108,7 +3108,11 @@ def loss_ener() -> list[Argument]:
         "- For absolute errors exceeding D: linear loss D * (\\|error\\| - 0.5 * D) \n\n"
         "Formula: loss = 0.5 * (error**2) if \\|error\\| <= D else D * (\\|error\\| - 0.5 * D). "
     )
-    doc_huber_delta = "The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss. "
+    doc_huber_delta = (
+        "The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss. "
+        "It can be either one float shared by all terms or a list of "
+        "three values ordered as [energy, force, virial]. "
+    )
     doc_loss_func = (
         "Loss function type for energy, force, and virial terms. "
         "Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss). "
@@ -3258,7 +3262,7 @@ def loss_ener() -> list[Argument]:
         ),
         Argument(
             "huber_delta",
-            float,
+            [float, list[float]],
             optional=True,
             default=0.01,
             doc=doc_huber_delta,

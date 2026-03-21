@@ -18,6 +18,9 @@ from deepmd.pt.utils.env import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.loss import (
+    resolve_huber_deltas,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -57,7 +60,7 @@ class EnergyStdLoss(TaskLoss):
         inference: bool = False,
         use_huber: bool = False,
         f_use_norm: bool = False,
-        huber_delta: float = 0.01,
+        huber_delta: float | list[float] = 0.01,
         **kwargs: Any,
     ) -> None:
         r"""Construct a layer to compute loss on energy, force and virial.
@@ -112,8 +115,11 @@ class EnergyStdLoss(TaskLoss):
         f_use_norm : bool
             If true, use L2 norm of force vectors for loss calculation when loss_func='mae' or use_huber is True.
             Instead of computing loss on force components, computes loss on ||F_pred - F_label||_2.
-        huber_delta : float
-            The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
+            This treats the force vector as a whole rather than three independent components.
+        huber_delta : float | list[float]
+            The threshold delta (D) used for Huber loss, controlling transition between
+            L2 and L1 loss. It can be either one float shared by all terms or a list of
+            three values ordered as [energy, force, virial].
         **kwargs
             Other keyword arguments.
         """
@@ -162,6 +168,11 @@ class EnergyStdLoss(TaskLoss):
                 "f_use_norm can only be True when use_huber or loss_func='mae'."
             )
         self.huber_delta = huber_delta
+        (
+            self._huber_delta_energy,
+            self._huber_delta_force,
+            self._huber_delta_virial,
+        ) = resolve_huber_deltas(huber_delta)
         if self.use_huber and (
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
@@ -244,7 +255,7 @@ class EnergyStdLoss(TaskLoss):
                     l_huber_loss = custom_huber_loss(
                         atom_norm * energy_pred,
                         atom_norm * energy_label,
-                        delta=self.huber_delta,
+                        delta=self._huber_delta_energy,
                     )
                     loss += pref_e * l_huber_loss
                 rmse_e = l2_ener_loss.sqrt() * atom_norm
@@ -308,7 +319,7 @@ class EnergyStdLoss(TaskLoss):
                             l_huber_loss = custom_huber_loss(
                                 force_pred.reshape(-1),
                                 force_label.reshape(-1),
-                                delta=self.huber_delta,
+                                delta=self._huber_delta_force,
                             )
                         else:
                             force_diff_norm = torch.linalg.vector_norm(
@@ -320,7 +331,7 @@ class EnergyStdLoss(TaskLoss):
                             l_huber_loss = custom_huber_loss(
                                 force_diff_norm,
                                 torch.zeros_like(force_diff_norm),
-                                delta=self.huber_delta,
+                                delta=self._huber_delta_force,
                             )
                         loss += pref_f * l_huber_loss
                     rmse_f = l2_force_loss.sqrt()
@@ -426,7 +437,7 @@ class EnergyStdLoss(TaskLoss):
                     l_huber_loss = custom_huber_loss(
                         atom_norm * model_pred["virial"].reshape(-1),
                         atom_norm * label["virial"].reshape(-1),
-                        delta=self.huber_delta,
+                        delta=self._huber_delta_virial,
                     )
                     loss += pref_v * l_huber_loss
                 rmse_v = l2_virial_loss.sqrt() * atom_norm
@@ -474,7 +485,7 @@ class EnergyStdLoss(TaskLoss):
                     l_huber_loss = custom_huber_loss(
                         atom_ener_reshape,
                         atom_ener_label_reshape,
-                        delta=self.huber_delta,
+                        delta=self._huber_delta_energy,
                     )
                     loss += pref_ae * l_huber_loss
                 rmse_ae = l2_atom_ener_loss.sqrt()
