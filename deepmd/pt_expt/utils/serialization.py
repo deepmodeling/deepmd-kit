@@ -194,6 +194,7 @@ def _collect_metadata(model: torch.nn.Module) -> dict:
         "dim_aparam": model.get_dim_aparam(),
         "mixed_types": model.mixed_types(),
         "sel_type": model.get_sel_type(),
+        "has_default_fparam": model.has_default_fparam(),
         "fitting_output_defs": fitting_output_defs,
     }
 

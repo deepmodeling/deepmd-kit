@@ -614,6 +614,11 @@ void DeepPotPTExpt::init(const std::string& model,
   daparam = metadata["dim_aparam"].as_int();
   mixed_types = metadata["mixed_types"].as_bool();
   aparam_nall = false;  // pt_expt models use nloc for aparam
+  if (metadata.obj_val.count("has_default_fparam")) {
+    has_default_fparam_ = metadata["has_default_fparam"].as_bool();
+  } else {
+    has_default_fparam_ = false;
+  }
 
   type_map.clear();
   for (const auto& v : metadata["type_map"].as_array()) {

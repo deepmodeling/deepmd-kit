@@ -105,6 +105,10 @@ class DeepPotPTExpt : public DeepPotBackend {
     assert(inited);
     return aparam_nall;
   };
+  bool has_default_fparam() const {
+    assert(inited);
+    return has_default_fparam_;
+  };
 
   // forward to template class
   void computew(std::vector<double>& ener,
@@ -188,6 +192,7 @@ class DeepPotPTExpt : public DeepPotBackend {
   int dfparam;
   int daparam;
   bool aparam_nall;
+  bool has_default_fparam_;
   double rcut;
   int gpu_id;
   bool gpu_enabled;

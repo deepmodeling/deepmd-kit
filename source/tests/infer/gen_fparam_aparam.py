@@ -151,6 +151,21 @@ def main():
 
     print("Export done.")  # noqa: T201
 
+    # ---- 3b. Export a model with default_fparam to .pt2 ----
+    config_default = copy.deepcopy(config)
+    config_default["fitting_net"]["default_fparam"] = [0.25852028]
+    model_default = get_model(config_default)
+    data_default = {
+        "model": model_default.serialize(),
+        "model_def_script": config_default,
+        "backend": "dpmodel",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+    pt2_default_path = os.path.join(base_dir, "fparam_aparam_default.pt2")
+    print(f"Exporting to {pt2_default_path} ...")  # noqa: T201
+    pt_expt_deserialize_to_file(pt2_default_path, copy.deepcopy(data_default))
+
     # ---- 4. Run inference via DeepPot to get reference values ----
     from deepmd.infer import (
         DeepPot,
