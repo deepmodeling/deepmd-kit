@@ -275,7 +275,8 @@ std::string read_zip_entry(const std::string& zip_path,
         "File too small to be a valid ZIP archive: " + zip_path);
   }
   size_t eocd_pos = std::string::npos;
-  for (int64_t i = static_cast<int64_t>(content.size()) - 22; i >= 0; --i) {
+  for (int64_t i = static_cast<int64_t>(content.size()) - 22;
+       i >= 0 && static_cast<size_t>(i) + 3 < content.size(); --i) {
     if (content[i] == 0x50 && content[i + 1] == 0x4b &&
         content[i + 2] == 0x05 && content[i + 3] == 0x06) {
       eocd_pos = static_cast<size_t>(i);
@@ -306,8 +307,8 @@ std::string read_zip_entry(const std::string& zip_path,
             << 24);
   };
 
-  uint16_t num_entries = read_u16(eocd_pos + 10);
-  uint32_t cd_offset = read_u32(eocd_pos + 16);
+  uint64_t num_entries = read_u16(eocd_pos + 10);
+  uint64_t cd_offset = read_u32(eocd_pos + 16);
 
   // If this is a ZIP64 file, look for the ZIP64 EOCD locator
   if (cd_offset == 0xFFFFFFFF || num_entries == 0xFFFF) {
@@ -336,17 +337,17 @@ std::string read_zip_entry(const std::string& zip_path,
         throw deepmd::deepmd_exception(
             "Invalid ZIP64 file (truncated EOCD record): " + zip_path);
       }
-      // num entries at offset 32 (8 bytes)
+      // num entries at offset 32 (8 bytes in ZIP64)
       num_entries = 0;
-      for (int b = 0; b < 2; ++b) {
-        num_entries |= static_cast<uint16_t>(static_cast<unsigned char>(
+      for (int b = 0; b < 8; ++b) {
+        num_entries |= static_cast<uint64_t>(static_cast<unsigned char>(
                            content[z64_pos + 32 + b]))
                        << (8 * b);
       }
-      // cd offset at offset 48 (8 bytes)
+      // cd offset at offset 48 (8 bytes in ZIP64)
       cd_offset = 0;
-      for (int b = 0; b < 4; ++b) {
-        cd_offset |= static_cast<uint32_t>(
+      for (int b = 0; b < 8; ++b) {
+        cd_offset |= static_cast<uint64_t>(
                          static_cast<unsigned char>(content[z64_pos + 48 + b]))
                      << (8 * b);
       }
@@ -355,7 +356,7 @@ std::string read_zip_entry(const std::string& zip_path,
 
   // Iterate central directory entries
   size_t pos = cd_offset;
-  for (int i = 0; i < num_entries; ++i) {
+  for (uint64_t i = 0; i < num_entries; ++i) {
     // Central directory entry signature: 0x02014b50
     if (pos + 46 > content.size()) {
       break;
@@ -421,7 +422,17 @@ std::string read_zip_entry(const std::string& zip_path,
       }
     }
 
-    if (name == entry_name) {
+    // Match exact name or suffix (handles archives with directory prefixes,
+    // e.g. "model/extra/output_keys.json" matches "extra/output_keys.json")
+    bool match = (name == entry_name);
+    if (!match && name.size() > entry_name.size()) {
+      size_t suffix_start = name.size() - entry_name.size();
+      if (name[suffix_start - 1] == '/' &&
+          name.substr(suffix_start) == entry_name) {
+        match = true;
+      }
+    }
+    if (match) {
       // Read from local file header
       uint16_t local_name_len = read_u16(local_header_offset + 26);
       uint16_t local_extra_len = read_u16(local_header_offset + 28);
@@ -584,6 +595,12 @@ void DeepPotPTExpt::init(const std::string& model,
     return;
   }
 
+  if (!file_content.empty()) {
+    throw deepmd::deepmd_exception(
+        "In-memory file_content loading is not supported for .pt2 models. "
+        "Please provide a file path instead.");
+  }
+
   int gpu_num = torch::cuda::device_count();
   gpu_id = (gpu_num > 0) ? (gpu_rank % gpu_num) : 0;
   gpu_enabled = torch::cuda::is_available();
@@ -686,7 +703,12 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model(
 void DeepPotPTExpt::extract_outputs(
     std::map<std::string, torch::Tensor>& output_map,
     const std::vector<torch::Tensor>& flat_outputs) {
-  assert(flat_outputs.size() == output_keys.size());
+  if (flat_outputs.size() != output_keys.size()) {
+    throw deepmd::deepmd_exception(
+        "Model returned " + std::to_string(flat_outputs.size()) +
+        " outputs but expected " + std::to_string(output_keys.size()) +
+        " (from output_keys.json)");
+  }
   for (size_t i = 0; i < output_keys.size(); ++i) {
     output_map[output_keys[i]] = flat_outputs[i];
   }

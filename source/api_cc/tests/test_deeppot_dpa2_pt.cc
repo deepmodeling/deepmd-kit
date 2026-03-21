@@ -12,9 +12,9 @@
 #include "neighbor_list.h"
 #include "test_utils.h"
 
-// DPA2 models need relaxed epsilon
+// DPA2 models need relaxed epsilon for float32 due to attention layers
 #undef EPSILON
-#define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-7 : 1e-1)
+#define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-7 : 1e-4)
 
 template <class VALUETYPE>
 class TestInferDeepPotDpa2Pt : public ::testing::Test {
@@ -273,6 +273,11 @@ TYPED_TEST(TestInferDeepPotDpa2PtNoPbc, cpu_build_nlist) {
   }
 }
 
+// TODO: This test uses a flat nlist with nloc==nall (no ghost atoms),
+// so it does not exercise the mapping/ghost-atom code path that a PBC
+// simulation with _build_nlist would test.  Adding a proper PBC+ghost
+// lmp_nlist test requires generating reference values with ghost atoms,
+// which needs non-trivial test infrastructure changes.
 TYPED_TEST(TestInferDeepPotDpa2PtNoPbc, cpu_lmp_nlist) {
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;

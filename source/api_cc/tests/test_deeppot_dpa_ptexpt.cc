@@ -377,7 +377,7 @@ TYPED_TEST(TestInferDeepPotDpaPtExpt, cpu_lmp_nlist_type_sel) {
   int nvir = 2;
   std::vector<VALUETYPE> coord_vir(nvir * 3);
   std::vector<int> atype_vir(nvir, 2);
-  for (int ii = 0; ii < nvir; ++ii) {
+  for (int ii = 0; ii < nvir * 3; ++ii) {
     coord_vir[ii] = coord[ii];
   }
   coord.insert(coord.begin(), coord_vir.begin(), coord_vir.end());

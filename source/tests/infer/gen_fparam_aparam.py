@@ -141,9 +141,11 @@ def main():
     pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data))
 
     pth_path = os.path.join(base_dir, "fparam_aparam.pth")
+    pth_exported = False
     print(f"Exporting to {pth_path} ...")  # noqa: T201
     try:
         pt_deserialize_to_file(pth_path, copy.deepcopy(data))
+        pth_exported = True
     except RuntimeError as e:
         # Custom ops (e.g. tabulate_fusion_se_t_tebd) may not be available
         # in all build environments; .pth generation is not critical.
@@ -240,17 +242,34 @@ def main():
     print("  };")  # noqa: T201
 
     # ---- 5. Verify .pth gives same results ----
-    dp_pth = DeepPot(pth_path)
-    e_pth, f_pth, _, ae_pth, av_pth = dp_pth.eval(
-        coord,
-        box,
-        atype,
-        fparam=fparam_val,
-        aparam=aparam_val,
-        atomic=True,
-    )
-    print(f"\n// .pth vs .pt2 energy diff: {abs(e[0, 0] - e_pth[0, 0]):.2e}")  # noqa: T201
-    print(f"// .pth vs .pt2 force max diff: {np.max(np.abs(f - f_pth)):.2e}")  # noqa: T201
+    if pth_exported:
+        dp_pth = DeepPot(pth_path)
+        e_pth, f_pth, v_pth, ae_pth, av_pth = dp_pth.eval(
+            coord,
+            box,
+            atype,
+            fparam=fparam_val,
+            aparam=aparam_val,
+            atomic=True,
+        )
+        tol = 1e-10
+        e_diff = abs(e[0, 0] - e_pth[0, 0])
+        f_diff = np.max(np.abs(f - f_pth))
+        v_diff = np.max(np.abs(v - v_pth))
+        ae_diff = np.max(np.abs(ae - ae_pth))
+        av_diff = np.max(np.abs(av - av_pth))
+        print(f"\n// .pth vs .pt2 energy diff: {e_diff:.2e}")  # noqa: T201
+        print(f"// .pth vs .pt2 force max diff: {f_diff:.2e}")  # noqa: T201
+        print(f"// .pth vs .pt2 virial max diff: {v_diff:.2e}")  # noqa: T201
+        print(f"// .pth vs .pt2 atom_energy max diff: {ae_diff:.2e}")  # noqa: T201
+        print(f"// .pth vs .pt2 atom_virial max diff: {av_diff:.2e}")  # noqa: T201
+        assert e_diff < tol, f"Energy parity failed: diff={e_diff:.2e}"
+        assert f_diff < tol, f"Force parity failed: diff={f_diff:.2e}"
+        assert v_diff < tol, f"Virial parity failed: diff={v_diff:.2e}"
+        assert ae_diff < tol, f"Atom energy parity failed: diff={ae_diff:.2e}"
+        assert av_diff < tol, f"Atom virial parity failed: diff={av_diff:.2e}"
+    else:
+        print("\n// Skipping .pth verification (export failed).")  # noqa: T201
 
     print("\nDone!")  # noqa: T201
 

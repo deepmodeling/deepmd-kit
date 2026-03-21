@@ -170,7 +170,8 @@ class DeepEval(DeepEvalBackend):
         self.rcut = self.metadata["rcut"]
         self.type_map = self.metadata["type_map"]
 
-        # Load the AOTInductor model
+        # Load the AOTInductor model package (.pt2 ZIP archive).
+        # Uses torch._inductor.aoti_load_package (private API, stable since PyTorch 2.6).
         self._pt2_runner = aoti_load_package(model_file)
         self.exported_module = None
 

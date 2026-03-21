@@ -65,8 +65,13 @@ def _load_custom_ops():
         if libs:
             try:
                 torch.ops.load_library(libs[0])
-            except Exception as e:
-                print(f"NOTE: custom op library not loaded ({e})", file=sys.stderr)  # noqa: T201
+            except (OSError, RuntimeError) as e:
+                import warnings
+
+                warnings.warn(
+                    f"Custom op library not loaded: {e}",
+                    stacklevel=2,
+                )
             break
 
 
@@ -218,17 +223,33 @@ def main():
         e_pth, f_pth, v_pth, ae_pth, av_pth = dp_pth.eval(
             coord, box, atype, atomic=True
         )
+        # PBC parity assertions
+        pbc_e_diff = abs(e1[0, 0] - e_pth[0, 0])
+        pbc_f_diff = np.max(np.abs(f1 - f_pth))
+        pbc_v_diff = np.max(np.abs(v1 - v_pth))
         print(f"\n// .pth PBC total energy: {e_pth[0, 0]:.18e}")  # noqa: T201
-        print(f"// .pth vs .pt2 energy diff: {abs(e1[0, 0] - e_pth[0, 0]):.2e}")  # noqa: T201
-        print(f"// .pth vs .pt2 force max diff: {np.max(np.abs(f1 - f_pth)):.2e}")  # noqa: T201
+        print(f"// .pth vs .pt2 energy diff: {pbc_e_diff:.2e}")  # noqa: T201
+        print(f"// .pth vs .pt2 force max diff: {pbc_f_diff:.2e}")  # noqa: T201
+        print(f"// .pth vs .pt2 virial max diff: {pbc_v_diff:.2e}")  # noqa: T201
+        tol = 1e-10
+        assert pbc_e_diff < tol, f"PBC energy parity failed: diff={pbc_e_diff:.2e}"
+        assert pbc_f_diff < tol, f"PBC force parity failed: diff={pbc_f_diff:.2e}"
+        assert pbc_v_diff < tol, f"PBC virial parity failed: diff={pbc_v_diff:.2e}"
 
-        e_pth_np, f_pth_np, _, ae_pth_np, av_pth_np = dp_pth.eval(
+        e_pth_np, f_pth_np, v_pth_np, ae_pth_np, av_pth_np = dp_pth.eval(
             coord, None, atype, atomic=True
         )
+        # NoPbc parity assertions
+        np_e_diff = abs(e_np[0, 0] - e_pth_np[0, 0])
+        np_f_diff = np.max(np.abs(f_np - f_pth_np))
+        np_v_diff = np.max(np.abs(v_np - v_pth_np))
         print(f"// .pth NoPbc total energy: {e_pth_np[0, 0]:.18e}")  # noqa: T201
-        print(  # noqa: T201
-            f"// .pth vs .pt2 NoPbc energy diff: {abs(e_np[0, 0] - e_pth_np[0, 0]):.2e}"
-        )
+        print(f"// .pth vs .pt2 NoPbc energy diff: {np_e_diff:.2e}")  # noqa: T201
+        print(f"// .pth vs .pt2 NoPbc force diff: {np_f_diff:.2e}")  # noqa: T201
+        print(f"// .pth vs .pt2 NoPbc virial diff: {np_v_diff:.2e}")  # noqa: T201
+        assert np_e_diff < tol, f"NoPbc energy parity failed: diff={np_e_diff:.2e}"
+        assert np_f_diff < tol, f"NoPbc force parity failed: diff={np_f_diff:.2e}"
+        assert np_v_diff < tol, f"NoPbc virial parity failed: diff={np_v_diff:.2e}"
     else:
         print("\n// Skipping .pth verification (file not generated).")  # noqa: T201
 
