@@ -2,6 +2,15 @@
 #pragma once
 
 #ifdef BUILD_PYTORCH
+// AOTInductor package loader requires a header that may not exist on all
+// platforms (e.g. macOS x86_64).  Disable pt_expt support when missing.
+#if __has_include(<torch/csrc/inductor/aoti_package/model_package_loader.h>)
+#define BUILD_PT_EXPT 1
+#else
+#define BUILD_PT_EXPT 0
+#endif
+
+#if BUILD_PT_EXPT
 
 #include <torch/torch.h>
 
@@ -268,4 +277,5 @@ class DeepPotPTExpt : public DeepPotBackend {
 
 }  // namespace deepmd
 
+#endif  // BUILD_PT_EXPT
 #endif  // BUILD_PYTORCH

@@ -57,10 +57,12 @@ void DeepPot::init(const std::string& model,
     throw deepmd::deepmd_exception("PyTorch backend is not built");
 #endif
   } else if (deepmd::DPBackend::PyTorchExportable == backend) {
-#ifdef BUILD_PYTORCH
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
     dp = std::make_shared<deepmd::DeepPotPTExpt>(model, gpu_rank, file_content);
 #else
-    throw deepmd::deepmd_exception("PyTorch backend is not built");
+    throw deepmd::deepmd_exception(
+        "PyTorch Exportable backend is not available (missing AOTInductor "
+        "headers at build time)");
 #endif
   } else if (deepmd::DPBackend::Paddle == backend) {
 #ifdef BUILD_PADDLE

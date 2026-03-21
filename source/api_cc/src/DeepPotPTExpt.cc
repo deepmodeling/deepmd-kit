@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-#ifdef BUILD_PYTORCH
 #include "DeepPotPTExpt.h"
 
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
 #include <torch/csrc/inductor/aoti_package/model_package_loader.h>
 
 #include <algorithm>
