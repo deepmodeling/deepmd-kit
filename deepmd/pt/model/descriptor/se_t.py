@@ -441,12 +441,13 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeT":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")
+        data.pop("compress", None)  # pt uses state_dict for compression
         obj = cls(**data)
 
         def t_cvt(xx: Any) -> torch.Tensor:
