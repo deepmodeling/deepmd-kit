@@ -1172,21 +1172,26 @@ void DeepPotPTExpt::compute_nframes(ENERGYVTYPE& ener,
     atom_virial.clear();
   }
   for (int ff = 0; ff < nframes; ++ff) {
-    std::vector<VALUETYPE> frame_coord(coord.begin() + ff * natoms * 3,
-                                       coord.begin() + (ff + 1) * natoms * 3);
+    size_t s_ff = static_cast<size_t>(ff);
+    size_t s_natoms = static_cast<size_t>(natoms);
+    std::vector<VALUETYPE> frame_coord(
+        coord.begin() + s_ff * s_natoms * 3,
+        coord.begin() + (s_ff + 1) * s_natoms * 3);
     std::vector<VALUETYPE> frame_box;
     if (!box.empty()) {
-      frame_box.assign(box.begin() + ff * 9, box.begin() + (ff + 1) * 9);
+      frame_box.assign(box.begin() + s_ff * 9, box.begin() + (s_ff + 1) * 9);
     }
     std::vector<VALUETYPE> frame_fparam;
     if (!fparam.empty()) {
-      frame_fparam.assign(fparam.begin() + ff * dfp,
-                          fparam.begin() + (ff + 1) * dfp);
+      size_t s_dfp = static_cast<size_t>(dfp);
+      frame_fparam.assign(fparam.begin() + s_ff * s_dfp,
+                          fparam.begin() + (s_ff + 1) * s_dfp);
     }
     std::vector<VALUETYPE> frame_aparam;
     if (!aparam.empty()) {
-      frame_aparam.assign(aparam.begin() + ff * dap,
-                          aparam.begin() + (ff + 1) * dap);
+      size_t s_dap = static_cast<size_t>(dap);
+      frame_aparam.assign(aparam.begin() + s_ff * s_dap,
+                          aparam.begin() + (s_ff + 1) * s_dap);
     }
     std::vector<ENERGYTYPE> frame_ener;
     std::vector<VALUETYPE> frame_force, frame_virial, frame_ae, frame_av;
@@ -1307,23 +1312,28 @@ void DeepPotPTExpt::compute_mixed_type_impl(
     atom_virial.clear();
   }
   for (int ff = 0; ff < nframes; ++ff) {
-    std::vector<VALUETYPE> frame_coord(coord.begin() + ff * natoms * 3,
-                                       coord.begin() + (ff + 1) * natoms * 3);
-    std::vector<int> frame_atype(atype.begin() + ff * natoms,
-                                 atype.begin() + (ff + 1) * natoms);
+    size_t s_ff = static_cast<size_t>(ff);
+    size_t s_natoms = static_cast<size_t>(natoms);
+    std::vector<VALUETYPE> frame_coord(
+        coord.begin() + s_ff * s_natoms * 3,
+        coord.begin() + (s_ff + 1) * s_natoms * 3);
+    std::vector<int> frame_atype(atype.begin() + s_ff * s_natoms,
+                                 atype.begin() + (s_ff + 1) * s_natoms);
     std::vector<VALUETYPE> frame_box;
     if (!box.empty()) {
-      frame_box.assign(box.begin() + ff * 9, box.begin() + (ff + 1) * 9);
+      frame_box.assign(box.begin() + s_ff * 9, box.begin() + (s_ff + 1) * 9);
     }
     std::vector<VALUETYPE> frame_fparam;
     if (!fparam.empty()) {
-      frame_fparam.assign(fparam.begin() + ff * dfp,
-                          fparam.begin() + (ff + 1) * dfp);
+      size_t s_dfp = static_cast<size_t>(dfp);
+      frame_fparam.assign(fparam.begin() + s_ff * s_dfp,
+                          fparam.begin() + (s_ff + 1) * s_dfp);
     }
     std::vector<VALUETYPE> frame_aparam;
     if (!aparam.empty()) {
-      frame_aparam.assign(aparam.begin() + ff * dap,
-                          aparam.begin() + (ff + 1) * dap);
+      size_t s_dap = static_cast<size_t>(dap);
+      frame_aparam.assign(aparam.begin() + s_ff * s_dap,
+                          aparam.begin() + (s_ff + 1) * s_dap);
     }
     std::vector<ENERGYTYPE> frame_ener;
     std::vector<VALUETYPE> frame_force, frame_virial, frame_ae, frame_av;

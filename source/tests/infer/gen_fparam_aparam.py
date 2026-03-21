@@ -212,7 +212,6 @@ def main():
         atomic=True,
     )
 
-    nloc = 6
     atom_energy = ae[0, :, 0]
     force = f[0]
     atom_virial = av[0]
