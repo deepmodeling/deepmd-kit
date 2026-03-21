@@ -33,6 +33,9 @@ from .polar_model import (
 from .property_model import (
     PropertyModel,
 )
+from .spin_ener_model import (
+    SpinEnergyModel,
+)
 
 __all__ = [
     "BaseModel",
@@ -44,6 +47,7 @@ __all__ = [
     "LinearEnergyModel",
     "PolarModel",
     "PropertyModel",
+    "SpinEnergyModel",
     "get_model",
     "make_hessian_model",
 ]

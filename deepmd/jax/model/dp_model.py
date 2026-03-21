@@ -55,6 +55,7 @@ def make_jax_dp_model_from_dpmodel(
             fparam: jnp.ndarray | None = None,
             aparam: jnp.ndarray | None = None,
             do_atomic_virial: bool = False,
+            extended_coord_corr: jnp.ndarray | None = None,
         ) -> dict[str, jnp.ndarray]:
             return forward_common_atomic(
                 self,
@@ -65,6 +66,7 @@ def make_jax_dp_model_from_dpmodel(
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
+                extended_coord_corr=extended_coord_corr,
             )
 
         def format_nlist(
