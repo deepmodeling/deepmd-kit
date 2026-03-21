@@ -22,6 +22,9 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
     split_batch,
@@ -381,6 +384,12 @@ class Trainer:
         finetune_model: str | None = None,
         finetune_links: dict | None = None,
     ) -> None:
+        if finetune_model is not None and (
+            init_model is not None or restart_model is not None
+        ):
+            raise ValueError(
+                "finetune_model cannot be combined with init_model or restart_model."
+            )
         resume_model = init_model or restart_model or finetune_model
         resuming = resume_model is not None
         self.restart_training = restart_model is not None
@@ -997,7 +1006,7 @@ def model_change_out_bias(
     model_type_map = _model.get_type_map()
     log.info(
         f"Change output bias of {model_type_map!s} "
-        f"from {np.asarray(old_bias).reshape(-1)[: len(model_type_map)]!s} "
-        f"to {np.asarray(new_bias).reshape(-1)[: len(model_type_map)]!s}."
+        f"from {to_numpy_array(old_bias).reshape(-1)[: len(model_type_map)]!s} "
+        f"to {to_numpy_array(new_bias).reshape(-1)[: len(model_type_map)]!s}."
     )
     return _model

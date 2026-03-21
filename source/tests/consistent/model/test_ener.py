@@ -1330,8 +1330,7 @@ class TestEnerModelAPIs(unittest.TestCase):
         new_bias[:, 1, :] = -3.7  # type 1 ("H")
         dp_model.set_out_bias(new_bias)
 
-        dp_std_orig = to_numpy_array(dp_model.get_out_bias()).copy()
-        # Also get out_std for reference
+        # Snapshot out_std before change_type_map for remap verification
         dp_std_before = to_numpy_array(dp_model.atomic_model.out_std).copy()
 
         # Build pt and pt_expt models from dp serialization
@@ -1412,6 +1411,22 @@ class TestEnerModelAPIs(unittest.TestCase):
             rtol=1e-10,
             atol=1e-10,
             err_msg="dp vs pt_expt out_std mismatch after change_type_map with new types",
+        )
+        # Verify old types' std was remapped correctly
+        # old "O" (index 0) -> new index 3, old "H" (index 1) -> new index 0
+        np.testing.assert_allclose(
+            dp_std_new[:, 3, :],
+            dp_std_before[:, 0, :],  # O
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg="out_std for O should be remapped from old index 0",
+        )
+        np.testing.assert_allclose(
+            dp_std_new[:, 0, :],
+            dp_std_before[:, 1, :],  # H
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg="out_std for H should be remapped from old index 1",
         )
         for idx in [1, 2, 4]:  # X1, X2, B
             np.testing.assert_allclose(

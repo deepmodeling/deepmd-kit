@@ -572,12 +572,22 @@ class TestFinetuneCLI(unittest.TestCase):
                     pre_state[key],
                     msg=f"Descriptor weight {key} should match pretrained",
                 )
-            elif not random_fitting and ".fitting" in key:
-                torch.testing.assert_close(
-                    ft_state[key],
-                    pre_state[key],
-                    msg=f"Fitting weight {key} should match pretrained",
-                )
+            elif ".fitting" in key:
+                if not random_fitting:
+                    torch.testing.assert_close(
+                        ft_state[key],
+                        pre_state[key],
+                        msg=f"Fitting weight {key} should match pretrained",
+                    )
+                else:
+                    # random_fitting: network weights must differ
+                    # (bias_atom_e is set by bias adjustment, not random init)
+                    if ft_state[key].is_floating_point() and "bias_atom_e" not in key:
+                        self.assertFalse(
+                            torch.equal(ft_state[key], pre_state[key]),
+                            msg=f"Fitting weight {key} should NOT match pretrained "
+                            f"when random_fitting=True",
+                        )
 
     def test_finetune_cli(self) -> None:
         """Train -> finetune via main() dispatcher -> verify checkpoint exists."""
