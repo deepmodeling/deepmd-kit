@@ -35,35 +35,37 @@ cmake --build . -j${NPROC}
 cmake --install .
 # Generate PT/PT2 model files for C++ tests.
 # Must run after cmake --build so that libdeepmd_op_pt.so (custom ops) is available.
-# Install the custom op .so to deepmd/lib/ so that `import deepmd.pt` can find it.
-# This prevents double-registration crashes when gen scripts also search build dirs.
-_OP_SO=$(find ${BUILD_TMP_DIR} -name 'libdeepmd_op_pt.so' 2>/dev/null | head -1)
-if [ -n "${_OP_SO}" ]; then
-	_DEEPMD_LIB=$(python -c 'from deepmd.env import SHARED_LIB_DIR; print(SHARED_LIB_DIR)' 2>/dev/null)
-	if [ -n "${_DEEPMD_LIB}" ]; then
-		mkdir -p "${_DEEPMD_LIB}"
-		cp "${_OP_SO}" "${_DEEPMD_LIB}/"
+if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
+	# Install the custom op .so to SHARED_LIB_DIR so that `import deepmd.pt` can find it.
+	# This prevents double-registration crashes when gen scripts also search build dirs.
+	_OP_SO=$(find ${BUILD_TMP_DIR} -name 'libdeepmd_op_pt.so' 2>/dev/null | head -1)
+	if [ -n "${_OP_SO}" ]; then
+		_DEEPMD_LIB=$(python -c 'from deepmd.env import SHARED_LIB_DIR; print(SHARED_LIB_DIR)' 2>/dev/null)
+		if [ -n "${_DEEPMD_LIB}" ]; then
+			mkdir -p "${_DEEPMD_LIB}"
+			cp "${_OP_SO}" "${_DEEPMD_LIB}/"
+		fi
 	fi
-fi
-# The custom op .so depends on libdeepmd.so (compute kernels).  Add the
-# install prefix lib/ to LD_LIBRARY_PATH so dlopen can resolve symbols.
-export LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${LD_LIBRARY_PATH}
-# When the build uses -fsanitize=leak, the custom op .so requires the LSAN
-# runtime to be preloaded (otherwise dlopen fails).  We disable leak detection
-# in the gen scripts to avoid false reports from torch/paddle internals.
-INFER_SCRIPT_PATH=${SCRIPT_PATH}/../tests/infer
-_GEN_ENV=""
-if echo "${CXXFLAGS:-}" | grep -q fsanitize=leak; then
-	_LSAN_LIB=$(gcc -print-file-name=liblsan.so 2>/dev/null || true)
-	if [ -n "${_LSAN_LIB}" ] && [ -f "${_LSAN_LIB}" ]; then
-		_GEN_ENV="LD_PRELOAD=${_LSAN_LIB} LSAN_OPTIONS=detect_leaks=0"
+	# The custom op .so depends on libdeepmd.so (compute kernels).  Add the
+	# install prefix lib/ to LD_LIBRARY_PATH so dlopen can resolve symbols.
+	export LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${LD_LIBRARY_PATH}
+	# When the build uses -fsanitize=leak, the custom op .so requires the LSAN
+	# runtime to be preloaded (otherwise dlopen fails).  We disable leak detection
+	# in the gen scripts to avoid false reports from torch/paddle internals.
+	INFER_SCRIPT_PATH=${SCRIPT_PATH}/../tests/infer
+	_GEN_ENV=""
+	if echo "${CXXFLAGS:-}" | grep -q fsanitize=leak; then
+		_LSAN_LIB=$(gcc -print-file-name=liblsan.so 2>/dev/null || true)
+		if [ -n "${_LSAN_LIB}" ] && [ -f "${_LSAN_LIB}" ]; then
+			_GEN_ENV="LD_PRELOAD=${_LSAN_LIB} LSAN_OPTIONS=detect_leaks=0"
+		fi
 	fi
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_sea.py
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa1.py
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa2.py
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa3.py
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_fparam_aparam.py
 fi
-env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_sea.py
-env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa1.py
-env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa2.py
-env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa3.py
-env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_fparam_aparam.py
 if [ "${ENABLE_PADDLE:-TRUE}" == "TRUE" ]; then
 	PADDLE_INFERENCE_DIR=${BUILD_TMP_DIR}/paddle_inference_install_dir
 	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PADDLE_INFERENCE_DIR}/third_party/install/onednn/lib:${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib
