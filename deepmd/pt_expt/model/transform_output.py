@@ -17,20 +17,20 @@ def atomic_virial_corr(
     extended_coord: torch.Tensor,
     atom_energy: torch.Tensor,
 ) -> torch.Tensor:
-    nall = extended_coord.shape[1]
-    nf = extended_coord.shape[0]
     nloc = atom_energy.shape[1]
-    coord, _ = torch.split(extended_coord, [nloc, nall - nloc], dim=1)
+    indices = torch.arange(nloc, dtype=torch.int64, device=extended_coord.device)
+    coord = torch.index_select(extended_coord, 1, indices)
     # no derivative with respect to the loc coord.
     coord = coord.detach()
     ce = coord * atom_energy
     sumce = torch.sum(ce, dim=1)  # [nf, 3]
 
-    # Use vmap to batch the 3 backward passes (one per spatial component)
-    basis = torch.eye(3, dtype=sumce.dtype, device=sumce.device)  # [3, 3]
-    basis = basis.unsqueeze(1).expand(3, nf, 3)  # [3, nf, 3]
-
-    def grad_fn(grad_output: torch.Tensor) -> torch.Tensor:
+    # Explicitly loop over the 3 spatial components instead of vmap,
+    # so that make_fx(symbolic) and torch.export can trace through.
+    results = []
+    for i in range(3):
+        grad_output = torch.zeros_like(sumce)
+        grad_output[:, i] = 1.0
         result = torch.autograd.grad(
             [sumce],
             [extended_coord],
@@ -39,11 +39,10 @@ def atomic_virial_corr(
             retain_graph=True,
         )[0]
         assert result is not None
-        return result
+        results.append(result)
 
-    # [3, nf, nall, 3] — batched over the 3 spatial components
-    extended_virial_corr = torch.vmap(grad_fn)(basis)
     # [3, nf, nall, 3] -> [nf, nall, 3, 3]
+    extended_virial_corr = torch.stack(results, dim=0)
     return extended_virial_corr.permute(1, 2, 3, 0)
 
 
@@ -141,6 +140,7 @@ def fit_output_to_model_output(
     do_atomic_virial: bool = False,
     create_graph: bool = True,
     mask: torch.Tensor | None = None,
+    extended_coord_corr: torch.Tensor | None = None,
 ) -> dict[str, torch.Tensor]:
     """Transform the output of the fitting network to
     the model output.
@@ -177,6 +177,12 @@ def fit_output_to_model_output(
                 model_ret[kk_derv_r] = dr
                 if vdef.c_differentiable:
                     assert dc is not None
+                    if extended_coord_corr is not None:
+                        dc_corr = (
+                            dr.squeeze(-2).unsqueeze(-1)
+                            @ extended_coord_corr.unsqueeze(-2).to(dr.dtype)
+                        ).view(list(dc.shape[:-2]) + [1, 9])  # noqa: RUF005
+                        dc = dc + dc_corr
                     model_ret[kk_derv_c] = dc
                     model_ret[kk_derv_c + "_redu"] = torch.sum(
                         model_ret[kk_derv_c].to(redu_prec), dim=1

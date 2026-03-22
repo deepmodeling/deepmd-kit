@@ -32,6 +32,15 @@ def xp_take_along_axis(arr: Array, indices: Array, axis: int) -> Array:
     # torch.take_along_dim requires int64 indices
     if array_api_compat.is_torch_array(indices):
         indices = xp.astype(indices, xp.int64)
+    if array_api_compat.is_torch_array(arr):
+        # Use torch.gather directly for torch.export dynamic shape compatibility.
+        # array_api_compat's take_along_axis / torch.take_along_dim specializes
+        # the source dimension size to a constant during torch.export tracing,
+        # breaking dynamic shape export.  torch.gather is the underlying
+        # primitive and handles symbolic shapes correctly.
+        import torch
+
+        return torch.gather(arr, axis, indices)
     if Version(xp.__array_api_version__) >= Version("2024.12"):
         # see: https://github.com/data-apis/array-api-strict/blob/d086c619a58f35c38240592ef994aa19ca7beebc/array_api_strict/_indexing_functions.py#L30-L39
         return xp.take_along_axis(arr, indices, axis=axis)
@@ -60,6 +69,24 @@ def xp_take_along_axis(arr: Array, indices: Array, axis: int) -> Array:
     out = xp.take(arr, indices)
     out = xp.reshape(out, shape)
     return xp_swapaxes(out, axis, -1)
+
+
+def xp_take_first_n(arr: Array, dim: int, n: int) -> Array:
+    """Take the first *n* elements along *dim*.
+
+    For torch tensors, uses ``torch.index_select`` so that
+    ``torch.export`` does not emit a contiguity guard that would
+    prevent the ``nall == nloc`` (no-PBC) case from working.
+    For numpy / jax, uses regular slicing.
+    """
+    if array_api_compat.is_torch_array(arr):
+        import torch
+
+        indices = torch.arange(n, dtype=torch.int64, device=arr.device)
+        return torch.index_select(arr, dim, indices)
+    slices = [slice(None)] * arr.ndim
+    slices[dim] = slice(0, n)
+    return arr[tuple(slices)]
 
 
 def xp_scatter_sum(input: Array, dim: int, index: Array, src: Array) -> Array:

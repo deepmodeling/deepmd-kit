@@ -107,11 +107,10 @@ class EnvMatStatSe(EnvMatStat):
                 "last_dim should be 1 for raial-only or 4 for full descriptor."
             )
         for system in data:
-            coord, atype, box, natoms = (
+            coord, atype, box = (
                 system["coord"],
                 system["atype"],
                 system["box"],
-                system["natoms"],
             )
             (
                 extended_coord,

@@ -33,7 +33,20 @@ from deepmd.utils.version import (
 
 @BaseDescriptor.register("hybrid")
 class DescrptHybrid(BaseDescriptor, NativeOP):
-    """Concate a list of descriptors to form a new descriptor.
+    r"""Concatenate a list of descriptors to form a new descriptor.
+
+    The hybrid descriptor combines multiple descriptors by concatenation:
+
+    .. math::
+        \mathcal{D}^i = [\mathcal{D}^i_1, \mathcal{D}^i_2, ..., \mathcal{D}^i_n],
+
+    where :math:`\mathcal{D}^i_k` is the descriptor computed by the :math:`k`-th
+    sub-descriptor for atom :math:`i`.
+
+    The output dimension is the sum of all sub-descriptor dimensions:
+
+    .. math::
+        \dim(\mathcal{D}^i) = \sum_{k=1}^{n} \dim(\mathcal{D}^i_k).
 
     Parameters
     ----------
@@ -232,7 +245,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         table_stride_2: float = 0.1,
         check_frequency: int = -1,
     ) -> None:
-        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -262,6 +275,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         atype_ext: Array,
         nlist: Array,
         mapping: Array | None = None,
+        fparam: Array | None = None,
     ) -> tuple[
         Array,
         Array | None,

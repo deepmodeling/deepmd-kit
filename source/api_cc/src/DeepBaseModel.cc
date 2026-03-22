@@ -34,6 +34,10 @@ void DeepBaseModel::get_type_map(std::string& type_map) {
 
 bool DeepBaseModel::is_aparam_nall() const { return dpbase->is_aparam_nall(); }
 
+bool DeepBaseModel::has_default_fparam() const {
+  return dpbase->has_default_fparam();
+}
+
 DeepBaseModelDevi::DeepBaseModelDevi() : inited(false), numb_models(0) {}
 
 // DeepBaseModelDevi::DeepBaseModelDevi(

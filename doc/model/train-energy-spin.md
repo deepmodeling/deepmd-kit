@@ -88,10 +88,6 @@ $$L = p_e L_e + p_{fr} L_{fr} + p_{fm} L_{fm} + p_v L_v$$
 
 where $L_e$, $L_{fr}$, $L_{fm}$ and $L_v$ denote the loss in energy, atomic force, magnatic force and virial, respectively. $p_e$, $p_{fr}$, $p_{fm}$ and $p_v$ give the prefactors of the energy, atomic force, magnatic force and virial losses.
 
-:::{note}
-Please note that the virial and atomic virial are not currently supported in spin models.
-:::
-
 The prefectors may not be a constant, rather it changes linearly with the learning rate. Taking the atomic force prefactor for example, at training step $t$, it is given by
 
 $$p_{fr}(t) = p_{fr}^0 \frac{ \alpha(t) }{ \alpha(0) } + p_{fr}^\infty ( 1 - \frac{ \alpha(t) }{ \alpha(0) })$$
@@ -115,10 +111,18 @@ The {ref}`loss <loss>` section in the `input.json` is
 	"limit_pref_fm":	10.0,
 	"start_pref_v":	    0,
 	"limit_pref_v":	    0,
+	"loss_func":	    "mse"
     },
 ```
 
 The options {ref}`start_pref_e <loss[ener_spin]/start_pref_e>`, {ref}`limit_pref_e <loss[ener_spin]/limit_pref_e>`, {ref}`start_pref_fr <loss[ener_spin]/start_pref_fr>`, {ref}`limit_pref_fm <loss[ener_spin]/limit_pref_fm>`, {ref}`start_pref_v <loss[ener_spin]/start_pref_v>` and {ref}`limit_pref_v <loss[ener_spin]/limit_pref_v>` determine the start and limit prefactors of energy, atomic force, magnatic force and virial, respectively.
+
+The {ref}`loss_func <loss[ener_spin]/loss_func>` option specifies the type of loss function to use. Two options are available:
+
+- `"mse"` (default): Mean Squared Error (L2 loss). This is the standard loss function that penalizes large errors more heavily.
+- `"mae"`: Mean Absolute Error (L1 loss). This loss function is less sensitive to outliers and may be preferred when the training data contains occasional large errors.
+
+When using `loss_func="mse"`, the training will output `rmse_e`, `rmse_fr`, `rmse_fm`, `rmse_v` metrics (root mean square errors). When using `loss_func="mae"`, the training will output `mae_e`, `mae_fr`, `mae_fm`, `mae_v` metrics (mean absolute errors).
 
 If one does not want to train with virial, then he/she may set the virial prefactors {ref}`start_pref_v <loss[ener_spin]/start_pref_v>` and {ref}`limit_pref_v <loss[ener_spin]/limit_pref_v>` to 0.
 
@@ -138,6 +142,7 @@ set.*/box.npy
 set.*/coord.npy
 set.*/energy.npy
 set.*/force.npy
+set.*/virial.npy
 ```
 
 This system contains `Nframes` frames with the same atom number `Natoms` and magnetic atom number `Nspins`, the total number of element and virtual types contained in all frames is `Ntypes`. The `box` and `energy` files are the same as those in [standard formats](../data/system.md). The `type` file contains the types of both real atoms and virtual atoms. In `coord` and `force` files, virtual atomic coordinates are integrated with real atomic coordinates, and magnetic forces are combined with atomic forces. Specifically, magnetic forces are obtained from [DeltaSpin](https://github.com/caizefeng/DeltaSpin) and virtual atomic coordinates are given by:
@@ -155,6 +160,7 @@ We list the details about spin system data format in TensorFlow backend:
 | box    | Boxes                      | box.raw    | Å    | Nframes * 3 * 3                 | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`                                                                                                                 |
 | energy | Frame energies             | energy.raw | eV   | Nframes                         |                                                                                                                                                           |
 | force  | Atomic and magnetic forces | force.raw  | eV/Å | Nframes * (Natoms + Nspins) * 3 | The first `3 \* Natoms` columns represent atomic forces, followed by `3 \* Nspins` columns representing magnetic forces.                                  |
+| virial | Frame virial               | virial.raw | eV   | Nframes * 9                     | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`                                                                                                                 |
 
 ### Spin data format in PyTorch/DP
 
@@ -168,6 +174,7 @@ set.*/spin.npy
 set.*/energy.npy
 set.*/force.npy
 set.*/force_mag.npy
+set.*/virial.npy
 ```
 
 This system contains `Nframes` frames with the same atom number `Natoms`, the total number of element contained in all frames is `Ntypes`. Most files are the same as those in [standard formats](../data/system.md), here we only list the distinct ones:

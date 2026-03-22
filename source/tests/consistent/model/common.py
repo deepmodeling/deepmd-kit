@@ -3,6 +3,8 @@ from typing import (
     Any,
 )
 
+import numpy as np
+
 from deepmd.common import (
     make_default_mesh,
 )
@@ -145,3 +147,31 @@ class ModelTest:
                 do_atomic_virial=True,
             ).items()
         }
+
+
+def compare_variables_recursive(
+    d1: dict, d2: dict, path: str = "", rtol: float = 1e-10, atol: float = 1e-10
+) -> None:
+    """Recursively compare ``@variables`` sections in two serialized dicts."""
+    for key in d1:
+        if key not in d2:
+            continue
+        child_path = f"{path}/{key}" if path else key
+        v1, v2 = d1[key], d2[key]
+        if key == "@variables" and isinstance(v1, dict) and isinstance(v2, dict):
+            for vk in v1:
+                if vk not in v2:
+                    continue
+                a1 = np.asarray(v1[vk]) if v1[vk] is not None else None
+                a2 = np.asarray(v2[vk]) if v2[vk] is not None else None
+                if a1 is None and a2 is None:
+                    continue
+                np.testing.assert_allclose(
+                    a1,
+                    a2,
+                    rtol=rtol,
+                    atol=atol,
+                    err_msg=f"@variables mismatch at {child_path}/{vk}",
+                )
+        elif isinstance(v1, dict) and isinstance(v2, dict):
+            compare_variables_recursive(v1, v2, child_path, rtol, atol)

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import functools
 import logging
 from collections.abc import (
     Callable,
@@ -67,6 +66,9 @@ class DPAtomicModel(BaseAtomicModel):
         if hasattr(self.fitting_net, "reinit_exclude"):
             self.fitting_net.reinit_exclude(self.atom_exclude_types)
         super().init_out_stat()
+        self.add_chg_spin_ebd: bool = getattr(
+            self.descriptor, "add_chg_spin_ebd", False
+        )
         self.enable_eval_descriptor_hook = False
         self.enable_eval_fitting_last_layer_hook = False
         self.eval_descriptor_list = []
@@ -270,12 +272,29 @@ class DPAtomicModel(BaseAtomicModel):
         atype = extended_atype[:, :nloc]
         if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
+
+        # Handle default fparam if fitting net supports it
+        if (
+            hasattr(self.fitting_net, "get_dim_fparam")
+            and self.fitting_net.get_dim_fparam() > 0
+            and fparam is None
+        ):
+            # use default fparam
+            default_fparam_tensor = self.fitting_net.get_default_fparam()
+            assert default_fparam_tensor is not None
+            fparam_input_for_des = torch.tile(
+                default_fparam_tensor.unsqueeze(0), [nframes, 1]
+            )
+        else:
+            fparam_input_for_des = fparam
+
         descriptor, rot_mat, g2, h2, sw = self.descriptor(
             extended_coord,
             extended_atype,
             nlist,
             mapping=mapping,
             comm_dict=comm_dict,
+            fparam=fparam_input_for_des if self.add_chg_spin_ebd else None,
         )
         assert descriptor is not None
         if self.enable_eval_descriptor_hook:
@@ -299,14 +318,12 @@ class DPAtomicModel(BaseAtomicModel):
             )
         return fit_ret
 
-    def get_out_bias(self) -> torch.Tensor:
-        return self.out_bias
-
     def compute_or_load_stat(
         self,
         sampled_func: Callable[[], list[dict]],
         stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
     ) -> None:
         """
         Compute or load the statistics parameters of the model,
@@ -331,32 +348,15 @@ class DPAtomicModel(BaseAtomicModel):
             # should not share the same parameters
             stat_file_path /= " ".join(self.type_map)
 
-        @functools.lru_cache
-        def wrapped_sampler() -> list[dict]:
-            sampled = sampled_func()
-            if self.pair_excl is not None:
-                pair_exclude_types = self.pair_excl.get_exclude_types()
-                for sample in sampled:
-                    sample["pair_exclude_types"] = list(pair_exclude_types)
-            if self.atom_excl is not None:
-                atom_exclude_types = self.atom_excl.get_exclude_types()
-                for sample in sampled:
-                    sample["atom_exclude_types"] = list(atom_exclude_types)
-            if (
-                "find_fparam" not in sampled[0]
-                and "fparam" not in sampled[0]
-                and self.has_default_fparam()
-            ):
-                default_fparam = self.get_default_fparam()
-                for sample in sampled:
-                    nframe = sample["atype"].shape[0]
-                    sample["fparam"] = default_fparam.repeat(nframe, 1)
-            return sampled
-
+        wrapped_sampler = self._make_wrapped_sampler(sampled_func)
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
         self.compute_fitting_input_stat(wrapped_sampler, stat_file_path)
         if compute_or_load_out_stat:
             self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
+
+        self._collect_and_set_observed_type(
+            wrapped_sampler, stat_file_path, preset_observed_type
+        )
 
     def compute_fitting_input_stat(
         self,

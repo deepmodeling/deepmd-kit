@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import functools
 from collections.abc import (
     Callable,
 )
@@ -58,7 +57,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self,
         models: list[BaseAtomicModel],
         type_map: list[str],
-        weights: str | list[float] | None = "mean",
+        weights: str | list[float] = "mean",
         **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
@@ -125,9 +124,6 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
         return True
-
-    def get_out_bias(self) -> torch.Tensor:
-        return self.out_bias
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
@@ -377,10 +373,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         dd.update(
             {
                 "@class": "Model",
-                "@version": 2,
+                "@version": 3,
                 "type": "linear",
                 "models": [model.serialize() for model in self.models],
                 "type_map": self.type_map,
+                "weights": self.weights,
             }
         )
         return dd
@@ -388,7 +385,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 2), 2, 1)
+        check_version_compatibility(data.pop("@version", 2), 3, 1)
+        if "weights" not in data:
+            data["weights"] = "mean"
         data.pop("@class", None)
         data.pop("type", None)
         models = [
@@ -479,6 +478,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         sampled_func: Callable[[], list[dict[str, Any]]],
         stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
     ) -> None:
         """
         Compute or load the statistics parameters of the model,
@@ -498,9 +498,21 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             Whether to compute the output statistics.
             If False, it will only compute the input statistics (e.g. mean and standard deviation of descriptors).
         """
+        # Compute observed type once at parent level, then propagate to
+        # sub-models via preset_observed_type to avoid redundant computation.
+        obs_stat_path = stat_file_path
+        if obs_stat_path is not None and self.type_map is not None:
+            obs_stat_path = obs_stat_path / " ".join(self.type_map)
+        self._collect_and_set_observed_type(
+            sampled_func, obs_stat_path, preset_observed_type
+        )
+
         for md in self.models:
             md.compute_or_load_stat(
-                sampled_func, stat_file_path, compute_or_load_out_stat=False
+                sampled_func,
+                stat_file_path,
+                compute_or_load_out_stat=False,
+                preset_observed_type=self._observed_type,
             )
 
         if stat_file_path is not None and self.type_map is not None:
@@ -508,19 +520,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             # should not share the same parameters
             stat_file_path /= " ".join(self.type_map)
 
-        @functools.lru_cache
-        def wrapped_sampler() -> list[dict[str, Any]]:
-            sampled = sampled_func()
-            if self.pair_excl is not None:
-                pair_exclude_types = self.pair_excl.get_exclude_types()
-                for sample in sampled:
-                    sample["pair_exclude_types"] = list(pair_exclude_types)
-            if self.atom_excl is not None:
-                atom_exclude_types = self.atom_excl.get_exclude_types()
-                for sample in sampled:
-                    sample["atom_exclude_types"] = list(atom_exclude_types)
-            return sampled
-
+        wrapped_sampler = self._make_wrapped_sampler(sampled_func)
         self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
 

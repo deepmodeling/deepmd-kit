@@ -59,11 +59,13 @@ if INSTALLED_ARRAY_API_STRICT:
 @parameterized(
     (False, True),  # huber
     (False, True),  # enable_atom_ener_coeff
+    ("mse", "mae"),  # loss_func
+    (False, True),  # f_use_norm
 )
 class TestEner(CommonTest, LossTest, unittest.TestCase):
     @property
     def data(self) -> dict:
-        (use_huber, enable_atom_ener_coeff) = self.param
+        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm) = self.param
         return {
             "start_pref_e": 0.02,
             "limit_pref_e": 1.0,
@@ -77,13 +79,25 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             "limit_pref_pf": 1.0 if not use_huber else 0.0,
             "use_huber": use_huber,
             "enable_atom_ener_coeff": enable_atom_ener_coeff,
+            "loss_func": loss_func,
+            "f_use_norm": f_use_norm,
         }
 
-    skip_tf = CommonTest.skip_tf
+    @property
+    def skip_tf(self) -> bool:
+        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm) = self.param
+        # Skip TF for MAE loss tests (not implemented in TF backend)
+        return CommonTest.skip_tf or loss_func == "mae" or f_use_norm
+
+    @property
+    def skip_pd(self) -> bool:
+        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm) = self.param
+        # Skip Paddle for MAE loss tests (not implemented in Paddle backend)
+        return not INSTALLED_PD or loss_func == "mae" or f_use_norm
+
     skip_pt = CommonTest.skip_pt
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
-    skip_pd = not INSTALLED_PD
 
     tf_class = EnerLossTF
     dp_class = EnerLossDP
@@ -94,6 +108,12 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
     args = loss_ener()
 
     def setUp(self) -> None:
+        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm) = self.param
+        # Skip invalid combinations
+        if f_use_norm and not (use_huber or loss_func == "mae"):
+            self.skipTest("f_use_norm requires either use_huber or loss_func='mae'")
+        if use_huber and loss_func == "mae":
+            self.skipTest("Cannot use both huber and mae loss_func at the same time")
         CommonTest.setUp(self)
         self.learning_rate = 1e-3
         rng = np.random.default_rng(20250105)
@@ -111,10 +131,10 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             ),
         }
         self.predict_dpmodel_style = {
-            "energy_derv_c_redu": self.predict["virial"],
-            "energy_derv_r": self.predict["force"],
-            "energy_redu": self.predict["energy"],
-            "energy": self.predict["atom_ener"],
+            "energy": self.predict["energy"],
+            "force": self.predict["force"],
+            "virial": self.predict["virial"],
+            "atom_energy": self.predict["atom_ener"],
         }
         self.label = {
             "energy": rng.random((self.nframes,)),
@@ -251,8 +271,17 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
         more_loss = {kk: to_numpy_array(vv) for kk, vv in more_loss.items()}
         return loss, more_loss
 
-    def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
-        return (ret[0],)
+    def extract_ret(self, ret: Any, backend) -> dict[str, np.ndarray]:
+        loss = ret[0]
+        result = {"loss": np.atleast_1d(np.asarray(loss, dtype=np.float64))}
+        if len(ret) > 1:
+            more_loss = ret[1]
+            for k in sorted(more_loss):
+                if k.startswith("rmse_") or k.startswith("mae_"):
+                    result[k] = np.atleast_1d(
+                        np.asarray(more_loss[k], dtype=np.float64)
+                    )
+        return result
 
     @property
     def rtol(self) -> float:
@@ -262,4 +291,214 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
     @property
     def atol(self) -> float:
         """Absolute tolerance for comparing the return value."""
+        return 1e-10
+
+
+class TestEnerGF(CommonTest, LossTest, unittest.TestCase):
+    """Test energy loss with generalized force (numb_generalized_coord > 0).
+
+    This exercises the code path that previously had a natoms[0] bug.
+    """
+
+    @property
+    def data(self) -> dict:
+        return {
+            "start_pref_e": 0.02,
+            "limit_pref_e": 1.0,
+            "start_pref_f": 1000.0,
+            "limit_pref_f": 1.0,
+            "start_pref_v": 1.0,
+            "limit_pref_v": 1.0,
+            "start_pref_ae": 1.0,
+            "limit_pref_ae": 1.0,
+            "start_pref_pf": 1.0,
+            "limit_pref_pf": 1.0,
+            "start_pref_gf": 1.0,
+            "limit_pref_gf": 1.0,
+            "numb_generalized_coord": 2,
+        }
+
+    skip_tf = CommonTest.skip_tf
+    skip_pt = CommonTest.skip_pt
+    skip_jax = not INSTALLED_JAX
+    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+    skip_pd = not INSTALLED_PD
+
+    tf_class = EnerLossTF
+    dp_class = EnerLossDP
+    pt_class = EnerLossPT
+    jax_class = EnerLossDP
+    pd_class = EnerLossPD
+    array_api_strict_class = EnerLossDP
+    args = loss_ener()
+
+    def setUp(self) -> None:
+        CommonTest.setUp(self)
+        self.learning_rate = 1e-3
+        rng = np.random.default_rng(20250105)
+        self.nframes = 2
+        self.natoms = 6
+        numb_generalized_coord = 2
+        self.predict = {
+            "energy": rng.random((self.nframes,)),
+            "force": rng.random((self.nframes, self.natoms, 3)),
+            "virial": rng.random((self.nframes, 9)),
+            "atom_ener": rng.random((self.nframes, self.natoms)),
+        }
+        self.predict_dpmodel_style = {
+            "energy": self.predict["energy"],
+            "force": self.predict["force"],
+            "virial": self.predict["virial"],
+            "atom_energy": self.predict["atom_ener"],
+        }
+        self.label = {
+            "energy": rng.random((self.nframes,)),
+            "force": rng.random((self.nframes, self.natoms, 3)),
+            "virial": rng.random((self.nframes, 9)),
+            "atom_ener": rng.random((self.nframes, self.natoms)),
+            "atom_pref": np.ones((self.nframes, self.natoms, 3)),
+            "drdq": rng.random(
+                (self.nframes, self.natoms * 3 * numb_generalized_coord)
+            ),
+            "find_energy": 1.0,
+            "find_force": 1.0,
+            "find_virial": 1.0,
+            "find_atom_ener": 1.0,
+            "find_atom_pref": 1.0,
+            "find_drdq": 1.0,
+        }
+
+    @property
+    def additional_data(self) -> dict:
+        return {
+            "starter_learning_rate": 1e-3,
+        }
+
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
+        predict = {
+            kk: tf.placeholder(
+                GLOBAL_TF_FLOAT_PRECISION, vv.shape, name="i_predict_" + kk
+            )
+            for kk, vv in self.predict.items()
+        }
+        label = {
+            kk: tf.placeholder(
+                GLOBAL_TF_FLOAT_PRECISION, vv.shape, name="i_label_" + kk
+            )
+            if isinstance(vv, np.ndarray)
+            else vv
+            for kk, vv in self.label.items()
+        }
+
+        loss, more_loss = obj.build(
+            self.learning_rate,
+            [self.natoms],
+            predict,
+            label,
+            suffix=suffix,
+        )
+        return [loss], {
+            **{
+                vv: self.predict[kk]
+                for kk, vv in predict.items()
+                if isinstance(vv, tf.Tensor)
+            },
+            **{
+                vv: self.label[kk]
+                for kk, vv in label.items()
+                if isinstance(vv, tf.Tensor)
+            },
+        }
+
+    def eval_pt(self, pt_obj: Any) -> Any:
+        predict = {kk: numpy_to_torch(vv) for kk, vv in self.predict.items()}
+        label = {kk: numpy_to_torch(vv) for kk, vv in self.label.items()}
+        predict["atom_energy"] = predict.pop("atom_ener")
+        _, loss, more_loss = pt_obj(
+            {},
+            lambda: predict,
+            label,
+            self.natoms,
+            self.learning_rate,
+        )
+        loss = torch_to_numpy(loss)
+        more_loss = {kk: torch_to_numpy(vv) for kk, vv in more_loss.items()}
+        return loss, more_loss
+
+    def eval_dp(self, dp_obj: Any) -> Any:
+        return dp_obj(
+            self.learning_rate,
+            self.natoms,
+            self.predict_dpmodel_style,
+            self.label,
+        )
+
+    def eval_jax(self, jax_obj: Any) -> Any:
+        predict = {kk: jnp.asarray(vv) for kk, vv in self.predict_dpmodel_style.items()}
+        label = {kk: jnp.asarray(vv) for kk, vv in self.label.items()}
+
+        loss, more_loss = jax_obj(
+            self.learning_rate,
+            self.natoms,
+            predict,
+            label,
+        )
+        loss = to_numpy_array(loss)
+        more_loss = {kk: to_numpy_array(vv) for kk, vv in more_loss.items()}
+        return loss, more_loss
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        predict = {
+            kk: array_api_strict.asarray(vv)
+            for kk, vv in self.predict_dpmodel_style.items()
+        }
+        label = {kk: array_api_strict.asarray(vv) for kk, vv in self.label.items()}
+
+        loss, more_loss = array_api_strict_obj(
+            self.learning_rate,
+            self.natoms,
+            predict,
+            label,
+        )
+        loss = to_numpy_array(loss)
+        more_loss = {kk: to_numpy_array(vv) for kk, vv in more_loss.items()}
+        return loss, more_loss
+
+    def eval_pd(self, pd_obj: Any) -> Any:
+        predict = {
+            kk: paddle.to_tensor(vv).to(PD_DEVICE) for kk, vv in self.predict.items()
+        }
+        label = {
+            kk: paddle.to_tensor(vv).to(PD_DEVICE) for kk, vv in self.label.items()
+        }
+        predict["atom_energy"] = predict.pop("atom_ener")
+        _, loss, more_loss = pd_obj(
+            {},
+            lambda: predict,
+            label,
+            self.natoms,
+            self.learning_rate,
+        )
+        loss = to_numpy_array(loss)
+        more_loss = {kk: to_numpy_array(vv) for kk, vv in more_loss.items()}
+        return loss, more_loss
+
+    def extract_ret(self, ret: Any, backend) -> dict[str, np.ndarray]:
+        loss = ret[0]
+        result = {"loss": np.atleast_1d(np.asarray(loss, dtype=np.float64))}
+        if len(ret) > 1:
+            more_loss = ret[1]
+            for k in sorted(more_loss):
+                if k.startswith("rmse_"):
+                    result[k] = np.atleast_1d(
+                        np.asarray(more_loss[k], dtype=np.float64)
+                    )
+        return result
+
+    @property
+    def rtol(self) -> float:
+        return 1e-10
+
+    @property
+    def atol(self) -> float:
         return 1e-10

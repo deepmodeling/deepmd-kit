@@ -51,7 +51,7 @@ def make_base_descriptor(
         def __new__(cls, *args: Any, **kwargs: Any) -> Any:
             if cls is BD:
                 cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
-            return super().__new__(cls)
+            return object.__new__(cls)
 
         @abstractmethod
         def get_rcut(self) -> float:
@@ -162,7 +162,7 @@ def make_base_descriptor(
             table_stride_2: float = 0.1,
             check_frequency: int = -1,
         ) -> None:
-            """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+            """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
 
             Parameters
             ----------
@@ -186,6 +186,7 @@ def make_base_descriptor(
             extended_atype: Array,
             nlist: Array,
             mapping: Array | None = None,
+            fparam: Array | None = None,
         ) -> Array:
             """Calculate descriptor."""
             pass

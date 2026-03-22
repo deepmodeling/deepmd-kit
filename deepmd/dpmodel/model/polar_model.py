@@ -9,6 +9,9 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.atomic_model import (
     DPPolarAtomicModel,
 )
+from deepmd.dpmodel.common import (
+    NativeOP,
+)
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
@@ -20,13 +23,11 @@ from .make_model import (
     make_model,
 )
 
-DPPolarModel_ = make_model(DPPolarAtomicModel)
+DPPolarModel_ = make_model(DPPolarAtomicModel, T_Bases=(NativeOP, BaseModel))
 
 
 @BaseModel.register("polar")
 class PolarModel(DPModelCommon, DPPolarModel_):
-    model_type = "polar"
-
     def __init__(
         self,
         *args: Any,

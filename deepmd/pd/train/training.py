@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import contextlib
+import datetime
 import functools
 import logging
 import time
@@ -120,6 +121,7 @@ class Trainer:
         self.restart_training = restart_model is not None
         model_params = config["model"]
         training_params = config["training"]
+        optimizer_params = config.get("optimizer", {})
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
         self.finetune_update_stat = False
@@ -157,14 +159,17 @@ class Trainer:
         self.lcurve_should_print_header = True
 
         def get_opt_param(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-            opt_type = params.get("opt_type", "Adam")
-            opt_param = {
-                "kf_blocksize": params.get("kf_blocksize", 5120),
-                "kf_start_pref_e": params.get("kf_start_pref_e", 1),
-                "kf_limit_pref_e": params.get("kf_limit_pref_e", 1),
-                "kf_start_pref_f": params.get("kf_start_pref_f", 1),
-                "kf_limit_pref_f": params.get("kf_limit_pref_f", 1),
-            }
+            """
+            Extract optimizer parameters.
+
+            Note: Default values are already filled by argcheck.normalize()
+            before this function is called.
+            """
+            opt_type = params.get("type", "Adam")
+            if opt_type not in ["Adam", "AdamW"]:
+                raise ValueError(f"Not supported optimizer type '{opt_type}'")
+            opt_param = dict(params)
+            opt_param.pop("type", None)
             return opt_type, opt_param
 
         def get_data_loader(
@@ -256,22 +261,7 @@ class Trainer:
             return lr_schedule
 
         # Optimizer
-        if self.multi_task and training_params.get("optim_dict", None) is not None:
-            self.optim_dict = training_params.get("optim_dict")
-            missing_keys = [
-                key for key in self.model_keys if key not in self.optim_dict
-            ]
-            assert not missing_keys, (
-                f"These keys are not in optim_dict: {missing_keys}!"
-            )
-            self.opt_type = {}
-            self.opt_param = {}
-            for model_key in self.model_keys:
-                self.opt_type[model_key], self.opt_param[model_key] = get_opt_param(
-                    self.optim_dict[model_key]
-                )
-        else:
-            self.opt_type, self.opt_param = get_opt_param(training_params)
+        self.opt_type, self.opt_param = get_opt_param(optimizer_params)
 
         # loss_param_tmp for Hessian activation
         loss_param_tmp = None
@@ -302,10 +292,7 @@ class Trainer:
             self.loss = {}
             for model_key in self.model_keys:
                 loss_param = config["loss_dict"][model_key]
-                if config.get("learning_rate_dict", None) is not None:
-                    lr_param = config["learning_rate_dict"][model_key]["start_lr"]
-                else:
-                    lr_param = config["learning_rate"]["start_lr"]
+                lr_param = config["learning_rate"]["start_lr"]
                 ntypes = len(model_params["model_dict"][model_key]["type_map"])
                 self.loss[model_key] = get_loss(
                     loss_param, lr_param, ntypes, self.model[model_key]
@@ -476,14 +463,7 @@ class Trainer:
 
         # Learning rate
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
-        if self.multi_task and config.get("learning_rate_dict", None) is not None:
-            self.lr_schedule = {}
-            for model_key in self.model_keys:
-                self.lr_schedule[model_key] = get_lr(
-                    config["learning_rate_dict"][model_key]
-                )
-        else:
-            self.lr_schedule = get_lr(config["learning_rate"])
+        self.lr_schedule = get_lr(config["learning_rate"])
 
         # JIT
         if JIT:
@@ -668,7 +648,7 @@ class Trainer:
         # author: iProzd
         # TODO add optimizers for multitask
         # author: iProzd
-        if self.opt_type == "Adam":
+        if self.opt_type in ["Adam", "AdamW"]:
             self.scheduler = paddle.optimizer.lr.LambdaDecay(
                 learning_rate=self.lr_schedule.start_lr,
                 lr_lambda=lambda step: (
@@ -676,8 +656,17 @@ class Trainer:
                     / self.lr_schedule.start_lr
                 ),
             )
-            self.optimizer = paddle.optimizer.Adam(
-                learning_rate=self.scheduler, parameters=self.wrapper.parameters()
+            opt_cls = (
+                paddle.optimizer.Adam
+                if self.opt_type == "Adam"
+                else paddle.optimizer.AdamW
+            )
+            self.optimizer = opt_cls(
+                learning_rate=self.scheduler,
+                parameters=self.wrapper.parameters(),
+                beta1=float(self.opt_param["adam_beta1"]),
+                beta2=float(self.opt_param["adam_beta2"]),
+                weight_decay=float(self.opt_param["weight_decay"]),
             )
             if optimizer_state_dict is not None and self.restart_training:
                 self.optimizer.set_state_dict(optimizer_state_dict)
@@ -806,11 +795,7 @@ class Trainer:
             # Paddle Profiler
             if enable_profiling:
                 core.nvprof_nvtx_push(f"Training step {_step_id}")
-            if isinstance(self.lr_schedule, dict):
-                _lr = self.lr_schedule[task_key]
-            else:
-                _lr = self.lr_schedule
-            cur_lr = _lr.value(_step_id)
+            cur_lr = self.lr_schedule.value(_step_id)
             pref_lr = cur_lr
 
             with nvprof_context(enable_profiling, "Fetching data"):
@@ -821,7 +806,7 @@ class Trainer:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
                 fout1.flush()
-            if self.opt_type == "Adam":
+            if self.opt_type in ["Adam", "AdamW"]:
                 cur_lr = self.scheduler.get_lr()
                 pref_lr = cur_lr
 
@@ -861,7 +846,7 @@ class Trainer:
                                 error_if_nonfinite=True,
                             )
 
-                    with nvprof_context(enable_profiling, "Adam update"):
+                    with nvprof_context(enable_profiling, "Optimizer update"):
                         self.optimizer.step()
                     self.optimizer.clear_grad(set_to_zero=False)
                     self.scheduler.step()
@@ -998,6 +983,10 @@ class Trainer:
                             batch=display_step_id,
                             wall_time=train_time,
                             eta=eta,
+                            current_time=datetime.datetime.fromtimestamp(
+                                current_time,
+                                tz=datetime.timezone.utc,
+                            ).astimezone(),
                         )
                     )
                 # the first training time is not accurate
@@ -1408,6 +1397,13 @@ def model_change_out_bias(
         bias_adjust_mode=_bias_adjust_mode,
     )
     new_bias = deepcopy(_model.get_out_bias())
+
+    from deepmd.pd.model.model.dp_model import (
+        DPModelCommon,
+    )
+
+    if isinstance(_model, DPModelCommon) and _bias_adjust_mode == "set-by-statistic":
+        _model.get_fitting_net().compute_input_stats(_sample_func)
 
     model_type_map = _model.get_type_map()
     log.info(

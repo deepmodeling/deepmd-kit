@@ -59,7 +59,7 @@ jobs:
         run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/astral-sh/uv/releases/download/0.2.24/uv-installer.sh | sh
         if: runner.os != 'Linux'
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.3
+        uses: pypa/cibuildwheel@v3.4
         env:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_ARCHS: all
@@ -68,7 +68,7 @@ jobs:
           CUDA_VERSION: ${{ matrix.cuda_version }}
           DP_PKG_NAME: ${{ matrix.dp_pkg_name }}
           CIBW_BUILD_FRONTEND: "build[uv]"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: cibw-cp${{ matrix.python }}-${{ matrix.platform_id }}-cu${{ matrix.cuda_version }}-${{ strategy.job-index }}
           path: ./wheelhouse/*.whl
@@ -82,7 +82,7 @@ jobs:
       - name: Build sdist
         run: pipx run uv tool run --with build[uv] --from build python -m build --installer uv --sdist
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: cibw-sdist
           path: dist/*.tar.gz
@@ -95,7 +95,7 @@ jobs:
       id-token: write
     if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags/v')
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: cibw-*
           path: dist
@@ -124,13 +124,13 @@ jobs:
           swap-storage: true
           docker-images: true
       - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           path: source/install/docker/dist
           pattern: cibw-*-manylinux_x86_64-cu${{ matrix.cuda_version }}*
           merge-multiple: true
       - name: Log in to the Container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -138,12 +138,12 @@ jobs:
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/deepmodeling/deepmd-kit
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: source/install/docker
           push: ${{ github.repository_owner == 'deepmodeling' && github.event_name == 'push' && github.actor != 'dependabot[bot]' }}
@@ -157,7 +157,7 @@ jobs:
     needs: [build_wheels, build_sdist]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           path: dist/packages
           pattern: cibw-*

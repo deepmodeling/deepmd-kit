@@ -744,6 +744,8 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
+        # this option can be removed after other backends support spin virial
+        cls.test_spin_virial = True
 
     @classmethod
     def tearDownClass(cls) -> None:

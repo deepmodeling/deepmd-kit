@@ -126,6 +126,7 @@ class TestModelSpin(tf.test.TestCase):
         )
 
         out_ener = np.reshape(out_ener, [-1])
+        out_virial = np.reshape(out_virial, [-1])
         natoms_real = np.sum(
             test_data["natoms_vec"][2 : 2 + len(spin_param["use_spin"])]
         )
@@ -425,14 +426,36 @@ class TestModelSpin(tf.test.TestCase):
             -0.0007015535942944564,
             0.004459188855221506,
         ]
+        refv = [
+            0.33691325723275595,
+            0.024301747372056412,
+            -0.06880806009046331,
+            0.026792188153995887,
+            0.3007953744219118,
+            -0.051612531097108075,
+            -0.07274496651648972,
+            -0.05156414798680478,
+            0.37692901508963417,
+            0.3205610686355494,
+            0.013102936385366228,
+            -0.04419007538301404,
+            0.014186144311082909,
+            0.31565216176483,
+            -0.058829665227551474,
+            -0.04759429793837308,
+            -0.05932221615318792,
+            0.39040431257661773,
+        ]
         refe = np.reshape(refe, [-1])
         refr = np.reshape(refr, [-1])
         refm = np.reshape(refm, [-1])
+        refv = np.reshape(refv, [-1])
 
         places = 10
         np.testing.assert_almost_equal(out_ener, refe, places)
         np.testing.assert_almost_equal(force_real, refr, places)
         np.testing.assert_almost_equal(force_mag, refm, places)
+        np.testing.assert_almost_equal(out_virial, refv, places)
 
 
 if __name__ == "__main__":

@@ -63,6 +63,24 @@ class DescrptSeT(NativeOP, BaseDescriptor):
 
     The embedding takes angles between two neighboring atoms as input.
 
+    The descriptor :math:`\mathcal{D}^i \in \mathbb{R}^{M}` is given by
+
+    .. math::
+        \mathcal{D}^i = \sum_{t_j, t_k} \frac{1}{N_{t_j} N_{t_k}} \sum_{j \in t_j, k \in t_k} \tilde{g}_{jk} \, \mathcal{N}_{t_j, t_k}(\tilde{g}_{jk}),
+
+    where :math:`\tilde{g}_{jk} = \boldsymbol{rr}_j \cdot \boldsymbol{rr}_k` is the dot product
+    of the smoothed directional vectors from the environment matrix, :math:`N_{t_j}` and
+    :math:`N_{t_k}` are the numbers of neighbors of types :math:`t_j` and :math:`t_k`,
+    and :math:`\mathcal{N}_{t_j, t_k}` is the embedding network that depends only on the
+    types of neighbor atoms :math:`j` and :math:`k`.
+
+    The smoothed directional vector :math:`\boldsymbol{rr}_j` is computed as:
+
+    .. math::
+        \boldsymbol{rr}_j = s(r_{ji}) \frac{\boldsymbol{R}_j - \boldsymbol{R}_i}{r_{ji}},
+
+    where :math:`s(r)` is the switching function.
+
     Parameters
     ----------
     rcut : float
@@ -97,6 +115,8 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             Number of element types.
             Not used in this descriptor, only to be compat with input.
     """
+
+    _update_sel_cls = UpdateSel
 
     def __init__(
         self,
@@ -324,6 +344,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         atype_ext: Array,
         nlist: Array,
         mapping: Array | None = None,
+        fparam: Array | None = None,
     ) -> tuple[Array, Array]:
         """Compute the descriptor.
 
@@ -487,7 +508,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        min_nbor_dist, local_jdata_cpy["sel"] = UpdateSel().update_one_sel(
+        min_nbor_dist, local_jdata_cpy["sel"] = cls._update_sel_cls().update_one_sel(
             train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], False
         )
         return local_jdata_cpy, min_nbor_dist

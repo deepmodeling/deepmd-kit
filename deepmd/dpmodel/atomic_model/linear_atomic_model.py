@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
 )
@@ -14,8 +17,8 @@ from deepmd.dpmodel.utils.nlist import (
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
-from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
+from deepmd.utils.path import (
+    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -38,7 +41,18 @@ from .pairtab_atomic_model import (
 
 @BaseAtomicModel.register("linear")
 class LinearEnergyAtomicModel(BaseAtomicModel):
-    """Linear model make linear combinations of several existing models.
+    r"""Linear model makes linear combinations of several existing models.
+
+    The linear model combines predictions from multiple atomic models:
+
+    .. math::
+        E^i = \sum_{k=1}^{K} w_k \cdot E_k^i,
+
+    where :math:`E_k^i` is the energy predicted by the :math:`k`-th sub-model
+    for atom :math:`i`, and :math:`w_k` is the corresponding weight.
+
+    This is useful for combining different interaction types, e.g., DP + ZBL
+    for short-range repulsion, or DP + D3 for dispersion corrections.
 
     Parameters
     ----------
@@ -53,6 +67,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self,
         models: list[BaseAtomicModel],
         type_map: list[str],
+        weights: str | list[float] = "mean",
         **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
@@ -83,6 +98,15 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self.mapping_list = mapping_list
         assert len(err_msg) == 0, "\n".join(err_msg)
         self.mixed_types_list = [model.mixed_types() for model in self.models]
+        if isinstance(weights, str):
+            assert weights in ["sum", "mean"]
+        elif isinstance(weights, list):
+            assert len(weights) == len(models)
+        else:
+            raise ValueError(
+                f"'weights' must be a string ('sum' or 'mean') or a list of float of length {len(models)}."
+            )
+        self.weights = weights
 
     def mixed_types(self) -> bool:
         """If true, the model
@@ -152,7 +176,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
-    def _sort_rcuts_sels(self) -> tuple[tuple[Array, Array], list[int]]:
+    def _sort_rcuts_sels(self) -> tuple[list[float], list[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = sorted(
             zip(self.get_model_rcuts(), self.get_model_nsels(), strict=True),
@@ -224,7 +248,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             the result dict, defined by the fitting net output def.
         """
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlist)
-        nframes, nloc, nnei = nlist.shape
+        nframes, _nloc, _nnei = nlist.shape
         extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
         sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
         nlists = build_multiple_neighbor_list(
@@ -306,10 +330,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         dd.update(
             {
                 "@class": "Model",
-                "@version": 2,
+                "@version": 3,
                 "type": "linear",
                 "models": [model.serialize() for model in self.models],
                 "type_map": self.type_map,
+                "weights": self.weights,
             }
         )
         return dd
@@ -317,15 +342,62 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 2), 2, 2)
+        check_version_compatibility(data.pop("@version", 2), 3, 2)
         data.pop("@class", None)
         data.pop("type", None)
+        if "weights" not in data:
+            data["weights"] = "mean"
         models = [
             BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)
             for model in data["models"]
         ]
         data["models"] = models
         return super().deserialize(data)
+
+    def compute_or_load_stat(
+        self,
+        sampled_func: Callable[[], list[dict]],
+        stat_file_path: DPPath | None = None,
+        compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
+    ) -> None:
+        """Compute or load the statistics parameters of the model.
+
+        For LinearEnergyAtomicModel, this first computes input stats for each
+        sub-model (without output stats), then computes its own output stats.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        stat_file_path
+            The path to the stat file.
+        compute_or_load_out_stat : bool
+            Whether to compute the output statistics.
+        """
+        # Compute observed type once at parent level, then propagate to
+        # sub-models via preset_observed_type to avoid redundant computation.
+        obs_stat_path = stat_file_path
+        if obs_stat_path is not None and self.type_map is not None:
+            obs_stat_path = obs_stat_path / " ".join(self.type_map)
+        self._collect_and_set_observed_type(
+            sampled_func, obs_stat_path, preset_observed_type
+        )
+
+        for md in self.models:
+            md.compute_or_load_stat(
+                sampled_func,
+                stat_file_path,
+                compute_or_load_out_stat=False,
+                preset_observed_type=self._observed_type,
+            )
+
+        if stat_file_path is not None and self.type_map is not None:
+            stat_file_path /= " ".join(self.type_map)
+
+        if compute_or_load_out_stat:
+            wrapped_sampler = self._make_wrapped_sampler(sampled_func)
+            self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
     def _compute_weight(
         self,
@@ -334,16 +406,33 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         nlists_: list[Array],
     ) -> list[Array]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
-        xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlists_)
+        xp = array_api_compat.array_namespace(extended_coord, extended_atype)
         nmodels = len(self.models)
         nframes, nloc, _ = nlists_[0].shape
         dev = array_api_compat.device(extended_coord)
-        # the dtype of weights is the interface data type.
-        return [
-            xp.ones((nframes, nloc, 1), dtype=GLOBAL_NP_FLOAT_PRECISION, device=dev)
-            / nmodels
-            for _ in range(nmodels)
-        ]
+        if isinstance(self.weights, str):
+            if self.weights == "sum":
+                return [
+                    xp.ones((nframes, nloc, 1), dtype=extended_coord.dtype, device=dev)
+                    for _ in range(nmodels)
+                ]
+            elif self.weights == "mean":
+                return [
+                    xp.ones((nframes, nloc, 1), dtype=extended_coord.dtype, device=dev)
+                    / nmodels
+                    for _ in range(nmodels)
+                ]
+            else:
+                raise ValueError(
+                    "`weights` must be 'sum' or 'mean' when provided as a string."
+                )
+        elif isinstance(self.weights, list):
+            return [
+                xp.ones((nframes, nloc, 1), dtype=extended_coord.dtype, device=dev) * w
+                for w in self.weights
+            ]
+        else:
+            raise NotImplementedError
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
@@ -512,4 +601,4 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         # to handle masked atoms
         coef = xp.where(sigma != 0, coef, xp.zeros_like(coef))
         self.zbl_weight = coef
-        return [1 - xp.expand_dims(coef, -1), xp.expand_dims(coef, -1)]
+        return [1 - xp.expand_dims(coef, axis=-1), xp.expand_dims(coef, axis=-1)]

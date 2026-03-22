@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import datetime
 import functools
+import json
 import logging
 import time
 from collections.abc import (
@@ -142,6 +144,7 @@ class Trainer:
         self.restart_training = restart_model is not None
         model_params = config["model"]
         training_params = config["training"]
+        optimizer_params = config.get("optimizer", {})
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
         self.finetune_update_stat = False
@@ -185,26 +188,17 @@ class Trainer:
         self.lcurve_should_print_header = True
 
         def get_opt_param(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-            opt_type = params.get("opt_type", "Adam")
-            opt_param = {
-                # LKF parameters
-                "kf_blocksize": params.get("kf_blocksize", 5120),
-                "kf_start_pref_e": params.get("kf_start_pref_e", 1),
-                "kf_limit_pref_e": params.get("kf_limit_pref_e", 1),
-                "kf_start_pref_f": params.get("kf_start_pref_f", 1),
-                "kf_limit_pref_f": params.get("kf_limit_pref_f", 1),
-                # Common parameters
-                "weight_decay": params.get("weight_decay", 0.001),
-                # Muon/AdaMuon parameters
-                "momentum": params.get("momentum", 0.95),
-                "adam_beta1": params.get("adam_beta1", 0.9),
-                "adam_beta2": params.get("adam_beta2", 0.95),
-                "lr_adjust": params.get("lr_adjust", 10.0),
-                "lr_adjust_coeff": params.get("lr_adjust_coeff", 0.2),
-                "muon_2d_only": params.get("muon_2d_only", True),
-                "min_2d_dim": params.get("min_2d_dim", 1),
-                "flash_muon": params.get("flash_muon", True),
-            }
+            """
+            Extract optimizer parameters.
+
+            Note: Default values are already filled by argcheck.normalize()
+            before this function is called.
+            """
+            opt_type = params.get("type", "Adam")
+            if opt_type not in ("Adam", "AdamW", "LKF", "AdaMuon", "HybridMuon"):
+                raise ValueError(f"Not supported optimizer type '{opt_type}'")
+            opt_param = dict(params)
+            opt_param.pop("type", None)
             return opt_type, opt_param
 
         def cycle_iterator(iterable: Iterable) -> Generator[Any, None, None]:
@@ -288,6 +282,7 @@ class Trainer:
             _training_data: DpLoaderSet,
             _stat_file_path: str | None,
             finetune_has_new_type: bool = False,
+            preset_observed_type: list[str] | None = None,
         ) -> Callable[[], Any]:
             @functools.lru_cache
             def get_sample() -> Any:
@@ -302,6 +297,7 @@ class Trainer:
                 _model.compute_or_load_stat(
                     sampled_func=get_sample,
                     stat_file_path=_stat_file_path,
+                    preset_observed_type=preset_observed_type,
                 )
                 if isinstance(_stat_file_path, DPH5Path):
                     _stat_file_path.root.close()
@@ -313,22 +309,7 @@ class Trainer:
             return lr_schedule
 
         # Optimizer
-        if self.multi_task and training_params.get("optim_dict", None) is not None:
-            self.optim_dict = training_params.get("optim_dict")
-            missing_keys = [
-                key for key in self.model_keys if key not in self.optim_dict
-            ]
-            assert not missing_keys, (
-                f"These keys are not in optim_dict: {missing_keys}!"
-            )
-            self.opt_type = {}
-            self.opt_param = {}
-            for model_key in self.model_keys:
-                self.opt_type[model_key], self.opt_param[model_key] = get_opt_param(
-                    self.optim_dict[model_key]
-                )
-        else:
-            self.opt_type, self.opt_param = get_opt_param(training_params)
+        self.opt_type, self.opt_param = get_opt_param(optimizer_params)
         if self.zero_stage > 0 and self.multi_task:
             raise ValueError(
                 "training.zero_stage is currently only supported in single-task training."
@@ -365,10 +346,7 @@ class Trainer:
             self.loss = {}
             for model_key in self.model_keys:
                 loss_param = config["loss_dict"][model_key]
-                if config.get("learning_rate_dict", None) is not None:
-                    lr_param = config["learning_rate_dict"][model_key]["start_lr"]
-                else:
-                    lr_param = config["learning_rate"]["start_lr"]
+                lr_param = config["learning_rate"]["start_lr"]
                 ntypes = len(model_params["model_dict"][model_key]["type_map"])
                 self.loss[model_key] = get_loss(
                     loss_param, lr_param, ntypes, self.model[model_key]
@@ -394,7 +372,14 @@ class Trainer:
                 finetune_has_new_type=self.finetune_links["Default"].get_has_new_type()
                 if self.finetune_links is not None
                 else False,
+                preset_observed_type=model_params.get("info", {}).get("observed_type"),
             )
+            # Persist observed_type from stat into model_params and model_def_script
+            if not resuming and self.rank == 0:
+                observed = self.model.atomic_model.observed_type
+                if observed is not None:
+                    model_params.setdefault("info", {})["observed_type"] = observed
+                    self.model.model_def_script = json.dumps(model_params)
             (
                 self.training_dataloader,
                 self.training_data,
@@ -432,6 +417,11 @@ class Trainer:
                 training_data[model_key].preload_and_modify_all_data_torch()
                 if validation_data[model_key] is not None:
                     validation_data[model_key].preload_and_modify_all_data_torch()
+                _mt_user_observed = (
+                    model_params["model_dict"][model_key]
+                    .get("info", {})
+                    .get("observed_type")
+                )
                 self.get_sample_func[model_key] = single_model_stat(
                     self.model[model_key],
                     model_params["model_dict"][model_key].get("data_stat_nbatch", 10),
@@ -442,7 +432,18 @@ class Trainer:
                     ].get_has_new_type()
                     if self.finetune_links is not None
                     else False,
+                    preset_observed_type=_mt_user_observed,
                 )
+                # Persist observed_type into model_params and model_def_script
+                if not resuming and self.rank == 0:
+                    observed = self.model[model_key].atomic_model.observed_type
+                    if observed is not None:
+                        model_params["model_dict"][model_key].setdefault("info", {})[
+                            "observed_type"
+                        ] = observed
+                        self.model[model_key].model_def_script = json.dumps(
+                            model_params["model_dict"][model_key]
+                        )
 
                 (
                     self.training_dataloader[model_key],
@@ -548,14 +549,7 @@ class Trainer:
 
         # Learning rate
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
-        if self.multi_task and config.get("learning_rate_dict", None) is not None:
-            self.lr_schedule = {}
-            for model_key in self.model_keys:
-                self.lr_schedule[model_key] = get_lr(
-                    config["learning_rate_dict"][model_key]
-                )
-        else:
-            self.lr_schedule = get_lr(config["learning_rate"])
+        self.lr_schedule = get_lr(config["learning_rate"])
 
         # JIT
         if JIT:
@@ -792,71 +786,49 @@ class Trainer:
         # TODO add optimizers for multitask
         # author: iProzd
         initial_lr = self.lr_schedule.value(self.start_step)
-        if self.opt_type in ["Adam", "AdamW"]:
-            # Initialize optimizer with the actual learning rate at start_step
-            # to ensure warmup is applied from the first step
-            if self.opt_type == "Adam":
-                self.optimizer = self._create_optimizer(
-                    torch.optim.Adam,
-                    lr=initial_lr,
-                    fused=DEVICE.type != "cpu",
-                )
-            else:
-                self.optimizer = self._create_optimizer(
-                    torch.optim.AdamW,
-                    lr=initial_lr,
-                    weight_decay=float(self.opt_param["weight_decay"]),
-                    fused=DEVICE.type != "cpu",
-                )
-            self._load_optimizer_state(optimizer_state_dict)
-            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-                self.optimizer,
-                lambda step: (
-                    self.lr_schedule.value(step + self.start_step) / initial_lr
-                ),
-                last_epoch=self.start_step - 1,
-            )
-        elif self.opt_type == "LKF":
+        if self.opt_type == "LKF":
             self.optimizer = LKFOptimizer(
                 self.wrapper.parameters(), 0.98, 0.99870, self.opt_param["kf_blocksize"]
             )
-        elif self.opt_type == "AdaMuon":
-            self.optimizer = self._create_optimizer(
-                AdaMuonOptimizer,
-                lr=initial_lr,
-                momentum=float(self.opt_param["momentum"]),
-                weight_decay=float(self.opt_param["weight_decay"]),
-                adam_betas=(
-                    float(self.opt_param["adam_beta1"]),
-                    float(self.opt_param["adam_beta2"]),
-                ),
-                lr_adjust=float(self.opt_param["lr_adjust"]),
-                lr_adjust_coeff=float(self.opt_param["lr_adjust_coeff"]),
+        else:
+            # === Common path for gradient-based optimizers ===
+            adam_betas = (
+                float(self.opt_param["adam_beta1"]),
+                float(self.opt_param["adam_beta2"]),
             )
-            if optimizer_state_dict is not None and self.restart_training:
-                self.optimizer.load_state_dict(optimizer_state_dict)
-            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-                self.optimizer,
-                lambda step: (
-                    self.lr_schedule.value(step + self.start_step) / initial_lr
-                ),
-                last_epoch=self.start_step - 1,
-            )
-        elif self.opt_type == "HybridMuon":
+            weight_decay = float(self.opt_param["weight_decay"])
+
+            if self.opt_type in ("Adam", "AdamW"):
+                cls = torch.optim.Adam if self.opt_type == "Adam" else torch.optim.AdamW
+                extra = {"betas": adam_betas, "fused": DEVICE.type != "cpu"}
+            elif self.opt_type == "AdaMuon":
+                cls = AdaMuonOptimizer
+                extra = {
+                    "adam_betas": adam_betas,
+                    "momentum": float(self.opt_param["momentum"]),
+                    "lr_adjust": float(self.opt_param["lr_adjust"]),
+                    "lr_adjust_coeff": float(self.opt_param["lr_adjust_coeff"]),
+                }
+            elif self.opt_type == "HybridMuon":
+                cls = HybridMuonOptimizer
+                extra = {
+                    "adam_betas": adam_betas,
+                    "momentum": float(self.opt_param["momentum"]),
+                    "lr_adjust": float(self.opt_param["lr_adjust"]),
+                    "lr_adjust_coeff": float(self.opt_param["lr_adjust_coeff"]),
+                    "muon_mode": str(self.opt_param.get("muon_mode", "slice")),
+                    "named_parameters": tuple(self.wrapper.named_parameters()),
+                    "flash_muon": bool(self.opt_param.get("flash_muon", True)),
+                    "magma_muon": bool(self.opt_param.get("magma_muon", False)),
+                }
+            else:
+                raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
+
             self.optimizer = self._create_optimizer(
-                HybridMuonOptimizer,
+                cls,
                 lr=initial_lr,
-                momentum=float(self.opt_param["momentum"]),
-                weight_decay=float(self.opt_param["weight_decay"]),
-                adam_betas=(
-                    float(self.opt_param["adam_beta1"]),
-                    float(self.opt_param["adam_beta2"]),
-                ),
-                lr_adjust=float(self.opt_param["lr_adjust"]),
-                lr_adjust_coeff=float(self.opt_param["lr_adjust_coeff"]),
-                muon_2d_only=bool(self.opt_param["muon_2d_only"]),
-                min_2d_dim=int(self.opt_param["min_2d_dim"]),
-                flash_muon=bool(self.opt_param["flash_muon"]),
+                weight_decay=weight_decay,
+                **extra,
             )
             self._load_optimizer_state(optimizer_state_dict)
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
@@ -866,8 +838,6 @@ class Trainer:
                 ),
                 last_epoch=self.start_step - 1,
             )
-        else:
-            raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
         if self.zero_stage > 0 and self.rank == 0:
             if self.zero_stage == 1:
@@ -1017,6 +987,7 @@ class Trainer:
             prof.start()
 
         def step(_step_id: int, task_key: str = "Default") -> None:
+            display_step_id = _step_id + 1
             if self.multi_task:
                 model_index = dp_random.choice(
                     np.arange(self.num_model, dtype=np.int_),
@@ -1026,11 +997,7 @@ class Trainer:
             # PyTorch Profiler
             if self.enable_profiler or self.profiling:
                 prof.step()
-            if isinstance(self.lr_schedule, dict):
-                _lr = self.lr_schedule[task_key]
-            else:
-                _lr = self.lr_schedule
-            cur_lr = _lr.value(_step_id)
+            cur_lr = self.lr_schedule.value(_step_id)
             pref_lr = cur_lr
             self.optimizer.zero_grad(set_to_none=True)
             input_dict, label_dict, log_dict = self.get_data(
@@ -1047,7 +1014,27 @@ class Trainer:
                     **input_dict, cur_lr=pref_lr, label=label_dict, task_key=task_key
                 )
                 loss.backward()
+                # === Initialize gradient diagnostics variables ===
+                total_norm: torch.Tensor | None = None
+                pre_clip_named_norms: list[tuple[str, float]] = []
                 if self.gradient_max_norm > 0.0:
+                    # Collect per-parameter gradient norms before clipping.
+                    # NOTE: Under FSDP2 with ZeRO stage >= 2, p.grad is a sharded DTensor,
+                    # so p.grad.norm() computes the shard-local L2 norm, not the full-parameter
+                    # norm. Skip per-param collection in this case to avoid misleading values.
+                    if (
+                        self.enable_tensorboard
+                        and self.zero_stage < 2
+                        and (
+                            display_step_id % self.tensorboard_freq == 0
+                            or display_step_id == 1
+                        )
+                    ):
+                        pre_clip_named_norms = [
+                            (name, p.grad.detach().norm().item())
+                            for name, p in self.wrapper.named_parameters()
+                            if p.grad is not None
+                        ]
                     # FSDP2 sharded DTensor gradients don't support error_if_nonfinite; use manual isfinite check instead.
                     total_norm = torch.nn.utils.clip_grad_norm_(
                         self.wrapper.parameters(),
@@ -1172,7 +1159,6 @@ class Trainer:
                             self.train_loss_accu[task_key][item] += more_loss[item]
 
             # Log and persist
-            display_step_id = _step_id + 1
             if self.display_in_training and (
                 display_step_id % self.disp_freq == 0 or display_step_id == 1
             ):
@@ -1349,6 +1335,10 @@ class Trainer:
                             batch=display_step_id,
                             wall_time=train_time,
                             eta=eta,
+                            current_time=datetime.datetime.fromtimestamp(
+                                current_time,
+                                tz=datetime.timezone.utc,
+                            ).astimezone(),
                         )
                     )
                 if (
@@ -1399,6 +1389,32 @@ class Trainer:
                     writer.add_scalar(
                         f"{task_key}/{item}", more_loss[item], display_step_id
                     )
+                # === Gradient diagnostics (pre-clip) ===
+                # Only log if total_norm was computed (i.e., not LKF optimizer).
+                if self.gradient_max_norm > 0.0 and total_norm is not None:
+                    writer.add_scalar(
+                        f"{task_key}/grad/total_norm",
+                        total_norm.item(),
+                        display_step_id,
+                    )
+                    # Only log per-parameter norms if list is non-empty.
+                    if pre_clip_named_norms:
+                        # Use float32 for histogram to ensure numerical stability
+                        # when gradients are in lower precision (FP16/BF16).
+                        norms = torch.tensor(
+                            [gn for _, gn in pre_clip_named_norms],
+                            dtype=torch.float32,
+                            device="cpu",
+                        )
+                        writer.add_histogram(
+                            f"{task_key}/grad/param_norms", norms, display_step_id
+                        )
+                        # Log top-10 largest per-parameter gradient norms.
+                        pre_clip_named_norms.sort(key=lambda x: x[1], reverse=True)
+                        for name, gn in pre_clip_named_norms[:10]:
+                            writer.add_scalar(
+                                f"{task_key}/grad_top10/{name}", gn, display_step_id
+                            )
 
         self.wrapper.train()
         self.t0 = time.time()
@@ -1814,8 +1830,17 @@ def model_change_out_bias(
     )
     new_bias = deepcopy(_model.get_out_bias())
 
+    from deepmd.pt.model.model.dp_model import (
+        DPModelCommon,
+    )
+
+    if isinstance(_model, DPModelCommon) and _bias_adjust_mode == "set-by-statistic":
+        _model.get_fitting_net().compute_input_stats(_sample_func)
+
     model_type_map = _model.get_type_map()
     log.info(
-        f"Change output bias of {model_type_map!s} from {to_numpy_array(old_bias).reshape(-1)!s} to {to_numpy_array(new_bias).reshape(-1)!s}."
+        f"Change output bias of {model_type_map!s} "
+        f"from {to_numpy_array(old_bias).reshape(-1)[: len(model_type_map)]!s} "
+        f"to {to_numpy_array(new_bias).reshape(-1)[: len(model_type_map)]!s}."
     )
     return _model

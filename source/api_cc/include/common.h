@@ -154,6 +154,27 @@ void select_map_inv(typename std::vector<VT>::iterator out,
                     const int& stride);
 
 /**
+ * @brief Remap communication sendlist for message passing with NULL-type atoms.
+ *
+ * When NULL-type (virtual) atoms are present, the original LAMMPS sendlist
+ * contains indices referring to virtual atoms that have been filtered out by
+ * select_real_atoms_coord. This function remaps those indices through fwd_map
+ * and independently recomputes recvnum using firstrecv.
+ *
+ * @param[out] new_sendlist Remapped send lists per swap (vector of vectors).
+ * @param[out] new_sendnum Number of atoms to send per swap after remapping.
+ * @param[out] new_recvnum Number of atoms to receive per swap after remapping.
+ * @param[in] lmp_list The LAMMPS neighbor list containing communication info.
+ * @param[in] fwd_map Forward map from original atom index to real-atom index
+ *            (-1 for virtual/NULL atoms).
+ */
+void remap_comm_sendlist(std::vector<std::vector<int>>& new_sendlist,
+                         std::vector<int>& new_sendnum,
+                         std::vector<int>& new_recvnum,
+                         const InputNlist& lmp_list,
+                         const std::vector<int>& fwd_map);
+
+/**
  * @brief Get the number of threads from the environment variable.
  * @details A warning will be thrown if environment variables are not set.
  * @param[out] num_intra_nthreads The number of intra threads. Read from

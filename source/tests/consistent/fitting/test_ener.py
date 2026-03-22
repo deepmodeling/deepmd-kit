@@ -523,6 +523,8 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
                 "aparam": rng.normal(size=(2, 6, numb_aparam)).astype(
                     GLOBAL_NP_FLOAT_PRECISION
                 ),
+                "find_fparam": True,
+                "find_aparam": True,
             },
             {
                 "fparam": rng.normal(size=(3, numb_fparam)).astype(
@@ -531,6 +533,8 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
                 "aparam": rng.normal(size=(3, 6, numb_aparam)).astype(
                     GLOBAL_NP_FLOAT_PRECISION
                 ),
+                "find_fparam": True,
+                "find_aparam": True,
             },
         ]
 
@@ -583,6 +587,8 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             {
                 "fparam": torch.from_numpy(d["fparam"]).to(PT_DEVICE),
                 "aparam": torch.from_numpy(d["aparam"]).to(PT_DEVICE),
+                "find_fparam": d["find_fparam"],
+                "find_aparam": d["find_aparam"],
             }
             for d in self.stat_data
         ]
@@ -669,6 +675,8 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             {
                 "fparam": jnp.asarray(d["fparam"]),
                 "aparam": jnp.asarray(d["aparam"]),
+                "find_fparam": d["find_fparam"],
+                "find_aparam": d["find_aparam"],
             }
             for d in self.stat_data
         ]
@@ -696,6 +704,8 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             {
                 "fparam": array_api_strict.asarray(d["fparam"]),
                 "aparam": array_api_strict.asarray(d["aparam"]),
+                "find_fparam": d["find_fparam"],
+                "find_aparam": d["find_aparam"],
             }
             for d in self.stat_data
         ]
@@ -727,6 +737,8 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             {
                 "fparam": paddle.to_tensor(d["fparam"]).to(PD_DEVICE),
                 "aparam": paddle.to_tensor(d["aparam"]).to(PD_DEVICE),
+                "find_fparam": d["find_fparam"],
+                "find_aparam": d["find_aparam"],
             }
             for d in self.stat_data
         ]

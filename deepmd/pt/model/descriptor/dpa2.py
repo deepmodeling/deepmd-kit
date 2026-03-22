@@ -715,6 +715,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         nlist: torch.Tensor,
         mapping: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        fparam: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,

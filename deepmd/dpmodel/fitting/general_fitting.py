@@ -35,9 +35,15 @@ from deepmd.dpmodel.utils.seed import (
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
+from deepmd.utils.env_mat_stat import (
+    StatItem,
+)
 from deepmd.utils.finetune import (
     get_index_between_two_maps,
     map_atom_exclude_types,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 from .base_fitting import (
@@ -226,6 +232,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         self,
         merged: Callable[[], list[dict]] | list[dict],
         protection: float = 1e-2,
+        stat_file_path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
@@ -241,27 +248,58 @@ class GeneralFitting(NativeOP, BaseFitting):
                 the lazy function helps by only sampling once.
         protection : float
             Divided-by-zero protection
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
         """
         if self.numb_fparam == 0 and self.numb_aparam == 0:
             # skip data statistics
             return
-        if callable(merged):
-            sampled = merged()
-        else:
-            sampled = merged
         # stat fparam
         if self.numb_fparam > 0:
-            cat_data = np.concatenate([frame["fparam"] for frame in sampled], axis=0)
-            cat_data = np.reshape(cat_data, [-1, self.numb_fparam])
-            fparam_avg = np.mean(cat_data, axis=0)
-            fparam_std = np.std(cat_data, axis=0, ddof=0)  # ddof=0 for population std
-            fparam_std = np.where(
-                fparam_std < protection,
-                np.array(protection, dtype=fparam_std.dtype),
-                fparam_std,
+            if (
+                stat_file_path is not None
+                and stat_file_path.is_dir()
+                and (stat_file_path / "fparam").is_file()
+            ):
+                fparam_stats = self._load_param_stats_from_file(
+                    stat_file_path, "fparam", self.numb_fparam
+                )
+            else:
+                sampled = merged() if callable(merged) else merged
+                for ii, frame in enumerate(sampled):
+                    if "find_fparam" not in frame:
+                        raise ValueError(
+                            f"numb_fparam > 0 but fparam is not acquired "
+                            f"for system {ii}."
+                        )
+                    if not frame["find_fparam"]:
+                        raise ValueError(
+                            f"numb_fparam > 0 but no fparam data is provided "
+                            f"for system {ii}."
+                        )
+                xp_fp = array_api_compat.array_namespace(sampled[0]["fparam"])
+                cat_data = xp_fp.concat([frame["fparam"] for frame in sampled], axis=0)
+                cat_data = xp_fp.reshape(cat_data, (-1, self.numb_fparam))
+                fparam_stats = [
+                    StatItem(
+                        number=cat_data.shape[0],
+                        sum=float(xp_fp.sum(cat_data[:, ii])),
+                        squared_sum=float(xp_fp.sum(cat_data[:, ii] ** 2)),
+                    )
+                    for ii in range(self.numb_fparam)
+                ]
+                if stat_file_path is not None:
+                    self._save_param_stats_to_file(
+                        stat_file_path, "fparam", fparam_stats
+                    )
+            fparam_avg = np.array(
+                [s.compute_avg() for s in fparam_stats], dtype=np.float64
+            )
+            fparam_std = np.array(
+                [s.compute_std(protection=protection) for s in fparam_stats],
+                dtype=np.float64,
             )
             fparam_inv_std = 1.0 / fparam_std
-            # Use array_api_compat to handle both numpy and torch
             xp = array_api_compat.array_namespace(self.fparam_avg)
             self.fparam_avg = xp.asarray(
                 fparam_avg,
@@ -275,26 +313,59 @@ class GeneralFitting(NativeOP, BaseFitting):
             )
         # stat aparam
         if self.numb_aparam > 0:
-            sys_sumv = []
-            sys_sumv2 = []
-            sys_sumn = []
-            for ss_ in [frame["aparam"] for frame in sampled]:
-                ss = np.reshape(ss_, [-1, self.numb_aparam])
-                sys_sumv.append(np.sum(ss, axis=0))
-                sys_sumv2.append(np.sum(ss * ss, axis=0))
-                sys_sumn.append(ss.shape[0])
-            sumv = np.sum(np.stack(sys_sumv), axis=0)
-            sumv2 = np.sum(np.stack(sys_sumv2), axis=0)
-            sumn = sum(sys_sumn)
-            aparam_avg = sumv / sumn
-            aparam_std = np.sqrt(sumv2 / sumn - (sumv / sumn) ** 2)
-            aparam_std = np.where(
-                aparam_std < protection,
-                np.array(protection, dtype=aparam_std.dtype),
-                aparam_std,
+            if (
+                stat_file_path is not None
+                and stat_file_path.is_dir()
+                and (stat_file_path / "aparam").is_file()
+            ):
+                aparam_stats = self._load_param_stats_from_file(
+                    stat_file_path, "aparam", self.numb_aparam
+                )
+            else:
+                sampled = merged() if callable(merged) else merged
+                for ii, frame in enumerate(sampled):
+                    if "find_aparam" not in frame:
+                        raise ValueError(
+                            f"numb_aparam > 0 but aparam is not acquired "
+                            f"for system {ii}."
+                        )
+                    if not frame["find_aparam"]:
+                        raise ValueError(
+                            f"numb_aparam > 0 but no aparam data is provided "
+                            f"for system {ii}."
+                        )
+                xp_ap = array_api_compat.array_namespace(sampled[0]["aparam"])
+                sys_sumv = []
+                sys_sumv2 = []
+                sys_sumn = []
+                for ss_ in [frame["aparam"] for frame in sampled]:
+                    ss = xp_ap.reshape(ss_, (-1, self.numb_aparam))
+                    sys_sumv.append(xp_ap.sum(ss, axis=0))
+                    sys_sumv2.append(xp_ap.sum(ss * ss, axis=0))
+                    sys_sumn.append(ss.shape[0])
+                sumv = xp_ap.sum(xp_ap.stack(sys_sumv), axis=0)
+                sumv2 = xp_ap.sum(xp_ap.stack(sys_sumv2), axis=0)
+                sumn = sum(sys_sumn)
+                aparam_stats = [
+                    StatItem(
+                        number=sumn,
+                        sum=float(sumv[ii]),
+                        squared_sum=float(sumv2[ii]),
+                    )
+                    for ii in range(self.numb_aparam)
+                ]
+                if stat_file_path is not None:
+                    self._save_param_stats_to_file(
+                        stat_file_path, "aparam", aparam_stats
+                    )
+            aparam_avg = np.array(
+                [s.compute_avg() for s in aparam_stats], dtype=np.float64
+            )
+            aparam_std = np.array(
+                [s.compute_std(protection=protection) for s in aparam_stats],
+                dtype=np.float64,
             )
             aparam_inv_std = 1.0 / aparam_std
-            # Use array_api_compat to handle both numpy and torch
             xp = array_api_compat.array_namespace(self.aparam_avg)
             self.aparam_avg = xp.asarray(
                 aparam_avg,
@@ -306,6 +377,31 @@ class GeneralFitting(NativeOP, BaseFitting):
                 dtype=self.aparam_inv_std.dtype,
                 device=array_api_compat.device(self.aparam_inv_std),
             )
+
+    @staticmethod
+    def _save_param_stats_to_file(
+        stat_file_path: DPPath,
+        name: str,
+        stats: list[StatItem],
+    ) -> None:
+        stat_file_path.mkdir(exist_ok=True, parents=True)
+        fp = stat_file_path / name
+        arr = np.array([[s.number, s.sum, s.squared_sum] for s in stats])
+        fp.save_numpy(arr)
+
+    @staticmethod
+    def _load_param_stats_from_file(
+        stat_file_path: DPPath,
+        name: str,
+        numb: int,
+    ) -> list[StatItem]:
+        fp = stat_file_path / name
+        arr = fp.load_numpy()
+        assert arr.shape == (numb, 3)
+        return [
+            StatItem(number=arr[ii][0], sum=arr[ii][1], squared_sum=arr[ii][2])
+            for ii in range(numb)
+        ]
 
     @abstractmethod
     def _net_out_dim(self) -> int:
@@ -363,11 +459,14 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.ntypes = len(type_map)
         self.reinit_exclude(map_atom_exclude_types(self.exclude_types, remap_index))
         if has_new_type:
+            xp = array_api_compat.array_namespace(self.bias_atom_e)
             extend_shape = [len(type_map), *list(self.bias_atom_e.shape[1:])]
-            extend_bias_atom_e = np.zeros(extend_shape, dtype=self.bias_atom_e.dtype)
-            self.bias_atom_e = np.concatenate(
-                [self.bias_atom_e, extend_bias_atom_e], axis=0
+            extend_bias_atom_e = xp.zeros(
+                extend_shape,
+                dtype=self.bias_atom_e.dtype,
+                device=array_api_compat.device(self.bias_atom_e),
             )
+            self.bias_atom_e = xp.concat([self.bias_atom_e, extend_bias_atom_e], axis=0)
         self.bias_atom_e = self.bias_atom_e[remap_index]
 
     def __setitem__(self, key: str, value: Any) -> None:

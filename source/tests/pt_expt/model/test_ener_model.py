@@ -184,7 +184,7 @@ class TestEnergyModel(unittest.TestCase):
         )
 
         # --- eager reference with zero params ---
-        ret_eager_zero = md._forward_lower(
+        ret_eager_zero = md.forward_lower(
             ext_coord.requires_grad_(True),
             ext_atype,
             nlist_t,
@@ -262,7 +262,7 @@ class TestEnergyModel(unittest.TestCase):
             dtype=torch.float64,
             device=self.device,
         )
-        ret_eager_nz = md._forward_lower(
+        ret_eager_nz = md.forward_lower(
             ext_coord.requires_grad_(True),
             ext_atype,
             nlist_t,

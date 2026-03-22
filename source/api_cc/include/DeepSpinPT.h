@@ -183,6 +183,14 @@ class DeepSpinPT : public DeepSpinBackend {
     assert(inited);
     return aparam_nall;
   };
+  /**
+   * @brief Check if the model has default frame parameters.
+   * @return true if the model has default frame parameters.
+   **/
+  bool has_default_fparam() const {
+    assert(inited);
+    return has_default_fparam_;
+  };
 
   void computew(std::vector<double>& ener,
                 std::vector<double>& force,
@@ -251,6 +259,7 @@ class DeepSpinPT : public DeepSpinBackend {
   int dfparam;
   int daparam;
   bool aparam_nall;
+  bool has_default_fparam_;
   // copy neighbor list info from host
   torch::jit::script::Module module;
   double rcut;
@@ -262,6 +271,10 @@ class DeepSpinPT : public DeepSpinBackend {
   at::Tensor firstneigh_tensor;
   c10::optional<torch::Tensor> mapping_tensor;
   torch::Dict<std::string, torch::Tensor> comm_dict;
+  std::vector<std::vector<int>> remapped_sendlist;
+  std::vector<int*> remapped_sendlist_ptrs;
+  std::vector<int> remapped_sendnum;
+  std::vector<int> remapped_recvnum;
   /**
    * @brief Translate PyTorch exceptions to the DeePMD-kit exception.
    * @param[in] f The function to run.
