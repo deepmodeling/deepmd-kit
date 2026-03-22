@@ -13,7 +13,7 @@
 namespace deepmd {
 
 typedef double ENERGYTYPE;
-enum DPBackend { TensorFlow, PyTorch, Paddle, JAX, Unknown };
+enum DPBackend { TensorFlow, PyTorch, PyTorchExportable, Paddle, JAX, Unknown };
 
 /**
  * @brief Get the backend of the model.
@@ -225,4 +225,43 @@ void convert_pbtxt_to_pb(std::string fn_pb_txt, std::string fn_pb);
  * @param[in] pre The prefix to each line.
  */
 void print_summary(const std::string& pre);
+
+/**
+ * @brief Fold back extended-region values to local atoms via scatter-sum.
+ *
+ * Copies local atom values directly, then accumulates ghost atom contributions
+ * onto their mapped local atoms using the mapping array.
+ *
+ * @tparam VT The value type (double or float).
+ * @param[out] out Output vector of size nframes * nloc * ndim.
+ * @param[in] in Input vector of size nframes * nall * ndim (extended region).
+ * @param[in] mapping Mapping from extended index to local index, size nall.
+ * @param[in] nloc Number of local atoms.
+ * @param[in] nall Number of all atoms (local + ghost).
+ * @param[in] ndim Number of dimensions per atom (e.g. 3 for force, 9 for
+ * virial).
+ * @param[in] nframes Number of frames.
+ */
+template <typename VT>
+void fold_back(std::vector<VT>& out,
+               const std::vector<VT>& in,
+               const std::vector<int>& mapping,
+               const int nloc,
+               const int nall,
+               const int ndim,
+               const int nframes = 1) {
+  out.resize(static_cast<size_t>(nframes) * nloc * ndim);
+  for (int kk = 0; kk < nframes; ++kk) {
+    std::copy(in.begin() + kk * nall * ndim,
+              in.begin() + kk * nall * ndim + nloc * ndim,
+              out.begin() + kk * nloc * ndim);
+    for (int ii = nloc; ii < nall; ++ii) {
+      int out_idx = mapping[ii];
+      for (int dd = 0; dd < ndim; ++dd) {
+        out[kk * nloc * ndim + out_idx * ndim + dd] +=
+            in[kk * nall * ndim + ii * ndim + dd];
+      }
+    }
+  }
+}
 }  // namespace deepmd
