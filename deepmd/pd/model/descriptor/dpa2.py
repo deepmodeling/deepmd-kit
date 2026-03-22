@@ -441,7 +441,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Any = None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -732,7 +732,14 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         nlist: paddle.Tensor,
         mapping: paddle.Tensor | None = None,
         comm_dict: list[paddle.Tensor] | None = None,
-    ) -> paddle.Tensor:
+        fparam: paddle.Tensor | None = None,
+    ) -> tuple[
+        paddle.Tensor,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+    ]:
         """Compute the descriptor.
 
         Parameters
@@ -843,11 +850,13 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         if self.concat_output_tebd:
             g1 = paddle.concat([g1, g1_inp], axis=-1)
         return (
-            g1.astype(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            rot_mat.astype(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            g2.astype(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            h2.astype(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            sw.astype(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            g1.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            rot_mat.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+            if rot_mat is not None
+            else None,
+            g2.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION) if g2 is not None else None,
+            h2.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION) if h2 is not None else None,
+            sw.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION) if sw is not None else None,
         )
 
     @classmethod

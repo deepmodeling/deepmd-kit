@@ -245,7 +245,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         use_tebd_bias: bool = False,
         type_map: list[str] | None = None,
         # not implemented
-        spin: Any = None,
+        spin: Any | None = None,
         type: str | None = None,
     ) -> None:
         super().__init__()
@@ -298,12 +298,13 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
+        self.tebd_compress = False
         if type_map is not None:
             self.register_buffer(
                 "buffer_type_map",
                 paddle.to_tensor([ord(c) for c in " ".join(type_map)]),
             )
-        self.compress = False
+        self.geo_compress = False
         self.type_embedding = TypeEmbedNet(
             ntypes,
             tebd_dim,
@@ -474,7 +475,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         return self.se_atten.mean, self.se_atten.stddev
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Any = None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -625,7 +626,14 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         nlist: paddle.Tensor,
         mapping: paddle.Tensor | None = None,
         comm_dict: list[paddle.Tensor] | None = None,
-    ) -> paddle.Tensor:
+        fparam: paddle.Tensor | None = None,
+    ) -> tuple[
+        paddle.Tensor,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+    ]:
         """Compute the descriptor.
 
         Parameters
@@ -682,10 +690,12 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
 
         return (
             g1.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            rot_mat.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            rot_mat.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+            if rot_mat is not None
+            else None,
             g2.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION) if g2 is not None else None,
-            h2.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            sw.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            h2.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION) if h2 is not None else None,
+            sw.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION) if sw is not None else None,
         )
 
     @classmethod

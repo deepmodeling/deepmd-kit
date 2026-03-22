@@ -556,7 +556,6 @@ class DescrptBlockRepflows(DescriptorBlock):
             # n_angle x 1
             a_sw = (a_sw[:, :, :, None] * a_sw[:, :, None, :])[a_nlist_mask]
         else:
-            # avoid jit assertion
             edge_index = torch.zeros([2, 1], device=nlist.device, dtype=nlist.dtype)
             angle_index = torch.zeros([3, 1], device=nlist.device, dtype=nlist.dtype)
         # get edge and angle embedding

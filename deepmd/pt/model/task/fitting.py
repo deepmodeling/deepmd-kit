@@ -841,7 +841,7 @@ class GeneralFitting(Fitting):
             (nf, nloc, net_dim_out),
             dtype=self.prec,
             device=descriptor.device,
-        )  # jit assertion
+        )
         results = {}
 
         if self.mixed_types:
@@ -861,7 +861,7 @@ class GeneralFitting(Fitting):
                     (nf, nloc, self.neuron[-1]),
                     dtype=self.prec,
                     device=descriptor.device,
-                )  # jit assertion
+                )
                 for type_i, ll in enumerate(self.filter_layers.networks):
                     mask = (atype == type_i).unsqueeze(-1)
                     mask = torch.tile(mask, (1, 1, net_dim_out))

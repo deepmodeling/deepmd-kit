@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+import functools
 import logging
 from collections.abc import (
     Callable,
@@ -99,6 +100,45 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         self.rcond = rcond
         self.preset_out_bias = preset_out_bias
         self.data_stat_protect = data_stat_protect
+        self._observed_type: list[str] | None = None
+
+    @property
+    def observed_type(self) -> list[str] | None:
+        """Get the observed element type list from data statistics."""
+        return self._observed_type
+
+    def _collect_and_set_observed_type(
+        self,
+        sampled_func: Callable[[], list[dict]],
+        stat_file_path: "DPPath | None",
+        preset_observed_type: list[str] | None,
+    ) -> None:
+        """Collect observed types with priority: preset > stat_file > compute.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames.
+        stat_file_path
+            The path to the statistics files (should already include type_map suffix).
+        preset_observed_type
+            User-specified observed types that take highest priority.
+        """
+        from deepmd.dpmodel.utils.stat import (
+            _restore_observed_type_from_file,
+            _save_observed_type_to_file,
+            collect_observed_types,
+        )
+
+        if preset_observed_type is not None:
+            self._observed_type = preset_observed_type
+        else:
+            observed = _restore_observed_type_from_file(stat_file_path)
+            if observed is None:
+                sampled = sampled_func()
+                observed = collect_observed_types(sampled, self.type_map)
+                _save_observed_type_to_file(stat_file_path, observed)
+            self._observed_type = observed
 
     def init_out_stat(self) -> None:
         """Initialize the output bias."""
@@ -112,7 +152,12 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         self.register_buffer("out_bias", out_bias_data)
         self.register_buffer("out_std", out_std_data)
 
+    def get_out_bias(self) -> paddle.Tensor:
+        """Get the output bias."""
+        return self.out_bias
+
     def set_out_bias(self, out_bias: paddle.Tensor) -> None:
+        """Set the output bias."""
         self.out_bias = out_bias
 
     def __setitem__(self, key: str, value: paddle.Tensor) -> None:
@@ -159,12 +204,62 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         """Check if the model has default frame parameters."""
         return False
 
+    def get_default_fparam(self) -> paddle.Tensor | None:
+        """Get the default frame parameters."""
+        return None
+
+    def _make_wrapped_sampler(
+        self,
+        sampled_func: Callable[[], list[dict]],
+    ) -> Callable[[], list[dict]]:
+        """Wrap the sampled function with exclusion types and default fparam.
+
+        The returned callable is cached so that the sampling (which may be
+        expensive) is performed at most once.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data
+            systems.
+
+        Returns
+        -------
+        Callable[[], list[dict]]
+            A cached wrapper around *sampled_func* that additionally sets
+            ``pair_exclude_types``, ``atom_exclude_types`` and default
+            ``fparam`` on every sample dict when applicable.
+        """
+
+        @functools.lru_cache
+        def wrapped_sampler() -> list[dict]:
+            sampled = sampled_func()
+            if self.pair_excl is not None:
+                pair_exclude_types = self.pair_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["pair_exclude_types"] = list(pair_exclude_types)
+            if self.atom_excl is not None:
+                atom_exclude_types = self.atom_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["atom_exclude_types"] = list(atom_exclude_types)
+            if (
+                "find_fparam" not in sampled[0]
+                and "fparam" not in sampled[0]
+                and self.has_default_fparam()
+            ):
+                default_fparam = self.get_default_fparam()
+                if default_fparam is not None:
+                    for sample in sampled:
+                        nframe = sample["atype"].shape[0]
+                        sample["fparam"] = default_fparam.repeat(nframe, 1)
+            return sampled
+
+        return wrapped_sampler
+
     def reinit_atom_exclude(
         self,
         exclude_types: list[int] | None = None,
     ) -> None:
-        if exclude_types is None:
-            exclude_types = []
         self.atom_exclude_types = exclude_types
         if exclude_types == []:
             self.atom_excl = None
@@ -284,6 +379,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
             comm_dict=comm_dict,
         )
         ret_dict = self.apply_out_stat(ret_dict, atype)
+
         # nf x nloc
         atom_mask = ext_atom_mask[:, :nloc].astype(paddle.int32)
         if self.atom_excl is not None:
@@ -299,7 +395,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
                 * atom_mask[:, :, None].astype(ret_dict[kk].dtype)
             ).reshape(out_shape)
         ret_dict["mask"] = atom_mask
-        # raise
+
         return ret_dict
 
     def forward(
@@ -393,6 +489,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         merged: Callable[[], list[dict]] | list[dict],
         stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
     ) -> NoReturn:
         """
         Compute or load the statistics parameters of the model,
@@ -499,6 +596,8 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
                 model_forward=self._get_forward_wrapper_func(),
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,
+                stats_distinguish_types=self.get_compute_stats_distinguish_types(),
+                intensive=self.get_intensive(),
             )
             self._store_out_stat(delta_bias, out_std, add=True)
         elif bias_adjust_mode == "set-by-statistic":

@@ -155,6 +155,8 @@ def fit_output_to_model_output(
     coord_ext: paddle.Tensor,
     do_atomic_virial: bool = False,
     create_graph: bool = True,
+    mask: paddle.Tensor | None = None,
+    extended_coord_corr: paddle.Tensor | None = None,
 ) -> dict[str, paddle.Tensor]:
     """Transform the output of the fitting network to
     the model output.
@@ -169,7 +171,12 @@ def fit_output_to_model_output(
         if vdef.reducible:
             kk_redu = get_reduce_name(kk)
             if vdef.intensive:
-                model_ret[kk_redu] = paddle.mean(vv.astype(redu_prec), axis=atom_axis)
+                if mask is not None:
+                    model_ret[kk_redu] = paddle.sum(
+                        vv.to(redu_prec), axis=atom_axis
+                    ) / paddle.sum(mask, axis=-1, keepdim=True)
+                else:
+                    model_ret[kk_redu] = paddle.mean(vv.to(redu_prec), axis=atom_axis)
             else:
                 model_ret[kk_redu] = paddle.sum(vv.astype(redu_prec), axis=atom_axis)
             if vdef.r_differentiable:
@@ -186,6 +193,12 @@ def fit_output_to_model_output(
                 model_ret[kk_derv_r] = dr
                 if vdef.c_differentiable:
                     assert dc is not None
+                    if extended_coord_corr is not None:
+                        dc_corr = (
+                            dr.squeeze(-2).unsqueeze(-1)
+                            @ extended_coord_corr.unsqueeze(-2).to(dr.dtype)
+                        ).reshape(list(dc.shape[:-2]) + [1, 9])  # noqa: RUF005
+                        dc = dc + dc_corr
                     model_ret[kk_derv_c] = dc
                     model_ret[kk_derv_c + "_redu"] = paddle.sum(
                         model_ret[kk_derv_c].astype(redu_prec), axis=1
@@ -223,7 +236,9 @@ def communicate_extended_output(
                 mapping = mapping.reshape(mldims + [1] * len(derv_r_ext_dims)).expand(
                     [-1] * len(mldims) + derv_r_ext_dims
                 )
-                force = paddle.zeros(vldims + derv_r_ext_dims, dtype=vv.dtype)
+                force = paddle.zeros(
+                    vldims + derv_r_ext_dims, dtype=vv.dtype, device=vv.device
+                )
                 # nf x nloc x nvar x 3
                 new_ret[kk_derv_r] = decomp.scatter_reduce(
                     force,
@@ -240,7 +255,9 @@ def communicate_extended_output(
                     mapping,
                     [1] * (len(mldims) + len(vdef.shape)) + [3],
                 )
-                virial = paddle.zeros(vldims + derv_c_ext_dims, dtype=vv.dtype)
+                virial = paddle.zeros(
+                    vldims + derv_c_ext_dims, dtype=vv.dtype, device=vv.device
+                )
                 # nf x nloc x nvar x 9
                 new_ret[kk_derv_c] = decomp.scatter_reduce(
                     virial,

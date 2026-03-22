@@ -70,14 +70,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             self,
             *args: Any,
             # underscore to prevent conflict with normal inputs
-            atomic_model_: T_AtomicModel | None = None,
+            atomic_model_: T_AtomicModel | None = None,  # type: ignore
             **kwargs: Any,
         ) -> None:
             super().__init__(*args, **kwargs)
             if atomic_model_ is not None:
-                self.atomic_model: T_AtomicModel = atomic_model_
+                self.atomic_model: T_AtomicModel = atomic_model_  # type: ignore
             else:
-                self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)
+                self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)  # type: ignore
             self.precision_dict = PRECISION_DICT
             self.reverse_precision_dict = RESERVED_PRECISION_DICT
             self.global_pd_float_precision = GLOBAL_PD_FLOAT_PRECISION
@@ -136,6 +136,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             fparam: paddle.Tensor | None = None,
             aparam: paddle.Tensor | None = None,
             do_atomic_virial: bool = False,
+            coord_corr_for_virial: paddle.Tensor | None = None,
         ) -> dict[str, paddle.Tensor]:
             """Return model prediction.
 
@@ -154,6 +155,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 atomic parameter. nf x nloc x nda
             do_atomic_virial
                 If calculate the atomic virial.
+            coord_corr_for_virial
+                The coordinates correction of the atoms for virial.
+                shape: nf x (nloc x 3)
 
             Returns
             -------
@@ -181,6 +185,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 mixed_types=True,
                 box=bb,
             )
+            if coord_corr_for_virial is not None:
+                coord_corr_for_virial = coord_corr_for_virial.to(cc.dtype)
+                extended_coord_corr = paddle.gather(
+                    coord_corr_for_virial, 1, mapping.unsqueeze(-1).expand(-1, -1, 3)
+                )
+            else:
+                extended_coord_corr = None
+
             model_predict_lower = self.forward_common_lower(
                 extended_coord,
                 extended_atype,
@@ -189,6 +201,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 do_atomic_virial=do_atomic_virial,
                 fparam=fp,
                 aparam=ap,
+                extended_coord_corr=extended_coord_corr,
             )
             model_predict = communicate_extended_output(
                 model_predict_lower,
@@ -201,24 +214,6 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
 
         def get_out_bias(self) -> paddle.Tensor:
             return self.atomic_model.get_out_bias()
-
-        def get_observed_type_list(self) -> list[str]:
-            """Get observed types (elements) of the model during data statistics.
-
-            Returns
-            -------
-            list[str]
-                A list of the observed type names in this model.
-            """
-            type_map = self.get_type_map()
-            out_bias = self.get_out_bias()[0]
-            assert out_bias is not None, "No out_bias found in the model."
-            assert out_bias.ndim == 2, "The supported out_bias should be a 2D array."
-            assert out_bias.shape[0] == len(type_map), (
-                "The out_bias shape does not match the type_map length."
-            )
-            bias_mask = paddle.any(paddle.abs(out_bias) > 1e-6, axis=-1)
-            return [type_map[i] for i in range(len(type_map)) if bias_mask[i]]
 
         def set_out_bias(self, out_bias: paddle.Tensor) -> None:
             self.atomic_model.set_out_bias(out_bias)
@@ -261,6 +256,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             do_atomic_virial: bool = False,
             comm_dict: list[paddle.Tensor] | None = None,
             extra_nlist_sort: bool = False,
+            extended_coord_corr: paddle.Tensor | None = None,
         ) -> dict[str, paddle.Tensor]:
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
@@ -287,6 +283,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 The data needed for communication for parallel inference.
             extra_nlist_sort
                 whether to forcibly sort the nlist.
+            extended_coord_corr
+                coordinates correction for virial in extended region. nf x (nall x 3)
 
             Returns
             -------
@@ -318,6 +316,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 cc_ext,
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
+                mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
+                extended_coord_corr=extended_coord_corr,
             )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
@@ -466,6 +466,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                         * paddle.ones(
                             [n_nf, n_nloc, nnei - n_nnei],
                             dtype=nlist.dtype,
+                            device=nlist.device,
                         ),
                     ],
                     axis=-1,
@@ -546,6 +547,13 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             """Get the number (dimension) of frame parameters of this atomic model."""
             return self.atomic_model.get_dim_fparam()
 
+        def has_default_fparam(self) -> bool:
+            """Check if the model has default frame parameters."""
+            return self.atomic_model.has_default_fparam()
+
+        def get_default_fparam(self) -> paddle.Tensor | None:
+            return self.atomic_model.get_default_fparam()
+
         def get_dim_aparam(self) -> int:
             """Get the number (dimension) of atomic parameters of this atomic model."""
             return self.atomic_model.get_dim_aparam()
@@ -612,11 +620,42 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
 
         def compute_or_load_stat(
             self,
-            sampled_func: Callable,
+            sampled_func: Callable[[], Any],
             stat_file_path: DPPath | None = None,
+            preset_observed_type: list[str] | None = None,
         ) -> None:
             """Compute or load the statistics."""
-            return self.atomic_model.compute_or_load_stat(sampled_func, stat_file_path)
+            return self.atomic_model.compute_or_load_stat(
+                sampled_func,
+                stat_file_path,
+                preset_observed_type=preset_observed_type,
+            )
+
+        def get_observed_type_list(self) -> list[str]:
+            """Get observed types (elements) of the model during data statistics.
+
+            Returns
+            -------
+            list[str]
+                A list of the observed type names in this model.
+            """
+            type_map = self.get_type_map()
+            out_bias = self.atomic_model.get_out_bias()[0]
+
+            assert out_bias is not None, "No out_bias found in the model."
+            assert out_bias.ndim == 2, "The supported out_bias should be a 2D array."
+            assert out_bias.shape[0] == len(type_map), (
+                "The out_bias shape does not match the type_map length."
+            )
+            bias_mask = (
+                paddle.gt(paddle.abs(out_bias), 1e-6).any(axis=-1).detach().cpu()
+            )  # 1e-6 for stability
+
+            observed_type_list: list[str] = []
+            for i in range(len(type_map)):
+                if bias_mask[i]:
+                    observed_type_list.append(type_map[i])
+            return observed_type_list
 
         def get_sel(self) -> list[int]:
             """Returns the number of selected atoms for each type."""
