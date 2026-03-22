@@ -45,6 +45,9 @@ if [ -n "${_OP_SO}" ]; then
 		cp "${_OP_SO}" "${_DEEPMD_LIB}/"
 	fi
 fi
+# The custom op .so depends on libdeepmd.so (compute kernels).  Add the
+# install prefix lib/ to LD_LIBRARY_PATH so dlopen can resolve symbols.
+export LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${LD_LIBRARY_PATH}
 # When the build uses -fsanitize=leak, the custom op .so requires the LSAN
 # runtime to be preloaded (otherwise dlopen fails).  We disable leak detection
 # in the gen scripts to avoid false reports from torch/paddle internals.
