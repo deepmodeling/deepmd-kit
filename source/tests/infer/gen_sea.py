@@ -78,7 +78,7 @@ def main():
         deserialize_to_file,
     )
 
-    # Load custom ops after deepmd import to avoid double registration
+    # Load custom ops after deepmd.pt import to avoid double registration
     _load_custom_ops()
     _ensure_inductor_compiler()
 
