@@ -665,6 +665,13 @@ class DeepEval(DeepEvalBackend):
         """Get model definition script."""
         return self.metadata
 
+    def serialize(self) -> dict[str, Any]:
+        from deepmd.pt_expt.utils.serialization import (
+            serialize_from_file,
+        )
+
+        return serialize_from_file(self.model_path)
+
     def get_model(self) -> torch.nn.Module:
         """Get the exported model module.
 
