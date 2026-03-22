@@ -35,6 +35,16 @@ cmake --build . -j${NPROC}
 cmake --install .
 # Generate PT/PT2 model files for C++ tests.
 # Must run after cmake --build so that libdeepmd_op_pt.so (custom ops) is available.
+# Install the custom op .so to deepmd/lib/ so that `import deepmd.pt` can find it.
+# This prevents double-registration crashes when gen scripts also search build dirs.
+_OP_SO=$(find ${BUILD_TMP_DIR} -name 'libdeepmd_op_pt.so' 2>/dev/null | head -1)
+if [ -n "${_OP_SO}" ]; then
+	_DEEPMD_LIB=$(python -c 'import deepmd,os;print(os.path.join(os.path.dirname(deepmd.__file__),"lib"))' 2>/dev/null)
+	if [ -n "${_DEEPMD_LIB}" ]; then
+		mkdir -p "${_DEEPMD_LIB}"
+		cp "${_OP_SO}" "${_DEEPMD_LIB}/"
+	fi
+fi
 # When the build uses -fsanitize=leak, the custom op .so requires the LSAN
 # runtime to be preloaded (otherwise dlopen fails).  We disable leak detection
 # in the gen scripts to avoid false reports from torch/paddle internals.
