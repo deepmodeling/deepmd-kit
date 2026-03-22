@@ -23,6 +23,9 @@ from copy import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 from deepmd.pt_expt.entrypoints.main import (
     get_trainer,
 )
@@ -224,11 +227,11 @@ class FinetuneTest:
 
         old_bias = model.get_out_bias()
         rng = np.random.default_rng(42)
-        random_bias = rng.standard_normal(np.asarray(old_bias).shape).astype(
-            np.asarray(old_bias).dtype
+        random_bias = rng.standard_normal(to_numpy_array(old_bias).shape).astype(
+            to_numpy_array(old_bias).dtype
         )
         model.set_out_bias(random_bias)
-        energy_bias_before = np.asarray(model.get_out_bias())[0]
+        energy_bias_before = to_numpy_array(model.get_out_bias())[0]
 
         # Run inference BEFORE bias change (need original model predictions)
         model.eval()
@@ -268,7 +271,7 @@ class FinetuneTest:
             sampled,
             bias_adjust_mode="change-by-statistic",
         )
-        energy_bias_after = np.asarray(model.get_out_bias())[0]
+        energy_bias_after = to_numpy_array(model.get_out_bias())[0]
 
         # compute ground-truth bias change via least squares
         atom_nums = np.tile(
@@ -613,7 +616,7 @@ class TestFinetuneCLI(unittest.TestCase):
             )
             original_wrapper = ModelWrapper(original_model)
             original_wrapper.load_state_dict(model_state)
-            original_bias = np.asarray(original_model.get_out_bias()).copy()
+            original_bias = to_numpy_array(original_model.get_out_bias()).copy()
 
             # Phase 2: finetune via CLI (lr=0 so weights stay unchanged)
             ft_config = _make_config(self.data_dir, model_se_e2_a, numb_steps=1)
@@ -645,7 +648,7 @@ class TestFinetuneCLI(unittest.TestCase):
             )
             ft_wrapper = ModelWrapper(ft_model)
             ft_wrapper.load_state_dict(ft_model_state)
-            ft_bias = np.asarray(ft_model.get_out_bias())
+            ft_bias = to_numpy_array(ft_model.get_out_bias())
 
             # Bias should have been adjusted (may or may not differ depending
             # on data, but the checkpoint should at least be valid)
