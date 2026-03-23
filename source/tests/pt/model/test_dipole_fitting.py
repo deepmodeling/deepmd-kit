@@ -433,6 +433,100 @@ class TestDipoleModel(unittest.TestCase):
             nat.reshape([-1]), ref_sel.reshape([-1]), decimal=10
         )
 
+    def test_label_order_via_deepmd_data(self) -> None:
+        """Verify that labels loaded via DeepmdData(sort_atoms=False) +
+        output_natoms_for_type_sel=True align with dp.eval() output.
+        Uses a sel_type model (exclude_types=[1,2]) with atype=[0,0,0,1,1]
+        shuffled to [0,0,1,1,0] so selected atoms are non-contiguous.
+        """
+        import shutil
+        import tempfile
+
+        from deepmd.utils.data import (
+            DeepmdData,
+        )
+
+        ft_sel = DipoleFittingNet(
+            self.nt,
+            self.dd0.dim_out,
+            embedding_width=self.dd0.get_dim_emb(),
+            numb_fparam=0,
+            numb_aparam=0,
+            mixed_types=self.dd0.mixed_types(),
+            exclude_types=[1, 2],
+            seed=GLOBAL_SEED,
+        ).to(env.DEVICE)
+        model_sel = DipoleModel(self.dd0, ft_sel, self.type_mapping)
+        jit_md = torch.jit.script(model_sel)
+        torch.jit.save(jit_md, self.file_path)
+        load_md = DeepDipole(self.file_path)
+
+        # Shuffle atoms so selected type-0 atoms are non-contiguous
+        # atype=[0,0,0,1,1] → shuffled idx → atype=[0,0,1,1,0]
+        idx_perm = [1, 0, 4, 3, 2]
+        atype = to_numpy_array(self.atype)  # [0,0,0,1,1]
+        coord = to_numpy_array(self.coord.reshape(1, self.natoms, 3))
+        cell = to_numpy_array(self.cell.reshape(1, 9))
+        atype_sf = atype[idx_perm]
+        coord_sf = coord.reshape(self.natoms, 3)[idx_perm].reshape(1, -1)
+
+        sel_mask_sf = np.isin(atype_sf, load_md.get_sel_type())  # type-0 positions
+
+        # Reference: model output for shuffled atoms, filter to sel atoms
+        ref_sf = load_md.eval(
+            coords=coord_sf, atom_types=atype_sf, cells=cell, atomic=True
+        )  # [1, natoms, nout]
+        ref_sf_sel = ref_sf[:, sel_mask_sf, :]  # [1, nsel, nout]
+
+        tmpdir = tempfile.mkdtemp()
+        try:
+            set_dir = os.path.join(tmpdir, "set.000")
+            os.makedirs(set_dir)
+            np.savetxt(os.path.join(tmpdir, "type.raw"), atype_sf, fmt="%d")
+            np.save(
+                os.path.join(set_dir, "coord.npy"),
+                coord_sf.reshape(1, -1).astype(np.float64),
+            )
+            np.save(
+                os.path.join(set_dir, "box.npy"),
+                cell.reshape(1, -1).astype(np.float64),
+            )
+            # Labels: nsel atoms in shuffled atom order (nsel format)
+            np.save(
+                os.path.join(set_dir, "atomic_dipole.npy"),
+                ref_sf_sel.reshape(1, -1).astype(np.float32),
+            )
+
+            data = DeepmdData(
+                tmpdir,
+                set_prefix="set",
+                shuffle_test=False,
+                type_map=load_md.get_type_map(),
+                sort_atoms=False,
+            )
+            data.add(
+                "atomic_dipole",
+                3,
+                atomic=True,
+                must=True,
+                high_prec=False,
+                type_sel=load_md.get_sel_type(),
+                output_natoms_for_type_sel=True,
+            )
+            test_data = data.get_test()
+
+            # Loaded label shape: [1, natoms*3]. Filter to sel atoms.
+            label_sel = test_data["atom_dipole"].reshape(1, self.natoms, 3)[
+                :, sel_mask_sf, :
+            ]  # [1, nsel, 3]
+
+            # Round-trip: loaded label must match what was written
+            np.testing.assert_almost_equal(
+                label_sel.reshape(-1), ref_sf_sel.reshape(-1), decimal=5
+            )
+        finally:
+            shutil.rmtree(tmpdir)
+
     def tearDown(self) -> None:
         if os.path.exists(self.file_path):
             os.remove(self.file_path)

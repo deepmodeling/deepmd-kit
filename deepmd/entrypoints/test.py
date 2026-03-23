@@ -1134,6 +1134,7 @@ def test_polar(
         must=True,
         high_prec=False,
         type_sel=dp.get_sel_type(),
+        output_natoms_for_type_sel=True,
     )
 
     test_data = data.get_test()
@@ -1155,7 +1156,12 @@ def test_polar(
         polar = polar.reshape((polar.shape[0], -1, 9))[:, sel_mask, :].reshape(
             (polar.shape[0], -1)
         )
-        rmse_f = rmse(polar - test_data["atom_polarizability"][:numb_test])
+        label_polar = (
+            test_data["atom_polarizability"][:numb_test]
+            .reshape((numb_test, -1, 9))[:, sel_mask, :]
+            .reshape((numb_test, -1))
+        )
+        rmse_f = rmse(polar - label_polar)
 
     log.info(f"# number of test data : {numb_test:d} ")
     log.info(f"Polarizability  RMSE       : {rmse_f:e}")
@@ -1183,10 +1189,7 @@ def test_polar(
         else:
             pe = np.concatenate(
                 (
-                    np.reshape(
-                        test_data["atom_polarizability"][:numb_test],
-                        [-1, 9 * sel_natoms],
-                    ),
+                    np.reshape(label_polar, [-1, 9 * sel_natoms]),
                     np.reshape(polar, [-1, 9 * sel_natoms]),
                 ),
                 axis=1,
@@ -1275,6 +1278,7 @@ def test_dipole(
         must=True,
         high_prec=False,
         type_sel=dp.get_sel_type(),
+        output_natoms_for_type_sel=True,
     )
 
     test_data = data.get_test()
@@ -1296,7 +1300,12 @@ def test_dipole(
         dipole = dipole.reshape((dipole.shape[0], -1, 3))[:, sel_mask, :].reshape(
             (dipole.shape[0], -1)
         )
-        rmse_f = rmse(dipole - test_data["atom_dipole"][:numb_test])
+        label_dipole = (
+            test_data["atom_dipole"][:numb_test]
+            .reshape((numb_test, -1, 3))[:, sel_mask, :]
+            .reshape((numb_test, -1))
+        )
+        rmse_f = rmse(dipole - label_dipole)
 
     log.info(f"# number of test data : {numb_test:d}")
     log.info(f"Dipole  RMSE       : {rmse_f:e}")
@@ -1319,9 +1328,7 @@ def test_dipole(
         else:
             pe = np.concatenate(
                 (
-                    np.reshape(
-                        test_data["atom_dipole"][:numb_test], [-1, 3 * sel_natoms]
-                    ),
+                    np.reshape(label_dipole, [-1, 3 * sel_natoms]),
                     np.reshape(dipole, [-1, 3 * sel_natoms]),
                 ),
                 axis=1,

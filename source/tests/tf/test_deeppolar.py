@@ -1076,6 +1076,78 @@ class TestDeepPolarNewPBC(unittest.TestCase):
             vv.reshape([-1]), self.expected_gv.reshape([-1]), decimal=default_places
         )
 
+    def test_label_order_via_deepmd_data(self) -> None:
+        """Verify that labels loaded via DeepmdData(sort_atoms=False) +
+        output_natoms_for_type_sel=True align with dp.eval() output, replicating
+        the dptest code path.  atype=[0,1,1,0,1,1] is intentionally NOT
+        type-sorted so ordering bugs in either the model or data loading are
+        detectable.
+        """
+        import shutil
+        import tempfile
+
+        from deepmd.utils.data import (
+            DeepmdData,
+        )
+
+        natoms = len(self.atype)
+        # sel_type=[0]: selected atoms are 0 and 3 (non-contiguous, non-sorted)
+        tmpdir = tempfile.mkdtemp()
+        try:
+            set_dir = os.path.join(tmpdir, "set.000")
+            os.makedirs(set_dir)
+            np.savetxt(os.path.join(tmpdir, "type.raw"), self.atype, fmt="%d")
+            np.save(
+                os.path.join(set_dir, "coord.npy"),
+                self.coords.reshape(1, -1).astype(np.float64),
+            )
+            np.save(
+                os.path.join(set_dir, "box.npy"),
+                self.box.reshape(1, -1).astype(np.float64),
+            )
+            # Labels: nsel=2 atoms in original atom order (atoms 0 then 3)
+            np.save(
+                os.path.join(set_dir, "atomic_polarizability.npy"),
+                self.expected_t.reshape(1, -1).astype(np.float32),
+            )
+
+            data = DeepmdData(
+                tmpdir,
+                set_prefix="set",
+                shuffle_test=False,
+                type_map=self.dp.get_type_map(),
+                sort_atoms=False,
+            )
+            data.add(
+                "atomic_polarizability",
+                9,
+                atomic=True,
+                must=True,
+                high_prec=False,
+                type_sel=self.dp.get_sel_type(),
+                output_natoms_for_type_sel=True,
+            )
+            test_data = data.get_test()
+
+            # Loaded label shape: [1, natoms*9]. Filter to sel atoms.
+            label_sel = test_data["atom_polarizability"].reshape(1, natoms, 9)[
+                :, self.sel_mask, :
+            ]  # [1, nsel, 9]
+
+            # Label order must match expected_t (atoms 0 then 3, not type-sorted)
+            np.testing.assert_almost_equal(
+                label_sel.reshape(-1), self.expected_t.reshape(-1), decimal=5
+            )
+
+            # Model output must also align with label order
+            pred = self.dp.eval(self.coords, self.box, self.atype, atomic=True)
+            pred_sel = pred[:, self.sel_mask, :]  # [1, nsel, 9]
+            np.testing.assert_almost_equal(
+                pred_sel.reshape(-1), label_sel.reshape(-1), decimal=default_places
+            )
+        finally:
+            shutil.rmtree(tmpdir)
+
     def test_2frame_full_atm(self) -> None:
         coords2 = np.concatenate((self.coords, self.coords))
         box2 = np.concatenate((self.box, self.box))

@@ -188,6 +188,8 @@ class DeepmdData:
         output_natoms_for_type_sel : bool, optional
             if True and type_sel is True, the atomic dimension will be natoms instead of nsel
         """
+        # normalize key: "atomic_" -> "atom_", same convention as _load_set output
+        key = key.replace("atomic_", "atom_")
         self.data_dict[key] = {
             "ndof": ndof,
             "atomic": atomic,
@@ -762,6 +764,15 @@ class DeepmdData:
         data = {kk.replace("atomic", "atom"): vv for kk, vv in data.items()}
         return data
 
+    def _get_data_path(self, set_name: "DPPath", key: str) -> "DPPath":
+        """Return the path for a data file, trying both atom_ and atomic_ naming."""
+        path = set_name / (key + ".npy")
+        if not path.is_file() and key.startswith("atom_"):
+            alt = set_name / ("atomic_" + key[5:] + ".npy")
+            if alt.is_file():
+                return alt
+        return path
+
     def _load_data(
         self,
         set_name: str,
@@ -800,7 +811,7 @@ class DeepmdData:
             dtype = GLOBAL_ENER_FLOAT_PRECISION
         else:
             dtype = GLOBAL_NP_FLOAT_PRECISION
-        path = set_name / (key + ".npy")
+        path = self._get_data_path(set_name, key)
         if path.is_file():
             data = path.load_numpy().astype(dtype)
             try:  # YWolfeee: deal with data shape error
@@ -892,7 +903,7 @@ class DeepmdData:
             The total number of frames in this set (to avoid redundant _get_nframes calls)
         """
         vv = self.data_dict[key]
-        path = set_dir / (key + ".npy")
+        path = self._get_data_path(set_dir, key)
 
         if vv["atomic"]:
             natoms = self.natoms
