@@ -96,6 +96,65 @@ class TestDPFreezePtExpt(unittest.TestCase):
         expected = os.path.join(self.tmpdir, "frozen_default_suffix.pte")
         self.assertTrue(os.path.exists(expected))
 
+    def test_freeze_pt2(self) -> None:
+        """Freeze to .pt2 (AOTInductor) and verify the file is loadable."""
+        output = os.path.join(self.tmpdir, "frozen_model.pt2")
+        freeze(model=self.ckpt_file, output=output)
+        self.assertTrue(os.path.exists(output))
+
+        # Verify the .pt2 can be loaded and evaluated via DeepPot
+        import numpy as np
+
+        from deepmd.infer import (
+            DeepPot,
+        )
+
+        dp = DeepPot(output)
+        self.assertEqual(dp.get_type_map(), ["O", "H", "B"])
+        rcut = dp.get_rcut()
+        self.assertGreater(rcut, 0.0)
+
+        # Quick smoke-test eval
+        coord = np.array(
+            [0.0, 0.0, 0.1, 1.0, 0.3, 0.2, 0.1, 1.9, 3.4],
+            dtype=np.float64,
+        )
+        box = np.array([5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 5.0], dtype=np.float64)
+        atype = [0, 1, 2]
+        e, f, v = dp.eval(coord, box, atype)
+        self.assertEqual(e.shape, (1, 1))
+        self.assertEqual(f.shape, (1, 3, 3))
+
+    def test_freeze_pt2_eval_consistency(self) -> None:
+        """Verify .pte and .pt2 produce identical results."""
+        import numpy as np
+
+        from deepmd.infer import (
+            DeepPot,
+        )
+
+        pte_path = os.path.join(self.tmpdir, "consistency.pte")
+        pt2_path = os.path.join(self.tmpdir, "consistency.pt2")
+        freeze(model=self.ckpt_file, output=pte_path)
+        freeze(model=self.ckpt_file, output=pt2_path)
+
+        coord = np.array(
+            [0.0, 0.0, 0.1, 1.0, 0.3, 0.2, 0.1, 1.9, 3.4],
+            dtype=np.float64,
+        )
+        box = np.array([5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 5.0], dtype=np.float64)
+        atype = [0, 1, 2]
+
+        dp_pte = DeepPot(pte_path)
+        dp_pt2 = DeepPot(pt2_path)
+
+        e_pte, f_pte, v_pte = dp_pte.eval(coord, box, atype)
+        e_pt2, f_pt2, v_pt2 = dp_pt2.eval(coord, box, atype)
+
+        np.testing.assert_allclose(e_pte, e_pt2, atol=1e-10)
+        np.testing.assert_allclose(f_pte, f_pt2, atol=1e-10)
+        np.testing.assert_allclose(v_pte, v_pt2, atol=1e-10)
+
 
 if __name__ == "__main__":
     unittest.main()
