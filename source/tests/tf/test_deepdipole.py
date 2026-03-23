@@ -545,6 +545,27 @@ class TestDeepDipoleNewPBC(unittest.TestCase):
             vv.reshape([-1]), self.expected_gv.reshape([-1]), decimal=default_places
         )
 
+    def test_1frame_eval_shuffle(self) -> None:
+        i_sf = [2, 1, 3, 0, 5, 4]
+        isel_sf = [1, 0]
+        at = self.dp.eval(
+            self.coords.reshape(-1, 3)[i_sf].reshape(-1),
+            self.box,
+            self.atype[i_sf],
+        )
+        at = at[:, self.sel_mask[i_sf]]
+        # check shape
+        nframes = 1
+        nsel = 2
+        self.assertEqual(at.shape, (nframes, nsel, self.nout))
+        # recover the shuffled result
+        nat = np.empty_like(at)
+        nat[:, isel_sf] = at
+        # check values match unshuffled reference
+        np.testing.assert_almost_equal(
+            nat.reshape([-1]), self.expected_t.reshape([-1]), decimal=default_places
+        )
+
     def test_1frame_full_atm_shuffle(self) -> None:
         i_sf = [2, 1, 3, 0, 5, 4]
         isel_sf = [1, 0]

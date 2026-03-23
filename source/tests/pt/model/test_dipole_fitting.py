@@ -372,6 +372,67 @@ class TestDipoleModel(unittest.TestCase):
         load_md.eval_full(coords=coord, atom_types=atype, cells=cell, atomic=True)
         load_md.eval_full(coords=coord, atom_types=atype, cells=cell, atomic=False)
 
+    def test_eval_shuffle_sel_type(self) -> None:
+        # Build a model where only type-0 atoms contribute (exclude types 1 and 2).
+        # This tests that eval() returns per-atom results in the correct input atom
+        # order even when sel_type is a strict subset of all types.
+        ft_sel = DipoleFittingNet(
+            self.nt,
+            self.dd0.dim_out,
+            embedding_width=self.dd0.get_dim_emb(),
+            numb_fparam=0,
+            numb_aparam=0,
+            mixed_types=self.dd0.mixed_types(),
+            exclude_types=[1, 2],
+            seed=GLOBAL_SEED,
+        ).to(env.DEVICE)
+        model_sel = DipoleModel(self.dd0, ft_sel, self.type_mapping)
+        jit_md = torch.jit.script(model_sel)
+        torch.jit.save(jit_md, self.file_path)
+        load_md = DeepDipole(self.file_path)
+
+        atype = to_numpy_array(self.atype)  # [0, 0, 0, 1, 1]
+        coord = to_numpy_array(self.coord.reshape(1, self.natoms, 3))
+        cell = to_numpy_array(self.cell.reshape(1, 9))
+
+        # Reference result with original atom order
+        ref = load_md.eval(coords=coord, atom_types=atype, cells=cell, atomic=True)
+        # ref shape: [nframes, natoms, nout]
+
+        # Shuffle atoms
+        idx_perm = [1, 0, 4, 3, 2]
+        coord_sf = coord.reshape(self.natoms, 3)[idx_perm].reshape(1, -1)
+        atype_sf = atype[idx_perm]
+
+        # Result with shuffled atom order
+        res_sf = load_md.eval(
+            coords=coord_sf, atom_types=atype_sf, cells=cell, atomic=True
+        )
+        # res_sf shape: [nframes, natoms, nout]
+
+        # sel_mask: which atoms in the original order are selected (type 0)
+        sel_mask = np.isin(atype, load_md.get_sel_type())  # [T,T,T,F,F]
+        sel_mask_sf = sel_mask[idx_perm]  # selected atoms in shuffled order
+
+        # Extract selected-atom outputs from each result
+        ref_sel = ref[:, sel_mask]  # [nframes, nsel, nout]
+        at_sf = res_sf[:, sel_mask_sf]  # [nframes, nsel, nout]
+
+        # isel_sf: mapping from shuffled-selected positions to original-selected positions
+        orig_sel_idx = np.where(sel_mask)[0]
+        shuffled_orig = np.array(idx_perm)[sel_mask_sf]
+        isel_sf = np.array(
+            [np.where(orig_sel_idx == x)[0][0] for x in shuffled_orig]
+        )  # [1, 0, 2]
+
+        # Recover original selected order from shuffled selected
+        nat = np.empty_like(at_sf)
+        nat[:, isel_sf] = at_sf
+
+        np.testing.assert_almost_equal(
+            nat.reshape([-1]), ref_sel.reshape([-1]), decimal=10
+        )
+
     def tearDown(self) -> None:
         if os.path.exists(self.file_path):
             os.remove(self.file_path)

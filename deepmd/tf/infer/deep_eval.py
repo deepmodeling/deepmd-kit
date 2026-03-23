@@ -983,6 +983,11 @@ class DeepEval(DeepEvalBackend):
                         (nframes, nloc, *out_nsel.shape[2:]), dtype=out_nsel.dtype
                     )
                     out_nloc[:, sel_mask] = out_nsel
+                    # reverse-map from sorted atom order back to original atom order
+                    out_shape = out_nloc.shape
+                    out_nloc = self.reverse_map(
+                        out_nloc.reshape(nframes, nloc, -1), imap
+                    ).reshape(out_shape)
                     v_out[ii] = out_nloc
                     odef_shape = self._get_output_shape(odef, nframes, nloc)
                 v_out[ii] = np.reshape(v_out[ii], odef_shape)
