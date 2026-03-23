@@ -251,13 +251,13 @@ void fold_back(std::vector<VT>& out,
                const int ndim,
                const int nframes = 1) {
   out.resize(static_cast<size_t>(nframes) * nloc * ndim);
-  for (int kk = 0; kk < nframes; ++kk) {
+  for (ptrdiff_t kk = 0; kk < nframes; ++kk) {
     std::copy(in.begin() + kk * nall * ndim,
               in.begin() + kk * nall * ndim + nloc * ndim,
               out.begin() + kk * nloc * ndim);
-    for (int ii = nloc; ii < nall; ++ii) {
-      int out_idx = mapping[ii];
-      for (int dd = 0; dd < ndim; ++dd) {
+    for (ptrdiff_t ii = nloc; ii < nall; ++ii) {
+      ptrdiff_t out_idx = mapping[ii];
+      for (ptrdiff_t dd = 0; dd < ndim; ++dd) {
         out[kk * nloc * ndim + out_idx * ndim + dd] +=
             in[kk * nall * ndim + ii * ndim + dd];
       }

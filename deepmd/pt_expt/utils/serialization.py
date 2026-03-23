@@ -110,23 +110,23 @@ def _make_sample_inputs(
     extended_coord = extended_coord.reshape(nframes, -1, 3)
 
     # Convert to torch tensors
-    from deepmd.pt_expt.utils.env import (
-        DEVICE,
-    )
+    import deepmd.pt_expt.utils.env as _env
 
-    ext_coord = torch.tensor(extended_coord, dtype=torch.float64, device=DEVICE)
-    ext_atype = torch.tensor(extended_atype, dtype=torch.int64, device=DEVICE)
-    nlist_t = torch.tensor(nlist, dtype=torch.int64, device=DEVICE)
-    mapping_t = torch.tensor(mapping, dtype=torch.int64, device=DEVICE)
+    ext_coord = torch.tensor(extended_coord, dtype=torch.float64, device=_env.DEVICE)
+    ext_atype = torch.tensor(extended_atype, dtype=torch.int64, device=_env.DEVICE)
+    nlist_t = torch.tensor(nlist, dtype=torch.int64, device=_env.DEVICE)
+    mapping_t = torch.tensor(mapping, dtype=torch.int64, device=_env.DEVICE)
 
     if dim_fparam > 0:
-        fparam = torch.zeros(nframes, dim_fparam, dtype=torch.float64, device=DEVICE)
+        fparam = torch.zeros(
+            nframes, dim_fparam, dtype=torch.float64, device=_env.DEVICE
+        )
     else:
         fparam = None
 
     if dim_aparam > 0:
         aparam = torch.zeros(
-            nframes, nloc, dim_aparam, dtype=torch.float64, device=DEVICE
+            nframes, nloc, dim_aparam, dtype=torch.float64, device=_env.DEVICE
         )
     else:
         aparam = None
