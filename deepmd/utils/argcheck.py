@@ -58,6 +58,7 @@ doc_ener = "Fit an energy model (potential energy surface)."
 doc_dos = "Fit a density of states model. The total density of states / site-projected density of states labels should be provided by `dos.npy` or `atom_dos.npy` in each data system. The file has number of frames lines and number of energy grid columns (times number of atoms in `atom_dos.npy`). See `loss` parameter."
 doc_dipole = "Fit an atomic dipole model. Global dipole labels or atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file either has number of frames lines and 3 times of number of selected atoms columns, or has number of frames lines and 3 columns. See `loss` parameter."
 doc_sog = "Fit a SOG-energy model (SR+LR)."
+doc_les = "Fit a LES-energy model (SR+LR)."
 doc_polar = "Fit an atomic polarizability model. Global polarizazbility labels or atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file with has number of frames lines and 9 times of number of selected atoms columns, or has number of frames lines and 9 columns. See `loss` parameter."
 # modifier
 doc_dipole_charge = "Use WFCC to model the electronic structure of the system. Correct the long-range interaction."
@@ -2079,6 +2080,176 @@ def fitting_sog_energy() -> list[Argument]:
     )
     doc_shift = "Shift values of the SOG long-range correction kernels."
     doc_amplitude = "Amplitude values of the SOG long-range correction kernels."
+
+    return [
+        Argument(
+            "var_name",
+            str,
+            optional=True,
+            default="energy",
+            doc=doc_only_pt_supported + doc_var_name,
+        ),
+        Argument(
+            "dim_out_sr",
+            int,
+            optional=True,
+            default=1,
+            doc=doc_only_pt_supported + doc_dim_out_sr,
+        ),
+        Argument(
+            "dim_out_lr",
+            int,
+            optional=True,
+            default=1,
+            doc=doc_only_pt_supported + doc_dim_out_lr,
+        ),
+        Argument(
+            "neuron_sr",
+            list[int],
+            optional=True,
+            default=[128, 128, 128],
+            doc=doc_only_pt_supported + doc_neuron_sr,
+        ),
+        Argument(
+            "neuron_lr",
+            list[int],
+            optional=True,
+            default=[128, 128, 128],
+            doc=doc_only_pt_supported + doc_neuron_lr,
+        ),
+        Argument(
+            "numb_fparam",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_only_pt_supported + doc_numb_fparam,
+        ),
+        Argument(
+            "numb_aparam",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_only_pt_supported + doc_numb_aparam,
+        ),
+        Argument(
+            "default_fparam",
+            list[float],
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_default_fparam,
+        ),
+        Argument(
+            "dim_case_embd",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_only_pt_supported + doc_dim_case_embd,
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
+        Argument(
+            "trainable",
+            [list[bool], bool],
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_trainable,
+        ),
+        Argument(
+            "rcond",
+            [float, type(None)],
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_rcond,
+        ),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+        Argument(
+            "exclude_types",
+            list[int],
+            optional=True,
+            default=[],
+            doc=doc_only_pt_supported + doc_exclude_types,
+        ),
+        Argument(
+            "use_aparam_as_mask",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_use_aparam_as_mask,
+        ),
+        Argument(
+            "shift",
+            list[float],
+            optional=True,
+            default=[
+                0.2750,
+                0.1375,
+                0.0688,
+                0.0344,
+                0.0172,
+                0.0086,
+                0.0043,
+                0.0021,
+                0.0011,
+                0.0005,
+                0.0003,
+                0.0001,
+            ],
+            doc=doc_only_pt_supported + doc_shift,
+        ),
+        Argument(
+            "amplitude",
+            list[float],
+            optional=True,
+            default=[
+                2.8,
+                5.7,
+                11.4,
+                22.7,
+                45.5,
+                91.0,
+                182.0,
+                364.0,
+                728.0,
+                1456.0,
+                2912.0,
+                5823.9,
+            ],
+            doc=doc_only_pt_supported + doc_amplitude,
+        ),
+    ]
+
+
+@fitting_args_plugin.register("les_energy", doc=doc_les)
+def fitting_les_energy() -> list[Argument]:
+    doc_var_name = "The atomic property name used by the LR fitting net. Usually set to `energy`."
+    doc_dim_out_sr = "The output dimension of the short-range fitting branch."
+    doc_dim_out_lr = "The output dimension of the long-range fitting branch."
+    doc_neuron_sr = "The number of neurons in each hidden layer of the short-range fitting net."
+    doc_neuron_lr = "The number of neurons in each hidden layer of the long-range fitting net."
+    doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
+    doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
+    doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
+    doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
+    doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be bool or list[bool]. When list[bool] is given, all values must be True to make parameters trainable."
+    doc_rcond = "The condition number used to determine the initial energy shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
+    doc_seed = "Random seed for parameter initialization of the fitting net"
+    doc_exclude_types = "The excluded atom types whose atomic contributions are set to zero."
+    doc_use_aparam_as_mask = (
+        "Whether to use the aparam as a mask in input."
+        "If True, the aparam will not be used in fitting net for embedding."
+    )
+    doc_shift = "Shift values of the LES long-range correction kernels."
+    doc_amplitude = "Amplitude values of the LES long-range correction kernels."
 
     return [
         Argument(

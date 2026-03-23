@@ -41,7 +41,7 @@
       "type": "sog_energy",
       "var_name": "energy",
       "dim_out_sr": 1,
-      "dim_out_lr": 1,
+      "dim_out_lr": 2,
       "neuron_sr": [
         240,
         240,
@@ -127,7 +127,7 @@
     "numb_steps": 500000,
     "gradient_max_norm": 5.0,
     "seed": 10,
-    "disp_file": "lcurve.out",
+    "disp_file": "lcurve_lr_2.out",
     "disp_freq": 100,
     "save_freq": 2000
   }

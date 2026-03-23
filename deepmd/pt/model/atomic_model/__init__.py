@@ -48,6 +48,9 @@ from .lr_energy_atomic_model import (
 from .sog_atomic_model import (
     SOGEnergyAtomicModel,
 )
+from .les_atomic_model import (
+    LESEnergyAtomicModel,
+)
 
 __all__ = [
     "BaseAtomicModel",
@@ -59,6 +62,7 @@ __all__ = [
     "DPPropertyAtomicModel",
     "DPZBLLinearEnergyAtomicModel",
     "LinearEnergyAtomicModel",
+    "LESEnergyAtomicModel",
     "LREnergyAtomicModel",
     "PairTabAtomicModel",
     "SOGEnergyAtomicModel",

@@ -235,7 +235,7 @@ class LRFittingNet(Fitting):
             networks=[
                 FittingNet(
                     in_dim,
-                    1,
+                    self.lr_net_dim_out,
                     self.neuron_lr,
                     self.activation_function,
                     self.resnet_dt,
@@ -254,7 +254,7 @@ class LRFittingNet(Fitting):
             networks=[
                 FittingNet(
                     in_dim,
-                    1,
+                    self.sr_net_dim_out,
                     self.neuron_sr,
                     self.activation_function,
                     self.resnet_dt,
@@ -572,7 +572,7 @@ class LRFittingNet(Fitting):
     def _apply_networks(
         self,
         layers: NetworkCollection,
-        neuron: int,
+        neuron: list[int],
         dim_out: int,
         xx: torch.Tensor,
         xx_zeros: Optional[torch.Tensor],
@@ -581,7 +581,7 @@ class LRFittingNet(Fitting):
         bool_bias: bool = False,
     ) -> torch.Tensor:
         nf, nloc, _ = xx.shape
-        outs = torch.zeros((nf, nloc, 1), dtype=self.prec, device=xx.device)
+        outs = torch.zeros((nf, nloc, dim_out), dtype=self.prec, device=xx.device)
         if self.mixed_types:
             atom_property = layers.networks[0](xx)
             if self.eval_return_middle_output and middle_output is not None:

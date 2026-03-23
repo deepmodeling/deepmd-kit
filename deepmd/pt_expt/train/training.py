@@ -398,6 +398,10 @@ class Trainer:
 
         # Model ---------------------------------------------------------------
         self.model = get_model(deepcopy(model_params)).to(DEVICE)
+        for module in self.model.modules():
+            set_freq = getattr(module, "set_debug_print_freq", None)
+            if callable(set_freq):
+                set_freq(self.disp_freq)
 
         # Loss ----------------------------------------------------------------
         self.loss = get_loss(

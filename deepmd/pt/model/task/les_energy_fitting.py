@@ -35,7 +35,7 @@ from deepmd.pt.model.task.lr_fitting import (
 )
 
 
-SOG_DEFAULT_AMPLITUDE = to_numpy_array(np.array([
+LES_DEFAULT_AMPLITUDE = to_numpy_array(np.array([
     0.2750,
     0.1375,
     0.0688,
@@ -49,7 +49,7 @@ SOG_DEFAULT_AMPLITUDE = to_numpy_array(np.array([
     0.0003,
     0.0001,
 ]))
-SOG_DEFAULT_SHIFT = to_numpy_array(np.array([
+LES_DEFAULT_SHIFT = to_numpy_array(np.array([
     2.8,
     5.7,
     11.4,
@@ -65,10 +65,10 @@ SOG_DEFAULT_SHIFT = to_numpy_array(np.array([
 ]))
 
 
-@LRFittingNet.register("sog_energy")
+@LRFittingNet.register("les_energy")
 @fitting_check_output
-class SOGEnergyFittingNet(LRFittingNet):
-    """Construct a SOG sr+lr interactions fitting net.
+class LESEnergyFittingNet(LRFittingNet):
+    """Construct a LES sr+lr interactions fitting net.
 
     Parameters
     ----------
@@ -189,9 +189,9 @@ class SOGEnergyFittingNet(LRFittingNet):
         shift_tensor = to_torch_tensor(shift)
         amplitude_tensor = to_torch_tensor(amplitude)
         if shift_tensor is None:
-            shift_tensor = to_torch_tensor(SOG_DEFAULT_SHIFT)
+            shift_tensor = to_torch_tensor(LES_DEFAULT_SHIFT)
         if amplitude_tensor is None:
-            amplitude_tensor = to_torch_tensor(SOG_DEFAULT_AMPLITUDE)
+            amplitude_tensor = to_torch_tensor(LES_DEFAULT_AMPLITUDE)
 
         shift_tensor = shift_tensor.to(dtype=dtype, device=device)
         amplitude_tensor = amplitude_tensor.to(dtype=dtype, device=device)
@@ -216,6 +216,7 @@ class SOGEnergyFittingNet(LRFittingNet):
         self.remove_self_interaction = False
         self._nufft_fallback_warned = False
 
+
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
@@ -228,78 +229,47 @@ class SOGEnergyFittingNet(LRFittingNet):
                 )
             ]
         )
-
-    @staticmethod
-    def _wl_sl_to_shift_amplitude(
-        wl_tensor: torch.Tensor,
-        sl_tensor: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        pi_tensor = torch.tensor(
-            torch.pi,
-            dtype=sl_tensor.dtype,
-            device=sl_tensor.device,
-        )
-        sqr_pi_tensor = torch.sqrt(pi_tensor)
-        shift_tensor = 2.0 * torch.exp(sl_tensor)
-        amplitude_tensor = wl_tensor / ((sqr_pi_tensor**3) * (shift_tensor**3))
-        return shift_tensor, amplitude_tensor
-
-    @staticmethod
-    def _shift_amplitude_to_wl_sl(
-        shift_tensor: torch.Tensor,
-        amplitude_tensor: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        pi_tensor = torch.tensor(
-            torch.pi,
-            dtype=shift_tensor.dtype,
-            device=shift_tensor.device,
-        )
-        sqr_pi_tensor = torch.sqrt(pi_tensor)
-        shift_safe = torch.clamp(
-            shift_tensor,
-            min=torch.finfo(shift_tensor.dtype).eps,
-        )
-        wl_tensor = amplitude_tensor * (sqr_pi_tensor**3) * (shift_safe**3)
-        sl_tensor = -torch.log(2.0 / shift_safe)
-        return wl_tensor, sl_tensor
-
+    
     def serialize(self) -> dict:
         data = super().serialize()
-        data["type"] = "sog_energy"
-        variables = data["@variables"]
-        variables["wl"] = to_numpy_array(self.wl)
-        variables["sl"] = to_numpy_array(self.sl)
-        shift_tensor, amplitude_tensor = self._wl_sl_to_shift_amplitude(
-            self.wl,
-            self.sl,
-        )
-        variables["shift"] = to_numpy_array(shift_tensor)
-        variables["amplitude"] = to_numpy_array(amplitude_tensor)
+        data["type"] = "les_energy"
+        data["@variables"]["wl"] = to_numpy_array(self.wl)
+        data["@variables"]["sl"] = to_numpy_array(self.sl)
+
+        pi_tensor = torch.tensor(torch.pi, dtype=self.sl.dtype, device=self.sl.device)
+        sqr_pi_tensor = torch.sqrt(pi_tensor)
+        shift_tensor = 2.0 * torch.exp(self.sl)
+        amplitude_tensor = self.wl / ((sqr_pi_tensor**3) * (shift_tensor**3))
+        data["@variables"]["shift"] = to_numpy_array(shift_tensor)
+        data["@variables"]["amplitude"] = to_numpy_array(amplitude_tensor)
         data["n_dl"] = self.n_dl
         return data
 
     @classmethod
-    def deserialize(cls, data: dict) -> "SOGEnergyFittingNet":
+    def deserialize(cls, data: dict) -> "LESEnergyFittingNet":
         data = data.copy()
-        variables = data.get("@variables", {}).copy()
-
-        wl_tensor = to_torch_tensor(variables.pop("wl", None))
-        sl_tensor = to_torch_tensor(variables.pop("sl", None))
-        shift_tensor = to_torch_tensor(variables.pop("shift", None))
-        amplitude_tensor = to_torch_tensor(variables.pop("amplitude", None))
-        data["@variables"] = variables
-
+        variables = data.get("@variables", {})
         obj = super().deserialize(data)
+        wl_tensor = to_torch_tensor(variables.get("wl", None))
+        sl_tensor = to_torch_tensor(variables.get("sl", None))
+        shift_tensor = to_torch_tensor(variables.get("shift", None))
+        amplitude_tensor = to_torch_tensor(variables.get("amplitude", None))
 
         with torch.no_grad():
             if wl_tensor is not None and sl_tensor is not None:
                 obj.wl.copy_(wl_tensor.to(dtype=obj.wl.dtype, device=obj.wl.device))
                 obj.sl.copy_(sl_tensor.to(dtype=obj.sl.dtype, device=obj.sl.device))
             elif shift_tensor is not None and amplitude_tensor is not None:
-                wl_tensor, sl_tensor = cls._shift_amplitude_to_wl_sl(
-                    shift_tensor.to(dtype=obj.wl.dtype, device=obj.wl.device),
-                    amplitude_tensor.to(dtype=obj.wl.dtype, device=obj.wl.device),
+                pi_tensor = torch.tensor(torch.pi, dtype=obj.wl.dtype, device=obj.wl.device)
+                sqr_pi_tensor = torch.sqrt(pi_tensor)
+                shift_tensor = shift_tensor.to(dtype=obj.wl.dtype, device=obj.wl.device)
+                amplitude_tensor = amplitude_tensor.to(dtype=obj.wl.dtype, device=obj.wl.device)
+                shift_safe = torch.clamp(
+                    shift_tensor,
+                    min=torch.finfo(shift_tensor.dtype).eps,
                 )
+                wl_tensor = amplitude_tensor * (sqr_pi_tensor**3) * (shift_safe**3)
+                sl_tensor = -torch.log(2.0 / shift_safe)
                 obj.wl.copy_(wl_tensor)
                 obj.sl.copy_(sl_tensor)
         return obj
@@ -307,7 +277,7 @@ class SOGEnergyFittingNet(LRFittingNet):
     def _kernel_params(self) -> tuple[torch.Tensor, torch.Tensor]:
         return self.wl, self.sl
 
-    def compute_potential_SOG_triclinic_NUFFT(
+    def compute_potential_LES_triclinic_NUFFT(
         self,
         r_raw: torch.Tensor,
         q: torch.Tensor,
@@ -386,10 +356,10 @@ class SOGEnergyFittingNet(LRFittingNet):
                 eps=1e-4,
                 isign=-1,
             )
-            con_sog = torch.mul(kfac_work.unsqueeze(0), recon)
+            con_les = torch.mul(kfac_work.unsqueeze(0), recon)
             ifft_con = pytorch_finufft.functional.finufft_type2(
                 points_work,
-                con_sog,
+                con_les,
                 eps=1e-4,
                 isign=1,
             ) / (2.0 * volume_work)
@@ -416,11 +386,6 @@ class SOGEnergyFittingNet(LRFittingNet):
             raise ValueError(
                 f"`lr_val` should have shape [nframe, nloc, nchan], got {tuple(lr_val.shape)}."
             )
-        if lr_val.shape[-1] != self.dim_out_lr:
-            raise ValueError(
-                f"`lr_val` channel mismatch: got {lr_val.shape[-1]}, "
-                f"expected dim_out_lr={self.dim_out_lr}."
-            )
 
         if coord is None or box is None:
             return torch.zeros(
@@ -438,7 +403,7 @@ class SOGEnergyFittingNet(LRFittingNet):
         corr = torch.zeros((nf, nloc, 1), dtype=lr_val.dtype, device=lr_val.device)
         for ff in range(nf):
             box_now = box[ff]
-            corr[ff] = self.compute_potential_SOG_triclinic_NUFFT(
+            corr[ff] = self.compute_potential_LES_triclinic_NUFFT(
                 coord[ff],
                 lr_val[ff],
                 box_now,
@@ -468,6 +433,7 @@ class SOGEnergyFittingNet(LRFittingNet):
         )
         short_energy = out["sr"]
         corr_energy = self._corr_head(out["lr"], coord=coord, box=box)
+        # corr_energy = 0
         result = {"energy": short_energy + corr_energy}
         if "middle_output" in out:
             result["middle_output"] = out["middle_output"]

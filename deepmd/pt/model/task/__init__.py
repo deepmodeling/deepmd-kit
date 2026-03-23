@@ -33,6 +33,9 @@ from .lr_fitting import (
 from .sog_energy_fitting import (
     SOGEnergyFittingNet,
 )
+from .les_energy_fitting import (
+    LESEnergyFittingNet,
+)
 
 __all__ = [
     "BaseFitting",
@@ -43,6 +46,7 @@ __all__ = [
     "EnergyFittingNetDirect",
     "Fitting",
     "LRFittingNet",
+    "LESEnergyFittingNet",
     "PolarFittingNet",
     "PropertyFittingNet",
     "SOGEnergyFittingNet",
