@@ -625,6 +625,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
         nlist: paddle.Tensor,
         mapping: paddle.Tensor | None = None,
         comm_dict: list[paddle.Tensor] | None = None,
+        fparam: paddle.Tensor | None = None,
     ) -> paddle.Tensor:
         """Compute the descriptor.
 
