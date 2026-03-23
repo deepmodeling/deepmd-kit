@@ -8,6 +8,7 @@ from copy import (
 )
 
 import numpy as np
+import torch
 
 from deepmd.main import (
     main,
@@ -30,6 +31,14 @@ from deepmd.utils.argcheck import (
 from deepmd.utils.compat import (
     update_deepmd_input,
 )
+
+
+def to_numpy(x):
+    """Convert array-like (numpy or torch.Tensor) to numpy array."""
+    if isinstance(x, torch.Tensor):
+        return x.detach().cpu().numpy()
+    return np.asarray(x)
+
 
 EXAMPLE_DIR = os.path.join(
     os.path.dirname(__file__),
@@ -136,7 +145,7 @@ class TestChangeBias(unittest.TestCase):
         cls.model_path = os.path.join(cls.tmpdir, "model.ckpt.pt")
 
         # Record original bias
-        cls.original_bias = deepcopy(trainer.wrapper.model.get_out_bias())
+        cls.original_bias = to_numpy(trainer.wrapper.model.get_out_bias())
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -162,7 +171,7 @@ class TestChangeBias(unittest.TestCase):
             f"-s {self.data_file[0]} -o {output_path}"
         )
         updated_model = self._load_model_from_ckpt(output_path)
-        updated_bias = np.array(updated_model.get_out_bias())
+        updated_bias = to_numpy(updated_model.get_out_bias())
         original_bias = np.array(self.original_bias)
         # Bias should have changed from the original
         self.assertFalse(
@@ -183,7 +192,7 @@ class TestChangeBias(unittest.TestCase):
             f"-f {tmp_file.name} -o {output_path}"
         )
         updated_model = self._load_model_from_ckpt(output_path)
-        updated_bias = np.array(updated_model.get_out_bias())
+        updated_bias = to_numpy(updated_model.get_out_bias())
         original_bias = np.array(self.original_bias)
         # Bias should have changed from the original
         self.assertFalse(
@@ -199,7 +208,7 @@ class TestChangeBias(unittest.TestCase):
             f"-b {' '.join(str(v) for v in user_bias)} -o {output_path}"
         )
         updated_model = self._load_model_from_ckpt(output_path)
-        updated_bias = np.array(updated_model.get_out_bias())
+        updated_bias = to_numpy(updated_model.get_out_bias())
         expected_bias = np.array(user_bias).reshape(updated_bias.shape)
         np.testing.assert_allclose(updated_bias, expected_bias)
 
