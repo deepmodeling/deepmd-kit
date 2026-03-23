@@ -306,7 +306,12 @@ def change_bias(
             "or a frozen model with a .pte/.pt2 extension"
         )
 
-    bias_adjust_mode = "change-by-statistic" if mode == "change" else "set-by-statistic"
+    if mode == "change":
+        bias_adjust_mode = "change-by-statistic"
+    elif mode == "set":
+        bias_adjust_mode = "set-by-statistic"
+    else:
+        raise ValueError(f"Unsupported mode '{mode}'. Expected 'change' or 'set'.")
 
     if input_file.endswith(".pt"):
         multi_task = "model_dict" in model_params
@@ -324,13 +329,13 @@ def change_bias(
         type_map = model_to_change.get_type_map()
 
     if bias_value is not None:
-        assert "energy" in model_to_change.model_output_type(), (
-            "User-defined bias is only available for energy model!"
-        )
-        assert len(bias_value) == len(type_map), (
-            f"The number of elements in the bias should be the same as "
-            f"that in the type_map: {type_map}."
-        )
+        if "energy" not in model_to_change.model_output_type():
+            raise ValueError("User-defined bias is only available for energy model!")
+        if len(bias_value) != len(type_map):
+            raise ValueError(
+                f"The number of elements in the bias should be the same as "
+                f"that in the type_map: {type_map}."
+            )
         old_bias = model_to_change.get_out_bias()
         bias_to_set = torch.tensor(
             bias_value, dtype=old_bias.dtype, device=old_bias.device
