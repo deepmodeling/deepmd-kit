@@ -383,12 +383,13 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")
+        data.pop("compress", None)  # compression not supported in pd backend
         obj = cls(**data)
 
         def t_cvt(xx: np.ndarray) -> paddle.Tensor:

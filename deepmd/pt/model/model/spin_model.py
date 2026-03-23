@@ -491,13 +491,23 @@ class SpinModel(torch.nn.Module):
                     "coord": coord_updated,
                     "atype": atype_updated,
                 }
+                if "aparam" in sys:
+                    tmp_dict["aparam"] = self.expand_aparam(
+                        sys["aparam"], atype_updated.shape[1]
+                    )
                 if "natoms" in sys:
                     natoms = sys["natoms"]
                     tmp_dict["natoms"] = torch.cat(
                         [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]], dim=-1
                     )
                 for item_key in sys.keys():
-                    if item_key not in ["coord", "atype", "spin", "natoms"]:
+                    if item_key not in [
+                        "coord",
+                        "atype",
+                        "spin",
+                        "natoms",
+                        "aparam",
+                    ]:
                         tmp_dict[item_key] = sys[item_key]
                 spin_sampled.append(tmp_dict)
             return spin_sampled
@@ -671,7 +681,7 @@ class SpinEnergyModel(SpinModel):
             output_def["virial"] = deepcopy(out_def_data["energy_derv_c_redu"])
             output_def["virial"].squeeze(-2)
             output_def["atom_virial"] = deepcopy(out_def_data["energy_derv_c"])
-            output_def["atom_virial"].squeeze(-3)
+            output_def["atom_virial"].squeeze(-2)
         return output_def
 
     def forward(
@@ -703,7 +713,7 @@ class SpinEnergyModel(SpinModel):
         if self.backbone_model.do_grad_c("energy"):
             model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
             if do_atomic_virial:
-                model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-3)
+                model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-2)
         return model_predict
 
     @torch.jit.export
@@ -744,6 +754,6 @@ class SpinEnergyModel(SpinModel):
             model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
             if do_atomic_virial:
                 model_predict["extended_virial"] = model_ret["energy_derv_c"].squeeze(
-                    -3
+                    -2
                 )
         return model_predict
