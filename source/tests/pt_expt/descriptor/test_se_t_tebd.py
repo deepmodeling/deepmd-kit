@@ -144,6 +144,51 @@ class TestDescrptSeTTebd(TestCaseSingleFrameWithNlist):
         )
         torch.export.export(dd0, inputs)
 
+    @pytest.mark.parametrize("prec", ["float64", "float32"])  # precision
+    def test_compressed_forward(self, prec) -> None:
+        from deepmd.pt.cxx_op import (
+            ENABLE_CUSTOMIZED_OP,
+        )
+
+        if not ENABLE_CUSTOMIZED_OP:
+            pytest.skip("Custom OP library not built")
+        rng = np.random.default_rng(GLOBAL_SEED)
+        _, _, nnei = self.nlist.shape
+        davg = rng.normal(size=(self.nt, nnei, 4))
+        dstd = rng.normal(size=(self.nt, nnei, 4))
+        dstd = 0.1 + np.abs(dstd)
+
+        dtype = PRECISION_DICT[prec]
+        atol = 1e-5 if prec == "float32" else 1e-10
+        dd0 = DescrptSeTTebd(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+            self.nt,
+            precision=prec,
+            tebd_input_mode="strip",
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        dd0.davg = torch.tensor(davg, dtype=dtype, device=self.device)
+        dd0.dstd = torch.tensor(dstd, dtype=dtype, device=self.device)
+
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
+
+        # uncompressed forward
+        rd0, _, _, _, _ = dd0(coord_ext, atype_ext, nlist)
+        # enable compression and forward again
+        dd0.enable_compression(0.5)
+        rd1, _, _, _, _ = dd0(coord_ext, atype_ext, nlist)
+
+        assert rd0.shape == rd1.shape
+        np.testing.assert_allclose(
+            rd0.detach().cpu().numpy(),
+            rd1.detach().cpu().numpy(),
+            atol=atol,
+        )
+
     @pytest.mark.parametrize("prec", ["float64"])  # precision
     def test_make_fx(self, prec) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)

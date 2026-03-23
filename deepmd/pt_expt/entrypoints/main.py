@@ -330,11 +330,11 @@ def change_bias(
 
     if bias_value is not None:
         if "energy" not in model_to_change.model_output_type():
-            raise ValueError("User-defined bias is only available for energy model!")
+            raise ValueError("User-defined bias is only available for energy models!")
         if len(bias_value) != len(type_map):
             raise ValueError(
-                f"The number of elements in the bias should be the same as "
-                f"that in the type_map: {type_map}."
+                f"The number of elements in the bias ({len(bias_value)}) must match "
+                f"the number of types in type_map ({len(type_map)}): {type_map}."
             )
         old_bias = model_to_change.get_out_bias()
         bias_to_set = torch.tensor(
@@ -466,6 +466,23 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
             numb_batch=FLAGS.numb_batch,
             model_branch=FLAGS.model_branch,
             output=FLAGS.output,
+        )
+    elif FLAGS.command == "compress":
+        from deepmd.pt_expt.entrypoints.compress import (
+            enable_compression,
+        )
+
+        if not FLAGS.input.endswith((".pte", ".pt2")):
+            FLAGS.input = str(Path(FLAGS.input).with_suffix(".pte"))
+        if not FLAGS.output.endswith((".pte", ".pt2")):
+            FLAGS.output = str(Path(FLAGS.output).with_suffix(".pte"))
+        enable_compression(
+            input_file=FLAGS.input,
+            output=FLAGS.output,
+            stride=FLAGS.step,
+            extrapolate=FLAGS.extrapolate,
+            check_frequency=FLAGS.frequency,
+            training_script=FLAGS.training_script,
         )
     else:
         raise RuntimeError(

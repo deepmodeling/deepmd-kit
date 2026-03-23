@@ -22,6 +22,9 @@ from .type_embed import (
 # as it's a stateless utility class
 register_dpmodel_mapping(EnvMat, lambda v: v)
 
+# Register fake tensor implementations for custom tabulate ops
+from deepmd.pt_expt.utils import tabulate_ops  # noqa: F401
+
 __all__ = [
     "AtomExcludeMask",
     "NetworkCollection",
