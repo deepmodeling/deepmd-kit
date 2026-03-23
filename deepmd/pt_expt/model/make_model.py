@@ -199,14 +199,26 @@ def make_model(
 
         @min_nbor_dist.setter
         def min_nbor_dist(self, value: float | None) -> None:
-            from deepmd.pt_expt.utils.env import (
-                DEVICE,
-            )
+            # Infer device from existing buffer or model parameters,
+            # falling back to env.DEVICE only if nothing is available yet.
+            buf = self.__dict__.get("_buffers", {}).get("_min_nbor_dist")
+            if buf is not None:
+                device = buf.device
+            else:
+                p = next(self.parameters(), None) or next(self.buffers(), None)
+                if p is not None:
+                    device = p.device
+                else:
+                    from deepmd.pt_expt.utils.env import (
+                        DEVICE,
+                    )
+
+                    device = DEVICE
 
             t = torch.tensor(
                 -1.0 if value is None else float(value),
                 dtype=torch.float64,
-                device=DEVICE,
+                device=device,
             )
             if "_buffers" in self.__dict__ and "_min_nbor_dist" in self._buffers:
                 self._buffers["_min_nbor_dist"] = t

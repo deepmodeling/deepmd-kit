@@ -211,11 +211,6 @@ class TestModelCompression(unittest.TestCase):
 
         # Compressed forward should match
         dtype = torch.float64
-        coord_ext = torch.tensor(
-            self.coord.detach().cpu().numpy().reshape(1, -1),
-            dtype=dtype,
-            device=self.device,
-        )
         # Build proper inputs for descriptor-level test
         from deepmd.dpmodel.utils.nlist import (
             build_neighbor_list,
