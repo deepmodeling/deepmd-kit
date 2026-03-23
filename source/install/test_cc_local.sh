@@ -36,19 +36,25 @@ cmake --install .
 # Generate PT/PT2 model files for C++ tests.
 # Must run after cmake --build so that libdeepmd_op_pt.so (custom ops) is available.
 if [ "${ENABLE_PYTORCH:-TRUE}" == "TRUE" ]; then
-	# Install the custom op .so to SHARED_LIB_DIR so that `import deepmd.pt` can find it.
-	# This prevents double-registration crashes when gen scripts also search build dirs.
-	_OP_SO=$(find ${BUILD_TMP_DIR} -name 'libdeepmd_op_pt.so' 2>/dev/null | head -1)
-	if [ -n "${_OP_SO}" ]; then
-		_DEEPMD_LIB=$(python -c 'from deepmd.env import SHARED_LIB_DIR; print(SHARED_LIB_DIR)' 2>/dev/null)
-		if [ -n "${_DEEPMD_LIB}" ]; then
-			mkdir -p "${_DEEPMD_LIB}"
-			cp "${_OP_SO}" "${_DEEPMD_LIB}/"
-		fi
-	fi
-	# The custom op .so depends on libdeepmd.so (compute kernels).  Add the
-	# install prefix lib/ to LD_LIBRARY_PATH so dlopen can resolve symbols.
+	# Install the custom op .so to SHARED_LIB_DIR so that `import deepmd.pt`
+	# loads it via cxx_op.py.  The .so depends on libdeepmd.so (compute
+	# kernels) in the install prefix, so add that to LD_LIBRARY_PATH too.
 	export LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${LD_LIBRARY_PATH}
+	python -c '
+import shutil, sys
+from pathlib import Path
+from deepmd.env import SHARED_LIB_DIR
+so = Path("'"${BUILD_TMP_DIR}"'") / "op" / "pt" / "libdeepmd_op_pt.so"
+dst = SHARED_LIB_DIR / so.name
+if not so.exists():
+    print(f"WARNING: {so} not found, custom ops will not be available", file=sys.stderr)
+elif dst.exists() and dst.resolve() == so.resolve():
+    print(f"Already linked: {dst} -> {so}")
+else:
+    SHARED_LIB_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(so), str(dst))
+    print(f"Installed {so} -> {dst}")
+'
 	# When the build uses -fsanitize=leak, the custom op .so requires the LSAN
 	# runtime to be preloaded (otherwise dlopen fails).  We disable leak detection
 	# in the gen scripts to avoid false reports from torch/paddle internals.

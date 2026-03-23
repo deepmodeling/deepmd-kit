@@ -25,29 +25,35 @@ def ensure_inductor_compiler():
 def load_custom_ops():
     """Load custom op library if not already registered.
 
-    Must be called AFTER importing deepmd (which may register ops from the
-    pip-installed library) to avoid double-registration crashes.
+    Normally ``import deepmd.pt`` loads the library from SHARED_LIB_DIR
+    (via ``cxx_op.py``).  This function is a fallback for running gen
+    scripts in environments where the .so hasn't been installed there
+    (e.g. standalone development).  It searches build directories for
+    ``libdeepmd_op_pt.so`` and loads the first one found.
+
+    Must be called AFTER importing deepmd.pt to avoid double-registration.
     """
     import torch
 
     if hasattr(torch.ops, "deepmd") and hasattr(torch.ops.deepmd, "border_op"):
         return
+    # Search common build directory locations relative to this file
     search_base = os.path.realpath(os.path.dirname(__file__))
-    for pattern in [
+    candidates = glob.glob(
         os.path.join(
             search_base, "..", "..", "..", "build*", "op", "pt", "libdeepmd_op_pt.so"
-        ),
+        )
+    ) + glob.glob(
         os.path.join(
             search_base, "..", "..", "build*", "op", "pt", "libdeepmd_op_pt.so"
-        ),
-    ]:
-        libs = glob.glob(pattern)
-        if libs:
-            try:
-                torch.ops.load_library(libs[0])
-            except Exception as e:
-                print(f"NOTE: custom op library not loaded ({e})", file=sys.stderr)  # noqa: T201
-            break
+        )
+    )
+    for lib in candidates:
+        try:
+            torch.ops.load_library(lib)
+        except Exception as e:
+            print(f"NOTE: custom op library not loaded ({e})", file=sys.stderr)  # noqa: T201
+        break
 
 
 def print_cpp_values(label, ae, f, av):
