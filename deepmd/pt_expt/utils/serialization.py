@@ -247,7 +247,11 @@ def _serialize_from_file_pt2(model_file: str) -> dict:
     return model_dict
 
 
-def deserialize_to_file(model_file: str, data: dict) -> None:
+def deserialize_to_file(
+    model_file: str,
+    data: dict,
+    model_json_override: dict | None = None,
+) -> None:
     """Deserialize a dictionary to a .pte or .pt2 model file.
 
     Builds a pt_expt model from the dict, traces it via make_fx,
@@ -260,15 +264,20 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     data : dict
         The dictionary to be deserialized (same format as dpmodel's
         serialize output, with "model" and optionally "model_def_script" keys).
+    model_json_override : dict or None
+        If provided, this dict is stored in model.json instead of ``data``.
+        Used by ``dp compress`` to store the compressed model dict while
+        tracing the uncompressed model (make_fx cannot trace custom ops).
     """
     if model_file.endswith(".pt2"):
-        _deserialize_to_file_pt2(model_file, data)
+        _deserialize_to_file_pt2(model_file, data, model_json_override)
     else:
-        _deserialize_to_file_pte(model_file, data)
+        _deserialize_to_file_pte(model_file, data, model_json_override)
 
 
 def _trace_and_export(
     data: dict,
+    model_json_override: dict | None = None,
 ) -> tuple:
     """Common logic: build model, trace, export.
 
@@ -352,15 +361,20 @@ def _trace_and_export(
         exported = move_to_device_pass(exported, target_device)
 
     # 8. Prepare JSON-serializable model dict
-    data_for_json = deepcopy(data)
+    json_source = model_json_override if model_json_override is not None else data
+    data_for_json = deepcopy(json_source)
     data_for_json = _numpy_to_json_serializable(data_for_json)
 
     return exported, metadata, data_for_json, output_keys
 
 
-def _deserialize_to_file_pte(model_file: str, data: dict) -> None:
+def _deserialize_to_file_pte(
+    model_file: str, data: dict, model_json_override: dict | None = None
+) -> None:
     """Deserialize a dictionary to a .pte model file."""
-    exported, metadata, data_for_json, _output_keys = _trace_and_export(data)
+    exported, metadata, data_for_json, _output_keys = _trace_and_export(
+        data, model_json_override
+    )
 
     extra_files = {
         "model_def_script.json": json.dumps(metadata),
@@ -370,7 +384,9 @@ def _deserialize_to_file_pte(model_file: str, data: dict) -> None:
     torch.export.save(exported, model_file, extra_files=extra_files)
 
 
-def _deserialize_to_file_pt2(model_file: str, data: dict) -> None:
+def _deserialize_to_file_pt2(
+    model_file: str, data: dict, model_json_override: dict | None = None
+) -> None:
     """Deserialize a dictionary to a .pt2 model file (AOTInductor).
 
     Uses torch._inductor.aoti_compile_and_package to compile the exported
@@ -383,7 +399,9 @@ def _deserialize_to_file_pt2(model_file: str, data: dict) -> None:
         aoti_compile_and_package,
     )
 
-    exported, metadata, data_for_json, output_keys = _trace_and_export(data)
+    exported, metadata, data_for_json, output_keys = _trace_and_export(
+        data, model_json_override
+    )
 
     # Compile via AOTInductor into a .pt2 package
     aoti_compile_and_package(exported, package_path=model_file)

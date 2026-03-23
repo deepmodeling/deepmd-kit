@@ -345,6 +345,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable
         self.precision = precision
+        self.compress = False
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -558,7 +559,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "dpa1",
-            "@version": 2,
+            "@version": 3 if self.compress else 2,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -603,13 +604,28 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         }
         if obj.tebd_input_mode in ["strip"]:
             data.update({"embeddings_strip": obj.embeddings_strip.serialize()})
+        if self.compress:
+            compress_dict: dict = {
+                "@variables": {
+                    "type_embd_data": to_numpy_array(self.type_embd_data),
+                },
+                "geo_compress": self.geo_compress,
+            }
+            if self.geo_compress:
+                compress_dict["@variables"]["compress_data"] = [
+                    to_numpy_array(d) for d in self.compress_data
+                ]
+                compress_dict["@variables"]["compress_info"] = [
+                    to_numpy_array(i) for i in self.compress_info
+                ]
+            data["compress"] = compress_dict
         return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptDPA1":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        check_version_compatibility(data.pop("@version"), 3, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -617,6 +633,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         type_embedding = data.pop("type_embedding")
         attention_layers = data.pop("attention_layers")
         env_mat = data.pop("env_mat")
+        compress = data.pop("compress", None)
         tebd_input_mode = data["tebd_input_mode"]
         if tebd_input_mode in ["strip"]:
             embeddings_strip = data.pop("embeddings_strip")
@@ -638,7 +655,19 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         obj.se_atten.dpa1_attention = NeighborGatedAttention.deserialize(
             attention_layers
         )
+        if compress is not None:
+            obj._load_compress_data(compress)
         return obj
+
+    def _load_compress_data(self, compress: dict) -> None:
+        """Load compression state from serialized data."""
+        variables = compress["@variables"]
+        self.type_embd_data = variables["type_embd_data"]
+        self.geo_compress = compress.get("geo_compress", False)
+        if self.geo_compress:
+            self.compress_data = variables["compress_data"]
+            self.compress_info = variables["compress_info"]
+        self.compress = True
 
     @classmethod
     def update_sel(

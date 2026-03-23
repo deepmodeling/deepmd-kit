@@ -626,10 +626,11 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
     def deserialize(cls, data: dict) -> "DescrptDPA2":
         data = data.copy()
         version = data.pop("@version")
-        check_version_compatibility(version, 3, 1)
+        check_version_compatibility(version, 4, 1)
         data.pop("@class")
         data.pop("type")
         repinit_variable = data.pop("repinit_variable").copy()
+        repinit_variable.pop("compress", None)  # pt uses state_dict for compression
         repformers_variable = data.pop("repformers_variable").copy()
         repinit_three_body_variable = (
             data.pop("repinit_three_body_variable").copy()

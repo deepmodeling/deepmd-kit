@@ -597,6 +597,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         self.rcut_smth = self.repinit.get_rcut_smth()
         self.trainable = trainable
         self.add_tebd_to_repinit_out = add_tebd_to_repinit_out
+        self.compress = False
 
         self.repinit_out_dim = self.repinit.dim_out
         if self.repinit_args.use_three_body:
@@ -937,7 +938,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "dpa2",
-            "@version": 3,
+            "@version": 4 if self.compress else 3,
             "ntypes": self.ntypes,
             "repinit_args": self.repinit_args.serialize(),
             "repformer_args": self.repformer_args.serialize(),
@@ -972,6 +973,21 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             repinit_variable.update(
                 {"embeddings_strip": repinit.embeddings_strip.serialize()}
             )
+        if self.compress:
+            compress_dict: dict = {
+                "@variables": {
+                    "type_embd_data": to_numpy_array(self.type_embd_data),
+                },
+                "geo_compress": self.geo_compress,
+            }
+            if self.geo_compress:
+                compress_dict["@variables"]["compress_data"] = [
+                    to_numpy_array(d) for d in self.compress_data
+                ]
+                compress_dict["@variables"]["compress_info"] = [
+                    to_numpy_array(i) for i in self.compress_info
+                ]
+            repinit_variable["compress"] = compress_dict
         repformers_variable = {
             "g2_embd": repformers.g2_embd.serialize(),
             "repformer_layers": [layer.serialize() for layer in repformers.layers],
@@ -1015,7 +1031,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
     def deserialize(cls, data: dict) -> "DescrptDPA2":
         data = data.copy()
         version = data.pop("@version")
-        check_version_compatibility(version, 3, 1)
+        check_version_compatibility(version, 4, 1)
         data.pop("@class")
         data.pop("type")
         repinit_variable = data.pop("repinit_variable").copy()
@@ -1039,6 +1055,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         # compat with version 1
         if "use_tebd_bias" not in data:
             data["use_tebd_bias"] = True
+        compress = repinit_variable.pop("compress", None)
         obj = cls(**data)
         obj.type_embedding = TypeEmbedNet.deserialize(type_embedding)
         if add_tebd_to_repinit_out:
@@ -1088,7 +1105,19 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         obj.repformers.layers = [
             RepformerLayer.deserialize(layer) for layer in repformer_layers
         ]
+        if compress is not None:
+            obj._load_compress_data(compress)
         return obj
+
+    def _load_compress_data(self, compress: dict) -> None:
+        """Load compression state from serialized data."""
+        variables = compress["@variables"]
+        self.type_embd_data = variables["type_embd_data"]
+        self.geo_compress = compress.get("geo_compress", False)
+        if self.geo_compress:
+            self.compress_data = variables["compress_data"]
+            self.compress_info = variables["compress_info"]
+        self.compress = True
 
     @classmethod
     def update_sel(
