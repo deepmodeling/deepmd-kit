@@ -250,16 +250,19 @@ void fold_back(std::vector<VT>& out,
                const int nall,
                const int ndim,
                const int nframes = 1) {
-  out.resize(static_cast<size_t>(nframes) * nloc * ndim);
+  const ptrdiff_t nloc_ = nloc;
+  const ptrdiff_t nall_ = nall;
+  const ptrdiff_t ndim_ = ndim;
+  out.resize(static_cast<size_t>(nframes) * nloc_ * ndim_);
   for (ptrdiff_t kk = 0; kk < nframes; ++kk) {
-    std::copy(in.begin() + kk * nall * ndim,
-              in.begin() + kk * nall * ndim + nloc * ndim,
-              out.begin() + kk * nloc * ndim);
-    for (ptrdiff_t ii = nloc; ii < nall; ++ii) {
+    std::copy(in.begin() + kk * nall_ * ndim_,
+              in.begin() + kk * nall_ * ndim_ + nloc_ * ndim_,
+              out.begin() + kk * nloc_ * ndim_);
+    for (ptrdiff_t ii = nloc_; ii < nall_; ++ii) {
       ptrdiff_t out_idx = mapping[ii];
-      for (ptrdiff_t dd = 0; dd < ndim; ++dd) {
-        out[kk * nloc * ndim + out_idx * ndim + dd] +=
-            in[kk * nall * ndim + ii * ndim + dd];
+      for (ptrdiff_t dd = 0; dd < ndim_; ++dd) {
+        out[kk * nloc_ * ndim_ + out_idx * ndim_ + dd] +=
+            in[kk * nall_ * ndim_ + ii * ndim_ + dd];
       }
     }
   }
