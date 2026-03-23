@@ -277,15 +277,14 @@ class GeneralFitting(NativeOP, BaseFitting):
                             f"numb_fparam > 0 but no fparam data is provided "
                             f"for system {ii}."
                         )
-                cat_data = np.concatenate(
-                    [frame["fparam"] for frame in sampled], axis=0
-                )
-                cat_data = np.reshape(cat_data, [-1, self.numb_fparam])
+                xp_fp = array_api_compat.array_namespace(sampled[0]["fparam"])
+                cat_data = xp_fp.concat([frame["fparam"] for frame in sampled], axis=0)
+                cat_data = xp_fp.reshape(cat_data, (-1, self.numb_fparam))
                 fparam_stats = [
                     StatItem(
                         number=cat_data.shape[0],
-                        sum=np.sum(cat_data[:, ii]),
-                        squared_sum=np.sum(cat_data[:, ii] ** 2),
+                        sum=float(xp_fp.sum(cat_data[:, ii])),
+                        squared_sum=float(xp_fp.sum(cat_data[:, ii] ** 2)),
                     )
                     for ii in range(self.numb_fparam)
                 ]
@@ -335,22 +334,23 @@ class GeneralFitting(NativeOP, BaseFitting):
                             f"numb_aparam > 0 but no aparam data is provided "
                             f"for system {ii}."
                         )
+                xp_ap = array_api_compat.array_namespace(sampled[0]["aparam"])
                 sys_sumv = []
                 sys_sumv2 = []
                 sys_sumn = []
                 for ss_ in [frame["aparam"] for frame in sampled]:
-                    ss = np.reshape(ss_, [-1, self.numb_aparam])
-                    sys_sumv.append(np.sum(ss, axis=0))
-                    sys_sumv2.append(np.sum(ss * ss, axis=0))
+                    ss = xp_ap.reshape(ss_, (-1, self.numb_aparam))
+                    sys_sumv.append(xp_ap.sum(ss, axis=0))
+                    sys_sumv2.append(xp_ap.sum(ss * ss, axis=0))
                     sys_sumn.append(ss.shape[0])
-                sumv = np.sum(np.stack(sys_sumv), axis=0)
-                sumv2 = np.sum(np.stack(sys_sumv2), axis=0)
+                sumv = xp_ap.sum(xp_ap.stack(sys_sumv), axis=0)
+                sumv2 = xp_ap.sum(xp_ap.stack(sys_sumv2), axis=0)
                 sumn = sum(sys_sumn)
                 aparam_stats = [
                     StatItem(
                         number=sumn,
-                        sum=sumv[ii],
-                        squared_sum=sumv2[ii],
+                        sum=float(sumv[ii]),
+                        squared_sum=float(sumv2[ii]),
                     )
                     for ii in range(self.numb_aparam)
                 ]

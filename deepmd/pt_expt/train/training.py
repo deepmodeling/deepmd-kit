@@ -6,6 +6,7 @@ pt backend's ``DpLoaderSet`` + ``DataLoader``.  NumPy batches are
 converted to torch tensors at the boundary.
 """
 
+import datetime
 import functools
 import logging
 import time
@@ -33,6 +34,7 @@ from deepmd.dpmodel.utils.learning_rate import (
     LearningRateExp,
 )
 from deepmd.loggers.training import (
+    format_training_message,
     format_training_message_per_task,
 )
 from deepmd.pt_expt.loss import (
@@ -823,6 +825,7 @@ class Trainer:
 
         self.wrapper.train()
         wall_start = time.time()
+        last_log_time = wall_start
 
         for step_id in range(self.start_step, self.num_steps):
             cur_lr = float(self.lr_schedule.value(step_id))
@@ -883,17 +886,40 @@ class Trainer:
                         }
 
                 # wall-clock time
-                wall_elapsed = time.time() - wall_start
+                current_time = time.time()
+                wall_elapsed = current_time - wall_start
+                interval_wall_time = current_time - last_log_time
+                last_log_time = current_time
                 if self.timing_in_training:
                     step_time = t_end - t_start
-                    log.info(
-                        "step=%d  wall=%.2fs  step_time=%.4fs",
-                        display_step_id,
-                        wall_elapsed,
-                        step_time,
+                    steps_completed_since_restart = max(
+                        1,
+                        display_step_id - self.start_step,
                     )
+                    eta = int(
+                        (self.num_steps - display_step_id)
+                        / steps_completed_since_restart
+                        * wall_elapsed
+                    )
+                    log.info(
+                        format_training_message(
+                            batch=display_step_id,
+                            wall_time=interval_wall_time,
+                            eta=eta,
+                            current_time=datetime.datetime.fromtimestamp(
+                                current_time,
+                                tz=datetime.timezone.utc,
+                            ).astimezone(),
+                        )
+                    )
+                    log.info("step=%d  step_time=%.4fs", display_step_id, step_time)
                 else:
-                    log.info("step=%d  wall=%.2fs", display_step_id, wall_elapsed)
+                    log.info(
+                        format_training_message(
+                            batch=display_step_id,
+                            wall_time=interval_wall_time,
+                        )
+                    )
 
                 # log
                 log.info(

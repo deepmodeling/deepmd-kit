@@ -3109,6 +3109,18 @@ def loss_ener() -> list[Argument]:
         "Formula: loss = 0.5 * (error**2) if \\|error\\| <= D else D * (\\|error\\| - 0.5 * D). "
     )
     doc_huber_delta = "The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss. "
+    doc_loss_func = (
+        "Loss function type for energy, force, and virial terms. "
+        "Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss). "
+        "MAE loss is less sensitive to outliers compared to MSE loss. "
+        "Future extensions may support additional loss types."
+    )
+    doc_f_use_norm = (
+        "If true, use L2 norm of force vectors for loss calculation when loss_func='mae' or use_huber is True. "
+        "Instead of computing loss on individual force components, computes loss on ||F_pred - F_label||_2 for each atom. "
+        "This treats the force vector as a whole rather than three independent components. "
+        "Only effective when loss_func='mae' or use_huber=True."
+    )
     return [
         Argument(
             "start_pref_e",
@@ -3231,6 +3243,20 @@ def loss_ener() -> list[Argument]:
             doc=doc_use_huber,
         ),
         Argument(
+            "loss_func",
+            str,
+            optional=True,
+            default="mse",
+            doc=doc_loss_func,
+        ),
+        Argument(
+            "f_use_norm",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_f_use_norm,
+        ),
+        Argument(
             "huber_delta",
             float,
             optional=True,
@@ -3256,6 +3282,12 @@ def loss_ener_spin() -> list[Argument]:
     doc_limit_pref_pf = limit_pref("atom_pref")
     doc_relative_f = "If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label."
     doc_enable_atom_ener_coeff = r"If true, the energy will be computed as \sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
+    doc_loss_func = (
+        "Loss function type for energy, force, and virial terms. "
+        "Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss). "
+        "MAE loss is less sensitive to outliers compared to MSE loss. "
+        "Future extensions may support additional loss types."
+    )
     return [
         Argument(
             "start_pref_e",
@@ -3348,6 +3380,13 @@ def loss_ener_spin() -> list[Argument]:
             optional=True,
             default=False,
             doc=doc_enable_atom_ener_coeff,
+        ),
+        Argument(
+            "loss_func",
+            str,
+            optional=True,
+            default="mse",
+            doc=doc_loss_func,
         ),
     ]
 

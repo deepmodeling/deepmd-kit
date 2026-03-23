@@ -225,7 +225,10 @@ def serialize_from_file(model_file: str) -> dict:
 
 
 def deserialize_to_file(
-    model_file: str, data: dict, model_params: dict | None = None
+    model_file: str,
+    data: dict,
+    model_params: dict | None = None,
+    model_json_override: dict | None = None,
 ) -> None:
     """Deserialize a dictionary to a .pte model file.
 
@@ -243,6 +246,10 @@ def deserialize_to_file(
         Original model config (the dict passed to ``get_model``).
         If provided, embedded in the .pte so that ``--use-pretrain-script``
         can extract descriptor/fitting params at finetune time.
+    model_json_override : dict or None
+        If provided, this dict is stored in model.json instead of ``data``.
+        Used by ``dp compress`` to store the compressed model dict while
+        tracing the uncompressed model (make_fx cannot trace custom ops).
     """
     from deepmd.pt_expt.model.model import (
         BaseModel,
@@ -293,7 +300,8 @@ def deserialize_to_file(
         deepcopy,
     )
 
-    data_for_json = deepcopy(data)
+    json_source = model_json_override if model_json_override is not None else data
+    data_for_json = deepcopy(json_source)
     data_for_json = _numpy_to_json_serializable(data_for_json)
 
     extra_files = {
