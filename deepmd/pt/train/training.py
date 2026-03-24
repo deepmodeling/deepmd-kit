@@ -1732,10 +1732,6 @@ def get_loss(
         loss_params["starter_learning_rate"] = start_lr
         loss_params["numb_dos"] = _model.model_output_def()["dos"].output_size
         return DOSLoss(**loss_params)
-    elif loss_type == "xas":
-        loss_params["starter_learning_rate"] = start_lr
-        loss_params["numb_xas"] = _model.model_output_def()["xas"].output_size
-        return XASLoss(**loss_params)
     elif loss_type == "ener_spin":
         loss_params["starter_learning_rate"] = start_lr
         return EnergySpinLoss(**loss_params)
@@ -1761,6 +1757,10 @@ def get_loss(
         loss_params["var_name"] = var_name
         loss_params["intensive"] = intensive
         return PropertyLoss(**loss_params)
+    elif loss_type == "xas":
+        loss_params["task_dim"] = _model.get_task_dim()
+        loss_params["var_name"] = _model.get_var_name()
+        return XASLoss(**loss_params)
     else:
         loss_params["starter_learning_rate"] = start_lr
         return TaskLoss.get_class_by_type(loss_type).get_loss(loss_params)

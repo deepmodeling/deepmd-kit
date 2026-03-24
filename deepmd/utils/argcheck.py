@@ -1912,64 +1912,6 @@ def fitting_dos() -> list[Argument]:
     ]
 
 
-@fitting_args_plugin.register("xas", doc=doc_only_pt_supported)
-def fitting_xas() -> list[Argument]:
-    doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams. Can be used to encode edge type information."
-    doc_numb_aparam = "The dimension of the atomic parameter."
-    doc_default_fparam = "The default frame parameter value."
-    doc_dim_case_embd = "The dimension of the case embedding."
-    doc_neuron = "The number of neurons in each hidden layer of the fitting net."
-    doc_activation_function = f"The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
-    doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
-    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection.'
-    doc_trainable = "Whether the parameters in the fitting net are trainable."
-    doc_rcond = "The condition number for the initial bias fitting."
-    doc_seed = "Random seed for parameter initialization."
-    doc_numb_xas = "The number of grid points on the XAS energy axis (ΔE space)."
-
-    return [
-        Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
-        Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
-        Argument(
-            "default_fparam",
-            list[float],
-            optional=True,
-            default=None,
-            doc=doc_default_fparam,
-        ),
-        Argument(
-            "dim_case_embd",
-            int,
-            optional=True,
-            default=0,
-            doc=doc_dim_case_embd,
-        ),
-        Argument(
-            "neuron", list[int], optional=True, default=[120, 120, 120], doc=doc_neuron
-        ),
-        Argument(
-            "activation_function",
-            str,
-            optional=True,
-            default="tanh",
-            doc=doc_activation_function,
-        ),
-        Argument("precision", str, optional=True, default="float64", doc=doc_precision),
-        Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
-        Argument(
-            "trainable",
-            [list[bool], bool],
-            optional=True,
-            default=True,
-            doc=doc_trainable,
-        ),
-        Argument(
-            "rcond", [float, type(None)], optional=True, default=None, doc=doc_rcond
-        ),
-        Argument("seed", [int, None], optional=True, doc=doc_seed),
-        Argument("numb_xas", int, optional=True, default=500, doc=doc_numb_xas),
-    ]
-
 
 @fitting_args_plugin.register("property", doc=doc_only_pt_supported)
 def fitting_property() -> list[Argument]:
@@ -2290,7 +2232,6 @@ def model_args(exclude_hybrid: bool = False) -> list[Argument]:
     doc_compress_config = "Model compression configurations"
     doc_spin = "The settings for systems with spin."
     doc_atom_exclude_types = "Exclude the atomic contribution of the listed atom types"
-    doc_absorbing_type = "The element symbol of the absorbing atom type for XAS fitting (e.g. 'Fe'). Only used when fitting_net type is 'xas'."
     doc_pair_exclude_types = "The atom pairs of the listed types are not treated to be neighbors, i.e. they do not see each other."
     doc_preset_out_bias = "The preset bias of the atomic output. Note that the set_davg_zero should be set to true. The bias is provided as a dict. Taking the energy model that has three atom types for example, the `preset_out_bias` may be given as `{ 'energy': [null, 0., 1.] }`. In this case the energy bias of type 1 and 2 are set to 0. and 1., respectively. A dipole model with two atom types may set `preset_out_bias` as `{ 'dipole': [null, [0., 1., 2.]] }`"
     doc_finetune_head = (
@@ -2354,13 +2295,6 @@ def model_args(exclude_hybrid: bool = False) -> list[Argument]:
                 optional=True,
                 default=[],
                 doc=doc_only_pt_supported + doc_atom_exclude_types,
-            ),
-            Argument(
-                "absorbing_type",
-                str,
-                optional=True,
-                default=None,
-                doc=doc_only_pt_supported + doc_absorbing_type,
             ),
             Argument(
                 "preset_out_bias",
@@ -3532,41 +3466,16 @@ def loss_dos() -> list[Argument]:
     ]
 
 
+
 @loss_args_plugin.register("xas", doc=doc_only_pt_supported)
 def loss_xas() -> list[Argument]:
-    doc_start_pref_xas = start_pref("XAS spectrum (mean over absorbing atoms)")
-    doc_limit_pref_xas = limit_pref("XAS spectrum (mean over absorbing atoms)")
-    doc_start_pref_cdf = start_pref("Cumulative Distribution Function of XAS")
-    doc_limit_pref_cdf = limit_pref("Cumulative Distribution Function of XAS")
+    doc_loss_func = "The loss function to minimize: 'smooth_mae' (default), 'mae', 'mse', 'rmse'."
+    doc_metric = "Metrics to display during training. Supported: 'mae', 'rmse'."
+    doc_beta = "Beta parameter for smooth_l1 loss."
     return [
-        Argument(
-            "start_pref_xas",
-            [float, int],
-            optional=True,
-            default=1.0,
-            doc=doc_start_pref_xas,
-        ),
-        Argument(
-            "limit_pref_xas",
-            [float, int],
-            optional=True,
-            default=1.0,
-            doc=doc_limit_pref_xas,
-        ),
-        Argument(
-            "start_pref_cdf",
-            [float, int],
-            optional=True,
-            default=0.0,
-            doc=doc_start_pref_cdf,
-        ),
-        Argument(
-            "limit_pref_cdf",
-            [float, int],
-            optional=True,
-            default=0.0,
-            doc=doc_limit_pref_cdf,
-        ),
+        Argument("loss_func", str, optional=True, default="smooth_mae", doc=doc_loss_func),
+        Argument("metric", list, optional=True, default=["mae"], doc=doc_metric),
+        Argument("beta", float, optional=True, default=1.0, doc=doc_beta),
     ]
 
 

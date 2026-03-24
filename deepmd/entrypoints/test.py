@@ -894,6 +894,9 @@ def test_property(
     if dp.get_dim_aparam() > 0:
         data.add("aparam", dp.get_dim_aparam(), atomic=True, must=True, high_prec=False)
 
+    # sel_type: optional per-frame type index for element-wise mean reduction (XAS)
+    data.add("sel_type", 1, atomic=False, must=False, high_prec=False, default=float(-1))
+
     test_data = data.get_test()
     mixed_type = data.mixed_type
     natoms = len(test_data["type"][0])
@@ -918,17 +921,39 @@ def test_property(
     else:
         aparam = None
 
+    # detect whether this system provides sel_type (XAS-style reduction)
+    sel_type_raw = test_data["sel_type"][:numb_test, 0]  # [numb_test]
+    has_sel_type = bool((sel_type_raw >= 0).all())
+
+    # for sel_type reduction we need per-atom outputs
+    eval_atomic = has_atom_property or has_sel_type
     ret = dp.eval(
         coord,
         box,
         atype,
         fparam=fparam,
         aparam=aparam,
-        atomic=has_atom_property,
+        atomic=eval_atomic,
         mixed_type=mixed_type,
     )
 
-    property = ret[0]
+    if has_sel_type:
+        # ret[1]: per-atom property [numb_test, natoms, task_dim]
+        atom_prop = ret[1].reshape([numb_test, natoms, dp.task_dim])
+        # atype for all frames
+        if mixed_type:
+            atype_frames = atype  # [numb_test, natoms]
+        else:
+            atype_frames = np.tile(atype, (numb_test, 1))  # [numb_test, natoms]
+        sel_type_int = sel_type_raw.astype(int)
+        property = np.zeros([numb_test, dp.task_dim], dtype=atom_prop.dtype)
+        for i in range(numb_test):
+            t = sel_type_int[i]
+            mask = (atype_frames[i] == t)  # [natoms]
+            count = max(mask.sum(), 1)
+            property[i] = atom_prop[i][mask].sum(axis=0) / count
+    else:
+        property = ret[0]
 
     property = property.reshape([numb_test, dp.task_dim])
 

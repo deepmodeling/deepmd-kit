@@ -20,9 +20,6 @@ from .polarizability_fitting import (
 from .property_fitting import (
     PropertyFittingNet,
 )
-from .xas_fitting import (
-    XASFittingNet,
-)
 
 __all__ = [
     "DOSFittingNet",
@@ -31,6 +28,5 @@ __all__ = [
     "InvarFitting",
     "PolarFitting",
     "PropertyFittingNet",
-    "XASFittingNet",
     "make_base_fitting",
 ]

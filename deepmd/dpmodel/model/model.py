@@ -43,9 +43,6 @@ from deepmd.dpmodel.model.property_model import (
 from deepmd.dpmodel.model.spin_model import (
     SpinModel,
 )
-from deepmd.dpmodel.model.xas_model import (
-    XASModel,
-)
 from deepmd.utils.spin import (
     Spin,
 )
@@ -100,8 +97,6 @@ def get_standard_model(data: dict) -> EnergyModel:
         modelcls = PolarModel
     elif fitting_net_type == "dos":
         modelcls = DOSModel
-    elif fitting_net_type == "xas":
-        modelcls = XASModel
     elif fitting_net_type in ["ener", "direct_force_ener"]:
         modelcls = EnergyModel
     elif fitting_net_type == "property":
@@ -116,8 +111,6 @@ def get_standard_model(data: dict) -> EnergyModel:
         "atom_exclude_types": atom_exclude_types,
         "pair_exclude_types": pair_exclude_types,
     }
-    if fitting_net_type == "xas":
-        model_kwargs["absorbing_type"] = data["absorbing_type"]
     model = modelcls(**model_kwargs)
     return model
 

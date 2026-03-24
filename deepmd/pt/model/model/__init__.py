@@ -73,10 +73,6 @@ from .spin_model import (
     SpinEnergyModel,
     SpinModel,
 )
-from .xas_model import (
-    XASModel,
-)
-
 
 def _get_standard_model_components(model_params: dict, ntypes: int) -> tuple:
     if "type_embedding" in model_params:
@@ -269,8 +265,6 @@ def get_standard_model(model_params: dict) -> BaseModel:
         modelcls = PolarModel
     elif fitting_net_type == "dos":
         modelcls = DOSModel
-    elif fitting_net_type == "xas":
-        modelcls = XASModel
     elif fitting_net_type in ["ener", "direct_force_ener"]:
         modelcls = EnergyModel
     elif fitting_net_type == "property":
@@ -287,8 +281,6 @@ def get_standard_model(model_params: dict) -> BaseModel:
         "preset_out_bias": preset_out_bias,
         "data_stat_protect": data_stat_protect,
     }
-    if fitting_net_type == "xas":
-        model_kwargs["absorbing_type"] = model_params["absorbing_type"]
     model = modelcls(**model_kwargs)
     if model_params.get("hessian_mode"):
         model.enable_hessian()
@@ -323,7 +315,6 @@ __all__ = [
     "PolarModel",
     "SpinEnergyModel",
     "SpinModel",
-    "XASModel",
     "get_model",
     "make_hessian_model",
     "make_model",

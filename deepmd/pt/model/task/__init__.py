@@ -27,9 +27,6 @@ from .property import (
 from .type_predict import (
     TypePredictNet,
 )
-from .xas import (
-    XASFittingNet,
-)
 
 __all__ = [
     "BaseFitting",
@@ -42,5 +39,4 @@ __all__ = [
     "PolarFittingNet",
     "PropertyFittingNet",
     "TypePredictNet",
-    "XASFittingNet",
 ]
