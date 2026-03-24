@@ -9,6 +9,9 @@ from copy import (
 from pathlib import (
     Path,
 )
+from unittest.mock import (
+    patch,
+)
 
 import numpy as np
 import torch
@@ -20,8 +23,15 @@ from deepmd.pt.entrypoints.main import train as train_entry
 from deepmd.pt.utils.finetune import (
     get_finetune_rules,
 )
+from deepmd.pt.utils.multi_task import (
+    preprocess_shared_params,
+)
+from deepmd.utils.argcheck import (
+    normalize,
+)
 from deepmd.utils.compat import (
     convert_optimizer_v31_to_v32,
+    update_deepmd_input,
 )
 
 from .model.test_permutation import (
@@ -747,6 +757,98 @@ class TestModelChangeOutBiasFittingStat(unittest.TestCase):
         assert not np.allclose(fparam_inv_std_a, 1.0), (
             "fparam_inv_std is still ones — stat was not computed"
         )
+
+
+class TestFullValidation(unittest.TestCase):
+    def setUp(self) -> None:
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["training"]["numb_steps"] = 2
+        self.config["training"]["save_freq"] = 100
+        self.config["training"]["disp_training"] = False
+        self.config["validating"] = {
+            "full_validation": True,
+            "validation_freq": 1,
+            "save_best": True,
+            "validation_metric": "E:MAE",
+            "full_val_file": "val.log",
+            "full_val_start": 0.0,
+        }
+
+    def tearDown(self) -> None:
+        for f in os.listdir("."):
+            if (f.startswith("model") or f.startswith("best")) and f.endswith(".pt"):
+                os.remove(f)
+            if f in ["lcurve.out", "val.log", "checkpoint"]:
+                os.remove(f)
+            if f.startswith("stat_files"):
+                shutil.rmtree(f)
+
+    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    def test_full_validation_rotates_best_checkpoint(self, mocked_eval) -> None:
+        mocked_eval.side_effect = [
+            {"mae_e_per_atom": 2.0},
+            {"mae_e_per_atom": 1.0},
+        ]
+        Path("best.ckpt-999.pt").touch()
+        trainer = get_trainer(deepcopy(self.config))
+        trainer.run()
+
+        self.assertFalse(Path("best.ckpt-999.pt").exists())
+        self.assertFalse(Path("best.ckpt-1.pt").exists())
+        self.assertTrue(Path("best.ckpt-2.pt").exists())
+        train_infos = trainer._get_inner_module().train_infos
+        self.assertEqual(train_infos["full_validation_best_step"], 2)
+        self.assertEqual(train_infos["full_validation_best_metric"], 1.0)
+        self.assertNotIn("full_validation_best_path", train_infos)
+        with open("val.log") as fp:
+            val_lines = [line for line in fp.readlines() if not line.startswith("#")]
+        self.assertEqual(val_lines[0].split()[1], "2000.0")
+        self.assertEqual(val_lines[1].split()[1], "1000.0")
+
+    def test_full_validation_rejects_spin_loss(self) -> None:
+        config = deepcopy(self.config)
+        config["loss"]["type"] = "ener_spin"
+        with self.assertRaisesRegex(ValueError, "spin-energy"):
+            get_trainer(config)
+
+    def test_full_validation_rejects_multitask(self) -> None:
+        multitask_json = str(Path(__file__).parent / "water/multitask.json")
+        with open(multitask_json) as f:
+            config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        for model_key in config["training"]["data_dict"]:
+            config["training"]["data_dict"][model_key]["training_data"]["systems"] = (
+                data_file
+            )
+            config["training"]["data_dict"][model_key]["validation_data"]["systems"] = (
+                data_file
+            )
+            config["training"]["data_dict"][model_key]["stat_file"] = (
+                f"stat_files_{model_key}"
+            )
+        config["training"]["numb_steps"] = 1
+        config["training"]["save_freq"] = 1
+        config["validating"] = {
+            "full_validation": True,
+            "validation_freq": 1,
+            "save_best": True,
+            "validation_metric": "E:MAE",
+            "full_val_file": "val.log",
+            "full_val_start": 0.0,
+        }
+        config["model"], shared_links = preprocess_shared_params(config["model"])
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config, multi_task=True)
+
+        with self.assertRaisesRegex(ValueError, "multi-task"):
+            get_trainer(config, shared_links=shared_links)
 
 
 if __name__ == "__main__":
