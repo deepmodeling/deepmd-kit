@@ -48,7 +48,7 @@ def _json_to_numpy(model_obj: dict) -> dict:
 def _make_sample_inputs(
     model: torch.nn.Module,
     nframes: int = 1,
-    nloc: int = 2,
+    nloc: int = 7,
 ) -> tuple[torch.Tensor, ...]:
     """Create sample inputs for tracing forward_lower.
 
@@ -110,23 +110,23 @@ def _make_sample_inputs(
     extended_coord = extended_coord.reshape(nframes, -1, 3)
 
     # Convert to torch tensors
-    from deepmd.pt_expt.utils.env import (
-        DEVICE,
-    )
+    import deepmd.pt_expt.utils.env as _env
 
-    ext_coord = torch.tensor(extended_coord, dtype=torch.float64, device=DEVICE)
-    ext_atype = torch.tensor(extended_atype, dtype=torch.int64, device=DEVICE)
-    nlist_t = torch.tensor(nlist, dtype=torch.int64, device=DEVICE)
-    mapping_t = torch.tensor(mapping, dtype=torch.int64, device=DEVICE)
+    ext_coord = torch.tensor(extended_coord, dtype=torch.float64, device=_env.DEVICE)
+    ext_atype = torch.tensor(extended_atype, dtype=torch.int64, device=_env.DEVICE)
+    nlist_t = torch.tensor(nlist, dtype=torch.int64, device=_env.DEVICE)
+    mapping_t = torch.tensor(mapping, dtype=torch.int64, device=_env.DEVICE)
 
     if dim_fparam > 0:
-        fparam = torch.zeros(nframes, dim_fparam, dtype=torch.float64, device=DEVICE)
+        fparam = torch.zeros(
+            nframes, dim_fparam, dtype=torch.float64, device=_env.DEVICE
+        )
     else:
         fparam = None
 
     if dim_aparam > 0:
         aparam = torch.zeros(
-            nframes, nloc, dim_aparam, dtype=torch.float64, device=DEVICE
+            nframes, nloc, dim_aparam, dtype=torch.float64, device=_env.DEVICE
         )
     else:
         aparam = None
@@ -194,19 +194,20 @@ def _collect_metadata(model: torch.nn.Module) -> dict:
         "dim_aparam": model.get_dim_aparam(),
         "mixed_types": model.mixed_types(),
         "sel_type": model.get_sel_type(),
+        "has_default_fparam": model.has_default_fparam(),
         "fitting_output_defs": fitting_output_defs,
     }
 
 
 def serialize_from_file(model_file: str) -> dict:
-    """Serialize a .pte model file to a dictionary.
+    """Serialize a .pte or .pt2 model file to a dictionary.
 
-    Reads the model dict stored in the extra_files of the .pte archive.
+    Reads the model dict stored in the model archive.
 
     Parameters
     ----------
     model_file : str
-        The .pte model file to be serialized.
+        The model file to be serialized (.pte or .pt2).
 
     Returns
     -------
@@ -215,6 +216,14 @@ def serialize_from_file(model_file: str) -> dict:
         ``model_params.json``, it is included under the
         ``"model_params"`` key.
     """
+    if model_file.endswith(".pt2"):
+        return _serialize_from_file_pt2(model_file)
+    else:
+        return _serialize_from_file_pte(model_file)
+
+
+def _serialize_from_file_pte(model_file: str) -> dict:
+    """Serialize a .pte model file to a dictionary."""
     extra_files = {"model.json": "", "model_params.json": ""}
     torch.export.load(model_file, extra_files=extra_files)
     model_dict = json.loads(extra_files["model.json"])
@@ -224,21 +233,44 @@ def serialize_from_file(model_file: str) -> dict:
     return model_dict
 
 
+def _serialize_from_file_pt2(model_file: str) -> dict:
+    """Serialize a .pt2 model file to a dictionary.
+
+    Reads the model dict stored in the extra/ directory of the .pt2 ZIP archive.
+    """
+    import zipfile
+
+    with zipfile.ZipFile(model_file, "r") as zf:
+        if "extra/model.json" not in zf.namelist():
+            raise ValueError(
+                f"Invalid .pt2 file '{model_file}': missing 'extra/model.json'"
+            )
+        model_json = zf.read("extra/model.json").decode("utf-8")
+        model_params_json = ""
+        if "extra/model_params.json" in zf.namelist():
+            model_params_json = zf.read("extra/model_params.json").decode("utf-8")
+    model_dict = json.loads(model_json)
+    model_dict = _json_to_numpy(model_dict)
+    if model_params_json:
+        model_dict["model_params"] = json.loads(model_params_json)
+    return model_dict
+
+
 def deserialize_to_file(
     model_file: str,
     data: dict,
     model_params: dict | None = None,
     model_json_override: dict | None = None,
 ) -> None:
-    """Deserialize a dictionary to a .pte model file.
+    """Deserialize a dictionary to a .pte or .pt2 model file.
 
     Builds a pt_expt model from the dict, traces it via make_fx,
-    exports with dynamic shapes, and saves using torch.export.save.
+    exports with dynamic shapes, and saves.
 
     Parameters
     ----------
     model_file : str
-        The .pte model file to be saved.
+        The model file to be saved (.pte or .pt2).
     data : dict
         The dictionary to be deserialized (same format as dpmodel's
         serialize output, with "model" and optionally "model_def_script" keys).
@@ -251,26 +283,57 @@ def deserialize_to_file(
         Used by ``dp compress`` to store the compressed model dict while
         tracing the uncompressed model (make_fx cannot trace custom ops).
     """
+    if model_file.endswith(".pt2"):
+        _deserialize_to_file_pt2(model_file, data, model_json_override, model_params)
+    else:
+        _deserialize_to_file_pte(model_file, data, model_json_override, model_params)
+
+
+def _trace_and_export(
+    data: dict,
+    model_json_override: dict | None = None,
+) -> tuple:
+    """Common logic: build model, trace, export.
+
+    Returns (exported, metadata, data_for_json, output_keys).
+    """
+    from copy import (
+        deepcopy,
+    )
+
+    import deepmd.pt_expt.utils.env as _env
     from deepmd.pt_expt.model.model import (
         BaseModel,
     )
 
-    # 1. Deserialize into a pt_expt model
+    target_device = _env.DEVICE
+
+    # 1. Deserialize model on CPU for make_fx tracing.
+    # make_fx with _allow_non_fake_inputs=True keeps real model parameters;
+    # on CUDA the autograd engine requires CUDA streams for those real
+    # tensors during torch.autograd.grad, but proxy-tensor dispatch doesn't
+    # set streams up → assertion failure.  Tracing on CPU avoids this.
     model = BaseModel.deserialize(data["model"])
+    model.to("cpu")
     model.eval()
 
     # 2. Collect metadata
     metadata = _collect_metadata(model)
 
-    # 3. Create sample inputs for tracing
+    # 3. Create sample inputs on CPU for tracing
     # Use nframes=2 so make_fx doesn't specialize on nframes=1
-    ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = _make_sample_inputs(
-        model, nframes=2
-    )
+    _orig_device = _env.DEVICE
+    _env.DEVICE = torch.device("cpu")
+    try:
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = _make_sample_inputs(
+            model, nframes=2
+        )
+    finally:
+        _env.DEVICE = _orig_device
 
-    # 4. Trace via forward_common_lower_exportable (make_fx)
-    # Uses internal keys (energy, energy_redu, energy_derv_r, etc.)
-    # so that communicate_extended_output can be applied at inference time.
+    # 4. Trace via make_fx on CPU.
+    # This decomposes torch.autograd.grad into aten ops so the resulting
+    # GraphModule no longer contains autograd calls.
     traced = model.forward_common_lower_exportable(
         ext_coord,
         ext_atype,
@@ -283,7 +346,15 @@ def deserialize_to_file(
         _allow_non_fake_inputs=True,
     )
 
-    # 5. Build dynamic shapes and export
+    # 5. Extract output keys from the CPU-traced module.
+    sample_out = traced(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
+    output_keys = list(sample_out.keys())
+
+    # 6. Export on CPU.
+    # make_fx on CPU bakes device='cpu' into tensor-creation ops in the
+    # graph.  Exporting on CPU keeps devices consistent; we move the
+    # ExportedProgram to the target device afterwards via the official
+    # move_to_device_pass (avoids FakeTensor device-propagation errors).
     dynamic_shapes = _build_dynamic_shapes(
         ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
     )
@@ -292,17 +363,35 @@ def deserialize_to_file(
         (ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam),
         dynamic_shapes=dynamic_shapes,
         strict=False,
+        prefer_deferred_runtime_asserts_over_guards=True,
     )
 
-    # 6. Prepare extra files
-    # Serialize the full model dict for cross-backend conversion
-    from copy import (
-        deepcopy,
-    )
+    # 7. Move the exported program to the target device if needed.
+    if target_device.type != "cpu":
+        from torch.export.passes import (
+            move_to_device_pass,
+        )
 
+        exported = move_to_device_pass(exported, target_device)
+
+    # 8. Prepare JSON-serializable model dict
     json_source = model_json_override if model_json_override is not None else data
     data_for_json = deepcopy(json_source)
     data_for_json = _numpy_to_json_serializable(data_for_json)
+
+    return exported, metadata, data_for_json, output_keys
+
+
+def _deserialize_to_file_pte(
+    model_file: str,
+    data: dict,
+    model_json_override: dict | None = None,
+    model_params: dict | None = None,
+) -> None:
+    """Deserialize a dictionary to a .pte model file."""
+    exported, metadata, data_for_json, _output_keys = _trace_and_export(
+        data, model_json_override
+    )
 
     extra_files = {
         "model_def_script.json": json.dumps(metadata),
@@ -311,5 +400,41 @@ def deserialize_to_file(
     if model_params is not None:
         extra_files["model_params.json"] = json.dumps(model_params)
 
-    # 7. Save
     torch.export.save(exported, model_file, extra_files=extra_files)
+
+
+def _deserialize_to_file_pt2(
+    model_file: str,
+    data: dict,
+    model_json_override: dict | None = None,
+    model_params: dict | None = None,
+) -> None:
+    """Deserialize a dictionary to a .pt2 model file (AOTInductor).
+
+    Uses torch._inductor.aoti_compile_and_package to compile the exported
+    program into a .pt2 package (ZIP archive with compiled shared libraries),
+    then embeds metadata into the archive.
+    """
+    import zipfile
+
+    from torch._inductor import (
+        aoti_compile_and_package,
+    )
+
+    exported, metadata, data_for_json, output_keys = _trace_and_export(
+        data, model_json_override
+    )
+
+    # Compile via AOTInductor into a .pt2 package
+    aoti_compile_and_package(exported, package_path=model_file)
+
+    # Embed metadata into the .pt2 ZIP archive
+    with zipfile.ZipFile(model_file, "a") as zf:
+        zf.writestr("extra/model_def_script.json", json.dumps(metadata))
+        zf.writestr("extra/output_keys.json", json.dumps(output_keys))
+        zf.writestr(
+            "extra/model.json",
+            json.dumps(data_for_json, separators=(",", ":")),
+        )
+        if model_params is not None:
+            zf.writestr("extra/model_params.json", json.dumps(model_params))

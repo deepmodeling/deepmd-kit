@@ -46,10 +46,11 @@ class DPTabulate(DPTabulatePT):
         exclude_types: list[list[int]] = [],
         activation_fn: ActivationFn = ActivationFn("tanh"),
     ) -> None:
-        # DPTabulatePT.__init__ works here because:
-        # 1. _get_descrpt_type is overridden to use serialized data (not isinstance)
-        # 2. The isinstance(descrpt, DescrptDPA2) check in parent just returns False
-        #    for pt_expt descriptors — callers pass the repinit block directly.
+        # Parent's __init__ uses `deepmd.pt.model.descriptor.DescrptDPA2` via
+        # lazy attribute access (`import deepmd` + `deepmd.pt.model.descriptor`).
+        # Ensure the submodule is imported so the attribute chain resolves.
+        import deepmd.pt.model.descriptor  # noqa: F401
+
         super().__init__(descrpt, neuron, type_one_side, exclude_types, activation_fn)
 
     def _get_descrpt_type(self) -> str:

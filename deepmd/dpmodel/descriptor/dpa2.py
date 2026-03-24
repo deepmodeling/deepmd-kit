@@ -15,6 +15,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     Array,
     xp_take_along_axis,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -878,7 +879,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
             (nframes, nall, self.tebd_dim),
         )
-        g1_inp = g1_ext[:, :nloc, :]
+        g1_inp = xp_take_first_n(g1_ext, 1, nloc)
         g1, _, _, _, _ = self.repinit(
             nlist_dict[
                 get_multiple_nlist_key(self.repinit.get_rcut(), self.repinit.get_nsel())
@@ -912,9 +913,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             g1 = g1 + self.tebd_transform(g1_inp)
         # mapping g1
         assert mapping is not None
-        mapping_ext = xp.tile(
-            xp.reshape(mapping, (nframes, nall, 1)), (1, 1, g1.shape[-1])
-        )
+        mapping_ext = xp.tile(xp.expand_dims(mapping, axis=-1), (1, 1, g1.shape[-1]))
         g1_ext = xp_take_along_axis(g1, mapping_ext, axis=1)
         # repformer
         g1, g2, h2, rot_mat, sw = self.repformers(
