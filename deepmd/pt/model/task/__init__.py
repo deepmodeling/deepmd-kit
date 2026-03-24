@@ -11,6 +11,9 @@ from .dipole import (
 from .dos import (
     DOSFittingNet,
 )
+from .xas import (
+    XASFittingNet,
+)
 from .ener import (
     EnergyFittingNet,
     EnergyFittingNetDirect,
@@ -31,6 +34,7 @@ from .type_predict import (
 __all__ = [
     "BaseFitting",
     "DOSFittingNet",
+    "XASFittingNet",
     "DenoiseNet",
     "DipoleFittingNet",
     "EnergyFittingNet",

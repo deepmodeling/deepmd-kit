@@ -28,6 +28,9 @@ from deepmd.dpmodel.model.dipole_model import (
 from deepmd.dpmodel.model.dos_model import (
     DOSModel,
 )
+from deepmd.dpmodel.model.xas_model import (
+    XASModel,
+)
 from deepmd.dpmodel.model.dp_zbl_model import (
     DPZBLModel,
 )
@@ -97,6 +100,8 @@ def get_standard_model(data: dict) -> EnergyModel:
         modelcls = PolarModel
     elif fitting_net_type == "dos":
         modelcls = DOSModel
+    elif fitting_net_type == "xas":
+        modelcls = XASModel
     elif fitting_net_type in ["ener", "direct_force_ener"]:
         modelcls = EnergyModel
     elif fitting_net_type == "property":
@@ -104,13 +109,16 @@ def get_standard_model(data: dict) -> EnergyModel:
     else:
         raise RuntimeError(f"Unknown fitting type: {fitting_net_type}")
 
-    model = modelcls(
-        descriptor=descriptor,
-        fitting=fitting,
-        type_map=data["type_map"],
-        atom_exclude_types=atom_exclude_types,
-        pair_exclude_types=pair_exclude_types,
-    )
+    model_kwargs: dict = {
+        "descriptor": descriptor,
+        "fitting": fitting,
+        "type_map": data["type_map"],
+        "atom_exclude_types": atom_exclude_types,
+        "pair_exclude_types": pair_exclude_types,
+    }
+    if fitting_net_type == "xas":
+        model_kwargs["absorbing_type"] = data["absorbing_type"]
+    model = modelcls(**model_kwargs)
     return model
 
 

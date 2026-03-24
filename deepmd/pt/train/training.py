@@ -43,6 +43,7 @@ from deepmd.pt.loss import (
     PropertyLoss,
     TaskLoss,
     TensorLoss,
+    XASLoss,
 )
 from deepmd.pt.model.model import (
     get_model,
@@ -94,9 +95,12 @@ from torch.distributed.checkpoint.state_dict import (
     get_optimizer_state_dict,
     set_optimizer_state_dict,
 )
-from torch.distributed.fsdp import (
-    fully_shard,
-)
+try:
+    from torch.distributed.fsdp import (
+        fully_shard,
+    )
+except ImportError:
+    fully_shard = None
 from torch.distributed.optim import (
     ZeroRedundancyOptimizer,
 )
@@ -1727,6 +1731,10 @@ def get_loss(
         loss_params["starter_learning_rate"] = start_lr
         loss_params["numb_dos"] = _model.model_output_def()["dos"].output_size
         return DOSLoss(**loss_params)
+    elif loss_type == "xas":
+        loss_params["starter_learning_rate"] = start_lr
+        loss_params["numb_xas"] = _model.model_output_def()["xas"].output_size
+        return XASLoss(**loss_params)
     elif loss_type == "ener_spin":
         loss_params["starter_learning_rate"] = start_lr
         return EnergySpinLoss(**loss_params)

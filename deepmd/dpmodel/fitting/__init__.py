@@ -5,6 +5,9 @@ from .dipole_fitting import (
 from .dos_fitting import (
     DOSFittingNet,
 )
+from .xas_fitting import (
+    XASFittingNet,
+)
 from .ener_fitting import (
     EnergyFittingNet,
 )
@@ -23,6 +26,7 @@ from .property_fitting import (
 
 __all__ = [
     "DOSFittingNet",
+    "XASFittingNet",
     "DipoleFitting",
     "EnergyFittingNet",
     "InvarFitting",

@@ -39,6 +39,9 @@ from .dipole_model import (
 from .dos_model import (
     DOSModel,
 )
+from .xas_model import (
+    XASModel,
+)
 from .dp_linear_model import (
     LinearEnergyModel,
 )
@@ -266,6 +269,8 @@ def get_standard_model(model_params: dict) -> BaseModel:
         modelcls = PolarModel
     elif fitting_net_type == "dos":
         modelcls = DOSModel
+    elif fitting_net_type == "xas":
+        modelcls = XASModel
     elif fitting_net_type in ["ener", "direct_force_ener"]:
         modelcls = EnergyModel
     elif fitting_net_type == "property":
@@ -273,15 +278,18 @@ def get_standard_model(model_params: dict) -> BaseModel:
     else:
         raise RuntimeError(f"Unknown fitting type: {fitting_net_type}")
 
-    model = modelcls(
-        descriptor=descriptor,
-        fitting=fitting,
-        type_map=model_params["type_map"],
-        atom_exclude_types=atom_exclude_types,
-        pair_exclude_types=pair_exclude_types,
-        preset_out_bias=preset_out_bias,
-        data_stat_protect=data_stat_protect,
-    )
+    model_kwargs: dict[str, Any] = {
+        "descriptor": descriptor,
+        "fitting": fitting,
+        "type_map": model_params["type_map"],
+        "atom_exclude_types": atom_exclude_types,
+        "pair_exclude_types": pair_exclude_types,
+        "preset_out_bias": preset_out_bias,
+        "data_stat_protect": data_stat_protect,
+    }
+    if fitting_net_type == "xas":
+        model_kwargs["absorbing_type"] = model_params["absorbing_type"]
+    model = modelcls(**model_kwargs)
     if model_params.get("hessian_mode"):
         model.enable_hessian()
     model.model_def_script = json.dumps(model_params_old)
@@ -306,6 +314,7 @@ def get_model(model_params: dict) -> Any:
 __all__ = [
     "BaseModel",
     "DOSModel",
+    "XASModel",
     "DPModelCommon",
     "DPZBLModel",
     "DipoleModel",
