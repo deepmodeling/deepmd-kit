@@ -188,8 +188,9 @@ class DeepmdData:
         output_natoms_for_type_sel : bool, optional
             if True and type_sel is True, the atomic dimension will be natoms instead of nsel
         """
-        # normalize key: "atomic_" -> "atom_", same convention as _load_set output
-        key = key.replace("atomic_", "atom_")
+        # normalize key: "atomic_" prefix -> "atom_", same convention as _load_set output
+        if key.startswith("atomic_"):
+            key = "atom_" + key[7:]
         self.data_dict[key] = {
             "ndof": ndof,
             "atomic": atomic,

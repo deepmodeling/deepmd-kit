@@ -463,7 +463,7 @@ class TestDipoleModel(unittest.TestCase):
 
         # Shuffle atoms so selected type-0 atoms are non-contiguous
         # atype=[0,0,0,1,1] → shuffled idx → atype=[0,0,1,1,0]
-        idx_perm = [1, 0, 4, 3, 2]
+        idx_perm = np.array([1, 0, 4, 3, 2], dtype=np.intp)
         atype = to_numpy_array(self.atype)  # [0,0,0,1,1]
         coord = to_numpy_array(self.coord.reshape(1, self.natoms, 3))
         cell = to_numpy_array(self.cell.reshape(1, 9))
@@ -485,16 +485,16 @@ class TestDipoleModel(unittest.TestCase):
             np.savetxt(os.path.join(tmpdir, "type.raw"), atype_sf, fmt="%d")
             np.save(
                 os.path.join(set_dir, "coord.npy"),
-                coord_sf.reshape(1, -1).astype(np.float64),
+                coord_sf.reshape(1, -1),
             )
             np.save(
                 os.path.join(set_dir, "box.npy"),
-                cell.reshape(1, -1).astype(np.float64),
+                cell.reshape(1, -1),
             )
             # Labels: nsel atoms in shuffled atom order (nsel format)
             np.save(
                 os.path.join(set_dir, "atomic_dipole.npy"),
-                ref_sf_sel.reshape(1, -1).astype(np.float32),
+                ref_sf_sel.reshape(1, -1),
             )
 
             data = DeepmdData(

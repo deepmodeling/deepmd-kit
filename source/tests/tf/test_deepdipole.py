@@ -632,16 +632,16 @@ class TestDeepDipoleNewPBC(unittest.TestCase):
             np.savetxt(os.path.join(tmpdir, "type.raw"), self.atype, fmt="%d")
             np.save(
                 os.path.join(set_dir, "coord.npy"),
-                self.coords.reshape(1, -1).astype(np.float64),
+                self.coords.reshape(1, -1),
             )
             np.save(
                 os.path.join(set_dir, "box.npy"),
-                self.box.reshape(1, -1).astype(np.float64),
+                self.box.reshape(1, -1),
             )
             # Labels: nsel=2 atoms in original atom order (atoms 0 then 3)
             np.save(
                 os.path.join(set_dir, "atomic_dipole.npy"),
-                self.expected_t.reshape(1, -1).astype(np.float32),
+                self.expected_t.reshape(1, -1),
             )
 
             data = DeepmdData(
@@ -669,7 +669,7 @@ class TestDeepDipoleNewPBC(unittest.TestCase):
 
             # Label order must match expected_t (atoms 0 then 3, not type-sorted)
             np.testing.assert_almost_equal(
-                label_sel.reshape(-1), self.expected_t.reshape(-1), decimal=5
+                label_sel.reshape(-1), self.expected_t.reshape(-1), default_places
             )
 
             # Model output must also align with label order
