@@ -613,3 +613,145 @@ TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist_nframes) {
     }
   }
 }
+
+// ========== Parser / metadata coverage tests ==========
+
+TEST(TestDeepPotPTExptParser, load_nonexistent_file) {
+#ifndef BUILD_PYTORCH
+  GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+  deepmd::DeepPot dp;
+  EXPECT_THROW(dp.init("nonexistent_model.pt2"), deepmd::deepmd_exception);
+}
+
+TEST(TestDeepPotPTExptParser, load_invalid_zip) {
+#ifndef BUILD_PYTORCH
+  GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+  std::string tmpfile = "test_invalid.pt2";
+  {
+    std::ofstream ofs(tmpfile, std::ios::binary);
+    ofs << "not a zip file at all";
+  }
+  deepmd::DeepPot dp;
+  EXPECT_THROW(dp.init(tmpfile), deepmd::deepmd_exception);
+  std::remove(tmpfile.c_str());
+}
+
+TEST(TestDeepPotPTExptParser, load_tiny_file) {
+#ifndef BUILD_PYTORCH
+  GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+  std::string tmpfile = "test_tiny.pt2";
+  {
+    std::ofstream ofs(tmpfile, std::ios::binary);
+    ofs << "abc";
+  }
+  deepmd::DeepPot dp;
+  EXPECT_THROW(dp.init(tmpfile), deepmd::deepmd_exception);
+  std::remove(tmpfile.c_str());
+}
+
+// Metadata accessor tests — exercise JSON parser on a real model
+template <class VALUETYPE>
+class TestDeepPotPTExptMetadata : public ::testing::Test {
+ protected:
+  deepmd::DeepPot dp;
+  void SetUp() override {
+#ifndef BUILD_PYTORCH
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+    dp.init("../../tests/infer/deeppot_sea.pt2");
+  };
+  void TearDown() override {};
+};
+
+TYPED_TEST_SUITE(TestDeepPotPTExptMetadata, ValueTypes);
+
+TYPED_TEST(TestDeepPotPTExptMetadata, type_map) {
+  std::string type_map;
+  this->dp.get_type_map(type_map);
+  EXPECT_NE(type_map.find("O"), std::string::npos);
+  EXPECT_NE(type_map.find("H"), std::string::npos);
+}
+
+TYPED_TEST(TestDeepPotPTExptMetadata, cutoff) {
+  EXPECT_GT(this->dp.cutoff(), 0.0);
+}
+
+TYPED_TEST(TestDeepPotPTExptMetadata, ntypes) {
+  EXPECT_EQ(this->dp.numb_types(), 2);
+}
+
+TYPED_TEST(TestDeepPotPTExptMetadata, dim_fparam_zero) {
+  EXPECT_EQ(this->dp.dim_fparam(), 0);
+}
+
+TYPED_TEST(TestDeepPotPTExptMetadata, dim_aparam_zero) {
+  EXPECT_EQ(this->dp.dim_aparam(), 0);
+}
+
+TYPED_TEST(TestDeepPotPTExptMetadata, no_default_fparam) {
+  EXPECT_FALSE(this->dp.has_default_fparam());
+}
+
+// JSON parser type-coverage via fparam model
+template <class VALUETYPE>
+class TestDeepPotPTExptJsonTypes : public ::testing::Test {
+ protected:
+  deepmd::DeepPot dp;
+  void SetUp() override {
+#ifndef BUILD_PYTORCH
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+    dp.init("../../tests/infer/fparam_aparam.pt2");
+  };
+  void TearDown() override {};
+};
+
+TYPED_TEST_SUITE(TestDeepPotPTExptJsonTypes, ValueTypes);
+
+TYPED_TEST(TestDeepPotPTExptJsonTypes, integer_fields) {
+  EXPECT_EQ(this->dp.dim_fparam(), 1);
+  EXPECT_EQ(this->dp.dim_aparam(), 1);
+}
+
+TYPED_TEST(TestDeepPotPTExptJsonTypes, boolean_field) {
+  EXPECT_FALSE(this->dp.has_default_fparam());
+}
+
+TYPED_TEST(TestDeepPotPTExptJsonTypes, string_array) {
+  std::string type_map;
+  this->dp.get_type_map(type_map);
+  EXPECT_FALSE(type_map.empty());
+}
+
+TYPED_TEST(TestDeepPotPTExptJsonTypes, float_field) {
+  EXPECT_GT(this->dp.cutoff(), 0.0);
+  EXPECT_LT(this->dp.cutoff(), 100.0);
+}
+
+// Default fparam model — tests JSON parsing of boolean true + float array
+template <class VALUETYPE>
+class TestDeepPotPTExptJsonDefaults : public ::testing::Test {
+ protected:
+  deepmd::DeepPot dp;
+  void SetUp() override {
+#ifndef BUILD_PYTORCH
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+    dp.init("../../tests/infer/fparam_aparam_default.pt2");
+  };
+  void TearDown() override {};
+};
+
+TYPED_TEST_SUITE(TestDeepPotPTExptJsonDefaults, ValueTypes);
+
+TYPED_TEST(TestDeepPotPTExptJsonDefaults, boolean_true) {
+  EXPECT_TRUE(this->dp.has_default_fparam());
+}
+
+TYPED_TEST(TestDeepPotPTExptJsonDefaults, default_fparam_parsed) {
+  EXPECT_EQ(this->dp.dim_fparam(), 1);
+  EXPECT_TRUE(this->dp.has_default_fparam());
+}
