@@ -500,3 +500,116 @@ TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist) {
     EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
   }
 }
+
+TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist_atomic) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_e = this->expected_e;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_v = this->expected_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+  double ener;
+  std::vector<VALUETYPE> force, virial, atom_ener, atom_vir;
+  dp.compute(ener, force, virial, atom_ener, atom_vir, coord, atype, box);
+
+  EXPECT_EQ(force.size(), natoms * 3);
+  EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(atom_ener.size(), natoms);
+  EXPECT_EQ(atom_vir.size(), natoms * 9);
+
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < natoms; ++ii) {
+    EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < natoms * 9; ++ii) {
+    EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
+  }
+}
+
+// Multi-frame PBC test via compute_mixed_type
+TYPED_TEST(TestInferDeepPotAPtExpt, cpu_build_nlist_nframes) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+
+  int nframes = 2;
+  std::vector<VALUETYPE> coord_2f(coord);
+  coord_2f.insert(coord_2f.end(), coord.begin(), coord.end());
+  std::vector<int> atype_2f(atype);
+  atype_2f.insert(atype_2f.end(), atype.begin(), atype.end());
+  std::vector<VALUETYPE> box_2f(box);
+  box_2f.insert(box_2f.end(), box.begin(), box.end());
+
+  std::vector<double> ener;
+  std::vector<VALUETYPE> force, virial;
+  dp.compute_mixed_type(ener, force, virial, nframes, coord_2f, atype_2f,
+                        box_2f);
+
+  EXPECT_EQ(ener.size(), nframes);
+  EXPECT_EQ(force.size(), nframes * natoms * 3);
+  EXPECT_EQ(virial.size(), nframes * 9);
+
+  for (int ff = 0; ff < nframes; ++ff) {
+    EXPECT_LT(fabs(ener[ff] - expected_tot_e), EPSILON);
+    for (int ii = 0; ii < natoms * 3; ++ii) {
+      EXPECT_LT(fabs(force[ff * natoms * 3 + ii] - expected_f[ii]), EPSILON);
+    }
+    for (int ii = 0; ii < 9; ++ii) {
+      EXPECT_LT(fabs(virial[ff * 9 + ii] - expected_tot_v[ii]), EPSILON);
+    }
+  }
+}
+
+// Multi-frame NoPBC test via compute_mixed_type
+TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist_nframes) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;  // empty
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+
+  int nframes = 2;
+  std::vector<VALUETYPE> coord_2f(coord);
+  coord_2f.insert(coord_2f.end(), coord.begin(), coord.end());
+  std::vector<int> atype_2f(atype);
+  atype_2f.insert(atype_2f.end(), atype.begin(), atype.end());
+
+  std::vector<double> ener;
+  std::vector<VALUETYPE> force, virial;
+  dp.compute_mixed_type(ener, force, virial, nframes, coord_2f, atype_2f, box);
+
+  EXPECT_EQ(ener.size(), nframes);
+  EXPECT_EQ(force.size(), nframes * natoms * 3);
+  EXPECT_EQ(virial.size(), nframes * 9);
+
+  for (int ff = 0; ff < nframes; ++ff) {
+    EXPECT_LT(fabs(ener[ff] - expected_tot_e), EPSILON);
+    for (int ii = 0; ii < natoms * 3; ++ii) {
+      EXPECT_LT(fabs(force[ff * natoms * 3 + ii] - expected_f[ii]), EPSILON);
+    }
+    for (int ii = 0; ii < 9; ++ii) {
+      EXPECT_LT(fabs(virial[ff * 9 + ii] - expected_tot_v[ii]), EPSILON);
+    }
+  }
+}
