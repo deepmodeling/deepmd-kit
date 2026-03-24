@@ -39,9 +39,6 @@ from .dipole_model import (
 from .dos_model import (
     DOSModel,
 )
-from .xas_model import (
-    XASModel,
-)
 from .dp_linear_model import (
     LinearEnergyModel,
 )
@@ -75,6 +72,9 @@ from .property_model import (
 from .spin_model import (
     SpinEnergyModel,
     SpinModel,
+)
+from .xas_model import (
+    XASModel,
 )
 
 
@@ -314,7 +314,6 @@ def get_model(model_params: dict) -> Any:
 __all__ = [
     "BaseModel",
     "DOSModel",
-    "XASModel",
     "DPModelCommon",
     "DPZBLModel",
     "DipoleModel",
@@ -324,6 +323,7 @@ __all__ = [
     "PolarModel",
     "SpinEnergyModel",
     "SpinModel",
+    "XASModel",
     "get_model",
     "make_hessian_model",
     "make_model",

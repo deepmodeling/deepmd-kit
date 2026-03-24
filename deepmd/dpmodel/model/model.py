@@ -28,9 +28,6 @@ from deepmd.dpmodel.model.dipole_model import (
 from deepmd.dpmodel.model.dos_model import (
     DOSModel,
 )
-from deepmd.dpmodel.model.xas_model import (
-    XASModel,
-)
 from deepmd.dpmodel.model.dp_zbl_model import (
     DPZBLModel,
 )
@@ -45,6 +42,9 @@ from deepmd.dpmodel.model.property_model import (
 )
 from deepmd.dpmodel.model.spin_model import (
     SpinModel,
+)
+from deepmd.dpmodel.model.xas_model import (
+    XASModel,
 )
 from deepmd.utils.spin import (
     Spin,

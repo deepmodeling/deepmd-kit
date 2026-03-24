@@ -5,9 +5,6 @@ from .denoise import (
 from .dos import (
     DOSLoss,
 )
-from .xas import (
-    XASLoss,
-)
 from .ener import (
     EnergyHessianStdLoss,
     EnergyStdLoss,
@@ -24,10 +21,12 @@ from .property import (
 from .tensor import (
     TensorLoss,
 )
+from .xas import (
+    XASLoss,
+)
 
 __all__ = [
     "DOSLoss",
-    "XASLoss",
     "DenoiseLoss",
     "EnergyHessianStdLoss",
     "EnergySpinLoss",
@@ -35,4 +34,5 @@ __all__ = [
     "PropertyLoss",
     "TaskLoss",
     "TensorLoss",
+    "XASLoss",
 ]

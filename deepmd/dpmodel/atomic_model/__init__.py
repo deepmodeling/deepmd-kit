@@ -23,9 +23,6 @@ from .dipole_atomic_model import (
 from .dos_atomic_model import (
     DPDOSAtomicModel,
 )
-from .xas_atomic_model import (
-    DPXASAtomicModel,
-)
 from .dp_atomic_model import (
     DPAtomicModel,
 )
@@ -48,16 +45,19 @@ from .polar_atomic_model import (
 from .property_atomic_model import (
     DPPropertyAtomicModel,
 )
+from .xas_atomic_model import (
+    DPXASAtomicModel,
+)
 
 __all__ = [
     "BaseAtomicModel",
     "DPAtomicModel",
     "DPDOSAtomicModel",
-    "DPXASAtomicModel",
     "DPDipoleAtomicModel",
     "DPEnergyAtomicModel",
     "DPPolarAtomicModel",
     "DPPropertyAtomicModel",
+    "DPXASAtomicModel",
     "DPZBLLinearEnergyAtomicModel",
     "LinearEnergyAtomicModel",
     "PairTabAtomicModel",

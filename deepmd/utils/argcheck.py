@@ -1919,7 +1919,7 @@ def fitting_xas() -> list[Argument]:
     doc_default_fparam = "The default frame parameter value."
     doc_dim_case_embd = "The dimension of the case embedding."
     doc_neuron = "The number of neurons in each hidden layer of the fitting net."
-    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}.'
+    doc_activation_function = f"The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection.'
     doc_trainable = "Whether the parameters in the fitting net are trainable."
