@@ -206,6 +206,20 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.reinit_pair_exclude(
             map_pair_exclude_types(self.pair_exclude_types, remap_index)
         )
+        if has_new_type:
+            xp = array_api_compat.array_namespace(self.out_bias)
+            extend_shape = [
+                self.out_bias.shape[0],
+                len(type_map),
+                *list(self.out_bias.shape[2:]),
+            ]
+            device = array_api_compat.device(self.out_bias)
+            extend_bias = xp.zeros(
+                extend_shape, dtype=self.out_bias.dtype, device=device
+            )
+            self.out_bias = xp.concat([self.out_bias, extend_bias], axis=1)
+            extend_std = xp.ones(extend_shape, dtype=self.out_std.dtype, device=device)
+            self.out_std = xp.concat([self.out_std, extend_std], axis=1)
         self.out_bias = self.out_bias[:, remap_index, :]
         self.out_std = self.out_std[:, remap_index, :]
 
