@@ -636,6 +636,13 @@ void DeepPotPTExpt::init(const std::string& model,
   } else {
     has_default_fparam_ = false;
   }
+  default_fparam_.clear();
+  if (has_default_fparam_ && metadata.obj_val.count("default_fparam") &&
+      metadata["default_fparam"].type == JsonValue::Array) {
+    for (const auto& v : metadata["default_fparam"].as_array()) {
+      default_fparam_.push_back(v.as_double());
+    }
+  }
 
   type_map.clear();
   for (const auto& v : metadata["type_map"].as_array()) {
@@ -818,6 +825,13 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                          valuetype_options)
             .to(torch::kFloat64)
             .to(device);
+  } else if (!default_fparam_.empty()) {
+    fparam_tensor =
+        torch::from_blob(const_cast<double*>(default_fparam_.data()),
+                         {1, static_cast<std::int64_t>(default_fparam_.size())},
+                         torch::TensorOptions().dtype(torch::kFloat64))
+            .clone()
+            .to(device);
   } else {
     fparam_tensor = torch::zeros({0}, options).to(device);
   }
@@ -982,6 +996,15 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       min_z = std::min(min_z, coord_d[ii * 3 + 2]);
       max_z = std::max(max_z, coord_d[ii * 3 + 2]);
     }
+    // Shift coords so minimum is at rcut (ensures all atoms are in [0, L))
+    double shift_x = rcut - min_x;
+    double shift_y = rcut - min_y;
+    double shift_z = rcut - min_z;
+    for (int ii = 0; ii < natoms; ++ii) {
+      coord_d[ii * 3 + 0] += shift_x;
+      coord_d[ii * 3 + 1] += shift_y;
+      coord_d[ii * 3 + 2] += shift_z;
+    }
     box_d.resize(9, 0.0);
     box_d[0] = (max_x - min_x) + 2.0 * rcut;
     box_d[4] = (max_y - min_y) + 2.0 * rcut;
@@ -1051,6 +1074,13 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                          {1, static_cast<std::int64_t>(fparam.size())},
                          valuetype_options)
             .to(torch::kFloat64)
+            .to(device);
+  } else if (!default_fparam_.empty()) {
+    fparam_tensor =
+        torch::from_blob(const_cast<double*>(default_fparam_.data()),
+                         {1, static_cast<std::int64_t>(default_fparam_.size())},
+                         torch::TensorOptions().dtype(torch::kFloat64))
+            .clone()
             .to(device);
   } else {
     fparam_tensor = torch::zeros({0}, options).to(device);
