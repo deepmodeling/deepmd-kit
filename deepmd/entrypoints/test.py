@@ -51,6 +51,18 @@ from deepmd.utils.data import (
 from deepmd.utils.data_system import (
     process_systems,
 )
+from deepmd.utils.eval_metrics import (
+    DP_TEST_HESSIAN_METRIC_KEYS,
+    DP_TEST_SPIN_WEIGHTED_METRIC_KEYS,
+    DP_TEST_WEIGHTED_FORCE_METRIC_KEYS,
+    DP_TEST_WEIGHTED_METRIC_KEYS,
+    compute_energy_type_metrics,
+    compute_error_stat,
+    compute_spin_force_metrics,
+    compute_weighted_error_stat,
+    mae,
+    rmse,
+)
 from deepmd.utils.weight_avg import (
     weighted_average,
 )
@@ -296,38 +308,6 @@ def test(
     log.info("# ----------------------------------------------- ")
 
 
-def mae(diff: np.ndarray) -> float:
-    """Calcalte mean absulote error.
-
-    Parameters
-    ----------
-    diff : np.ndarray
-        difference
-
-    Returns
-    -------
-    float
-        mean absulote error
-    """
-    return np.mean(np.abs(diff))
-
-
-def rmse(diff: np.ndarray) -> float:
-    """Calculate root mean square error.
-
-    Parameters
-    ----------
-    diff : np.ndarray
-        difference
-
-    Returns
-    -------
-    float
-        root mean square error
-    """
-    return np.sqrt(np.average(diff * diff))
-
-
 def save_txt_file(
     fname: Path, data: np.ndarray, header: str = "", append: bool = False
 ) -> None:
@@ -349,6 +329,231 @@ def save_txt_file(
         np.savetxt(fp, data, header=header)
 
 
+def _reshape_force_by_atom(force_array: np.ndarray, natoms: int) -> np.ndarray:
+    """Reshape flattened force arrays into `[nframes, natoms, 3]`."""
+    return np.reshape(force_array, [-1, natoms, 3])
+
+
+def _concat_force_rows(
+    force_blocks: list[np.ndarray], dtype: np.dtype | type[np.generic]
+) -> np.ndarray:
+    """Concatenate per-frame force rows into one 2D array."""
+    if not force_blocks:
+        return np.empty((0, 3), dtype=dtype)
+    return np.concatenate(force_blocks, axis=0)
+
+
+def _align_spin_force_arrays(
+    *,
+    dp: "DeepPot",
+    atype: np.ndarray,
+    natoms: int,
+    prediction_force: np.ndarray,
+    reference_force: np.ndarray,
+    prediction_force_mag: np.ndarray | None,
+    reference_force_mag: np.ndarray | None,
+    mask_mag: np.ndarray | None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, np.ndarray | None]:
+    """Align spin force arrays into real-atom and magnetic subsets."""
+    prediction_force_by_atom = _reshape_force_by_atom(prediction_force, natoms)
+    reference_force_by_atom = _reshape_force_by_atom(reference_force, natoms)
+    if dp.get_ntypes_spin() != 0:  # old tf support for spin
+        ntypes_real = dp.get_ntypes() - dp.get_ntypes_spin()
+        atype_by_frame = np.reshape(atype, [-1, natoms])
+        if atype_by_frame.shape[0] == 1 and prediction_force_by_atom.shape[0] != 1:
+            atype_by_frame = np.broadcast_to(
+                atype_by_frame,
+                (prediction_force_by_atom.shape[0], natoms),
+            )
+        if atype_by_frame.shape[0] != prediction_force_by_atom.shape[0]:
+            raise ValueError(
+                "Spin atom types and force arrays must have matching frames."
+            )
+        force_real_prediction_chunks = []
+        force_real_reference_chunks = []
+        force_magnetic_prediction_chunks = []
+        force_magnetic_reference_chunks = []
+        for frame_atype, frame_prediction, frame_reference in zip(
+            atype_by_frame,
+            prediction_force_by_atom,
+            reference_force_by_atom,
+            strict=False,
+        ):
+            real_mask = frame_atype < ntypes_real
+            magnetic_mask = ~real_mask
+            force_real_prediction_chunks.append(frame_prediction[real_mask])
+            force_real_reference_chunks.append(frame_reference[real_mask])
+            force_magnetic_prediction_chunks.append(frame_prediction[magnetic_mask])
+            force_magnetic_reference_chunks.append(frame_reference[magnetic_mask])
+        return (
+            _concat_force_rows(
+                force_real_prediction_chunks,
+                prediction_force_by_atom.dtype,
+            ),
+            _concat_force_rows(
+                force_real_reference_chunks,
+                reference_force_by_atom.dtype,
+            ),
+            _concat_force_rows(
+                force_magnetic_prediction_chunks,
+                prediction_force_by_atom.dtype,
+            ),
+            _concat_force_rows(
+                force_magnetic_reference_chunks,
+                reference_force_by_atom.dtype,
+            ),
+        )
+
+    force_real_prediction = prediction_force_by_atom.reshape(-1, 3)
+    force_real_reference = reference_force_by_atom.reshape(-1, 3)
+    if prediction_force_mag is None or reference_force_mag is None or mask_mag is None:
+        return force_real_prediction, force_real_reference, None, None
+    magnetic_mask = mask_mag.reshape(-1).astype(bool)
+    return (
+        force_real_prediction,
+        force_real_reference,
+        prediction_force_mag.reshape(-1, 3)[magnetic_mask],
+        reference_force_mag.reshape(-1, 3)[magnetic_mask],
+    )
+
+
+def _write_energy_test_details(
+    *,
+    detail_path: Path,
+    system: str,
+    natoms: int,
+    append_detail: bool,
+    reference_energy: np.ndarray,
+    prediction_energy: np.ndarray,
+    reference_force: np.ndarray,
+    prediction_force: np.ndarray,
+    reference_virial: np.ndarray | None,
+    prediction_virial: np.ndarray | None,
+    out_put_spin: bool,
+    reference_force_real: np.ndarray | None = None,
+    prediction_force_real: np.ndarray | None = None,
+    reference_force_magnetic: np.ndarray | None = None,
+    prediction_force_magnetic: np.ndarray | None = None,
+    reference_hessian: np.ndarray | None = None,
+    prediction_hessian: np.ndarray | None = None,
+) -> None:
+    """Write energy-type detail outputs after arrays have been aligned."""
+    pe = np.concatenate(
+        (
+            np.reshape(reference_energy, [-1, 1]),
+            np.reshape(prediction_energy, [-1, 1]),
+        ),
+        axis=1,
+    )
+    save_txt_file(
+        detail_path.with_suffix(".e.out"),
+        pe,
+        header=f"{system}: data_e pred_e",
+        append=append_detail,
+    )
+    pe_atom = pe / natoms
+    save_txt_file(
+        detail_path.with_suffix(".e_peratom.out"),
+        pe_atom,
+        header=f"{system}: data_e pred_e",
+        append=append_detail,
+    )
+    if not out_put_spin:
+        pf = np.concatenate(
+            (
+                np.reshape(reference_force, [-1, 3]),
+                np.reshape(prediction_force, [-1, 3]),
+            ),
+            axis=1,
+        )
+        save_txt_file(
+            detail_path.with_suffix(".f.out"),
+            pf,
+            header=f"{system}: data_fx data_fy data_fz pred_fx pred_fy pred_fz",
+            append=append_detail,
+        )
+    else:
+        if reference_force_real is None or prediction_force_real is None:
+            raise ValueError("Spin detail output requires aligned real-atom forces.")
+        pf_real = np.concatenate(
+            (
+                np.reshape(reference_force_real, [-1, 3]),
+                np.reshape(prediction_force_real, [-1, 3]),
+            ),
+            axis=1,
+        )
+        save_txt_file(
+            detail_path.with_suffix(".fr.out"),
+            pf_real,
+            header=f"{system}: data_fx data_fy data_fz pred_fx pred_fy pred_fz",
+            append=append_detail,
+        )
+        if (reference_force_magnetic is None) != (prediction_force_magnetic is None):
+            raise ValueError(
+                "Spin magnetic detail output requires both reference and prediction forces."
+            )
+        if (
+            reference_force_magnetic is not None
+            and prediction_force_magnetic is not None
+        ):
+            pf_mag = np.concatenate(
+                (
+                    np.reshape(reference_force_magnetic, [-1, 3]),
+                    np.reshape(prediction_force_magnetic, [-1, 3]),
+                ),
+                axis=1,
+            )
+            save_txt_file(
+                detail_path.with_suffix(".fm.out"),
+                pf_mag,
+                header=f"{system}: data_fmx data_fmy data_fmz pred_fmx pred_fmy pred_fmz",
+                append=append_detail,
+            )
+    if (reference_virial is None) != (prediction_virial is None):
+        raise ValueError(
+            "Virial detail output requires both reference and prediction virials."
+        )
+    if reference_virial is not None and prediction_virial is not None:
+        pv = np.concatenate(
+            (
+                np.reshape(reference_virial, [-1, 9]),
+                np.reshape(prediction_virial, [-1, 9]),
+            ),
+            axis=1,
+        )
+        save_txt_file(
+            detail_path.with_suffix(".v.out"),
+            pv,
+            header=f"{system}: data_vxx data_vxy data_vxz data_vyx data_vyy "
+            "data_vyz data_vzx data_vzy data_vzz pred_vxx pred_vxy pred_vxz pred_vyx "
+            "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
+            append=append_detail,
+        )
+        pv_atom = pv / natoms
+        save_txt_file(
+            detail_path.with_suffix(".v_peratom.out"),
+            pv_atom,
+            header=f"{system}: data_vxx data_vxy data_vxz data_vyx data_vyy "
+            "data_vyz data_vzx data_vzy data_vzz pred_vxx pred_vxy pred_vxz pred_vyx "
+            "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
+            append=append_detail,
+        )
+    if reference_hessian is not None and prediction_hessian is not None:
+        hessian_detail = np.concatenate(
+            (
+                reference_hessian.reshape(-1, 1),
+                prediction_hessian.reshape(-1, 1),
+            ),
+            axis=1,
+        )
+        save_txt_file(
+            detail_path.with_suffix(".h.out"),
+            hessian_detail,
+            header=f"{system}: data_h pred_h (3Na*3Na matrix in row-major order)",
+            append=append_detail,
+        )
+
+
 def test_ener(
     dp: "DeepPot",
     data: DeepmdData,
@@ -357,7 +562,7 @@ def test_ener(
     detail_file: str | None,
     has_atom_ener: bool,
     append_detail: bool = False,
-) -> tuple[list[np.ndarray], list[int]]:
+) -> dict[str, tuple[float, float]]:
     """Test energy type model.
 
     Parameters
@@ -379,8 +584,8 @@ def test_ener(
 
     Returns
     -------
-    tuple[list[np.ndarray], list[int]]
-        arrays with results and their shapes
+    dict[str, tuple[float, float]]
+        weighted-average-ready metric pairs
     """
     dict_to_return = {}
 
@@ -461,6 +666,9 @@ def test_ener(
     energy = energy.reshape([numb_test, 1])
     force = force.reshape([numb_test, -1])
     virial = virial.reshape([numb_test, 9])
+    hessian = None
+    force_m = None
+    mask_mag = None
     if dp.has_hessian:
         hessian = ret[3]
         hessian = hessian.reshape([numb_test, -1])
@@ -481,75 +689,114 @@ def test_ener(
             mask_mag = ret[4]
             mask_mag = mask_mag.reshape([numb_test, -1])
     out_put_spin = dp.get_ntypes_spin() != 0 or dp.has_spin
+    spin_metrics = None
+    force_r = None
+    test_force_r = None
+    test_force_m = None
     if out_put_spin:
-        if dp.get_ntypes_spin() != 0:  # old tf support for spin
-            ntypes_real = dp.get_ntypes() - dp.get_ntypes_spin()
-            nloc = natoms
-            nloc_real = sum(
-                [np.count_nonzero(atype == ii) for ii in range(ntypes_real)]
+        force_r, test_force_r, force_m, test_force_m = _align_spin_force_arrays(
+            dp=dp,
+            atype=atype,
+            natoms=natoms,
+            prediction_force=force,
+            reference_force=test_data["force"][:numb_test],
+            prediction_force_mag=force_m,
+            reference_force_mag=(
+                test_data["force_mag"][:numb_test] if "force_mag" in test_data else None
+            ),
+            mask_mag=mask_mag,
+        )
+        if find_force_mag == 1 and (force_m is None or test_force_m is None):
+            raise RuntimeError(
+                "Spin magnetic force metrics require magnetic force arrays and mask."
             )
-            force_r = np.split(
-                force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
-            )[0]
-            force_m = np.split(
-                force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
-            )[1]
-            test_force_r = np.split(
-                test_data["force"][:numb_test],
-                indices_or_sections=[nloc_real * 3, nloc * 3],
-                axis=1,
-            )[0]
-            test_force_m = np.split(
-                test_data["force"][:numb_test],
-                indices_or_sections=[nloc_real * 3, nloc * 3],
-                axis=1,
-            )[1]
-        else:  # pt support for spin
-            force_r = force
-            test_force_r = test_data["force"][:numb_test]
-            # The shape of force_m and test_force_m are [-1, 3],
-            # which is designed for mixed_type cases
-            force_m = force_m.reshape(-1, 3)[mask_mag.reshape(-1)]
-            test_force_m = test_data["force_mag"][:numb_test].reshape(-1, 3)[
-                mask_mag.reshape(-1)
-            ]
+        spin_metrics = compute_spin_force_metrics(
+            force_real_prediction=force_r,
+            force_real_reference=test_force_r,
+            force_magnetic_prediction=force_m if find_force_mag == 1 else None,
+            force_magnetic_reference=test_force_m if find_force_mag == 1 else None,
+        )
 
-    diff_e = energy - test_data["energy"][:numb_test].reshape([-1, 1])
-    mae_e = mae(diff_e)
-    rmse_e = rmse(diff_e)
-    diff_f = force - test_data["force"][:numb_test]
-    mae_f = mae(diff_f)
-    rmse_f = rmse(diff_f)
-    size_f = diff_f.size
-    if find_atom_pref == 1:
-        atom_weight = test_data["atom_pref"][:numb_test]
-        weight_sum = np.sum(atom_weight)
-        if weight_sum > 0:
-            mae_fw = np.sum(np.abs(diff_f) * atom_weight) / weight_sum
-            rmse_fw = np.sqrt(np.sum(diff_f * diff_f * atom_weight) / weight_sum)
-        else:
-            mae_fw = 0.0
-            rmse_fw = 0.0
-    diff_v = virial - test_data["virial"][:numb_test]
-    mae_v = mae(diff_v)
-    rmse_v = rmse(diff_v)
-    mae_ea = mae_e / natoms
-    rmse_ea = rmse_e / natoms
-    mae_va = mae_v / natoms
-    rmse_va = rmse_v / natoms
+    energy_metric_input = {
+        "find_energy": find_energy,
+        "find_force": find_force if not out_put_spin else 0.0,
+        "find_virial": find_virial if not out_put_spin else 0.0,
+        "energy": test_data["energy"][:numb_test],
+        "force": test_data["force"][:numb_test],
+    }
+    energy_metric_prediction = {
+        "energy": energy,
+        "force": force,
+    }
+    if find_virial == 1 and data.pbc and not out_put_spin:
+        energy_metric_input["virial"] = test_data["virial"][:numb_test]
+        energy_metric_prediction["virial"] = virial
+    shared_metrics = compute_energy_type_metrics(
+        prediction=energy_metric_prediction,
+        test_data=energy_metric_input,
+        natoms=natoms,
+        has_pbc=data.pbc,
+    )
+    dict_to_return.update(
+        shared_metrics.as_weighted_average_errors(DP_TEST_WEIGHTED_METRIC_KEYS)
+    )
+
+    weighted_force_metrics = None
+    if find_energy == 1:
+        if shared_metrics.energy is None or shared_metrics.energy_per_atom is None:
+            raise RuntimeError("Energy metrics are unavailable for dp test.")
+        mae_e = shared_metrics.energy.mae
+        rmse_e = shared_metrics.energy.rmse
+        mae_ea = shared_metrics.energy_per_atom.mae
+        rmse_ea = shared_metrics.energy_per_atom.rmse
+
+    if not out_put_spin and find_force == 1:
+        if shared_metrics.force is None:
+            raise RuntimeError("Force metrics are unavailable for dp test.")
+        mae_f = shared_metrics.force.mae
+        rmse_f = shared_metrics.force.rmse
+        if find_atom_pref == 1:
+            weighted_force_metrics = compute_weighted_error_stat(
+                force,
+                test_data["force"][:numb_test],
+                test_data["atom_pref"][:numb_test],
+            )
+            mae_fw = weighted_force_metrics.mae
+            rmse_fw = weighted_force_metrics.rmse
+
+    if data.pbc and not out_put_spin and find_virial == 1:
+        if shared_metrics.virial is None or shared_metrics.virial_per_atom is None:
+            raise RuntimeError("Virial metrics are unavailable for dp test.")
+        mae_v = shared_metrics.virial.mae
+        rmse_v = shared_metrics.virial.rmse
+        mae_va = shared_metrics.virial_per_atom.mae
+        rmse_va = shared_metrics.virial_per_atom.rmse
+
+    hessian_metrics = None
     if dp.has_hessian:
-        diff_h = hessian - test_data["hessian"][:numb_test]
-        mae_h = mae(diff_h)
-        rmse_h = rmse(diff_h)
+        hessian_metrics = compute_error_stat(
+            hessian,
+            test_data["hessian"][:numb_test],
+        )
+        mae_h = hessian_metrics.mae
+        rmse_h = hessian_metrics.rmse
     if has_atom_ener:
-        diff_ae = test_data["atom_ener"][:numb_test].reshape([-1]) - ae.reshape([-1])
-        mae_ae = mae(diff_ae)
-        rmse_ae = rmse(diff_ae)
+        atomic_energy_metrics = compute_error_stat(
+            ae.reshape([-1]),
+            test_data["atom_ener"][:numb_test].reshape([-1]),
+        )
+        mae_ae = atomic_energy_metrics.mae
+        rmse_ae = atomic_energy_metrics.rmse
     if out_put_spin:
-        mae_fr = mae(force_r - test_force_r)
-        mae_fm = mae(force_m - test_force_m)
-        rmse_fr = rmse(force_r - test_force_r)
-        rmse_fm = rmse(force_m - test_force_m)
+        if spin_metrics is None or spin_metrics.force_real is None:
+            raise RuntimeError("Spin force metrics are unavailable for dp test.")
+        mae_fr = spin_metrics.force_real.mae
+        rmse_fr = spin_metrics.force_real.rmse
+        if find_force_mag == 1:
+            if spin_metrics.force_magnetic is None:
+                raise RuntimeError("Spin magnetic force metrics are unavailable.")
+            mae_fm = spin_metrics.force_magnetic.mae
+            rmse_fm = spin_metrics.force_magnetic.rmse
 
     log.info(f"# number of test data : {numb_test:d} ")
     if find_energy == 1:
@@ -557,146 +804,76 @@ def test_ener(
         log.info(f"Energy RMSE        : {rmse_e:e} eV")
         log.info(f"Energy MAE/Natoms  : {mae_ea:e} eV")
         log.info(f"Energy RMSE/Natoms : {rmse_ea:e} eV")
-        dict_to_return["mae_e"] = (mae_e, energy.size)
-        dict_to_return["mae_ea"] = (mae_ea, energy.size)
-        dict_to_return["rmse_e"] = (rmse_e, energy.size)
-        dict_to_return["rmse_ea"] = (rmse_ea, energy.size)
     if not out_put_spin and find_force == 1:
         log.info(f"Force  MAE         : {mae_f:e} eV/Å")
         log.info(f"Force  RMSE        : {rmse_f:e} eV/Å")
-        dict_to_return["mae_f"] = (mae_f, size_f)
-        dict_to_return["rmse_f"] = (rmse_f, size_f)
-        if find_atom_pref == 1:
+        if weighted_force_metrics is not None:
             log.info(f"Force weighted MAE : {mae_fw:e} eV/Å")
             log.info(f"Force weighted RMSE: {rmse_fw:e} eV/Å")
-            dict_to_return["mae_fw"] = (mae_fw, weight_sum)
-            dict_to_return["rmse_fw"] = (rmse_fw, weight_sum)
+            dict_to_return.update(
+                weighted_force_metrics.as_weighted_average_errors(
+                    *DP_TEST_WEIGHTED_FORCE_METRIC_KEYS
+                )
+            )
     if out_put_spin and find_force == 1:
         log.info(f"Force atom MAE      : {mae_fr:e} eV/Å")
         log.info(f"Force atom RMSE     : {rmse_fr:e} eV/Å")
-        dict_to_return["mae_fr"] = (mae_fr, force_r.size)
-        dict_to_return["rmse_fr"] = (rmse_fr, force_r.size)
+        dict_to_return.update(
+            spin_metrics.as_weighted_average_errors(
+                {"force_real": DP_TEST_SPIN_WEIGHTED_METRIC_KEYS["force_real"]}
+            )
+        )
     if out_put_spin and find_force_mag == 1:
         log.info(f"Force spin MAE      : {mae_fm:e} eV/uB")
         log.info(f"Force spin RMSE     : {rmse_fm:e} eV/uB")
-        dict_to_return["mae_fm"] = (mae_fm, force_m.size)
-        dict_to_return["rmse_fm"] = (rmse_fm, force_m.size)
+        dict_to_return.update(
+            spin_metrics.as_weighted_average_errors(
+                {"force_magnetic": DP_TEST_SPIN_WEIGHTED_METRIC_KEYS["force_magnetic"]}
+            )
+        )
     if data.pbc and not out_put_spin and find_virial == 1:
         log.info(f"Virial MAE         : {mae_v:e} eV")
         log.info(f"Virial RMSE        : {rmse_v:e} eV")
         log.info(f"Virial MAE/Natoms  : {mae_va:e} eV")
         log.info(f"Virial RMSE/Natoms : {rmse_va:e} eV")
-        dict_to_return["mae_v"] = (mae_v, virial.size)
-        dict_to_return["mae_va"] = (mae_va, virial.size)
-        dict_to_return["rmse_v"] = (rmse_v, virial.size)
-        dict_to_return["rmse_va"] = (rmse_va, virial.size)
     if has_atom_ener:
         log.info(f"Atomic ener MAE    : {mae_ae:e} eV")
         log.info(f"Atomic ener RMSE   : {rmse_ae:e} eV")
     if dp.has_hessian:
         log.info(f"Hessian MAE        : {mae_h:e} eV/Å^2")
         log.info(f"Hessian RMSE       : {rmse_h:e} eV/Å^2")
-        dict_to_return["mae_h"] = (mae_h, hessian.size)
-        dict_to_return["rmse_h"] = (rmse_h, hessian.size)
+        if hessian_metrics is None:
+            raise RuntimeError("Hessian metrics are unavailable for dp test.")
+        dict_to_return.update(
+            hessian_metrics.as_weighted_average_errors(*DP_TEST_HESSIAN_METRIC_KEYS)
+        )
 
     if detail_file is not None:
-        detail_path = Path(detail_file)
-
-        pe = np.concatenate(
-            (
-                np.reshape(test_data["energy"][:numb_test], [-1, 1]),
-                np.reshape(energy, [-1, 1]),
-            ),
-            axis=1,
+        _write_energy_test_details(
+            detail_path=Path(detail_file),
+            system=system,
+            natoms=natoms,
+            append_detail=append_detail,
+            reference_energy=test_data["energy"][:numb_test],
+            prediction_energy=energy,
+            reference_force=test_data["force"][:numb_test],
+            prediction_force=force,
+            reference_virial=test_data["virial"][:numb_test]
+            if find_virial == 1 and data.pbc
+            else None,
+            prediction_virial=virial if find_virial == 1 and data.pbc else None,
+            out_put_spin=out_put_spin,
+            reference_force_real=test_force_r,
+            prediction_force_real=force_r,
+            reference_force_magnetic=test_force_m if find_force_mag == 1 else None,
+            prediction_force_magnetic=force_m
+            if out_put_spin and find_force_mag == 1
+            else None,
+            reference_hessian=test_data["hessian"][:numb_test]
+            if dp.has_hessian
+            else None,
+            prediction_hessian=hessian if dp.has_hessian else None,
         )
-        save_txt_file(
-            detail_path.with_suffix(".e.out"),
-            pe,
-            header=f"{system}: data_e pred_e",
-            append=append_detail,
-        )
-        pe_atom = pe / natoms
-        save_txt_file(
-            detail_path.with_suffix(".e_peratom.out"),
-            pe_atom,
-            header=f"{system}: data_e pred_e",
-            append=append_detail,
-        )
-        if not out_put_spin:
-            pf = np.concatenate(
-                (
-                    np.reshape(test_data["force"][:numb_test], [-1, 3]),
-                    np.reshape(force, [-1, 3]),
-                ),
-                axis=1,
-            )
-            save_txt_file(
-                detail_path.with_suffix(".f.out"),
-                pf,
-                header=f"{system}: data_fx data_fy data_fz pred_fx pred_fy pred_fz",
-                append=append_detail,
-            )
-        else:
-            pf_real = np.concatenate(
-                (np.reshape(test_force_r, [-1, 3]), np.reshape(force_r, [-1, 3])),
-                axis=1,
-            )
-            pf_mag = np.concatenate(
-                (np.reshape(test_force_m, [-1, 3]), np.reshape(force_m, [-1, 3])),
-                axis=1,
-            )
-            save_txt_file(
-                detail_path.with_suffix(".fr.out"),
-                pf_real,
-                header=f"{system}: data_fx data_fy data_fz pred_fx pred_fy pred_fz",
-                append=append_detail,
-            )
-            save_txt_file(
-                detail_path.with_suffix(".fm.out"),
-                pf_mag,
-                header=f"{system}: data_fmx data_fmy data_fmz pred_fmx pred_fmy pred_fmz",
-                append=append_detail,
-            )
-        pv = np.concatenate(
-            (
-                np.reshape(test_data["virial"][:numb_test], [-1, 9]),
-                np.reshape(virial, [-1, 9]),
-            ),
-            axis=1,
-        )
-        save_txt_file(
-            detail_path.with_suffix(".v.out"),
-            pv,
-            header=f"{system}: data_vxx data_vxy data_vxz data_vyx data_vyy "
-            "data_vyz data_vzx data_vzy data_vzz pred_vxx pred_vxy pred_vxz pred_vyx "
-            "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
-            append=append_detail,
-        )
-        pv_atom = pv / natoms
-        save_txt_file(
-            detail_path.with_suffix(".v_peratom.out"),
-            pv_atom,
-            header=f"{system}: data_vxx data_vxy data_vxz data_vyx data_vyy "
-            "data_vyz data_vzx data_vzy data_vzz pred_vxx pred_vxy pred_vxz pred_vyx "
-            "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
-            append=append_detail,
-        )
-        if dp.has_hessian:
-            data_h = test_data["hessian"][:numb_test].reshape(-1, 1)
-            pred_h = hessian.reshape(-1, 1)
-            h = np.concatenate(
-                (
-                    data_h,
-                    pred_h,
-                ),
-                axis=1,
-            )
-            save_txt_file(
-                detail_path.with_suffix(".h.out"),
-                h,
-                header=f"{system}: data_h pred_h (3Na*3Na matrix in row-major order)",
-                append=append_detail,
-            )
 
     return dict_to_return
 
@@ -721,9 +898,10 @@ def print_ener_sys_avg(avg: dict[str, float]) -> None:
             log.info(f"Force weighted RMSE: {avg['rmse_fw']:e} eV/Å")
     else:
         log.info(f"Force atom MAE      : {avg['mae_fr']:e} eV/Å")
-        log.info(f"Force spin MAE      : {avg['mae_fm']:e} eV/uB")
         log.info(f"Force atom RMSE     : {avg['rmse_fr']:e} eV/Å")
-        log.info(f"Force spin RMSE     : {avg['rmse_fm']:e} eV/uB")
+        if "rmse_fm" in avg:
+            log.info(f"Force spin MAE      : {avg['mae_fm']:e} eV/uB")
+            log.info(f"Force spin RMSE     : {avg['rmse_fm']:e} eV/uB")
     if "rmse_v" in avg:
         log.info(f"Virial MAE         : {avg['mae_v']:e} eV")
         log.info(f"Virial RMSE        : {avg['rmse_v']:e} eV")

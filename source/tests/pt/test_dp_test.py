@@ -84,28 +84,32 @@ class DPTest:
                 pred_f,
                 to_numpy_array(result["force"]).reshape(-1, 3),
             )
-            pred_v = np.loadtxt(self.detail_file + ".v.out", ndmin=2)[:, 9:18]
-            np.testing.assert_almost_equal(
-                pred_v,
-                to_numpy_array(result["virial"]),
-            )
-            pred_v_peratom = np.loadtxt(self.detail_file + ".v_peratom.out", ndmin=2)[
-                :, 9:18
-            ]
-            np.testing.assert_almost_equal(pred_v_peratom, pred_v / natom)
+            if os.path.exists(self.detail_file + ".v.out"):
+                pred_v = np.loadtxt(self.detail_file + ".v.out", ndmin=2)[:, 9:18]
+                np.testing.assert_almost_equal(
+                    pred_v,
+                    to_numpy_array(result["virial"]),
+                )
+                pred_v_peratom = np.loadtxt(
+                    self.detail_file + ".v_peratom.out", ndmin=2
+                )[:, 9:18]
+                np.testing.assert_almost_equal(pred_v_peratom, pred_v / natom)
+            else:
+                self.assertFalse(os.path.exists(self.detail_file + ".v_peratom.out"))
         else:
             pred_fr = np.loadtxt(self.detail_file + ".fr.out", ndmin=2)[:, 3:6]
             np.testing.assert_almost_equal(
                 pred_fr,
                 to_numpy_array(result["force"]).reshape(-1, 3),
             )
-            pred_fm = np.loadtxt(self.detail_file + ".fm.out", ndmin=2)[:, 3:6]
-            np.testing.assert_almost_equal(
-                pred_fm,
-                to_numpy_array(
-                    result["force_mag"][result["mask_mag"].bool().squeeze(-1)]
-                ).reshape(-1, 3),
-            )
+            if os.path.exists(self.detail_file + ".fm.out"):
+                pred_fm = np.loadtxt(self.detail_file + ".fm.out", ndmin=2)[:, 3:6]
+                np.testing.assert_almost_equal(
+                    pred_fm,
+                    to_numpy_array(
+                        result["force_mag"][result["mask_mag"].bool().squeeze(-1)]
+                    ).reshape(-1, 3),
+                )
 
     def test_dp_test_1_frame(self) -> None:
         self._run_dp_test(False)
