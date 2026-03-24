@@ -461,6 +461,25 @@ def torch_module(
 
         TorchModule.forward_lower = forward_lower
 
+    # Auto-register dpmodel base → pt_expt converter so that auto-wrapped
+    # parent objects (e.g. atomic models) get pt_expt sub-components instead
+    # of generic dpmodel wrappers (which lack methods like enable_compression).
+    if hasattr(TorchModule, "deserialize"):
+        for base in module.__bases__:
+            if (
+                base is not NativeOP
+                and issubclass(base, NativeOP)
+                and hasattr(base, "serialize")
+                and base not in _DPMODEL_TO_PT_EXPT
+            ):
+                # Capture TorchModule in closure via default arg
+                def _converter(
+                    v: NativeOP, _cls: type = TorchModule
+                ) -> torch.nn.Module:
+                    return _cls.deserialize(v.serialize())
+
+                _DPMODEL_TO_PT_EXPT[base] = _converter
+
     return TorchModule
 
 

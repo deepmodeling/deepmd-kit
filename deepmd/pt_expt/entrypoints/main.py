@@ -38,6 +38,8 @@ def get_trainer(
     config: dict[str, Any],
     init_model: str | None = None,
     restart_model: str | None = None,
+    finetune_model: str | None = None,
+    finetune_links: dict | None = None,
 ) -> training.Trainer:
     """Build a :class:`training.Trainer` from a normalised config."""
     model_params = config["model"]
@@ -94,6 +96,8 @@ def get_trainer(
         validation_data=validation_data,
         init_model=init_model,
         restart_model=restart_model,
+        finetune_model=finetune_model,
+        finetune_links=finetune_links,
     )
     return trainer
 
@@ -102,6 +106,9 @@ def train(
     input_file: str,
     init_model: str | None = None,
     restart: str | None = None,
+    finetune: str | None = None,
+    model_branch: str = "",
+    use_pretrain_script: bool = False,
     skip_neighbor_stat: bool = False,
     output: str = "out.json",
 ) -> None:
@@ -115,13 +122,24 @@ def train(
         Path to a checkpoint to initialise weights from.
     restart : str or None
         Path to a checkpoint to restart training from.
+    finetune : str or None
+        Path to a pretrained checkpoint to fine-tune from.
+    model_branch : str
+        Branch to select from a multi-task pretrained model.
+    use_pretrain_script : bool
+        If True, copy descriptor/fitting params from the pretrained model.
     skip_neighbor_stat : bool
         Skip neighbour statistics calculation.
     output : str
         Where to dump the normalised config.
     """
+    import torch
+
     from deepmd.common import (
         j_loader,
+    )
+    from deepmd.pt_expt.utils.env import (
+        DEVICE,
     )
 
     log.info("Configuration path: %s", input_file)
@@ -132,6 +150,27 @@ def train(
         init_model += ".pt"
     if restart is not None and not restart.endswith(".pt"):
         restart += ".pt"
+
+    # update fine-tuning config
+    finetune_links = None
+    if finetune is not None:
+        from deepmd.pt_expt.utils.finetune import (
+            get_finetune_rules,
+        )
+
+        config["model"], finetune_links = get_finetune_rules(
+            finetune,
+            config["model"],
+            model_branch=model_branch,
+            change_model_params=use_pretrain_script,
+        )
+
+    # update init_model config if --use-pretrain-script
+    if init_model is not None and use_pretrain_script:
+        init_state_dict = torch.load(init_model, map_location=DEVICE, weights_only=True)
+        if "model" in init_state_dict:
+            init_state_dict = init_state_dict["model"]
+        config["model"] = init_state_dict["_extra_state"]["model_params"]
 
     # argcheck
     config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
@@ -156,7 +195,13 @@ def train(
     with open(output, "w") as fp:
         json.dump(config, fp, indent=4)
 
-    trainer = get_trainer(config, init_model, restart)
+    trainer = get_trainer(
+        config,
+        init_model,
+        restart,
+        finetune_model=finetune,
+        finetune_links=finetune_links,
+    )
     trainer.run()
 
 
@@ -214,7 +259,7 @@ def freeze(
     m.eval()
 
     model_dict = m.serialize()
-    deserialize_to_file(output, {"model": model_dict})
+    deserialize_to_file(output, {"model": model_dict}, model_params=model_params)
     log.info("Saved frozen model to %s", output)
 
 
@@ -250,6 +295,9 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
             input_file=FLAGS.INPUT,
             init_model=FLAGS.init_model,
             restart=FLAGS.restart,
+            finetune=FLAGS.finetune,
+            model_branch=FLAGS.model_branch,
+            use_pretrain_script=FLAGS.use_pretrain_script,
             skip_neighbor_stat=FLAGS.skip_neighbor_stat,
             output=FLAGS.output,
         )
@@ -275,6 +323,23 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
         if not FLAGS.output.endswith((".pte", ".pt2")):
             FLAGS.output = str(Path(FLAGS.output).with_suffix(".pte"))
         freeze(model=FLAGS.model, output=FLAGS.output, head=FLAGS.head)
+    elif FLAGS.command == "compress":
+        from deepmd.pt_expt.entrypoints.compress import (
+            enable_compression,
+        )
+
+        if not FLAGS.input.endswith((".pte", ".pt2")):
+            FLAGS.input = str(Path(FLAGS.input).with_suffix(".pte"))
+        if not FLAGS.output.endswith((".pte", ".pt2")):
+            FLAGS.output = str(Path(FLAGS.output).with_suffix(".pte"))
+        enable_compression(
+            input_file=FLAGS.input,
+            output=FLAGS.output,
+            stride=FLAGS.step,
+            extrapolate=FLAGS.extrapolate,
+            check_frequency=FLAGS.frequency,
+            training_script=FLAGS.training_script,
+        )
     else:
         raise RuntimeError(
             f"Unsupported command '{FLAGS.command}' for the pt_expt backend."
