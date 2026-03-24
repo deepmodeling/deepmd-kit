@@ -1283,6 +1283,160 @@ class TestEnerModelAPIs(unittest.TestCase):
             atol=1e-10,
         )
 
+    def test_change_type_map_new_type(self) -> None:
+        """change_type_map with new types should extend out_bias/out_std consistently across dp, pt, and pt_expt.
+
+        When the new type_map introduces types not present in the original
+        type_map, the model's out_bias must be extended (zeros for bias,
+        ones for std) before remapping.  This test verifies the fix in
+        dpmodel's base_atomic_model.change_type_map.
+        """
+        from deepmd.utils.argcheck import model_args as model_args_fn
+
+        small_tm = ["O", "H"]
+        large_tm = ["H", "X1", "X2", "O", "B"]
+
+        data = model_args_fn().normalize_value(
+            {
+                "type_map": small_tm,
+                "descriptor": {
+                    "type": "se_atten",
+                    "sel": 20,
+                    "rcut_smth": 0.50,
+                    "rcut": 6.00,
+                    "neuron": [3, 6],
+                    "resnet_dt": False,
+                    "axis_neuron": 2,
+                    "precision": "float64",
+                    "seed": 1,
+                    "attn": 6,
+                    "attn_layer": 0,
+                },
+                "fitting_net": {
+                    "neuron": [5, 5],
+                    "resnet_dt": True,
+                    "precision": "float64",
+                    "seed": 1,
+                },
+            },
+            trim_pattern="_*",
+        )
+        dp_model = get_model_dp(data)
+
+        # Set non-zero out_bias so the remap is non-trivial
+        dp_bias_orig = to_numpy_array(dp_model.get_out_bias()).copy()
+        new_bias = dp_bias_orig.copy()
+        new_bias[:, 0, :] = 1.5  # type 0 ("O")
+        new_bias[:, 1, :] = -3.7  # type 1 ("H")
+        dp_model.set_out_bias(new_bias)
+
+        # Snapshot out_std before change_type_map for remap verification
+        dp_std_before = to_numpy_array(dp_model.atomic_model.out_std).copy()
+
+        # Build pt and pt_expt models from dp serialization
+        pt_model = EnergyModelPT.deserialize(dp_model.serialize())
+        pt_expt_model = EnergyModelPTExpt.deserialize(dp_model.serialize())
+
+        # Extend type map with new types (no model_with_new_type_stat)
+        dp_model.change_type_map(large_tm)
+        pt_model.change_type_map(large_tm)
+        pt_expt_model.change_type_map(large_tm)
+
+        # All should have the new type_map
+        self.assertEqual(dp_model.get_type_map(), large_tm)
+        self.assertEqual(pt_model.get_type_map(), large_tm)
+        self.assertEqual(pt_expt_model.get_type_map(), large_tm)
+
+        # Out_bias should be consistent across all backends
+        dp_bias_new = to_numpy_array(dp_model.get_out_bias())
+        pt_bias_new = torch_to_numpy(pt_model.get_out_bias())
+        pt_expt_bias_new = to_numpy_array(pt_expt_model.get_out_bias())
+
+        np.testing.assert_allclose(
+            dp_bias_new,
+            pt_bias_new,
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg="dp vs pt out_bias mismatch after change_type_map with new types",
+        )
+        np.testing.assert_allclose(
+            dp_bias_new,
+            pt_expt_bias_new,
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg="dp vs pt_expt out_bias mismatch after change_type_map with new types",
+        )
+
+        # Verify remap correctness:
+        # large_tm = ["H", "X1", "X2", "O", "B"]
+        # old "O" (index 0) -> new index 3
+        # old "H" (index 1) -> new index 0
+        # new types X1(1), X2(2), B(4) -> bias should be 0
+        np.testing.assert_allclose(
+            dp_bias_new[:, 3, :],
+            new_bias[:, 0, :],  # O
+            rtol=1e-10,
+            atol=1e-10,
+        )
+        np.testing.assert_allclose(
+            dp_bias_new[:, 0, :],
+            new_bias[:, 1, :],  # H
+            rtol=1e-10,
+            atol=1e-10,
+        )
+        for idx in [1, 2, 4]:  # X1, X2, B
+            np.testing.assert_allclose(
+                dp_bias_new[:, idx, :],
+                0.0,
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"new type at index {idx} should have zero bias",
+            )
+
+        # Out_std for new types should be 1.0 (default)
+        dp_std_new = to_numpy_array(dp_model.atomic_model.out_std)
+        pt_std_new = torch_to_numpy(pt_model.atomic_model.out_std)
+        pt_expt_std_new = to_numpy_array(pt_expt_model.atomic_model.out_std)
+
+        np.testing.assert_allclose(
+            dp_std_new,
+            pt_std_new,
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg="dp vs pt out_std mismatch after change_type_map with new types",
+        )
+        np.testing.assert_allclose(
+            dp_std_new,
+            pt_expt_std_new,
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg="dp vs pt_expt out_std mismatch after change_type_map with new types",
+        )
+        # Verify old types' std was remapped correctly
+        # old "O" (index 0) -> new index 3, old "H" (index 1) -> new index 0
+        np.testing.assert_allclose(
+            dp_std_new[:, 3, :],
+            dp_std_before[:, 0, :],  # O
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg="out_std for O should be remapped from old index 0",
+        )
+        np.testing.assert_allclose(
+            dp_std_new[:, 0, :],
+            dp_std_before[:, 1, :],  # H
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg="out_std for H should be remapped from old index 1",
+        )
+        for idx in [1, 2, 4]:  # X1, X2, B
+            np.testing.assert_allclose(
+                dp_std_new[:, idx, :],
+                1.0,
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"new type at index {idx} should have unit std",
+            )
+
     def test_update_sel(self) -> None:
         """update_sel should return the same result on dp and pt."""
         from unittest.mock import (

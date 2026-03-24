@@ -212,7 +212,9 @@ def serialize_from_file(model_file: str) -> dict:
     Returns
     -------
     dict
-        The serialized model data.
+        The serialized model data.  If the archive contains
+        ``model_params.json``, it is included under the
+        ``"model_params"`` key.
     """
     if model_file.endswith(".pt2"):
         return _serialize_from_file_pt2(model_file)
@@ -222,10 +224,12 @@ def serialize_from_file(model_file: str) -> dict:
 
 def _serialize_from_file_pte(model_file: str) -> dict:
     """Serialize a .pte model file to a dictionary."""
-    extra_files = {"model.json": ""}
+    extra_files = {"model.json": "", "model_params.json": ""}
     torch.export.load(model_file, extra_files=extra_files)
     model_dict = json.loads(extra_files["model.json"])
     model_dict = _json_to_numpy(model_dict)
+    if extra_files["model_params.json"]:
+        model_dict["model_params"] = json.loads(extra_files["model_params.json"])
     return model_dict
 
 
@@ -242,14 +246,20 @@ def _serialize_from_file_pt2(model_file: str) -> dict:
                 f"Invalid .pt2 file '{model_file}': missing 'extra/model.json'"
             )
         model_json = zf.read("extra/model.json").decode("utf-8")
+        model_params_json = ""
+        if "extra/model_params.json" in zf.namelist():
+            model_params_json = zf.read("extra/model_params.json").decode("utf-8")
     model_dict = json.loads(model_json)
     model_dict = _json_to_numpy(model_dict)
+    if model_params_json:
+        model_dict["model_params"] = json.loads(model_params_json)
     return model_dict
 
 
 def deserialize_to_file(
     model_file: str,
     data: dict,
+    model_params: dict | None = None,
     model_json_override: dict | None = None,
 ) -> None:
     """Deserialize a dictionary to a .pte or .pt2 model file.
@@ -264,15 +274,19 @@ def deserialize_to_file(
     data : dict
         The dictionary to be deserialized (same format as dpmodel's
         serialize output, with "model" and optionally "model_def_script" keys).
+    model_params : dict or None
+        Original model config (the dict passed to ``get_model``).
+        If provided, embedded in the .pte so that ``--use-pretrain-script``
+        can extract descriptor/fitting params at finetune time.
     model_json_override : dict or None
         If provided, this dict is stored in model.json instead of ``data``.
         Used by ``dp compress`` to store the compressed model dict while
         tracing the uncompressed model (make_fx cannot trace custom ops).
     """
     if model_file.endswith(".pt2"):
-        _deserialize_to_file_pt2(model_file, data, model_json_override)
+        _deserialize_to_file_pt2(model_file, data, model_json_override, model_params)
     else:
-        _deserialize_to_file_pte(model_file, data, model_json_override)
+        _deserialize_to_file_pte(model_file, data, model_json_override, model_params)
 
 
 def _trace_and_export(
@@ -369,7 +383,10 @@ def _trace_and_export(
 
 
 def _deserialize_to_file_pte(
-    model_file: str, data: dict, model_json_override: dict | None = None
+    model_file: str,
+    data: dict,
+    model_json_override: dict | None = None,
+    model_params: dict | None = None,
 ) -> None:
     """Deserialize a dictionary to a .pte model file."""
     exported, metadata, data_for_json, _output_keys = _trace_and_export(
@@ -380,12 +397,17 @@ def _deserialize_to_file_pte(
         "model_def_script.json": json.dumps(metadata),
         "model.json": json.dumps(data_for_json, separators=(",", ":")),
     }
+    if model_params is not None:
+        extra_files["model_params.json"] = json.dumps(model_params)
 
     torch.export.save(exported, model_file, extra_files=extra_files)
 
 
 def _deserialize_to_file_pt2(
-    model_file: str, data: dict, model_json_override: dict | None = None
+    model_file: str,
+    data: dict,
+    model_json_override: dict | None = None,
+    model_params: dict | None = None,
 ) -> None:
     """Deserialize a dictionary to a .pt2 model file (AOTInductor).
 
@@ -414,3 +436,5 @@ def _deserialize_to_file_pt2(
             "extra/model.json",
             json.dumps(data_for_json, separators=(",", ":")),
         )
+        if model_params is not None:
+            zf.writestr("extra/model_params.json", json.dumps(model_params))
