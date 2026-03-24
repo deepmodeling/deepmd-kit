@@ -400,7 +400,7 @@ class TestDipoleModel(unittest.TestCase):
         # ref shape: [nframes, natoms, nout]
 
         # Shuffle atoms
-        idx_perm = [1, 0, 4, 3, 2]
+        idx_perm = np.array([1, 0, 4, 3, 2], dtype=np.intp)
         coord_sf = coord.reshape(self.natoms, 3)[idx_perm].reshape(1, -1)
         atype_sf = atype[idx_perm]
 
