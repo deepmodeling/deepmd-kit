@@ -230,7 +230,7 @@ class TestChangeBias(unittest.TestCase):
         # Get original bias
         original_data = serialize_from_file(pte_path)
         original_model = BaseModel.deserialize(original_data["model"])
-        original_bias = deepcopy(original_model.get_out_bias())
+        original_bias = to_numpy(original_model.get_out_bias())
 
         # Run change-bias on the frozen model
         output_pte = os.path.join(self.tmpdir, "frozen_updated.pte")
@@ -242,7 +242,7 @@ class TestChangeBias(unittest.TestCase):
         # Load updated model and verify bias changed
         updated_data = serialize_from_file(output_pte)
         updated_model = BaseModel.deserialize(updated_data["model"])
-        updated_bias = updated_model.get_out_bias()
+        updated_bias = to_numpy(updated_model.get_out_bias())
 
         # Bias should have changed
         self.assertFalse(
