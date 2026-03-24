@@ -895,7 +895,9 @@ def test_property(
         data.add("aparam", dp.get_dim_aparam(), atomic=True, must=True, high_prec=False)
 
     # sel_type: optional per-frame type index for element-wise mean reduction (XAS)
-    data.add("sel_type", 1, atomic=False, must=False, high_prec=False, default=float(-1))
+    data.add(
+        "sel_type", 1, atomic=False, must=False, high_prec=False, default=float(-1)
+    )
 
     test_data = data.get_test()
     mixed_type = data.mixed_type
@@ -949,7 +951,7 @@ def test_property(
         property = np.zeros([numb_test, dp.task_dim], dtype=atom_prop.dtype)
         for i in range(numb_test):
             t = sel_type_int[i]
-            mask = (atype_frames[i] == t)  # [natoms]
+            mask = atype_frames[i] == t  # [natoms]
             count = max(mask.sum(), 1)
             property[i] = atom_prop[i][mask].sum(axis=0) / count
     else:

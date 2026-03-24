@@ -1,13 +1,21 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-from typing import Any
+from typing import (
+    Any,
+)
 
 import torch
 import torch.nn.functional as F
 
-from deepmd.pt.loss.loss import TaskLoss
-from deepmd.pt.utils import env
-from deepmd.utils.data import DataRequirementItem
+from deepmd.pt.loss.loss import (
+    TaskLoss,
+)
+from deepmd.pt.utils import (
+    env,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 
 log = logging.getLogger(__name__)
 
@@ -70,9 +78,7 @@ class XASLoss(TaskLoss):
 
         # element-wise mean: for each frame average over atoms of sel_type
         nf, nloc, td = atom_prop.shape
-        pred = torch.zeros(
-            nf, td, dtype=atom_prop.dtype, device=atom_prop.device
-        )
+        pred = torch.zeros(nf, td, dtype=atom_prop.dtype, device=atom_prop.device)
         for i in range(nf):
             t = int(sel_type[i].item())
             mask = (atype[i] == t).unsqueeze(-1)  # [nloc, 1]

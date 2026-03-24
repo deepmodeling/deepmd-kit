@@ -74,6 +74,7 @@ from .spin_model import (
     SpinModel,
 )
 
+
 def _get_standard_model_components(model_params: dict, ntypes: int) -> tuple:
     if "type_embedding" in model_params:
         raise ValueError(
