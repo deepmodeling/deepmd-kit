@@ -70,16 +70,16 @@ O  is type 1  →  sel_type.npy filled with 1.0
 
 ### `xas.npy` label layout (`task_dim = 102`)
 
-| Column    | Meaning                                     |
-|-----------|---------------------------------------------|
-| `xas[i,0]` | `E_min` (eV) — lower bound of energy grid  |
-| `xas[i,1]` | `E_max` (eV) — upper bound of energy grid  |
-| `xas[i,2:]`| `I[0..99]` — 100 intensity values on `linspace(E_min, E_max, 100)` |
+| Column      | Meaning                                                            |
+| ----------- | ------------------------------------------------------------------ |
+| `xas[i,0]`  | `E_min` (eV) — lower bound of energy grid                          |
+| `xas[i,1]`  | `E_max` (eV) — upper bound of energy grid                          |
+| `xas[i,2:]` | `I[0..99]` — 100 intensity values on `linspace(E_min, E_max, 100)` |
 
 ### `fparam.npy` edge encoding (`nfparam = 3`)
 
 | Edge | Encoding  |
-|------|-----------|
+| ---- | --------- |
 | K    | `[1,0,0]` |
 | L1   | `[0,1,0]` |
 | L2   | `[0,0,1]` |
@@ -90,14 +90,14 @@ Extend with more entries for additional edges and set `numb_fparam` accordingly.
 
 Key fields in `input.json`:
 
-| Parameter | Description |
-|-----------|-------------|
-| `fitting_net.type` | Must be `"property"` |
-| `fitting_net.task_dim` | `102` (2 energy bounds + 100 intensities) |
-| `fitting_net.intensive` | `true` — per-atom outputs are **averaged**, not summed |
-| `fitting_net.numb_fparam` | Number of edge-type features (3 for K/L1/L2) |
-| `loss.type` | `"xas"` — uses `sel_type.npy` for element-selective averaging |
-| `loss.loss_func` | `"smooth_mae"` (recommended) or `"mse"` |
+| Parameter                 | Description                                                   |
+| ------------------------- | ------------------------------------------------------------- |
+| `fitting_net.type`        | Must be `"property"`                                          |
+| `fitting_net.task_dim`    | `102` (2 energy bounds + 100 intensities)                     |
+| `fitting_net.intensive`   | `true` — per-atom outputs are **averaged**, not summed        |
+| `fitting_net.numb_fparam` | Number of edge-type features (3 for K/L1/L2)                  |
+| `loss.type`               | `"xas"` — uses `sel_type.npy` for element-selective averaging |
+| `loss.loss_func`          | `"smooth_mae"` (recommended) or `"mse"`                       |
 
 ## Extending to More Elements / Edges
 

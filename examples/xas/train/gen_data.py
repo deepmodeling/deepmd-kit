@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Generate example XAS training data for a Fe-O system.
 
 This script shows the required data format for XAS spectrum fitting.
@@ -43,28 +44,37 @@ sel_type.npy
 """
 
 import os
+
 import numpy as np
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-nframes   = 50        # number of frames per system
-numb_pts  = 100       # energy grid points
-task_dim  = numb_pts + 2   # E_min + E_max + 100 intensities
-nfparam   = 3         # K / L1 / L2 one-hot
-natoms    = 8         # 4 Fe (type 0) + 4 O (type 1)
-box_size  = 4.0       # Å
+nframes = 50  # number of frames per system
+numb_pts = 100  # energy grid points
+task_dim = numb_pts + 2  # E_min + E_max + 100 intensities
+nfparam = 3  # K / L1 / L2 one-hot
+natoms = 8  # 4 Fe (type 0) + 4 O (type 1)
+box_size = 4.0  # Å
 
 rng = np.random.default_rng(42)
 
 # Equilibrium positions: simple rock-salt-like arrangement
-base_pos = np.array([
-    [0.0, 0.0, 0.0], [2.0, 2.0, 0.0], [2.0, 0.0, 2.0], [0.0, 2.0, 2.0],  # Fe
-    [1.0, 1.0, 1.0], [3.0, 3.0, 1.0], [3.0, 1.0, 3.0], [1.0, 3.0, 3.0],  # O
-])
+base_pos = np.array(
+    [
+        [0.0, 0.0, 0.0],
+        [2.0, 2.0, 0.0],
+        [2.0, 0.0, 2.0],
+        [0.0, 2.0, 2.0],  # Fe
+        [1.0, 1.0, 1.0],
+        [3.0, 3.0, 1.0],
+        [3.0, 1.0, 3.0],
+        [1.0, 3.0, 3.0],  # O
+    ]
+)
 
 coords = base_pos[None] + rng.normal(0, 0.1, (nframes, natoms, 3))
-box    = np.tile(np.diag([box_size] * 3).reshape(9), (nframes, 1))
+box = np.tile(np.diag([box_size] * 3).reshape(9), (nframes, 1))
 
 type_arr = np.array([0, 0, 0, 0, 1, 1, 1, 1], dtype=int)  # Fe Fe Fe Fe O O O O
 
@@ -73,7 +83,7 @@ type_arr = np.array([0, 0, 0, 0, 1, 1, 1, 1], dtype=int)  # Fe Fe Fe Fe O O O O
 # Helpers
 # ---------------------------------------------------------------------------
 def gaussian_spectrum(peak_eV, e_min, e_max, npts=100, width_frac=0.10):
-    grid  = np.linspace(e_min, e_max, npts)
+    grid = np.linspace(e_min, e_max, npts)
     width = (e_max - e_min) * width_frac
     return np.exp(-0.5 * ((grid - peak_eV) / width) ** 2)
 
@@ -81,12 +91,12 @@ def gaussian_spectrum(peak_eV, e_min, e_max, npts=100, width_frac=0.10):
 def write_system(
     path: str,
     sel_type_idx: int,
-    atom_slice,       # slice object selecting absorbing atoms
+    atom_slice,  # slice object selecting absorbing atoms
     e_min: float,
     e_max: float,
     peak_center: float,
     peak_shift_scale: float,
-    fparam_vec,       # 1-D array of length nfparam (one-hot edge encoding)
+    fparam_vec,  # 1-D array of length nfparam (one-hot edge encoding)
 ):
     os.makedirs(f"{path}/set.000", exist_ok=True)
 
@@ -94,9 +104,11 @@ def write_system(
     np.savetxt(f"{path}/type.raw", type_arr, fmt="%d")
     with open(f"{path}/type_map.raw", "w") as f:
         f.write("Fe\nO\n")
-    np.save(f"{path}/set.000/box.npy",   box.astype(np.float64))
-    np.save(f"{path}/set.000/coord.npy",
-            coords.reshape(nframes, natoms * 3).astype(np.float64))
+    np.save(f"{path}/set.000/box.npy", box.astype(np.float64))
+    np.save(
+        f"{path}/set.000/coord.npy",
+        coords.reshape(nframes, natoms * 3).astype(np.float64),
+    )
 
     # --- fparam: same edge for all frames ---
     fparam = np.tile(fparam_vec, (nframes, 1)).astype(np.float64)
@@ -110,11 +122,11 @@ def write_system(
     labels = np.zeros((nframes, task_dim), dtype=np.float64)
     for i in range(nframes):
         # peak position shifts slightly with mean x-coordinate of absorbing atoms
-        mean_x  = coords[i, atom_slice, 0].mean()
-        peak    = peak_center + mean_x * peak_shift_scale
+        mean_x = coords[i, atom_slice, 0].mean()
+        peak = peak_center + mean_x * peak_shift_scale
         spectrum = gaussian_spectrum(peak, e_min, e_max)
-        labels[i, 0]  = e_min
-        labels[i, 1]  = e_max
+        labels[i, 0] = e_min
+        labels[i, 1] = e_max
         labels[i, 2:] = spectrum
     np.save(f"{path}/set.000/xas.npy", labels)
 
@@ -129,25 +141,25 @@ def write_system(
 print("Generating example XAS training data...")
 
 write_system(
-    path             = "data/Fe_K",
-    sel_type_idx     = 0,           # Fe is type 0
-    atom_slice       = slice(0, 4), # first 4 atoms are Fe
-    e_min            = 7100.0,      # Fe K-edge region (eV)
-    e_max            = 7250.0,
-    peak_center      = 7112.0,      # Fe K-edge energy
-    peak_shift_scale = 2.0,         # chemical shift ∝ local environment
-    fparam_vec       = np.array([1.0, 0.0, 0.0]),  # K-edge one-hot
+    path="data/Fe_K",
+    sel_type_idx=0,  # Fe is type 0
+    atom_slice=slice(0, 4),  # first 4 atoms are Fe
+    e_min=7100.0,  # Fe K-edge region (eV)
+    e_max=7250.0,
+    peak_center=7112.0,  # Fe K-edge energy
+    peak_shift_scale=2.0,  # chemical shift ∝ local environment
+    fparam_vec=np.array([1.0, 0.0, 0.0]),  # K-edge one-hot
 )
 
 write_system(
-    path             = "data/O_K",
-    sel_type_idx     = 1,           # O is type 1
-    atom_slice       = slice(4, 8), # last 4 atoms are O
-    e_min            = 525.0,       # O K-edge region (eV)
-    e_max            = 560.0,
-    peak_center      = 535.0,       # O K-edge energy
-    peak_shift_scale = 0.5,
-    fparam_vec       = np.array([1.0, 0.0, 0.0]),  # also K-edge
+    path="data/O_K",
+    sel_type_idx=1,  # O is type 1
+    atom_slice=slice(4, 8),  # last 4 atoms are O
+    e_min=525.0,  # O K-edge region (eV)
+    e_max=560.0,
+    peak_center=535.0,  # O K-edge energy
+    peak_shift_scale=0.5,
+    fparam_vec=np.array([1.0, 0.0, 0.0]),  # also K-edge
 )
 
 print(f"\nDone. {nframes} frames per system, task_dim={task_dim}, nfparam={nfparam}")
