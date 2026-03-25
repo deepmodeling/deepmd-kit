@@ -461,7 +461,7 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
     if (lmp_list.mapping) {
       std::vector<std::int64_t> mapping(nall_real);
       for (size_t ii = 0; ii < nall_real; ii++) {
-        mapping[ii] = lmp_list.mapping[fwd_map[ii]];
+        mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
       }
       this->mapping_tensor = predictor_fl->GetInputHandle("mapping");
       this->mapping_tensor->Reshape({1, nall_real});

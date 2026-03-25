@@ -11,6 +11,7 @@
 #endif
 #ifdef BUILD_PYTORCH
 #include "DeepPotPT.h"
+#include "DeepPotPTExpt.h"
 #endif
 #if defined(BUILD_TENSORFLOW) || defined(BUILD_JAX)
 #include "DeepPotJAX.h"
@@ -54,6 +55,14 @@ void DeepPot::init(const std::string& model,
     dp = std::make_shared<deepmd::DeepPotPT>(model, gpu_rank, file_content);
 #else
     throw deepmd::deepmd_exception("PyTorch backend is not built");
+#endif
+  } else if (deepmd::DPBackend::PyTorchExportable == backend) {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+    dp = std::make_shared<deepmd::DeepPotPTExpt>(model, gpu_rank, file_content);
+#else
+    throw deepmd::deepmd_exception(
+        "PyTorch Exportable backend is not available (missing AOTInductor "
+        "headers at build time)");
 #endif
   } else if (deepmd::DPBackend::Paddle == backend) {
 #ifdef BUILD_PADDLE
