@@ -35,9 +35,6 @@ class DescrptSeT(DescrptSeTDP):
         table_stride_2: float = 0.1,
         check_frequency: int = -1,
     ) -> None:
-        from deepmd.pt.utils.utils import (
-            ActivationFn,
-        )
         from deepmd.pt_expt.utils.tabulate import (
             DPTabulate,
         )
@@ -49,7 +46,7 @@ class DescrptSeT(DescrptSeTDP):
             self,
             data["neuron"],
             exclude_types=data["exclude_types"],
-            activation_fn=ActivationFn(data["activation_function"]),
+            activation_fn_name=data["activation_function"],
         )
         # SE_T scales strides by 10
         stride_1_scaled = table_stride_1 * 10

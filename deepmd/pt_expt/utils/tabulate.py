@@ -1,22 +1,20 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """DPTabulate for the pt_expt backend.
 
-Subclasses the pt backend's DPTabulate, overriding _get_descrpt_type() to
-detect descriptor types via serialized data rather than isinstance checks
-against pt-specific classes.
+Inherits the numpy math from ``deepmd.utils.tabulate_math.DPTabulate``
+and overrides ``_convert_numpy_to_tensor`` for torch tensor conversion
+and ``_get_descrpt_type`` for serialization-based type detection.
+No dependency on the pt backend.
 """
 
 from typing import (
     Any,
 )
 
-from deepmd.pt.utils.tabulate import DPTabulate as DPTabulatePT
-from deepmd.pt.utils.utils import (
-    ActivationFn,
-)
+from deepmd.utils.tabulate_math import DPTabulate as DPTabulateBase
 
 
-class DPTabulate(DPTabulatePT):
+class DPTabulate(DPTabulateBase):
     """Tabulation helper for pt_expt descriptors.
 
     The descriptor passed to this class must serialize to a dict with
@@ -34,8 +32,8 @@ class DPTabulate(DPTabulatePT):
         Whether to use one-side type embedding.
     exclude_types
         Excluded type pairs.
-    activation_fn
-        The activation function used in the embedding net.
+    activation_fn_name
+        Name of the activation function (e.g. "tanh", "gelu").
     """
 
     def __init__(
@@ -44,23 +42,20 @@ class DPTabulate(DPTabulatePT):
         neuron: list[int],
         type_one_side: bool = False,
         exclude_types: list[list[int]] = [],
-        activation_fn: ActivationFn = ActivationFn("tanh"),
+        activation_fn_name: str = "tanh",
     ) -> None:
-        # DPTabulatePT.__init__ works here because:
-        # 1. _get_descrpt_type is overridden to use serialized data (not isinstance)
-        # 2. The isinstance(descrpt, DescrptDPA2) check in parent just returns False
-        #    for pt_expt descriptors — callers pass the repinit block directly.
-        super().__init__(descrpt, neuron, type_one_side, exclude_types, activation_fn)
+        super().__init__(
+            descrpt,
+            neuron,
+            type_one_side,
+            exclude_types,
+            activation_fn_name=activation_fn_name,
+        )
 
     def _get_descrpt_type(self) -> str:
-        """Determine descriptor type from serialized data.
-
-        Instead of isinstance checks against pt classes, use the "type" key
-        from the serialized descriptor dict.
-        """
+        """Determine descriptor type from serialized data."""
         data = self.descrpt.serialize()
         type_str = data.get("type", "")
-
         type_map = {
             "se_e2_a": "A",
             "se_r": "R",
@@ -69,8 +64,18 @@ class DPTabulate(DPTabulatePT):
             "dpa1": "Atten",
             "se_atten_v2": "Atten",
         }
-
         descrpt_type = type_map.get(type_str)
         if descrpt_type is None:
             raise RuntimeError(f"Unsupported descriptor type: {type_str}")
         return descrpt_type
+
+    def _convert_numpy_to_tensor(self) -> None:
+        """Convert self.data from np.ndarray to torch.Tensor."""
+        import torch
+
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
+        for ii in self.data:
+            self.data[ii] = torch.tensor(self.data[ii], device=DEVICE)  # pylint: disable=no-explicit-dtype

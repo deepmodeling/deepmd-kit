@@ -34,9 +34,6 @@ class DescrptSeR(DescrptSeRDP):
         table_stride_2: float = 0.1,
         check_frequency: int = -1,
     ) -> None:
-        from deepmd.pt.utils.utils import (
-            ActivationFn,
-        )
         from deepmd.pt_expt.utils.tabulate import (
             DPTabulate,
         )
@@ -49,7 +46,7 @@ class DescrptSeR(DescrptSeRDP):
             data["neuron"],
             data["type_one_side"],
             data["exclude_types"],
-            ActivationFn(data["activation_function"]),
+            data["activation_function"],
         )
         self.table_config = [
             table_extrapolate,
