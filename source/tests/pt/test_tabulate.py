@@ -27,6 +27,12 @@ ACTIVATION_NAMES = {
     7: "silu",
 }
 
+# functype=0 (linear/none) is not supported by TF custom ops,
+# so we test it separately against numerical derivatives.
+ACTIVATION_NAMES_NUMPY_ONLY = {
+    0: "linear",
+}
+
 
 def get_activation_function(functype: int):
     """Get activation function corresponding to functype."""
@@ -184,6 +190,37 @@ class TestDPTabulate(unittest.TestCase):
             decimal=10,
             err_msg=f"unaggregated_dy2_dx failed for {activation_name}",
         )
+
+    def test_linear_activation(self) -> None:
+        """Test functype=0 (linear/none) against numerical derivatives.
+
+        TF custom ops don't support functype=0, so we validate against
+        finite-difference derivatives instead.
+        """
+        from deepmd.utils.tabulate_math import (
+            grad,
+            grad_grad,
+        )
+
+        fn = get_activation_fn("linear")
+        y = fn(self.xbar)
+        h = 1e-7
+
+        # grad: f'(x) = 1 for identity
+        dy_ana = grad(self.xbar, y, 0)
+        np.testing.assert_allclose(dy_ana, np.ones_like(self.xbar), atol=1e-12)
+
+        # grad_grad: f''(x) = 0 for identity
+        dy2_ana = grad_grad(self.xbar, y, 0)
+        np.testing.assert_allclose(dy2_ana, np.zeros_like(self.xbar), atol=1e-12)
+
+        # Also verify unaggregated functions work with functype=0
+        dy = unaggregated_dy_dx_s(y, self.w, self.xbar, 0)
+        self.assertEqual(dy.shape, (4, 4))
+
+        dy2 = unaggregated_dy2_dx_s(y, dy, self.w, self.xbar, 0)
+        # Second derivative of identity is zero everywhere
+        np.testing.assert_allclose(dy2, np.zeros_like(dy2), atol=1e-12)
 
 
 if __name__ == "__main__":
