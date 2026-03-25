@@ -27,12 +27,6 @@ ACTIVATION_NAMES = {
     7: "silu",
 }
 
-# functype=0 (linear/none) is not supported by TF custom ops,
-# so we test it separately against numerical derivatives.
-ACTIVATION_NAMES_NUMPY_ONLY = {
-    0: "linear",
-}
-
 
 def get_activation_function(functype: int):
     """Get activation function corresponding to functype."""
@@ -192,10 +186,10 @@ class TestDPTabulate(unittest.TestCase):
         )
 
     def test_linear_activation(self) -> None:
-        """Test functype=0 (linear/none) against numerical derivatives.
+        """Test functype=0 (linear/none) with direct numpy expectations.
 
-        TF custom ops don't support functype=0, so we validate against
-        finite-difference derivatives instead.
+        TF custom ops don't support functype=0, so we validate the numpy
+        derivative helpers and unaggregated tabulate ops directly.
         """
         from deepmd.utils.tabulate_math import (
             grad,
@@ -204,7 +198,6 @@ class TestDPTabulate(unittest.TestCase):
 
         fn = get_activation_fn("linear")
         y = fn(self.xbar)
-        h = 1e-7
 
         # grad: f'(x) = 1 for identity
         dy_ana = grad(self.xbar, y, 0)

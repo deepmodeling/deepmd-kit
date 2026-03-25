@@ -46,7 +46,7 @@ class DPTabulate(DPTabulateBase):
     exclude_types
         Excluded type pairs.
     activation_fn
-        The activation function (PT ActivationFn module).
+        The activation function name or PT ``ActivationFn`` module.
     """
 
     def __init__(
@@ -54,15 +54,21 @@ class DPTabulate(DPTabulateBase):
         descrpt: Any,
         neuron: list[int],
         type_one_side: bool = False,
-        exclude_types: list[list[int]] = [],
-        activation_fn: ActivationFn = ActivationFn("tanh"),
+        exclude_types: list[list[int]] | None = None,
+        activation_fn: str | ActivationFn = "tanh",
     ) -> None:
+        exclude_types = [] if exclude_types is None else exclude_types
+        activation_fn_name = (
+            activation_fn.activation
+            if isinstance(activation_fn, ActivationFn)
+            else str(activation_fn)
+        )
         super().__init__(
             descrpt,
             neuron,
             type_one_side,
             exclude_types,
-            activation_fn_name=activation_fn.activation,
+            activation_fn_name=activation_fn_name,
         )
 
     def _get_descrpt_type(self) -> str:

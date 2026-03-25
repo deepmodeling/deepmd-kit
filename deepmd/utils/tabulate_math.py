@@ -103,7 +103,7 @@ def grad_grad(xbar: np.ndarray, y: np.ndarray, functype: int) -> np.ndarray:
         d_sig = sig * (1 - sig)
         return 2 * d_sig + xbar * d_sig * (1 - 2 * sig)
     else:
-        return -np.ones_like(xbar)
+        raise ValueError(f"Unsupported function type: {functype}")
 
 
 # ---- Chain-rule derivative propagation (numpy) ----
@@ -254,9 +254,10 @@ class DPTabulate(BaseTabulate):
         descrpt: Any,
         neuron: list[int],
         type_one_side: bool = False,
-        exclude_types: list[list[int]] = [],
+        exclude_types: list[list[int]] | None = None,
         activation_fn_name: str = "tanh",
     ) -> None:
+        exclude_types = [] if exclude_types is None else exclude_types
         super().__init__(
             descrpt,
             neuron,

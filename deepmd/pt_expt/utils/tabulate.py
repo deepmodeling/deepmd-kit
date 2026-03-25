@@ -41,9 +41,10 @@ class DPTabulate(DPTabulateBase):
         descrpt: Any,
         neuron: list[int],
         type_one_side: bool = False,
-        exclude_types: list[list[int]] = [],
+        exclude_types: list[list[int]] | None = None,
         activation_fn_name: str = "tanh",
     ) -> None:
+        exclude_types = [] if exclude_types is None else exclude_types
         super().__init__(
             descrpt,
             neuron,
