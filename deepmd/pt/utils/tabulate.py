@@ -20,6 +20,12 @@ from deepmd.pt.utils.utils import (
     ActivationFn,
 )
 from deepmd.utils.tabulate_math import DPTabulate as DPTabulateBase
+from deepmd.utils.tabulate_math import (  # noqa: F401 — re-export for test compatibility
+    unaggregated_dy2_dx,
+    unaggregated_dy2_dx_s,
+    unaggregated_dy_dx,
+    unaggregated_dy_dx_s,
+)
 
 
 class DPTabulate(DPTabulateBase):
