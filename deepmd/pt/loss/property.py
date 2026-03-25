@@ -91,6 +91,27 @@ class PropertyLoss(TaskLoss):
         """
         model_pred = model(**input_dict)
         var_name = self.var_name
+
+        # ---- Softmax-weighted averaging over the batch added by YL----
+        # model_pred[var_name]: (nbz, task_dim)
+        # 1) get a scalar score per sample (mean over task_dim)
+        #    (If you want to favor smaller values, use `score_per_sample = -model_pred[var_name].mean(dim=1)`.)
+        score_per_sample = model_pred[var_name].mean(dim=1)             # (nbz,)
+        weights = F.softmax(score_per_sample, dim=0)                    # (nbz,)
+        # 2) weighted average vector (1, task_dim)
+        avg_vec = (weights.unsqueeze(1) * model_pred[var_name]).sum(dim=0, keepdim=True)
+        # 3) replace all predictions with the averaged vector (broadcast over batch)
+        model_pred[var_name] = avg_vec.expand_as(model_pred[var_name])
+        # ----------------------------------------------------
+
+        nbz = model_pred[var_name].shape[0]
+        #=======Raise error when nbz!=3=======
+        if nbz != 3:
+            raise RuntimeError(
+                f"[PropertyLoss] Expected batch size nbz == 3 for softmax-avg, got nbz == {nbz}. "
+                "Ensure your DataLoader yields triples (batch_size=3, drop_last=True)."
+            )   
+
         nbz = model_pred[var_name].shape[0]
         assert model_pred[var_name].shape == (nbz, self.task_dim)
         assert label[var_name].shape == (nbz, self.task_dim)

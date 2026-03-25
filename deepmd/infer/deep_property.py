@@ -139,6 +139,17 @@ class DeepProperty(DeepEval):
         atomic_property = results[self.get_var_name()].reshape(
             nframes, natoms, self.get_task_dim()
         )
+        # --- softmax-weighted averaging over frames (minimal) ---
+        print(f"Nframes == {nframes}")
+        if nframes != 3:
+            raise RuntimeError(f"Expected nframes == 3, got {nframes}")
+        scores = property.mean(axis=1)                           # (3,)
+        # If you want to favor *smaller* values (e.g., energies), use: scores = -scores
+        w = np.exp(scores - scores.max()); w /= w.sum()          # (3,)
+        avg = (w[:, None] * property).sum(axis=0, keepdims=True) # (1, D)
+        property[:] = np.repeat(avg, nframes, axis=0)            # (3, D)
+        # --------------------------------------------------------
+
         property = results[f"{self.get_var_name()}_redu"].reshape(
             nframes, self.get_task_dim()
         )
