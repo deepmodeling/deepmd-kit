@@ -47,6 +47,17 @@ ACTIVATION_TO_FUNCTYPE: dict[str, int] = {
 # ---- Activation derivatives (numpy) ----
 
 
+def _stable_sigmoid(xbar: np.ndarray) -> np.ndarray:
+    """Compute sigmoid without overflow for large-magnitude inputs."""
+    positive = xbar >= 0
+    exp_neg_abs = np.exp(np.where(positive, -xbar, xbar))
+    return np.where(
+        positive,
+        1.0 / (1.0 + exp_neg_abs),
+        exp_neg_abs / (1.0 + exp_neg_abs),
+    )
+
+
 def grad(xbar: np.ndarray, y: np.ndarray, functype: int) -> np.ndarray:
     """First derivative of the activation function."""
     if functype == 0:
@@ -67,7 +78,7 @@ def grad(xbar: np.ndarray, y: np.ndarray, functype: int) -> np.ndarray:
             (xbar > 0) & (xbar < 6), np.ones_like(xbar), np.zeros_like(xbar)
         )
     elif functype == 5:
-        return 1.0 - 1.0 / (1.0 + np.exp(xbar))
+        return _stable_sigmoid(xbar)
     elif functype == 6:
         return y * (1 - y)
     elif functype == 7:
@@ -94,8 +105,8 @@ def grad_grad(xbar: np.ndarray, y: np.ndarray, functype: int) -> np.ndarray:
     elif functype in [3, 4]:
         return np.zeros_like(xbar)
     elif functype == 5:
-        exp_xbar = np.exp(xbar)
-        return exp_xbar / ((1 + exp_xbar) * (1 + exp_xbar))
+        sig = _stable_sigmoid(xbar)
+        return sig * (1 - sig)
     elif functype == 6:
         return y * (1 - y) * (1 - 2 * y)
     elif functype == 7:

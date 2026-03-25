@@ -215,6 +215,51 @@ class TestDPTabulate(unittest.TestCase):
         # Second derivative of identity is zero everywhere
         np.testing.assert_allclose(dy2, np.zeros_like(dy2), atol=1e-12)
 
+    def test_softplus_activation_is_numerically_stable(self) -> None:
+        """Test softplus tabulation helpers on large extrapolated inputs."""
+        from deepmd.utils.tabulate_math import (
+            grad,
+            grad_grad,
+        )
+
+        xbar = np.array([[100.0, 500.0, 1000.0]], dtype=np.float64)
+
+        with np.errstate(over="raise", invalid="raise"):
+            y = get_activation_fn("softplus")(xbar)
+            dy = grad(xbar, y, 5)
+            dy2 = grad_grad(xbar, y, 5)
+
+        np.testing.assert_allclose(y, xbar, atol=1e-12)
+        np.testing.assert_allclose(dy, np.ones_like(xbar), atol=1e-12)
+        np.testing.assert_allclose(dy2, np.zeros_like(xbar), atol=1e-12)
+
+    def test_softplus_derivatives_match_finite_differences(self) -> None:
+        """Test softplus derivatives against finite differences on both branches."""
+        from deepmd.utils.tabulate_math import (
+            grad,
+            grad_grad,
+        )
+
+        fn = get_activation_fn("softplus")
+        xbar = np.array([[-5.0, -0.5, 0.0, 0.5, 5.0]], dtype=np.float64)
+        y = fn(xbar)
+
+        dy = grad(xbar, y, 5)
+        dy2 = grad_grad(xbar, y, 5)
+
+        h_grad = 3e-5
+        y_plus = fn(xbar + h_grad)
+        y_minus = fn(xbar - h_grad)
+        dy_fd = (y_plus - y_minus) / (2 * h_grad)
+
+        h_grad2 = 3e-4
+        y_plus = fn(xbar + h_grad2)
+        y_minus = fn(xbar - h_grad2)
+        dy2_fd = (y_plus - 2 * y + y_minus) / (h_grad2**2)
+
+        np.testing.assert_allclose(dy, dy_fd, rtol=1e-8, atol=1e-10)
+        np.testing.assert_allclose(dy2, dy2_fd, rtol=1e-6, atol=1e-8)
+
 
 if __name__ == "__main__":
     unittest.main()
