@@ -678,7 +678,11 @@ def test_dos(
 
     if dp.get_dim_fparam() > 0:
         data.add(
-            "fparam", dp.get_dim_fparam(), atomic=False, must=True, high_prec=False
+            "fparam",
+            dp.get_dim_fparam(),
+            atomic=False,
+            must=not dp.has_default_fparam(),
+            high_prec=False,
         )
     if dp.get_dim_aparam() > 0:
         data.add("aparam", dp.get_dim_aparam(), atomic=True, must=True, high_prec=False)
@@ -846,7 +850,11 @@ def test_property(
 
     if dp.get_dim_fparam() > 0:
         data.add(
-            "fparam", dp.get_dim_fparam(), atomic=False, must=True, high_prec=False
+            "fparam",
+            dp.get_dim_fparam(),
+            atomic=False,
+            must=not dp.has_default_fparam(),
+            high_prec=False,
         )
     if dp.get_dim_aparam() > 0:
         data.add("aparam", dp.get_dim_aparam(), atomic=True, must=True, high_prec=False)
