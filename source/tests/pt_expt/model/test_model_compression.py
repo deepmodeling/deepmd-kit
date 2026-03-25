@@ -341,6 +341,12 @@ class TestModelCompression(unittest.TestCase):
             np.testing.assert_allclose(
                 ret_frozen["energy"], e_pt2, atol=1e-7, err_msg="energy"
             )
+            np.testing.assert_allclose(
+                ret_frozen["force"], f_pt2, atol=1e-7, err_msg="force"
+            )
+            np.testing.assert_allclose(
+                ret_frozen["virial"], v_pt2, atol=1e-7, err_msg="virial"
+            )
         finally:
             os.unlink(frozen_path)
             if os.path.exists(compressed_pt2_path):

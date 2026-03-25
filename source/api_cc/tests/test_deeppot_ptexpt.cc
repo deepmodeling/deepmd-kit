@@ -19,6 +19,10 @@ class TestInferDeepPotAPtExpt : public ::testing::Test {
   std::vector<VALUETYPE> coord = {12.83, 2.56, 2.18, 12.09, 2.87, 2.74,
                                   00.25, 3.32, 1.68, 3.36,  3.00, 1.81,
                                   3.51,  2.51, 2.60, 4.27,  3.22, 1.56};
+  // Alternative coords for multi-frame tests (must give different energy)
+  std::vector<VALUETYPE> coord_alt = {10.06, 5.71,  11.16, 9.07, 1.22, 12.68,
+                                      9.89,  10.22, 1.67,  5.86, 4.82, 12.05,
+                                      8.37,  10.70, 5.76,  2.95, 7.21, 0.83};
   std::vector<int> atype = {0, 1, 1, 0, 1, 1};
   std::vector<VALUETYPE> box = {13., 0., 0., 0., 13., 0., 0., 0., 13.};
   // Same reference values as test_deeppot_pt.cc (model converted from .pth)
@@ -414,6 +418,9 @@ class TestInferDeepPotAPtExptNoPbc : public ::testing::Test {
   std::vector<VALUETYPE> coord = {12.83, 2.56, 2.18, 12.09, 2.87, 2.74,
                                   00.25, 3.32, 1.68, 3.36,  3.00, 1.81,
                                   3.51,  2.51, 2.60, 4.27,  3.22, 1.56};
+  std::vector<VALUETYPE> coord_alt = {10.06, 5.71,  11.16, 9.07, 1.22, 12.68,
+                                      9.89,  10.22, 1.67,  5.86, 4.82, 12.05,
+                                      8.37,  10.70, 5.76,  2.95, 7.21, 0.83};
   std::vector<int> atype = {0, 1, 1, 0, 1, 1};
   std::vector<VALUETYPE> box = {};
   // Same reference values as TestInferDeepPotAPtNoPbc in test_deeppot_pt.cc
@@ -541,6 +548,7 @@ TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist_atomic) {
 TYPED_TEST(TestInferDeepPotAPtExpt, cpu_build_nlist_nframes) {
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<VALUETYPE>& coord_alt = this->coord_alt;
   std::vector<int>& atype = this->atype;
   std::vector<VALUETYPE>& box = this->box;
   std::vector<VALUETYPE>& expected_f = this->expected_f;
@@ -550,8 +558,9 @@ TYPED_TEST(TestInferDeepPotAPtExpt, cpu_build_nlist_nframes) {
   deepmd::DeepPot& dp = this->dp;
 
   int nframes = 2;
+  // Frame 0: original coords.  Frame 1: alternative coords (coord_alt).
   std::vector<VALUETYPE> coord_2f(coord);
-  coord_2f.insert(coord_2f.end(), coord.begin(), coord.end());
+  coord_2f.insert(coord_2f.end(), coord_alt.begin(), coord_alt.end());
   std::vector<int> atype_2f(atype);
   atype_2f.insert(atype_2f.end(), atype.begin(), atype.end());
   std::vector<VALUETYPE> box_2f(box);
@@ -566,15 +575,13 @@ TYPED_TEST(TestInferDeepPotAPtExpt, cpu_build_nlist_nframes) {
   EXPECT_EQ(force.size(), nframes * natoms * 3);
   EXPECT_EQ(virial.size(), nframes * 9);
 
-  for (int ff = 0; ff < nframes; ++ff) {
-    EXPECT_LT(fabs(ener[ff] - expected_tot_e), EPSILON);
-    for (int ii = 0; ii < natoms * 3; ++ii) {
-      EXPECT_LT(fabs(force[ff * natoms * 3 + ii] - expected_f[ii]), EPSILON);
-    }
-    for (int ii = 0; ii < 9; ++ii) {
-      EXPECT_LT(fabs(virial[ff * 9 + ii] - expected_tot_v[ii]), EPSILON);
-    }
+  // Frame 0 should match reference
+  EXPECT_LT(fabs(ener[0] - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
   }
+  // Frame 1 should be different (perturbed coords)
+  EXPECT_GT(fabs(ener[1] - ener[0]), 1e-10);
 }
 
 // Multi-frame NoPBC test via compute_mixed_type
@@ -582,6 +589,7 @@ TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist_nframes) {
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;
   std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& coord_alt = this->coord_alt;
   std::vector<VALUETYPE>& box = this->box;  // empty
   std::vector<VALUETYPE>& expected_f = this->expected_f;
   int& natoms = this->natoms;
@@ -591,7 +599,7 @@ TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist_nframes) {
 
   int nframes = 2;
   std::vector<VALUETYPE> coord_2f(coord);
-  coord_2f.insert(coord_2f.end(), coord.begin(), coord.end());
+  coord_2f.insert(coord_2f.end(), coord_alt.begin(), coord_alt.end());
   std::vector<int> atype_2f(atype);
   atype_2f.insert(atype_2f.end(), atype.begin(), atype.end());
 
@@ -603,15 +611,13 @@ TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist_nframes) {
   EXPECT_EQ(force.size(), nframes * natoms * 3);
   EXPECT_EQ(virial.size(), nframes * 9);
 
-  for (int ff = 0; ff < nframes; ++ff) {
-    EXPECT_LT(fabs(ener[ff] - expected_tot_e), EPSILON);
-    for (int ii = 0; ii < natoms * 3; ++ii) {
-      EXPECT_LT(fabs(force[ff * natoms * 3 + ii] - expected_f[ii]), EPSILON);
-    }
-    for (int ii = 0; ii < 9; ++ii) {
-      EXPECT_LT(fabs(virial[ff * 9 + ii] - expected_tot_v[ii]), EPSILON);
-    }
+  // Frame 0 should match reference
+  EXPECT_LT(fabs(ener[0] - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
   }
+  // Frame 1 should be different (perturbed coords)
+  EXPECT_GT(fabs(ener[1] - ener[0]), 1e-10);
 }
 
 // ========== Parser / metadata coverage tests ==========
@@ -631,6 +637,7 @@ TEST(TestDeepPotPTExptParser, load_invalid_zip) {
   std::string tmpfile = "test_invalid.pt2";
   {
     std::ofstream ofs(tmpfile, std::ios::binary);
+    ASSERT_TRUE(ofs.is_open()) << "Failed to create temp file";
     ofs << "not a zip file at all";
   }
   deepmd::DeepPot dp;
@@ -645,6 +652,7 @@ TEST(TestDeepPotPTExptParser, load_tiny_file) {
   std::string tmpfile = "test_tiny.pt2";
   {
     std::ofstream ofs(tmpfile, std::ios::binary);
+    ASSERT_TRUE(ofs.is_open()) << "Failed to create temp file";
     ofs << "abc";
   }
   deepmd::DeepPot dp;

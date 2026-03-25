@@ -899,6 +899,10 @@ class TestFinetuneCLI(unittest.TestCase):
             freeze(model=ckpt_path, output=pt2_path)
             self.assertTrue(os.path.exists(pt2_path))
 
+            # Save pretrained weights before finetune overwrites model.ckpt.pt
+            pre_ckpt_copy = os.path.join(tmpdir, "pretrained_copy.pt")
+            shutil.copy2(ckpt_path, pre_ckpt_copy)
+
             # Phase 3: finetune from .pt2 via CLI (lr=0 so weights stay unchanged)
             ft_config = _make_config(self.data_dir, model_se_e2_a, numb_steps=1)
             ft_config["learning_rate"]["start_lr"] = 1e-30
@@ -926,8 +930,10 @@ class TestFinetuneCLI(unittest.TestCase):
             ft_model_state = ft_state["model"] if "model" in ft_state else ft_state
             self.assertIn("_extra_state", ft_model_state)
 
-            # Load pretrained from .pt for weight comparison
-            pre_state = torch.load(ckpt_path, map_location=DEVICE, weights_only=True)
+            # Load pretrained from saved copy (finetune overwrites model.ckpt.pt)
+            pre_state = torch.load(
+                pre_ckpt_copy, map_location=DEVICE, weights_only=True
+            )
             pre_model_state = pre_state["model"] if "model" in pre_state else pre_state
 
             # Inherited weights must match pretrained

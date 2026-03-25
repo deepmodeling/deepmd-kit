@@ -630,10 +630,12 @@ class DeepEval(DeepEvalBackend):
                     torch.tensor(default_fp, dtype=torch.float64, device=DEVICE)
                     .unsqueeze(0)
                     .expand(nframes, -1)
+                    .contiguous()
                 )
             else:
-                fparam_t = torch.zeros(
-                    nframes, self.get_dim_fparam(), dtype=torch.float64, device=DEVICE
+                raise ValueError(
+                    f"fparam is required for this model (dim_fparam={self.get_dim_fparam()}) "
+                    "but was not provided, and no default_fparam is stored in the model."
                 )
         else:
             fparam_t = None

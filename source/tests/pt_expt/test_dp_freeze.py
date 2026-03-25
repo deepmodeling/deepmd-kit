@@ -124,6 +124,7 @@ class TestDPFreezePtExpt(unittest.TestCase):
         e, f, v = dp.eval(coord, box, atype)
         self.assertEqual(e.shape, (1, 1))
         self.assertEqual(f.shape, (1, 3, 3))
+        self.assertEqual(v.shape, (1, 9))
 
     def test_freeze_pt2_eval_consistency(self) -> None:
         """Verify .pte and .pt2 produce identical results."""
