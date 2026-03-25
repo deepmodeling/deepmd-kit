@@ -253,7 +253,9 @@ class XASLoss(TaskLoss):
             edge_idx = torch.zeros(nf, dtype=torch.long, device=pred.device)
 
         # e_ref_frame: [nf, 2]  (E_min_ref, E_max_ref for each frame)
-        e_ref_frame = self.e_ref[sel_type, edge_idx]  # [nf, 2]
+        # Indices must be on the same device as the buffer (handles CPU/GPU mismatch)
+        _dev = self.e_ref.device
+        e_ref_frame = self.e_ref[sel_type.to(_dev), edge_idx.to(_dev)].to(pred.device)
 
         # Shift the energy-dim TARGETS only.
         #
