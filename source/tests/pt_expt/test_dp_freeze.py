@@ -161,6 +161,9 @@ class TestDPFreezePtExpt(unittest.TestCase):
 
         Regression test: the C++ NoPBC path creates a fake box and must
         shift coordinates so atoms with negative values are inside [0, L).
+        Compares .pt2 (C++ fake-box path) against .pte (Python no-ghost path)
+        — these are independent NoPBC implementations so cross-comparison
+        validates both.
         """
         import numpy as np
 

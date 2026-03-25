@@ -312,7 +312,8 @@ class TestChangeBias(unittest.TestCase):
         updated_model = BaseModel.deserialize(updated_data["model"])
         updated_bias = to_numpy(updated_model.get_out_bias())
 
-        np.testing.assert_allclose(updated_bias.flatten()[:2], [1.0, 2.0], atol=1e-10)
+        expected = np.array([[1.0], [2.0]])
+        np.testing.assert_allclose(updated_bias, expected, atol=1e-10)
 
     def test_change_bias_pt2_pte_consistency(self) -> None:
         """Change-bias on .pte and .pt2 should produce same bias values."""
