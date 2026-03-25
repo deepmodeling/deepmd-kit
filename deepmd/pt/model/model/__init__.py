@@ -69,12 +69,12 @@ from .polar_model import (
 from .property_model import (
     PropertyModel,
 )
-from .xas_model import (
-    XASModel,
-)
 from .spin_model import (
     SpinEnergyModel,
     SpinModel,
+)
+from .xas_model import (
+    XASModel,
 )
 
 

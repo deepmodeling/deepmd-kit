@@ -1,15 +1,25 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-from collections import defaultdict
-from typing import Any
+from collections import (
+    defaultdict,
+)
+from typing import (
+    Any,
+)
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 
-from deepmd.pt.loss.loss import TaskLoss
-from deepmd.pt.utils import env
-from deepmd.utils.data import DataRequirementItem
+from deepmd.pt.loss.loss import (
+    TaskLoss,
+)
+from deepmd.pt.utils import (
+    env,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 
 log = logging.getLogger(__name__)
 
@@ -153,8 +163,8 @@ class XASLoss(TaskLoss):
             )
             log.info(
                 f"XASLoss e_ref: type={t}, edge={e} -> "
-                f"E_min_ref={float(e_ref[t,e,0]):.2f} eV, "
-                f"E_max_ref={float(e_ref[t,e,1]):.2f} eV  "
+                f"E_min_ref={float(e_ref[t, e, 0]):.2f} eV, "
+                f"E_max_ref={float(e_ref[t, e, 1]):.2f} eV  "
                 f"(n={len(vals)})"
             )
 
@@ -275,9 +285,7 @@ class XASLoss(TaskLoss):
         # --- metrics ---
         more_loss: dict[str, torch.Tensor] = {}
         if "mae" in self.metric:
-            more_loss["mae"] = F.l1_loss(
-                pred, label_shifted, reduction="mean"
-            ).detach()
+            more_loss["mae"] = F.l1_loss(pred, label_shifted, reduction="mean").detach()
         if "rmse" in self.metric:
             more_loss["rmse"] = torch.sqrt(
                 F.mse_loss(pred, label_shifted, reduction="mean")

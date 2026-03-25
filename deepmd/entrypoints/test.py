@@ -898,9 +898,7 @@ def test_property(
 
     # XAS requires sel_type.npy (per-frame absorbing element type index)
     if is_xas:
-        data.add(
-            "sel_type", 1, atomic=False, must=True, high_prec=False
-        )
+        data.add("sel_type", 1, atomic=False, must=True, high_prec=False)
 
     test_data = data.get_test()
     mixed_type = data.mixed_type
@@ -962,9 +960,10 @@ def test_property(
             xas_e_ref = None
         if xas_e_ref is not None and fparam is not None:
             import torch as _torch
-            edge_idx_all = _torch.tensor(
-                fparam.reshape(numb_test, -1)
-            ).argmax(dim=-1).numpy()
+
+            edge_idx_all = (
+                _torch.tensor(fparam.reshape(numb_test, -1)).argmax(dim=-1).numpy()
+            )
             e_ref_np = xas_e_ref.cpu().numpy()  # [ntypes, nfparam, 2]
             for i in range(numb_test):
                 t = sel_type_int[i]

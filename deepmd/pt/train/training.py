@@ -381,10 +381,12 @@ class Trainer:
             )
             # For XAS loss: compute per-(absorbing_type, edge) reference energies
             # from training data and store as a registered buffer in the loss module.
-            if not resuming and self.rank == 0 and hasattr(self.loss, "compute_output_stats"):
-                self.loss.compute_output_stats(
-                    self.get_sample_func(), model=self.model
-                )
+            if (
+                not resuming
+                and self.rank == 0
+                and hasattr(self.loss, "compute_output_stats")
+            ):
+                self.loss.compute_output_stats(self.get_sample_func(), model=self.model)
             # Persist observed_type from stat into model_params and model_def_script
             if not resuming and self.rank == 0:
                 observed = self.model.atomic_model.observed_type
