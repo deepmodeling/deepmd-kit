@@ -32,9 +32,8 @@ from torch.overrides import (
 )
 
 
-@pytest.fixture(autouse=True)
-def _clear_leaked_device_context():
-    """Pop any stale ``DeviceContext`` before each test, restore after."""
+def _pop_device_contexts() -> list:
+    """Pop all stale DeviceContext modes from the torch function mode stack."""
     popped = []
     while True:
         modes = _get_current_function_mode_stack()
@@ -46,6 +45,24 @@ def _clear_leaked_device_context():
             popped.append(top)
         else:
             break
+    return popped
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _clear_leaked_device_context_session():
+    """Pop any stale DeviceContext once at session start.
+
+    This runs before any setUpClass, preventing CUDA init errors
+    in tests that call trainer.run() during class setup.
+    """
+    _pop_device_contexts()
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _clear_leaked_device_context():
+    """Pop any stale ``DeviceContext`` before each test, restore after."""
+    popped = _pop_device_contexts()
     yield
     # Restore in reverse order so the stack is back to its original state.
     for ctx in reversed(popped):
