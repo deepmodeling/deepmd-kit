@@ -256,7 +256,6 @@ class DPTabulate(BaseTabulate):
             neuron,
             type_one_side,
             exclude_types,
-            True,  # is_pt flag (for _build_lower numpy int conversion)
         )
         self._activation_fn = get_activation_fn(activation_fn_name)
         activation_fn_name = activation_fn_name.lower()

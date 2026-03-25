@@ -81,5 +81,6 @@ class DPTabulate(DPTabulateBase):
 
     def _convert_numpy_to_tensor(self) -> None:
         """Convert self.data from np.ndarray to torch.Tensor."""
+        self._convert_numpy_float_to_int()
         for ii in self.data:
             self.data[ii] = torch.tensor(self.data[ii], device=env.DEVICE)  # pylint: disable=no-explicit-dtype

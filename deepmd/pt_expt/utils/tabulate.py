@@ -77,5 +77,6 @@ class DPTabulate(DPTabulateBase):
             DEVICE,
         )
 
+        self._convert_numpy_float_to_int()
         for ii in self.data:
             self.data[ii] = torch.tensor(self.data[ii], device=DEVICE)  # pylint: disable=no-explicit-dtype
