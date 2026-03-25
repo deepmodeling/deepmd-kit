@@ -39,6 +39,8 @@ ACTIVATION_TO_FUNCTYPE: dict[str, int] = {
     "softplus": 5,
     "sigmoid": 6,
     "silu": 7,
+    "linear": 0,
+    "none": 0,
 }
 
 
@@ -47,7 +49,9 @@ ACTIVATION_TO_FUNCTYPE: dict[str, int] = {
 
 def grad(xbar: np.ndarray, y: np.ndarray, functype: int) -> np.ndarray:
     """First derivative of the activation function."""
-    if functype == 1:
+    if functype == 0:
+        return np.ones_like(xbar)
+    elif functype == 1:
         return 1 - y * y
     elif functype == 2:
         var = np.tanh(SQRT_2_PI * (xbar + GGELU * xbar**3))
@@ -75,7 +79,9 @@ def grad(xbar: np.ndarray, y: np.ndarray, functype: int) -> np.ndarray:
 
 def grad_grad(xbar: np.ndarray, y: np.ndarray, functype: int) -> np.ndarray:
     """Second derivative of the activation function."""
-    if functype == 1:
+    if functype == 0:
+        return np.zeros_like(xbar)
+    elif functype == 1:
         return -2 * y * (1 - y * y)
     elif functype == 2:
         var1 = np.tanh(SQRT_2_PI * (xbar + GGELU * xbar**3))
@@ -435,7 +441,7 @@ class DPTabulate(BaseTabulate):
                 dy = dz
                 yy = zz
 
-        vv = zz.astype(self.data_type)
+        vv = yy.astype(self.data_type)
         dd = dy.astype(self.data_type)
         d2 = dy2.astype(self.data_type)
         return vv, dd, d2
