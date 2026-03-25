@@ -887,6 +887,8 @@ def test_property(
             high_prec=True,
         )
 
+    is_xas = var_name == "xas"
+
     if dp.get_dim_fparam() > 0:
         data.add(
             "fparam", dp.get_dim_fparam(), atomic=False, must=True, high_prec=False
@@ -894,10 +896,11 @@ def test_property(
     if dp.get_dim_aparam() > 0:
         data.add("aparam", dp.get_dim_aparam(), atomic=True, must=True, high_prec=False)
 
-    # sel_type: optional per-frame type index for element-wise mean reduction (XAS)
-    data.add(
-        "sel_type", 1, atomic=False, must=False, high_prec=False, default=float(-1)
-    )
+    # XAS requires sel_type.npy (per-frame absorbing element type index)
+    if is_xas:
+        data.add(
+            "sel_type", 1, atomic=False, must=True, high_prec=False
+        )
 
     test_data = data.get_test()
     mixed_type = data.mixed_type
@@ -923,12 +926,8 @@ def test_property(
     else:
         aparam = None
 
-    # detect whether this system provides sel_type (XAS-style reduction)
-    sel_type_raw = test_data["sel_type"][:numb_test, 0]  # [numb_test]
-    has_sel_type = bool((sel_type_raw >= 0).all())
-
-    # for sel_type reduction we need per-atom outputs
-    eval_atomic = has_atom_property or has_sel_type
+    # XAS: per-atom outputs are needed to average over absorbing-element atoms
+    eval_atomic = has_atom_property or is_xas
     ret = dp.eval(
         coord,
         box,
@@ -939,27 +938,44 @@ def test_property(
         mixed_type=mixed_type,
     )
 
-    if has_sel_type:
+    if is_xas:
         # ret[1]: per-atom property [numb_test, natoms, task_dim]
         atom_prop = ret[1].reshape([numb_test, natoms, dp.task_dim])
-        # atype for all frames
         if mixed_type:
             atype_frames = atype  # [numb_test, natoms]
         else:
             atype_frames = np.tile(atype, (numb_test, 1))  # [numb_test, natoms]
-        sel_type_int = sel_type_raw.astype(int)
+        sel_type_int = test_data["sel_type"][:numb_test, 0].astype(int)
         property = np.zeros([numb_test, dp.task_dim], dtype=atom_prop.dtype)
         for i in range(numb_test):
             t = sel_type_int[i]
             mask = atype_frames[i] == t  # [natoms]
             count = max(mask.sum(), 1)
             property[i] = atom_prop[i][mask].sum(axis=0) / count
+
+        # Add back the per-(type, edge) energy reference so output is in
+        # absolute eV (matching label format).  xas_e_ref is saved in the
+        # model checkpoint by XASLoss.compute_output_stats.
+        try:
+            xas_e_ref = dp.dp.model["Default"].atomic_model.xas_e_ref
+        except AttributeError:
+            xas_e_ref = None
+        if xas_e_ref is not None and fparam is not None:
+            import torch as _torch
+            edge_idx_all = _torch.tensor(
+                fparam.reshape(numb_test, -1)
+            ).argmax(dim=-1).numpy()
+            e_ref_np = xas_e_ref.cpu().numpy()  # [ntypes, nfparam, 2]
+            for i in range(numb_test):
+                t = sel_type_int[i]
+                e = int(edge_idx_all[i])
+                property[i, :2] += e_ref_np[t, e]
     else:
         property = ret[0]
 
     property = property.reshape([numb_test, dp.task_dim])
 
-    if has_atom_property:
+    if has_atom_property and not is_xas:
         aproperty = ret[1]
         aproperty = aproperty.reshape([numb_test, natoms * dp.task_dim])
 

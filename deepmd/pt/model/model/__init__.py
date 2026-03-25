@@ -69,6 +69,9 @@ from .polar_model import (
 from .property_model import (
     PropertyModel,
 )
+from .xas_model import (
+    XASModel,
+)
 from .spin_model import (
     SpinEnergyModel,
     SpinModel,
@@ -269,7 +272,10 @@ def get_standard_model(model_params: dict) -> BaseModel:
     elif fitting_net_type in ["ener", "direct_force_ener"]:
         modelcls = EnergyModel
     elif fitting_net_type == "property":
-        modelcls = PropertyModel
+        property_name = model_params.get("fitting_net", {}).get(
+            "property_name", model_params.get("fitting_net", {}).get("var_name", "")
+        )
+        modelcls = XASModel if property_name == "xas" else PropertyModel
     else:
         raise RuntimeError(f"Unknown fitting type: {fitting_net_type}")
 
@@ -316,6 +322,7 @@ __all__ = [
     "PolarModel",
     "SpinEnergyModel",
     "SpinModel",
+    "XASModel",
     "get_model",
     "make_hessian_model",
     "make_model",
