@@ -2,13 +2,9 @@
 import unittest
 
 import numpy as np
-import torch
 
 from deepmd.dpmodel.utils.network import (
     get_activation_fn,
-)
-from deepmd.pt.utils import (
-    env,
 )
 from deepmd.pt.utils.tabulate import (
     unaggregated_dy2_dx,
@@ -90,14 +86,14 @@ class TestDPTabulate(unittest.TestCase):
         )
 
         dy_pt = unaggregated_dy_dx_s(
-            torch.from_numpy(y),
+            y,
             self.w,
-            torch.from_numpy(self.xbar),
+            self.xbar,
             functype,
         )
 
         dy_tf_numpy = dy_tf.numpy()
-        dy_pt_numpy = dy_pt.detach().cpu().numpy()
+        dy_pt_numpy = np.asarray(dy_pt)
 
         np.testing.assert_almost_equal(
             dy_tf_numpy,
@@ -116,15 +112,15 @@ class TestDPTabulate(unittest.TestCase):
         )
 
         dy2_pt = unaggregated_dy2_dx_s(
-            torch.from_numpy(y),
+            y,
             dy_pt,
             self.w,
-            torch.from_numpy(self.xbar),
+            self.xbar,
             functype,
         )
 
         dy2_tf_numpy = dy2_tf.numpy()
-        dy2_pt_numpy = dy2_pt.detach().cpu().numpy()
+        dy2_pt_numpy = np.asarray(dy2_pt)
 
         np.testing.assert_almost_equal(
             dy2_tf_numpy,
@@ -143,15 +139,15 @@ class TestDPTabulate(unittest.TestCase):
         )
 
         dz_pt = unaggregated_dy_dx(
-            torch.from_numpy(y).to(env.DEVICE),
+            y,
             self.w,
             dy_pt,
-            torch.from_numpy(self.xbar).to(env.DEVICE),
+            self.xbar,
             functype,
         )
 
         dz_tf_numpy = dz_tf.numpy()
-        dz_pt_numpy = dz_pt.detach().cpu().numpy()
+        dz_pt_numpy = np.asarray(dz_pt)
 
         np.testing.assert_almost_equal(
             dz_tf_numpy,
@@ -171,16 +167,16 @@ class TestDPTabulate(unittest.TestCase):
         )
 
         dy2_pt = unaggregated_dy2_dx(
-            torch.from_numpy(y).to(env.DEVICE),
+            y,
             self.w,
             dy_pt,
             dy2_pt,
-            torch.from_numpy(self.xbar).to(env.DEVICE),
+            self.xbar,
             functype,
         )
 
         dy2_tf_numpy = dy2_tf.numpy()
-        dy2_pt_numpy = dy2_pt.detach().cpu().numpy()
+        dy2_pt_numpy = np.asarray(dy2_pt)
 
         np.testing.assert_almost_equal(
             dy2_tf_numpy,
