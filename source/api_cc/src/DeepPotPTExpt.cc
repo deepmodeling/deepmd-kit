@@ -832,6 +832,11 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                          torch::TensorOptions().dtype(torch::kFloat64))
             .clone()
             .to(device);
+  } else if (dfparam > 0) {
+    throw deepmd::deepmd_exception(
+        "fparam is required for this model (dim_fparam=" +
+        std::to_string(dfparam) +
+        ") but was not provided, and no default_fparam is stored.");
   } else {
     fparam_tensor = torch::zeros({0}, options).to(device);
   }
@@ -1082,6 +1087,11 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                          torch::TensorOptions().dtype(torch::kFloat64))
             .clone()
             .to(device);
+  } else if (dfparam > 0) {
+    throw deepmd::deepmd_exception(
+        "fparam is required for this model (dim_fparam=" +
+        std::to_string(dfparam) +
+        ") but was not provided, and no default_fparam is stored.");
   } else {
     fparam_tensor = torch::zeros({0}, options).to(device);
   }
