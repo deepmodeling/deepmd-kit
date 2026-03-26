@@ -66,6 +66,9 @@ def main():
     }
 
     # ---- 2. Build two models with different seeds ----
+    from deepmd.pt.utils.serialization import (  # noqa: F401
+        deserialize_to_file,
+    )
     from deepmd.pt_expt.utils.serialization import (
         deserialize_to_file as pt_expt_deserialize_to_file,
     )
