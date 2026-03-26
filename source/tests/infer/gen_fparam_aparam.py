@@ -199,7 +199,7 @@ def main():
 
     # ---- 4b. Reference values for default_fparam model (.pt2) ----
     dp_default = DeepPot(pt2_default_path)
-    e_d, f_d, v_d, ae_d, av_d = dp_default.eval(
+    e_d, f_d, _v_d, ae_d, av_d = dp_default.eval(
         coord,
         box,
         atype,

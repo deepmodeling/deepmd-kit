@@ -637,15 +637,22 @@ void DeepPotPTExpt::init(const std::string& model,
     has_default_fparam_ = false;
   }
   if (has_default_fparam_) {
-    if (!metadata.obj_val.count("default_fparam")) {
-      throw deepmd::deepmd_exception(
-          "Model has has_default_fparam=true but default_fparam values are "
-          "missing from metadata. Please regenerate the .pt2 model with an "
-          "updated version of deepmd-kit.");
-    }
-    default_fparam_.clear();
-    for (const auto& v : metadata["default_fparam"].as_array()) {
-      default_fparam_.push_back(v.as_double());
+    if (metadata.obj_val.count("default_fparam")) {
+      default_fparam_.clear();
+      for (const auto& v : metadata["default_fparam"].as_array()) {
+        default_fparam_.push_back(v.as_double());
+      }
+      if (static_cast<int>(default_fparam_.size()) != dfparam) {
+        throw deepmd::deepmd_exception(
+            "default_fparam length (" + std::to_string(default_fparam_.size()) +
+            ") does not match dim_fparam (" + std::to_string(dfparam) + ").");
+      }
+    } else {
+      std::cerr << "WARNING: Model has has_default_fparam=true but "
+                   "default_fparam values are missing from metadata. "
+                   "Empty fparam will not be substituted. Please regenerate "
+                   "the .pt2 model with an updated version of deepmd-kit."
+                << std::endl;
     }
   }
 
@@ -837,6 +844,10 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                          options)
             .clone()
             .to(device);
+  } else if (has_default_fparam_) {
+    throw deepmd::deepmd_exception(
+        "fparam is empty and default_fparam values are missing from the .pt2 "
+        "metadata. Please regenerate the model or provide fparam explicitly.");
   } else {
     fparam_tensor = torch::zeros({0}, options).to(device);
   }
@@ -1078,6 +1089,10 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                          options)
             .clone()
             .to(device);
+  } else if (has_default_fparam_) {
+    throw deepmd::deepmd_exception(
+        "fparam is empty and default_fparam values are missing from the .pt2 "
+        "metadata. Please regenerate the model or provide fparam explicitly.");
   } else {
     fparam_tensor = torch::zeros({0}, options).to(device);
   }
