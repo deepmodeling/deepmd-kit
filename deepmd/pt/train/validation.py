@@ -6,6 +6,7 @@ from __future__ import (
 )
 
 import logging
+import traceback
 from dataclasses import (
     dataclass,
 )
@@ -110,6 +111,12 @@ def resolve_full_validation_start_step(
 def parse_validation_metric(metric: str) -> tuple[str, str]:
     """Parse the configured full validation metric."""
     normalized_metric = normalize_full_validation_metric(metric)
+    if normalized_metric not in METRIC_KEY_MAP:
+        supported_metrics = ", ".join(item.upper() for item in METRIC_KEY_MAP)
+        raise ValueError(
+            "validating.validation_metric must be one of "
+            f"{supported_metrics}, got {metric!r}."
+        )
     return normalized_metric, METRIC_KEY_MAP[normalized_metric]
 
 
@@ -255,7 +262,7 @@ class FullValidator:
         self.enabled = (
             self.full_validation
             and self.start_step is not None
-            and self.start_step < num_steps
+            and self.start_step <= num_steps
         )
         self.step_column_width = max(len("step"), len(str(num_steps)))
         self._write_mode = "a" if restart_training else "w"
@@ -308,21 +315,60 @@ class FullValidator:
             dist.barrier()
 
         result: FullValidationResult | None = None
+        caught_exception: Exception | None = None
+        error_message = None
         save_path = [None]
         if self.rank == 0:
-            result = self._evaluate(display_step)
-            save_path[0] = result.saved_best_path
+            try:
+                result = self._evaluate(display_step)
+                save_path[0] = result.saved_best_path
+            except Exception as exc:
+                caught_exception = exc
+                error_message = (
+                    "Full validation failed on rank 0 during evaluation:\n"
+                    f"{traceback.format_exc()}"
+                )
+
+        self._raise_if_distributed_error(error_message, caught_exception)
 
         if self.is_distributed:
             dist.broadcast_object_list(save_path, src=0)
 
         if save_path[0] is not None:
-            save_checkpoint(Path(save_path[0]), lr=lr, step=step_id)
-            if self.rank == 0:
-                self._prune_best_checkpoints(keep_names={Path(save_path[0]).name})
+            try:
+                if not self.is_distributed or self.zero_stage == 0:
+                    if self.rank == 0:
+                        save_checkpoint(Path(save_path[0]), lr=lr, step=step_id)
+                else:
+                    save_checkpoint(Path(save_path[0]), lr=lr, step=step_id)
+                if self.rank == 0:
+                    self._prune_best_checkpoints(keep_names={Path(save_path[0]).name})
+            except Exception as exc:
+                caught_exception = exc
+                error_message = (
+                    "Full validation failed while saving the best checkpoint:\n"
+                    f"{traceback.format_exc()}"
+                )
+            else:
+                error_message = None
+                caught_exception = None
+
+            self._raise_if_distributed_error(error_message, caught_exception)
 
         if self.rank == 0:
-            self._log_result(result)
+            try:
+                self._log_result(result)
+            except Exception as exc:
+                caught_exception = exc
+                error_message = (
+                    "Full validation failed while writing logs:\n"
+                    f"{traceback.format_exc()}"
+                )
+            else:
+                error_message = None
+                caught_exception = None
+
+        self._raise_if_distributed_error(error_message, caught_exception)
 
         if self.is_distributed:
             dist.barrier()
@@ -367,8 +413,12 @@ class FullValidator:
 
         system_metrics = []
         for dataset in self.validation_data.systems:
-            assert isinstance(dataset, DeepmdDataSetForLoader)
-            system_metrics.append(self._evaluate_system(dataset._data_system))
+            if not isinstance(dataset, DeepmdDataSetForLoader):
+                raise TypeError(
+                    "Full validation expects each dataset in validation_data.systems "
+                    f"to be DeepmdDataSetForLoader, got {type(dataset)!r}."
+                )
+            system_metrics.append(self._evaluate_system(dataset.data_system))
 
         aggregated = weighted_average([metric for metric in system_metrics if metric])
         return {
@@ -554,6 +604,25 @@ class FullValidator:
             )
         else:
             self._prune_best_checkpoints()
+
+    def _raise_if_distributed_error(
+        self,
+        local_error_message: str | None,
+        local_exception: Exception | None = None,
+    ) -> None:
+        """Propagate a local error to all ranks and raise consistently."""
+        error_message = local_error_message
+        if self.is_distributed:
+            gathered_errors = [None] * dist.get_world_size()
+            dist.all_gather_object(gathered_errors, local_error_message)
+            error_message = next(
+                (message for message in gathered_errors if message is not None), None
+            )
+        if error_message is None:
+            return
+        if local_exception is not None:
+            raise RuntimeError(error_message) from local_exception
+        raise RuntimeError(error_message)
 
     def _log_result(self, result: FullValidationResult | None) -> None:
         """Log and persist full validation results on rank 0."""

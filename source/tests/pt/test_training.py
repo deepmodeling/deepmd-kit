@@ -2,6 +2,7 @@
 import json
 import os
 import shutil
+import tempfile
 import unittest
 from copy import (
     deepcopy,
@@ -761,6 +762,9 @@ class TestModelChangeOutBiasFittingStat(unittest.TestCase):
 
 class TestFullValidation(unittest.TestCase):
     def setUp(self) -> None:
+        self._cwd = os.getcwd()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        os.chdir(self._tmpdir.name)
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -782,13 +786,8 @@ class TestFullValidation(unittest.TestCase):
         }
 
     def tearDown(self) -> None:
-        for f in os.listdir("."):
-            if (f.startswith("model") or f.startswith("best")) and f.endswith(".pt"):
-                os.remove(f)
-            if f in ["lcurve.out", "val.log", "checkpoint"]:
-                os.remove(f)
-            if f.startswith("stat_files"):
-                shutil.rmtree(f)
+        os.chdir(self._cwd)
+        self._tmpdir.cleanup()
 
     @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
     def test_full_validation_rotates_best_checkpoint(self, mocked_eval) -> None:
@@ -843,12 +842,10 @@ class TestFullValidation(unittest.TestCase):
             "full_val_file": "val.log",
             "full_val_start": 0.0,
         }
-        config["model"], shared_links = preprocess_shared_params(config["model"])
+        config["model"], _ = preprocess_shared_params(config["model"])
         config = update_deepmd_input(config, warning=False)
-        config = normalize(config, multi_task=True)
-
         with self.assertRaisesRegex(ValueError, "multi-task"):
-            get_trainer(config, shared_links=shared_links)
+            normalize(config, multi_task=True)
 
 
 if __name__ == "__main__":

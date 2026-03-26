@@ -7,6 +7,9 @@ from copy import (
 )
 
 import torch
+from dargs.dargs import (
+    ArgumentValueError,
+)
 
 from deepmd.pt.train.validation import (
     FullValidator,
@@ -135,5 +138,5 @@ class TestValidationArgcheck(unittest.TestCase):
     def test_normalize_rejects_invalid_metric(self) -> None:
         config = _make_single_task_config()
         config["validating"]["validation_metric"] = "X:MAE"
-        with self.assertRaisesRegex(Exception, "validation_metric"):
+        with self.assertRaisesRegex(ArgumentValueError, "validation_metric"):
             normalize(config)

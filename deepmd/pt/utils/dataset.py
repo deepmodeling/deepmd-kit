@@ -49,6 +49,11 @@ class DeepmdDataSetForLoader(Dataset):
     def __len__(self) -> int:
         return self._data_system.nframes
 
+    @property
+    def data_system(self) -> DeepmdData:
+        """Expose the underlying DeePMD data system."""
+        return self._data_system
+
     def __getitem__(self, index: int) -> dict[str, Any]:
         """Get a frame from the selected system."""
         b_data = self._data_system.get_item_torch(index, max(1, NUM_WORKERS))
