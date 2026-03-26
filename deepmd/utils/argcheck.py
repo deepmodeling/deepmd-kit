@@ -4177,10 +4177,6 @@ def validate_full_validation_config(
     if float(validating.get("full_val_start", 0.0)) == 1.0:
         return
 
-    if multi_task:
-        # Unsupported multi-task mode is rejected during trainer initialization.
-        return
-
     metric = validating["validation_metric"]
     if not is_valid_full_validation_metric(metric):
         valid_metrics = ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
@@ -4189,9 +4185,19 @@ def validate_full_validation_config(
             f"{valid_metrics}, got {metric!r}."
         )
 
+    if multi_task:
+        raise ValueError(
+            "validating.full_validation only supports single-task energy "
+            "training; multi-task training is not supported."
+        )
+
     loss_params = data.get("loss", {})
-    if loss_params.get("type", "ener") != "ener":
-        return
+    loss_type = loss_params.get("type", "ener")
+    if loss_type != "ener":
+        raise ValueError(
+            "validating.full_validation only supports single-task energy "
+            f"training with loss.type='ener'; got loss.type={loss_type!r}."
+        )
 
     if not data.get("training", {}).get("validation_data"):
         raise ValueError(
