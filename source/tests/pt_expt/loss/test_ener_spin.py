@@ -141,7 +141,7 @@ class TestEnergySpinLoss:
             k: v.detach().cpu().numpy() if isinstance(v, torch.Tensor) else v
             for k, v in label.items()
         }
-        l_dp, more_dp = dp_loss(learning_rate, natoms, model_pred_np, label_np)
+        l_dp, _more_dp = dp_loss(learning_rate, natoms, model_pred_np, label_np)
 
         np.testing.assert_allclose(
             l0.detach().cpu().numpy(),
@@ -229,7 +229,7 @@ class TestEnergySpinLoss:
             rng, nframes, natoms, n_magnetic, dtype, self.device
         )
 
-        l0, more0 = loss0(learning_rate, natoms, model_pred, label)
+        l0, _more0 = loss0(learning_rate, natoms, model_pred, label)
         assert l0.shape == ()
 
         # Compare with dpmodel

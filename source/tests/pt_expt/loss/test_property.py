@@ -110,7 +110,7 @@ class TestPropertyLoss:
         dp_loss = PropertyLossDP.deserialize(loss0.serialize())
         model_pred_np = {k: v.detach().cpu().numpy() for k, v in model_pred.items()}
         label_np = {k: v.detach().cpu().numpy() for k, v in label.items()}
-        l_dp, more_dp = dp_loss(learning_rate, natoms, model_pred_np, label_np)
+        l_dp, _more_dp = dp_loss(learning_rate, natoms, model_pred_np, label_np)
 
         # Use relative tolerance: extreme out_std values (e.g. 0.001) can produce
         # large loss values where torch/numpy accumulation order differs at machine epsilon.

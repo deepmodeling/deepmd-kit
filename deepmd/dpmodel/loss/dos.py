@@ -124,7 +124,7 @@ class DOSLoss(Loss):
         more_loss = {}
 
         if self.has_ados and "atom_dos" in model_dict and "atom_dos" in label_dict:
-            find_local = label_dict.get("find_atom_dos", 1.0)
+            find_local = label_dict.get("find_atom_dos", 0.0)
             pref_ados = pref_ados * find_local
             local_pred = xp.reshape(model_dict["atom_dos"], (-1, natoms, self.numb_dos))
             local_label = xp.reshape(
@@ -145,7 +145,7 @@ class DOSLoss(Loss):
             )
 
         if self.has_acdf and "atom_dos" in model_dict and "atom_dos" in label_dict:
-            find_local = label_dict.get("find_atom_dos", 1.0)
+            find_local = label_dict.get("find_atom_dos", 0.0)
             pref_acdf = pref_acdf * find_local
             local_pred_cdf = xp.cumulative_sum(
                 xp.reshape(model_dict["atom_dos"], (-1, natoms, self.numb_dos)),
@@ -170,7 +170,7 @@ class DOSLoss(Loss):
             )
 
         if self.has_dos and "dos" in model_dict and "dos" in label_dict:
-            find_global = label_dict.get("find_dos", 1.0)
+            find_global = label_dict.get("find_dos", 0.0)
             pref_dos = pref_dos * find_global
             global_pred = xp.reshape(model_dict["dos"], (-1, self.numb_dos))
             global_label = xp.reshape(label_dict["dos"], (-1, self.numb_dos))
@@ -190,7 +190,7 @@ class DOSLoss(Loss):
             )
 
         if self.has_cdf and "dos" in model_dict and "dos" in label_dict:
-            find_global = label_dict.get("find_dos", 1.0)
+            find_global = label_dict.get("find_dos", 0.0)
             pref_cdf = pref_cdf * find_global
             global_pred_cdf = xp.cumulative_sum(
                 xp.reshape(model_dict["dos"], (-1, self.numb_dos)), axis=-1

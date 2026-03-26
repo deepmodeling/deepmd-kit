@@ -121,7 +121,7 @@ class EnergySpinLoss(Loss):
         if self.has_e:
             energy_pred = model_dict["energy"]
             energy_label = label_dict["energy"]
-            find_energy = label_dict.get("find_energy", 1.0)
+            find_energy = label_dict.get("find_energy", 0.0)
             pref_e = pref_e * find_energy
             if self.enable_atom_ener_coeff and "atom_energy" in model_dict:
                 atom_ener_pred = model_dict["atom_energy"]
@@ -148,7 +148,7 @@ class EnergySpinLoss(Loss):
                 more_loss["mae_e_all"] = self.display_if_exist(mae_e_all, find_energy)
 
         if self.has_fr:
-            find_force = label_dict.get("find_force", 1.0)
+            find_force = label_dict.get("find_force", 0.0)
             pref_fr = pref_fr * find_force
             force_pred = model_dict["force"]
             force_label = label_dict["force"]
@@ -173,7 +173,7 @@ class EnergySpinLoss(Loss):
                 )
 
         if self.has_fm:
-            find_force_mag = label_dict.get("find_force_mag", 1.0)
+            find_force_mag = label_dict.get("find_force_mag", 0.0)
             pref_fm = pref_fm * find_force_mag
             force_mag_pred = model_dict["force_mag"]
             force_mag_label = label_dict["force_mag"]
@@ -207,7 +207,7 @@ class EnergySpinLoss(Loss):
                 )
 
         if self.has_ae:
-            find_atom_ener = label_dict.get("find_atom_ener", 1.0)
+            find_atom_ener = label_dict.get("find_atom_ener", 0.0)
             pref_ae = pref_ae * find_atom_ener
             atom_ener = model_dict["atom_energy"]
             atom_ener_label = label_dict["atom_ener"]
@@ -231,7 +231,7 @@ class EnergySpinLoss(Loss):
                 )
 
         if self.has_v:
-            find_virial = label_dict.get("find_virial", 1.0)
+            find_virial = label_dict.get("find_virial", 0.0)
             pref_v = pref_v * find_virial
             virial_pred = xp.reshape(model_dict["virial"], (-1, 9))
             virial_label = label_dict["virial"]

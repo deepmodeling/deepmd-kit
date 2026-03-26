@@ -91,13 +91,13 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
 
     @property
     def skip_tf(self) -> bool:
-        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm, _mae) = self.param
+        (_use_huber, _enable_atom_ener_coeff, loss_func, f_use_norm, _mae) = self.param
         # Skip TF for MAE loss tests (not implemented in TF backend)
         return CommonTest.skip_tf or loss_func == "mae" or f_use_norm
 
     @property
     def skip_pd(self) -> bool:
-        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm, _mae) = self.param
+        (_use_huber, _enable_atom_ener_coeff, loss_func, f_use_norm, _mae) = self.param
         # Skip Paddle for MAE loss tests (not implemented in Paddle backend)
         return not INSTALLED_PD or loss_func == "mae" or f_use_norm
 
@@ -116,7 +116,7 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
     args = loss_ener()
 
     def setUp(self) -> None:
-        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm, mae) = self.param
+        (use_huber, _enable_atom_ener_coeff, loss_func, f_use_norm, mae) = self.param
         # Skip invalid combinations
         if f_use_norm and not (use_huber or loss_func == "mae"):
             self.skipTest("f_use_norm requires either use_huber or loss_func='mae'")
@@ -189,7 +189,7 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             for kk, vv in self.label.items()
         }
 
-        loss, more_loss = obj.build(
+        loss, _more_loss = obj.build(
             self.learning_rate,
             [self.natoms],
             predict,
@@ -424,7 +424,7 @@ class TestEnerGF(CommonTest, LossTest, unittest.TestCase):
             for kk, vv in self.label.items()
         }
 
-        loss, more_loss = obj.build(
+        loss, _more_loss = obj.build(
             self.learning_rate,
             [self.natoms],
             predict,

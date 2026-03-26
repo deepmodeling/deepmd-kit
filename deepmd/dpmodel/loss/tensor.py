@@ -92,7 +92,7 @@ class TensorLoss(Loss):
             and self.tensor_name in model_dict
             and "atom_" + self.label_name in label_dict
         ):
-            find_local = label_dict.get("find_atom_" + self.label_name, 1.0)
+            find_local = label_dict.get("find_atom_" + self.label_name, 0.0)
             local_weight = self.local_weight * find_local
             local_pred = xp.reshape(
                 model_dict[self.tensor_name], (-1, natoms, self.tensor_size)
@@ -120,7 +120,7 @@ class TensorLoss(Loss):
             and "global_" + self.tensor_name in model_dict
             and self.label_name in label_dict
         ):
-            find_global = label_dict.get("find_" + self.label_name, 1.0)
+            find_global = label_dict.get("find_" + self.label_name, 0.0)
             global_weight = self.global_weight * find_global
             global_pred = xp.reshape(
                 model_dict["global_" + self.tensor_name], (-1, self.tensor_size)
