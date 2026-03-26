@@ -123,12 +123,6 @@ class TestChangeBias(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        from .conftest import (
-            _pop_device_contexts,
-        )
-
-        _pop_device_contexts()
-
         data_dir = os.path.join(EXAMPLE_DIR, "data")
         if not os.path.isdir(data_dir):
             raise unittest.SkipTest(f"Example data not found: {data_dir}")
