@@ -19,6 +19,7 @@ from ..common import (
     INSTALLED_JAX,
     INSTALLED_PD,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
     parameterized,
@@ -52,6 +53,10 @@ if INSTALLED_JAX:
     from deepmd.jax.env import (
         jnp,
     )
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.loss.ener import EnergyLoss as EnerLossPTExpt
+else:
+    EnerLossPTExpt = None
 if INSTALLED_ARRAY_API_STRICT:
     import array_api_strict
 
@@ -61,11 +66,12 @@ if INSTALLED_ARRAY_API_STRICT:
     (False, True),  # enable_atom_ener_coeff
     ("mse", "mae"),  # loss_func
     (False, True),  # f_use_norm
+    (False, True),  # mae (dp test extra MAE metrics)
 )
 class TestEner(CommonTest, LossTest, unittest.TestCase):
     @property
     def data(self) -> dict:
-        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm) = self.param
+        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm, _mae) = self.param
         return {
             "start_pref_e": 0.02,
             "limit_pref_e": 1.0,
@@ -85,36 +91,41 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
 
     @property
     def skip_tf(self) -> bool:
-        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm) = self.param
+        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm, _mae) = self.param
         # Skip TF for MAE loss tests (not implemented in TF backend)
         return CommonTest.skip_tf or loss_func == "mae" or f_use_norm
 
     @property
     def skip_pd(self) -> bool:
-        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm) = self.param
+        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm, _mae) = self.param
         # Skip Paddle for MAE loss tests (not implemented in Paddle backend)
         return not INSTALLED_PD or loss_func == "mae" or f_use_norm
 
     skip_pt = CommonTest.skip_pt
+    skip_pt_expt = not INSTALLED_PT_EXPT
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
     tf_class = EnerLossTF
     dp_class = EnerLossDP
     pt_class = EnerLossPT
+    pt_expt_class = EnerLossPTExpt
     jax_class = EnerLossDP
     pd_class = EnerLossPD
     array_api_strict_class = EnerLossDP
     args = loss_ener()
 
     def setUp(self) -> None:
-        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm) = self.param
+        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm, mae) = self.param
         # Skip invalid combinations
         if f_use_norm and not (use_huber or loss_func == "mae"):
             self.skipTest("f_use_norm requires either use_huber or loss_func='mae'")
         if use_huber and loss_func == "mae":
             self.skipTest("Cannot use both huber and mae loss_func at the same time")
+        if loss_func == "mae" and mae:
+            self.skipTest("mae=True with loss_func='mae' is redundant")
         CommonTest.setUp(self)
+        self.mae = mae
         self.learning_rate = 1e-3
         rng = np.random.default_rng(20250105)
         self.nframes = 2
@@ -208,6 +219,7 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             label,
             self.natoms,
             self.learning_rate,
+            mae=self.mae,
         )
         loss = torch_to_numpy(loss)
         more_loss = {kk: torch_to_numpy(vv) for kk, vv in more_loss.items()}
@@ -219,7 +231,24 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             self.natoms,
             self.predict_dpmodel_style,
             self.label,
+            mae=self.mae,
         )
+
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        predict = {
+            kk: numpy_to_torch(vv) for kk, vv in self.predict_dpmodel_style.items()
+        }
+        label = {kk: numpy_to_torch(vv) for kk, vv in self.label.items()}
+        loss, more_loss = pt_expt_obj(
+            self.learning_rate,
+            self.natoms,
+            predict,
+            label,
+            mae=self.mae,
+        )
+        loss = torch_to_numpy(loss)
+        more_loss = {kk: torch_to_numpy(vv) for kk, vv in more_loss.items()}
+        return loss, more_loss
 
     def eval_jax(self, jax_obj: Any) -> Any:
         predict = {kk: jnp.asarray(vv) for kk, vv in self.predict_dpmodel_style.items()}
@@ -230,6 +259,7 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             self.natoms,
             predict,
             label,
+            mae=self.mae,
         )
         loss = to_numpy_array(loss)
         more_loss = {kk: to_numpy_array(vv) for kk, vv in more_loss.items()}
@@ -247,6 +277,7 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             self.natoms,
             predict,
             label,
+            mae=self.mae,
         )
         loss = to_numpy_array(loss)
         more_loss = {kk: to_numpy_array(vv) for kk, vv in more_loss.items()}
@@ -320,6 +351,7 @@ class TestEnerGF(CommonTest, LossTest, unittest.TestCase):
 
     skip_tf = CommonTest.skip_tf
     skip_pt = CommonTest.skip_pt
+    skip_pt_expt = not INSTALLED_PT_EXPT
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
     skip_pd = not INSTALLED_PD
@@ -327,6 +359,7 @@ class TestEnerGF(CommonTest, LossTest, unittest.TestCase):
     tf_class = EnerLossTF
     dp_class = EnerLossDP
     pt_class = EnerLossPT
+    pt_expt_class = EnerLossPTExpt
     jax_class = EnerLossDP
     pd_class = EnerLossPD
     array_api_strict_class = EnerLossDP
@@ -420,6 +453,7 @@ class TestEnerGF(CommonTest, LossTest, unittest.TestCase):
             label,
             self.natoms,
             self.learning_rate,
+            mae=True,
         )
         loss = torch_to_numpy(loss)
         more_loss = {kk: torch_to_numpy(vv) for kk, vv in more_loss.items()}
@@ -431,7 +465,24 @@ class TestEnerGF(CommonTest, LossTest, unittest.TestCase):
             self.natoms,
             self.predict_dpmodel_style,
             self.label,
+            mae=True,
         )
+
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        predict = {
+            kk: numpy_to_torch(vv) for kk, vv in self.predict_dpmodel_style.items()
+        }
+        label = {kk: numpy_to_torch(vv) for kk, vv in self.label.items()}
+        loss, more_loss = pt_expt_obj(
+            self.learning_rate,
+            self.natoms,
+            predict,
+            label,
+            mae=True,
+        )
+        loss = torch_to_numpy(loss)
+        more_loss = {kk: torch_to_numpy(vv) for kk, vv in more_loss.items()}
+        return loss, more_loss
 
     def eval_jax(self, jax_obj: Any) -> Any:
         predict = {kk: jnp.asarray(vv) for kk, vv in self.predict_dpmodel_style.items()}
@@ -442,6 +493,7 @@ class TestEnerGF(CommonTest, LossTest, unittest.TestCase):
             self.natoms,
             predict,
             label,
+            mae=True,
         )
         loss = to_numpy_array(loss)
         more_loss = {kk: to_numpy_array(vv) for kk, vv in more_loss.items()}
@@ -459,6 +511,7 @@ class TestEnerGF(CommonTest, LossTest, unittest.TestCase):
             self.natoms,
             predict,
             label,
+            mae=True,
         )
         loss = to_numpy_array(loss)
         more_loss = {kk: to_numpy_array(vv) for kk, vv in more_loss.items()}
@@ -489,7 +542,7 @@ class TestEnerGF(CommonTest, LossTest, unittest.TestCase):
         if len(ret) > 1:
             more_loss = ret[1]
             for k in sorted(more_loss):
-                if k.startswith("rmse_"):
+                if k.startswith("rmse_") or k.startswith("mae_"):
                     result[k] = np.atleast_1d(
                         np.asarray(more_loss[k], dtype=np.float64)
                     )

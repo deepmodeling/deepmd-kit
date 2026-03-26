@@ -18,6 +18,9 @@ from deepmd.pt.utils.env import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 
 class EnergySpinLoss(TaskLoss):
@@ -405,3 +408,31 @@ class EnergySpinLoss(TaskLoss):
                 )
             )
         return label_requirement
+
+    def serialize(self) -> dict:
+        """Serialize the loss module."""
+        return {
+            "@class": "EnergySpinLoss",
+            "@version": 1,
+            "starter_learning_rate": self.starter_learning_rate,
+            "start_pref_e": self.start_pref_e,
+            "limit_pref_e": self.limit_pref_e,
+            "start_pref_fr": self.start_pref_fr,
+            "limit_pref_fr": self.limit_pref_fr,
+            "start_pref_fm": self.start_pref_fm,
+            "limit_pref_fm": self.limit_pref_fm,
+            "start_pref_v": self.start_pref_v,
+            "limit_pref_v": self.limit_pref_v,
+            "start_pref_ae": self.start_pref_ae,
+            "limit_pref_ae": self.limit_pref_ae,
+            "enable_atom_ener_coeff": self.enable_atom_ener_coeff,
+            "loss_func": self.loss_func,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "EnergySpinLoss":
+        """Deserialize the loss module."""
+        data = data.copy()
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        return cls(**data)
