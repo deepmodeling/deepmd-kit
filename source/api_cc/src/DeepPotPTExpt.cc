@@ -636,6 +636,18 @@ void DeepPotPTExpt::init(const std::string& model,
   } else {
     has_default_fparam_ = false;
   }
+  if (has_default_fparam_) {
+    if (!metadata.obj_val.count("default_fparam")) {
+      throw deepmd::deepmd_exception(
+          "Model has has_default_fparam=true but default_fparam values are "
+          "missing from metadata. Please regenerate the .pt2 model with an "
+          "updated version of deepmd-kit.");
+    }
+    default_fparam_.clear();
+    for (const auto& v : metadata["default_fparam"].as_array()) {
+      default_fparam_.push_back(v.as_double());
+    }
+  }
 
   type_map.clear();
   for (const auto& v : metadata["type_map"].as_array()) {
@@ -817,6 +829,13 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                          {1, static_cast<std::int64_t>(fparam.size())},
                          valuetype_options)
             .to(torch::kFloat64)
+            .to(device);
+  } else if (has_default_fparam_ && !default_fparam_.empty()) {
+    fparam_tensor =
+        torch::from_blob(const_cast<double*>(default_fparam_.data()),
+                         {1, static_cast<std::int64_t>(default_fparam_.size())},
+                         options)
+            .clone()
             .to(device);
   } else {
     fparam_tensor = torch::zeros({0}, options).to(device);
@@ -1051,6 +1070,13 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                          {1, static_cast<std::int64_t>(fparam.size())},
                          valuetype_options)
             .to(torch::kFloat64)
+            .to(device);
+  } else if (has_default_fparam_ && !default_fparam_.empty()) {
+    fparam_tensor =
+        torch::from_blob(const_cast<double*>(default_fparam_.data()),
+                         {1, static_cast<std::int64_t>(default_fparam_.size())},
+                         options)
+            .clone()
             .to(device);
   } else {
     fparam_tensor = torch::zeros({0}, options).to(device);

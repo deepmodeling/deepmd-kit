@@ -121,6 +121,15 @@ def main():
     print(f"Exporting to {pt2_default_path} ...")  # noqa: T201
     pt_expt_deserialize_to_file(pt2_default_path, copy.deepcopy(data_default))
 
+    pth_default_path = os.path.join(base_dir, "fparam_aparam_default.pth")
+    pth_default_exported = False
+    print(f"Exporting to {pth_default_path} ...")  # noqa: T201
+    try:
+        pt_deserialize_to_file(pth_default_path, copy.deepcopy(data_default))
+        pth_default_exported = True
+    except RuntimeError as e:
+        print(f"WARNING: .pth default export failed ({e}), skipping.")  # noqa: T201
+
     # ---- 4. Run inference via DeepPot to get reference values ----
     from deepmd.infer import (
         DeepPot,
@@ -190,6 +199,43 @@ def main():
     virial_flat = atom_virial.flatten()
     for ii, vv in enumerate(virial_flat):
         comma = "," if ii < len(virial_flat) - 1 else ""
+        print(f"      {vv:.18e}{comma}")  # noqa: T201
+    print("  };")  # noqa: T201
+
+    # ---- 4b. Reference values for default_fparam model (.pt2) ----
+    dp_default = DeepPot(pt2_default_path)
+    e_d, f_d, v_d, ae_d, av_d = dp_default.eval(
+        coord,
+        box,
+        atype,
+        fparam=fparam_val,
+        aparam=aparam_val,
+        atomic=True,
+    )
+    atom_energy_d = ae_d[0, :, 0]
+    force_d = f_d[0]
+    atom_virial_d = av_d[0]
+
+    print("\n// ---- Reference values for C++ default_fparam .pt2 test ----")  # noqa: T201
+    print(f"// Total energy: {e_d[0, 0]:.18e}")  # noqa: T201
+    print()  # noqa: T201
+    print("  std::vector<VALUETYPE> expected_e = {")  # noqa: T201
+    for ii, ev in enumerate(atom_energy_d):
+        comma = "," if ii < len(atom_energy_d) - 1 else ""
+        print(f"      {ev:.18e}{comma}")  # noqa: T201
+    print("  };")  # noqa: T201
+
+    print("  std::vector<VALUETYPE> expected_f = {")  # noqa: T201
+    force_flat_d = force_d.flatten()
+    for ii, fv in enumerate(force_flat_d):
+        comma = "," if ii < len(force_flat_d) - 1 else ""
+        print(f"      {fv:.18e}{comma}")  # noqa: T201
+    print("  };")  # noqa: T201
+
+    print("  std::vector<VALUETYPE> expected_v = {")  # noqa: T201
+    virial_flat_d = atom_virial_d.flatten()
+    for ii, vv in enumerate(virial_flat_d):
+        comma = "," if ii < len(virial_flat_d) - 1 else ""
         print(f"      {vv:.18e}{comma}")  # noqa: T201
     print("  };")  # noqa: T201
 
