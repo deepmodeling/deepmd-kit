@@ -297,6 +297,7 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             label,
             self.natoms,
             self.learning_rate,
+            mae=self.mae,
         )
         loss = to_numpy_array(loss)
         more_loss = {kk: to_numpy_array(vv) for kk, vv in more_loss.items()}
@@ -531,6 +532,7 @@ class TestEnerGF(CommonTest, LossTest, unittest.TestCase):
             label,
             self.natoms,
             self.learning_rate,
+            mae=True,
         )
         loss = to_numpy_array(loss)
         more_loss = {kk: to_numpy_array(vv) for kk, vv in more_loss.items()}
