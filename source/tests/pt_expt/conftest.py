@@ -34,6 +34,13 @@ def _pop_device_contexts() -> list:
     return popped
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _clear_leaked_device_context_session():
+    """Pop any stale DeviceContext once at session start."""
+    _pop_device_contexts()
+    yield
+
+
 @pytest.fixture(autouse=True)
 def _clear_leaked_device_context():
     """Pop any stale ``DeviceContext`` before each test (safety net)."""
