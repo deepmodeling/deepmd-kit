@@ -773,13 +773,14 @@ class TestFullValidation(unittest.TestCase):
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_se_e2_a)
-        self.config["training"]["numb_steps"] = 2
+        self.config["training"]["numb_steps"] = 4
         self.config["training"]["save_freq"] = 100
         self.config["training"]["disp_training"] = False
         self.config["validating"] = {
             "full_validation": True,
             "validation_freq": 1,
             "save_best": True,
+            "max_best_ckpt": 2,
             "validation_metric": "E:MAE",
             "full_val_file": "val.log",
             "full_val_start": 0.0,
@@ -792,24 +793,33 @@ class TestFullValidation(unittest.TestCase):
     @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
     def test_full_validation_rotates_best_checkpoint(self, mocked_eval) -> None:
         mocked_eval.side_effect = [
-            {"mae_e_per_atom": 2.0},
             {"mae_e_per_atom": 1.0},
+            {"mae_e_per_atom": 2.0},
+            {"mae_e_per_atom": 0.5},
+            {"mae_e_per_atom": 1.5},
         ]
-        Path("best.ckpt-999.pt").touch()
+        Path("best.ckpt-999.t-1.pt").touch()
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
 
-        self.assertFalse(Path("best.ckpt-999.pt").exists())
-        self.assertFalse(Path("best.ckpt-1.pt").exists())
-        self.assertTrue(Path("best.ckpt-2.pt").exists())
+        self.assertFalse(Path("best.ckpt-999.t-1.pt").exists())
+        self.assertFalse(Path("best.ckpt-1.t-1.pt").exists())
+        self.assertFalse(Path("best.ckpt-2.t-1.pt").exists())
+        self.assertTrue(Path("best.ckpt-3.t-1.pt").exists())
+        self.assertTrue(Path("best.ckpt-1.t-2.pt").exists())
         train_infos = trainer._get_inner_module().train_infos
-        self.assertEqual(train_infos["full_validation_best_step"], 2)
-        self.assertEqual(train_infos["full_validation_best_metric"], 1.0)
-        self.assertNotIn("full_validation_best_path", train_infos)
+        self.assertEqual(
+            train_infos["full_validation_topk_records"],
+            [
+                {"metric": 0.5, "step": 3},
+                {"metric": 1.0, "step": 1},
+            ],
+        )
         with open("val.log") as fp:
             val_lines = [line for line in fp.readlines() if not line.startswith("#")]
-        self.assertEqual(val_lines[0].split()[1], "2000.0")
-        self.assertEqual(val_lines[1].split()[1], "1000.0")
+        self.assertEqual(len(val_lines), 4)
+        self.assertEqual(val_lines[0].split()[1], "1000.0")
+        self.assertEqual(val_lines[1].split()[1], "2000.0")
 
     def test_full_validation_rejects_spin_loss(self) -> None:
         config = deepcopy(self.config)
