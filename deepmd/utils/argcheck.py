@@ -4085,6 +4085,11 @@ def validating_args() -> Argument:
         "Whether to save an extra checkpoint when the selected full validation "
         "metric reaches a new best value."
     )
+    doc_max_best_ckpt = (
+        "The maximum number of top-ranked best checkpoints to keep. The best "
+        "checkpoints are ranked by the selected validation metric in ascending "
+        "order. Default is 1."
+    )
     doc_validation_metric = (
         "Metric used to determine the best checkpoint during full validation. "
         f"Supported values are {valid_metrics}. The string is case-insensitive. "
@@ -4127,6 +4132,15 @@ def validating_args() -> Argument:
             doc=doc_only_pt_supported + doc_save_best,
         ),
         Argument(
+            "max_best_ckpt",
+            int,
+            optional=True,
+            default=1,
+            doc=doc_only_pt_supported + doc_max_best_ckpt,
+            extra_check=lambda x: x > 0,
+            extra_check_errmsg="must be greater than 0",
+        ),
+        Argument(
             "validation_metric",
             str,
             optional=True,
@@ -4149,7 +4163,7 @@ def validating_args() -> Argument:
             "full_val_start",
             [int, float],
             optional=True,
-            default=0.0,
+            default=0.5,
             doc=doc_only_pt_supported + doc_full_val_start,
             extra_check=lambda x: x >= 0,
             extra_check_errmsg="must be greater than or equal to 0",

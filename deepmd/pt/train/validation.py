@@ -6,6 +6,7 @@ from __future__ import (
 )
 
 import logging
+import re
 import traceback
 from dataclasses import (
     dataclass,
@@ -68,11 +69,16 @@ LOG_COLUMN_ORDER = [
     ("V_RMSE", "rmse_v_per_atom"),
 ]
 
-BEST_METRIC_INFO_KEY = "full_validation_best_metric"
-BEST_STEP_INFO_KEY = "full_validation_best_step"
+TOPK_RECORDS_INFO_KEY = "full_validation_topk_records"
 BEST_METRIC_NAME_INFO_KEY = "full_validation_metric"
-BEST_CKPT_GLOB = "best.ckpt-*.pt"
-BEST_PATH_INFO_KEY_COMPAT = "full_validation_best_path"
+BEST_CKPT_GLOB = "best.ckpt-*.t-*.pt"
+BEST_CKPT_PATTERN = re.compile(r"^best\.ckpt-(\d+)\.t-(\d+)\.pt$")
+STALE_FULL_VALIDATION_INFO_KEYS = (
+    "full_validation_best_metric",
+    "full_validation_best_step",
+    "full_validation_best_path",
+    "full_validation_best_records",
+)
 BATCH_SIZE_LOGGER_NAME = "deepmd.utils.batch_size"
 VAL_LOG_SIGNIFICANT_DIGITS = 5
 VAL_LOG_COLUMN_GAP = "   "
@@ -94,6 +100,14 @@ class FullValidationResult:
     selected_metric_key: str
     selected_metric_value: float
     saved_best_path: str | None
+
+
+@dataclass(order=True, frozen=True)
+class BestCheckpointRecord:
+    """One best-checkpoint record ordered by metric then step."""
+
+    metric: float
+    step: int
 
 
 def resolve_full_validation_start_step(
@@ -251,6 +265,7 @@ class FullValidator:
         self.full_validation = bool(validating_params.get("full_validation", False))
         self.validation_freq = int(validating_params.get("validation_freq", 5000))
         self.save_best = bool(validating_params.get("save_best", True))
+        self.max_best_ckpt = int(validating_params.get("max_best_ckpt", 1))
         self.metric_name, self.metric_key = parse_validation_metric(
             str(validating_params.get("validation_metric", "E:MAE"))
         )
@@ -278,15 +293,7 @@ class FullValidator:
                 (metric_key, header_label, max(len(header_label), 18))
             )
 
-        if self.train_infos.get(BEST_METRIC_NAME_INFO_KEY) == self.metric_name:
-            best_metric = self.train_infos.get(BEST_METRIC_INFO_KEY)
-            self.best_metric_value = (
-                float(best_metric) if best_metric is not None else None
-            )
-            self.best_step = self.train_infos.get(BEST_STEP_INFO_KEY)
-        else:
-            self.best_metric_value = None
-            self.best_step = None
+        self.topk_records = self._load_topk_records()
         self._sync_train_infos()
         if self.rank == 0:
             self._initialize_best_checkpoints(restart_training=restart_training)
@@ -342,7 +349,7 @@ class FullValidator:
                 else:
                     save_checkpoint(Path(save_path[0]), lr=lr, step=step_id)
                 if self.rank == 0:
-                    self._prune_best_checkpoints(keep_names={Path(save_path[0]).name})
+                    self._reconcile_best_checkpoints()
             except Exception as exc:
                 caught_exception = exc
                 error_message = (
@@ -553,31 +560,62 @@ class FullValidator:
         display_step: int,
         selected_metric_value: float,
     ) -> str | None:
-        """Update the best metric state and return the checkpoint path to save."""
-        if (
-            self.best_metric_value is not None
-            and selected_metric_value >= self.best_metric_value
-        ):
+        """Update the top-K records and return the checkpoint path to save."""
+        candidate = BestCheckpointRecord(
+            metric=selected_metric_value,
+            step=display_step,
+        )
+        updated_records = [
+            record for record in self.topk_records if record.step != display_step
+        ]
+        updated_records.append(candidate)
+        updated_records.sort()
+        updated_records = updated_records[: self.max_best_ckpt]
+        if candidate not in updated_records:
             return None
 
-        new_best_path = (
-            self._best_checkpoint_name(display_step) if self.save_best else None
-        )
-        self.best_metric_value = selected_metric_value
-        self.best_step = display_step
+        self.topk_records = updated_records
         self._sync_train_infos()
-        return new_best_path
+        if not self.save_best:
+            return None
+        candidate_rank = self.topk_records.index(candidate) + 1
+        return self._best_checkpoint_name(display_step, candidate_rank)
 
     def _sync_train_infos(self) -> None:
-        """Synchronize best validation state into train infos."""
-        self.train_infos.pop(BEST_PATH_INFO_KEY_COMPAT, None)
+        """Synchronize top-K validation state into train infos."""
+        for key in STALE_FULL_VALIDATION_INFO_KEYS:
+            self.train_infos.pop(key, None)
         self.train_infos[BEST_METRIC_NAME_INFO_KEY] = self.metric_name
-        self.train_infos[BEST_METRIC_INFO_KEY] = self.best_metric_value
-        self.train_infos[BEST_STEP_INFO_KEY] = self.best_step
+        self.train_infos[TOPK_RECORDS_INFO_KEY] = [
+            {"metric": record.metric, "step": record.step}
+            for record in self.topk_records
+        ]
 
-    def _best_checkpoint_name(self, step: int) -> str:
+    def _load_topk_records(self) -> list[BestCheckpointRecord]:
+        """Load top-K records from train infos for the current metric."""
+        if self.train_infos.get(BEST_METRIC_NAME_INFO_KEY) != self.metric_name:
+            return []
+        raw_records = self.train_infos.get(TOPK_RECORDS_INFO_KEY, [])
+        if not isinstance(raw_records, list):
+            return []
+        records = []
+        for raw_record in raw_records:
+            if not isinstance(raw_record, dict):
+                continue
+            if "metric" not in raw_record or "step" not in raw_record:
+                continue
+            records.append(
+                BestCheckpointRecord(
+                    metric=float(raw_record["metric"]),
+                    step=int(raw_record["step"]),
+                )
+            )
+        records.sort()
+        return records[: self.max_best_ckpt]
+
+    def _best_checkpoint_name(self, step: int, rank: int) -> str:
         """Build the best-checkpoint filename for one step."""
-        return f"best.ckpt-{step}.pt"
+        return f"best.ckpt-{step}.t-{rank}.pt"
 
     def _list_best_checkpoints(self) -> list[Path]:
         """List all managed best checkpoints in the working directory."""
@@ -589,21 +627,63 @@ class FullValidator:
         best_checkpoints.sort(key=lambda path: path.stat().st_mtime)
         return best_checkpoints
 
-    def _prune_best_checkpoints(self, keep_names: set[str] | None = None) -> None:
-        """Delete managed best checkpoints except the requested ones."""
-        keep_names = set() if keep_names is None else keep_names
-        for checkpoint_path in self._list_best_checkpoints():
-            if checkpoint_path.name not in keep_names:
-                checkpoint_path.unlink(missing_ok=True)
+    def _expected_topk_checkpoint_names(self) -> dict[int, str]:
+        """Return the expected checkpoint filename for each retained step."""
+        return {
+            record.step: self._best_checkpoint_name(record.step, rank)
+            for rank, record in enumerate(self.topk_records, start=1)
+        }
+
+    def _reconcile_best_checkpoints(self) -> None:
+        """Rename retained best checkpoints to ranked names and delete stale ones."""
+        expected_names = self._expected_topk_checkpoint_names()
+        current_files = self._list_best_checkpoints()
+        files_by_step: dict[int, list[Path]] = {}
+        stale_files: list[Path] = []
+        for checkpoint_path in current_files:
+            match = BEST_CKPT_PATTERN.match(checkpoint_path.name)
+            if match is None:
+                stale_files.append(checkpoint_path)
+                continue
+            step = int(match.group(1))
+            files_by_step.setdefault(step, []).append(checkpoint_path)
+
+        temp_moves: list[tuple[Path, Path]] = []
+        for step, checkpoint_paths in files_by_step.items():
+            expected_name = expected_names.get(step)
+            if expected_name is None:
+                stale_files.extend(checkpoint_paths)
+                continue
+
+            keep_path = next(
+                (
+                    checkpoint_path
+                    for checkpoint_path in checkpoint_paths
+                    if checkpoint_path.name == expected_name
+                ),
+                checkpoint_paths[0],
+            )
+            for checkpoint_path in checkpoint_paths:
+                if checkpoint_path != keep_path:
+                    stale_files.append(checkpoint_path)
+            if keep_path.name != expected_name:
+                temp_path = keep_path.with_name(f"{keep_path.name}.tmp")
+                keep_path.rename(temp_path)
+                temp_moves.append((temp_path, keep_path.with_name(expected_name)))
+
+        for checkpoint_path in stale_files:
+            checkpoint_path.unlink(missing_ok=True)
+        for temp_path, final_path in temp_moves:
+            final_path.unlink(missing_ok=True)
+            temp_path.rename(final_path)
 
     def _initialize_best_checkpoints(self, restart_training: bool) -> None:
         """Align on-disk best checkpoints with the current training mode."""
-        if restart_training and self.save_best and self.best_step is not None:
-            self._prune_best_checkpoints(
-                keep_names={self._best_checkpoint_name(int(self.best_step))}
-            )
-        else:
-            self._prune_best_checkpoints()
+        if restart_training and self.save_best and self.topk_records:
+            self._reconcile_best_checkpoints()
+            return
+        for checkpoint_path in self._list_best_checkpoints():
+            checkpoint_path.unlink(missing_ok=True)
 
     def _raise_if_distributed_error(
         self,

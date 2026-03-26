@@ -5,6 +5,9 @@ import unittest
 from copy import (
     deepcopy,
 )
+from pathlib import (
+    Path,
+)
 
 import torch
 from dargs.dargs import (
@@ -12,6 +15,8 @@ from dargs.dargs import (
 )
 
 from deepmd.pt.train.validation import (
+    BEST_METRIC_NAME_INFO_KEY,
+    TOPK_RECORDS_INFO_KEY,
     FullValidator,
     resolve_full_validation_start_step,
 )
@@ -70,6 +75,7 @@ def _make_single_task_config() -> dict:
             "full_validation": True,
             "validation_freq": 2,
             "save_best": True,
+            "max_best_ckpt": 1,
             "validation_metric": "E:MAE",
             "full_val_file": "val.log",
             "full_val_start": 0.0,
@@ -95,6 +101,7 @@ class TestValidationHelpers(unittest.TestCase):
                         "full_validation": True,
                         "validation_freq": 1,
                         "save_best": True,
+                        "max_best_ckpt": 2,
                         "validation_metric": "E:MAE",
                         "full_val_file": "val.log",
                         "full_val_start": 0.0,
@@ -108,16 +115,82 @@ class TestValidationHelpers(unittest.TestCase):
                     restart_training=False,
                 )
                 new_best_path = validator._update_best_state(
+                    display_step=1,
+                    selected_metric_value=2.0,
+                )
+                Path(new_best_path).touch()
+                validator._reconcile_best_checkpoints()
+
+                new_best_path = validator._update_best_state(
                     display_step=2,
                     selected_metric_value=1.0,
+                )
+                Path(new_best_path).touch()
+                validator._reconcile_best_checkpoints()
+
+                new_best_path = validator._update_best_state(
+                    display_step=3,
+                    selected_metric_value=1.5,
+                )
+                Path(new_best_path).touch()
+                validator._reconcile_best_checkpoints()
+            finally:
+                os.chdir(old_cwd)
+
+            self.assertEqual(new_best_path, "best.ckpt-3.t-2.pt")
+            self.assertEqual(
+                sorted(path.name for path in Path(tmpdir).glob("best.ckpt-*.pt")),
+                ["best.ckpt-2.t-1.pt", "best.ckpt-3.t-2.pt"],
+            )
+            self.assertEqual(
+                train_infos[TOPK_RECORDS_INFO_KEY],
+                [
+                    {"metric": 1.0, "step": 2},
+                    {"metric": 1.5, "step": 3},
+                ],
+            )
+            self.assertEqual(train_infos[BEST_METRIC_NAME_INFO_KEY], "e:mae")
+
+    def test_full_validator_restores_top_k_checkpoints(self) -> None:
+        train_infos = {
+            BEST_METRIC_NAME_INFO_KEY: "e:mae",
+            TOPK_RECORDS_INFO_KEY: [
+                {"metric": 1.0, "step": 20},
+                {"metric": 2.0, "step": 10},
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                Path("best.ckpt-20.t-9.pt").touch()
+                Path("best.ckpt-10.t-8.pt").touch()
+                Path("best.ckpt-999.t-1.pt").touch()
+                FullValidator(
+                    validating_params={
+                        "full_validation": True,
+                        "validation_freq": 1,
+                        "save_best": True,
+                        "max_best_ckpt": 2,
+                        "validation_metric": "E:MAE",
+                        "full_val_file": "val.log",
+                        "full_val_start": 0.0,
+                    },
+                    validation_data=_DummyValidationData(),
+                    model=_DummyModel(),
+                    train_infos=train_infos,
+                    num_steps=10,
+                    rank=0,
+                    zero_stage=0,
+                    restart_training=True,
                 )
             finally:
                 os.chdir(old_cwd)
 
-            self.assertEqual(new_best_path, "best.ckpt-2.pt")
-            self.assertEqual(train_infos["full_validation_best_metric"], 1.0)
-            self.assertEqual(train_infos["full_validation_best_step"], 2)
-            self.assertNotIn("full_validation_best_path", train_infos)
+            self.assertEqual(
+                sorted(path.name for path in Path(tmpdir).glob("best.ckpt-*.pt")),
+                ["best.ckpt-10.t-2.pt", "best.ckpt-20.t-1.pt"],
+            )
 
 
 class TestValidationArgcheck(unittest.TestCase):
@@ -139,4 +212,10 @@ class TestValidationArgcheck(unittest.TestCase):
         config = _make_single_task_config()
         config["validating"]["validation_metric"] = "X:MAE"
         with self.assertRaisesRegex(ArgumentValueError, "validation_metric"):
+            normalize(config)
+
+    def test_normalize_rejects_nonpositive_max_best_ckpt(self) -> None:
+        config = _make_single_task_config()
+        config["validating"]["max_best_ckpt"] = 0
+        with self.assertRaisesRegex(ArgumentValueError, "max_best_ckpt"):
             normalize(config)
