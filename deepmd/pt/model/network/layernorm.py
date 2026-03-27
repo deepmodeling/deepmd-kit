@@ -87,12 +87,9 @@ class LayerNorm(nn.Module):
         yy: torch.Tensor
             The output.
         """
-        # mean = xx.mean(dim=-1, keepdim=True)
-        # variance = xx.var(dim=-1, unbiased=False, keepdim=True)
-        # The following operation is the same as above, but will not raise error when using jit model to inference.
-        # See https://github.com/pytorch/pytorch/issues/85792
         if xx.numel() > 0:
-            variance, mean = torch.var_mean(xx, dim=-1, unbiased=False, keepdim=True)
+            mean = xx.mean(dim=-1, keepdim=True)
+            variance = xx.var(dim=-1, unbiased=False, keepdim=True)
             yy = (xx - mean) / torch.sqrt(variance + self.eps)
         else:
             yy = xx
