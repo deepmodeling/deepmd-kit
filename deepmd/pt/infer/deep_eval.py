@@ -702,6 +702,18 @@ class DeepEval(DeepEvalBackend):
         """Get model definition script."""
         return self.model_def_script
 
+    def serialize(self) -> dict[str, Any]:
+        model = self.dp.model["Default"]
+        data: dict[str, Any] = {
+            "backend": "PyTorch",
+            "model": model.serialize(),
+            "model_def_script": self.get_model_def_script(),
+            "@variables": {},
+        }
+        if model.get_min_nbor_dist() is not None:
+            data["@variables"]["min_nbor_dist"] = model.get_min_nbor_dist()
+        return data
+
     def get_model_size(self) -> dict:
         """Get model parameter count.
 

@@ -110,6 +110,7 @@ class DeepEval(DeepEvalBackend):
             input_map=input_map,
         )
         self.load_prefix = load_prefix
+        self.model_file = model_file
 
         # graph_compatable should be called after graph and prefix are set
         if not self._graph_compatable():
@@ -1121,6 +1122,38 @@ class DeepEval(DeepEvalBackend):
         model_def_script = script.decode("utf-8")
         return json.loads(model_def_script)["model"]
 
+    def serialize(self) -> dict[str, Any]:
+        from deepmd.tf.model.model import (
+            Model,
+        )
+        from deepmd.tf.utils.graph import (
+            load_graph_def,
+        )
+
+        graph, graph_def = load_graph_def(str(self.model_file))
+
+        model_def_script = self.get_model_def_script()
+        model = Model(**model_def_script)
+        # important! must be called before serialize
+        model.init_variables(graph=graph, graph_def=graph_def)
+        model_dict = model.serialize()
+
+        data: dict[str, Any] = {
+            "backend": "TensorFlow",
+            "tf_version": tf.__version__,
+            "model": model_dict,
+            "model_def_script": model_def_script,
+        }
+        try:
+            t_min_nbor_dist = self._get_tensor("train_attr/min_nbor_dist:0")
+        except KeyError:
+            pass
+        else:
+            [min_nbor_dist] = run_sess(self.sess, [t_min_nbor_dist], feed_dict={})
+            data.setdefault("@variables", {})
+            data["@variables"]["min_nbor_dist"] = float(min_nbor_dist)
+        return data
+
     def get_model(self) -> "tf.Graph":
         """Get the TensorFlow graph.
 
@@ -1172,6 +1205,7 @@ class DeepEvalOld:
             input_map=input_map,
         )
         self.load_prefix = load_prefix
+        self.model_file = model_file
 
         # graph_compatable should be called after graph and prefix are set
         if not self._graph_compatable():
