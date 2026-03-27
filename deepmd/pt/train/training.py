@@ -535,7 +535,9 @@ class Trainer:
 
                 training_data[model_key].print_summary(
                     f"training in {model_key}",
-                    to_numpy_array(self.training_dataloader[model_key].sampler.weights),
+                    to_numpy_array(self.training_dataloader[model_key].sampler.weights)
+                    if not isinstance(training_data[model_key], LmdbDataset)
+                    else [1.0],
                 )
                 if (
                     validation_data is not None
@@ -545,7 +547,9 @@ class Trainer:
                         f"validation in {model_key}",
                         to_numpy_array(
                             self.validation_dataloader[model_key].sampler.weights
-                        ),
+                        )
+                        if not isinstance(validation_data[model_key], LmdbDataset)
+                        else [1.0],
                     )
 
         # Resolve training steps
@@ -587,15 +591,18 @@ class Trainer:
                         "are mutually exclusive."
                     )
                 for model_key in self.model_keys:
-                    sampler_weights = to_numpy_array(
-                        self.training_dataloader[model_key].sampler.weights
-                    )
-                    per_task_total.append(
-                        compute_total_numb_batch(
-                            training_data[model_key].index,
-                            sampler_weights,
+                    if isinstance(training_data[model_key], LmdbDataset):
+                        per_task_total.append(training_data[model_key].total_batch)
+                    else:
+                        sampler_weights = to_numpy_array(
+                            self.training_dataloader[model_key].sampler.weights
                         )
-                    )
+                        per_task_total.append(
+                            compute_total_numb_batch(
+                                training_data[model_key].index,
+                                sampler_weights,
+                            )
+                        )
                 (
                     self.model_prob,
                     self.num_steps,

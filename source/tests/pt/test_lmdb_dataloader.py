@@ -973,3 +973,268 @@ class TestMergeLmdbSystemIds:
             meta = _read_metadata(txn)
         env.close()
         assert meta.get("type_map") == ["O", "H"]
+
+
+# ============================================================
+# Multitask LMDB training tests
+# ============================================================
+
+
+@pytest.fixture
+def multitask_lmdb_setup(tmp_path):
+    """Create two LMDB datasets and a multitask training config."""
+    lmdb_train1 = str(tmp_path / "task1_train.lmdb")
+    lmdb_train2 = str(tmp_path / "task2_train.lmdb")
+    lmdb_val1 = str(tmp_path / "task1_val.lmdb")
+    lmdb_val2 = str(tmp_path / "task2_val.lmdb")
+
+    _create_test_lmdb_with_type_map(
+        lmdb_train1, nframes=20, natoms=6, lmdb_type_map=["O", "H"]
+    )
+    _create_test_lmdb_with_type_map(
+        lmdb_train2, nframes=20, natoms=6, lmdb_type_map=["O", "H"]
+    )
+    _create_test_lmdb_with_type_map(
+        lmdb_val1, nframes=10, natoms=6, lmdb_type_map=["O", "H"]
+    )
+    _create_test_lmdb_with_type_map(
+        lmdb_val2, nframes=10, natoms=6, lmdb_type_map=["O", "H"]
+    )
+
+    config = {
+        "model": {
+            "shared_dict": {
+                "type_map_all": ["O", "H"],
+                "my_descriptor": {
+                    "type": "se_atten",
+                    "sel": 40,
+                    "rcut_smth": 0.5,
+                    "rcut": 4.0,
+                    "neuron": [4, 8, 16],
+                    "axis_neuron": 4,
+                    "attn": 4,
+                    "attn_layer": 2,
+                    "attn_dotr": True,
+                    "attn_mask": False,
+                    "precision": "float64",
+                },
+                "my_fitting": {
+                    "neuron": [16, 16],
+                    "precision": "float64",
+                    "seed": 1,
+                },
+            },
+            "model_dict": {
+                "model_1": {
+                    "type_map": "type_map_all",
+                    "descriptor": "my_descriptor",
+                    "fitting_net": "my_fitting",
+                    "data_stat_nbatch": 1,
+                },
+                "model_2": {
+                    "type_map": "type_map_all",
+                    "descriptor": "my_descriptor",
+                    "fitting_net": "my_fitting",
+                    "data_stat_nbatch": 1,
+                },
+            },
+        },
+        "learning_rate": {
+            "type": "exp",
+            "decay_steps": 50,
+            "start_lr": 1e-3,
+            "stop_lr": 1e-8,
+        },
+        "loss_dict": {
+            "model_1": {
+                "type": "ener",
+                "start_pref_e": 0.2,
+                "limit_pref_e": 1,
+                "start_pref_f": 100,
+                "limit_pref_f": 1,
+                "start_pref_v": 0.0,
+                "limit_pref_v": 0.0,
+            },
+            "model_2": {
+                "type": "ener",
+                "start_pref_e": 0.2,
+                "limit_pref_e": 1,
+                "start_pref_f": 100,
+                "limit_pref_f": 1,
+                "start_pref_v": 0.0,
+                "limit_pref_v": 0.0,
+            },
+        },
+        "training": {
+            "model_prob": {"model_1": 0.5, "model_2": 0.5},
+            "data_dict": {
+                "model_1": {
+                    "stat_file": str(tmp_path / "stat_model_1.hdf5"),
+                    "training_data": {
+                        "systems": lmdb_train1,
+                        "batch_size": 4,
+                    },
+                    "validation_data": {
+                        "systems": lmdb_val1,
+                        "batch_size": 2,
+                    },
+                },
+                "model_2": {
+                    "stat_file": str(tmp_path / "stat_model_2.hdf5"),
+                    "training_data": {
+                        "systems": lmdb_train2,
+                        "batch_size": 4,
+                    },
+                    "validation_data": {
+                        "systems": lmdb_val2,
+                        "batch_size": 2,
+                    },
+                },
+            },
+            "numb_steps": 5,
+            "seed": 10,
+            "disp_file": str(tmp_path / "lcurve.out"),
+            "disp_freq": 2,
+            "save_freq": 5,
+        },
+    }
+    return config, tmp_path
+
+
+class TestMultitaskLmdbTraining:
+    """Test multitask training with LMDB datasets."""
+
+    def test_multitask_lmdb_trainer_init(self, multitask_lmdb_setup, monkeypatch):
+        """Trainer initializes without error for multitask LMDB."""
+        from copy import (
+            deepcopy,
+        )
+
+        from deepmd.pt.entrypoints.main import (
+            get_trainer,
+        )
+        from deepmd.pt.utils.multi_task import (
+            preprocess_shared_params,
+        )
+        from deepmd.utils.argcheck import (
+            normalize,
+        )
+        from deepmd.utils.compat import (
+            update_deepmd_input,
+        )
+
+        config, tmp_path = multitask_lmdb_setup
+        monkeypatch.chdir(tmp_path)
+
+        config = update_deepmd_input(deepcopy(config), warning=True)
+        config["model"], shared_links = preprocess_shared_params(config["model"])
+        config = normalize(config, multi_task=True)
+
+        trainer = get_trainer(config, shared_links=shared_links)
+        assert trainer.multi_task
+        assert set(trainer.model_keys) == {"model_1", "model_2"}
+
+    def test_multitask_lmdb_training_runs(self, multitask_lmdb_setup, monkeypatch):
+        """Multitask LMDB training runs for a few steps without errors."""
+        from copy import (
+            deepcopy,
+        )
+
+        from deepmd.pt.entrypoints.main import (
+            get_trainer,
+        )
+        from deepmd.pt.utils.multi_task import (
+            preprocess_shared_params,
+        )
+        from deepmd.utils.argcheck import (
+            normalize,
+        )
+        from deepmd.utils.compat import (
+            update_deepmd_input,
+        )
+
+        config, tmp_path = multitask_lmdb_setup
+        monkeypatch.chdir(tmp_path)
+
+        config = update_deepmd_input(deepcopy(config), warning=True)
+        config["model"], shared_links = preprocess_shared_params(config["model"])
+        config = normalize(config, multi_task=True)
+
+        trainer = get_trainer(config, shared_links=shared_links)
+        trainer.run()
+
+        # Verify checkpoint was saved
+        ckpt_files = list(tmp_path.glob("model.ckpt*.pt"))
+        assert len(ckpt_files) > 0, "No checkpoint file was saved"
+
+    def test_multitask_lmdb_get_data(self, multitask_lmdb_setup, monkeypatch):
+        """Verify get_data returns proper dicts for each task with LMDB."""
+        from copy import (
+            deepcopy,
+        )
+
+        from deepmd.pt.entrypoints.main import (
+            get_trainer,
+        )
+        from deepmd.pt.utils.multi_task import (
+            preprocess_shared_params,
+        )
+        from deepmd.utils.argcheck import (
+            normalize,
+        )
+        from deepmd.utils.compat import (
+            update_deepmd_input,
+        )
+
+        config, tmp_path = multitask_lmdb_setup
+        monkeypatch.chdir(tmp_path)
+
+        config = update_deepmd_input(deepcopy(config), warning=True)
+        config["model"], shared_links = preprocess_shared_params(config["model"])
+        config = normalize(config, multi_task=True)
+
+        trainer = get_trainer(config, shared_links=shared_links)
+
+        for task_key in ["model_1", "model_2"]:
+            input_dict, label_dict, log_dict = trainer.get_data(
+                is_train=True, task_key=task_key
+            )
+            assert "coord" in input_dict
+            assert "atype" in input_dict
+            assert "energy" in label_dict or "find_energy" in label_dict
+            assert "sid" in log_dict
+
+    def test_multitask_lmdb_shared_params(self, multitask_lmdb_setup, monkeypatch):
+        """Shared descriptor params are identical across tasks after init."""
+        from copy import (
+            deepcopy,
+        )
+
+        from deepmd.pt.entrypoints.main import (
+            get_trainer,
+        )
+        from deepmd.pt.utils.multi_task import (
+            preprocess_shared_params,
+        )
+        from deepmd.utils.argcheck import (
+            normalize,
+        )
+        from deepmd.utils.compat import (
+            update_deepmd_input,
+        )
+
+        config, tmp_path = multitask_lmdb_setup
+        monkeypatch.chdir(tmp_path)
+
+        config = update_deepmd_input(deepcopy(config), warning=True)
+        config["model"], shared_links = preprocess_shared_params(config["model"])
+        config = normalize(config, multi_task=True)
+
+        trainer = get_trainer(config, shared_links=shared_links)
+
+        state_dict = trainer.wrapper.model.state_dict()
+        for key in state_dict:
+            if "model_1.atomic_model.descriptor" in key:
+                key2 = key.replace("model_1", "model_2")
+                assert key2 in state_dict, f"Missing {key2}"
+                torch.testing.assert_close(state_dict[key], state_dict[key2])
