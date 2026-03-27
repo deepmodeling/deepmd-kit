@@ -186,6 +186,9 @@ class DeepPot(DeepEval):
             when atomic is True.
         hessian
             The Hessian matrix of the system, in shape (nframes, 3 * natoms, 3 * natoms). Returned when available.
+        grad_aparam
+            The gradient of energy w.r.t. atomic parameters, in shape (nframes, natoms, dim_aparam).
+            Returned when aparam is provided and the model has dim_aparam > 0.
         """
         # This method has been used by:
         # documentation python.md
@@ -251,6 +254,10 @@ class DeepPot(DeepEval):
                 nframes, 3 * natoms, 3 * natoms
             )
             result = (*list(result), hessian)
+        if "grad_aparam" in results:
+            dim_aparam = self.get_dim_aparam()
+            grad_aparam = results["grad_aparam"].reshape(nframes, natoms, dim_aparam)
+            result = (*list(result), grad_aparam)
         return result
 
 

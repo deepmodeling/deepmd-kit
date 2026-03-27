@@ -58,6 +58,9 @@ class EnergyStdLoss(TaskLoss):
         use_huber: bool = False,
         f_use_norm: bool = False,
         huber_delta: float = 0.01,
+        start_pref_ap: float = 0.0,
+        limit_pref_ap: float = 0.0,
+        numb_aparam: int = 0,
         **kwargs: Any,
     ) -> None:
         r"""Construct a layer to compute loss on energy, force and virial.
@@ -114,6 +117,12 @@ class EnergyStdLoss(TaskLoss):
             Instead of computing loss on force components, computes loss on ||F_pred - F_label||_2.
         huber_delta : float
             The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
+        start_pref_ap : float
+            The prefactor of aparam gradient loss at the start of the training.
+        limit_pref_ap : float
+            The prefactor of aparam gradient loss at the end of the training.
+        numb_aparam : int
+            The dimension of atomic parameters. Required when aparam gradient loss is enabled.
         **kwargs
             Other keyword arguments.
         """
@@ -169,6 +178,15 @@ class EnergyStdLoss(TaskLoss):
                 "Huber loss is not implemented for force with atom_pref, generalized force and relative force. "
             )
 
+        self.has_ap = start_pref_ap != 0.0 or limit_pref_ap != 0.0
+        if self.has_ap and numb_aparam == 0:
+            raise RuntimeError(
+                "numb_aparam must be > 0 when aparam gradient loss is enabled"
+            )
+        self.start_pref_ap = start_pref_ap
+        self.limit_pref_ap = limit_pref_ap
+        self.numb_aparam = numb_aparam
+
     def forward(
         self,
         input_dict: dict[str, torch.Tensor],
@@ -200,7 +218,18 @@ class EnergyStdLoss(TaskLoss):
         more_loss: dict[str, torch.Tensor]
             Other losses for display.
         """
-        model_pred = model(**input_dict)
+        ap_for_grad: torch.Tensor | None = None
+        # Capture the grad-enabled state before any enable_grad context.
+        in_training = torch.is_grad_enabled()
+        if self.has_ap and input_dict.get("aparam") is not None:
+            ap_for_grad = input_dict["aparam"].detach()
+            ap_for_grad.requires_grad_(True)
+            input_dict = {**input_dict, "aparam": ap_for_grad}
+            # Use enable_grad so gradient can be computed even inside no_grad (inference).
+            with torch.enable_grad():
+                model_pred = model(**input_dict)
+        else:
+            model_pred = model(**input_dict)
         coef = learning_rate / self.starter_learning_rate
         pref_e = self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * coef
         pref_f = self.limit_pref_f + (self.start_pref_f - self.limit_pref_f) * coef
@@ -496,6 +525,41 @@ class EnergyStdLoss(TaskLoss):
                     f"Loss type {self.loss_func} is not implemented for atomic energy loss."
                 )
 
+        if self.has_ap and ap_for_grad is not None and "energy" in model_pred:
+            energy_pred_ap = model_pred["energy"]  # [nf, 1]
+            # Compute d(sum_E)/d(aparam_raw), shape [nf, nloc, numb_aparam].
+            # Use enable_grad so this works both in training and no_grad inference.
+            with torch.enable_grad():
+                grad_ap_pred = torch.autograd.grad(
+                    [energy_pred_ap.sum()],
+                    [ap_for_grad],
+                    create_graph=in_training,
+                    retain_graph=not self.inference,  # keep graph alive for subsequent loss.backward in training
+                )[0]
+            assert grad_ap_pred is not None
+            # Always expose aparam_grad in model_pred (useful for inference output).
+            model_pred = dict(model_pred)
+            model_pred["aparam_grad"] = (
+                grad_ap_pred.detach() if not in_training else grad_ap_pred
+            )
+            if "grad_aparam" in label:
+                find_grad_ap = label.get("find_grad_aparam", 0.0)
+                pref_ap = (
+                    self.limit_pref_ap
+                    + (self.start_pref_ap - self.limit_pref_ap) * coef
+                ) * find_grad_ap
+                grad_ap_label = label["grad_aparam"].to(grad_ap_pred.dtype)
+                diff_ap = (grad_ap_label - grad_ap_pred).reshape(-1)
+                l2_ap_loss = torch.mean(torch.square(diff_ap))
+                if not self.inference:
+                    more_loss["l2_grad_aparam_loss"] = self.display_if_exist(
+                        l2_ap_loss.detach(), find_grad_ap
+                    )
+                loss += (pref_ap * l2_ap_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                more_loss["rmse_grad_aparam"] = self.display_if_exist(
+                    l2_ap_loss.sqrt().detach(), find_grad_ap
+                )
+
         if not self.inference:
             more_loss["rmse"] = torch.sqrt(loss.detach())
         return model_pred, loss, more_loss
@@ -576,6 +640,16 @@ class EnergyStdLoss(TaskLoss):
                     default=1.0,
                 )
             )
+        if self.has_ap:
+            label_requirement.append(
+                DataRequirementItem(
+                    "grad_aparam",
+                    ndof=self.numb_aparam,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                )
+            )
         return label_requirement
 
     def serialize(self) -> dict:
@@ -586,7 +660,7 @@ class EnergyStdLoss(TaskLoss):
         dict
             The serialized loss module
         """
-        return {
+        data = {
             "@class": "EnergyLoss",
             "@version": 2,
             "starter_learning_rate": self.starter_learning_rate,
@@ -610,6 +684,11 @@ class EnergyStdLoss(TaskLoss):
             "loss_func": self.loss_func,
             "f_use_norm": self.f_use_norm,
         }
+        if self.has_ap:
+            data["start_pref_ap"] = self.start_pref_ap
+            data["limit_pref_ap"] = self.limit_pref_ap
+            data["numb_aparam"] = self.numb_aparam
+        return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "TaskLoss":
