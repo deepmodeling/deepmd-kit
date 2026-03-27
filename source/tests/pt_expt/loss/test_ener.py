@@ -23,7 +23,7 @@ from deepmd.pt_expt.utils.env import (
     PRECISION_DICT,
 )
 
-from ...pt.model.test_mlp import (
+from ...common.test_mixins import (
     get_tols,
 )
 from ...seed import (

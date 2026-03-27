@@ -14,7 +14,7 @@ from deepmd.pt_expt.utils import (
     env,
 )
 
-from ...pt.model.test_env_mat import (
+from ...common.test_mixins import (
     TestCaseSingleFrameWithNlist,
 )
 from ...seed import (
