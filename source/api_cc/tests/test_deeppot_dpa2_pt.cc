@@ -14,7 +14,7 @@
 
 // DPA2 models need relaxed epsilon for float32 due to attention layers
 #undef EPSILON
-#define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-7 : 1e-4)
+#define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-10 : 1e-4)
 
 template <class VALUETYPE>
 class TestInferDeepPotDpa2Pt : public ::testing::Test {
