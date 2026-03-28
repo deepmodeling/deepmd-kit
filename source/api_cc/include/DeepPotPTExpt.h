@@ -202,6 +202,7 @@ class DeepPotPTExpt : public DeepPotBackend {
   int daparam;
   bool aparam_nall;
   bool has_default_fparam_;
+  std::vector<double> default_fparam_;
   double rcut;
   int gpu_id;
   bool gpu_enabled;

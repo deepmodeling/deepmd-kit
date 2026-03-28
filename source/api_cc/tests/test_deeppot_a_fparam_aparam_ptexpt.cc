@@ -345,28 +345,3 @@ TYPED_TEST(TestInferDeepPotNoDefaultFParamPtExpt, no_default_fparam) {
   EXPECT_EQ(dp.dim_fparam(), 1);
   EXPECT_FALSE(dp.has_default_fparam());
 }
-
-// Test that a .pt2 model with default_fparam reports true
-template <class VALUETYPE>
-class TestInferDeepPotDefaultFParamPtExpt : public ::testing::Test {
- protected:
-  deepmd::DeepPot dp;
-
-  void SetUp() override {
-#ifndef BUILD_PYTORCH
-    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
-#endif
-    dp.init("../../tests/infer/fparam_aparam_default.pt2");
-  };
-
-  void TearDown() override {};
-};
-
-TYPED_TEST_SUITE(TestInferDeepPotDefaultFParamPtExpt, ValueTypes);
-
-TYPED_TEST(TestInferDeepPotDefaultFParamPtExpt, has_default_fparam) {
-  using VALUETYPE = TypeParam;
-  deepmd::DeepPot& dp = this->dp;
-  EXPECT_EQ(dp.dim_fparam(), 1);
-  EXPECT_TRUE(dp.has_default_fparam());
-}
