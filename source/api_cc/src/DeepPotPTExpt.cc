@@ -636,11 +636,23 @@ void DeepPotPTExpt::init(const std::string& model,
   } else {
     has_default_fparam_ = false;
   }
-  default_fparam_.clear();
-  if (has_default_fparam_ && metadata.obj_val.count("default_fparam") &&
-      metadata["default_fparam"].type == JsonValue::Array) {
-    for (const auto& v : metadata["default_fparam"].as_array()) {
-      default_fparam_.push_back(v.as_double());
+  if (has_default_fparam_) {
+    if (metadata.obj_val.count("default_fparam")) {
+      default_fparam_.clear();
+      for (const auto& v : metadata["default_fparam"].as_array()) {
+        default_fparam_.push_back(v.as_double());
+      }
+      if (static_cast<int>(default_fparam_.size()) != dfparam) {
+        throw deepmd::deepmd_exception(
+            "default_fparam length (" + std::to_string(default_fparam_.size()) +
+            ") does not match dim_fparam (" + std::to_string(dfparam) + ").");
+      }
+    } else {
+      std::cerr << "WARNING: Model has has_default_fparam=true but "
+                   "default_fparam values are missing from metadata. "
+                   "Empty fparam will not be substituted. Please regenerate "
+                   "the .pt2 model with an updated version of deepmd-kit."
+                << std::endl;
     }
   }
 
@@ -825,18 +837,17 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                          valuetype_options)
             .to(torch::kFloat64)
             .to(device);
-  } else if (!default_fparam_.empty()) {
+  } else if (has_default_fparam_ && !default_fparam_.empty()) {
     fparam_tensor =
         torch::from_blob(const_cast<double*>(default_fparam_.data()),
                          {1, static_cast<std::int64_t>(default_fparam_.size())},
-                         torch::TensorOptions().dtype(torch::kFloat64))
+                         options)
             .clone()
             .to(device);
-  } else if (dfparam > 0) {
+  } else if (has_default_fparam_) {
     throw deepmd::deepmd_exception(
-        "fparam is required for this model (dim_fparam=" +
-        std::to_string(dfparam) +
-        ") but was not provided, and no default_fparam is stored.");
+        "fparam is empty and default_fparam values are missing from the .pt2 "
+        "metadata. Please regenerate the model or provide fparam explicitly.");
   } else {
     fparam_tensor = torch::zeros({0}, options).to(device);
   }
@@ -1080,18 +1091,17 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                          valuetype_options)
             .to(torch::kFloat64)
             .to(device);
-  } else if (!default_fparam_.empty()) {
+  } else if (has_default_fparam_ && !default_fparam_.empty()) {
     fparam_tensor =
         torch::from_blob(const_cast<double*>(default_fparam_.data()),
                          {1, static_cast<std::int64_t>(default_fparam_.size())},
-                         torch::TensorOptions().dtype(torch::kFloat64))
+                         options)
             .clone()
             .to(device);
-  } else if (dfparam > 0) {
+  } else if (has_default_fparam_) {
     throw deepmd::deepmd_exception(
-        "fparam is required for this model (dim_fparam=" +
-        std::to_string(dfparam) +
-        ") but was not provided, and no default_fparam is stored.");
+        "fparam is empty and default_fparam values are missing from the .pt2 "
+        "metadata. Please regenerate the model or provide fparam explicitly.");
   } else {
     fparam_tensor = torch::zeros({0}, options).to(device);
   }
