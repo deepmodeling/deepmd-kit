@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Generate fparam_aparam.pth and fparam_aparam.pt2 test models.
+"""Generate fparam_aparam .pt2 test models from pre-committed .pth.
 
-Creates a dpmodel model from config with type_one_side=True, serializes,
-and exports to both .pth and .pt2 from the same weights.
+Converts the pre-committed fparam_aparam_default.pth (checked into git) to
+.pt2 format. Produces:
+  - fparam_aparam_default.pt2: model WITH default_fparam
+  - fparam_aparam.pt2: same weights WITHOUT default_fparam
+  - fparam_aparam.pth: same weights WITHOUT default_fparam (torch.jit)
 Also prints reference values for C++ tests.
 """
 
 import copy
+import json
 import os
 import sys
 
@@ -23,60 +27,11 @@ from gen_common import (
 
 
 def main():
-    from deepmd.dpmodel.model.model import (
+    import torch
+
+    from deepmd.pt.model.model import (
         get_model,
     )
-
-    ensure_inductor_compiler()
-
-    # ---- 1. Model config (type_one_side=True) ----
-    config = {
-        "type_map": ["O"],
-        "descriptor": {
-            "type": "se_e2_a",
-            "sel": [60],
-            "rcut": 6.0,
-            "rcut_smth": 1.8,
-            "neuron": [5, 10, 20],
-            "axis_neuron": 8,
-            "activation_function": "tanh",
-            "resnet_dt": False,
-            "type_one_side": True,
-            "exclude_types": [],
-            "set_davg_zero": False,
-            "precision": "default",
-            "trainable": True,
-            "seed": 1,
-        },
-        "fitting_net": {
-            "type": "ener",
-            "neuron": [5, 5, 5],
-            "activation_function": "tanh",
-            "resnet_dt": True,
-            "numb_fparam": 1,
-            "numb_aparam": 1,
-            "precision": "default",
-            "seed": 1,
-            "atom_ener": [],
-            "rcond": 0.001,
-            "trainable": True,
-            "use_aparam_as_mask": False,
-        },
-    }
-
-    # ---- 2. Build dpmodel and serialize ----
-    model = get_model(copy.deepcopy(config))
-    model_dict = model.serialize()
-
-    data = {
-        "model": model_dict,
-        "model_def_script": config,
-        "backend": "dpmodel",
-        "software": "deepmd-kit",
-        "version": "3.0.0",
-    }
-
-    # ---- 3. Export to .pt2 and .pth ----
     from deepmd.pt.utils.serialization import (
         deserialize_to_file as pt_deserialize_to_file,
     )
@@ -84,42 +39,63 @@ def main():
         deserialize_to_file as pt_expt_deserialize_to_file,
     )
 
-    # Load custom ops after deepmd.pt import to avoid double registration
+    ensure_inductor_compiler()
     load_custom_ops()
 
     base_dir = os.path.dirname(__file__)
 
-    pt2_path = os.path.join(base_dir, "fparam_aparam.pt2")
-    print(f"Exporting to {pt2_path} ...")  # noqa: T201
-    pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data))
+    # ---- 1. Load pre-committed .pth (has type_one_side=False) ----
+    pth_default_path = os.path.join(base_dir, "fparam_aparam_default.pth")
+    print(f"Loading {pth_default_path} ...")  # noqa: T201
+    saved = torch.jit.load(pth_default_path, map_location="cpu")
+    config = json.loads(saved.model_def_script)
+    # The pre-committed .pth has type_one_side=False, which is incompatible
+    # with torch.export. Since this model has only 1 atom type, flipping to
+    # type_one_side=True produces identical results (single embedding net).
+    config["descriptor"]["type_one_side"] = True
+    model = get_model(config)
+    model.load_state_dict(saved.state_dict(), strict=False)
+    model_dict = model.serialize()
 
-    pth_path = os.path.join(base_dir, "fparam_aparam.pth")
-    pth_exported = False
-    print(f"Exporting to {pth_path} ...")  # noqa: T201
-    try:
-        pt_deserialize_to_file(pth_path, copy.deepcopy(data))
-        pth_exported = True
-    except RuntimeError as e:
-        # Custom ops (e.g. tabulate_fusion_se_t_tebd) may not be available
-        # in all build environments; .pth generation is not critical.
-        print(f"WARNING: .pth export failed ({e}), skipping.")  # noqa: T201
-
-    print("Export done.")  # noqa: T201
-
-    # ---- 3b. Export a model with default_fparam to .pt2 ----
-    config_default = copy.deepcopy(config)
-    config_default["fitting_net"]["default_fparam"] = [0.25852028]
-    model_default = get_model(config_default)
+    # ---- 2. Export fparam_aparam_default.pt2 (with default_fparam) ----
     data_default = {
-        "model": model_default.serialize(),
-        "model_def_script": config_default,
-        "backend": "dpmodel",
+        "model": model_dict,
+        "model_def_script": config,
+        "backend": "PyTorch",
         "software": "deepmd-kit",
         "version": "3.0.0",
     }
     pt2_default_path = os.path.join(base_dir, "fparam_aparam_default.pt2")
     print(f"Exporting to {pt2_default_path} ...")  # noqa: T201
     pt_expt_deserialize_to_file(pt2_default_path, copy.deepcopy(data_default))
+
+    # ---- 3. Export fparam_aparam.pt2 and .pth (without default_fparam) ----
+    config_no_default = copy.deepcopy(config)
+    config_no_default["fitting_net"].pop("default_fparam", None)
+    model_no_default = get_model(config_no_default)
+    model_no_default.load_state_dict(saved.state_dict(), strict=False)
+    data_no_default = {
+        "model": model_no_default.serialize(),
+        "model_def_script": config_no_default,
+        "backend": "PyTorch",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+
+    pt2_path = os.path.join(base_dir, "fparam_aparam.pt2")
+    print(f"Exporting to {pt2_path} ...")  # noqa: T201
+    pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data_no_default))
+
+    pth_path = os.path.join(base_dir, "fparam_aparam.pth")
+    pth_exported = False
+    print(f"Exporting to {pth_path} ...")  # noqa: T201
+    try:
+        pt_deserialize_to_file(pth_path, copy.deepcopy(data_no_default))
+        pth_exported = True
+    except RuntimeError as e:
+        print(f"WARNING: .pth export failed ({e}), skipping.")  # noqa: T201
+
+    print("Export done.")  # noqa: T201
 
     # ---- 4. Run inference via DeepPot to get reference values ----
     from deepmd.infer import (
