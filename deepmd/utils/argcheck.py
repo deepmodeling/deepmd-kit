@@ -3946,6 +3946,21 @@ def training_args(
         "The oldest checkpoints will be deleted once the number of checkpoints exceeds max_ckpt_keep. "
         "Defaults to 5."
     )
+    doc_enable_ema = (
+        "Whether to maintain an exponential moving average (EMA) of model "
+        "parameters during training and save periodic EMA checkpoints with an "
+        "`_ema` suffix in the checkpoint prefix."
+    )
+    doc_ema_decay = (
+        "The decay factor used for the exponential moving average of model "
+        "parameters. The EMA update is "
+        "`ema = ema_decay * ema + (1 - ema_decay) * param`."
+    )
+    doc_ema_ckpt_keep = (
+        "The maximum number of periodic EMA checkpoints to keep. "
+        "EMA checkpoints use the same prefix-based cleanup rule as regular "
+        "training checkpoints, but with an EMA-specific checkpoint prefix."
+    )
     doc_change_bias_after_training = (
         "Whether to change the output bias after the last training step, "
         "by performing predictions using trained model on training data and "
@@ -4059,6 +4074,31 @@ def training_args(
             "save_ckpt", str, optional=True, default="model.ckpt", doc=doc_save_ckpt
         ),
         Argument("max_ckpt_keep", int, optional=True, default=5, doc=doc_max_ckpt_keep),
+        Argument(
+            "enable_ema",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_enable_ema,
+        ),
+        Argument(
+            "ema_decay",
+            float,
+            optional=True,
+            default=0.999,
+            doc=doc_only_pt_supported + doc_ema_decay,
+            extra_check=lambda x: 0.0 <= x < 1.0,
+            extra_check_errmsg="must be greater than or equal to 0 and less than 1",
+        ),
+        Argument(
+            "ema_ckpt_keep",
+            int,
+            optional=True,
+            default=3,
+            doc=doc_only_pt_supported + doc_ema_ckpt_keep,
+            extra_check=lambda x: x > 0,
+            extra_check_errmsg="must be greater than 0",
+        ),
         Argument(
             "change_bias_after_training",
             bool,
@@ -4254,6 +4294,14 @@ def validating_args() -> Argument:
         "Whether to save an extra checkpoint when the selected full validation "
         "metric reaches a new best value."
     )
+    doc_ema_full_validation = (
+        "Whether to additionally run the same full validation flow on the "
+        "EMA-smoothed model. This reuses the existing full validation schedule, "
+        "metric, start step, and best-checkpoint settings, writes results to an "
+        "EMA-specific validation log such as `val_ema.log`, and saves EMA best "
+        "checkpoints with an `best_ema.ckpt` prefix. Requires "
+        "`training.enable_ema=true`."
+    )
     doc_max_best_ckpt = (
         "The maximum number of top-ranked best checkpoints to keep. The best "
         "checkpoints are ranked by the selected validation metric in ascending "
@@ -4283,6 +4331,13 @@ def validating_args() -> Argument:
             optional=True,
             default=False,
             doc=doc_only_pt_supported + doc_full_validation,
+        ),
+        Argument(
+            "ema_full_validation",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_ema_full_validation,
         ),
         Argument(
             "validation_freq",
@@ -4355,9 +4410,17 @@ def validate_full_validation_config(
 ) -> None:
     """Validate cross-section constraints for full validation."""
     validating = data.get("validating") or {}
-    training = data.get("training", {})
-    if not validating.get("full_validation", False):
+    training_params = data.get("training", {}) or {}
+    full_validation_enabled = bool(validating.get("full_validation", False))
+    ema_full_validation_enabled = bool(validating.get("ema_full_validation", False))
+    if not full_validation_enabled and not ema_full_validation_enabled:
         return
+    if float(validating.get("full_val_start", 0.0)) == 1.0:
+        return
+    if ema_full_validation_enabled and not training_params.get("enable_ema", False):
+        raise ValueError(
+            "validating.ema_full_validation requires `training.enable_ema=true`."
+        )
 
     metric = str(validating.get("validation_metric", "E:MAE"))
     if not is_valid_full_validation_metric(metric):
@@ -4386,13 +4449,13 @@ def validate_full_validation_config(
             f"training with loss.type='ener'; got loss.type={loss_type!r}."
         )
 
-    if not training.get("validation_data"):
+    if not training_params.get("validation_data"):
         raise ValueError(
-            "validating.full_validation requires `training.validation_data`. "
-            "It is only supported for single-task energy training."
+            "full validation requires `training.validation_data`. It is only "
+            "supported for single-task energy training."
         )
 
-    zero_stage = int(training.get("zero_stage", 0))
+    zero_stage = int(training_params.get("zero_stage", 0))
     if zero_stage >= 2:
         raise ValueError(
             "validating.full_validation only supports single-task energy "
