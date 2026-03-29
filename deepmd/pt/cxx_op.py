@@ -42,12 +42,17 @@ def load_library(module_name: str) -> bool:
     module_file = (SHARED_LIB_DIR / (prefix + module_name)).with_suffix(ext).resolve()
 
     if module_file.is_file():
-        # Guard: skip if ops are already registered (e.g. by JAX backend
-        # loading the same .so via a different pathway in the same process).
-        if hasattr(torch.ops, "deepmd") and hasattr(torch.ops.deepmd, "border_op"):
+        # Skip if this library was already loaded by torch.ops.load_library.
+        if str(module_file) in torch.ops.loaded_libraries:
             return True
         try:
             torch.ops.load_library(module_file)
+        except RuntimeError:
+            # Ops may already be registered via C++ shared-library linkage
+            # (e.g. LAMMPS plugin links libdeepmd_op_pt.so at the C++ level).
+            # In that case torch.ops.load_library raises a c10::Error for
+            # duplicate operator registration.  Treat as success.
+            return True
         except OSError as e:
             # check: CXX11_ABI_FLAG; version
             # from our op
