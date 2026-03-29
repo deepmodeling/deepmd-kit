@@ -28,6 +28,7 @@ class Loss(NativeOP, ABC, make_plugin_registry("loss")):
         natoms: int,
         model_dict: dict[str, Array],
         label_dict: dict[str, Array],
+        mae: bool = False,
     ) -> tuple[Array, dict[str, Array]]:
         """Calculate loss from model results and labeled results.
 
