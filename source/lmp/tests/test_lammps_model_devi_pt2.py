@@ -85,9 +85,10 @@ def _compute_expected():
 
     expected_e = results[0][0]
     expected_f = results[0][1]
-    expected_v = results[0][2]
+    # DeepPot returns virial; LAMMPS centroid/stress/atom returns stress = -virial
+    expected_v = -results[0][2]
     expected_f2 = results[1][1]
-    expected_v2 = results[1][2]
+    expected_v2 = -results[1][2]
 
 
 def setup_module() -> None:
