@@ -98,7 +98,7 @@ class TestEnergyLoss:
             start_pref_pf=0.0 if use_huber else 1.0,
             limit_pref_pf=0.0 if use_huber else 1.0,
             use_huber=use_huber,
-        ).to(self.device)
+        )
 
         model_pred, label = _make_data(rng, nframes, natoms, dtype, self.device)
 

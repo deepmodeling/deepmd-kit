@@ -85,7 +85,7 @@ class TestDOSLoss:
             limit_pref_ados=0.5 if has_ados else 0.0,
             start_pref_acdf=0.0,
             limit_pref_acdf=0.0,
-        ).to(self.device)
+        )
 
         model_pred, label = _make_data(
             rng, nframes, natoms, numb_dos, dtype, self.device
@@ -152,7 +152,7 @@ class TestDOSLoss:
             limit_pref_ados=0.0,
             start_pref_acdf=1.0,
             limit_pref_acdf=0.5,
-        ).to(self.device)
+        )
 
         model_pred, label = _make_data(
             rng, nframes, natoms, numb_dos, dtype, self.device

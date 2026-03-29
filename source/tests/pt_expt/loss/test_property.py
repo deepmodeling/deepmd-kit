@@ -77,7 +77,7 @@ class TestPropertyLoss:
             out_bias=[0.1, 0.5, 1.2, -0.1, -10.0],
             out_std=[8.0, 10.0, 0.001, -0.2, -10.0],
             intensive=False,
-        ).to(self.device)
+        )
 
         model_pred, label = _make_data(
             rng, nframes, task_dim, var_name, dtype, self.device
@@ -143,7 +143,7 @@ class TestPropertyLoss:
             out_bias=None,
             out_std=None,
             intensive=True,
-        ).to(self.device)
+        )
 
         model_pred, label = _make_data(
             rng, nframes, task_dim, var_name, dtype, self.device
@@ -187,7 +187,7 @@ class TestPropertyLoss:
             out_bias=None,
             out_std=None,
             intensive=False,
-        ).to(self.device)
+        )
 
         model_pred, label = _make_data(
             rng, nframes, task_dim, var_name, dtype, self.device

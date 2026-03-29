@@ -85,7 +85,7 @@ class TestTensorLoss:
             label_name=label_name,
             pref_atomic=1.0 if has_local else 0.0,
             pref=1.0 if has_global else 0.0,
-        ).to(self.device)
+        )
 
         model_pred, label = _make_data(
             rng,
@@ -158,7 +158,7 @@ class TestTensorLoss:
             pref_atomic=1.0,
             pref=1.0,
             enable_atomic_weight=True,
-        ).to(self.device)
+        )
 
         model_pred, label = _make_data(
             rng,
