@@ -47,12 +47,14 @@ def load_library(module_name: str) -> bool:
             return True
         try:
             torch.ops.load_library(module_file)
-        except RuntimeError:
+        except RuntimeError as e:
             # Ops may already be registered via C++ shared-library linkage
             # (e.g. LAMMPS plugin links libdeepmd_op_pt.so at the C++ level).
             # In that case torch.ops.load_library raises a c10::Error for
-            # duplicate operator registration.  Treat as success.
-            return True
+            # duplicate operator registration.  Only suppress that case.
+            if "already registered" in str(e) or "registerDef" in str(e):
+                return True
+            raise
         except OSError as e:
             # check: CXX11_ABI_FLAG; version
             # from our op
