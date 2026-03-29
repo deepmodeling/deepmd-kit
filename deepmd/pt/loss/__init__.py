@@ -21,6 +21,9 @@ from .property import (
 from .tensor import (
     TensorLoss,
 )
+from .xas import (
+    XASLoss,
+)
 
 __all__ = [
     "DOSLoss",
@@ -31,4 +34,5 @@ __all__ = [
     "PropertyLoss",
     "TaskLoss",
     "TensorLoss",
+    "XASLoss",
 ]

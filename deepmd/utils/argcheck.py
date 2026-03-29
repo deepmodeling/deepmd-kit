@@ -3465,6 +3465,22 @@ def loss_dos() -> list[Argument]:
     ]
 
 
+@loss_args_plugin.register("xas", doc=doc_only_pt_supported)
+def loss_xas() -> list[Argument]:
+    doc_loss_func = (
+        "The loss function to minimize: 'smooth_mae' (default), 'mae', 'mse', 'rmse'."
+    )
+    doc_metric = "Metrics to display during training. Supported: 'mae', 'rmse'."
+    doc_beta = "Beta parameter for smooth_l1 loss."
+    return [
+        Argument(
+            "loss_func", str, optional=True, default="smooth_mae", doc=doc_loss_func
+        ),
+        Argument("metric", list, optional=True, default=["mae"], doc=doc_metric),
+        Argument("beta", float, optional=True, default=1.0, doc=doc_beta),
+    ]
+
+
 @loss_args_plugin.register("property")
 def loss_property() -> list[Argument]:
     doc_loss_func = "The loss function to minimize, such as 'mae','smooth_mae'."
