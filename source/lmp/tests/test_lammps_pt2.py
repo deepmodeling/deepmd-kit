@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Test LAMMPS with .pt2 (AOTInductor) se_e2_a model.
 
-Subset of test_lammps_pt.py tests that do not require model deviation
-(DeepPotModelDevi not yet supported for .pt2) or MPI.
+Subset of test_lammps_pt.py tests for basic energy/force/virial evaluation.
+Model deviation tests are in test_lammps_model_devi_pt2.py.
 """
 
 import os
