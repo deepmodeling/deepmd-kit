@@ -380,7 +380,7 @@ def test_pair_deepmd_model_devi_atomic_relative_real(lammps_real) -> None:
     relative = 1.0
     lammps_real.pair_style(
         f"deepmd {pt2_file0.resolve()} {pt2_file1.resolve()} "
-        f"out_file {md_file.resolve()} out_freq 1 atomic relative {relative} "
+        f"out_file {md_file.resolve()} out_freq 1 atomic relative {relative * constants.force_metal2real} "
         f"fparam {fparam_val} aparam {aparam_val}"
     )
     lammps_real.pair_coeff("* *")
@@ -415,7 +415,7 @@ def test_pair_deepmd_model_devi_atomic_relative_v_real(lammps_real) -> None:
     relative = 1.0
     lammps_real.pair_style(
         f"deepmd {pt2_file0.resolve()} {pt2_file1.resolve()} "
-        f"out_file {md_file.resolve()} out_freq 1 atomic relative_v {relative} "
+        f"out_file {md_file.resolve()} out_freq 1 atomic relative_v {relative * constants.ener_metal2real} "
         f"fparam {fparam_val} aparam {aparam_val}"
     )
     lammps_real.pair_coeff("* *")
