@@ -21,6 +21,9 @@ from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
 from deepmd.pt.entrypoints.main import train as train_entry
+from deepmd.pt.train.ema import (
+    EMA_CHECKPOINT_KEY,
+)
 from deepmd.pt.utils.finetune import (
     get_finetune_rules,
 )
@@ -904,6 +907,111 @@ class TestFullValidation(unittest.TestCase):
         config = update_deepmd_input(config, warning=False)
         with self.assertRaisesRegex(ValueError, "multi-task"):
             normalize(config, multi_task=True)
+
+
+class TestEMATraining(unittest.TestCase):
+    def setUp(self) -> None:
+        self._cwd = os.getcwd()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        os.chdir(self._tmpdir.name)
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["training"]["numb_steps"] = 4
+        self.config["training"]["save_freq"] = 1
+        self.config["training"]["max_ckpt_keep"] = 3
+        self.config["training"]["disp_training"] = False
+        self.config["training"]["enable_ema"] = True
+        self.config["training"]["ema_decay"] = 0.9
+        self.config["training"]["ema_ckpt_keep"] = 2
+        self.config["validating"] = {
+            "full_validation": False,
+            "ema_full_validation": False,
+            "validation_freq": 1,
+            "save_best": True,
+            "max_best_ckpt": 1,
+            "validation_metric": "E:MAE",
+            "full_val_file": "val.log",
+            "full_val_start": 0.0,
+        }
+
+    def tearDown(self) -> None:
+        os.chdir(self._cwd)
+        self._tmpdir.cleanup()
+
+    def test_ema_checkpoint_rotation(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        ema_prefix = trainer.ema_save_ckpt
+        Path(f"{ema_prefix}-999.pt").touch()
+        trainer.run()
+
+        self.assertFalse(Path(f"{ema_prefix}-999.pt").exists())
+        self.assertTrue(Path(f"{ema_prefix}-3.pt").exists())
+        self.assertTrue(Path(f"{ema_prefix}-4.pt").exists())
+        self.assertFalse(Path(f"{ema_prefix}-2.pt").exists())
+        self.assertFalse(Path("checkpoint_ema").exists())
+
+    def test_restart_restores_ema_state(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        first_key = next(iter(trainer.model_ema.shadow_params))
+        trainer.model_ema.shadow_params[first_key].add_(1.2345)
+        trainer.model_ema.validation_state.update(
+            {
+                "full_validation_metric": "e:mae",
+                "full_validation_topk_records": [
+                    {"metric": 0.5, "step": 3},
+                ],
+            }
+        )
+        trainer.save_model("model.ckpt-0.pt", lr=0.1, step=0)
+
+        checkpoint = torch.load(
+            "model.ckpt-0.pt", map_location="cpu", weights_only=True
+        )
+        self.assertIn(EMA_CHECKPOINT_KEY, checkpoint)
+
+        restarted = get_trainer(
+            deepcopy(self.config),
+            restart_model="model.ckpt-0.pt",
+        )
+        torch.testing.assert_close(
+            restarted.model_ema.shadow_params[first_key],
+            trainer.model_ema.shadow_params[first_key],
+        )
+        self.assertEqual(
+            restarted.model_ema.validation_state,
+            trainer.model_ema.validation_state,
+        )
+
+    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    def test_ema_full_validation_writes_separate_outputs(self, mocked_eval) -> None:
+        mocked_eval.side_effect = [
+            {"mae_e_per_atom": 1.0},
+            {"mae_e_per_atom": 0.5},
+            {"mae_e_per_atom": 0.75},
+            {"mae_e_per_atom": 0.25},
+        ]
+        config = deepcopy(self.config)
+        config["validating"]["ema_full_validation"] = True
+        trainer = get_trainer(config)
+        trainer.run()
+
+        self.assertFalse(Path("val.log").exists())
+        self.assertTrue(Path("val_ema.log").exists())
+        self.assertTrue(Path("best_ema.ckpt-4.t-1.pt").exists())
+        self.assertFalse(Path("best_ema.ckpt-1.t-1.pt").exists())
+        train_infos = trainer._get_inner_module().train_infos
+        self.assertNotIn("full_validation_ema_metric", train_infos)
+        self.assertNotIn("full_validation_ema_topk_records", train_infos)
+        self.assertEqual(
+            trainer.model_ema.validation_state["full_validation_topk_records"],
+            [{"metric": 0.25, "step": 4}],
+        )
 
 
 if __name__ == "__main__":
