@@ -160,6 +160,7 @@ def _lammps(data_file, units="metal") -> PyLammps:
     lammps.units(units)
     lammps.boundary("f f f")
     lammps.atom_style("atomic")
+    lammps.atom_modify("map yes")
     if units == "metal" or units == "real":
         lammps.neighbor("2.0 bin")
     elif units == "si":
