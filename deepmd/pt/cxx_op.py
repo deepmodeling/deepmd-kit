@@ -42,6 +42,10 @@ def load_library(module_name: str) -> bool:
     module_file = (SHARED_LIB_DIR / (prefix + module_name)).with_suffix(ext).resolve()
 
     if module_file.is_file():
+        # Guard: skip if ops are already registered (e.g. by JAX backend
+        # loading the same .so via a different pathway in the same process).
+        if hasattr(torch.ops, "deepmd") and hasattr(torch.ops.deepmd, "border_op"):
+            return True
         try:
             torch.ops.load_library(module_file)
         except OSError as e:
