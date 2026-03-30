@@ -991,6 +991,69 @@ class DistributedSameNlocBatchSampler:
         return self._world_size
 
 
+def make_neighbor_stat_data(
+    lmdb_path: str,
+    type_map: list[str] | None,
+    max_frames: int = 2000,
+) -> Any:
+    """Create a duck-typed DeepmdDataSystem-like object for neighbor stat from LMDB.
+
+    Samples up to *max_frames* frames, groups them by nloc, and returns an
+    object whose attributes satisfy the interface expected by
+    ``NeighborStat.iterator()`` and ``UpdateSel.get_nbor_stat()``.
+    """
+    from types import (
+        SimpleNamespace,
+    )
+
+    reader = LmdbDataReader(lmdb_path, type_map=type_map)
+    nframes = len(reader)
+    rng = np.random.RandomState(42)
+    if nframes > max_frames:
+        indices = np.sort(rng.choice(nframes, max_frames, replace=False))
+    else:
+        indices = np.arange(nframes, dtype=np.int64)
+
+    # Read sampled frames, group by nloc
+    nloc_frames: dict[int, list[tuple[np.ndarray, np.ndarray, np.ndarray | None]]] = {}
+    for idx in indices:
+        frame = reader[int(idx)]
+        atype = frame["atype"]
+        nloc = len(atype)
+        nloc_frames.setdefault(nloc, []).append(
+            (frame["coord"], atype, frame.get("box"))
+        )
+
+    # Build per-nloc data_system proxies
+    data_systems = []
+    system_dirs: list[str] = []
+    for nloc, frames in nloc_frames.items():
+        coords = np.stack([c.reshape(nloc * 3) for c, _, _ in frames])
+        types = np.stack([a.reshape(nloc) for _, a, _ in frames])
+        has_box = frames[0][2] is not None
+        boxes = np.stack([b.reshape(9) for _, _, b in frames]) if has_box else None
+        set_data = {"coord": coords, "type": types, "box": boxes}
+        label = f"lmdb:{nloc}atoms"
+        proxy = SimpleNamespace(
+            dirs=[label],
+            pbc=has_box,
+            mixed_type=True,
+            get_natoms=lambda _nloc=nloc: _nloc,
+            _load_set=lambda _d, _sd=set_data: _sd,
+        )
+        data_systems.append(proxy)
+        system_dirs.append(label)
+
+    ntypes = len(type_map) if type_map else reader._ntypes
+    return SimpleNamespace(
+        system_dirs=system_dirs,
+        data_systems=data_systems,
+        get_batch=lambda: None,
+        get_ntypes=lambda: ntypes,
+        mixed_type=True,
+    )
+
+
 class LmdbTestData:
     """LMDB-backed data reader for dp test.
 

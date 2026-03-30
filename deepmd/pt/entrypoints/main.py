@@ -372,9 +372,17 @@ def train(
 
         if not multi_task:
             type_map = config["model"].get("type_map")
-            train_data = get_data(
-                config["training"]["training_data"], 0, type_map, None
-            )
+            training_systems = config["training"]["training_data"].get("systems")
+            if training_systems is not None and is_lmdb(training_systems):
+                from deepmd.dpmodel.utils.lmdb_data import (
+                    make_neighbor_stat_data,
+                )
+
+                train_data = make_neighbor_stat_data(training_systems, type_map)
+            else:
+                train_data = get_data(
+                    config["training"]["training_data"], 0, type_map, None
+                )
             config["model"], min_nbor_dist = BaseModel.update_sel(
                 train_data, type_map, config["model"]
             )
@@ -382,12 +390,22 @@ def train(
             min_nbor_dist = {}
             for model_item in config["model"]["model_dict"]:
                 type_map = config["model"]["model_dict"][model_item].get("type_map")
-                train_data = get_data(
-                    config["training"]["data_dict"][model_item]["training_data"],
-                    0,
-                    type_map,
-                    None,
-                )
+                training_systems = config["training"]["data_dict"][model_item][
+                    "training_data"
+                ].get("systems")
+                if training_systems is not None and is_lmdb(training_systems):
+                    from deepmd.dpmodel.utils.lmdb_data import (
+                        make_neighbor_stat_data,
+                    )
+
+                    train_data = make_neighbor_stat_data(training_systems, type_map)
+                else:
+                    train_data = get_data(
+                        config["training"]["data_dict"][model_item]["training_data"],
+                        0,
+                        type_map,
+                        None,
+                    )
                 config["model"]["model_dict"][model_item], min_nbor_dist[model_item] = (
                     BaseModel.update_sel(
                         train_data, type_map, config["model"]["model_dict"][model_item]

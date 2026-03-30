@@ -12,6 +12,7 @@ from .lmdb_data import (
     LmdbTestData,
     SameNlocBatchSampler,
     is_lmdb,
+    make_neighbor_stat_data,
 )
 from .network import (
     EmbeddingNet,
@@ -75,6 +76,7 @@ __all__ = [
     "make_embedding_network",
     "make_fitting_network",
     "make_multilayer_network",
+    "make_neighbor_stat_data",
     "nlist_distinguish_types",
     "normalize_coord",
     "phys2inter",
