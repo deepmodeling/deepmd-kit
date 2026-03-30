@@ -431,6 +431,7 @@ class GeneralFitting(Fitting):
         type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
         default_fparam: list[float] | None = None,
+        normalize_fparam: bool = True,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -451,6 +452,7 @@ class GeneralFitting(Fitting):
         self.seed = seed
         self.type_map = type_map
         self.use_aparam_as_mask = use_aparam_as_mask
+        self.normalize_fparam = normalize_fparam
         # order matters, should be place after the assignment of ntypes
         self.reinit_exclude(exclude_types)
         self.trainable = trainable
@@ -622,6 +624,7 @@ class GeneralFitting(Fitting):
             "trainable": [self.trainable] * (len(self.neuron) + 1),
             "layer_name": None,
             "use_aparam_as_mask": self.use_aparam_as_mask,
+            "normalize_fparam": self.normalize_fparam,
             "spin": None,
         }
 
@@ -786,9 +789,10 @@ class GeneralFitting(Fitting):
                 )
             fparam = fparam.view([nf, self.numb_fparam])
             nb, _ = fparam.shape
-            t_fparam_avg = self._extend_f_avg_std(self.fparam_avg, nb)
-            t_fparam_inv_std = self._extend_f_avg_std(self.fparam_inv_std, nb)
-            fparam = (fparam - t_fparam_avg) * t_fparam_inv_std
+            if self.normalize_fparam:
+                t_fparam_avg = self._extend_f_avg_std(self.fparam_avg, nb)
+                t_fparam_inv_std = self._extend_f_avg_std(self.fparam_inv_std, nb)
+                fparam = (fparam - t_fparam_avg) * t_fparam_inv_std
             fparam = torch.tile(fparam.reshape([nf, 1, -1]), [1, nloc, 1])
             xx = torch.cat(
                 [xx, fparam],

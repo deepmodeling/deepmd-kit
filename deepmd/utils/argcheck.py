@@ -1929,6 +1929,12 @@ def fitting_property() -> list[Argument]:
     doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
 - list of bool: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of this list should be equal to len(`neuron`)+1."
+    doc_normalize_fparam = (
+        "Whether to normalize fparam by subtracting its mean and dividing by its std "
+        "computed from the training data. Set to False when fparam is a one-hot "
+        "encoding (e.g. edge-type in XAS), where normalization would distort the "
+        "discrete identity of each category."
+    )
     return [
         Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
         Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
@@ -1978,6 +1984,13 @@ def fitting_property() -> list[Argument]:
             optional=True,
             default=True,
             doc=doc_trainable,
+        ),
+        Argument(
+            "normalize_fparam",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_normalize_fparam,
         ),
     ]
 
