@@ -45,10 +45,27 @@ _KEY_REMAP = {
 # (energy is set by Loss DataRequirementItem; reduce() also sets high_prec=True)
 _HIGH_PREC_KEYS = frozenset({"energy"})
 
+# Process-level cache: lmdb does not allow opening the same path twice in one
+# process.  Multiple LmdbDataReader / LmdbDataset instances that point to the
+# same file must share a single Environment object.
+_ENV_CACHE: dict[str, lmdb.Environment] = {}
+
 
 def _open_lmdb(path: str) -> lmdb.Environment:
-    """Open LMDB environment readonly."""
-    return lmdb.open(path, readonly=True, lock=False, readahead=False, meminit=False)
+    """Open (or reuse) an LMDB environment readonly.
+
+    The python-lmdb binding raises ``lmdb.Error`` if the same path is opened
+    more than once in a single process.  We keep a per-process cache keyed by
+    the *resolved* absolute path so that callers transparently share one
+    ``lmdb.Environment`` handle.
+    """
+    resolved = str(Path(path).resolve())
+    env = _ENV_CACHE.get(resolved)
+    if env is not None:
+        return env
+    env = lmdb.open(path, readonly=True, lock=False, readahead=False, meminit=False)
+    _ENV_CACHE[resolved] = env
+    return env
 
 
 def _read_metadata(txn: lmdb.Transaction) -> dict:
