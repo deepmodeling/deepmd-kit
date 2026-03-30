@@ -21,17 +21,19 @@ def safe_for_norm(
     keepdim: bool = False,
     ord: float = 2.0,
 ) -> torch.Tensor:
-    """Safe version of vector_norm that has a gradient of 0 at x = 0."""
+    """Safe version of torch.linalg.norm that has a gradient of 0 at x = 0.
+
+    This helper is currently used for vector-norm cases in PT descriptors.
+    """
     if dim is None:
         mask = torch.sum(torch.square(x)) > 0
         x_safe = torch.where(mask, x, torch.ones_like(x))
         norm = torch.linalg.norm(x_safe, ord=ord)
         return torch.where(mask, norm, torch.zeros_like(norm))
 
-    dim_list = [dim]
-    mask = torch.sum(torch.square(x), dim=dim_list, keepdim=True) > 0
-    mask_out = mask if keepdim else (torch.sum(torch.square(x), dim=dim_list) > 0)
+    mask = torch.sum(torch.square(x), dim=(dim,), keepdim=True) > 0
+    mask_out = mask if keepdim else mask.squeeze(dim)
 
     x_safe = torch.where(mask, x, torch.ones_like(x))
-    norm = torch.linalg.norm(x_safe, ord=ord, dim=dim_list, keepdim=keepdim)
+    norm = torch.linalg.norm(x_safe, ord=ord, dim=dim, keepdim=keepdim)
     return torch.where(mask_out, norm, torch.zeros_like(norm))
