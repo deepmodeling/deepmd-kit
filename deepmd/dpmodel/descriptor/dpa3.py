@@ -170,6 +170,12 @@ class RepFlowArgs:
         In the dynamic selection case, neighbor-scale normalization will use `e_sel / sel_reduce_factor`
         or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values,
         accommodating larger selection numbers.
+    sequential_update : bool, optional
+        Whether to use sequential update mode within each repflow layer.
+        When True, updates are applied sequentially: edge self → angle self (using updated edge)
+        → edge angle (using updated angle) → node (using final edge),
+        instead of the default parallel mode where all updates use original embeddings.
+        Currently only supports ``update_style='res_residual'``.
     """
 
     def __init__(
@@ -201,6 +207,7 @@ class RepFlowArgs:
         use_exp_switch: bool = False,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
+        sequential_update: bool = False,
     ) -> None:
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -231,6 +238,15 @@ class RepFlowArgs:
         self.use_exp_switch = use_exp_switch
         self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
+        self.sequential_update = sequential_update
+        if self.sequential_update:
+            if self.update_style != "res_residual":
+                raise ValueError(
+                    "sequential_update only supports update_style='res_residual', "
+                    f"got '{self.update_style}'!"
+                )
+            if not self.update_angle:
+                raise ValueError("sequential_update requires update_angle=True!")
 
     def __getitem__(self, key: str) -> Any:
         if hasattr(self, key):
@@ -266,6 +282,7 @@ class RepFlowArgs:
             "use_exp_switch": self.use_exp_switch,
             "use_dynamic_sel": self.use_dynamic_sel,
             "sel_reduce_factor": self.sel_reduce_factor,
+            "sequential_update": self.sequential_update,
         }
 
     @classmethod
@@ -404,6 +421,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             use_exp_switch=self.repflow_args.use_exp_switch,
             use_dynamic_sel=self.repflow_args.use_dynamic_sel,
             sel_reduce_factor=self.repflow_args.sel_reduce_factor,
+            sequential_update=self.repflow_args.sequential_update,
             use_loc_mapping=use_loc_mapping,
             exclude_types=exclude_types,
             env_protection=env_protection,
