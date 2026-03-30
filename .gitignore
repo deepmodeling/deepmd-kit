@@ -71,3 +71,4 @@ frozen_model.*
 
 # Test system directories
 system/
+tests/
