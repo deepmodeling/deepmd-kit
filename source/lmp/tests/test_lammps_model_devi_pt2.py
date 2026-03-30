@@ -58,37 +58,54 @@ expected_v2 = None
 
 
 def _compute_expected():
-    """Load both .pt2 models via DeepPot and compute reference values."""
+    """Load both .pt2 models via DeepPot and compute reference values.
+
+    Runs in a subprocess to avoid importing ``deepmd`` in the LAMMPS test
+    process — the LAMMPS plugin already loads ``libdeepmd_op_pt.so`` at the
+    C++ level, and importing the Python package on top of that can segfault
+    (e.g. ``hashlib`` native extension crashes due to library state conflicts).
+    """
     global expected_e, expected_f, expected_v, expected_f2, expected_v2
 
-    from deepmd.infer import (
-        DeepPot,
+    import json
+    import subprocess
+    import sys
+    import textwrap
+
+    script = textwrap.dedent(f"""\
+        import json, numpy as np
+        from deepmd.infer import DeepPot
+
+        coord = {coord.tolist()!r}
+        box_9 = [13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0]
+        atype = [0, 0, 0, 0, 0, 0]
+        fp = [{fparam_val}]
+        ap = [{aparam_val}] * 6
+
+        results = []
+        for pt2_path in [{str(pt2_file0)!r}, {str(pt2_file1)!r}]:
+            dp = DeepPot(pt2_path)
+            e, f, v, ae, av = dp.eval(
+                np.array(coord).reshape(1, -1), np.array(box_9),
+                atype, fparam=np.array(fp), aparam=np.array(ap), atomic=True,
+            )
+            results.append({{"e": e[0, 0], "f": f[0].tolist(), "av": av[0].tolist()}})
+        print(json.dumps(results))
+    """)
+    proc = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
     )
-
-    box_9 = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
-    atype = [0, 0, 0, 0, 0, 0]
-    fp = np.array([fparam_val])
-    ap = np.array([aparam_val] * 6)
-
-    results = []
-    for pt2_path in [pt2_file0, pt2_file1]:
-        dp = DeepPot(str(pt2_path))
-        e, f, v, ae, av = dp.eval(
-            coord.reshape(1, -1),
-            box_9,
-            atype,
-            fparam=fp,
-            aparam=ap,
-            atomic=True,
-        )
-        results.append((e[0, 0], f[0], av[0]))
-
-    expected_e = results[0][0]
-    expected_f = results[0][1]
+    if proc.returncode != 0:
+        raise RuntimeError(f"Failed to compute expected values:\n{proc.stderr}")
+    results = json.loads(proc.stdout.strip())
+    expected_e = results[0]["e"]
+    expected_f = np.array(results[0]["f"])
     # DeepPot returns virial; LAMMPS centroid/stress/atom returns stress = -virial
-    expected_v = -results[0][2]
-    expected_f2 = results[1][1]
-    expected_v2 = -results[1][2]
+    expected_v = -np.array(results[0]["av"])
+    expected_f2 = np.array(results[1]["f"])
+    expected_v2 = -np.array(results[1]["av"])
 
 
 def setup_module() -> None:
