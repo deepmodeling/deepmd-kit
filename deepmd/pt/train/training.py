@@ -54,6 +54,10 @@ from deepmd.pt.optimizer import (
     KFOptimizerWrapper,
     LKFOptimizer,
 )
+from deepmd.pt.train.validation import (
+    FullValidator,
+    resolve_full_validation_start_step,
+)
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
 )
@@ -857,6 +861,57 @@ class Trainer:
         self.enable_profiler = training_params.get("enable_profiler", False)
         self.profiling = training_params.get("profiling", False)
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
+        self.full_validator = None
+
+        validating_params = config.get("validating") or {}
+        validation_start_step = resolve_full_validation_start_step(
+            validating_params.get("full_val_start", 0.0),
+            self.num_steps,
+        )
+        full_validation_requested = (
+            bool(validating_params.get("full_validation", False))
+            and validation_start_step is not None
+            and validation_start_step < self.num_steps
+        )
+        if full_validation_requested:
+            if self.multi_task:
+                raise ValueError(
+                    "validating.full_validation only supports single-task energy "
+                    "training; multi-task training is not supported."
+                )
+            has_spin = getattr(self.model, "has_spin", False)
+            if callable(has_spin):
+                has_spin = has_spin()
+            if has_spin or isinstance(self.loss, EnergySpinLoss):
+                raise ValueError(
+                    "validating.full_validation only supports single-task energy "
+                    "training; spin-energy training is not supported."
+                )
+            if not isinstance(self.loss, EnergyStdLoss):
+                raise ValueError(
+                    "validating.full_validation only supports single-task energy "
+                    "training."
+                )
+            if validation_data is None:
+                raise ValueError(
+                    "validating.full_validation requires `training.validation_data` "
+                    "to be configured."
+                )
+            if self.zero_stage >= 2:
+                raise ValueError(
+                    "validating.full_validation only supports single-task energy "
+                    "training with training.zero_stage < 2."
+                )
+            self.full_validator = FullValidator(
+                validating_params=validating_params,
+                validation_data=validation_data,
+                model=self.model,
+                train_infos=self._get_inner_module().train_infos,
+                num_steps=self.num_steps,
+                rank=self.rank,
+                zero_stage=self.zero_stage,
+                restart_training=self.restart_training,
+            )
 
         # Log model parameter count
         if self.rank == 0:
@@ -1362,6 +1417,14 @@ class Trainer:
                     self.print_on_training(
                         fout, display_step_id, cur_lr, train_results, valid_results
                     )
+
+            if self.full_validator is not None:
+                self.full_validator.run(
+                    step_id=_step_id,
+                    display_step=display_step_id,
+                    lr=cur_lr,
+                    save_checkpoint=self.save_model,
+                )
 
             if (
                 (
