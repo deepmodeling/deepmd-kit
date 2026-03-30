@@ -49,6 +49,23 @@ class XASLoss(TaskLoss):
     The buffer is saved in the model checkpoint, eliminating any need for
     external normalisation files.
 
+    Weighted loss
+    -------------
+    ``pref_energy`` and ``pref_spectrum`` allow independent weighting of the
+    two energy dimensions (E_min, E_max at indices 0–1) and the intensity
+    dimensions (indices 2:).  If the loss is dominated by the energy shift
+    terms, reduce ``pref_energy`` or increase ``pref_spectrum``.
+
+    Smoothness regularisation
+    -------------------------
+    XAS spectra should be smooth.  A second-order finite-difference penalty
+    on the predicted intensity dimensions discourages high-frequency wiggles::
+
+        L_smooth = smooth_reg * mean( (pred[:,i+1] - 2*pred[:,i] + pred[:,i-1])^2 )
+
+    The regulariser is applied to the raw NN output (before adding ``e_ref``),
+    so it acts on chemical-shift–normalised intensities.
+
     Parameters
     ----------
     task_dim : int
@@ -65,6 +82,15 @@ class XASLoss(TaskLoss):
         Metrics to display during training.
     beta : float
         Beta parameter for smooth_l1 loss.
+    pref_energy : float
+        Weight multiplier for the two energy dimensions (E_min, E_max).
+        Default 1.0.  Reduce this if energy terms dominate training.
+    pref_spectrum : float
+        Weight multiplier for the intensity dimensions (index 2 onward).
+        Default 1.0.  Increase this to focus training on spectral shape.
+    smooth_reg : float
+        Coefficient of the second-order smoothness regulariser applied to
+        the predicted intensity dimensions.  0.0 disables it (default).
     """
 
     def __init__(
@@ -76,6 +102,9 @@ class XASLoss(TaskLoss):
         loss_func: str = "smooth_mae",
         metric: list[str] = ["mae"],
         beta: float = 1.0,
+        pref_energy: float = 1.0,
+        pref_spectrum: float = 1.0,
+        smooth_reg: float = 0.0,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -86,6 +115,9 @@ class XASLoss(TaskLoss):
         self.loss_func = loss_func
         self.metric = metric
         self.beta = beta
+        self.pref_energy = pref_energy
+        self.pref_spectrum = pref_spectrum
+        self.smooth_reg = smooth_reg
 
         # e_ref[sel_type_idx, edge_idx, 0] = mean E_min  (eV)
         # e_ref[sel_type_idx, edge_idx, 1] = mean E_max  (eV)
@@ -269,20 +301,52 @@ class XASLoss(TaskLoss):
         label_shifted = label_xas.clone()
         label_shifted[:, :2] = label_xas[:, :2] - e_ref_frame
 
-        # --- loss ---
+        # --- weighted loss ---
+        # Build per-dimension weight vector: pref_energy for dims 0-1,
+        # pref_spectrum for dims 2+.
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
-        if self.loss_func == "smooth_mae":
-            loss += F.smooth_l1_loss(
-                pred, label_shifted, reduction="sum", beta=self.beta
-            )
-        elif self.loss_func == "mae":
-            loss += F.l1_loss(pred, label_shifted, reduction="sum")
-        elif self.loss_func == "mse":
-            loss += F.mse_loss(pred, label_shifted, reduction="sum")
-        elif self.loss_func == "rmse":
-            loss += torch.sqrt(F.mse_loss(pred, label_shifted, reduction="mean"))
+        if self.pref_energy == self.pref_spectrum:
+            # Fast path: uniform weights, use standard reduction.
+            if self.loss_func == "smooth_mae":
+                loss += F.smooth_l1_loss(
+                    pred, label_shifted, reduction="sum", beta=self.beta
+                )
+            elif self.loss_func == "mae":
+                loss += F.l1_loss(pred, label_shifted, reduction="sum")
+            elif self.loss_func == "mse":
+                loss += F.mse_loss(pred, label_shifted, reduction="sum")
+            elif self.loss_func == "rmse":
+                loss += torch.sqrt(F.mse_loss(pred, label_shifted, reduction="mean"))
+            else:
+                raise RuntimeError(f"Unknown loss function: {self.loss_func}")
         else:
-            raise RuntimeError(f"Unknown loss function: {self.loss_func}")
+            # Weighted path: split energy dims and spectrum dims.
+            def _elem_loss(p: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+                if self.loss_func == "smooth_mae":
+                    return F.smooth_l1_loss(p, t, reduction="sum", beta=self.beta)
+                elif self.loss_func == "mae":
+                    return F.l1_loss(p, t, reduction="sum")
+                elif self.loss_func == "mse":
+                    return F.mse_loss(p, t, reduction="sum")
+                elif self.loss_func == "rmse":
+                    return torch.sqrt(F.mse_loss(p, t, reduction="mean"))
+                else:
+                    raise RuntimeError(f"Unknown loss function: {self.loss_func}")
+
+            loss += self.pref_energy * _elem_loss(pred[:, :2], label_shifted[:, :2])
+            loss += self.pref_spectrum * _elem_loss(
+                pred[:, 2:], label_shifted[:, 2:]
+            )
+
+        # --- smoothness regulariser on intensity dims (2:) ---
+        # Penalise second-order finite differences (curvature) of the predicted
+        # spectrum.  This discourages high-frequency wiggles without preventing
+        # legitimate sharp spectral features.
+        #   L_smooth = smooth_reg * mean( (p_{i+1} - 2*p_i + p_{i-1})^2 )
+        if self.smooth_reg > 0.0 and self.task_dim > 4:
+            intens = pred[:, 2:]  # [nf, n_pts]
+            curv = intens[:, 2:] - 2.0 * intens[:, 1:-1] + intens[:, :-2]
+            loss += self.smooth_reg * (curv**2).mean()
 
         # --- metrics ---
         more_loss: dict[str, torch.Tensor] = {}

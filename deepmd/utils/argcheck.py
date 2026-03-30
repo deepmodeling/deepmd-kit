@@ -3472,12 +3472,36 @@ def loss_xas() -> list[Argument]:
     )
     doc_metric = "Metrics to display during training. Supported: 'mae', 'rmse'."
     doc_beta = "Beta parameter for smooth_l1 loss."
+    doc_pref_energy = (
+        "Weight multiplier for the two energy dimensions (E_min, E_max at indices 0-1). "
+        "Default 1.0. Decrease this if energy-shift terms dominate the loss and "
+        "spectral shape is undertrained."
+    )
+    doc_pref_spectrum = (
+        "Weight multiplier for the intensity dimensions (index 2 onward). "
+        "Default 1.0. Increase this to focus training on spectral shape."
+    )
+    doc_smooth_reg = (
+        "Coefficient of the second-order smoothness regulariser applied to the "
+        "predicted intensity dimensions. Penalises curvature "
+        "(pred[i+1] - 2*pred[i] + pred[i-1])^2 to suppress high-frequency wiggles. "
+        "0.0 disables it (default). Typical range: 1e-4 to 1e-2."
+    )
     return [
         Argument(
             "loss_func", str, optional=True, default="smooth_mae", doc=doc_loss_func
         ),
         Argument("metric", list, optional=True, default=["mae"], doc=doc_metric),
         Argument("beta", float, optional=True, default=1.0, doc=doc_beta),
+        Argument(
+            "pref_energy", float, optional=True, default=1.0, doc=doc_pref_energy
+        ),
+        Argument(
+            "pref_spectrum", float, optional=True, default=1.0, doc=doc_pref_spectrum
+        ),
+        Argument(
+            "smooth_reg", float, optional=True, default=0.0, doc=doc_smooth_reg
+        ),
     ]
 
 
