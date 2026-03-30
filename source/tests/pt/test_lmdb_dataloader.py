@@ -789,9 +789,13 @@ def multitask_lmdb_setup(tmp_path):
 
 
 class TestMultitaskLmdbTraining:
-    """Test multitask training with LMDB datasets."""
+    """Test multitask training with LMDB datasets.
 
-    def test_multitask_lmdb_trainer_init(self, multitask_lmdb_setup, monkeypatch):
+    All assertions are in a single test to avoid creating multiple heavy
+    se_atten trainers which would OOM on CI runners (7 GB RAM limit).
+    """
+
+    def test_multitask_lmdb_end_to_end(self, multitask_lmdb_setup, monkeypatch):
         from copy import (
             deepcopy,
         )
@@ -815,60 +819,20 @@ class TestMultitaskLmdbTraining:
         config["model"], shared_links = preprocess_shared_params(config["model"])
         config = normalize(config, multi_task=True)
         trainer = get_trainer(config, shared_links=shared_links)
+
+        # -- trainer init assertions --
         assert trainer.multi_task
         assert set(trainer.model_keys) == {"model_1", "model_2"}
 
-    def test_multitask_lmdb_training_runs(self, multitask_lmdb_setup, monkeypatch):
-        from copy import (
-            deepcopy,
-        )
+        # -- shared params assertions --
+        state_dict = trainer.wrapper.model.state_dict()
+        for key in state_dict:
+            if "model_1.atomic_model.descriptor" in key:
+                key2 = key.replace("model_1", "model_2")
+                assert key2 in state_dict
+                torch.testing.assert_close(state_dict[key], state_dict[key2])
 
-        from deepmd.pt.entrypoints.main import (
-            get_trainer,
-        )
-        from deepmd.pt.utils.multi_task import (
-            preprocess_shared_params,
-        )
-        from deepmd.utils.argcheck import (
-            normalize,
-        )
-        from deepmd.utils.compat import (
-            update_deepmd_input,
-        )
-
-        config, tmp_path = multitask_lmdb_setup
-        monkeypatch.chdir(tmp_path)
-        config = update_deepmd_input(deepcopy(config), warning=True)
-        config["model"], shared_links = preprocess_shared_params(config["model"])
-        config = normalize(config, multi_task=True)
-        trainer = get_trainer(config, shared_links=shared_links)
-        trainer.run()
-        assert len(list(tmp_path.glob("model.ckpt*.pt"))) > 0
-
-    def test_multitask_lmdb_get_data(self, multitask_lmdb_setup, monkeypatch):
-        from copy import (
-            deepcopy,
-        )
-
-        from deepmd.pt.entrypoints.main import (
-            get_trainer,
-        )
-        from deepmd.pt.utils.multi_task import (
-            preprocess_shared_params,
-        )
-        from deepmd.utils.argcheck import (
-            normalize,
-        )
-        from deepmd.utils.compat import (
-            update_deepmd_input,
-        )
-
-        config, tmp_path = multitask_lmdb_setup
-        monkeypatch.chdir(tmp_path)
-        config = update_deepmd_input(deepcopy(config), warning=True)
-        config["model"], shared_links = preprocess_shared_params(config["model"])
-        config = normalize(config, multi_task=True)
-        trainer = get_trainer(config, shared_links=shared_links)
+        # -- get_data assertions --
         for task_key in ["model_1", "model_2"]:
             input_dict, label_dict, log_dict = trainer.get_data(
                 is_train=True, task_key=task_key
@@ -876,33 +840,6 @@ class TestMultitaskLmdbTraining:
             assert "coord" in input_dict
             assert "sid" in log_dict
 
-    def test_multitask_lmdb_shared_params(self, multitask_lmdb_setup, monkeypatch):
-        from copy import (
-            deepcopy,
-        )
-
-        from deepmd.pt.entrypoints.main import (
-            get_trainer,
-        )
-        from deepmd.pt.utils.multi_task import (
-            preprocess_shared_params,
-        )
-        from deepmd.utils.argcheck import (
-            normalize,
-        )
-        from deepmd.utils.compat import (
-            update_deepmd_input,
-        )
-
-        config, tmp_path = multitask_lmdb_setup
-        monkeypatch.chdir(tmp_path)
-        config = update_deepmd_input(deepcopy(config), warning=True)
-        config["model"], shared_links = preprocess_shared_params(config["model"])
-        config = normalize(config, multi_task=True)
-        trainer = get_trainer(config, shared_links=shared_links)
-        state_dict = trainer.wrapper.model.state_dict()
-        for key in state_dict:
-            if "model_1.atomic_model.descriptor" in key:
-                key2 = key.replace("model_1", "model_2")
-                assert key2 in state_dict
-                torch.testing.assert_close(state_dict[key], state_dict[key2])
+        # -- training run assertions --
+        trainer.run()
+        assert len(list(tmp_path.glob("model.ckpt*.pt"))) > 0

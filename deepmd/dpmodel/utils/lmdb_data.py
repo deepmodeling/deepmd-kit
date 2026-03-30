@@ -45,27 +45,47 @@ _KEY_REMAP = {
 # (energy is set by Loss DataRequirementItem; reduce() also sets high_prec=True)
 _HIGH_PREC_KEYS = frozenset({"energy"})
 
-# Process-level cache: lmdb does not allow opening the same path twice in one
-# process.  Multiple LmdbDataReader / LmdbDataset instances that point to the
-# same file must share a single Environment object.
-_ENV_CACHE: dict[str, lmdb.Environment] = {}
+# Process-level cache: python-lmdb does not allow opening the same path twice
+# in one process.  We ref-count so the Environment is closed (and freed from
+# the cache) once every reader that shares it is garbage-collected.
+_ENV_CACHE: dict[str, tuple[lmdb.Environment, int]] = {}
 
 
 def _open_lmdb(path: str) -> lmdb.Environment:
-    """Open (or reuse) an LMDB environment readonly.
+    """Open (or reuse) a readonly LMDB environment with reference counting.
 
     The python-lmdb binding raises ``lmdb.Error`` if the same path is opened
-    more than once in a single process.  We keep a per-process cache keyed by
-    the *resolved* absolute path so that callers transparently share one
-    ``lmdb.Environment`` handle.
+    more than once in a single process.  We cache by resolved absolute path
+    and bump a reference count.  Call :func:`_close_lmdb` when done to
+    decrement the count; when it reaches zero the environment is closed and
+    removed from the cache.
     """
     resolved = str(Path(path).resolve())
-    env = _ENV_CACHE.get(resolved)
-    if env is not None:
+    entry = _ENV_CACHE.get(resolved)
+    if entry is not None:
+        env, refcount = entry
+        _ENV_CACHE[resolved] = (env, refcount + 1)
         return env
     env = lmdb.open(path, readonly=True, lock=False, readahead=False, meminit=False)
-    _ENV_CACHE[resolved] = env
+    _ENV_CACHE[resolved] = (env, 1)
     return env
+
+
+def _close_lmdb(path: str) -> None:
+    """Decrement the ref-count for *path* and close the env when it hits zero."""
+    resolved = str(Path(path).resolve())
+    entry = _ENV_CACHE.get(resolved)
+    if entry is None:
+        return
+    env, refcount = entry
+    if refcount <= 1:
+        del _ENV_CACHE[resolved]
+        try:
+            env.close()
+        except Exception:
+            pass
+    else:
+        _ENV_CACHE[resolved] = (env, refcount - 1)
 
 
 def _read_metadata(txn: lmdb.Transaction) -> dict:
@@ -356,6 +376,12 @@ class LmdbDataReader:
         if key in _HIGH_PREC_KEYS:
             return GLOBAL_ENER_FLOAT_PRECISION
         return GLOBAL_NP_FLOAT_PRECISION
+
+    def __del__(self) -> None:
+        """Release the LMDB environment ref-count on garbage collection."""
+        path = getattr(self, "lmdb_path", None)
+        if path is not None:
+            _close_lmdb(path)
 
     def get_batch_size_for_nloc(self, nloc: int) -> int:
         """Get batch_size for a given nloc. Uses auto rule if configured."""
@@ -1187,6 +1213,12 @@ class LmdbTestData:
                 self.pbc = False
 
         self.mixed_type = True
+
+    def __del__(self) -> None:
+        """Release the LMDB environment ref-count on garbage collection."""
+        path = getattr(self, "lmdb_path", None)
+        if path is not None:
+            _close_lmdb(path)
 
     @property
     def nloc_groups(self) -> dict[int, list[int]]:
