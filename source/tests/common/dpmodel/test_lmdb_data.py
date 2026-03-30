@@ -709,5 +709,159 @@ class TestLmdbNeighborStat(unittest.TestCase):
         tmpdir.cleanup()
 
 
+def _create_lmdb_with_extra_keys(
+    path: str, nframes: int = 5, natoms: int = 6, extra_keys: dict | None = None
+) -> str:
+    """Create a test LMDB with extra per-frame keys (e.g. atom_pref, fparam).
+
+    Parameters
+    ----------
+    extra_keys : dict
+        key -> (shape_fn, dtype) where shape_fn(natoms) returns the array shape.
+        Example: {"atom_pref": (lambda n: (n,), np.float64)}
+    """
+    n_type0 = max(1, natoms // 3)
+    n_type1 = natoms - n_type0
+    extra_keys = extra_keys or {}
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    with env.begin(write=True) as txn:
+        meta = {
+            "nframes": nframes,
+            "frame_idx_fmt": "012d",
+            "type_map": ["O", "H"],
+            "system_info": {"natoms": [n_type0, n_type1]},
+        }
+        txn.put(b"__metadata__", msgpack.packb(meta, use_bin_type=True))
+        rng = np.random.RandomState(0)
+        for i in range(nframes):
+            frame = _make_frame(natoms=natoms, seed=i)
+            for ek, (shape_fn, dtype) in extra_keys.items():
+                arr = rng.rand(*shape_fn(natoms)).astype(dtype)
+                frame[ek] = {
+                    "type": str(arr.dtype),
+                    "shape": list(arr.shape),
+                    "data": arr.tobytes(),
+                }
+            txn.put(
+                format(i, "012d").encode(),
+                msgpack.packb(frame, use_bin_type=True),
+            )
+    env.close()
+    return path
+
+
+# ============================================================
+# Dynamic find_* and repeat tests
+# ============================================================
+
+
+class TestDynamicKeysAndRepeat(unittest.TestCase):
+    """Test auto-discovery of find_* flags and repeat handling."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmpdir = tempfile.TemporaryDirectory()
+        cls._natoms = 6
+        cls._nframes = 5
+        cls._lmdb_path = _create_lmdb_with_extra_keys(
+            f"{cls._tmpdir.name}/extra.lmdb",
+            nframes=cls._nframes,
+            natoms=cls._natoms,
+            extra_keys={
+                "atom_pref": (lambda n: (n,), np.float64),
+                "fparam": (lambda n: (3,), np.float64),
+            },
+        )
+        cls._type_map = ["O", "H"]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmpdir.cleanup()
+
+    # --- LmdbDataReader ---
+
+    def test_reader_find_flags_auto_detected(self):
+        """Extra keys in frame get find_*=1.0 automatically."""
+        reader = LmdbDataReader(self._lmdb_path, self._type_map)
+        frame = reader[0]
+        self.assertEqual(frame["find_atom_pref"], np.float32(1.0))
+        self.assertEqual(frame["find_fparam"], np.float32(1.0))
+        self.assertEqual(frame["find_energy"], np.float32(1.0))
+        # Keys not in frame get find_*=0.0
+        self.assertEqual(frame["find_aparam"], np.float32(0.0))
+        self.assertEqual(frame["find_spin"], np.float32(0.0))
+
+    def test_reader_repeat_applied(self):
+        """DataRequirementItem with repeat=3 expands atom_pref from (natoms,) to (natoms*3,)."""
+        from deepmd.utils.data import (
+            DataRequirementItem,
+        )
+
+        reader = LmdbDataReader(self._lmdb_path, self._type_map)
+        reader.add_data_requirement(
+            [
+                DataRequirementItem(
+                    "atom_pref",
+                    ndof=1,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                    repeat=3,
+                ),
+            ]
+        )
+        frame = reader[0]
+        self.assertEqual(frame["atom_pref"].shape, (self._natoms * 3,))
+
+    def test_reader_repeat_default_fill(self):
+        """Missing key with repeat fills correct shape."""
+        from deepmd.utils.data import (
+            DataRequirementItem,
+        )
+
+        reader = LmdbDataReader(self._lmdb_path, self._type_map)
+        reader.add_data_requirement(
+            [
+                DataRequirementItem(
+                    "drdq", ndof=6, atomic=True, must=False, high_prec=False, repeat=2
+                ),
+            ]
+        )
+        frame = reader[0]
+        self.assertEqual(frame["find_drdq"], np.float32(0.0))
+        self.assertEqual(frame["drdq"].shape, (self._natoms * 6 * 2,))
+
+    # --- LmdbTestData ---
+
+    def test_testdata_find_flags_auto_detected(self):
+        """LmdbTestData.get_test() discovers extra keys dynamically."""
+        td = LmdbTestData(self._lmdb_path, type_map=self._type_map, shuffle_test=False)
+        result = td.get_test()
+        self.assertEqual(result["find_atom_pref"], 1.0)
+        self.assertEqual(result["find_fparam"], 1.0)
+        self.assertIn("atom_pref", result)
+        self.assertIn("fparam", result)
+
+    def test_testdata_repeat_applied(self):
+        """LmdbTestData respects repeat=3 for atom_pref."""
+        td = LmdbTestData(self._lmdb_path, type_map=self._type_map, shuffle_test=False)
+        td.add("atom_pref", 1, atomic=True, must=False, high_prec=False, repeat=3)
+        result = td.get_test()
+        self.assertEqual(
+            result["atom_pref"].shape,
+            (self._nframes, self._natoms * 3),
+        )
+
+    def test_testdata_missing_key_not_found(self):
+        """Keys absent from LMDB frames get find_*=0.0 in get_test()."""
+        tmpdir = tempfile.TemporaryDirectory()
+        path = _create_lmdb(f"{tmpdir.name}/plain.lmdb", nframes=3, natoms=6)
+        td = LmdbTestData(path, type_map=["O", "H"], shuffle_test=False)
+        result = td.get_test()
+        # atom_pref is not in the plain LMDB
+        self.assertEqual(result.get("find_atom_pref", 0.0), 0.0)
+        tmpdir.cleanup()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1289,13 +1289,13 @@ class LmdbTestData:
             np.stack(atypes) if atypes else np.zeros((0, natoms), dtype=np.int64)
         )
 
-        # Dynamically discover all data keys present in frames, plus
+        # Dynamically discover all data keys from the first frame, plus
         # any registered requirements.  Structural keys (coord, box, type)
         # are excluded — they are already handled above.
         _structural_keys = frozenset({"coord", "box", "atype"})
         all_keys: dict[str, dict[str, Any]] = {}
-        for f in frames:
-            for fk in f:
+        if frames:
+            for fk in frames[0]:
                 if fk in _structural_keys or fk.startswith("find_"):
                     continue
                 if fk not in all_keys:
