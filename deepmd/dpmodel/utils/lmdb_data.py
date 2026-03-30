@@ -406,54 +406,75 @@ class LmdbDataReader:
             frame["natoms"] = fallback
             frame["real_natoms_vec"] = fallback
 
-        # Add find_* flags for known label keys
-        label_keys = [
-            "energy",
-            "force",
-            "virial",
-            "atom_ener",
-            "atom_pref",
-            "drdq",
-            "atom_ener_coeff",
-            "hessian",
-        ]
-        for lk in label_keys:
-            frame[f"find_{lk}"] = np.float32(1.0) if lk in frame else np.float32(0.0)
+        # Add find_* flags for all data keys present in the frame.
+        # Core structural keys and metadata are excluded — only label-like
+        # and auxiliary data keys get find_* flags.
+        _structural_keys = frozenset(
+            {
+                "coord",
+                "box",
+                "atype",
+                "natoms",
+                "real_natoms_vec",
+                "fid",
+            }
+        )
+        for fk in list(frame.keys()):
+            if fk.startswith("find_") or fk in _structural_keys:
+                continue
+            # Skip keys handled by data_requirements (processed below)
+            if fk in self._data_requirements:
+                continue
+            if f"find_{fk}" not in frame:
+                frame[f"find_{fk}"] = np.float32(1.0)
 
-        # Handle registered data requirements: fill defaults for missing keys
+        # Handle registered data requirements: fill defaults for missing keys,
+        # apply repeat, and cast dtype.
         for req_key, req_item in self._data_requirements.items():
+            # Extract requirement fields (support both dict and object)
+            if isinstance(req_item, dict):
+                ndof = req_item["ndof"]
+                default = req_item["default"]
+                atomic = req_item["atomic"]
+                repeat = req_item.get("repeat", 1)
+                req_dtype = req_item.get("dtype")
+                if req_dtype is None:
+                    req_dtype = (
+                        GLOBAL_ENER_FLOAT_PRECISION
+                        if req_item.get("high_prec", False)
+                        else GLOBAL_NP_FLOAT_PRECISION
+                    )
+            else:
+                ndof = req_item.ndof
+                default = req_item.default
+                atomic = req_item.atomic
+                repeat = getattr(req_item, "repeat", 1)
+                req_dtype = req_item.dtype
+                if req_dtype is None:
+                    req_dtype = (
+                        GLOBAL_ENER_FLOAT_PRECISION
+                        if req_item.high_prec
+                        else GLOBAL_NP_FLOAT_PRECISION
+                    )
+
             if req_key not in frame:
                 frame[f"find_{req_key}"] = np.float32(0.0)
-                # Support both dict and DataRequirementItem object
-                if isinstance(req_item, dict):
-                    ndof = req_item["ndof"]
-                    default = req_item["default"]
-                    atomic = req_item["atomic"]
-                    req_dtype = req_item.get("dtype")
-                    if req_dtype is None:
-                        req_dtype = (
-                            GLOBAL_ENER_FLOAT_PRECISION
-                            if req_item.get("high_prec", False)
-                            else GLOBAL_NP_FLOAT_PRECISION
-                        )
-                else:
-                    ndof = req_item.ndof
-                    default = req_item.default
-                    atomic = req_item.atomic
-                    req_dtype = req_item.dtype
-                    if req_dtype is None:
-                        req_dtype = (
-                            GLOBAL_ENER_FLOAT_PRECISION
-                            if req_item.high_prec
-                            else GLOBAL_NP_FLOAT_PRECISION
-                        )
                 if atomic:
                     shape = (frame_natoms, ndof)
                 else:
                     shape = (ndof,)
-                frame[req_key] = np.full(shape, default, dtype=req_dtype)
-            elif f"find_{req_key}" not in frame:
-                frame[f"find_{req_key}"] = np.float32(1.0)
+                data = np.full(shape, default, dtype=req_dtype)
+                if repeat != 1:
+                    data = np.repeat(data, repeat).reshape(-1)
+                frame[req_key] = data
+            else:
+                if f"find_{req_key}" not in frame:
+                    frame[f"find_{req_key}"] = np.float32(1.0)
+                # Apply repeat to existing data (e.g. atom_pref repeat=3)
+                if repeat != 1 and isinstance(frame[req_key], np.ndarray):
+                    frame[req_key] = (
+                        np.repeat(frame[req_key], repeat).reshape(-1).astype(req_dtype)
+                    )
 
         # Add find_* for fparam/aparam/spin if not already set
         for extra_key in ["fparam", "aparam", "spin"]:
@@ -1268,22 +1289,17 @@ class LmdbTestData:
             np.stack(atypes) if atypes else np.zeros((0, natoms), dtype=np.int64)
         )
 
-        # Label keys and registered requirements
+        # Dynamically discover all data keys present in frames, plus
+        # any registered requirements.  Structural keys (coord, box, type)
+        # are excluded — they are already handled above.
+        _structural_keys = frozenset({"coord", "box", "atype"})
         all_keys: dict[str, dict[str, Any]] = {}
-        for key in [
-            "energy",
-            "force",
-            "virial",
-            "atom_ener",
-            "atom_pref",
-            "force_mag",
-            "spin",
-            "fparam",
-            "aparam",
-            "hessian",
-            "efield",
-        ]:
-            all_keys[key] = {"ndof": None, "atomic": False, "default": 0.0}
+        for f in frames:
+            for fk in f:
+                if fk in _structural_keys or fk.startswith("find_"):
+                    continue
+                if fk not in all_keys:
+                    all_keys[fk] = {"ndof": None, "atomic": False, "default": 0.0}
         for key, req in self._requirements.items():
             all_keys[key] = req
 
@@ -1293,12 +1309,20 @@ class LmdbTestData:
             )
             result[f"find_{key}"] = 1.0 if has_key else 0.0
 
+            # Get repeat factor from registered requirements
+            repeat = 1
+            if key in self._requirements:
+                repeat = self._requirements[key].get("repeat", 1)
+
             if has_key:
                 arrays = []
                 for frame in frames:
                     val = frame.get(key)
                     if isinstance(val, np.ndarray):
-                        arrays.append(val.astype(self._resolve_dtype(key)).ravel())
+                        arr = val.astype(self._resolve_dtype(key)).ravel()
+                        if repeat != 1:
+                            arr = np.repeat(arr, repeat)
+                        arrays.append(arr)
                     elif val is not None:
                         arrays.append(
                             np.array([float(val)], dtype=self._resolve_dtype(key))
@@ -1313,8 +1337,9 @@ class LmdbTestData:
                             None,
                         )
                         if ref is not None:
+                            size = ref.size * repeat if repeat != 1 else ref.size
                             arrays.append(
-                                np.zeros(ref.size, dtype=self._resolve_dtype(key))
+                                np.zeros(size, dtype=self._resolve_dtype(key))
                             )
                         else:
                             arrays.append(np.zeros(1, dtype=self._resolve_dtype(key)))
@@ -1324,9 +1349,9 @@ class LmdbTestData:
                 atomic = self._requirements[key]["atomic"]
                 default = self._requirements[key]["default"]
                 if atomic:
-                    shape = (nframes, natoms * ndof)
+                    shape = (nframes, natoms * ndof * repeat)
                 else:
-                    shape = (nframes, ndof)
+                    shape = (nframes, ndof * repeat)
                 result[key] = np.full(shape, default, dtype=self._resolve_dtype(key))
 
         return result
