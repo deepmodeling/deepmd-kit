@@ -73,4 +73,7 @@ class Tester:
         self.wrapper = ModelWrapper(self.model)  # inference only
         if JIT:
             self.wrapper = torch.jit.script(self.wrapper)
+        # Drop loss-related keys (e.g. loss buffers like XASLoss.e_ref) that
+        # are not part of the inference-only wrapper.
+        state_dict = {k: v for k, v in state_dict.items() if not k.startswith("loss.")}
         self.wrapper.load_state_dict(state_dict)
