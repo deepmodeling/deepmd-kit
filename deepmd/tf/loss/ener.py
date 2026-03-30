@@ -571,7 +571,7 @@ class EnerStdLoss(Loss):
             The deserialized loss module
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        check_version_compatibility(data.pop("@version"), 3, 1)
         data.pop("@class")
         return cls(**data)
 
