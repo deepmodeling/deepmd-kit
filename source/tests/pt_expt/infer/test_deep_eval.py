@@ -115,7 +115,8 @@ class TestDeepEvalEner(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix=".pte", delete=False) as f:
             tmpfile2 = f.name
         try:
-            deserialize_to_file(tmpfile2, self.model_data, model_params=training_config)
+            data_with_config = {**self.model_data, "model_def_script": training_config}
+            deserialize_to_file(tmpfile2, data_with_config)
             dp2 = DeepPot(tmpfile2)
             mds = dp2.deep_eval.get_model_def_script()
             self.assertEqual(mds, training_config)
@@ -598,9 +599,11 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         try:
             torch.set_default_device(None)
             try:
-                deserialize_to_file(
-                    tmpfile2, self.model_data, model_params=training_config
-                )
+                data_with_config = {
+                    **self.model_data,
+                    "model_def_script": training_config,
+                }
+                deserialize_to_file(tmpfile2, data_with_config)
             finally:
                 torch.set_default_device("cuda:9999999")
             dp2 = DeepPot(tmpfile2)

@@ -259,7 +259,7 @@ def freeze(
     m.eval()
 
     model_dict = m.serialize()
-    deserialize_to_file(output, {"model": model_dict}, model_params=model_params)
+    deserialize_to_file(output, {"model": model_dict, "model_def_script": model_params})
     log.info("Saved frozen model to %s", output)
 
 
@@ -441,7 +441,7 @@ def change_bias(
         )
         model_dict = model_to_change.serialize()
         deserialize_to_file(
-            output_path, {"model": model_dict}, model_params=model_params
+            output_path, {"model": model_dict, "model_def_script": model_params}
         )
     log.info(f"Saved model to {output_path}")
 

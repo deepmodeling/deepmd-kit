@@ -270,7 +270,6 @@ def _serialize_from_file_pt2(model_file: str) -> dict:
 def deserialize_to_file(
     model_file: str,
     data: dict,
-    model_params: dict | None = None,
     model_json_override: dict | None = None,
 ) -> None:
     """Deserialize a dictionary to a .pte or .pt2 model file.
@@ -285,19 +284,18 @@ def deserialize_to_file(
     data : dict
         The dictionary to be deserialized (same format as dpmodel's
         serialize output, with "model" and optionally "model_def_script" keys).
-    model_params : dict or None
-        Original model config (the dict passed to ``get_model``).
-        If provided, embedded in the .pte so that ``--use-pretrain-script``
-        can extract descriptor/fitting params at finetune time.
+        If ``data["model_def_script"]`` is present, it is embedded in the
+        output so that ``--use-pretrain-script`` can extract descriptor/fitting
+        params at finetune time.
     model_json_override : dict or None
         If provided, this dict is stored in model.json instead of ``data``.
         Used by ``dp compress`` to store the compressed model dict while
         tracing the uncompressed model (make_fx cannot trace custom ops).
     """
     if model_file.endswith(".pt2"):
-        _deserialize_to_file_pt2(model_file, data, model_json_override, model_params)
+        _deserialize_to_file_pt2(model_file, data, model_json_override)
     else:
-        _deserialize_to_file_pte(model_file, data, model_json_override, model_params)
+        _deserialize_to_file_pte(model_file, data, model_json_override)
 
 
 def _trace_and_export(
@@ -397,17 +395,17 @@ def _deserialize_to_file_pte(
     model_file: str,
     data: dict,
     model_json_override: dict | None = None,
-    model_params: dict | None = None,
 ) -> None:
     """Deserialize a dictionary to a .pte model file."""
     exported, metadata, data_for_json, output_keys = _trace_and_export(
         data, model_json_override
     )
 
+    model_def_script = data.get("model_def_script") or {}
     metadata["output_keys"] = output_keys
     extra_files = {
         "metadata.json": json.dumps(metadata),
-        "model_def_script.json": json.dumps(model_params or {}),
+        "model_def_script.json": json.dumps(model_def_script),
         "model.json": json.dumps(data_for_json, separators=(",", ":")),
     }
 
@@ -418,7 +416,6 @@ def _deserialize_to_file_pt2(
     model_file: str,
     data: dict,
     model_json_override: dict | None = None,
-    model_params: dict | None = None,
 ) -> None:
     """Deserialize a dictionary to a .pt2 model file (AOTInductor).
 
@@ -440,10 +437,11 @@ def _deserialize_to_file_pt2(
     aoti_compile_and_package(exported, package_path=model_file)
 
     # Embed metadata into the .pt2 ZIP archive
+    model_def_script = data.get("model_def_script") or {}
     metadata["output_keys"] = output_keys
     with zipfile.ZipFile(model_file, "a") as zf:
         zf.writestr("extra/metadata.json", json.dumps(metadata))
-        zf.writestr("extra/model_def_script.json", json.dumps(model_params or {}))
+        zf.writestr("extra/model_def_script.json", json.dumps(model_def_script))
         zf.writestr(
             "extra/model.json",
             json.dumps(data_for_json, separators=(",", ":")),
