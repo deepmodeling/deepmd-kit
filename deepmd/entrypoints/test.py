@@ -955,7 +955,9 @@ def test_property(
         # absolute eV (matching label format).  xas_e_ref is saved in the
         # model checkpoint by XASLoss.compute_output_stats.
         try:
-            xas_e_ref = dp.dp.model["Default"].atomic_model.xas_e_ref
+            # dp is DeepProperty (wrapper); the PT backend is dp.deep_eval,
+            # and its ModelWrapper is dp.deep_eval.dp.
+            xas_e_ref = dp.deep_eval.dp.model["Default"].atomic_model.xas_e_ref
         except AttributeError:
             xas_e_ref = None
         if xas_e_ref is not None and fparam is not None:
