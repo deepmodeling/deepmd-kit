@@ -166,6 +166,7 @@ class EnergyLoss(Loss):
         natoms: int,
         model_dict: dict[str, Array],
         label_dict: dict[str, Array],
+        mae: bool = False,
     ) -> tuple[Array, dict[str, Array]]:
         """Calculate loss from model results and labeled results."""
         energy = model_dict["energy"]
@@ -266,6 +267,11 @@ class EnergyLoss(Loss):
                 raise NotImplementedError(
                     f"Loss type {self.loss_func} is not implemented for energy loss."
                 )
+            if mae:
+                mae_e = xp.mean(xp.abs(energy - energy_hat)) * atom_norm_ener
+                more_loss["mae_e"] = self.display_if_exist(mae_e, find_energy)
+                mae_e_all = xp.mean(xp.abs(energy - energy_hat))
+                more_loss["mae_e_all"] = self.display_if_exist(mae_e_all, find_energy)
         if self.has_f:
             if self.loss_func == "mse":
                 l2_force_loss = xp.mean(xp.square(diff_f))
@@ -304,6 +310,9 @@ class EnergyLoss(Loss):
                 raise NotImplementedError(
                     f"Loss type {self.loss_func} is not implemented for force loss."
                 )
+            if mae:
+                mae_f = xp.mean(xp.abs(diff_f))
+                more_loss["mae_f"] = self.display_if_exist(mae_f, find_force)
         if self.has_v:
             virial_reshape = xp.reshape(virial, (-1,))
             virial_hat_reshape = xp.reshape(virial_hat, (-1,))
@@ -333,6 +342,9 @@ class EnergyLoss(Loss):
                 raise NotImplementedError(
                     f"Loss type {self.loss_func} is not implemented for virial loss."
                 )
+            if mae:
+                mae_v = xp.mean(xp.abs(virial_hat_reshape - virial_reshape)) * atom_norm
+                more_loss["mae_v"] = self.display_if_exist(mae_v, find_virial)
         if self.has_ae:
             atom_ener_reshape = xp.reshape(atom_ener, (-1,))
             atom_ener_hat_reshape = xp.reshape(atom_ener_hat, (-1,))

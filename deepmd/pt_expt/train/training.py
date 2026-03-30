@@ -38,7 +38,11 @@ from deepmd.loggers.training import (
     format_training_message_per_task,
 )
 from deepmd.pt_expt.loss import (
+    DOSLoss,
     EnergyLoss,
+    EnergySpinLoss,
+    PropertyLoss,
+    TensorLoss,
 )
 from deepmd.pt_expt.model import (
     get_model,
@@ -81,6 +85,32 @@ def get_loss(
     if loss_type == "ener":
         loss_params["starter_learning_rate"] = start_lr
         return EnergyLoss(**loss_params)
+    elif loss_type == "dos":
+        loss_params["starter_learning_rate"] = start_lr
+        loss_params["numb_dos"] = _model.model_output_def()["dos"].output_size
+        return DOSLoss(**loss_params)
+    elif loss_type == "ener_spin":
+        loss_params["starter_learning_rate"] = start_lr
+        return EnergySpinLoss(**loss_params)
+    elif loss_type == "tensor":
+        model_output_type = _model.model_output_type()
+        if "mask" in model_output_type:
+            model_output_type.pop(model_output_type.index("mask"))
+        tensor_name = model_output_type[0]
+        loss_params["tensor_size"] = _model.model_output_def()[tensor_name].output_size
+        loss_params["label_name"] = tensor_name
+        if tensor_name == "polarizability":
+            tensor_name = "polar"
+        loss_params["tensor_name"] = tensor_name
+        return TensorLoss(**loss_params)
+    elif loss_type == "property":
+        task_dim = _model.get_task_dim()
+        var_name = _model.get_var_name()
+        intensive = _model.get_intensive()
+        loss_params["task_dim"] = task_dim
+        loss_params["var_name"] = var_name
+        loss_params["intensive"] = intensive
+        return PropertyLoss(**loss_params)
     else:
         raise ValueError(f"Unsupported loss type for pt_expt: {loss_type}")
 

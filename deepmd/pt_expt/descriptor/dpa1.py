@@ -49,9 +49,6 @@ class DescrptDPA1(DescrptDPA1DP):
         check_frequency
             The overflow check frequency
         """
-        from deepmd.pt.utils.utils import (
-            ActivationFn,
-        )
         from deepmd.pt_expt.utils.tabulate import (
             DPTabulate,
         )
@@ -71,7 +68,7 @@ class DescrptDPA1(DescrptDPA1DP):
             data["neuron"],
             data["type_one_side"],
             data["exclude_types"],
-            ActivationFn(data["activation_function"]),
+            data["activation_function"],
         )
         self.table_config = [
             table_extrapolate,
