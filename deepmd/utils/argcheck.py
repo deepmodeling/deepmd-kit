@@ -1925,6 +1925,9 @@ def fitting_property() -> list[Argument]:
     doc_seed = "Random seed for parameter initialization of the fitting net"
     doc_task_dim = "The dimension of outputs of fitting net"
     doc_intensive = "Whether the fitting property is intensive"
+    doc_distinguish_types = (
+        "Whether to distinguish atom types when computing output statistics."
+    )
     doc_property_name = "The names of fitting property, which should be consistent with the property name in the dataset."
     doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
@@ -1966,6 +1969,13 @@ def fitting_property() -> list[Argument]:
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument("task_dim", int, optional=True, default=1, doc=doc_task_dim),
         Argument("intensive", bool, optional=True, default=False, doc=doc_intensive),
+        Argument(
+            "distinguish_types",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_distinguish_types,
+        ),
         Argument(
             "property_name",
             str,
