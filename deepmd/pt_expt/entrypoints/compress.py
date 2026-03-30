@@ -118,6 +118,7 @@ def enable_compression(
     deserialize_to_file(
         output,
         uncompressed_data,
+        model_params=model_dict.get("model_def_script"),
         model_json_override={
             "model": compressed_model_dict,
             "model_def_script": model_dict.get("model_def_script"),

@@ -165,9 +165,17 @@ def _build_dynamic_shapes(
 
 
 def _collect_metadata(model: torch.nn.Module) -> dict:
-    """Collect metadata from the model for storage in .pte extra_files."""
-    # Serialize the fitting output definitions so that ModelOutputDef
-    # can be reconstructed at inference time without loading the full model.
+    """Collect metadata from the model for C++ inference.
+
+    This metadata is stored as ``metadata.json`` in .pt2 archives and as
+    ``model_def_script.json`` (legacy) in .pte archives.  C++ reads these
+    flat JSON fields because compiling model API methods as AOTInductor
+    entry points is impractical (~12 s per trivial function) and string
+    outputs (``get_type_map``) cannot be expressed as tensor I/O.
+
+    The ``fitting_output_defs`` list is also included so that
+    ``ModelOutputDef`` can be reconstructed without loading the full model.
+    """
     fitting_output_def = model.atomic_output_def()
     fitting_output_defs = []
     for vdef in fitting_output_def.get_data().values():
@@ -189,11 +197,9 @@ def _collect_metadata(model: torch.nn.Module) -> dict:
         "type_map": model.get_type_map(),
         "rcut": model.get_rcut(),
         "sel": model.get_sel(),
-        "model_output_type": model.model_output_type(),
         "dim_fparam": model.get_dim_fparam(),
         "dim_aparam": model.get_dim_aparam(),
         "mixed_types": model.mixed_types(),
-        "sel_type": model.get_sel_type(),
         "has_default_fparam": model.has_default_fparam(),
         "default_fparam": model.get_default_fparam(),
         "fitting_output_defs": fitting_output_defs,
@@ -214,8 +220,8 @@ def serialize_from_file(model_file: str) -> dict:
     -------
     dict
         The serialized model data.  If the archive contains
-        ``model_params.json``, it is included under the
-        ``"model_params"`` key.
+        ``model_def_script.json`` (training config), it is included
+        under the ``"model_def_script"`` key.
     """
     if model_file.endswith(".pt2"):
         return _serialize_from_file_pt2(model_file)
@@ -225,12 +231,14 @@ def serialize_from_file(model_file: str) -> dict:
 
 def _serialize_from_file_pte(model_file: str) -> dict:
     """Serialize a .pte model file to a dictionary."""
-    extra_files = {"model.json": "", "model_params.json": ""}
+    extra_files = {"model.json": "", "model_def_script.json": ""}
     torch.export.load(model_file, extra_files=extra_files)
     model_dict = json.loads(extra_files["model.json"])
     model_dict = _json_to_numpy(model_dict)
-    if extra_files["model_params.json"]:
-        model_dict["model_params"] = json.loads(extra_files["model_params.json"])
+    if extra_files["model_def_script.json"]:
+        model_dict["model_def_script"] = json.loads(
+            extra_files["model_def_script.json"]
+        )
     return model_dict
 
 
@@ -247,13 +255,15 @@ def _serialize_from_file_pt2(model_file: str) -> dict:
                 f"Invalid .pt2 file '{model_file}': missing 'extra/model.json'"
             )
         model_json = zf.read("extra/model.json").decode("utf-8")
-        model_params_json = ""
-        if "extra/model_params.json" in zf.namelist():
-            model_params_json = zf.read("extra/model_params.json").decode("utf-8")
+        model_def_script_json = ""
+        if "extra/model_def_script.json" in zf.namelist():
+            model_def_script_json = zf.read("extra/model_def_script.json").decode(
+                "utf-8"
+            )
     model_dict = json.loads(model_json)
     model_dict = _json_to_numpy(model_dict)
-    if model_params_json:
-        model_dict["model_params"] = json.loads(model_params_json)
+    if model_def_script_json:
+        model_dict["model_def_script"] = json.loads(model_def_script_json)
     return model_dict
 
 
@@ -390,16 +400,16 @@ def _deserialize_to_file_pte(
     model_params: dict | None = None,
 ) -> None:
     """Deserialize a dictionary to a .pte model file."""
-    exported, metadata, data_for_json, _output_keys = _trace_and_export(
+    exported, metadata, data_for_json, output_keys = _trace_and_export(
         data, model_json_override
     )
 
+    metadata["output_keys"] = output_keys
     extra_files = {
-        "model_def_script.json": json.dumps(metadata),
+        "metadata.json": json.dumps(metadata),
+        "model_def_script.json": json.dumps(model_params or {}),
         "model.json": json.dumps(data_for_json, separators=(",", ":")),
     }
-    if model_params is not None:
-        extra_files["model_params.json"] = json.dumps(model_params)
 
     torch.export.save(exported, model_file, extra_files=extra_files)
 
@@ -430,12 +440,11 @@ def _deserialize_to_file_pt2(
     aoti_compile_and_package(exported, package_path=model_file)
 
     # Embed metadata into the .pt2 ZIP archive
+    metadata["output_keys"] = output_keys
     with zipfile.ZipFile(model_file, "a") as zf:
-        zf.writestr("extra/model_def_script.json", json.dumps(metadata))
-        zf.writestr("extra/output_keys.json", json.dumps(output_keys))
+        zf.writestr("extra/metadata.json", json.dumps(metadata))
+        zf.writestr("extra/model_def_script.json", json.dumps(model_params or {}))
         zf.writestr(
             "extra/model.json",
             json.dumps(data_for_json, separators=(",", ":")),
         )
-        if model_params is not None:
-            zf.writestr("extra/model_params.json", json.dumps(model_params))

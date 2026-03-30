@@ -344,7 +344,7 @@ def change_bias(
         )
 
         model_to_change = BaseModel.deserialize(pte_data["model"])
-        model_params = None
+        model_params = pte_data.get("model_def_script")
     else:
         raise RuntimeError(
             "The model provided must be a checkpoint file with a .pt extension "
@@ -440,7 +440,9 @@ def change_bias(
             )
         )
         model_dict = model_to_change.serialize()
-        deserialize_to_file(output_path, {"model": model_dict})
+        deserialize_to_file(
+            output_path, {"model": model_dict}, model_params=model_params
+        )
     log.info(f"Saved model to {output_path}")
 
 

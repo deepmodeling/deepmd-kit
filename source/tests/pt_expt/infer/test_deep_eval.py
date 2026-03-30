@@ -104,11 +104,35 @@ class TestDeepEvalEner(unittest.TestCase):
         self.assertIsInstance(mod, torch.nn.Module)
 
     def test_get_model_def_script(self) -> None:
+        """Without model_params, get_model_def_script returns {}."""
         mds = self.dp.deep_eval.get_model_def_script()
         self.assertIsInstance(mds, dict)
-        self.assertEqual(mds["type_map"], self.type_map)
-        self.assertAlmostEqual(mds["rcut"], self.rcut)
-        self.assertEqual(mds["sel"], list(self.sel))
+        self.assertEqual(mds, {})
+
+    def test_get_model_def_script_with_params(self) -> None:
+        """Export with model_params → get_model_def_script returns them."""
+        training_config = {"type_map": self.type_map, "descriptor": {"type": "se_e2_a"}}
+        with tempfile.NamedTemporaryFile(suffix=".pte", delete=False) as f:
+            tmpfile2 = f.name
+        try:
+            deserialize_to_file(tmpfile2, self.model_data, model_params=training_config)
+            dp2 = DeepPot(tmpfile2)
+            mds = dp2.deep_eval.get_model_def_script()
+            self.assertEqual(mds, training_config)
+        finally:
+            import os
+
+            os.unlink(tmpfile2)
+
+    def test_model_api_delegation(self) -> None:
+        """Verify that model API calls are delegated to the deserialized dpmodel."""
+        de = self.dp.deep_eval
+        self.assertIsNotNone(de._dpmodel)
+        self.assertAlmostEqual(de.get_rcut(), self.rcut)
+        self.assertEqual(de.get_type_map(), self.type_map)
+        self.assertEqual(de.get_dim_fparam(), 0)
+        self.assertEqual(de.get_dim_aparam(), 0)
+        self.assertEqual(de.get_sel_type(), self.model.get_sel_type())
 
     def test_eval_consistency(self) -> None:
         """Test that DeepPot.eval gives same results as direct model forward."""
@@ -210,8 +234,7 @@ class TestDeepEvalEner(unittest.TestCase):
         Compares exported module output against direct forward_common_lower
         for multiple nloc values.
         """
-        extra_files = {"model_def_script.json": ""}
-        exported = torch.export.load(self.tmpfile.name, extra_files=extra_files)
+        exported = torch.export.load(self.tmpfile.name)
         exported_mod = exported.module()
 
         for nloc in [2, 5, 10]:
@@ -562,11 +585,41 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         self.assertIs(self.dp.deep_eval.model_type, DeepPot)
 
     def test_get_model_def_script(self) -> None:
+        """Without model_params, get_model_def_script returns {}."""
         mds = self.dp.deep_eval.get_model_def_script()
         self.assertIsInstance(mds, dict)
-        self.assertEqual(mds["type_map"], self.type_map)
-        self.assertAlmostEqual(mds["rcut"], self.rcut)
-        self.assertEqual(mds["sel"], list(self.sel))
+        self.assertEqual(mds, {})
+
+    def test_get_model_def_script_with_params(self) -> None:
+        """Export with model_params → get_model_def_script returns them."""
+        training_config = {"type_map": self.type_map, "descriptor": {"type": "se_e2_a"}}
+        with tempfile.NamedTemporaryFile(suffix=".pt2", delete=False) as f:
+            tmpfile2 = f.name
+        try:
+            torch.set_default_device(None)
+            try:
+                deserialize_to_file(
+                    tmpfile2, self.model_data, model_params=training_config
+                )
+            finally:
+                torch.set_default_device("cuda:9999999")
+            dp2 = DeepPot(tmpfile2)
+            mds = dp2.deep_eval.get_model_def_script()
+            self.assertEqual(mds, training_config)
+        finally:
+            import os
+
+            os.unlink(tmpfile2)
+
+    def test_model_api_delegation(self) -> None:
+        """Verify that model API calls are delegated to the deserialized dpmodel."""
+        de = self.dp.deep_eval
+        self.assertIsNotNone(de._dpmodel)
+        self.assertAlmostEqual(de.get_rcut(), self.rcut)
+        self.assertEqual(de.get_type_map(), self.type_map)
+        self.assertEqual(de.get_dim_fparam(), 0)
+        self.assertEqual(de.get_dim_aparam(), 0)
+        self.assertEqual(de.get_sel_type(), self.model.get_sel_type())
 
     def test_pt2_file_is_zip(self) -> None:
         """The .pt2 file should be a valid ZIP archive."""
@@ -576,9 +629,11 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         """The .pt2 ZIP should contain metadata entries."""
         with zipfile.ZipFile(self.tmpfile.name, "r") as zf:
             names = zf.namelist()
+            self.assertIn("extra/metadata.json", names)
             self.assertIn("extra/model_def_script.json", names)
-            self.assertIn("extra/output_keys.json", names)
             self.assertIn("extra/model.json", names)
+            self.assertNotIn("extra/output_keys.json", names)
+            self.assertNotIn("extra/model_params.json", names)
 
     def test_eval_consistency(self) -> None:
         """Test that DeepPot.eval gives same results as direct model forward."""
