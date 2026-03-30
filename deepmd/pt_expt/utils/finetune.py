@@ -33,11 +33,7 @@ def _load_model_params(finetune_model: str) -> dict[str, Any]:
         )
 
         data = serialize_from_file(finetune_model)
-        # Prefer embedded model_def_script (full training config); fall back to
-        # a minimal dict with just type_map for older .pte files.
-        if "model_def_script" in data:
-            return data["model_def_script"]
-        return {"type_map": data["model"]["type_map"]}
+        return data["model_def_script"]
     else:
         state_dict = torch.load(finetune_model, map_location=DEVICE, weights_only=True)
         if "model" in state_dict:
