@@ -18,6 +18,9 @@ from deepmd.pd.utils.env import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.loss import (
+    resolve_huber_deltas,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -56,7 +59,7 @@ class EnergyStdLoss(TaskLoss):
         loss_func: str = "mse",
         inference: bool = False,
         use_huber: bool = False,
-        huber_delta: float = 0.01,
+        huber_delta: float | list[float] = 0.01,
         f_use_norm: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -109,8 +112,10 @@ class EnergyStdLoss(TaskLoss):
             - For absolute prediction errors within D: quadratic loss (0.5 * (error**2))
             - For absolute errors exceeding D: linear loss (D * |error| - 0.5 * D)
             Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D).
-        huber_delta : float
-            The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
+        huber_delta : float | list[float]
+            The threshold delta (D) used for Huber loss, controlling transition between
+            L2 and L1 loss. It can be either one float shared by all terms or a list of
+            three values ordered as [energy, force, virial].
         f_use_norm : bool
             If True, use L2 norm of force vectors for loss calculation.
             Not implemented in PD backend, only for serialization compatibility.
@@ -156,6 +161,11 @@ class EnergyStdLoss(TaskLoss):
         self.inference = inference
         self.use_huber = use_huber
         self.huber_delta = huber_delta
+        (
+            self._huber_delta_energy,
+            self._huber_delta_force,
+            self._huber_delta_virial,
+        ) = resolve_huber_deltas(huber_delta)
         if self.use_huber and (
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
@@ -238,7 +248,7 @@ class EnergyStdLoss(TaskLoss):
                     l_huber_loss = custom_huber_loss(
                         atom_norm * energy_pred,
                         atom_norm * energy_label,
-                        delta=self.huber_delta,
+                        delta=self._huber_delta_energy,
                     )
                     loss += pref_e * l_huber_loss
                 rmse_e = l2_ener_loss.sqrt() * atom_norm
@@ -305,7 +315,7 @@ class EnergyStdLoss(TaskLoss):
                         l_huber_loss = custom_huber_loss(
                             force_pred.reshape([-1]),
                             force_label.reshape([-1]),
-                            delta=self.huber_delta,
+                            delta=self._huber_delta_force,
                         )
                         loss += pref_f * l_huber_loss
                     rmse_f = l2_force_loss.sqrt()
@@ -409,7 +419,7 @@ class EnergyStdLoss(TaskLoss):
                 l_huber_loss = custom_huber_loss(
                     atom_norm * model_pred["virial"].reshape([-1]),
                     atom_norm * label["virial"].reshape([-1]),
-                    delta=self.huber_delta,
+                    delta=self._huber_delta_virial,
                 )
                 loss += pref_v * l_huber_loss
             rmse_v = l2_virial_loss.sqrt() * atom_norm
@@ -440,7 +450,7 @@ class EnergyStdLoss(TaskLoss):
                     l_huber_loss = custom_huber_loss(
                         atom_ener_reshape,
                         atom_ener_label_reshape,
-                        delta=self.huber_delta,
+                        delta=self._huber_delta_energy,
                     )
                     loss += pref_ae * l_huber_loss
                 rmse_ae = l2_atom_ener_loss.sqrt()

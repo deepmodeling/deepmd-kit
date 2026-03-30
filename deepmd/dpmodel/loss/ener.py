@@ -14,6 +14,9 @@ from deepmd.dpmodel.loss.loss import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.loss import (
+    resolve_huber_deltas,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -74,8 +77,10 @@ class EnergyLoss(Loss):
         - For absolute prediction errors within D: quadratic loss (0.5 * (error**2))
         - For absolute errors exceeding D: linear loss (D * |error| - 0.5 * D)
         Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D).
-    huber_delta : float
-        The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
+    huber_delta : float | list[float]
+        The threshold delta (D) used for Huber loss, controlling transition between
+        L2 and L1 loss. It can be either one float shared by all terms or a list of
+        three values ordered as [energy, force, virial].
     loss_func : str
         Loss function type for energy, force, and virial terms.
         Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss).
@@ -84,6 +89,7 @@ class EnergyLoss(Loss):
     f_use_norm : bool
         If true, use L2 norm of force vectors for loss calculation when loss_func='mae' or use_huber is True.
         Instead of computing loss on force components, computes loss on ||F_pred - F_label||_2.
+        This treats the force vector as a whole rather than three independent components.
     **kwargs
         Other keyword arguments.
     """
@@ -107,7 +113,7 @@ class EnergyLoss(Loss):
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
         use_huber: bool = False,
-        huber_delta: float = 0.01,
+        huber_delta: float | list[float] = 0.01,
         loss_func: str = "mse",
         f_use_norm: bool = False,
         **kwargs: Any,
@@ -153,6 +159,11 @@ class EnergyLoss(Loss):
             raise RuntimeError(
                 "f_use_norm can only be True when use_huber or loss_func='mae'."
             )
+        (
+            self._huber_delta_energy,
+            self._huber_delta_force,
+            self._huber_delta_virial,
+        ) = resolve_huber_deltas(huber_delta)
         if self.use_huber and (
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
@@ -216,7 +227,10 @@ class EnergyLoss(Loss):
 
         if self.relative_f is not None:
             force_hat_3 = xp.reshape(force_hat, (-1, 3))
-            norm_f = xp.reshape(xp.norm(force_hat_3, axis=1), (-1, 1)) + self.relative_f
+            norm_f = (
+                xp.reshape(xp.linalg.vector_norm(force_hat_3, axis=1), (-1, 1))
+                + self.relative_f
+            )
             diff_f_3 = xp.reshape(diff_f, (-1, 3))
             diff_f_3 = diff_f_3 / norm_f
             diff_f = xp.reshape(diff_f_3, (-1,))
@@ -251,7 +265,7 @@ class EnergyLoss(Loss):
                     l_huber_loss = custom_huber_loss(
                         atom_norm_ener * energy,
                         atom_norm_ener * energy_hat,
-                        delta=self.huber_delta,
+                        delta=self._huber_delta_energy,
                     )
                     loss += pref_e * l_huber_loss
                 more_loss["rmse_e"] = self.display_if_exist(
@@ -282,7 +296,7 @@ class EnergyLoss(Loss):
                         l_huber_loss = custom_huber_loss(
                             xp.reshape(force, (-1,)),
                             xp.reshape(force_hat, (-1,)),
-                            delta=self.huber_delta,
+                            delta=self._huber_delta_force,
                         )
                     else:
                         force_diff_3 = xp.reshape(force_hat - force, (-1, 3))
@@ -292,7 +306,7 @@ class EnergyLoss(Loss):
                         l_huber_loss = custom_huber_loss(
                             force_diff_norm,
                             xp.zeros_like(force_diff_norm),
-                            delta=self.huber_delta,
+                            delta=self._huber_delta_force,
                         )
                     loss += pref_f * l_huber_loss
                 more_loss["rmse_f"] = self.display_if_exist(
@@ -326,7 +340,7 @@ class EnergyLoss(Loss):
                     l_huber_loss = custom_huber_loss(
                         atom_norm * virial_reshape,
                         atom_norm * virial_hat_reshape,
-                        delta=self.huber_delta,
+                        delta=self._huber_delta_virial,
                     )
                     loss += pref_v * l_huber_loss
                 more_loss["rmse_v"] = self.display_if_exist(
@@ -348,7 +362,6 @@ class EnergyLoss(Loss):
         if self.has_ae:
             atom_ener_reshape = xp.reshape(atom_ener, (-1,))
             atom_ener_hat_reshape = xp.reshape(atom_ener_hat, (-1,))
-
             if self.loss_func == "mse":
                 l2_atom_ener_loss = xp.mean(
                     xp.square(atom_ener_hat_reshape - atom_ener_reshape),
@@ -359,7 +372,7 @@ class EnergyLoss(Loss):
                     l_huber_loss = custom_huber_loss(
                         atom_ener_reshape,
                         atom_ener_hat_reshape,
-                        delta=self.huber_delta,
+                        delta=self._huber_delta_energy,
                     )
                     loss += pref_ae * l_huber_loss
                 more_loss["rmse_ae"] = self.display_if_exist(
