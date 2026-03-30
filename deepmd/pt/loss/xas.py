@@ -61,7 +61,9 @@ class XASLoss(TaskLoss):
     XAS spectra should be smooth.  A second-order finite-difference penalty
     on the predicted intensity dimensions discourages high-frequency wiggles::
 
-        L_smooth = smooth_reg * mean( (pred[:,i+1] - 2*pred[:,i] + pred[:,i-1])^2 )
+        L_smooth = smooth_reg * mean(
+            (pred[:, i + 1] - 2 * pred[:, i] + pred[:, i - 1]) ^ 2
+        )
 
     The regulariser is applied to the raw NN output (before adding ``e_ref``),
     so it acts on chemical-shift–normalised intensities.
@@ -334,9 +336,7 @@ class XASLoss(TaskLoss):
                     raise RuntimeError(f"Unknown loss function: {self.loss_func}")
 
             loss += self.pref_energy * _elem_loss(pred[:, :2], label_shifted[:, :2])
-            loss += self.pref_spectrum * _elem_loss(
-                pred[:, 2:], label_shifted[:, 2:]
-            )
+            loss += self.pref_spectrum * _elem_loss(pred[:, 2:], label_shifted[:, 2:])
 
         # --- smoothness regulariser on intensity dims (2:) ---
         # Penalise second-order finite differences (curvature) of the predicted

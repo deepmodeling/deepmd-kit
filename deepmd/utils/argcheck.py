@@ -3493,15 +3493,11 @@ def loss_xas() -> list[Argument]:
         ),
         Argument("metric", list, optional=True, default=["mae"], doc=doc_metric),
         Argument("beta", float, optional=True, default=1.0, doc=doc_beta),
-        Argument(
-            "pref_energy", float, optional=True, default=1.0, doc=doc_pref_energy
-        ),
+        Argument("pref_energy", float, optional=True, default=1.0, doc=doc_pref_energy),
         Argument(
             "pref_spectrum", float, optional=True, default=1.0, doc=doc_pref_spectrum
         ),
-        Argument(
-            "smooth_reg", float, optional=True, default=0.0, doc=doc_smooth_reg
-        ),
+        Argument("smooth_reg", float, optional=True, default=0.0, doc=doc_smooth_reg),
     ]
 
 
