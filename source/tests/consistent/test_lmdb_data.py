@@ -135,22 +135,21 @@ class TestLmdbDataConsistency(unittest.TestCase):
             f"{cls._tmpdir.name}/test.lmdb", nframes=10, natoms=6
         )
         cls._type_map = ["O", "H"]
+        cls._reader = LmdbDataReader(cls._lmdb_path, cls._type_map, batch_size=2)
+        cls._ds = LmdbDataset(cls._lmdb_path, cls._type_map, batch_size=2)
 
     @classmethod
     def tearDownClass(cls):
+        del cls._ds, cls._reader
         cls._tmpdir.cleanup()
 
     def test_same_len(self):
-        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
-        ds = LmdbDataset(self._lmdb_path, self._type_map, batch_size=2)
-        self.assertEqual(len(reader), len(ds))
+        self.assertEqual(len(self._reader), len(self._ds))
 
     def test_same_frame_data(self):
-        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
-        ds = LmdbDataset(self._lmdb_path, self._type_map, batch_size=2)
-        for i in range(len(reader)):
-            frame_dp = reader[i]
-            frame_pt = ds[i]
+        for i in range(len(self._reader)):
+            frame_dp = self._reader[i]
+            frame_pt = self._ds[i]
             self.assertEqual(set(frame_dp.keys()), set(frame_pt.keys()))
             for key in frame_dp:
                 dp_val = frame_dp[key]
@@ -168,11 +167,9 @@ class TestLmdbDataConsistency(unittest.TestCase):
         self.assertEqual(reader.batch_size, ds.batch_size)
 
     def test_same_properties(self):
-        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
-        ds = LmdbDataset(self._lmdb_path, self._type_map, batch_size=2)
-        self.assertEqual(reader.index, ds.index)
-        self.assertEqual(reader.total_batch, ds.total_batch)
-        self.assertEqual(reader.batch_sizes, ds.batch_sizes)
+        self.assertEqual(self._reader.index, self._ds.index)
+        self.assertEqual(self._reader.total_batch, self._ds.total_batch)
+        self.assertEqual(self._reader.batch_sizes, self._ds.batch_sizes)
 
     def test_data_requirement(self):
         req = [
@@ -205,19 +202,20 @@ class TestMixedNlocConsistency(unittest.TestCase):
         cls._tmpdir = tempfile.TemporaryDirectory()
         cls._lmdb_path = _create_mixed_nloc_lmdb(f"{cls._tmpdir.name}/mixed.lmdb")
         cls._type_map = ["O", "H"]
+        cls._reader = LmdbDataReader(cls._lmdb_path, cls._type_map, batch_size=2)
+        cls._ds = LmdbDataset(cls._lmdb_path, cls._type_map, batch_size=2)
 
     @classmethod
     def tearDownClass(cls):
+        del cls._ds, cls._reader
         cls._tmpdir.cleanup()
 
     def test_collate_mixed_nloc_raises(self):
-        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
         with self.assertRaises(NotImplementedError):
-            _collate_lmdb_batch([reader[0], reader[4]])
+            _collate_lmdb_batch([self._reader[0], self._reader[4]])
 
     def test_collate_same_nloc_ok(self):
-        reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size=2)
-        batch = _collate_lmdb_batch([reader[0], reader[1]])
+        batch = _collate_lmdb_batch([self._reader[0], self._reader[1]])
         self.assertEqual(batch["coord"].shape[0], 2)
 
     def test_mixed_batch_true_raises(self):
@@ -225,16 +223,14 @@ class TestMixedNlocConsistency(unittest.TestCase):
             LmdbDataset(self._lmdb_path, self._type_map, batch_size=2, mixed_batch=True)
 
     def test_pt_dataset_mixed_batch_flag(self):
-        ds = LmdbDataset(self._lmdb_path, self._type_map, batch_size=2)
-        self.assertFalse(ds.mixed_batch)
+        self.assertFalse(self._ds.mixed_batch)
 
     def test_pt_full_epoch_mixed_nloc(self):
         import torch
 
-        ds = LmdbDataset(self._lmdb_path, self._type_map, batch_size=2)
         all_fids = []
         with torch.device("cpu"):
-            for dl in ds.dataloaders:
+            for dl in self._ds.dataloaders:
                 for batch in dl:
                     atype = batch["atype"]
                     nloc = atype.shape[1]
