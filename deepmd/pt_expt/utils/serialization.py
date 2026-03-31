@@ -167,8 +167,8 @@ def _build_dynamic_shapes(
 def _collect_metadata(model: torch.nn.Module) -> dict:
     """Collect metadata from the model for C++ inference.
 
-    This metadata is stored as ``metadata.json`` in .pt2 archives and as
-    ``model_def_script.json`` (legacy) in .pte archives.  C++ reads these
+    This metadata is stored as ``metadata.json`` in both .pt2 and .pte archives.
+    Training config is stored separately in ``model_def_script.json``.  C++ reads
     flat JSON fields because compiling model API methods as AOTInductor
     entry points is impractical (~12 s per trivial function) and string
     outputs (``get_type_map``) cannot be expressed as tensor I/O.

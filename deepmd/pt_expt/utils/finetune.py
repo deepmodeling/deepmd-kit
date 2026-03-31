@@ -78,7 +78,7 @@ def get_finetune_rules(
         raise ValueError(
             "Cannot use --use-pretrain-script: the pretrained model does not "
             "contain full model params.  If finetuning from a .pte file, "
-            "re-freeze it with the latest code so that model_params is embedded."
+            "re-freeze it with the latest code so that model_def_script is embedded."
         )
 
     finetune_from_multi_task = "model_dict" in last_model_params

@@ -288,6 +288,8 @@ class TestChangeBias(unittest.TestCase):
         )
 
         # Freeze to .pt2
+        # Clear default device: tests/pt/__init__.py sets it to "cuda:9999999"
+        # for CPU fallback, which poisons AOTInductor compilation.
         pt2_path = os.path.join(self.tmpdir, "frozen_mds.pt2")
         torch.set_default_device(None)
         try:
@@ -301,7 +303,7 @@ class TestChangeBias(unittest.TestCase):
         original_mds = original_data["model_def_script"]
         self.assertIn("type_map", original_mds)  # training config has model params
 
-        # Run change-bias with user-defined values
+        # Run change-bias with user-defined values (same device workaround)
         output_pt2 = os.path.join(self.tmpdir, "frozen_mds_updated.pt2")
         torch.set_default_device(None)
         try:
