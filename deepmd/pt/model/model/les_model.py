@@ -5,6 +5,7 @@ from typing import (
 )
 
 import torch
+import pytorch_finufft
 
 from deepmd.pt.model.model.transform_output import (
     communicate_extended_output,
@@ -97,6 +98,189 @@ class LESEnergyModel(DPModelCommon, LESEnergyModel_):
         if self._hessian_enabled:
             output_def["hessian"] = out_def_data["energy_derv_r_derv_r"]
         return output_def
+
+    def _compute_les_frame_correction(
+        self,
+        coord: torch.Tensor,
+        latent_charge: torch.Tensor,
+        box: torch.Tensor,
+    ) -> torch.Tensor:
+        fitting = self.get_fitting_net()
+        runtime_device = coord.device
+        real_dtype = coord.dtype
+        complex_dtype = torch.complex128 if real_dtype == torch.float64 else torch.complex64
+        latent_charge = latent_charge.to(device=runtime_device, dtype=real_dtype)
+        box = box.to(device=runtime_device, dtype=real_dtype)
+
+        sigma_raw = getattr(fitting, "sigma", None)
+        if sigma_raw is None:
+            raise ValueError("LES fitting net should provide `sigma` for frame correction.")
+        sigma = torch.as_tensor(
+            sigma_raw,
+            dtype=real_dtype,
+            device=runtime_device,
+        ).reshape(-1)[0]
+        sigma = torch.clamp(sigma, min=torch.finfo(real_dtype).eps)
+        remove_self_interaction = bool(fitting.remove_self_interaction)
+        n_dl = int(fitting.n_dl)
+
+        nf, _, _ = coord.shape
+        corr = torch.zeros((nf, 1), dtype=real_dtype, device=runtime_device)
+
+        for ff in range(nf):
+            r_raw = coord[ff]
+            q = latent_charge[ff]
+            box_frame = box[ff]
+
+            volume = torch.det(box_frame)
+            if torch.abs(volume) <= torch.finfo(real_dtype).eps:
+                raise ValueError("`box` is singular (near-zero volume), cannot run NUFFT.")
+
+            cell_inv = torch.linalg.inv(box_frame)
+            r_frac = torch.matmul(r_raw, cell_inv)
+            r_frac = torch.remainder(r_frac + 0.5, 1.0) - 0.5
+            pi_tensor = torch.tensor(torch.pi, dtype=real_dtype, device=runtime_device)
+            point_limit = pi_tensor - 32.0 * torch.finfo(real_dtype).eps
+            r_in = torch.clamp(
+                2.0 * pi_tensor * r_frac,
+                min=-point_limit,
+                max=point_limit,
+            ).contiguous()
+            nufft_points = r_in.transpose(0, 1).contiguous()
+
+            norms = torch.norm(box_frame, dim=1)
+            nk = [max(1, int(n.item() / n_dl)) for n in norms]
+            n1 = torch.arange(-nk[0], nk[0] + 1, device=runtime_device, dtype=real_dtype)
+            n2 = torch.arange(-nk[1], nk[1] + 1, device=runtime_device, dtype=real_dtype)
+            n3 = torch.arange(-nk[2], nk[2] + 1, device=runtime_device, dtype=real_dtype)
+
+            kx_grid, ky_grid, kz_grid = torch.meshgrid(n1, n2, n3, indexing="ij")
+            k_sq = kx_grid**2 + ky_grid**2 + kz_grid**2
+            zero_mask = k_sq == 0
+
+            k_sq_safe = torch.where(zero_mask, torch.ones_like(k_sq), k_sq)
+            kfac = torch.exp(-0.5 * (sigma**2) * k_sq_safe) / k_sq_safe
+            kfac = kfac.to(dtype=real_dtype)
+            kfac[zero_mask] = 0.0
+
+            q_t = q.transpose(0, 1).contiguous()
+            charge = torch.complex(q_t, torch.zeros_like(q_t)).to(dtype=complex_dtype)
+            recon = pytorch_finufft.functional.finufft_type1(
+                nufft_points,
+                charge,
+                output_shape=tuple(int(x) for x in kx_grid.shape),
+                eps=1e-4,
+                isign=-1,
+            )
+            conv = kfac.unsqueeze(0) * recon
+            ifft_conv = pytorch_finufft.functional.finufft_type2(
+                nufft_points,
+                conv,
+                eps=1e-4,
+                isign=1,
+            ) / (2.0 * volume)
+            corr[ff, 0] = (charge * ifft_conv).real.sum()
+
+            if remove_self_interaction:
+                diag_sum = kfac.sum(dim=-1).sum(dim=-1).sum(dim=-1) / (2.0 * volume)
+                corr[ff, 0] -= torch.sum(q**2) * diag_sum
+
+        return corr
+
+    def _apply_frame_correction_lower(
+        self,
+        model_ret: dict[str, torch.Tensor],
+        extended_coord: torch.Tensor,
+        nlist: torch.Tensor,
+        box: Optional[torch.Tensor],
+        do_atomic_virial: bool,
+    ) -> dict[str, torch.Tensor]:
+        if box is None or "latent_charge" not in model_ret:
+            return model_ret
+
+        nf, nloc, _ = nlist.shape
+        nall = extended_coord.shape[1]
+        coord_local = extended_coord[:, :nloc, :]
+        box_local = box.view(nf, 3, 3)
+        latent_charge = model_ret["latent_charge"]
+        corr_redu = self._compute_les_frame_correction(coord_local, latent_charge, box_local)
+
+        model_ret["energy_redu"] = model_ret["energy_redu"] + corr_redu.to(model_ret["energy_redu"].dtype)
+
+        if self.do_grad_r("energy") or self.do_grad_c("energy"):
+            corr_force_ext = -torch.autograd.grad(
+                corr_redu.sum(),
+                extended_coord,
+                create_graph=self.training,
+                retain_graph=True,
+            )[0].view(nf, nall, 3)
+            if "energy_derv_r" in model_ret:
+                model_ret["energy_derv_r"] = model_ret["energy_derv_r"] + corr_force_ext.unsqueeze(-2).to(
+                    model_ret["energy_derv_r"].dtype
+                )
+
+            if self.do_grad_c("energy"):
+                corr_virial_ext = torch.einsum(
+                    "fai,faj->faij",
+                    corr_force_ext,
+                    extended_coord,
+                ).reshape(nf, nall, 1, 9)
+                corr_virial_redu = corr_virial_ext.sum(dim=1)
+                if "energy_derv_c_redu" in model_ret:
+                    model_ret["energy_derv_c_redu"] = model_ret["energy_derv_c_redu"] + corr_virial_redu.to(
+                        model_ret["energy_derv_c_redu"].dtype
+                    )
+                if do_atomic_virial and "energy_derv_c" in model_ret:
+                    corr_atom_virial = torch.zeros(
+                        (nf, nall, 1, 9),
+                        dtype=corr_virial_ext.dtype,
+                        device=corr_virial_ext.device,
+                    )
+                    corr_atom_virial[:, :nloc, :, :] = corr_virial_ext[:, :nloc, :, :]
+                    model_ret["energy_derv_c"] = model_ret["energy_derv_c"] + corr_atom_virial.to(
+                        model_ret["energy_derv_c"].dtype
+                    )
+
+        return model_ret
+
+    @torch.jit.export
+    def forward_common_lower(
+        self,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: Optional[torch.Tensor] = None,
+        fparam: Optional[torch.Tensor] = None,
+        aparam: Optional[torch.Tensor] = None,
+        do_atomic_virial: bool = False,
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        extra_nlist_sort: bool = False,
+        extended_coord_corr: Optional[torch.Tensor] = None,
+    ) -> dict[str, torch.Tensor]:
+        if self.do_grad_r("energy") or self.do_grad_c("energy"):
+            extended_coord = extended_coord.requires_grad_(True)
+        model_ret = super().forward_common_lower(
+            extended_coord,
+            extended_atype,
+            nlist,
+            mapping,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
+            comm_dict=comm_dict,
+            extra_nlist_sort=extra_nlist_sort,
+            extended_coord_corr=extended_coord_corr,
+        )
+        box = None
+        if comm_dict is not None and "box" in comm_dict:
+            box = comm_dict["box"]
+        return self._apply_frame_correction_lower(
+            model_ret,
+            extended_coord,
+            nlist,
+            box,
+            do_atomic_virial,
+        )
 
     def forward(
         self,

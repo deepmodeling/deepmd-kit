@@ -461,6 +461,10 @@ class LRFittingNet(Fitting):
     def _lr_net_out_dim(self) -> int:
         """Set the LR FittingNet output dim."""
         return self.dim_out_lr
+
+    def _corr_head(self, lr_out: torch.Tensor) -> torch.Tensor:
+        # TODO: Add latent_charge correction logic after LR output is finalized.
+        return lr_out
     
     def _extend_f_avg_std(self, xx: torch.Tensor, nb: int) -> torch.Tensor:
         return torch.tile(xx.view([1, self.numb_fparam]), [nb, 1])
@@ -566,6 +570,7 @@ class LRFittingNet(Fitting):
         mask = self.emask(atype).to(torch.bool)
         sr_out = torch.where(mask[:, :, None], sr_out, 0.0)
         lr_out = torch.where(mask[:, :, None], lr_out, 0.0)
+        lr_out = self._corr_head(lr_out)
         results.update({"sr": sr_out, "lr": lr_out})
         return results
     

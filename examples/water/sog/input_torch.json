@@ -41,7 +41,7 @@
       "type": "sog_energy",
       "var_name": "energy",
       "dim_out_sr": 1,
-      "dim_out_lr": 2,
+      "dim_out_lr": 1,
       "neuron_sr": [
         240,
         240,
@@ -58,20 +58,6 @@
       "seed": 1,
       "_comment": "SOG-specific long-range kernel parameters",
       "shift": [
-        0.275,
-        0.1375,
-        0.0688,
-        0.0344,
-        0.0172,
-        0.0086,
-        0.0043,
-        0.0021,
-        0.0011,
-        0.0005,
-        0.0003,
-        0.0001
-      ],
-      "amplitude": [
         2.8,
         5.7,
         11.4,
@@ -84,6 +70,20 @@
         1456.0,
         2912.0,
         5823.9
+      ],
+      "amplitude": [
+        0.275,
+        0.1375,
+        0.0688,
+        0.0344,
+        0.0172,
+        0.0086,
+        0.0043,
+        0.0021,
+        0.0011,
+        0.0005,
+        0.0003,
+        0.0001
       ]
     }
   },
@@ -124,10 +124,10 @@
       ],
       "batch_size": 1
     },
-    "numb_steps": 500000,
+    "numb_steps": 1000,
     "gradient_max_norm": 5.0,
     "seed": 10,
-    "disp_file": "lcurve_lr_2.out",
+    "disp_file": "lcurve_test_3.out",
     "disp_freq": 100,
     "save_freq": 2000
   }

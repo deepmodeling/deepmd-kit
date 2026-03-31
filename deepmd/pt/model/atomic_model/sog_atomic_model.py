@@ -73,6 +73,13 @@ class SOGEnergyAtomicModel(BaseAtomicModel):
                     r_differentiable=True,
                     c_differentiable=True,
                 ),
+                OutputVariableDef(
+                    name="latent_charge",
+                    shape=[self.fitting_net.dim_out_lr],
+                    reducible=False,
+                    r_differentiable=False,
+                    c_differentiable=False,
+                ),
             ]
         )
 
@@ -165,12 +172,6 @@ class SOGEnergyAtomicModel(BaseAtomicModel):
             h2=h2,
             fparam=fparam,
             aparam=aparam,
-            coord=extended_coord[:, :nloc, :],
-            box=(
-                comm_dict["box"].view(nframes, 3, 3)
-                if comm_dict is not None and "box" in comm_dict
-                else None
-            ),
         )
 
         if self.enable_eval_fitting_last_layer_hook and "middle_output" in energy_ret:
@@ -180,6 +181,7 @@ class SOGEnergyAtomicModel(BaseAtomicModel):
 
         ret = {
             "energy": energy_ret["energy"],
+            "latent_charge": energy_ret["latent_charge"],
         }
         if "middle_output" in energy_ret:
             ret["middle_output"] = energy_ret["middle_output"]
