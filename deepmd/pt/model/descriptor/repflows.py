@@ -35,6 +35,9 @@ from deepmd.pt.utils.env_mat_stat import (
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
+from deepmd.pt.utils.safe_gradient import (
+    safe_for_norm,
+)
 from deepmd.pt.utils.spin import (
     concat_switch_virtual,
 )
@@ -473,9 +476,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         sw = sw.masked_fill(~nlist_mask, 0.0)
 
         # get angle nlist (maybe smaller)
-        a_dist_mask = (torch.linalg.norm(diff, dim=-1) < self.a_rcut)[
-            :, :, : self.a_sel
-        ]
+        a_dist_mask = (safe_for_norm(diff, dim=-1) < self.a_rcut)[:, :, : self.a_sel]
         a_nlist = nlist[:, :, : self.a_sel]
         a_nlist = torch.where(a_dist_mask, a_nlist, -1)
         _, a_diff, a_sw = prod_env_mat(
@@ -512,11 +513,11 @@ class DescrptBlockRepflows(DescriptorBlock):
         edge_input, h2 = torch.split(dmatrix, [1, 3], dim=-1)
         if self.edge_init_use_dist:
             # nb x nloc x nnei x 1
-            edge_input = torch.linalg.norm(diff, dim=-1, keepdim=True)
+            edge_input = safe_for_norm(diff, dim=-1, keepdim=True)
 
         # nf x nloc x a_nnei x 3
         normalized_diff_i = a_diff / (
-            torch.linalg.norm(a_diff, dim=-1, keepdim=True) + 1e-6
+            safe_for_norm(a_diff, dim=-1, keepdim=True) + 1e-6
         )
         # nf x nloc x 3 x a_nnei
         normalized_diff_j = torch.transpose(normalized_diff_i, 2, 3)
