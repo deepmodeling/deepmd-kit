@@ -49,14 +49,12 @@ class TestDPAHessianFinite(unittest.TestCase):
     def test_dpa2_direct_dist_hessian_is_finite(self):
         model_params = copy.deepcopy(model_dpa2)
         model_params["descriptor"]["repformer"]["direct_dist"] = True
-        model_params["hessian_mode"] = True
         self._assert_hessian_finite(model_params)
 
     def test_dpa3_hessian_is_finite(self):
         model_params = copy.deepcopy(model_dpa3)
         model_params["descriptor"]["precision"] = "float64"
         model_params["fitting_net"]["precision"] = "float64"
-        model_params["hessian_mode"] = True
         self._assert_hessian_finite(model_params)
 
 
