@@ -93,6 +93,29 @@ class XASLoss(TaskLoss):
     smooth_reg : float
         Coefficient of the second-order smoothness regulariser applied to
         the predicted intensity dimensions.  0.0 disables it (default).
+    intensity_norm : str
+        Normalisation applied to intensity dimensions **inside the loss only**
+        (model outputs remain in absolute units; freeze/test are unaffected).
+
+        ``"none"`` (default)
+            No normalisation.  Loss is dominated by high-intensity regions,
+            which can cause small features to be ignored and large peaks to be
+            over-smoothed by smooth_reg.
+
+        ``"log1p"``
+            Apply ``log(1 + x)`` to both predicted and label intensities before
+            computing the loss and smooth_reg.  Compresses the dynamic range so
+            that features at 1e-2 and features at 10 receive comparable gradient
+            signal.  Requires non-negative intensities (physically guaranteed for
+            XAS cross-sections; negative transients during training are clamped
+            to 0 before the transform).
+
+        ``"max_frame"``
+            Divide each frame's intensities by ``max(|label|) + eps`` so that
+            every spectrum has a peak of ~1 in loss space.  Equalises the
+            per-frame contribution regardless of absolute cross-section scale.
+            Use this when absolute intensity differences between frames are not
+            physically meaningful.
     """
 
     def __init__(
@@ -107,6 +130,7 @@ class XASLoss(TaskLoss):
         pref_energy: float = 1.0,
         pref_spectrum: float = 1.0,
         smooth_reg: float = 0.0,
+        intensity_norm: str = "none",
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -120,6 +144,11 @@ class XASLoss(TaskLoss):
         self.pref_energy = pref_energy
         self.pref_spectrum = pref_spectrum
         self.smooth_reg = smooth_reg
+        if intensity_norm not in ("none", "log1p", "max_frame"):
+            raise ValueError(
+                f"intensity_norm must be 'none', 'log1p', or 'max_frame', got {intensity_norm!r}"
+            )
+        self.intensity_norm = intensity_norm
 
         # e_ref[sel_type_idx, edge_idx, 0] = mean E_min  (eV)
         # e_ref[sel_type_idx, edge_idx, 1] = mean E_max  (eV)
@@ -303,49 +332,52 @@ class XASLoss(TaskLoss):
         label_shifted = label_xas.clone()
         label_shifted[:, :2] = label_xas[:, :2] - e_ref_frame
 
+        # --- intensity normalisation (loss space only; model output unchanged) ---
+        # Separate intensity dims for possible normalisation before loss/smooth_reg.
+        pred_intens = pred[:, 2:]  # [nf, n_pts]
+        label_intens = label_shifted[:, 2:]
+        if self.intensity_norm == "log1p":
+            # log(1+x): compresses dynamic range so 1e-2 and 10 get comparable
+            # gradient signal.  Clamp predictions to >=0 (physically required for
+            # cross-sections; may transiently go negative early in training).
+            pred_intens = torch.log1p(pred_intens.clamp(min=0.0))
+            label_intens = torch.log1p(label_intens.clamp(min=0.0))
+        elif self.intensity_norm == "max_frame":
+            # Per-frame normalisation: divide by frame's peak label intensity.
+            # Every spectrum contributes equally regardless of absolute scale.
+            norm_factor = (
+                label_intens.abs().max(dim=-1, keepdim=True).values.clamp(min=1e-6)
+            )
+            pred_intens = pred_intens / norm_factor
+            label_intens = label_intens / norm_factor
+
         # --- weighted loss ---
         # Build per-dimension weight vector: pref_energy for dims 0-1,
         # pref_spectrum for dims 2+.
-        loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
-        if self.pref_energy == self.pref_spectrum:
-            # Fast path: uniform weights, use standard reduction.
+        def _elem_loss(p: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
             if self.loss_func == "smooth_mae":
-                loss += F.smooth_l1_loss(
-                    pred, label_shifted, reduction="sum", beta=self.beta
-                )
+                return F.smooth_l1_loss(p, t, reduction="sum", beta=self.beta)
             elif self.loss_func == "mae":
-                loss += F.l1_loss(pred, label_shifted, reduction="sum")
+                return F.l1_loss(p, t, reduction="sum")
             elif self.loss_func == "mse":
-                loss += F.mse_loss(pred, label_shifted, reduction="sum")
+                return F.mse_loss(p, t, reduction="sum")
             elif self.loss_func == "rmse":
-                loss += torch.sqrt(F.mse_loss(pred, label_shifted, reduction="mean"))
+                return torch.sqrt(F.mse_loss(p, t, reduction="mean"))
             else:
                 raise RuntimeError(f"Unknown loss function: {self.loss_func}")
-        else:
-            # Weighted path: split energy dims and spectrum dims.
-            def _elem_loss(p: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
-                if self.loss_func == "smooth_mae":
-                    return F.smooth_l1_loss(p, t, reduction="sum", beta=self.beta)
-                elif self.loss_func == "mae":
-                    return F.l1_loss(p, t, reduction="sum")
-                elif self.loss_func == "mse":
-                    return F.mse_loss(p, t, reduction="sum")
-                elif self.loss_func == "rmse":
-                    return torch.sqrt(F.mse_loss(p, t, reduction="mean"))
-                else:
-                    raise RuntimeError(f"Unknown loss function: {self.loss_func}")
 
-            loss += self.pref_energy * _elem_loss(pred[:, :2], label_shifted[:, :2])
-            loss += self.pref_spectrum * _elem_loss(pred[:, 2:], label_shifted[:, 2:])
+        loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
+        loss += self.pref_energy * _elem_loss(pred[:, :2], label_shifted[:, :2])
+        loss += self.pref_spectrum * _elem_loss(pred_intens, label_intens)
 
-        # --- smoothness regulariser on intensity dims (2:) ---
-        # Penalise second-order finite differences (curvature) of the predicted
-        # spectrum.  This discourages high-frequency wiggles without preventing
-        # legitimate sharp spectral features.
-        #   L_smooth = smooth_reg * mean( (p_{i+1} - 2*p_i + p_{i-1})^2 )
+        # --- smoothness regulariser on intensity dims ---
+        # Computed on the (possibly normalised) intensity tensor so that the
+        # curvature penalty is scale-invariant when intensity_norm is active:
+        #   - "none"      : penalises absolute curvature (dominated by large peaks)
+        #   - "log1p"     : penalises relative curvature uniformly across scales
+        #   - "max_frame" : penalises curvature relative to each frame's peak
         if self.smooth_reg > 0.0 and self.task_dim > 4:
-            intens = pred[:, 2:]  # [nf, n_pts]
-            curv = intens[:, 2:] - 2.0 * intens[:, 1:-1] + intens[:, :-2]
+            curv = pred_intens[:, 2:] - 2.0 * pred_intens[:, 1:-1] + pred_intens[:, :-2]
             loss += self.smooth_reg * (curv**2).mean()
 
         # --- metrics ---
