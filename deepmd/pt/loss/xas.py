@@ -284,14 +284,10 @@ class XASLoss(TaskLoss):
                 if populated.any():
                     e_std_global = e_std[populated].mean(dim=0)  # [2]
                 else:
-                    e_std_global = torch.ones(
-                        2, dtype=e_std.dtype, device=e_std.device
-                    )
+                    e_std_global = torch.ones(2, dtype=e_std.dtype, device=e_std.device)
                 with torch.no_grad():
                     am.out_bias[key_idx, :, :2] = 0.0
-                    am.out_std[key_idx, :, :2] = e_std_global.to(
-                        am.out_std.dtype
-                    )
+                    am.out_std[key_idx, :, :2] = e_std_global.to(am.out_std.dtype)
                 log.info(
                     f"XASLoss: set out_bias[:,:2]=0, out_std[:,:2]={e_std_global.tolist()} eV "
                     "(NN output ±1 ≈ ±e_std eV chemical shift)."
