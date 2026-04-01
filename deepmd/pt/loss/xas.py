@@ -316,14 +316,12 @@ class XASLoss(TaskLoss):
         # sel_type from label: [nf, 1] float → [nf] int
         sel_type = label["sel_type"][:, 0].long()
 
-        # element-wise mean: average atom_prop over atoms of sel_type per frame
+        # Sum atomic contributions over atoms of sel_type per frame.
+        # The label represents the total XAS spectrum from all sel_type atoms
+        # in the supercell, so the correct reduction is sum (not mean).
         nf, nloc, td = atom_prop.shape
-        pred = torch.zeros(nf, td, dtype=atom_prop.dtype, device=atom_prop.device)
-        for i in range(nf):
-            t = int(sel_type[i].item())
-            mask = (atype[i] == t).unsqueeze(-1)  # [nloc, 1]
-            count = mask.sum().clamp(min=1)
-            pred[i] = (atom_prop[i] * mask).sum(dim=0) / count
+        mask_3d = (atype.unsqueeze(-1) == sel_type.view(nf, 1, 1))  # [nf, nloc, 1]
+        pred = (atom_prop * mask_3d).sum(dim=1)  # [nf, td]
 
         label_xas = label[self.var_name]  # [nf, task_dim]
 
