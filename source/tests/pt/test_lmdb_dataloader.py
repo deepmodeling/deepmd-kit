@@ -50,10 +50,10 @@ def _make_frame(natoms: int = 6, seed: int = 0) -> dict:
             np.array([0] * (natoms // 2) + [1] * (natoms // 2), dtype=np.int64)
         ),
         "orig": _encode_array(np.zeros(3, dtype=np.float64)),
-        "cells": _encode_array(rng.randn(3, 3).astype(np.float32)),
-        "coords": _encode_array(rng.randn(natoms, 3).astype(np.float32)),
-        "energies": _encode_array(np.array(rng.randn(), dtype=np.float32)),
-        "forces": _encode_array(rng.randn(natoms, 3).astype(np.float32)),
+        "cells": _encode_array((np.eye(3) * 10.0).astype(np.float64)),
+        "coords": _encode_array((rng.rand(natoms, 3) * 10.0).astype(np.float64)),
+        "energies": _encode_array(np.array(rng.randn(), dtype=np.float64)),
+        "forces": _encode_array(rng.randn(natoms, 3).astype(np.float64)),
     }
 
 
@@ -697,19 +697,15 @@ def multitask_lmdb_setup(tmp_path):
             "shared_dict": {
                 "type_map_all": ["O", "H"],
                 "my_descriptor": {
-                    "type": "se_atten",
-                    "sel": 40,
+                    "type": "se_e2_a",
+                    "sel": [4, 4],
                     "rcut_smth": 0.5,
                     "rcut": 4.0,
-                    "neuron": [4, 8, 16],
+                    "neuron": [4, 8],
                     "axis_neuron": 4,
-                    "attn": 4,
-                    "attn_layer": 2,
-                    "attn_dotr": True,
-                    "attn_mask": False,
                     "precision": "float64",
                 },
-                "my_fitting": {"neuron": [16, 16], "precision": "float64", "seed": 1},
+                "my_fitting": {"neuron": [8, 8], "precision": "float64", "seed": 1},
             },
             "model_dict": {
                 "model_1": {
@@ -791,8 +787,8 @@ def multitask_lmdb_setup(tmp_path):
 class TestMultitaskLmdbTraining:
     """Test multitask training with LMDB datasets.
 
-    All assertions are in a single test to avoid creating multiple heavy
-    se_atten trainers which would OOM on CI runners (7 GB RAM limit).
+    Uses se_e2_a (not se_atten) to keep memory usage low on CI runners (~7 GB).
+    All assertions are in a single test to avoid creating multiple trainers.
     """
 
     def test_multitask_lmdb_end_to_end(self, multitask_lmdb_setup, monkeypatch):
@@ -843,3 +839,9 @@ class TestMultitaskLmdbTraining:
         # -- training run assertions --
         trainer.run()
         assert len(list(tmp_path.glob("model.ckpt*.pt"))) > 0
+
+        # Explicit cleanup to free memory on CI
+        import gc
+
+        del trainer
+        gc.collect()
