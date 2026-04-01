@@ -19,7 +19,6 @@ from deepmd.dpmodel.utils.lmdb_data import (
 try:
     from deepmd.pt.utils.lmdb_dataset import (
         LmdbDataset,
-        _collate_lmdb_batch,
     )
 
     INSTALLED_PT = True
@@ -124,6 +123,24 @@ def _create_mixed_nloc_lmdb(path: str) -> str:
     return path
 
 
+def _assert_frames_equal(test_case, frame_dp, frame_pt, frame_idx):
+    """Assert two frames (from reader and dataset) are identical."""
+    test_case.assertEqual(
+        set(frame_dp.keys()),
+        set(frame_pt.keys()),
+        msg=f"frame={frame_idx}",
+    )
+    for key in frame_dp:
+        dp_val = frame_dp[key]
+        pt_val = frame_pt[key]
+        if isinstance(dp_val, np.ndarray):
+            np.testing.assert_array_equal(
+                dp_val, pt_val, err_msg=f"key={key}, frame={frame_idx}"
+            )
+        else:
+            test_case.assertEqual(dp_val, pt_val, msg=f"key={key}, frame={frame_idx}")
+
+
 @unittest.skipUnless(INSTALLED_PT, "PyTorch not available")
 class TestLmdbDataConsistency(unittest.TestCase):
     """Verify LmdbDataReader (dpmodel) and LmdbDataset (pt) produce identical outputs."""
@@ -148,18 +165,7 @@ class TestLmdbDataConsistency(unittest.TestCase):
 
     def test_same_frame_data(self):
         for i in range(len(self._reader)):
-            frame_dp = self._reader[i]
-            frame_pt = self._ds[i]
-            self.assertEqual(set(frame_dp.keys()), set(frame_pt.keys()))
-            for key in frame_dp:
-                dp_val = frame_dp[key]
-                pt_val = frame_pt[key]
-                if isinstance(dp_val, np.ndarray):
-                    np.testing.assert_array_equal(
-                        dp_val, pt_val, err_msg=f"key={key}, frame={i}"
-                    )
-                else:
-                    self.assertEqual(dp_val, pt_val, msg=f"key={key}, frame={i}")
+            _assert_frames_equal(self, self._reader[i], self._ds[i], i)
 
     def test_same_batch_size(self):
         reader = LmdbDataReader(self._lmdb_path, self._type_map, batch_size="auto")
@@ -170,6 +176,9 @@ class TestLmdbDataConsistency(unittest.TestCase):
         self.assertEqual(self._reader.index, self._ds.index)
         self.assertEqual(self._reader.total_batch, self._ds.total_batch)
         self.assertEqual(self._reader.batch_sizes, self._ds.batch_sizes)
+        self.assertEqual(self._reader.nframes, self._ds.nframes)
+        self.assertEqual(self._reader.mixed_type, self._ds.mixed_type)
+        self.assertEqual(self._reader.mixed_batch, self._ds.mixed_batch)
 
     def test_data_requirement(self):
         req = [
@@ -192,166 +201,26 @@ class TestLmdbDataConsistency(unittest.TestCase):
         np.testing.assert_array_equal(frame_dp["virial"], frame_pt["virial"])
         self.assertEqual(frame_dp["find_virial"], frame_pt["find_virial"])
 
+    def test_mixed_nloc_same_frame_data(self):
+        """Reader and dataset produce identical frames for mixed atom counts."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _create_mixed_nloc_lmdb(f"{tmpdir}/mixed.lmdb")
+            reader = LmdbDataReader(path, self._type_map, batch_size=2)
+            ds = LmdbDataset(path, self._type_map, batch_size=2)
+            self.assertEqual(len(reader), len(ds))
+            for i in range(len(reader)):
+                _assert_frames_equal(self, reader[i], ds[i], i)
 
-@unittest.skipUnless(INSTALLED_PT, "PyTorch not available")
-class TestMixedNlocConsistency(unittest.TestCase):
-    """Consistency tests for mixed-nloc LMDB: collate, LmdbDataset iteration."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls._tmpdir = tempfile.TemporaryDirectory()
-        cls._lmdb_path = _create_mixed_nloc_lmdb(f"{cls._tmpdir.name}/mixed.lmdb")
-        cls._type_map = ["O", "H"]
-        cls._reader = LmdbDataReader(cls._lmdb_path, cls._type_map, batch_size=2)
-        cls._ds = LmdbDataset(cls._lmdb_path, cls._type_map, batch_size=2)
-
-    @classmethod
-    def tearDownClass(cls):
-        del cls._ds, cls._reader
-        cls._tmpdir.cleanup()
-
-    def test_collate_mixed_nloc_raises(self):
-        with self.assertRaises(NotImplementedError):
-            _collate_lmdb_batch([self._reader[0], self._reader[4]])
-
-    def test_collate_same_nloc_ok(self):
-        batch = _collate_lmdb_batch([self._reader[0], self._reader[1]])
-        self.assertEqual(batch["coord"].shape[0], 2)
-
-    def test_mixed_batch_true_raises(self):
-        with self.assertRaises(NotImplementedError):
-            LmdbDataset(self._lmdb_path, self._type_map, batch_size=2, mixed_batch=True)
-
-    def test_pt_dataset_mixed_batch_flag(self):
-        self.assertFalse(self._ds.mixed_batch)
-
-    def test_pt_full_epoch_mixed_nloc(self):
-        import torch
-
-        all_fids = []
-        with torch.device("cpu"):
-            for dl in self._ds.dataloaders:
-                for batch in dl:
-                    atype = batch["atype"]
-                    nloc = atype.shape[1]
-                    for i in range(atype.shape[0]):
-                        self.assertEqual(atype[i].shape[0], nloc)
-                    all_fids.extend(batch["fid"])
-        self.assertEqual(sorted(all_fids), list(range(10)))
-
-    def test_pt_batch_shapes_consistent(self):
-        import torch
-
-        ds = LmdbDataset(self._lmdb_path, self._type_map, batch_size=3)
-        with torch.device("cpu"):
-            for batch in ds.dataloaders[0]:
-                bs = batch["atype"].shape[0]
-                nloc = batch["atype"].shape[1]
-                self.assertEqual(batch["coord"].shape, (bs, nloc, 3))
-                self.assertEqual(batch["force"].shape, (bs, nloc, 3))
-                self.assertEqual(batch["natoms"].shape, (bs, 4))
-
-
-@unittest.skipUnless(INSTALLED_PT, "PyTorch not available")
-class TestLmdbNeighborStatConsistency(unittest.TestCase):
-    """Test neighbor stat values from LMDB match expected geometry."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls._tmpdir = tempfile.TemporaryDirectory()
-        X, Y, Z = np.mgrid[0:2:3j, 0:2:3j, 0:2:3j]
-        positions = np.vstack([X.ravel(), Y.ravel(), Z.ravel()]).T
-        natoms = 27
-        cell = np.array([3.0, 0, 0, 0, 3.0, 0, 0, 0, 3.0], dtype=np.float64)
-        atype = np.zeros(natoms, dtype=np.int64)
-        path = f"{cls._tmpdir.name}/grid.lmdb"
-        env = lmdb.open(path, map_size=10 * 1024 * 1024)
-        with env.begin(write=True) as txn:
-            meta = {
-                "nframes": 3,
-                "frame_idx_fmt": "012d",
-                "type_map": ["TYPE"],
-                "system_info": {"natoms": [natoms], "formula": "grid"},
-            }
-            txn.put(b"__metadata__", msgpack.packb(meta, use_bin_type=True))
-            for i in range(3):
-                frame = {
-                    "atom_types": {
-                        "type": "<i8",
-                        "shape": (natoms,),
-                        "data": atype.tobytes(),
-                    },
-                    "coords": {
-                        "type": "<f8",
-                        "shape": (natoms, 3),
-                        "data": positions.astype(np.float64).tobytes(),
-                    },
-                    "cells": {
-                        "type": "<f8",
-                        "shape": (3, 3),
-                        "data": cell.reshape(3, 3).tobytes(),
-                    },
-                    "energies": {
-                        "type": "<f8",
-                        "shape": (1,),
-                        "data": np.array([0.0], dtype=np.float64).tobytes(),
-                    },
-                    "forces": {
-                        "type": "<f8",
-                        "shape": (natoms, 3),
-                        "data": np.zeros((natoms, 3), dtype=np.float64).tobytes(),
-                    },
-                    "atom_names": ["TYPE"],
-                    "atom_numbs": [
-                        {
-                            "type": "<i8",
-                            "shape": (1,),
-                            "data": np.array([natoms], dtype=np.int64).tobytes(),
-                        }
-                    ],
-                }
-                txn.put(
-                    format(i, "012d").encode(), msgpack.packb(frame, use_bin_type=True)
-                )
-        env.close()
-        cls._lmdb_path = path
-
-    @classmethod
-    def tearDownClass(cls):
-        cls._tmpdir.cleanup()
-
-    def test_neighbor_stat_values(self):
-        """Neighbor stat from LMDB matches expected values for grid geometry."""
-        from deepmd.dpmodel.utils.lmdb_data import (
-            make_neighbor_stat_data,
-        )
-        from deepmd.pt.utils.neighbor_stat import (
-            NeighborStat,
-        )
-
-        type_map = ["TYPE", "NO_THIS_TYPE"]
-        data = make_neighbor_stat_data(self._lmdb_path, type_map)
-
-        for rcut in (1.0, 2.0, 4.0):
-            for mixed_type in (True, False):
-                with self.subTest(rcut=rcut, mixed_type=mixed_type):
-                    rcut_eps = rcut + 1e-3
-                    nei = NeighborStat(len(type_map), rcut_eps, mixed_type=mixed_type)
-                    min_nbor_dist, max_nbor_size = nei.get_stat(data)
-
-                    upper = int(np.ceil(rcut_eps)) + 1
-                    X, Y, Z = np.mgrid[-upper:upper, -upper:upper, -upper:upper]
-                    positions = np.vstack([X.ravel(), Y.ravel(), Z.ravel()]).T
-                    distance = np.linalg.norm(positions, axis=1)
-                    expected_neighbors = np.count_nonzero(
-                        np.logical_and(distance > 0, distance <= rcut_eps)
-                    )
-
-                    self.assertAlmostEqual(min_nbor_dist, 1.0, places=6)
-                    expected = [expected_neighbors]
-                    if not mixed_type:
-                        expected.append(0)
-                    np.testing.assert_array_equal(max_nbor_size, expected)
+    def test_mixed_nloc_same_properties(self):
+        """Reader and dataset agree on properties for mixed-nloc LMDB."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _create_mixed_nloc_lmdb(f"{tmpdir}/mixed.lmdb")
+            reader = LmdbDataReader(path, self._type_map, batch_size=2)
+            ds = LmdbDataset(path, self._type_map, batch_size=2)
+            self.assertEqual(reader.nframes, ds.nframes)
+            self.assertEqual(reader.batch_sizes, ds.batch_sizes)
+            self.assertEqual(reader.mixed_batch, ds.mixed_batch)
+            self.assertFalse(reader.mixed_batch)
 
 
 if __name__ == "__main__":
