@@ -320,7 +320,7 @@ class XASLoss(TaskLoss):
         # The label represents the total XAS spectrum from all sel_type atoms
         # in the supercell, so the correct reduction is sum (not mean).
         nf, nloc, td = atom_prop.shape
-        mask_3d = (atype.unsqueeze(-1) == sel_type.view(nf, 1, 1))  # [nf, nloc, 1]
+        mask_3d = atype.unsqueeze(-1) == sel_type.view(nf, 1, 1)  # [nf, nloc, 1]
         pred = (atom_prop * mask_3d).sum(dim=1)  # [nf, td]
 
         label_xas = label[self.var_name]  # [nf, task_dim]
