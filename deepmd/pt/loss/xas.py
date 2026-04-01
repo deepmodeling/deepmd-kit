@@ -157,6 +157,14 @@ class XASLoss(TaskLoss):
             "e_ref",
             torch.zeros(ntypes, nfparam, 2, dtype=env.GLOBAL_PT_FLOAT_PRECISION),
         )
+        # e_std[sel_type_idx, edge_idx, 0/1] = std of chemical shifts for E_min/E_max.
+        # Used to normalise the energy-dim loss so that chemical shifts (eV) are
+        # on the same scale as the intensity dims after intensity_norm.
+        # Initialised to 1.0 (= no normalisation) until compute_output_stats runs.
+        self.register_buffer(
+            "e_std",
+            torch.ones(ntypes, nfparam, 2, dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+        )
 
     # ------------------------------------------------------------------
     # Stat phase: compute per-(absorbing_type, edge) reference energies
@@ -220,20 +228,26 @@ class XASLoss(TaskLoss):
         e_ref = torch.zeros(
             self.ntypes, self.nfparam, 2, dtype=env.GLOBAL_PT_FLOAT_PRECISION
         )
+        e_std = torch.ones(
+            self.ntypes, self.nfparam, 2, dtype=env.GLOBAL_PT_FLOAT_PRECISION
+        )
         for (t, e), vals in accum.items():
-            e_ref[t, e] = torch.tensor(
-                np.mean(vals, axis=0), dtype=env.GLOBAL_PT_FLOAT_PRECISION
-            )
+            arr = np.array(vals)  # [n, 2]
+            mean_val = np.mean(arr, axis=0)
+            std_val = np.std(arr, axis=0).clip(min=1.0)  # floor at 1 eV
+            e_ref[t, e] = torch.tensor(mean_val, dtype=env.GLOBAL_PT_FLOAT_PRECISION)
+            e_std[t, e] = torch.tensor(std_val, dtype=env.GLOBAL_PT_FLOAT_PRECISION)
             log.info(
                 f"XASLoss e_ref: type={t}, edge={e} -> "
-                f"E_min_ref={float(e_ref[t, e, 0]):.2f} eV, "
-                f"E_max_ref={float(e_ref[t, e, 1]):.2f} eV  "
+                f"E_min_ref={float(e_ref[t, e, 0]):.2f} eV (std={float(e_std[t, e, 0]):.2f}), "
+                f"E_max_ref={float(e_ref[t, e, 1]):.2f} eV (std={float(e_std[t, e, 1]):.2f})  "
                 f"(n={len(vals)})"
             )
 
         self.e_ref.copy_(e_ref)
+        self.e_std.copy_(e_std)
         log.info(
-            f"XASLoss: e_ref computed for {len(accum)} (sel_type, edge) combinations."
+            f"XASLoss: e_ref/e_std computed for {len(accum)} (sel_type, edge) combinations."
         )
 
         if model is not None:
@@ -315,10 +329,12 @@ class XASLoss(TaskLoss):
         else:
             edge_idx = torch.zeros(nf, dtype=torch.long, device=pred.device)
 
-        # e_ref_frame: [nf, 2]  (E_min_ref, E_max_ref for each frame)
-        # Indices must be on the same device as the buffer (handles CPU/GPU mismatch)
+        # e_ref_frame / e_std_frame: [nf, 2]
         _dev = self.e_ref.device
-        e_ref_frame = self.e_ref[sel_type.to(_dev), edge_idx.to(_dev)].to(pred.device)
+        _sel = sel_type.to(_dev)
+        _eidx = edge_idx.to(_dev)
+        e_ref_frame = self.e_ref[_sel, _eidx].to(pred.device)
+        e_std_frame = self.e_std[_sel, _eidx].to(pred.device)  # [nf, 2]
 
         # Shift the energy-dim TARGETS only.
         #
@@ -366,8 +382,13 @@ class XASLoss(TaskLoss):
             else:
                 raise RuntimeError(f"Unknown loss function: {self.loss_func}")
 
+        # Normalise chemical shifts by per-(type,edge) std before computing energy loss,
+        # so energy dims are on the same scale as intensity dims after intensity_norm.
+        pred_energy_norm = pred[:, :2] / e_std_frame
+        label_energy_norm = label_shifted[:, :2] / e_std_frame
+
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
-        loss += self.pref_energy * _elem_loss(pred[:, :2], label_shifted[:, :2])
+        loss += self.pref_energy * _elem_loss(pred_energy_norm, label_energy_norm)
         loss += self.pref_spectrum * _elem_loss(pred_intens, label_intens)
 
         # --- smoothness regulariser on intensity dims ---
