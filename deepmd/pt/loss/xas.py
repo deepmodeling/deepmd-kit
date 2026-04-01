@@ -261,30 +261,40 @@ class XASLoss(TaskLoss):
                     am.xas_e_ref.copy_(e_ref.to(am.xas_e_ref.dtype))
                     log.info("XASLoss: copied e_ref → model.atomic_model.xas_e_ref.")
 
-                # 2. Reset energy-dim out_bias/out_std so the NN predicts
-                #    chemical shifts instead of absolute energies.
+                # 2. Set energy-dim out_bias/out_std so the NN predicts
+                #    *normalised* chemical shifts instead of absolute energies.
                 #
-                #    Why this is necessary
-                #    ----------------------
-                #    The model stat phase initialises
-                #      out_bias[:, :2] ≈ global_mean(E_min, E_max) ≈ 19 000 eV
-                #      out_std[:, :2]  ≈ global_std(E_min, E_max)  ≈ 26 000 eV
-                #    so  atom_xas[:, 0] = NN_raw[:, 0] * 26 000 + 19 000.
-                #    A single Adam step changes NN_raw by ~lr, which changes
-                #    the physical output by lr × 26 000 = 2.7 eV — the same
-                #    instability as out_bias for energy fitting if the reference
-                #    is wrong.  With out_std=1 / out_bias=0, the NN output for
-                #    energy dims is interpreted directly as a chemical shift
-                #    (target ≈ label − e_ref ≈ ±few eV), keeping gradient
-                #    magnitudes O(1) and training stable.
+                #    out_bias[:, :2] = 0       → NN output = 0 means ΔE = 0 (= e_ref)
+                #    out_std[:, :2]  = e_std   → NN output ±1 maps to ±e_std eV
+                #
+                #    This keeps the NN's raw output in ±O(1) range (similar to the
+                #    intensity dims after max_frame normalisation), so pref_energy=1
+                #    gives a balanced gradient signal without requiring manual tuning.
+                #    The loss is computed directly on the physical chemical shift
+                #    (pred = NN_raw × e_std ≈ ΔE), so no explicit e_std division is
+                #    needed in the loss — avoiding the e_std² gradient suppression that
+                #    would otherwise cause systematic energy prediction errors.
+                #
+                #    e_std is the global mean across all (type,edge) combinations,
+                #    since out_std is shared across types in the current implementation.
                 key_idx = am.bias_keys.index(self.var_name)
+                # Compute a single representative e_std for the two energy dims
+                # as the mean over all populated (type, edge) entries.
+                populated = e_std.abs().gt(1.0)  # mask: where e_std > floor
+                if populated.any():
+                    e_std_global = e_std[populated].mean(dim=0)  # [2]
+                else:
+                    e_std_global = torch.ones(
+                        2, dtype=e_std.dtype, device=e_std.device
+                    )
                 with torch.no_grad():
                     am.out_bias[key_idx, :, :2] = 0.0
-                    am.out_std[key_idx, :, :2] = 1.0
+                    am.out_std[key_idx, :, :2] = e_std_global.to(
+                        am.out_std.dtype
+                    )
                 log.info(
-                    "XASLoss: reset out_bias[:,:2]=0 and out_std[:,:2]=1 "
-                    "for energy dims (model predicts chemical shifts; "
-                    "xas_e_ref restores absolute energies at inference)."
+                    f"XASLoss: set out_bias[:,:2]=0, out_std[:,:2]={e_std_global.tolist()} eV "
+                    "(NN output ±1 ≈ ±e_std eV chemical shift)."
                 )
             except Exception as exc:
                 log.warning(f"XASLoss: could not update model energy-dim stats: {exc}")
@@ -382,13 +392,8 @@ class XASLoss(TaskLoss):
             else:
                 raise RuntimeError(f"Unknown loss function: {self.loss_func}")
 
-        # Normalise chemical shifts by per-(type,edge) std before computing energy loss,
-        # so energy dims are on the same scale as intensity dims after intensity_norm.
-        pred_energy_norm = pred[:, :2] / e_std_frame
-        label_energy_norm = label_shifted[:, :2] / e_std_frame
-
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
-        loss += self.pref_energy * _elem_loss(pred_energy_norm, label_energy_norm)
+        loss += self.pref_energy * _elem_loss(pred[:, :2], label_shifted[:, :2])
         loss += self.pref_spectrum * _elem_loss(pred_intens, label_intens)
 
         # --- smoothness regulariser on intensity dims ---
