@@ -288,7 +288,14 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         nlist: paddle.Tensor,
         mapping: paddle.Tensor | None = None,
         comm_dict: list[paddle.Tensor] | None = None,
-    ) -> paddle.Tensor:
+        fparam: paddle.Tensor | None = None,
+    ) -> tuple[
+        paddle.Tensor,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+    ]:
         """Compute the descriptor.
 
         Parameters
