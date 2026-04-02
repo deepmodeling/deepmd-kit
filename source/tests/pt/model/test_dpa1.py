@@ -108,7 +108,7 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 err_msg=err_msg,
             )
 
-    def test_jit(
+    def test_export(
         self,
     ) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
@@ -132,8 +132,6 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [False, True],  # use_econf_tebd
         ):
             dtype = PRECISION_DICT[prec]
-            rtol, atol = get_tols(prec)
-            err_msg = f"idt={idt} prec={prec}"
             # dpa1 new impl
             dd0 = DescrptDPA1(
                 self.rcut,
@@ -151,6 +149,9 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
             )
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.se_atten.dstd = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
-            # dd1 = DescrptDPA1.deserialize(dd0.serialize())
-            model = torch.jit.script(dd0)
-            # model = torch.jit.script(dd1)
+
+            coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE)
+            atype_ext = torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE)
+            nlist = torch.tensor(self.nlist, dtype=int, device=env.DEVICE)
+
+            _ = torch.export.export(dd0, (coord_ext, atype_ext, nlist))
