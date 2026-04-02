@@ -545,6 +545,27 @@ class TestDeepDipoleNewPBC(unittest.TestCase):
             vv.reshape([-1]), self.expected_gv.reshape([-1]), decimal=default_places
         )
 
+    def test_1frame_eval_shuffle(self) -> None:
+        i_sf = [2, 1, 3, 0, 5, 4]
+        isel_sf = [1, 0]
+        at = self.dp.eval(
+            self.coords.reshape(-1, 3)[i_sf].reshape(-1),
+            self.box,
+            self.atype[i_sf],
+        )
+        at = at[:, self.sel_mask[i_sf]]
+        # check shape
+        nframes = 1
+        nsel = 2
+        self.assertEqual(at.shape, (nframes, nsel, self.nout))
+        # recover the shuffled result
+        nat = np.empty_like(at)
+        nat[:, isel_sf] = at
+        # check values match unshuffled reference
+        np.testing.assert_almost_equal(
+            nat.reshape([-1]), self.expected_t.reshape([-1]), decimal=default_places
+        )
+
     def test_1frame_full_atm_shuffle(self) -> None:
         i_sf = [2, 1, 3, 0, 5, 4]
         isel_sf = [1, 0]
@@ -587,6 +608,78 @@ class TestDeepDipoleNewPBC(unittest.TestCase):
         np.testing.assert_almost_equal(
             vv.reshape([-1]), self.expected_gv.reshape([-1]), decimal=default_places
         )
+
+    def test_label_order_via_deepmd_data(self) -> None:
+        """Verify that labels loaded via DeepmdData(sort_atoms=False) +
+        output_natoms_for_type_sel=True align with dp.eval() output, replicating
+        the dptest code path.  atype=[0,1,1,0,1,1] is intentionally NOT
+        type-sorted so ordering bugs in either the model or data loading are
+        detectable.
+        """
+        import shutil
+        import tempfile
+
+        from deepmd.utils.data import (
+            DeepmdData,
+        )
+
+        natoms = len(self.atype)
+        sel_mask = np.isin(self.atype, self.dp.get_sel_type())
+        tmpdir = tempfile.mkdtemp()
+        try:
+            set_dir = os.path.join(tmpdir, "set.000")
+            os.makedirs(set_dir)
+            np.savetxt(os.path.join(tmpdir, "type.raw"), self.atype, fmt="%d")
+            np.save(
+                os.path.join(set_dir, "coord.npy"),
+                self.coords.reshape(1, -1),
+            )
+            np.save(
+                os.path.join(set_dir, "box.npy"),
+                self.box.reshape(1, -1),
+            )
+            # Labels: nsel=2 atoms in original atom order (atoms 0 then 3)
+            np.save(
+                os.path.join(set_dir, "atomic_dipole.npy"),
+                self.expected_t.reshape(1, -1),
+            )
+
+            data = DeepmdData(
+                tmpdir,
+                set_prefix="set",
+                shuffle_test=False,
+                type_map=self.dp.get_type_map(),
+                sort_atoms=False,
+            )
+            data.add(
+                "atomic_dipole",
+                3,
+                atomic=True,
+                must=True,
+                high_prec=False,
+                type_sel=self.dp.get_sel_type(),
+                output_natoms_for_type_sel=True,
+            )
+            test_data = data.get_test()
+
+            # Loaded label shape: [1, natoms*3]. Filter to sel atoms.
+            label_sel = test_data["atom_dipole"].reshape(1, natoms, 3)[
+                :, sel_mask, :
+            ]  # [1, nsel, 3]
+
+            # Label order must match expected_t (atoms 0 then 3, not type-sorted)
+            np.testing.assert_almost_equal(
+                label_sel.reshape(-1), self.expected_t.reshape(-1), default_places
+            )
+
+            # Model output must also align with label order
+            pred = self.dp.eval(self.coords, self.box, self.atype, atomic=True)
+            pred_sel = pred[:, sel_mask, :]  # [1, nsel, 3]
+            np.testing.assert_almost_equal(
+                pred_sel.reshape(-1), label_sel.reshape(-1), decimal=default_places
+            )
+        finally:
+            shutil.rmtree(tmpdir)
 
     def test_1frame_num_deriv(self) -> None:
         # numerical force

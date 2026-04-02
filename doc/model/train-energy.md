@@ -116,11 +116,19 @@ The {ref}`loss <loss>` section in the `input.json` is
 	"start_pref_f":	1000,
 	"limit_pref_f":	1,
 	"start_pref_v":	0,
-	"limit_pref_v":	0
+	"limit_pref_v":	0,
+	"loss_func":	"mse"
     }
 ```
 
 The options {ref}`start_pref_e <loss[ener]/start_pref_e>`, {ref}`limit_pref_e <loss[ener]/limit_pref_e>`, {ref}`start_pref_f <loss[ener]/start_pref_f>`, {ref}`limit_pref_f <loss[ener]/limit_pref_f>`, {ref}`start_pref_v <loss[ener]/start_pref_v>` and {ref}`limit_pref_v <loss[ener]/limit_pref_v>` determine the start and limit prefactors of energy, force and virial, respectively.
+
+The {ref}`loss_func <loss[ener]/loss_func>` option specifies the type of loss function to use. Two options are available:
+
+- `"mse"` (default): Mean Squared Error (L2 loss). This is the standard loss function that penalizes large errors more heavily.
+- `"mae"`: Mean Absolute Error (L1 loss). This loss function is less sensitive to outliers and may be preferred when the training data contains occasional large errors.
+
+When using `loss_func="mse"`, the training will output `rmse_e`, `rmse_f`, `rmse_v` metrics (root mean square errors). When using `loss_func="mae"`, the training will output `mae_e`, `mae_f`, `mae_v` metrics (mean absolute errors).
 
 If one does not want to train with virial, then he/she may set the virial prefactors {ref}`start_pref_v <loss[ener]/start_pref_v>` and {ref}`limit_pref_v <loss[ener]/limit_pref_v>` to 0.
 

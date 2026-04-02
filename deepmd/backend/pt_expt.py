@@ -41,7 +41,7 @@ class PyTorchExportableBackend(Backend):
         | Backend.Feature.IO
     )
     """The features of the backend."""
-    suffixes: ClassVar[list[str]] = [".pte"]
+    suffixes: ClassVar[list[str]] = [".pte", ".pt2"]
     """The suffixes of the backend."""
 
     def is_available(self) -> bool:

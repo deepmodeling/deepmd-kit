@@ -17,6 +17,9 @@ from deepmd.tf.utils.sess import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.loss import (
+    resolve_huber_deltas,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -87,8 +90,16 @@ class EnerStdLoss(Loss):
         - For absolute prediction errors within D: quadratic loss (0.5 * (error**2))
         - For absolute errors exceeding D: linear loss (D * |error| - 0.5 * D)
         Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D).
-    huber_delta : float
-        The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
+    huber_delta : float | list[float]
+        The threshold delta (D) used for Huber loss, controlling transition between
+        L2 and L1 loss. It can be either one float shared by all terms or a list of
+        three values ordered as [energy, force, virial].
+    loss_func : str
+        Loss function type. Options: 'mse' or 'mae'.
+        Not implemented in TF backend, only for serialization compatibility.
+    f_use_norm : bool
+        If True, use L2 norm of force vectors for loss calculation.
+        Not implemented in TF backend, only for serialization compatibility.
     **kwargs
         Other keyword arguments.
     """
@@ -112,9 +123,22 @@ class EnerStdLoss(Loss):
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
         use_huber: bool = False,
-        huber_delta: float = 0.01,
+        huber_delta: float | list[float] = 0.01,
+        loss_func: str = "mse",
+        f_use_norm: bool = False,
         **kwargs: Any,
     ) -> None:
+        if loss_func != "mse":
+            raise NotImplementedError(
+                f"TensorFlow backend only supports loss_func='mse', got '{loss_func}'."
+            )
+        self.loss_func = loss_func
+        self.f_use_norm = f_use_norm
+        if self.f_use_norm:
+            raise NotImplementedError(
+                "TensorFlow backend does not support f_use_norm=True."
+            )
+
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e
@@ -143,6 +167,11 @@ class EnerStdLoss(Loss):
             )
         self.use_huber = use_huber
         self.huber_delta = huber_delta
+        (
+            self._huber_delta_energy,
+            self._huber_delta_force,
+            self._huber_delta_virial,
+        ) = resolve_huber_deltas(huber_delta)
         if self.use_huber and (
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
@@ -332,7 +361,7 @@ class EnerStdLoss(Loss):
                 l_huber_loss = custom_huber_loss(
                     atom_norm_ener * energy,
                     atom_norm_ener * energy_hat,
-                    delta=self.huber_delta,
+                    delta=self._huber_delta_energy,
                 )
                 loss += pref_e * l_huber_loss
             more_loss["l2_ener_loss"] = self.display_if_exist(l2_ener_loss, find_energy)
@@ -343,7 +372,7 @@ class EnerStdLoss(Loss):
                 l_huber_loss = custom_huber_loss(
                     tf.reshape(force, [-1]),
                     tf.reshape(force_hat, [-1]),
-                    delta=self.huber_delta,
+                    delta=self._huber_delta_force,
                 )
                 loss += pref_f * l_huber_loss
             more_loss["l2_force_loss"] = self.display_if_exist(
@@ -356,7 +385,7 @@ class EnerStdLoss(Loss):
                 l_huber_loss = custom_huber_loss(
                     atom_norm * tf.reshape(virial, [-1]),
                     atom_norm * tf.reshape(virial_hat, [-1]),
-                    delta=self.huber_delta,
+                    delta=self._huber_delta_virial,
                 )
                 loss += pref_v * l_huber_loss
             more_loss["l2_virial_loss"] = self.display_if_exist(
@@ -369,7 +398,7 @@ class EnerStdLoss(Loss):
                 l_huber_loss = custom_huber_loss(
                     tf.reshape(atom_ener, [-1]),
                     tf.reshape(atom_ener_hat, [-1]),
-                    delta=self.huber_delta,
+                    delta=self._huber_delta_energy,
                 )
                 loss += pref_ae * l_huber_loss
             more_loss["l2_atom_ener_loss"] = self.display_if_exist(
@@ -531,6 +560,8 @@ class EnerStdLoss(Loss):
             "numb_generalized_coord": self.numb_generalized_coord,
             "use_huber": self.use_huber,
             "huber_delta": self.huber_delta,
+            "loss_func": self.loss_func,
+            "f_use_norm": self.f_use_norm,
         }
 
     @classmethod
@@ -574,7 +605,13 @@ class EnerSpinLoss(Loss):
         relative_f: float | None = None,
         enable_atom_ener_coeff: bool = False,
         use_spin: list | None = None,
+        loss_func: str = "mse",
     ) -> None:
+        if loss_func != "mse":
+            raise NotImplementedError(
+                f"TensorFlow backend only supports loss_func='mse', got '{loss_func}'."
+            )
+        self.loss_func = loss_func
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e

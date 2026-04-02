@@ -17,9 +17,6 @@ from deepmd.dpmodel.utils.nlist import (
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
-from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
-)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -70,6 +67,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self,
         models: list[BaseAtomicModel],
         type_map: list[str],
+        weights: str | list[float] = "mean",
         **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
@@ -100,6 +98,15 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self.mapping_list = mapping_list
         assert len(err_msg) == 0, "\n".join(err_msg)
         self.mixed_types_list = [model.mixed_types() for model in self.models]
+        if isinstance(weights, str):
+            assert weights in ["sum", "mean"]
+        elif isinstance(weights, list):
+            assert len(weights) == len(models)
+        else:
+            raise ValueError(
+                f"'weights' must be a string ('sum' or 'mean') or a list of float of length {len(models)}."
+            )
+        self.weights = weights
 
     def mixed_types(self) -> bool:
         """If true, the model
@@ -241,7 +248,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             the result dict, defined by the fitting net output def.
         """
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlist)
-        nframes, nloc, nnei = nlist.shape
+        nframes, _nloc, _nnei = nlist.shape
         extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
         sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
         nlists = build_multiple_neighbor_list(
@@ -323,10 +330,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         dd.update(
             {
                 "@class": "Model",
-                "@version": 2,
+                "@version": 3,
                 "type": "linear",
                 "models": [model.serialize() for model in self.models],
                 "type_map": self.type_map,
+                "weights": self.weights,
             }
         )
         return dd
@@ -334,9 +342,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 2), 2, 2)
+        check_version_compatibility(data.pop("@version", 2), 3, 2)
         data.pop("@class", None)
         data.pop("type", None)
+        if "weights" not in data:
+            data["weights"] = "mean"
         models = [
             BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)
             for model in data["models"]
@@ -396,16 +406,33 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         nlists_: list[Array],
     ) -> list[Array]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
-        xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlists_)
+        xp = array_api_compat.array_namespace(extended_coord, extended_atype)
         nmodels = len(self.models)
         nframes, nloc, _ = nlists_[0].shape
         dev = array_api_compat.device(extended_coord)
-        # the dtype of weights is the interface data type.
-        return [
-            xp.ones((nframes, nloc, 1), dtype=GLOBAL_NP_FLOAT_PRECISION, device=dev)
-            / nmodels
-            for _ in range(nmodels)
-        ]
+        if isinstance(self.weights, str):
+            if self.weights == "sum":
+                return [
+                    xp.ones((nframes, nloc, 1), dtype=extended_coord.dtype, device=dev)
+                    for _ in range(nmodels)
+                ]
+            elif self.weights == "mean":
+                return [
+                    xp.ones((nframes, nloc, 1), dtype=extended_coord.dtype, device=dev)
+                    / nmodels
+                    for _ in range(nmodels)
+                ]
+            else:
+                raise ValueError(
+                    "`weights` must be 'sum' or 'mean' when provided as a string."
+                )
+        elif isinstance(self.weights, list):
+            return [
+                xp.ones((nframes, nloc, 1), dtype=extended_coord.dtype, device=dev) * w
+                for w in self.weights
+            ]
+        else:
+            raise NotImplementedError
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""

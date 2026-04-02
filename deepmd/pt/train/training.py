@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import datetime
 import functools
 import json
 import logging
@@ -815,9 +816,10 @@ class Trainer:
                     "momentum": float(self.opt_param["momentum"]),
                     "lr_adjust": float(self.opt_param["lr_adjust"]),
                     "lr_adjust_coeff": float(self.opt_param["lr_adjust_coeff"]),
-                    "muon_2d_only": bool(self.opt_param["muon_2d_only"]),
-                    "min_2d_dim": int(self.opt_param["min_2d_dim"]),
-                    "flash_muon": bool(self.opt_param["flash_muon"]),
+                    "muon_mode": str(self.opt_param.get("muon_mode", "slice")),
+                    "named_parameters": tuple(self.wrapper.named_parameters()),
+                    "flash_muon": bool(self.opt_param.get("flash_muon", True)),
+                    "magma_muon": bool(self.opt_param.get("magma_muon", False)),
                 }
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
@@ -1333,6 +1335,10 @@ class Trainer:
                             batch=display_step_id,
                             wall_time=train_time,
                             eta=eta,
+                            current_time=datetime.datetime.fromtimestamp(
+                                current_time,
+                                tz=datetime.timezone.utc,
+                            ).astimezone(),
                         )
                     )
                 if (
