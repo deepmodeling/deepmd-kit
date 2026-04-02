@@ -789,7 +789,14 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         extended_atype_embd: paddle.Tensor | None = None,
         mapping: paddle.Tensor | None = None,
         type_embedding: paddle.Tensor | None = None,
-    ) -> paddle.Tensor:
+        fparam: paddle.Tensor | None = None,
+    ) -> tuple[
+        paddle.Tensor,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+    ]:
         """Compute the descriptor.
 
         Parameters
