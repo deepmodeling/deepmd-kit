@@ -488,6 +488,7 @@ def DescriptorParamDPA3(
     use_dynamic_sel=False,
     precision="float64",
     use_loc_mapping=True,
+    add_chg_spin_ebd=False,
 ):
     input_dict = {
         # kwargs for repformer
@@ -535,6 +536,7 @@ def DescriptorParamDPA3(
         "use_econf_tebd": False,
         "use_tebd_bias": False,
         "use_loc_mapping": use_loc_mapping,
+        "add_chg_spin_ebd": add_chg_spin_ebd,
         "type_map": type_map,
         "seed": GLOBAL_SEED,
     }
@@ -547,7 +549,7 @@ DescriptorParamDPA3List = parameterize_func(
         {
             "update_residual_init": ("const",),
             "exclude_types": ([], [[0, 1]]),
-            "update_angle": (True, False),
+            "update_angle": (True,),
             "a_compress_rate": (1,),
             "a_compress_e_rate": (2,),
             "a_compress_use_split": (True,),
@@ -561,6 +563,7 @@ DescriptorParamDPA3List = parameterize_func(
             "env_protection": (0.0, 1e-8),
             "precision": ("float64",),
             "use_loc_mapping": (True, False),
+            "add_chg_spin_ebd": (False, True),
         }
     ),
 )

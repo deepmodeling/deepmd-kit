@@ -6,6 +6,7 @@ pt backend's ``DpLoaderSet`` + ``DataLoader``.  NumPy batches are
 converted to torch tensors at the boundary.
 """
 
+import datetime
 import functools
 import logging
 import time
@@ -22,6 +23,9 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
     split_batch,
@@ -30,10 +34,15 @@ from deepmd.dpmodel.utils.learning_rate import (
     LearningRateExp,
 )
 from deepmd.loggers.training import (
+    format_training_message,
     format_training_message_per_task,
 )
 from deepmd.pt_expt.loss import (
+    DOSLoss,
     EnergyLoss,
+    EnergySpinLoss,
+    PropertyLoss,
+    TensorLoss,
 )
 from deepmd.pt_expt.model import (
     get_model,
@@ -76,6 +85,32 @@ def get_loss(
     if loss_type == "ener":
         loss_params["starter_learning_rate"] = start_lr
         return EnergyLoss(**loss_params)
+    elif loss_type == "dos":
+        loss_params["starter_learning_rate"] = start_lr
+        loss_params["numb_dos"] = _model.model_output_def()["dos"].output_size
+        return DOSLoss(**loss_params)
+    elif loss_type == "ener_spin":
+        loss_params["starter_learning_rate"] = start_lr
+        return EnergySpinLoss(**loss_params)
+    elif loss_type == "tensor":
+        model_output_type = _model.model_output_type()
+        if "mask" in model_output_type:
+            model_output_type.pop(model_output_type.index("mask"))
+        tensor_name = model_output_type[0]
+        loss_params["tensor_size"] = _model.model_output_def()[tensor_name].output_size
+        loss_params["label_name"] = tensor_name
+        if tensor_name == "polarizability":
+            tensor_name = "polar"
+        loss_params["tensor_name"] = tensor_name
+        return TensorLoss(**loss_params)
+    elif loss_type == "property":
+        task_dim = _model.get_task_dim()
+        var_name = _model.get_var_name()
+        intensive = _model.get_intensive()
+        loss_params["task_dim"] = task_dim
+        loss_params["var_name"] = var_name
+        loss_params["intensive"] = intensive
+        return PropertyLoss(**loss_params)
     else:
         raise ValueError(f"Unsupported loss type for pt_expt: {loss_type}")
 
@@ -378,8 +413,16 @@ class Trainer:
         validation_data: DeepmdDataSystem | None = None,
         init_model: str | None = None,
         restart_model: str | None = None,
+        finetune_model: str | None = None,
+        finetune_links: dict | None = None,
     ) -> None:
-        resume_model = init_model or restart_model
+        if finetune_model is not None and (
+            init_model is not None or restart_model is not None
+        ):
+            raise ValueError(
+                "finetune_model cannot be combined with init_model or restart_model."
+            )
+        resume_model = init_model or restart_model or finetune_model
         resuming = resume_model is not None
         self.restart_training = restart_model is not None
 
@@ -431,7 +474,12 @@ class Trainer:
         def get_sample() -> list[dict[str, np.ndarray]]:
             return make_stat_input(training_data, data_stat_nbatch)
 
-        if not resuming:
+        finetune_has_new_type = (
+            finetune_model is not None
+            and finetune_links is not None
+            and finetune_links["Default"].get_has_new_type()
+        )
+        if not resuming or finetune_has_new_type:
             self.model.compute_or_load_stat(
                 sampled_func=get_sample,
                 stat_file_path=stat_file_path,
@@ -474,23 +522,98 @@ class Trainer:
         # Resume --------------------------------------------------------------
         if resuming:
             log.info(f"Resuming from {resume_model}.")
-            state_dict = torch.load(
-                resume_model, map_location=DEVICE, weights_only=True
-            )
-            if "model" in state_dict:
-                optimizer_state_dict = (
-                    state_dict["optimizer"] if self.restart_training else None
-                )
-                state_dict = state_dict["model"]
-            else:
-                optimizer_state_dict = None
+            is_pte = resume_model.endswith((".pte", ".pt2"))
 
-            self.start_step = (
-                state_dict["_extra_state"]["train_infos"]["step"]
-                if self.restart_training
-                else 0
-            )
-            self.wrapper.load_state_dict(state_dict)
+            if is_pte:
+                # .pte frozen model: no optimizer state, no step counter
+                optimizer_state_dict = None
+                self.start_step = 0
+            else:
+                state_dict = torch.load(
+                    resume_model, map_location=DEVICE, weights_only=True
+                )
+                if "model" in state_dict:
+                    optimizer_state_dict = (
+                        state_dict["optimizer"]
+                        if self.restart_training and finetune_model is None
+                        else None
+                    )
+                    state_dict = state_dict["model"]
+                else:
+                    optimizer_state_dict = None
+                self.start_step = (
+                    state_dict["_extra_state"]["train_infos"]["step"]
+                    if self.restart_training
+                    else 0
+                )
+
+            if finetune_model is not None and finetune_links is not None:
+                # --- Finetune: selective weight loading -----------------------
+                finetune_rule = finetune_links["Default"]
+
+                # Build pretrained model and load weights
+                if is_pte:
+                    from deepmd.pt_expt.model import (
+                        BaseModel,
+                    )
+                    from deepmd.pt_expt.utils.serialization import (
+                        serialize_from_file,
+                    )
+
+                    data = serialize_from_file(finetune_model)
+                    pretrained_model = BaseModel.deserialize(data["model"]).to(DEVICE)
+                else:
+                    pretrained_model = get_model(
+                        deepcopy(state_dict["_extra_state"]["model_params"])
+                    ).to(DEVICE)
+                pretrained_wrapper = ModelWrapper(pretrained_model)
+                if not is_pte:
+                    pretrained_wrapper.load_state_dict(state_dict)
+
+                # Change type map if needed
+                if (
+                    finetune_rule.get_finetune_tmap()
+                    != pretrained_wrapper.model.get_type_map()
+                ):
+                    model_with_new_type_stat = (
+                        self.wrapper.model if finetune_rule.get_has_new_type() else None
+                    )
+                    pretrained_wrapper.model.change_type_map(
+                        finetune_rule.get_finetune_tmap(),
+                        model_with_new_type_stat=model_with_new_type_stat,
+                    )
+
+                # Selectively copy weights: descriptor always from pretrained,
+                # fitting from pretrained unless random_fitting is True
+                pretrained_state = pretrained_wrapper.state_dict()
+                target_state = self.wrapper.state_dict()
+                new_state = {}
+                for key in target_state:
+                    if key == "_extra_state":
+                        new_state[key] = target_state[key]
+                    elif (
+                        finetune_rule.get_random_fitting() and ".descriptor." not in key
+                    ):
+                        new_state[key] = target_state[key]  # keep random init
+                    elif key in pretrained_state:
+                        new_state[key] = pretrained_state[key]  # from pretrained
+                    else:
+                        new_state[key] = target_state[key]  # fallback
+                self.wrapper.load_state_dict(new_state)
+
+                # Adjust output bias
+                bias_mode = (
+                    "change-by-statistic"
+                    if not finetune_rule.get_random_fitting()
+                    else "set-by-statistic"
+                )
+                self.model = model_change_out_bias(
+                    self.model, get_sample, _bias_adjust_mode=bias_mode
+                )
+            else:
+                # --- Normal resume (init_model / restart) --------------------
+                self.wrapper.load_state_dict(state_dict)
+
             if optimizer_state_dict is not None:
                 self.optimizer.load_state_dict(optimizer_state_dict)
                 # rebuild scheduler from the resumed step.
@@ -736,6 +859,7 @@ class Trainer:
 
         self.wrapper.train()
         wall_start = time.time()
+        last_log_time = wall_start
 
         for step_id in range(self.start_step, self.num_steps):
             cur_lr = float(self.lr_schedule.value(step_id))
@@ -796,17 +920,40 @@ class Trainer:
                         }
 
                 # wall-clock time
-                wall_elapsed = time.time() - wall_start
+                current_time = time.time()
+                wall_elapsed = current_time - wall_start
+                interval_wall_time = current_time - last_log_time
+                last_log_time = current_time
                 if self.timing_in_training:
                     step_time = t_end - t_start
-                    log.info(
-                        "step=%d  wall=%.2fs  step_time=%.4fs",
-                        display_step_id,
-                        wall_elapsed,
-                        step_time,
+                    steps_completed_since_restart = max(
+                        1,
+                        display_step_id - self.start_step,
                     )
+                    eta = int(
+                        (self.num_steps - display_step_id)
+                        / steps_completed_since_restart
+                        * wall_elapsed
+                    )
+                    log.info(
+                        format_training_message(
+                            batch=display_step_id,
+                            wall_time=interval_wall_time,
+                            eta=eta,
+                            current_time=datetime.datetime.fromtimestamp(
+                                current_time,
+                                tz=datetime.timezone.utc,
+                            ).astimezone(),
+                        )
+                    )
+                    log.info("step=%d  step_time=%.4fs", display_step_id, step_time)
                 else:
-                    log.info("step=%d  wall=%.2fs", display_step_id, wall_elapsed)
+                    log.info(
+                        format_training_message(
+                            batch=display_step_id,
+                            wall_time=interval_wall_time,
+                        )
+                    )
 
                 # log
                 log.info(
@@ -888,3 +1035,46 @@ class Trainer:
         line += f"   {cur_lr:8.1e}\n"
         fout.write(line)
         fout.flush()
+
+
+def model_change_out_bias(
+    _model: Any,
+    _sample_func: Any,
+    _bias_adjust_mode: str = "change-by-statistic",
+) -> Any:
+    """Change the output bias of a model based on sampled data.
+
+    Parameters
+    ----------
+    _model
+        The model whose bias should be adjusted.
+    _sample_func
+        Callable that returns sampled data for bias computation.
+    _bias_adjust_mode
+        ``"change-by-statistic"`` or ``"set-by-statistic"``.
+
+    Returns
+    -------
+    The model with updated bias.
+    """
+    old_bias = deepcopy(_model.get_out_bias())
+    _model.change_out_bias(
+        _sample_func,
+        bias_adjust_mode=_bias_adjust_mode,
+    )
+    new_bias = deepcopy(_model.get_out_bias())
+
+    from deepmd.dpmodel.model.dp_model import (
+        DPModelCommon,
+    )
+
+    if isinstance(_model, DPModelCommon) and _bias_adjust_mode == "set-by-statistic":
+        _model.get_fitting_net().compute_input_stats(_sample_func)
+
+    model_type_map = _model.get_type_map()
+    log.info(
+        f"Change output bias of {model_type_map!s} "
+        f"from {to_numpy_array(old_bias).reshape(-1)[: len(model_type_map)]!s} "
+        f"to {to_numpy_array(new_bias).reshape(-1)[: len(model_type_map)]!s}."
+    )
+    return _model

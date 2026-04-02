@@ -150,6 +150,8 @@ def get_linear_model(model_params: dict) -> LinearEnergyModel:
     list_of_models = []
     ntypes = len(model_params["type_map"])
     for sub_model_params in model_params["models"]:
+        if "type_map" not in sub_model_params:
+            sub_model_params["type_map"] = model_params["type_map"]
         if "descriptor" in sub_model_params:
             # descriptor
             sub_model_params["descriptor"]["ntypes"] = ntypes

@@ -1455,6 +1455,9 @@ void deepmd::print_summary(const std::string& pre) {
 deepmd::DPBackend deepmd::get_backend(const std::string& model) {
   if (model.length() >= 4 && model.substr(model.length() - 4) == ".pth") {
     return deepmd::DPBackend::PyTorch;
+  } else if (model.length() >= 4 &&
+             model.substr(model.length() - 4) == ".pt2") {
+    return deepmd::DPBackend::PyTorchExportable;
   } else if (model.length() >= 3 && model.substr(model.length() - 3) == ".pb") {
     return deepmd::DPBackend::TensorFlow;
   } else if (model.length() >= 11 &&

@@ -260,6 +260,11 @@ class DeepPotPD : public DeepPotBackend {
     assert(inited);
     return aparam_nall;
   };
+  /**
+   * @brief Check if the model has default frame parameters.
+   * @return Always false for Paddle backend.
+   **/
+  bool has_default_fparam() const { return false; };
 
   /**
    * @brief Print the shape of given tensor.

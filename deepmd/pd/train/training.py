@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import contextlib
+import datetime
 import functools
 import logging
 import time
@@ -165,7 +166,7 @@ class Trainer:
             before this function is called.
             """
             opt_type = params.get("type", "Adam")
-            if opt_type != "Adam":
+            if opt_type not in ["Adam", "AdamW"]:
                 raise ValueError(f"Not supported optimizer type '{opt_type}'")
             opt_param = dict(params)
             opt_param.pop("type", None)
@@ -647,7 +648,7 @@ class Trainer:
         # author: iProzd
         # TODO add optimizers for multitask
         # author: iProzd
-        if self.opt_type == "Adam":
+        if self.opt_type in ["Adam", "AdamW"]:
             self.scheduler = paddle.optimizer.lr.LambdaDecay(
                 learning_rate=self.lr_schedule.start_lr,
                 lr_lambda=lambda step: (
@@ -655,7 +656,12 @@ class Trainer:
                     / self.lr_schedule.start_lr
                 ),
             )
-            self.optimizer = paddle.optimizer.Adam(
+            opt_cls = (
+                paddle.optimizer.Adam
+                if self.opt_type == "Adam"
+                else paddle.optimizer.AdamW
+            )
+            self.optimizer = opt_cls(
                 learning_rate=self.scheduler,
                 parameters=self.wrapper.parameters(),
                 beta1=float(self.opt_param["adam_beta1"]),
@@ -800,7 +806,7 @@ class Trainer:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
                 fout1.flush()
-            if self.opt_type == "Adam":
+            if self.opt_type in ["Adam", "AdamW"]:
                 cur_lr = self.scheduler.get_lr()
                 pref_lr = cur_lr
 
@@ -840,7 +846,7 @@ class Trainer:
                                 error_if_nonfinite=True,
                             )
 
-                    with nvprof_context(enable_profiling, "Adam update"):
+                    with nvprof_context(enable_profiling, "Optimizer update"):
                         self.optimizer.step()
                     self.optimizer.clear_grad(set_to_zero=False)
                     self.scheduler.step()
@@ -977,6 +983,10 @@ class Trainer:
                             batch=display_step_id,
                             wall_time=train_time,
                             eta=eta,
+                            current_time=datetime.datetime.fromtimestamp(
+                                current_time,
+                                tz=datetime.timezone.utc,
+                            ).astimezone(),
                         )
                     )
                 # the first training time is not accurate

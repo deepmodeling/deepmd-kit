@@ -400,13 +400,14 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeTTebd":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         type_embedding = data.pop("type_embedding")
         env_mat = data.pop("env_mat")
+        data.pop("compress", None)  # pd uses state_dict for compression
         tebd_input_mode = data["tebd_input_mode"]
         if tebd_input_mode in ["strip"]:
             embeddings_strip = data.pop("embeddings_strip")

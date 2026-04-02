@@ -146,6 +146,11 @@ void DeepPotPT::init(const std::string& model,
   dfparam = module.run_method("get_dim_fparam").toInt();
   daparam = module.run_method("get_dim_aparam").toInt();
   aparam_nall = module.run_method("is_aparam_nall").toBool();
+  if (module.find_method("has_default_fparam")) {
+    has_default_fparam_ = module.run_method("has_default_fparam").toBool();
+  } else {
+    has_default_fparam_ = false;
+  }
   inited = true;
 }
 
@@ -226,7 +231,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     if (lmp_list.mapping) {
       std::vector<std::int64_t> mapping(nall_real);
       for (size_t ii = 0; ii < nall_real; ii++) {
-        mapping[ii] = lmp_list.mapping[fwd_map[ii]];
+        mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
       }
       mapping_tensor =
           torch::from_blob(mapping.data(), {1, nall_real}, int_option)

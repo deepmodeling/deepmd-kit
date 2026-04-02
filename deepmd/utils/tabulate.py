@@ -28,7 +28,6 @@ class BaseTabulate(ABC):
         neuron: list[int],
         type_one_side: bool,
         exclude_types: list[list[int]],
-        is_pt: bool,
     ) -> None:
         """Constructor."""
         super().__init__()
@@ -38,7 +37,6 @@ class BaseTabulate(ABC):
         self.neuron = neuron
         self.type_one_side = type_one_side
         self.exclude_types = exclude_types
-        self.is_pt = is_pt
 
         """Need to be initialized in the subclass."""
         self.descrpt_type = "Base"
@@ -91,6 +89,11 @@ class BaseTabulate(ABC):
         """
         # tabulate range [lower, upper] with stride0 'stride0'
         lower, upper = self._get_env_mat_range(min_nbor_dist)
+        # Normalize to per-type scalars: PT serialized data produces
+        # multi-dimensional arrays (ntypes, nnei) while TF produces 1D.
+        if lower.ndim > 1:
+            lower = np.min(lower, axis=tuple(range(1, lower.ndim)))
+            upper = np.max(upper, axis=tuple(range(1, upper.ndim)))
         if self.descrpt_type in ("Atten", "AEbdV2"):
             uu = np.max(upper)
             ll = np.min(lower)
@@ -127,12 +130,8 @@ class BaseTabulate(ABC):
                         net = (
                             "filter_" + str(ielement) + "_net_" + str(ii % self.ntypes)
                         )
-                        if self.is_pt:
-                            uu = np.max(upper[ielement])
-                            ll = np.min(lower[ielement])
-                        else:
-                            uu = upper[ielement]
-                            ll = lower[ielement]
+                        uu = upper[ielement]
+                        ll = lower[ielement]
                     xx = np.arange(ll, uu, stride0, dtype=self.data_type)
                     xx = np.append(
                         xx,
@@ -150,13 +149,8 @@ class BaseTabulate(ABC):
         elif self.descrpt_type == "T":
             xx_all = []
             for ii in range(self.ntypes):
-                """Pt and tf is different here. Pt version is a two-dimensional array."""
-                if self.is_pt:
-                    uu = np.max(upper[ii])
-                    ll = np.min(lower[ii])
-                else:
-                    ll = lower[ii]
-                    uu = upper[ii]
+                ll = lower[ii]
+                uu = upper[ii]
                 xx = np.arange(extrapolate * ll, ll, stride1, dtype=self.data_type)
                 xx = np.append(xx, np.arange(ll, uu, stride0, dtype=self.data_type))
                 xx = np.append(
@@ -176,12 +170,8 @@ class BaseTabulate(ABC):
             ).astype(int)
             idx = 0
             for ii in range(self.ntypes):
-                if self.is_pt:
-                    uu = np.max(upper[ii])
-                    ll = np.min(lower[ii])
-                else:
-                    ll = lower[ii]
-                    uu = upper[ii]
+                ll = lower[ii]
+                uu = upper[ii]
                 for jj in range(ii, self.ntypes):
                     net = "filter_" + str(ii) + "_net_" + str(jj)
                     self._build_lower(
@@ -193,7 +183,7 @@ class BaseTabulate(ABC):
                         stride0,
                         stride1,
                         extrapolate,
-                        nspline[ii][0] if self.is_pt else nspline[ii],
+                        nspline[ii],
                     )
                     idx += 1
         elif self.descrpt_type == "T_TEBD":
@@ -279,8 +269,6 @@ class BaseTabulate(ABC):
             raise RuntimeError("Unsupported descriptor")
 
         self._convert_numpy_to_tensor()
-        if self.is_pt:
-            self._convert_numpy_float_to_int()
         return self.lower, self.upper
 
     # generate_spline_table

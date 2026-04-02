@@ -45,6 +45,7 @@ struct DP_DeepBaseModel {
   int dfparam;
   int daparam;
   bool aparam_nall;
+  bool has_default_fparam;
 };
 
 struct DP_DeepBaseModelDevi {
@@ -57,6 +58,7 @@ struct DP_DeepBaseModelDevi {
   int dfparam;
   int daparam;
   bool aparam_nall;
+  bool has_default_fparam;
 };
 
 struct DP_DeepPot : DP_DeepBaseModel {

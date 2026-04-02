@@ -1369,6 +1369,11 @@ def descrpt_dpa3_args() -> list[Argument]:
     doc_concat_output_tebd = (
         "Whether to concat type embedding at the output of the descriptor."
     )
+    doc_add_chg_spin_ebd = (
+        "Whether to add charge and spin embedding to the descriptor. "
+        "When enabled, fparam is expected to have 2 values (charge, spin) "
+        "which are embedded and added to the type embedding."
+    )
     doc_activation_function = f"The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
@@ -1391,6 +1396,13 @@ def descrpt_dpa3_args() -> list[Argument]:
             optional=True,
             default=False,
             doc=doc_concat_output_tebd,
+        ),
+        Argument(
+            "add_chg_spin_ebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_add_chg_spin_ebd,
         ),
         Argument(
             "activation_function",
@@ -1915,6 +1927,9 @@ def fitting_property() -> list[Argument]:
     doc_seed = "Random seed for parameter initialization of the fitting net"
     doc_task_dim = "The dimension of outputs of fitting net"
     doc_intensive = "Whether the fitting property is intensive"
+    doc_distinguish_types = (
+        "Whether to distinguish atom types when computing output statistics."
+    )
     doc_property_name = "The names of fitting property, which should be consistent with the property name in the dataset."
     doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
@@ -1956,6 +1971,13 @@ def fitting_property() -> list[Argument]:
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument("task_dim", int, optional=True, default=1, doc=doc_task_dim),
         Argument("intensive", bool, optional=True, default=False, doc=doc_intensive),
+        Argument(
+            "distinguish_types",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_distinguish_types,
+        ),
         Argument(
             "property_name",
             str,
@@ -2974,6 +2996,61 @@ def _check_decay_steps_args(data: dict[str, Any]) -> bool:
     return True
 
 
+def _check_wsd_args(data: dict[str, Any]) -> bool:
+    """
+    Check WSD-specific learning rate arguments.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        The learning rate configuration dictionary.
+
+    Returns
+    -------
+    bool
+        True if validation passes.
+
+    Raises
+    ------
+    ValueError
+        If the WSD-specific arguments are invalid.
+    """
+    lr_type = data.get("type", "exp")
+    if lr_type != "wsd":
+        return True
+
+    start_lr = data.get("start_lr")
+    if start_lr is not None and start_lr <= 0:
+        raise ValueError(f"start_lr ({start_lr}) must be positive for WSD.")
+
+    stop_lr = data.get("stop_lr")
+    if stop_lr is not None and stop_lr <= 0:
+        raise ValueError(f"stop_lr ({stop_lr}) must be positive for WSD.")
+
+    stop_lr_ratio = data.get("stop_lr_ratio")
+    if stop_lr_ratio is not None and stop_lr_ratio <= 0:
+        raise ValueError(f"stop_lr_ratio ({stop_lr_ratio}) must be positive for WSD.")
+
+    decay_phase_ratio = data.get("decay_phase_ratio")
+    if decay_phase_ratio is not None and (
+        decay_phase_ratio <= 0 or decay_phase_ratio > 1
+    ):
+        raise ValueError(f"decay_phase_ratio ({decay_phase_ratio}) must be in (0, 1].")
+
+    decay_type = data.get("decay_type")
+    if decay_type is not None and decay_type not in (
+        "inverse_linear",
+        "cosine",
+        "linear",
+    ):
+        raise ValueError(
+            "decay_type must be one of "
+            f"{('inverse_linear', 'cosine', 'linear')}. "
+            f"Got decay_type={decay_type}."
+        )
+    return True
+
+
 @lr_args_plugin.register("exp")
 def learning_rate_exp() -> list[Argument]:
     """
@@ -3025,6 +3102,42 @@ def learning_rate_cosine() -> list[Argument]:
     return []
 
 
+@lr_args_plugin.register("wsd")
+def learning_rate_wsd() -> list[Argument]:
+    """
+    Defines a warmup-stable-decay learning rate schedule with configurable
+    decay rules.
+
+    The learning rate stays at `start_lr` during the stable phase and then
+    decays to `stop_lr` with the selected decay rule.
+    """
+    doc_decay_phase_ratio = (
+        "The ratio of the decay phase to total training steps. "
+        "The remaining post-warmup steps are used as the stable phase. "
+        "Default is 0.1."
+    )
+    doc_decay_type = (
+        "The decay rule used in the decay phase. "
+        "Supported values are `inverse_linear` (default), `cosine`, and `linear`."
+    )
+    return [
+        Argument(
+            "decay_phase_ratio",
+            float,
+            optional=True,
+            default=0.1,
+            doc=doc_decay_phase_ratio,
+        ),
+        Argument(
+            "decay_type",
+            str,
+            optional=True,
+            default="inverse_linear",
+            doc=doc_decay_type,
+        ),
+    ]
+
+
 def learning_rate_variant_type_args() -> Variant:
     doc_lr = "The type of the learning rate."
 
@@ -3074,6 +3187,8 @@ def learning_rate_args(fold_subdoc: bool = False) -> Argument:
         _check_warmup_args(data)
         # Check decay_steps and decay_rate
         _check_decay_steps_args(data)
+        # Check WSD-specific arguments
+        _check_wsd_args(data)
         return True
 
     # Common arguments for all learning rate types (outside Variant)
@@ -3313,7 +3428,19 @@ def optimizer_adamuon() -> list[Argument]:
     ]
 
 
-@opt_args_plugin.register("HybridMuon", doc=doc_only_pt_supported)
+@opt_args_plugin.register(
+    "HybridMuon",
+    doc=doc_only_pt_supported
+    + "HybridMuon optimizer (DeePMD-kit custom implementation). "
+    + "This is a Hybrid optimizer that automatically combines Muon and Adam. "
+    + "For matrix params: Muon update with Newton-Schulz based on selected muon_mode. "
+    + "For 1D params: Standard Adam. "
+    + "Name-based Adam routing is enabled: final effective parameter name segment containing 'bias' "
+    + "or starting with 'adam_' (case-insensitive) always uses Adam (no weight decay); "
+    + "segment starting with 'adamw_' (case-insensitive) uses AdamW-style decoupled decay. "
+    + "Trailing numeric ParameterList indices are ignored when deriving the effective segment. "
+    + "This is DIFFERENT from PyTorch's torch.optim.Muon which ONLY supports 2D parameters.",
+)
 def optimizer_hybrid_muon() -> list[Argument]:
     return [
         Argument(
@@ -3354,12 +3481,12 @@ def optimizer_hybrid_muon() -> list[Argument]:
             "lr_adjust",
             float,
             optional=True,
-            default=10.0,
+            default=0.0,
             doc=doc_only_pt_supported
             + "Learning rate adjustment mode for HybridMuon scaling and Adam learning rate. "
             "If lr_adjust <= 0: use match-RMS scaling (scale = coeff*sqrt(max(m,n))), Adam uses lr directly. "
             "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1, m/n))), Adam uses lr/lr_adjust. "
-            "Default is 10.0 (Adam lr = lr/10).",
+            "Default is 0.0 (match-RMS scaling).",
         ),
         Argument(
             "lr_adjust_coeff",
@@ -3370,26 +3497,16 @@ def optimizer_hybrid_muon() -> list[Argument]:
             + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
         ),
         Argument(
-            "muon_2d_only",
-            bool,
+            "muon_mode",
+            str,
             optional=True,
-            default=True,
+            default="slice",
             doc=doc_only_pt_supported
-            + "If True, only 2D parameters use Muon (matching PyTorch's torch.optim.Muon). "
-            + "Parameters with ndim > 2 use Adam without weight decay. "
-            + "If False, all >=2D parameters use Muon.",
-        ),
-        Argument(
-            "min_2d_dim",
-            int,
-            optional=True,
-            default=1,
-            alias=["muon_min_2d_dim"],
-            doc=doc_only_pt_supported
-            + "Minimum min(m, n) threshold for HybridMuon on 2D matrices. "
-            "Matrices with min(m, n) >= min_2d_dim use HybridMuon; "
-            "those with min(m, n) < min_2d_dim use Adam fallback. "
-            "Set to 1 to disable fallback.",
+            + "Muon routing mode. "
+            + "'2d': only effective-rank-2 params are eligible for Muon; effective rank >2 goes to AdamW-style decoupled decay path. "
+            + "'flat': effective-rank >=2 params are flattened to matrix-view (prod(shape[:-1]), shape[-1]) for Muon. "
+            + "'slice' (default): effective-rank >=3 params use per-slice Muon on the last two dimensions; no cross-slice mixing. "
+            + "Routing uses effective shape after removing singleton dimensions.",
         ),
         Argument(
             "flash_muon",
@@ -3400,6 +3517,17 @@ def optimizer_hybrid_muon() -> list[Argument]:
             + "Enable triton-accelerated Newton-Schulz orthogonalization. "
             "Requires triton and CUDA. Falls back to PyTorch implementation "
             "when triton is unavailable or running on CPU.",
+        ),
+        Argument(
+            "magma_muon",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported
+            + "Enable Magma-lite damping on the Muon route only. "
+            "When enabled, HybridMuon computes momentum-gradient alignment "
+            "per Muon block, applies EMA smoothing, and rescales Muon updates "
+            "to improve stability. Adam/AdamW routes are unchanged.",
         ),
     ]
 
@@ -3475,7 +3603,23 @@ def loss_ener() -> list[Argument]:
         "- For absolute errors exceeding D: linear loss D * (\\|error\\| - 0.5 * D) \n\n"
         "Formula: loss = 0.5 * (error**2) if \\|error\\| <= D else D * (\\|error\\| - 0.5 * D). "
     )
-    doc_huber_delta = "The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss. "
+    doc_huber_delta = (
+        "The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss. "
+        "It can be either one float shared by all terms or a list of "
+        "three values ordered as [energy, force, virial]. "
+    )
+    doc_loss_func = (
+        "Loss function type for energy, force, and virial terms. "
+        "Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss). "
+        "MAE loss is less sensitive to outliers compared to MSE loss. "
+        "Future extensions may support additional loss types."
+    )
+    doc_f_use_norm = (
+        "If true, use L2 norm of force vectors for loss calculation when loss_func='mae' or use_huber is True. "
+        "Instead of computing loss on individual force components, computes loss on ||F_pred - F_label||_2 for each atom. "
+        "This treats the force vector as a whole rather than three independent components. "
+        "Only effective when loss_func='mae' or use_huber=True."
+    )
     return [
         Argument(
             "start_pref_e",
@@ -3598,8 +3742,22 @@ def loss_ener() -> list[Argument]:
             doc=doc_use_huber,
         ),
         Argument(
+            "loss_func",
+            str,
+            optional=True,
+            default="mse",
+            doc=doc_loss_func,
+        ),
+        Argument(
+            "f_use_norm",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_f_use_norm,
+        ),
+        Argument(
             "huber_delta",
-            float,
+            [float, list[float]],
             optional=True,
             default=0.01,
             doc=doc_huber_delta,
@@ -3623,6 +3781,12 @@ def loss_ener_spin() -> list[Argument]:
     doc_limit_pref_pf = limit_pref("atom_pref")
     doc_relative_f = "If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label."
     doc_enable_atom_ener_coeff = r"If true, the energy will be computed as \sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
+    doc_loss_func = (
+        "Loss function type for energy, force, and virial terms. "
+        "Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss). "
+        "MAE loss is less sensitive to outliers compared to MSE loss. "
+        "Future extensions may support additional loss types."
+    )
     return [
         Argument(
             "start_pref_e",
@@ -3715,6 +3879,13 @@ def loss_ener_spin() -> list[Argument]:
             optional=True,
             default=False,
             doc=doc_enable_atom_ener_coeff,
+        ),
+        Argument(
+            "loss_func",
+            str,
+            optional=True,
+            default="mse",
+            doc=doc_loss_func,
         ),
     ]
 

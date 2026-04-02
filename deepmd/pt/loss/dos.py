@@ -14,6 +14,9 @@ from deepmd.pt.utils import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 
 class DOSLoss(TaskLoss):
@@ -264,3 +267,28 @@ class DOSLoss(TaskLoss):
                 )
             )
         return label_requirement
+
+    def serialize(self) -> dict:
+        """Serialize the loss module."""
+        return {
+            "@class": "DOSLoss",
+            "@version": 1,
+            "starter_learning_rate": self.starter_learning_rate,
+            "numb_dos": self.numb_dos,
+            "start_pref_dos": self.start_pref_dos,
+            "limit_pref_dos": self.limit_pref_dos,
+            "start_pref_cdf": self.start_pref_cdf,
+            "limit_pref_cdf": self.limit_pref_cdf,
+            "start_pref_ados": self.start_pref_ados,
+            "limit_pref_ados": self.limit_pref_ados,
+            "start_pref_acdf": self.start_pref_acdf,
+            "limit_pref_acdf": self.limit_pref_acdf,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "DOSLoss":
+        """Deserialize the loss module."""
+        data = data.copy()
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        return cls(**data)

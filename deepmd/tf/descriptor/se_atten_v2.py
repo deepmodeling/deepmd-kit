@@ -136,7 +136,7 @@ class DescrptSeAttenV2(DescrptSeAtten):
         if cls is not DescrptSeAttenV2:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        check_version_compatibility(data.pop("@version"), 3, 1)
         data.pop("@class")
         data.pop("type")
         embedding_net_variables = cls.deserialize_network(
@@ -147,6 +147,7 @@ class DescrptSeAttenV2(DescrptSeAtten):
         )
         data.pop("env_mat")
         variables = data.pop("@variables")
+        data.pop("compress", None)  # tf uses frozen graph for compression
         type_one_side = data["type_one_side"]
         two_side_embeeding_net_variables = cls.deserialize_network_strip(
             data.pop("embeddings_strip"),

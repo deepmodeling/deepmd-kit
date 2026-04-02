@@ -192,6 +192,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.precision = precision
         self.spin = spin
         self.type_map = type_map
+        self.compress = False
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
 
@@ -397,6 +398,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         atype_ext: Array,
         nlist: Array,
         mapping: Array | None = None,
+        fparam: Array | None = None,
     ) -> Array:
         """Compute the descriptor.
 
@@ -513,10 +515,24 @@ class DescrptSeA(NativeOP, BaseDescriptor):
                 if embedding_idx in self.emask:
                     self.embeddings[embedding_idx].clear()
 
-        return {
+        # Serialization version history:
+        #   v2: original format
+        #   v3: added optional "compress" key for model compression state
+        #       (tabulated embedding-net polynomial coefficients).
+        #       Uncompressed models stay at v2 for full backward compatibility.
+        #
+        # Why serialize compression state here:
+        #   The pt and tf backends persist compression via their native
+        #   framework save mechanisms (torch.jit.save / tf.saved_model),
+        #   which capture the full runtime state including tabulated data.
+        #   The pt_expt backend uses serialize() -> model.json -> deserialize()
+        #   as the primary persistence path (.pte files), so compression state
+        #   must survive this round-trip.  All backends accept v3 in
+        #   deserialize() to allow cross-backend loading of compressed models.
+        data = {
             "@class": "Descriptor",
             "type": "se_e2_a",
-            "@version": 2,
+            "@version": 3 if self.compress else 2,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
@@ -540,23 +556,49 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             },
             "type_map": self.type_map,
         }
+        if self.compress:
+            data["compress"] = {
+                "@variables": {
+                    "compress_data": [to_numpy_array(d) for d in self.compress_data],
+                    "compress_info": [to_numpy_array(i) for i in self.compress_info],
+                },
+            }
+        return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")
+        compress = data.pop("compress", None)
         obj = cls(**data)
 
         obj["davg"] = variables["davg"]
         obj["dstd"] = variables["dstd"]
         obj.embeddings = NetworkCollection.deserialize(embeddings)
+        if compress is not None:
+            obj._load_compress_data(compress)
         return obj
+
+    def _load_compress_data(self, compress: dict) -> None:
+        """Load compression state from serialized data.
+
+        Parameters
+        ----------
+        compress : dict
+            Must contain "@variables" with "compress_data" (list of arrays,
+            one per embedding network) and "compress_info" (list of arrays
+            with table bounds).
+        """
+        variables = compress["@variables"]
+        self.compress_data = variables["compress_data"]
+        self.compress_info = variables["compress_info"]
+        self.compress = True
 
     @classmethod
     def update_sel(
