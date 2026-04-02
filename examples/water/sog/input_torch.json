@@ -48,14 +48,16 @@
         240
       ],
       "neuron_lr": [
-        240,
-        240,
-        240
+        120,
+        120,
+        120
       ],
       "resnet_dt": true,
       "precision": "float32",
       "activation_function": "silut:10.0",
       "seed": 1,
+      "n_dl": 1,
+      "remove_self_interaction": true,
       "_comment": "SOG-specific long-range kernel parameters",
       "shift": [
         2.8,
@@ -124,10 +126,10 @@
       ],
       "batch_size": 1
     },
-    "numb_steps": 1000,
+    "numb_steps": 500000,
     "gradient_max_norm": 5.0,
     "seed": 10,
-    "disp_file": "lcurve_test_3.out",
+    "disp_file": "lcurve_remove_self.out",
     "disp_freq": 100,
     "save_freq": 2000
   }

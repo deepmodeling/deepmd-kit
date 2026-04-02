@@ -75,10 +75,18 @@ def _install_fine_frame_corr_profiler(
     device: torch.device,
     collect_flag: dict[str, bool],
 ) -> tuple[Any, Any]:
-    orig_compute = model._compute_sog_frame_correction
+    orig_bundle = model._compute_sog_frame_correction_bundle
     orig_apply = model._apply_frame_correction_lower
 
-    def _timed_compute(self, coord: torch.Tensor, latent_charge: torch.Tensor, box: torch.Tensor) -> torch.Tensor:
+    def _timed_bundle(
+        self,
+        coord: torch.Tensor,
+        latent_charge: torch.Tensor,
+        box: torch.Tensor,
+        *,
+        need_force: bool,
+        need_virial: bool,
+    ) -> dict[str, torch.Tensor]:
         if coord.dim() != 3:
             raise ValueError(f"`coord` should be [nf, nloc, 3], got shape {tuple(coord.shape)}")
         if latent_charge.dim() != 3:
@@ -110,9 +118,20 @@ def _install_fine_frame_corr_profiler(
             remove_self_interaction = bool(fitting.remove_self_interaction)
             n_dl = int(fitting.n_dl)
             pi_tensor = torch.tensor(torch.pi, dtype=real_dtype, device=runtime_device)
+            two_pi = torch.tensor(2.0 * torch.pi, dtype=real_dtype, device=runtime_device)
 
-        nf, _nloc, _ = coord.shape
+        nf, nloc, _ = coord.shape
         corr = torch.zeros((nf, 1), dtype=real_dtype, device=runtime_device)
+        force_local = (
+            torch.zeros((nf, nloc, 3), dtype=real_dtype, device=runtime_device)
+            if need_force
+            else None
+        )
+        virial_local = (
+            torch.zeros((nf, nloc, 1, 9), dtype=real_dtype, device=runtime_device)
+            if need_virial
+            else None
+        )
 
         for ff in range(nf):
             r_raw = coord[ff]
@@ -164,22 +183,54 @@ def _install_fine_frame_corr_profiler(
                     isign=-1,
                 )
 
-            with _time_block("fc_nufft_type2_reduce", detail_times, device) if collect_flag["on"] else nullcontext():
-                conv = kfac.unsqueeze(0) * recon
-                ifft_conv = pytorch_finufft.functional.finufft_type2(
-                    nufft_points,
-                    conv,
-                    eps=1e-4,
-                    isign=1,
-                ) / (2.0 * volume)
-                corr[ff, 0] = (charge * ifft_conv).real.sum()
+            with _time_block("fc_energy_reduce", detail_times, device) if collect_flag["on"] else nullcontext():
+                rho_sq = recon.real.square() + recon.imag.square()
+                corr[ff, 0] = (kfac.unsqueeze(0) * rho_sq).sum() / (2.0 * volume)
+
+            if need_force:
+                with _time_block("fc_prepare_force_conv", detail_times, device) if collect_flag["on"] else nullcontext():
+                    conv = kfac.unsqueeze(0).to(dtype=complex_dtype) * recon
+
+                with _time_block("fc_prepare_force_kgrid", detail_times, device) if collect_flag["on"] else nullcontext():
+                    kk1 = torch.fft.ifftshift(kx_grid, dim=0)
+                    kk2 = torch.fft.ifftshift(ky_grid, dim=1)
+                    kk3 = torch.fft.ifftshift(kz_grid, dim=2)
+                    k_grid = torch.stack((kk1, kk2, kk3), dim=0)
+                    g_cart = two_pi * torch.einsum("ik,k...->i...", cell_inv, k_grid)
+                    grad_conv = (1j * g_cart.unsqueeze(1).to(dtype=complex_dtype)) * conv.unsqueeze(0)
+
+                with _time_block("fc_nufft_type2_force", detail_times, device) if collect_flag["on"] else nullcontext():
+                    grad_field = pytorch_finufft.functional.finufft_type2(
+                        nufft_points,
+                        grad_conv,
+                        eps=1e-4,
+                        isign=1,
+                    )
+
+                with _time_block("fc_force_reduce", detail_times, device) if collect_flag["on"] else nullcontext():
+                    force_frame = -(q_t.unsqueeze(0) * grad_field.real.to(dtype=real_dtype)).sum(dim=1).transpose(0, 1)
+                    force_frame = force_frame / volume
+                    force_local[ff] = force_frame
+
+                if need_virial:
+                    with _time_block("fc_virial_local", detail_times, device) if collect_flag["on"] else nullcontext():
+                        virial_local[ff] = torch.einsum(
+                            "ai,aj->aij",
+                            force_frame,
+                            r_raw,
+                        ).reshape(nloc, 1, 9)
 
             if remove_self_interaction:
                 with _time_block("fc_self_interaction", detail_times, device) if collect_flag["on"] else nullcontext():
                     diag_sum = kfac.sum(dim=-1).sum(dim=-1).sum(dim=-1) / (2.0 * volume)
                     corr[ff, 0] -= torch.sum(q**2) * diag_sum
 
-        return corr
+        out: dict[str, torch.Tensor] = {"corr_redu": corr}
+        if force_local is not None:
+            out["force_local"] = force_local
+        if virial_local is not None:
+            out["virial_local"] = virial_local
+        return out
 
     def _timed_apply(
         self,
@@ -198,36 +249,25 @@ def _install_fine_frame_corr_profiler(
             coord_local = extended_coord[:, :nloc, :]
             box_local = box.view(nf, 3, 3)
             latent_charge = model_ret["latent_charge"]
-            latent_charge_for_energy = latent_charge if self.training else latent_charge.detach()
+            need_force = self.do_grad_r("energy") or self.do_grad_c("energy")
+            need_virial = self.do_grad_c("energy")
+            latent_charge_runtime = latent_charge if self.training else latent_charge.detach()
 
-        with _time_block("fc_compute_corr_redu", detail_times, device) if collect_flag["on"] else nullcontext():
-            corr_redu = self._compute_sog_frame_correction(
+        with _time_block("fc_compute_corr_bundle", detail_times, device) if collect_flag["on"] else nullcontext():
+            corr_bundle = self._compute_sog_frame_correction_bundle(
                 coord_local,
-                latent_charge_for_energy,
+                latent_charge_runtime,
                 box_local,
+                need_force=need_force,
+                need_virial=need_virial,
             )
+            corr_redu = corr_bundle["corr_redu"]
 
         with _time_block("fc_add_energy", detail_times, device) if collect_flag["on"] else nullcontext():
             model_ret["energy_redu"] = model_ret["energy_redu"] + corr_redu.to(model_ret["energy_redu"].dtype)
 
-        if self.do_grad_r("energy") or self.do_grad_c("energy"):
-            with _time_block("fc_compute_corr_redu_for_grad", detail_times, device) if collect_flag["on"] else nullcontext():
-                if self.training and latent_charge.requires_grad:
-                    corr_redu_for_grad = self._compute_sog_frame_correction(
-                        coord_local,
-                        latent_charge.detach(),
-                        box_local,
-                    )
-                else:
-                    corr_redu_for_grad = corr_redu
-
-            with _time_block("fc_autograd_force", detail_times, device) if collect_flag["on"] else nullcontext():
-                corr_force_local = -torch.autograd.grad(
-                    corr_redu_for_grad.sum(),
-                    coord_local,
-                    create_graph=self.training,
-                    retain_graph=False,
-                )[0].view(nf, nloc, 3)
+        if need_force:
+            corr_force_local = corr_bundle["force_local"].to(coord_local.dtype)
 
             with _time_block("fc_scatter_force", detail_times, device) if collect_flag["on"] else nullcontext():
                 corr_force_ext = torch.zeros(
@@ -241,13 +281,9 @@ def _install_fine_frame_corr_profiler(
                         model_ret["energy_derv_r"].dtype
                     )
 
-            if self.do_grad_c("energy"):
+            if need_virial:
+                corr_virial_local = corr_bundle["virial_local"].to(corr_force_local.dtype)
                 with _time_block("fc_virial_update", detail_times, device) if collect_flag["on"] else nullcontext():
-                    corr_virial_local = torch.einsum(
-                        "fai,faj->faij",
-                        corr_force_local,
-                        coord_local,
-                    ).reshape(nf, nloc, 1, 9)
                     corr_virial_redu = corr_virial_local.sum(dim=1)
                     if "energy_derv_c_redu" in model_ret:
                         model_ret["energy_derv_c_redu"] = model_ret["energy_derv_c_redu"] + corr_virial_redu.to(
@@ -266,9 +302,9 @@ def _install_fine_frame_corr_profiler(
 
         return model_ret
 
-    model._compute_sog_frame_correction = types.MethodType(_timed_compute, model)
+    model._compute_sog_frame_correction_bundle = types.MethodType(_timed_bundle, model)
     model._apply_frame_correction_lower = types.MethodType(_timed_apply, model)
-    return orig_compute, orig_apply
+    return orig_bundle, orig_apply
 
 
 def profile(
@@ -308,11 +344,11 @@ def profile(
     timings: dict[str, float] = defaultdict(float)
     detail_times: dict[str, float] = defaultdict(float)
     collect_detail = {"on": False}
-    orig_compute = None
+    orig_bundle = None
     orig_apply = None
 
     if fine_frame_profile:
-        orig_compute, orig_apply = _install_fine_frame_corr_profiler(
+        orig_bundle, orig_apply = _install_fine_frame_corr_profiler(
             model,
             detail_times,
             device,
@@ -422,8 +458,8 @@ def profile(
     finally:
         pytorch_finufft.functional.finufft_type1 = orig_type1
         pytorch_finufft.functional.finufft_type2 = orig_type2
-        if fine_frame_profile and orig_compute is not None and orig_apply is not None:
-            model._compute_sog_frame_correction = orig_compute
+        if fine_frame_profile and orig_bundle is not None and orig_apply is not None:
+            model._compute_sog_frame_correction_bundle = orig_bundle
             model._apply_frame_correction_lower = orig_apply
 
 
@@ -450,7 +486,7 @@ def _format_report(timings: dict[str, float]) -> str:
         "communicate_output",
         "output_cast",
         "fc_guard_and_slice",
-        "fc_compute_corr_redu",
+        "fc_compute_corr_bundle",
         "fc_cast_inputs",
         "fc_param_prepare",
         "fc_geom_and_points",
@@ -458,11 +494,14 @@ def _format_report(timings: dict[str, float]) -> str:
         "fc_build_kfac",
         "fc_prepare_charge",
         "fc_nufft_type1",
-        "fc_nufft_type2_reduce",
+        "fc_energy_reduce",
+        "fc_prepare_force_conv",
+        "fc_prepare_force_kgrid",
+        "fc_nufft_type2_force",
+        "fc_force_reduce",
+        "fc_virial_local",
         "fc_self_interaction",
         "fc_add_energy",
-        "fc_compute_corr_redu_for_grad",
-        "fc_autograd_force",
         "fc_scatter_force",
         "fc_virial_update",
     ]

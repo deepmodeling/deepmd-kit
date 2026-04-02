@@ -123,6 +123,10 @@ class SOGEnergyFittingNet(LRFittingNet):
     default_fparam: list[float], optional
         The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
         this value will be used as the default value for the frame parameter in the fitting net.
+    n_dl : int
+        NUFFT long-range grid density control factor.
+    remove_self_interaction : bool
+        If True, remove self interaction term in long-range correction.
     """
 
     def __init__(
@@ -153,6 +157,7 @@ class SOGEnergyFittingNet(LRFittingNet):
         shift: Optional[Union[list[float], torch.Tensor]] = None,
         amplitude: Optional[Union[list[float], torch.Tensor]] = None,
         n_dl: int = 1,
+        remove_self_interaction: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -212,7 +217,7 @@ class SOGEnergyFittingNet(LRFittingNet):
             sl_tensor,
             requires_grad=bool(self.trainable),
         )
-        self.remove_self_interaction = False
+        self.remove_self_interaction = bool(remove_self_interaction)
         self._nufft_fallback_warned = False
 
     def output_def(self) -> FittingOutputDef:
@@ -282,11 +287,13 @@ class SOGEnergyFittingNet(LRFittingNet):
         variables["shift"] = to_numpy_array(shift_tensor)
         variables["amplitude"] = to_numpy_array(amplitude_tensor)
         data["n_dl"] = self.n_dl
+        data["remove_self_interaction"] = bool(self.remove_self_interaction)
         return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "SOGEnergyFittingNet":
         data = data.copy()
+
         variables = data.get("@variables", {}).copy()
 
         wl_tensor = to_torch_tensor(variables.pop("wl", None))

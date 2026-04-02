@@ -96,6 +96,10 @@ class LESEnergyFittingNet(LRFittingNet):
     default_fparam: list[float], optional
         The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
         this value will be used as the default value for the frame parameter in the fitting net.
+    n_dl : int
+        NUFFT long-range grid density control factor.
+    remove_self_interaction : bool
+        If True, remove self interaction term in long-range correction.
     """
 
     def __init__(
@@ -125,6 +129,7 @@ class LESEnergyFittingNet(LRFittingNet):
         default_fparam: Optional[list[float]] = None,
         sigma: Optional[Union[float, list[float], torch.Tensor]] = None,
         n_dl: int = 1,
+        remove_self_interaction: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -169,7 +174,7 @@ class LESEnergyFittingNet(LRFittingNet):
             sigma_tensor,
             requires_grad=bool(self.trainable),
         )
-        self.remove_self_interaction = False
+        self.remove_self_interaction = bool(remove_self_interaction)
         self._nufft_fallback_warned = False
 
 
@@ -198,6 +203,7 @@ class LESEnergyFittingNet(LRFittingNet):
         data["type"] = "les_energy"
         data["@variables"]["sigma"] = to_numpy_array(self.sigma)
         data["n_dl"] = self.n_dl
+        data["remove_self_interaction"] = bool(self.remove_self_interaction)
         return data
 
     @classmethod

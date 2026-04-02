@@ -415,7 +415,7 @@ class LRFittingNet(Fitting):
 
     def __setitem__(self, key: str, value: torch.Tensor) -> None:
         if key in ["bias_atom_e"]:
-            value = value.view([self.ntypes, self._net_out_dim()])
+            value = value.view([self.ntypes, self._sr_net_out_dim()])
             self.bias_atom_e = value
         elif key in ["fparam_avg"]:
             self.fparam_avg = value

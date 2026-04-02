@@ -147,13 +147,15 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
             output_def["hessian"] = out_def_data["energy_derv_r_derv_r"]
         return output_def
 
-    def _compute_sog_frame_correction(
+    def _compute_sog_frame_correction_bundle(
         self,
         coord: torch.Tensor,
         latent_charge: torch.Tensor,
         box: torch.Tensor,
-        return_kspace_info: bool = False,
-    ) -> torch.Tensor | tuple[torch.Tensor, list[dict[str, torch.Tensor]]]:
+        *,
+        need_force: bool,
+        need_virial: bool,
+    ) -> dict[str, torch.Tensor]:
         if coord.dim() != 3:
             raise ValueError(f"`coord` should be [nf, nloc, 3], got shape {tuple(coord.shape)}")
         if latent_charge.dim() != 3:
@@ -183,10 +185,20 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
         remove_self_interaction = bool(fitting.remove_self_interaction)
         n_dl = int(fitting.n_dl)
         pi_tensor = torch.tensor(torch.pi, dtype=real_dtype, device=runtime_device)
+        two_pi = torch.tensor(2.0 * torch.pi, dtype=real_dtype, device=runtime_device)
 
         nf, nloc, _ = coord.shape
         corr = torch.zeros((nf, 1), dtype=real_dtype, device=runtime_device)
-        kspace_info: list[dict[str, torch.Tensor]] = []
+        force_local = (
+            torch.zeros((nf, nloc, 3), dtype=real_dtype, device=runtime_device)
+            if need_force
+            else None
+        )
+        virial_local = (
+            torch.zeros((nf, nloc, 1, 9), dtype=real_dtype, device=runtime_device)
+            if need_virial
+            else None
+        )
 
         for ff in range(nf):
             r_raw = coord[ff]
@@ -232,137 +244,66 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
                 eps=1e-4,
                 isign=-1,
             )
-            conv = kfac.unsqueeze(0) * recon
-            ifft_conv = pytorch_finufft.functional.finufft_type2(
-                nufft_points,
-                conv,
-                eps=1e-4,
-                isign=1,
-            ) / (2.0 * volume)
-            corr[ff, 0] = (charge * ifft_conv).real.sum()
 
-            if return_kspace_info:
-                kspace_info.append(
-                    {
-                        "k_sq": k_sq,
-                        "kfac": kfac,
-                        "nufft_points": nufft_points,
-                        "charge": charge,
-                        "recon": recon,
-                        "ifft_conv": ifft_conv,
-                        "volume": volume,
-                    }
+            rho_sq = recon.real.square() + recon.imag.square()
+            corr[ff, 0] = (kfac.unsqueeze(0) * rho_sq).sum() / (2.0 * volume)
+
+            conv = None
+            if need_force:
+                conv = kfac.unsqueeze(0).to(dtype=complex_dtype) * recon
+
+            if need_force:
+                assert conv is not None
+                # Reuse the already built k-grid and only reorder it to the FFT
+                # storage order required by type-2 inputs.
+                kk1 = torch.fft.ifftshift(kx_grid, dim=0)
+                kk2 = torch.fft.ifftshift(ky_grid, dim=1)
+                kk3 = torch.fft.ifftshift(kz_grid, dim=2)
+                k_grid = torch.stack((kk1, kk2, kk3), dim=0)
+                g_cart = two_pi * torch.einsum("ik,k...->i...", cell_inv, k_grid)
+                grad_conv = (1j * g_cart.unsqueeze(1).to(dtype=complex_dtype)) * conv.unsqueeze(0)
+                grad_field = pytorch_finufft.functional.finufft_type2(
+                    nufft_points,
+                    grad_conv,
+                    eps=1e-4,
+                    isign=1,
                 )
+                force_frame = -(q_t.unsqueeze(0) * grad_field.real.to(dtype=real_dtype)).sum(dim=1).transpose(0, 1)
+                force_frame = force_frame / volume
+                force_local[ff] = force_frame
+
+                if need_virial:
+                    virial_local[ff] = torch.einsum(
+                        "ai,aj->aij",
+                        force_frame,
+                        r_raw,
+                    ).reshape(nloc, 1, 9)
 
             if remove_self_interaction:
                 diag_sum = kfac.sum(dim=-1).sum(dim=-1).sum(dim=-1) / (2.0 * volume)
                 corr[ff, 0] -= torch.sum(q**2) * diag_sum
 
-        if return_kspace_info:
-            return corr, kspace_info
-        return corr
+        out: dict[str, torch.Tensor] = {"corr_redu": corr}
+        if force_local is not None:
+            out["force_local"] = force_local
+        if virial_local is not None:
+            out["virial_local"] = virial_local
+        return out
 
-    def analytic_sog_needs_kspace(self) -> bool:
-        """Whether analytic derivative hook requires k-space intermediates."""
-        return False
-
-    def compute_sog_correction_derivatives(
+    def _compute_sog_frame_correction(
         self,
         coord: torch.Tensor,
         latent_charge: torch.Tensor,
         box: torch.Tensor,
-        energy_correction: torch.Tensor,
-        do_atomic_virial: bool,
-        kspace_info: Optional[list[dict[str, torch.Tensor]]] = None,
-    ) -> Optional[dict[str, torch.Tensor]]:
-        """Optional model-layer analytic derivatives hook.
-
-        Override this in model subclasses if analytic force/virial is available.
-        """
-        return None
-
-    def _try_analytic_frame_correction_derivatives(
-        self,
-        coord_local: torch.Tensor,
-        latent_charge: torch.Tensor,
-        box_local: torch.Tensor,
-        corr_redu: torch.Tensor,
-        do_atomic_virial: bool,
-        kspace_info: Optional[list[dict[str, torch.Tensor]]] = None,
-    ) -> Optional[dict[str, torch.Tensor]]:
-        """Try to fetch analytic correction derivatives from fitting net.
-
-        Contract for fitting-net hook (optional):
-        `compute_sog_correction_derivatives(coord, latent_charge, box, energy_correction, do_atomic_virial)`
-
-        Returns a dict with:
-        - `force_local`: required, shape [nf, nloc, 3]
-        - `virial_local`: optional, shape [nf, nloc, 1, 9]
-        """
-        out = self.compute_sog_correction_derivatives(
-            coord=coord_local,
-            latent_charge=latent_charge,
-            box=box_local,
-            energy_correction=corr_redu,
-            do_atomic_virial=do_atomic_virial,
-            kspace_info=kspace_info,
+    ) -> torch.Tensor:
+        out = self._compute_sog_frame_correction_bundle(
+            coord,
+            latent_charge,
+            box,
+            need_force=False,
+            need_virial=False,
         )
-        if out is None:
-            # Backward compatibility: allow fitting-layer hook if present.
-            fitting = self.get_fitting_net()
-            hook = getattr(fitting, "compute_sog_correction_derivatives", None)
-            if hook is not None:
-                out = hook(
-                    coord=coord_local,
-                    latent_charge=latent_charge,
-                    box=box_local,
-                    energy_correction=corr_redu,
-                    do_atomic_virial=do_atomic_virial,
-                )
-        if out is None:
-            return None
-        if not isinstance(out, dict):
-            raise TypeError(
-                "`compute_sog_correction_derivatives` should return dict[str, torch.Tensor] or None."
-            )
-        if "force_local" not in out:
-            raise KeyError(
-                "`compute_sog_correction_derivatives` must provide `force_local`."
-            )
-
-        force_local = out["force_local"]
-        expected_force_shape = coord_local.shape
-        if force_local.shape != expected_force_shape:
-            raise ValueError(
-                "`force_local` shape mismatch: "
-                f"expected {tuple(expected_force_shape)}, got {tuple(force_local.shape)}"
-            )
-        if force_local.device != coord_local.device:
-            raise ValueError(
-                "`force_local` device mismatch: "
-                f"expected {coord_local.device}, got {force_local.device}"
-            )
-
-        if "virial_local" in out:
-            virial_local = out["virial_local"]
-            expected_virial_shape = (
-                coord_local.shape[0],
-                coord_local.shape[1],
-                1,
-                9,
-            )
-            if virial_local.shape != expected_virial_shape:
-                raise ValueError(
-                    "`virial_local` shape mismatch: "
-                    f"expected {tuple(expected_virial_shape)}, got {tuple(virial_local.shape)}"
-                )
-            if virial_local.device != coord_local.device:
-                raise ValueError(
-                    "`virial_local` device mismatch: "
-                    f"expected {coord_local.device}, got {virial_local.device}"
-                )
-
-        return out
+        return out["corr_redu"]
 
     def _apply_frame_correction_lower(
         self,
@@ -380,57 +321,22 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
         coord_local = extended_coord[:, :nloc, :]
         box_local = box.view(nf, 3, 3)
         latent_charge = model_ret["latent_charge"]
-        # Keep latent_charge on the computational graph for both training and eval
-        # so SOG correction gradients can always propagate through the LR branch.
-        latent_charge_for_energy = latent_charge
-        kspace_info: Optional[list[dict[str, torch.Tensor]]] = None
-        if self.analytic_sog_needs_kspace():
-            corr_out = self._compute_sog_frame_correction(
-                coord_local,
-                latent_charge_for_energy,
-                box_local,
-                return_kspace_info=True,
-            )
-            assert isinstance(corr_out, tuple)
-            corr_redu, kspace_info = corr_out
-        else:
-            corr_redu = self._compute_sog_frame_correction(
-                coord_local,
-                latent_charge_for_energy,
-                box_local,
-            )
+        need_force = self.do_grad_r("energy") or self.do_grad_c("energy")
+        need_virial = self.do_grad_c("energy")
+        latent_charge_runtime = latent_charge if self.training else latent_charge.detach()
+        corr_bundle = self._compute_sog_frame_correction_bundle(
+            coord_local,
+            latent_charge_runtime,
+            box_local,
+            need_force=need_force,
+            need_virial=need_virial,
+        )
+        corr_redu = corr_bundle["corr_redu"]
 
         model_ret["energy_redu"] = model_ret["energy_redu"] + corr_redu.to(model_ret["energy_redu"].dtype)
 
-        if self.do_grad_r("energy") or self.do_grad_c("energy"):
-            analytic = self._try_analytic_frame_correction_derivatives(
-                coord_local=coord_local,
-                latent_charge=latent_charge,
-                box_local=box_local,
-                corr_redu=corr_redu,
-                do_atomic_virial=do_atomic_virial,
-                kspace_info=kspace_info,
-            )
-            if analytic is not None:
-                corr_force_local = analytic["force_local"].to(coord_local.dtype)
-            else:
-                # Force correction keeps full dependency on latent_charge.
-                # If latent_charge is differentiable, recompute correction with the
-                # same graph connectivity; otherwise reuse corr_redu.
-                if self.training and latent_charge.requires_grad:
-                    corr_redu_for_grad = self._compute_sog_frame_correction(
-                        coord_local,
-                        latent_charge,
-                        box_local,
-                    )
-                else:
-                    corr_redu_for_grad = corr_redu
-                corr_force_local = -torch.autograd.grad(
-                    corr_redu_for_grad.sum(),
-                    coord_local,
-                    create_graph=self.training,
-                    retain_graph=False,
-                )[0].view(nf, nloc, 3)
+        if need_force:
+            corr_force_local = corr_bundle["force_local"].to(coord_local.dtype)
 
             corr_force_ext = torch.zeros(
                 (nf, nall, 3),
@@ -443,15 +349,8 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
                     model_ret["energy_derv_r"].dtype
                 )
 
-            if self.do_grad_c("energy"):
-                if analytic is not None and "virial_local" in analytic:
-                    corr_virial_local = analytic["virial_local"].to(corr_force_local.dtype)
-                else:
-                    corr_virial_local = torch.einsum(
-                        "fai,faj->faij",
-                        corr_force_local,
-                        coord_local,
-                    ).reshape(nf, nloc, 1, 9)
+            if need_virial:
+                corr_virial_local = corr_bundle["virial_local"].to(corr_force_local.dtype)
                 corr_virial_redu = corr_virial_local.sum(dim=1)
                 if "energy_derv_c_redu" in model_ret:
                     model_ret["energy_derv_c_redu"] = model_ret["energy_derv_c_redu"] + corr_virial_redu.to(

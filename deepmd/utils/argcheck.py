@@ -2080,6 +2080,10 @@ def fitting_sog_energy() -> list[Argument]:
     )
     doc_shift = "Shift values of the SOG long-range correction kernels."
     doc_amplitude = "Amplitude values of the SOG long-range correction kernels."
+    doc_n_dl = "NUFFT long-range grid density control factor."
+    doc_remove_self_interaction = (
+        "Whether to remove self interaction term in long-range correction."
+    )
 
     return [
         Argument(
@@ -2182,6 +2186,20 @@ def fitting_sog_energy() -> list[Argument]:
             optional=True,
             default=False,
             doc=doc_only_pt_supported + doc_use_aparam_as_mask,
+        ),
+        Argument(
+            "n_dl",
+            int,
+            optional=True,
+            default=1,
+            doc=doc_only_pt_supported + doc_n_dl,
+        ),
+        Argument(
+            "remove_self_interaction",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_remove_self_interaction,
         ),
         Argument(
             "shift",
@@ -2250,6 +2268,10 @@ def fitting_les_energy() -> list[Argument]:
     )
     doc_shift = "Shift values of the LES long-range correction kernels."
     doc_amplitude = "Amplitude values of the LES long-range correction kernels."
+    doc_n_dl = "NUFFT long-range grid density control factor."
+    doc_remove_self_interaction = (
+        "Whether to remove self interaction term in long-range correction."
+    )
 
     return [
         Argument(
@@ -2352,6 +2374,20 @@ def fitting_les_energy() -> list[Argument]:
             optional=True,
             default=False,
             doc=doc_only_pt_supported + doc_use_aparam_as_mask,
+        ),
+        Argument(
+            "n_dl",
+            int,
+            optional=True,
+            default=1,
+            doc=doc_only_pt_supported + doc_n_dl,
+        ),
+        Argument(
+            "remove_self_interaction",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_remove_self_interaction,
         ),
         Argument(
             "shift",
