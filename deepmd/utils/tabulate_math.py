@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Backend-agnostic tabulation math using numpy.
+"""Backend-agnostic tabulation math using the Array API where possible.
 
 Provides the pure-math functions for model compression tabulation:
 activation derivatives, chain-rule derivative propagation, and
@@ -14,8 +14,12 @@ from typing import (
     Any,
 )
 
+import array_api_compat
 import numpy as np
 
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 from deepmd.dpmodel.utils.network import (
     get_activation_fn,
 )
@@ -44,58 +48,67 @@ ACTIVATION_TO_FUNCTYPE: dict[str, int] = {
 }
 
 
-# ---- Activation derivatives (numpy) ----
+# ---- Activation derivatives (Array API compatible) ----
 
 
-def _stable_sigmoid(xbar: np.ndarray) -> np.ndarray:
+def _stable_sigmoid(xbar: Any) -> Any:
     """Compute sigmoid without overflow for large-magnitude inputs."""
+    xp = array_api_compat.array_namespace(xbar)
     positive = xbar >= 0
-    exp_neg_abs = np.exp(np.where(positive, -xbar, xbar))
-    return np.where(
+    exp_neg_abs = xp.exp(xp.where(positive, -xbar, xbar))
+    return xp.where(
         positive,
         1.0 / (1.0 + exp_neg_abs),
         exp_neg_abs / (1.0 + exp_neg_abs),
     )
 
 
-def grad(xbar: np.ndarray, y: np.ndarray, functype: int) -> np.ndarray:
+def _repeat_flattened_weight_prefix(w: Any, rows: int, cols: int) -> Any:
+    """Repeat the flattened weight prefix row-wise in an Array API way."""
+    xp = array_api_compat.array_namespace(w)
+    w_flat = xp.reshape(w, (-1,))[:cols]
+    w_flat = xp.reshape(w_flat, (1, cols))
+    return xp.broadcast_to(w_flat, (rows, cols))
+
+
+def grad(xbar: Any, y: Any, functype: int) -> Any:
     """First derivative of the activation function."""
+    xp = array_api_compat.array_namespace(xbar, y)
     if functype == 0:
-        return np.ones_like(xbar)
+        return xp.ones_like(xbar)
     elif functype == 1:
         return 1 - y * y
     elif functype == 2:
-        var = np.tanh(SQRT_2_PI * (xbar + GGELU * xbar**3))
+        var = xp.tanh(SQRT_2_PI * (xbar + GGELU * xbar**3))
         return (
             0.5 * SQRT_2_PI * xbar * (1 - var**2) * (3 * GGELU * xbar**2 + 1)
             + 0.5 * var
             + 0.5
         )
     elif functype == 3:
-        return np.where(xbar > 0, np.ones_like(xbar), np.zeros_like(xbar))
+        return xp.astype(xbar > 0, xbar.dtype)
     elif functype == 4:
-        return np.where(
-            (xbar > 0) & (xbar < 6), np.ones_like(xbar), np.zeros_like(xbar)
-        )
+        return xp.astype((xbar > 0) & (xbar < 6), xbar.dtype)
     elif functype == 5:
         return _stable_sigmoid(xbar)
     elif functype == 6:
         return y * (1 - y)
     elif functype == 7:
-        sig = 1.0 / (1.0 + np.exp(-xbar))
+        sig = _stable_sigmoid(xbar)
         return sig + xbar * sig * (1 - sig)
     else:
         raise ValueError(f"Unsupported function type: {functype}")
 
 
-def grad_grad(xbar: np.ndarray, y: np.ndarray, functype: int) -> np.ndarray:
+def grad_grad(xbar: Any, y: Any, functype: int) -> Any:
     """Second derivative of the activation function."""
+    xp = array_api_compat.array_namespace(xbar, y)
     if functype == 0:
-        return np.zeros_like(xbar)
+        return xp.zeros_like(xbar)
     elif functype == 1:
         return -2 * y * (1 - y * y)
     elif functype == 2:
-        var1 = np.tanh(SQRT_2_PI * (xbar + GGELU * xbar**3))
+        var1 = xp.tanh(SQRT_2_PI * (xbar + GGELU * xbar**3))
         var2 = SQRT_2_PI * (1 - var1**2) * (3 * GGELU * xbar**2 + 1)
         return (
             3 * GGELU * SQRT_2_PI * xbar**2 * (1 - var1**2)
@@ -103,26 +116,24 @@ def grad_grad(xbar: np.ndarray, y: np.ndarray, functype: int) -> np.ndarray:
             + var2
         )
     elif functype in [3, 4]:
-        return np.zeros_like(xbar)
+        return xp.zeros_like(xbar)
     elif functype == 5:
         sig = _stable_sigmoid(xbar)
         return sig * (1 - sig)
     elif functype == 6:
         return y * (1 - y) * (1 - 2 * y)
     elif functype == 7:
-        sig = 1.0 / (1.0 + np.exp(-xbar))
+        sig = _stable_sigmoid(xbar)
         d_sig = sig * (1 - sig)
         return 2 * d_sig + xbar * d_sig * (1 - 2 * sig)
     else:
         raise ValueError(f"Unsupported function type: {functype}")
 
 
-# ---- Chain-rule derivative propagation (numpy) ----
+# ---- Chain-rule derivative propagation (Array API compatible) ----
 
 
-def unaggregated_dy_dx_s(
-    y: np.ndarray, w: np.ndarray, xbar: np.ndarray, functype: int
-) -> np.ndarray:
+def unaggregated_dy_dx_s(y: Any, w: Any, xbar: Any, functype: int) -> Any:
     """First derivative for the first layer (scalar input)."""
     if y.ndim != 2:
         raise ValueError("Dim of input y should be 2")
@@ -132,18 +143,17 @@ def unaggregated_dy_dx_s(
         raise ValueError("Dim of input xbar should be 2")
 
     grad_xbar_y = grad(xbar, y, functype)
-    w_flat = np.ravel(w)[: y.shape[1]]
-    w_rep = np.tile(w_flat, (y.shape[0], 1))
+    w_rep = _repeat_flattened_weight_prefix(w, y.shape[0], y.shape[1])
     return grad_xbar_y * w_rep
 
 
 def unaggregated_dy2_dx_s(
-    y: np.ndarray,
-    dy: np.ndarray,
-    w: np.ndarray,
-    xbar: np.ndarray,
+    y: Any,
+    dy: Any,
+    w: Any,
+    xbar: Any,
     functype: int,
-) -> np.ndarray:
+) -> Any:
     """Second derivative for the first layer (scalar input)."""
     if y.ndim != 2:
         raise ValueError("Dim of input y should be 2")
@@ -155,19 +165,19 @@ def unaggregated_dy2_dx_s(
         raise ValueError("Dim of input xbar should be 2")
 
     gg = grad_grad(xbar, y, functype)
-    w_flat = np.ravel(w)[: y.shape[1]]
-    w_rep = np.tile(w_flat, (y.shape[0], 1))
+    w_rep = _repeat_flattened_weight_prefix(w, y.shape[0], y.shape[1])
     return gg * w_rep * w_rep
 
 
 def unaggregated_dy_dx(
-    z: np.ndarray,
-    w: np.ndarray,
-    dy_dx: np.ndarray,
-    ybar: np.ndarray,
+    z: Any,
+    w: Any,
+    dy_dx: Any,
+    ybar: Any,
     functype: int,
-) -> np.ndarray:
+) -> Any:
     """First derivative for subsequent layers."""
+    xp = array_api_compat.array_namespace(z, w, dy_dx, ybar)
     if z.ndim != 2:
         raise ValueError("z must have 2 dimensions")
     if w.ndim != 2:
@@ -181,28 +191,30 @@ def unaggregated_dy_dx(
     size = w.shape[0]
 
     grad_ybar_z = grad(ybar, z, functype)
-    dy_dx = np.ravel(dy_dx)[: length * size].reshape(length, size)
-    accumulator = dy_dx @ w
+    dy_dx = xp.reshape(dy_dx, (-1,))[: length * size]
+    dy_dx = xp.reshape(dy_dx, (length, size))
+    accumulator = xp.matmul(dy_dx, w)
     dz_drou = grad_ybar_z * accumulator
 
     if width == size:
         dz_drou += dy_dx
     if width == 2 * size:
-        dy_dx = np.concatenate((dy_dx, dy_dx), axis=1)
+        dy_dx = xp.concat((dy_dx, dy_dx), axis=1)
         dz_drou += dy_dx
 
     return dz_drou
 
 
 def unaggregated_dy2_dx(
-    z: np.ndarray,
-    w: np.ndarray,
-    dy_dx: np.ndarray,
-    dy2_dx: np.ndarray,
-    ybar: np.ndarray,
+    z: Any,
+    w: Any,
+    dy_dx: Any,
+    dy2_dx: Any,
+    ybar: Any,
     functype: int,
-) -> np.ndarray:
+) -> Any:
     """Second derivative for subsequent layers."""
+    xp = array_api_compat.array_namespace(z, w, dy_dx, dy2_dx, ybar)
     if z.ndim != 2:
         raise ValueError("z must have 2 dimensions")
     if w.ndim != 2:
@@ -220,28 +232,30 @@ def unaggregated_dy2_dx(
     grad_ybar_z = grad(ybar, z, functype)
     gg = grad_grad(ybar, z, functype)
 
-    dy2_dx = np.ravel(dy2_dx)[: length * size].reshape(length, size)
-    dy_dx = np.ravel(dy_dx)[: length * size].reshape(length, size)
+    dy2_dx = xp.reshape(dy2_dx, (-1,))[: length * size]
+    dy2_dx = xp.reshape(dy2_dx, (length, size))
+    dy_dx = xp.reshape(dy_dx, (-1,))[: length * size]
+    dy_dx = xp.reshape(dy_dx, (length, size))
 
-    acc1 = dy2_dx @ w
-    acc2 = dy_dx @ w
+    acc1 = xp.matmul(dy2_dx, w)
+    acc2 = xp.matmul(dy_dx, w)
 
     dz_drou = grad_ybar_z * acc1 + gg * acc2 * acc2
 
     if width == size:
         dz_drou += dy2_dx
     if width == 2 * size:
-        dy2_dx = np.concatenate((dy2_dx, dy2_dx), axis=1)
+        dy2_dx = xp.concat((dy2_dx, dy2_dx), axis=1)
         dz_drou += dy2_dx
 
     return dz_drou
 
 
-# ---- DPTabulate with numpy math ----
+# ---- DPTabulate with Array API math ----
 
 
 class DPTabulate(BaseTabulate):
-    r"""Backend-agnostic tabulation using numpy.
+    r"""Backend-agnostic tabulation using Array API compatible math.
 
     Compress a model by tabulating the embedding-net. The table is composed
     of fifth-order polynomial coefficients assembled from two sub-tables.
@@ -310,141 +324,138 @@ class DPTabulate(BaseTabulate):
         self.data_type = self._get_data_type()
         self.last_layer_size = self._get_last_layer_size()
 
+    def _get_math_backend_sample(self) -> Any:
+        """Return a sample array choosing the execution backend for math ops."""
+        return np.empty((), dtype=self.data_type)
+
+    @cached_property
+    def _math_backend_sample(self) -> Any:
+        return self._get_math_backend_sample()
+
+    @cached_property
+    def _math_backend_device(self) -> Any:
+        return array_api_compat.device(self._math_backend_sample)
+
+    def _backend_asarray(self, value: Any) -> Any:
+        xp = array_api_compat.array_namespace(self._math_backend_sample)
+        return xp.asarray(value, device=self._math_backend_device)
+
+    @cached_property
+    def _matrix_backend(self) -> dict[str, list[Any]]:
+        return {
+            layer: [self._backend_asarray(value) for value in values]
+            for layer, values in self.matrix.items()
+        }
+
+    @cached_property
+    def _bias_backend(self) -> dict[str, list[Any]]:
+        return {
+            layer: [self._backend_asarray(value) for value in values]
+            for layer, values in self.bias.items()
+        }
+
     def _make_data(self, xx: np.ndarray, idx: int) -> Any:
         """Forward pass through embedding net with derivative computation."""
-        xx = xx.reshape(-1, 1)
+        xp = array_api_compat.array_namespace(self._math_backend_sample)
+        xx = xp.reshape(self._backend_asarray(xx), (-1, 1))
         for layer in range(self.layer_size):
+            matrix = self._matrix_backend["layer_" + str(layer + 1)][idx]
+            bias = self._bias_backend["layer_" + str(layer + 1)][idx]
             if layer == 0:
-                xbar = (
-                    np.matmul(xx, self.matrix["layer_" + str(layer + 1)][idx])
-                    + self.bias["layer_" + str(layer + 1)][idx]
-                )
+                xbar = xp.matmul(xx, matrix) + bias
                 if self.neuron[0] == 1:
-                    yy = (
-                        self._layer_0(
-                            xx,
-                            self.matrix["layer_" + str(layer + 1)][idx],
-                            self.bias["layer_" + str(layer + 1)][idx],
-                        )
-                        + xx
-                    )
+                    yy = self._layer_0(xx, matrix, bias) + xx
                     dy = unaggregated_dy_dx_s(
                         yy - xx,
-                        self.matrix["layer_" + str(layer + 1)][idx],
+                        matrix,
                         xbar,
                         self.functype,
-                    ) + np.ones((1, 1), dtype=yy.dtype)
+                    ) + xp.ones((1, 1), dtype=yy.dtype, device=array_api_compat.device(yy))
                     dy2 = unaggregated_dy2_dx_s(
                         yy - xx,
                         dy,
-                        self.matrix["layer_" + str(layer + 1)][idx],
+                        matrix,
                         xbar,
                         self.functype,
                     )
                 elif self.neuron[0] == 2:
-                    tt, yy = self._layer_1(
-                        xx,
-                        self.matrix["layer_" + str(layer + 1)][idx],
-                        self.bias["layer_" + str(layer + 1)][idx],
-                    )
+                    tt, yy = self._layer_1(xx, matrix, bias)
                     dy = unaggregated_dy_dx_s(
                         yy - tt,
-                        self.matrix["layer_" + str(layer + 1)][idx],
+                        matrix,
                         xbar,
                         self.functype,
-                    ) + np.ones((1, 2), dtype=yy.dtype)
+                    ) + xp.ones((1, 2), dtype=yy.dtype, device=array_api_compat.device(yy))
                     dy2 = unaggregated_dy2_dx_s(
                         yy - tt,
                         dy,
-                        self.matrix["layer_" + str(layer + 1)][idx],
+                        matrix,
                         xbar,
                         self.functype,
                     )
                 else:
-                    yy = self._layer_0(
-                        xx,
-                        self.matrix["layer_" + str(layer + 1)][idx],
-                        self.bias["layer_" + str(layer + 1)][idx],
-                    )
+                    yy = self._layer_0(xx, matrix, bias)
                     dy = unaggregated_dy_dx_s(
                         yy,
-                        self.matrix["layer_" + str(layer + 1)][idx],
+                        matrix,
                         xbar,
                         self.functype,
                     )
                     dy2 = unaggregated_dy2_dx_s(
                         yy,
                         dy,
-                        self.matrix["layer_" + str(layer + 1)][idx],
+                        matrix,
                         xbar,
                         self.functype,
                     )
             else:
-                ybar = (
-                    np.matmul(yy, self.matrix["layer_" + str(layer + 1)][idx])
-                    + self.bias["layer_" + str(layer + 1)][idx]
-                )
+                ybar = xp.matmul(yy, matrix) + bias
                 if self.neuron[layer] == self.neuron[layer - 1]:
-                    zz = (
-                        self._layer_0(
-                            yy,
-                            self.matrix["layer_" + str(layer + 1)][idx],
-                            self.bias["layer_" + str(layer + 1)][idx],
-                        )
-                        + yy
-                    )
+                    zz = self._layer_0(yy, matrix, bias) + yy
                     dz = unaggregated_dy_dx(
                         zz - yy,
-                        self.matrix["layer_" + str(layer + 1)][idx],
+                        matrix,
                         dy,
                         ybar,
                         self.functype,
                     )
                     dy2 = unaggregated_dy2_dx(
                         zz - yy,
-                        self.matrix["layer_" + str(layer + 1)][idx],
+                        matrix,
                         dy,
                         dy2,
                         ybar,
                         self.functype,
                     )
                 elif self.neuron[layer] == 2 * self.neuron[layer - 1]:
-                    tt, zz = self._layer_1(
-                        yy,
-                        self.matrix["layer_" + str(layer + 1)][idx],
-                        self.bias["layer_" + str(layer + 1)][idx],
-                    )
+                    tt, zz = self._layer_1(yy, matrix, bias)
                     dz = unaggregated_dy_dx(
                         zz - tt,
-                        self.matrix["layer_" + str(layer + 1)][idx],
+                        matrix,
                         dy,
                         ybar,
                         self.functype,
                     )
                     dy2 = unaggregated_dy2_dx(
                         zz - tt,
-                        self.matrix["layer_" + str(layer + 1)][idx],
+                        matrix,
                         dy,
                         dy2,
                         ybar,
                         self.functype,
                     )
                 else:
-                    zz = self._layer_0(
-                        yy,
-                        self.matrix["layer_" + str(layer + 1)][idx],
-                        self.bias["layer_" + str(layer + 1)][idx],
-                    )
+                    zz = self._layer_0(yy, matrix, bias)
                     dz = unaggregated_dy_dx(
                         zz,
-                        self.matrix["layer_" + str(layer + 1)][idx],
+                        matrix,
                         dy,
                         ybar,
                         self.functype,
                     )
                     dy2 = unaggregated_dy2_dx(
                         zz,
-                        self.matrix["layer_" + str(layer + 1)][idx],
+                        matrix,
                         dy,
                         dy2,
                         ybar,
@@ -453,19 +464,21 @@ class DPTabulate(BaseTabulate):
                 dy = dz
                 yy = zz
 
-        vv = yy.astype(self.data_type)
-        dd = dy.astype(self.data_type)
-        d2 = dy2.astype(self.data_type)
+        vv = to_numpy_array(yy).astype(self.data_type)
+        dd = to_numpy_array(dy).astype(self.data_type)
+        d2 = to_numpy_array(dy2).astype(self.data_type)
         return vv, dd, d2
 
-    def _layer_0(self, x: np.ndarray, w: np.ndarray, b: np.ndarray) -> np.ndarray:
-        return self._activation_fn(np.matmul(x, w) + b)
+    def _layer_0(self, x: Any, w: Any, b: Any) -> Any:
+        xp = array_api_compat.array_namespace(x, w, b)
+        return self._activation_fn(xp.matmul(x, w) + b)
 
     def _layer_1(
-        self, x: np.ndarray, w: np.ndarray, b: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
-        t = np.concatenate([x, x], axis=1)
-        return t, self._activation_fn(np.matmul(x, w) + b) + t
+        self, x: Any, w: Any, b: Any
+    ) -> tuple[Any, Any]:
+        xp = array_api_compat.array_namespace(x, w, b)
+        t = xp.concat([x, x], axis=1)
+        return t, self._activation_fn(xp.matmul(x, w) + b) + t
 
     def _get_descrpt_type(self) -> str:
         """Determine descriptor type from serialized data."""
